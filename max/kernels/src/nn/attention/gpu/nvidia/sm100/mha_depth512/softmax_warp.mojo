@@ -775,4 +775,6 @@ def depth512_softmax[
     # with TMEM by this point. Only warp 0 needs to deallocate.
     if tid // UInt32(WARP_SIZE) == 0:
         tcgen05_release_allocation_lock[Int32(config.cta_group)]()
-        tcgen05_dealloc[Int32(config.cta_group)](tmem_addr, UInt32(512))
+        tcgen05_dealloc[Int32(config.cta_group)](
+            tmem_addr, UInt32(config.sm100_tmem_cols)
+        )

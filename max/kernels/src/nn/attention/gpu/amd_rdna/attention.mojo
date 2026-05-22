@@ -34,7 +34,6 @@ from layout import (
     Coord,
     Idx,
     MixedLayout,
-    RuntimeInt,
     TileTensor,
 )
 from layout.tile_layout import row_major
@@ -282,7 +281,7 @@ struct AttentionRDNA[
         use_exp2=Self.use_exp2,
     ]
 
-    # Q / output / KV DRAM tile layouts. RuntimeInt rows + ComptimeInt
+    # Q / output / KV DRAM tile layouts. Scalar rows + ComptimeInt
     # depth/strides; the runtime row count drives SRD OOB clamping.
 
     comptime kv_num_heads = Self.num_heads // Self.group
@@ -291,7 +290,7 @@ struct AttentionRDNA[
         Self.num_heads * Self.q_depth if not Self.token_gen else Self.q_depth
     )
     comptime QTileLayout = MixedLayout[
-        Coord[RuntimeInt[DType.int64], ComptimeInt[Self.q_depth]].element_types,
+        Coord[Int64, ComptimeInt[Self.q_depth]].element_types,
         Coord[ComptimeInt[Self._q_stride0], ComptimeInt[1]].element_types,
     ]
 
@@ -300,15 +299,13 @@ struct AttentionRDNA[
         * Self.output_depth if not Self.token_gen else Self.output_depth
     )
     comptime OutputTileLayout = MixedLayout[
-        Coord[
-            RuntimeInt[DType.int64], ComptimeInt[Self.output_depth]
-        ].element_types,
+        Coord[Int64, ComptimeInt[Self.output_depth]].element_types,
         Coord[ComptimeInt[Self._output_stride0], ComptimeInt[1]].element_types,
     ]
 
     comptime _kv_stride0 = Self.kv_num_heads * Self.depth
     comptime KvTileLayout = MixedLayout[
-        Coord[RuntimeInt[DType.int64], ComptimeInt[Self.depth]].element_types,
+        Coord[Int64, ComptimeInt[Self.depth]].element_types,
         Coord[ComptimeInt[Self._kv_stride0], ComptimeInt[1]].element_types,
     ]
 
@@ -438,7 +435,7 @@ struct AttentionRDNA[
             head_idx,
             Self.KvTileLayout(
                 Coord(
-                    RuntimeInt[DType.int64](Int64(kv_tile_num_rows)),
+                    Int64(kv_tile_num_rows),
                     Idx[Self.depth](),
                 ),
                 Coord(Idx[Self._kv_stride0](), Idx[1]()),
@@ -591,7 +588,7 @@ struct AttentionRDNA[
             ]()
             self.p_reg_buffer = Self.PRegisterBufferType(p_ptr)
 
-        # Q tile: pre-offset and wrapped as TileTensor with RuntimeInt rows.
+        # Q tile: pre-offset and wrapped as TileTensor with Scalar rows.
         var valid_rows: UInt32 = UInt32(Self.group) if Self.token_gen else min(
             UInt32(Self.BM),
             UInt32(seq_len) - UInt32(Self.q_tile_idx()) * UInt32(Self.BM),
@@ -605,7 +602,7 @@ struct AttentionRDNA[
             ptr=q + Int(q_offset),
             layout=Self.QTileLayout(
                 Coord(
-                    RuntimeInt[DType.int64](Int64(valid_rows)),
+                    Int64(valid_rows),
                     Idx[Self.q_depth](),
                 ),
                 Coord(Idx[Self._q_stride0](), Idx[1]()),
@@ -619,7 +616,7 @@ struct AttentionRDNA[
             ptr=output_ptr + Int(output_offset),
             layout=Self.OutputTileLayout(
                 Coord(
-                    RuntimeInt[DType.int64](Int64(valid_rows)),
+                    Int64(valid_rows),
                     Idx[Self.output_depth](),
                 ),
                 Coord(

@@ -1194,7 +1194,7 @@ def cp_async_bulk_reduce_global_shared_cta[
     Parameters:
         dtype: Element data type of the reduction. Supported floating-point
             types are `float16`, `bfloat16`, `float32`, and `float64`.
-        reduction_kind: The reduction operation to apply. Curently only `ADD` is supported.
+        reduction_kind: The reduction operation to apply. Currently only `ADD` is supported.
         eviction_policy: Cache eviction policy for the L2 cache.
             Defaults to `EVICT_NORMAL`.
 

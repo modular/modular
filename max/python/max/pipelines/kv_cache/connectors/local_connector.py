@@ -47,6 +47,7 @@ class LocalConnector:
         params: KVCacheParams,
         device_buffers: list[Buffer],
         total_num_host_blocks: int,
+        non_replicated_device_buffers_to_offload: list[Buffer] | None = None,
     ) -> None:
         """Initialize the local host memory connector."""
         if not params.enable_prefix_caching:
@@ -65,6 +66,7 @@ class LocalConnector:
             total_num_host_blocks,
             device_buffers,
             replicate_kv_across_tp=params.replicates_kv_across_tp,
+            non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
         )
 
         # Host block pool for managing host memory

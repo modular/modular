@@ -20,12 +20,14 @@ from collections.abc import Callable
 from typing import Any
 
 from max.experimental import functional as F
+from max.experimental.functional.utils import collect_tensors
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import (
     DeviceMesh,
     Placement,
     PlacementMapping,
     Replicated,
+    global_shape_from_local,
 )
 from max.experimental.sharding.rules import RuleSignature
 from max.experimental.sharding.types import TensorLayout
@@ -152,12 +154,26 @@ def _wrap_kvcache_op(
         mapping = _get_mapping(
             op.__name__, sig, return_input_sharding, args, kwargs
         )
+        reference_tensors = collect_tensors((*args, *kwargs.values()))
         for i in range(len(results)):
             result = results[i]
-            if isinstance(result, TensorValue):
-                tensor_results.append(Tensor.from_shard_values(result, mapping))
-            elif isinstance(result, (list, tuple)):
-                tensor_results.append(Tensor.from_shard_values(result, mapping))
+            if isinstance(result, (TensorValue, list, tuple)):
+                shards = (
+                    [result]
+                    if isinstance(result, TensorValue)
+                    else list(result)
+                )
+                global_shape = global_shape_from_local(
+                    [list(s.shape) for s in shards],
+                    mapping.mesh,
+                    mapping.to_placements(),
+                    reference_tensors,
+                )
+                tensor_results.append(
+                    Tensor.from_shard_values(
+                        result, mapping, global_shape=global_shape
+                    )
+                )
             else:
                 raise TypeError(f"Unexpected result type: {type(results[0])}")
         if len(tensor_results) == 1:

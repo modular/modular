@@ -66,6 +66,13 @@ from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 
 
+# IEEE-754 FP32 exponent bias.  Clamping `exp2` inputs at
+# `-FP32_EXP_BIAS` keeps the result within FP32's representable range
+# (the smallest normal positive float32 is `2^-126`, and going much
+# more negative just underflows to zero).
+comptime FP32_EXP_BIAS = 127
+
+
 # TileTensor-based aliases for storage (native types)
 comptime LocalTensor[
     dtype: DType,
@@ -1184,11 +1191,15 @@ def exp2_emulation[
 ](x: SIMD[DType.float32, 2]) -> SIMD[DType.float32, 2]:
     comptime if use_exp2_emulation:
         comptime fp32_round_int = SIMD[DType.float32, 2]((1 << 23) + (1 << 22))
-        clamped = max(x, -127)
+        clamped = max(x, -FP32_EXP_BIAS)
         # We want to round down here, so that the fractional part is in [0, 1)
         rounded = add_ftz_rm(clamped, fp32_round_int)
         rounded_back = sub_ftz(rounded, fp32_round_int)
         frac = sub_ftz(clamped, rounded_back)
+        # Degree-3 polynomial approximation of `2^x` on `x ∈ [0, 1)`.
+        # Coefficients lifted from Tri Dao's FlashAttention-3
+        # `exp2_emulated` (Dao-AILab/flash-attention, `flash_fwd_kernel*`)
+        # — fit by minimax over the unit interval.
         # Tri Dao assumes x <= 127.0 and y <= 127.0
         frac_ex2 = fma_ftz(
             fma_ftz(

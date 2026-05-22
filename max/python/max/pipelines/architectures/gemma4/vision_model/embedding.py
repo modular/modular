@@ -109,11 +109,11 @@ class Gemma4VisionPatchEmbedder(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
-        return self.input_proj.sharding_strategy
+        return self.input_proj.weight.sharding_strategy
 
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        self.input_proj.sharding_strategy = strategy
+        self.input_proj.weight.sharding_strategy = strategy
         self.position_embedding_table.sharding_strategy = strategy
 
     def shard(
@@ -121,7 +121,7 @@ class Gemma4VisionPatchEmbedder(Module):
     ) -> list[Gemma4VisionPatchEmbedder]:
         assert self.sharding_strategy
 
-        input_proj_shards = self.input_proj.shard(devices)
+        input_proj_shards = self.input_proj.weight.shard(devices)
         position_embedding_table_shards = self.position_embedding_table.shard(
             devices
         )
@@ -134,7 +134,7 @@ class Gemma4VisionPatchEmbedder(Module):
             strict=True,
         ):
             sharded = Gemma4VisionPatchEmbedder(self.config, device)
-            sharded.input_proj = input_proj_shard
+            sharded.input_proj.weight = input_proj_shard
             sharded.position_embedding_table = pos_emb_shard
             shards.append(sharded)
 

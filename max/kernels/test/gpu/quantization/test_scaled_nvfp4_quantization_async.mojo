@@ -76,8 +76,8 @@ def test_nvfp4_quantization[
     ctx.enqueue_copy(device_buffer, host_ptr)
 
     var scales_shape = Coord(
-        Idx(ceildiv(M, SF_MN_GROUP_SIZE)),
-        Idx(ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K)),
+        ceildiv(M, SF_MN_GROUP_SIZE),
+        ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),
         Idx[SF_ATOM_K](),
@@ -150,9 +150,7 @@ def test_nvfp4_quantization[
             for k in range(SF_ATOM_M[0]):
                 for l in range(SF_ATOM_M[1]):
                     for m in range(SF_ATOM_K):
-                        var coord = Coord(
-                            Idx(i), Idx(j), Idx(k), Idx(l), Idx(m)
-                        )
+                        var coord = Coord(i, j, k, l, m)
                         assert_equal(
                             scales_tensor_host_ref[coord].cast[DType.float64](),
                             scales_tensor_host[coord].cast[DType.float64](),
@@ -171,10 +169,10 @@ def test_nvfp4_quantization[
             comptime assert output_tensor_host.flat_rank >= 2
             var output_vector = output_tensor_host.load[
                 width=SF_VECTOR_SIZE // 2
-            ](Coord(Idx(row_idx), Idx(col_idx)))
+            ](Coord(row_idx, col_idx))
             var output_vector_ref = output_tensor_host_ref.load[
                 width=SF_VECTOR_SIZE // 2
-            ](Coord(Idx(row_idx), Idx(col_idx)))
+            ](Coord(row_idx, col_idx))
 
             var output_fp32 = cast_uint_to_fp4e2m1[
                 out_dtype=DType.float32,
@@ -203,8 +201,8 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(2 * 128),
+            Idx[1](),
+            2 * 128,
             Idx[11 * 64](),
             tensor_sf=1.0,
         )
@@ -214,8 +212,8 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(999),
+            Idx[1](),
+            Idx[999](),
             Idx[576](),
             tensor_sf=1.0,
         )
@@ -225,8 +223,8 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(129),
+            Idx[1](),
+            Idx[129](),
             Idx[23 * 128](),
             tensor_sf=1.0,
         )
@@ -236,8 +234,8 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(27 * 128),
+            Idx[1](),
+            27 * 128,
             Idx[23 * 128](),
             tensor_sf=0.43,
         )
@@ -247,8 +245,8 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(13),
+            Idx[1](),
+            Idx[13](),
             Idx[17 * 128](),
             tensor_sf=0.5,
         )

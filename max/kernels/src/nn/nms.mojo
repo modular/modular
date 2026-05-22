@@ -282,7 +282,7 @@ def non_max_suppression[
             # this happens when:
             #   1. Score does not meet score threshold (filtered out initially)
             #   2. IoU with an already-selected boc is above IOU threshold (suppressed)
-            var offset = scores.layout(Coord(Idx(b), Idx(c), Idx[0]()))
+            var offset = scores.layout(Coord(b, c, Idx[0]()))
             var per_class_scores_ptr = scores.ptr + offset
 
             # Filter boxes by score threshold

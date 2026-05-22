@@ -26,7 +26,7 @@
 
 from std.gpu.host import DeviceContext
 from std.memory import UnsafePointer, alloc
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.testing import assert_equal
 
 from kv_cache.paged_sparse_kv_index_remap import (
@@ -192,7 +192,7 @@ def main() raises:
             NUM_BATCHES,
             LOG_S0,
             LOG_S1,
-            DeviceContextPtr(ctx),
+            ctx,
         )
 
         ctx.enqueue_copy(h_out, d_out)

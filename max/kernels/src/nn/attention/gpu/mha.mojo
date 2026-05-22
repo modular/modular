@@ -65,6 +65,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    lt_to_tt,
     row_major,
 )
 from layout.layout import *
@@ -86,6 +87,7 @@ from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
 from .amd_rdna.mha_prefill import AttentionRDNA
 from .amd_structured.attention import Attention
+from .amd_structured.hk_mha_prefill import HKMhaConfig, hk_mha_prefill
 from .amd_structured.mha_decode import Attention
 from .amd_structured.mha_decode_streaming import Attention
 from .amd_structured.mha_prefill import Attention
@@ -126,7 +128,6 @@ from nn.attention.mha_utils import (
     _kernel_mask,
     get_start_and_end_for_partitions,
 )
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
@@ -167,7 +168,7 @@ def flash_attention[
     v: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     mask: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     scale: Float32,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: DeviceContext,
     num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -188,14 +189,12 @@ def flash_attention[
             )
         )
 
-    var ctx = context.get_device_context()
-
-    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
+    with Trace[TraceLevel.OP, target=context.default_device_info.api](
         "flash_attention",
         Trace[
-            TraceLevel.OP, target=ctx.default_device_info.api
+            TraceLevel.OP, target=context.default_device_info.api
         ]._get_detail_str[description_fn](),
-        task_id=Int(ctx.id()),
+        task_id=Int(context.id()),
     ):
         return flash_attention[
             config=config,
@@ -220,7 +219,7 @@ def flash_attention[
                 )
             ),
             scale,
-            context.get_device_context(),
+            context,
             num_partitions,
             sink_weights=sink_weights,
         )
@@ -401,21 +400,21 @@ def flash_attention[
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
-        # TODO: This helps differentiate between CE/TG. Not batch-specific.
-        #       We'll just implement a flag on the cache object which is true
-        #       when the batch contains all cache_lens == 0. Remove this when
-        #       such flag (part of ContiguousKVCache) is implemented.
-        var is_token_generation = (
-            k.max_prompt_length() == 1 and not k.empty_cache()
-        )
-
         var max_prompt_len: Int
         var num_keys = Int(k.max_context_length())
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
+        elif decode_dispatch_metadata:
+            max_prompt_len = decode_dispatch_metadata.value().q_max_seq_len
         else:
             max_prompt_len = Int(k.max_prompt_length())
+
+        # TODO: This helps differentiate between CE/TG. Not batch-specific.
+        #       We'll just implement a flag on the cache object which is true
+        #       when the batch contains all cache_lens == 0. Remove this when
+        #       such flag (part of ContiguousKVCache) is implemented.
+        var is_token_generation = max_prompt_len == 1 and not k.empty_cache()
 
         # Whether head and depth are static. With BSHD, B and S are dynamic.
         # H and D are always known for opaque KVCache types, we only check Q.
@@ -693,6 +692,67 @@ def flash_attention_dispatch[
                         )
 
             else:
+                # Long-context AMD CDNA prefill gate. Routes BF16 causal
+                # prefill to the 8-warp structured kernel in
+                # `amd_structured/hk_mha_prefill.mojo`; otherwise falls
+                # through to the FA2 launch below. Gate (all comptime
+                # except the seq-length / page-size run-time checks):
+                # - BF16 throughout;
+                # - depth in (64, 128) (MFMA shape `32x32x16_bf16`);
+                # - causal mask, no attention sink, no ragged batch;
+                # - AMD CDNA (not RDNA, not Nvidia);
+                # - K/V operand is either contiguous (`page_size == 0`)
+                #   or paged with `page_size >= KV_BLOCK = 64`;
+                # - max_prompt_len >= 4096 and a multiple of
+                #   BM = NUM_WARPS * Q_BLOCK_SIZE = 256 (no partial-Q
+                #   tile path in this kernel).
+                comptime _hk_eligible = (
+                    config.dtype == DType.bfloat16
+                    and output.dtype == DType.bfloat16
+                    and (config.depth == 64 or config.depth == 128)
+                    and _type_is_eq[mask_t, CausalMask]()
+                    and not sink
+                    and not ragged
+                    and has_amd_gpu_accelerator()
+                    and not _is_amd_rdna()
+                    and (k_t.page_size == 0 or k_t.page_size >= 64)
+                )
+
+                comptime if _hk_eligible:
+                    if max_prompt_len >= 4096 and max_prompt_len % 256 == 0:
+                        comptime hk_config = HKMhaConfig(
+                            q_block_size=32,
+                            kv_block=64,
+                            depth=config.depth,
+                            num_heads=config.num_heads,
+                            num_kv_heads=kv_num_heads,
+                            num_warps=8,
+                            output_dtype=DType.bfloat16,
+                        )
+                        var q_tt = lt_to_tt(q)
+                        var o_tt = lt_to_tt(output)
+                        # `mask_functor` is the dispatcher's
+                        # `mask_t` instance (the gate filtered to
+                        # `CausalMask` for now; future phases will
+                        # widen to sliding/chunked causal).
+                        # `start_pos = max_cache_valid_length -
+                        # max_prompt_len` is the number of pre-existing
+                        # KV entries before this prefill batch's tokens
+                        # — zero for fresh prefill, positive for cache
+                        # reuse.
+                        hk_mha_prefill[hk_config](
+                            q_tt,
+                            k,
+                            v,
+                            o_tt,
+                            mask_functor,
+                            scale,
+                            max_cache_valid_length,
+                            max_cache_valid_length - max_prompt_len,
+                            ctx,
+                        )
+                        return
+
                 comptime BM = config.block_m()
                 comptime smem_use = config.shared_mem_bytes[is_shared_kv]()
                 comptime kernel = mha[
@@ -4852,9 +4912,9 @@ def mha_gpu_naive[
         p_device,
         row_major(
             (
-                Idx(batch_size * num_heads),
-                Idx(max_prompt_len),
-                Idx(num_keys),
+                batch_size * num_heads,
+                max_prompt_len,
+                num_keys,
             )
         ),
     )
@@ -5504,6 +5564,7 @@ def _naive_attention_with_transpose[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
+    ctx: DeviceContext,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
@@ -5535,19 +5596,19 @@ def _naive_attention_with_transpose[
 
     var qt = TileTensor(
         qt_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth)),
+        row_major(batch_size, num_heads, seq_len, depth),
     )
     var kt = TileTensor(
         kt_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(depth), Idx(num_keys)),
+        row_major(batch_size, num_heads, depth, num_keys),
     )
     var vt = TileTensor(
         vt_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(num_keys), Idx(depth)),
+        row_major(batch_size, num_heads, num_keys, depth),
     )
     var ot = TileTensor(
         ot_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth)),
+        row_major(batch_size, num_heads, seq_len, depth),
     )
 
     comptime layout_4d = Layout.row_major[4]()
@@ -5604,10 +5665,10 @@ def _naive_attention_with_transpose[
         q.ptr,
         row_major(
             (
-                Idx(q.dim[0]()),
-                Idx(q.dim[1]()),
-                Idx(q.dim[2]()),
-                Idx(q.dim[3]()),
+                q.dim[0](),
+                q.dim[1](),
+                q.dim[2](),
+                q.dim[3](),
             )
         ),
     )
@@ -5615,10 +5676,10 @@ def _naive_attention_with_transpose[
         k.ptr,
         row_major(
             (
-                Idx(k.dim[0]()),
-                Idx(k.dim[1]()),
-                Idx(k.dim[2]()),
-                Idx(k.dim[3]()),
+                k.dim[0](),
+                k.dim[1](),
+                k.dim[2](),
+                k.dim[3](),
             )
         ),
     )
@@ -5626,10 +5687,10 @@ def _naive_attention_with_transpose[
         v.ptr,
         row_major(
             (
-                Idx(v.dim[0]()),
-                Idx(v.dim[1]()),
-                Idx(v.dim[2]()),
-                Idx(v.dim[3]()),
+                v.dim[0](),
+                v.dim[1](),
+                v.dim[2](),
+                v.dim[3](),
             )
         ),
     )
@@ -5637,10 +5698,10 @@ def _naive_attention_with_transpose[
         output.ptr,
         row_major(
             (
-                Idx(output.dim[0]()),
-                Idx(output.dim[1]()),
-                Idx(output.dim[2]()),
-                Idx(output.dim[3]()),
+                output.dim[0](),
+                output.dim[1](),
+                output.dim[2](),
+                output.dim[3](),
             )
         ),
     )
@@ -5650,7 +5711,7 @@ def _naive_attention_with_transpose[
     transpose(vt, v_tt, q_perm.ptr)
 
     _naive_attention[dtype, transpose_k](
-        ot_lt, qt_lt, kt_lt, vt_lt, mask, scale
+        ot_lt, qt_lt, kt_lt, vt_lt, mask, scale, ctx
     )
 
     transpose(output_tt, ot, o_perm.ptr)
@@ -5676,6 +5737,7 @@ def _naive_attention[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
+    ctx: DeviceContext,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
@@ -5692,19 +5754,17 @@ def _naive_attention[
     var score_ptr = alloc[Scalar[dtype]](score_size)
     var score = TileTensor(
         score_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
-        ),
+        row_major((batch_size, num_heads, seq_len, num_keys)),
     )
 
     var q_tt = TileTensor(
         q.ptr,
         row_major(
             (
-                Idx(q.dim[0]()),
-                Idx(q.dim[1]()),
-                Idx(q.dim[2]()),
-                Idx(q.dim[3]()),
+                q.dim[0](),
+                q.dim[1](),
+                q.dim[2](),
+                q.dim[3](),
             )
         ),
     )
@@ -5712,10 +5772,10 @@ def _naive_attention[
         k.ptr,
         row_major(
             (
-                Idx(k.dim[0]()),
-                Idx(k.dim[1]()),
-                Idx(k.dim[2]()),
-                Idx(k.dim[3]()),
+                k.dim[0](),
+                k.dim[1](),
+                k.dim[2](),
+                k.dim[3](),
             )
         ),
     )
@@ -5739,7 +5799,7 @@ def _naive_attention[
         )
 
     elementwise[scale_and_mask, simd_size](
-        Index(batch_size, num_heads, seq_len, num_keys)
+        Index(batch_size, num_heads, seq_len, num_keys), ctx
     )
 
     softmax[dtype, simd_size, 4](score, score, axis=3)
@@ -5748,10 +5808,10 @@ def _naive_attention[
         output.ptr,
         row_major(
             (
-                Idx(output.dim[0]()),
-                Idx(output.dim[1]()),
-                Idx(output.dim[2]()),
-                Idx(output.dim[3]()),
+                output.dim[0](),
+                output.dim[1](),
+                output.dim[2](),
+                output.dim[3](),
             )
         ),
     )
@@ -5759,10 +5819,10 @@ def _naive_attention[
         v.ptr,
         row_major(
             (
-                Idx(v.dim[0]()),
-                Idx(v.dim[1]()),
-                Idx(v.dim[2]()),
-                Idx(v.dim[3]()),
+                v.dim[0](),
+                v.dim[1](),
+                v.dim[2](),
+                v.dim[3](),
             )
         ),
     )

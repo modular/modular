@@ -32,7 +32,10 @@ from typing import Any
 
 from max.driver import CPU, Device
 from max.experimental import tensor
-from max.experimental.sharding import DeviceMapping
+from max.experimental.sharding import (
+    DeviceMapping,
+    global_shape_from_local,
+)
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, TensorValueLike, Type, ops
 from max.graph.dim import StaticDim
@@ -69,7 +72,6 @@ from ..sharding.rules.pooling import linear_pool_rule, pool_rule
 from ..sharding.rules.reduction import linear_reduce_rule, reduce_rule
 from ..sharding.rules.shape import (
     argsort_rule,
-    broadcast_to_rule,
     chunk_rule,
     flatten_rule,
     gather_nd_rule,
@@ -80,7 +82,6 @@ from ..sharding.rules.shape import (
     pad_rule,
     permute_rule,
     repeat_interleave_rule,
-    reshape_rule,
     same_placement_multi_input_rule,
     scatter_add_rule,
     scatter_nd_add_rule,
@@ -99,6 +100,7 @@ from .collective_ops import transfer_to
 from .creation_ops import full_like
 from .utils import (
     any_distributed,
+    collect_tensors,
     ensure_context,
     map_tensors,
     tensor_to_layout,
@@ -143,16 +145,34 @@ def spmd_dispatch(
         if first is None:
             return None
 
+        reference_tensors = collect_tensors(args)
+
         if not isinstance(first, (list, tuple)):
             tvs = [TensorValue(s) for s in per_shard]
-            return Tensor.from_shard_values(tvs, output_mappings[0])
+            global_shape = global_shape_from_local(
+                [list(tv.shape) for tv in tvs],
+                output_mappings[0].mesh,
+                output_mappings[0].to_placements(),
+                reference_tensors,
+            )
+            return Tensor.from_shard_values(
+                tvs, output_mappings[0], global_shape=global_shape
+            )
 
         num_out = len(first)
         outputs: list[Tensor] = []
         for j in builtins.range(num_out):
             out_m = output_mappings[builtins.min(j, len(output_mappings) - 1)]
             tvs = [TensorValue(per_shard[i][j]) for i in builtins.range(n)]
-            outputs.append(Tensor.from_shard_values(tvs, out_m))
+            global_shape = global_shape_from_local(
+                [list(tv.shape) for tv in tvs],
+                out_m.mesh,
+                out_m.to_placements(),
+                reference_tensors,
+            )
+            outputs.append(
+                Tensor.from_shard_values(tvs, out_m, global_shape=global_shape)
+            )
         return type(first)(outputs)
 
 
@@ -490,9 +510,6 @@ unsqueeze = functional(ops.unsqueeze, rule=unsqueeze_rule)
 #: Removes a dimension of size 1. Distributed via SPMD.
 #: See :func:`max.graph.ops.squeeze` for details.
 squeeze = functional(ops.squeeze, rule=squeeze_rule)
-#: Reshapes a tensor to a new shape. Distributed via SPMD.
-#: See :func:`max.graph.ops.reshape` for details.
-reshape = functional(ops.reshape, rule=reshape_rule)
 #: Flattens a tensor. Distributed via SPMD.
 #: See :func:`max.graph.ops.flatten` for details.
 flatten = functional(ops.flatten, rule=flatten_rule)
@@ -502,9 +519,6 @@ tile = functional(ops.tile, rule=tile_rule)
 #: Pads a tensor. Distributed via SPMD.
 #: See :func:`max.graph.ops.pad` for details.
 pad = functional(ops.pad, rule=pad_rule)
-#: Broadcasts a tensor to a new shape. Distributed via SPMD.
-#: See :func:`max.graph.ops.broadcast_to` for details.
-broadcast_to = functional(ops.broadcast_to, rule=broadcast_to_rule)
 #: Repeats elements of a tensor. Distributed via SPMD.
 #: See :func:`max.graph.ops.repeat_interleave` for details.
 repeat_interleave = functional(
@@ -642,6 +656,10 @@ def _reduce_op(
     ) -> Tensor:
         assert isinstance(x, tensor.Tensor)
         if axis is None:
+            # Lazy import: ``shape_ops`` imports ``functional`` from this
+            # module, so a top-level import would be circular.
+            from .shape_ops import reshape
+
             x = reshape(x, [-1])
             axis = 0
         return single_axis(x, axis)

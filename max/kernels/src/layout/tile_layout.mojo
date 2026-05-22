@@ -40,6 +40,8 @@ from layout.tile_layout import Layout, TensorLayout, row_major, col_major
 ```
 """
 
+import std.sys
+from std.collections.string.string import _calc_initial_buffer_size_int32
 from std.math.uutils import udivmod_unchecked
 
 from layout.coord import (
@@ -47,7 +49,6 @@ from layout.coord import (
     Idx,
     Coord,
     CoordLike,
-    RuntimeInt,
     DynamicCoord,
     crd2idx,
     idx2crd,
@@ -216,7 +217,7 @@ trait TensorLayout(TrivialRegisterPassable):
         Returns:
             A Coord containing the logical coordinates corresponding to
             the linear index. For nested layouts, the result mirrors the
-            shape nesting with RuntimeInt leaves.
+            shape nesting with Scalar leaves.
 
         Examples:
             For a layout with shape (3, 4) and row-major strides:
@@ -264,10 +265,10 @@ trait TensorLayout(TrivialRegisterPassable):
         """Converts all dimensions to runtime values of the given dtype.
 
         Parameters:
-            dtype: The data type for the resulting `RuntimeInt` values.
+            dtype: The data type for the resulting `Scalar` values.
 
         Returns:
-            A new Layout with all dimensions as `RuntimeInt[dtype]`.
+            A new Layout with all dimensions as `Scalar[dtype]`.
         """
         ...
 
@@ -349,7 +350,7 @@ struct Layout[
 
         Each dimension is initialized to its default value: compile-time
         dimensions (`ComptimeInt`) get their static value, runtime dimensions
-        (`RuntimeInt`) get 0. This is useful for constructing a fully-static
+        (`Scalar`) get 0. This is useful for constructing a fully-static
         layout purely from its type, e.g. ``UpcastLayout[MyLayout, 2]()``.
         """
         self._shape = Coord[*Self.shape_types]()
@@ -460,7 +461,7 @@ struct Layout[
         Returns:
             A Coord containing the logical coordinates corresponding to
             the linear index. For nested layouts, the result mirrors the
-            shape nesting with RuntimeInt leaves.
+            shape nesting with Scalar leaves.
 
         Examples:
             For a layout with shape (3, 4) and row-major strides:
@@ -492,7 +493,7 @@ struct Layout[
                     ](divided, Int(sub_shape[j].value()))
                     UnsafePointer(to=sub_result[j]).init_pointee_copy(
                         rebind[SubResultType.element_types[j]](
-                            RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                            Scalar[out_dtype](coord_val)
                         )
                     )
                 UnsafePointer(to=result[i]).init_pointee_copy(
@@ -507,7 +508,7 @@ struct Layout[
                 )
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultType.element_types[i]](
-                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                        Scalar[out_dtype](coord_val)
                     )
                 )
         return result
@@ -550,9 +551,7 @@ struct Layout[
         Returns:
             The size of the memory region required by the layout.
         """
-        return (
-            self[linear_idx_type=linear_idx_type](Idx(self.product() - 1)) + 1
-        )
+        return self[linear_idx_type=linear_idx_type](self.product() - 1) + 1
 
     @always_inline("nodebug")
     def to_layout(self) -> LegacyLayout:
@@ -629,21 +628,21 @@ struct Layout[
         _CoordToDynamic[dtype, Self.shape_types],
         _CoordToDynamic[dtype, Self.stride_types],
     ]:
-        """Convert all elements in shape and stride to RuntimeInt[dtype].
+        """Convert all elements in shape and stride to Scalar[dtype].
 
         Parameters:
-            dtype: The data type for the resulting RuntimeInt values.
+            dtype: The data type for the resulting Scalar values.
 
         Returns:
             A new Layout where all elements in shape and stride are
-            converted to RuntimeInt[dtype].
+            converted to Scalar[dtype].
 
         Examples:
             ```mojo
             from layout.tile_layout import row_major
             var layout = row_major[3, 4]()  # All compile-time
             var dynamic = layout.make_dynamic[DType.int64]()
-            # dynamic has RuntimeInt[DType.int64] for all dimensions
+            # dynamic has Int64 for all dimensions
             ```
         """
         return Layout(
@@ -787,7 +786,7 @@ comptime _RowMajorMapperIdx[
     == 0 else (
         TypeList.of[
             Trait=CoordLike,
-            RuntimeInt[
+            Scalar[
                 ShapeList[list_idx - 1]
                 .DTYPE if not ShapeList[list_idx - 1]
                 .is_static_value else TypeList[Prev]()[0]
@@ -855,7 +854,7 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
                 )
                 stride_ptr.init_pointee_copy(
                     rebind[StrideType](
-                        RuntimeInt[StrideType.DTYPE](
+                        Scalar[StrideType.DTYPE](
                             Scalar[StrideType.DTYPE](stride_val)
                         )
                     )
@@ -916,7 +915,7 @@ def row_major[
                 )
                 stride_ptr.init_pointee_copy(
                     rebind[StrideType](
-                        RuntimeInt[StrideType.DTYPE](
+                        Scalar[StrideType.DTYPE](
                             Scalar[StrideType.DTYPE](stride_val)
                         )
                     )
@@ -974,7 +973,7 @@ comptime _ColMajorMapperIdx[
     == 0 else (
         TypeList.of[
             Trait=CoordLike,
-            RuntimeInt[
+            Scalar[
                 ShapeList[list_idx - 1]
                 .DTYPE if not ShapeList[list_idx - 1]
                 .is_static_value else TypeList[Prev]()[list_idx - 1]
@@ -1066,7 +1065,7 @@ def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
                 )
                 stride_ptr.init_pointee_copy(
                     rebind[StrideType](
-                        RuntimeInt[StrideType.DTYPE](
+                        Scalar[StrideType.DTYPE](
                             Scalar[StrideType.DTYPE](stride_val)
                         )
                     )
@@ -1118,7 +1117,7 @@ def col_major(
 
 @always_inline("nodebug")
 def col_major(
-    idx: RuntimeInt[...],
+    idx: Scalar[...],
 ) -> Layout[
     shape_types=Coord[type_of(idx)].element_types,
     stride_types=Coord[ComptimeInt[1]].element_types,
@@ -1126,7 +1125,7 @@ def col_major(
     """Creates a 1D column-major layout from a runtime dimension.
 
     Args:
-        idx: The shape dimension as a `RuntimeInt`.
+        idx: The shape dimension as a `Scalar`.
 
     Returns:
         A 1D Layout with stride 1.
@@ -1477,10 +1476,8 @@ def blocked_product[
             var block_cosize = Int(block.shape_coord().product())
             UnsafePointer(to=outer_stride[i]).init_pointee_copy(
                 rebind[OuterStrideTypes[i]](
-                    RuntimeInt[OuterStrideTypes[i].DTYPE](
-                        Scalar[OuterStrideTypes[i].DTYPE](
-                            Int(tiler.stride_coord()[i].value()) * block_cosize
-                        )
+                    Scalar[OuterStrideTypes[i].DTYPE](
+                        Int(tiler.stride_coord()[i].value()) * block_cosize
                     )
                 )
             )
@@ -1578,14 +1575,14 @@ comptime _UpcastStrideReducer[
     coord: CoordLike,
 ]: CoordLike = ComptimeInt[
     _comptime_shape_div(coord.static_value, factor)
-] if coord.is_static_value else RuntimeInt[
+] if coord.is_static_value else Scalar[
     coord.DTYPE
 ]
 """Computes the type for each upcast stride dimension.
 
 For a compile-time stride ``d``, the result type is
 ``ComptimeInt[shape_div(d, factor)]``. For a runtime stride, the result
-is ``RuntimeInt``.
+is ``Scalar``.
 """
 
 
@@ -1610,14 +1607,14 @@ comptime _UpcastShapeTabulator[
     idx
 ].is_static_value and stride_types[
     idx
-].is_static_value else RuntimeInt[
+].is_static_value else Scalar[
     shape_types[idx].DTYPE
 ]
 """Computes the type for each upcast shape dimension.
 
 For compile-time shape ``s`` and stride ``d``, the result type is
 ``ComptimeInt[shape_div(s, shape_div(factor, d))]``. When either is
-runtime, the result is ``RuntimeInt``.
+runtime, the result is ``Scalar``.
 """
 
 
@@ -1736,11 +1733,9 @@ def upcast[
         else:
             UnsafePointer(to=new_stride[i]).init_pointee_copy(
                 rebind[ResultStrideTypes[i]](
-                    RuntimeInt(
-                        Scalar[ResultStrideTypes[i].DTYPE](
-                            _runtime_shape_div(
-                                Int(layout.stride_coord()[i].value()), factor
-                            )
+                    Scalar[ResultStrideTypes[i].DTYPE](
+                        _runtime_shape_div(
+                            Int(layout.stride_coord()[i].value()), factor
                         )
                     )
                 )
@@ -1754,15 +1749,13 @@ def upcast[
         else:
             UnsafePointer(to=new_shape[i]).init_pointee_copy(
                 rebind[ResultShapeTypes[i]](
-                    RuntimeInt(
-                        Scalar[ResultShapeTypes[i].DTYPE](
+                    Scalar[ResultShapeTypes[i].DTYPE](
+                        _runtime_shape_div(
+                            Int(layout.shape_coord()[i].value()),
                             _runtime_shape_div(
-                                Int(layout.shape_coord()[i].value()),
-                                _runtime_shape_div(
-                                    factor,
-                                    Int(layout.stride_coord()[i].value()),
-                                ),
-                            )
+                                factor,
+                                Int(layout.stride_coord()[i].value()),
+                            ),
                         )
                     )
                 )
@@ -2059,3 +2052,104 @@ Parameters:
     L: The layout type whose shape structure is checked.
     C: The coordinate element types to check against.
 """
+
+
+# ===----------------------------------------------------------------------=== #
+# Layout Printing Utilities
+# ===----------------------------------------------------------------------=== #
+
+
+@no_inline
+def _print_layout(layout: Layout):
+    """Prints a 2D layout to the standard output.
+
+    This function visualizes a 2D layout by printing a formatted table showing
+    the memory indices for each logical coordinate.
+
+    Args:
+        layout: The 2D layout to print.
+    """
+    comptime assert layout.rank == 2, "_print_layout only supports 2D layouts"
+    print(layout)
+    var stdout = std.sys.stdout
+    _format_layout(layout, stdout)
+
+
+@always_inline("nodebug")
+def _dim_size[T: CoordLike](dim: T) -> Int:
+    """Returns the element count for a single layout dimension.
+
+    For scalar CoordLike types (ComptimeInt, Scalar), returns the value.
+    For nested Coord types, returns the product of all sub-elements.
+    """
+    comptime if T.is_tuple:
+        comptime sub_rank = T.__len__()
+        var t = dim.tuple()
+        var result: Int = 1
+        comptime for j in range(sub_rank):
+            result *= _dim_size(t[j])
+        return result
+    else:
+        return Int(dim.value())
+
+
+@no_inline
+def _format_layout[W: Writer](layout: Layout, mut writer: W):
+    """Formats a 2D layout as a table and writes it to the specified writer.
+
+    This function creates a visual representation of a 2D layout as a table
+    showing the memory indices for each logical coordinate.
+
+    Parameters:
+        W: Type parameter representing a Writer implementation.
+
+    Args:
+        layout: The 2D layout to format.
+        writer: The writer to output the formatted layout to.
+    """
+    comptime assert layout.rank == 2, "_format_layout only supports 2D layouts"
+
+    def _write_divider(column_count: Int, cell_width: Int) {mut writer}:
+        for _ in range(column_count):
+            writer.write("+")
+            for _ in range(cell_width):
+                writer.write("-")
+        writer.write("+\n")
+
+    var rows = _dim_size(layout.shape[0]())
+    var cols = _dim_size(layout.shape[1]())
+    # maximum column width is based on the width of the longest label plus 2 spaces
+    var idx_width = String(layout.cosize()).byte_length() + 2
+
+    # Print column labels
+    writer.write("    ")
+    for n in range(cols):
+        writer.write("  ")
+        n.write_padded(writer, width=idx_width - 2)
+
+        if n + 1 != cols:
+            writer.write(" ")
+
+    writer.write("\n")
+
+    for m in range(rows):
+        writer.write("    ")
+        _write_divider(cols, idx_width)
+
+        # Print row label
+        m.write_padded(writer, width=2)
+        writer.write("  ")
+
+        for n in range(cols):
+            writer.write("| ")
+            Int(layout(Coord(m, n))).write_padded(
+                writer,
+                width=idx_width - 2,
+            )
+            writer.write(" ")
+        writer.write("|\n")
+
+    writer.write("    ")
+
+    # Write the final horizontal dividing line
+    _write_divider(cols, idx_width)

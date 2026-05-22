@@ -122,6 +122,8 @@ def fa4_mma[
         """Arrive at mbar: multicast for pair-CTA, local elect for single."""
         comptime if config.pair_cta:
             if e != 0:
+                # cta_mask = 0b11 = (1 << cta_group) - 1 for cta_group=2:
+                # arrive on both CTAs' instance of the barrier.
                 mma_arrive_multicast[cta_group](mbar, UInt16(0x3))
         else:
             elect_mma_arrive(mbar, e)

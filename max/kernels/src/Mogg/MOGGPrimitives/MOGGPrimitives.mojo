@@ -16,9 +16,17 @@ from std.math import fma
 from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
 
+import std.algorithm
+
 from compiler_internal import StaticTensorSpec
+from compiler_internal.directives import (
+    ComputeOutputFusion,
+    ElementwiseFusion,
+    InputFusion,
+    OutputFusion,
+)
 from std.collections import InlineArray
-from std.gpu.host import DeviceBuffer
+from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.device_context import _DeviceContextPtr
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
@@ -34,13 +42,17 @@ from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
 from register import register_internal
-from std.runtime.asyncrt import DeviceContextPtr
 from tensor import (
     IOSpec,
     ManagedTensorSlice,
 )
 from tensor.io_spec import IO
-from tensor.managed_tensor_slice import DynamicTensor, get_kernel_simd_width
+from tensor.managed_tensor_slice import (
+    DynamicTensor,
+    _shape_types_compatible,
+    get_kernel_simd_width,
+    simd_load_from_managed_tensor_slice,
+)
 
 from std.utils import Index, IndexList, StaticTuple
 
@@ -124,7 +136,7 @@ def create_i1_async(
 def create_buffer_ref_async(
     buffer: MutByteBuffer,
     async_ptr: OpaquePointer[MutAnyOrigin],
-    call_ctx: DeviceContextPtr,
+    call_ctx: DeviceContext,
 ):
     external_call["MGP_RT_CreateAsyncDeviceBufferRef", NoneType](
         buffer.unsafe_ptr(), buffer.size(), async_ptr, call_ctx._handle
@@ -156,13 +168,13 @@ def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
 @no_inline
 def unpack_device_ctx(
     async_ptr: OpaquePointer[MutAnyOrigin],
-) -> DeviceContextPtr:
+) -> DeviceContext:
     var ptr = external_call[
         "MGP_RT_UnpackDeviceContext",
         _DeviceContextPtr[mut=True],
     ](async_ptr)
 
-    return DeviceContextPtr(ptr)
+    return DeviceContext(ptr)
 
 
 @no_inline
@@ -341,14 +353,14 @@ def mgp_tensor_slice[
 @register_internal("mgp.buffer.alloc")
 @no_inline
 def mgp_buffer_alloc(
-    byte_size: Int, dev_context: DeviceContextPtr
+    byte_size: Int, dev_context: DeviceContext
 ) raises -> MutByteBuffer:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
-    var buf = dev_context[].enqueue_create_buffer[DType.int8](byte_size)
+    var buf = dev_context.enqueue_create_buffer[DType.int8](byte_size)
     return MutByteBuffer(buf^.take_ptr(), shape)
 
 
@@ -539,23 +551,21 @@ def mgp_buffer_concat[
 ](
     output: MutByteBuffer,
     inputs: StaticTuple[MutByteBuffer, ...],
-    call_ctx: DeviceContextPtr,
+    call_ctx: DeviceContext,
 ) raises:
     var output_lt = TileTensor(
         output.unsafe_ptr(),
-        row_major(Coord(Idx(output.size()))),
+        row_major(Coord(output.size())),
     )
     var input_tensors = StaticTuple[_, inputs.size](
-        TileTensor(
-            inputs[0].unsafe_ptr(), row_major(Coord(Idx(inputs[0].size())))
-        )
+        TileTensor(inputs[0].unsafe_ptr(), row_major(Coord(inputs[0].size())))
         .as_any_origin()
         .as_immut()
     )
     for i in range(1, len(inputs)):
         input_tensors[i] = (
             TileTensor(
-                inputs[i].unsafe_ptr(), row_major(Coord(Idx(inputs[i].size())))
+                inputs[i].unsafe_ptr(), row_major(Coord(inputs[i].size()))
             )
             .as_any_origin()
             .as_immut()
@@ -573,12 +583,12 @@ def mgp_buffer_device_to_host[
 ](
     dev_buf: MutByteBuffer,
     host_buf: MutByteBuffer,
-    dev_ctx: DeviceContextPtr,
+    dev_ctx: DeviceContext,
 ) raises:
     comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
-        dev_ctx[].enqueue_copy[DType.int8](
+        dev_ctx.enqueue_copy[DType.int8](
             host_buf.unsafe_ptr(),
-            dev_buf.to_device_buffer(dev_ctx[]),
+            dev_buf.to_device_buffer(dev_ctx),
         )
     else:
         raise Error("mgp.buffer.device_to_host must be scheduled on gpu device")
@@ -592,13 +602,13 @@ def mgp_buffer_device_to_device[
 ](
     src_buf: MutByteBuffer,
     dst_buf: MutByteBuffer,
-    src_dev_ctx: DeviceContextPtr,
-    dst_dev_ctx: DeviceContextPtr,
+    src_dev_ctx: DeviceContext,
+    dst_dev_ctx: DeviceContext,
 ) raises:
     comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
-        dst_dev_ctx[].enqueue_copy[DType.int8](
-            dst_buf.to_device_buffer(dst_dev_ctx[]),
-            src_buf.to_device_buffer(src_dev_ctx[]),
+        dst_dev_ctx.enqueue_copy[DType.int8](
+            dst_buf.to_device_buffer(dst_dev_ctx),
+            src_buf.to_device_buffer(src_dev_ctx),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
         memcpy(
@@ -621,11 +631,11 @@ def mgp_buffer_host_to_device[
 ](
     host_buf: MutByteBuffer,
     dev_buf: MutByteBuffer,
-    dev_ctx: DeviceContextPtr,
+    dev_ctx: DeviceContext,
 ) raises:
     comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
-        dev_ctx[].enqueue_copy[DType.int8](
-            dev_buf.to_device_buffer(dev_ctx[]),
+        dev_ctx.enqueue_copy[DType.int8](
+            dev_buf.to_device_buffer(dev_ctx),
             host_buf.unsafe_ptr(),
         )
     else:
@@ -696,15 +706,15 @@ def mgp_tensor_spec_get_dim[
 
 
 @export
-def mgp_device_context_destroy(dev_ctx: DeviceContextPtr):
+def mgp_device_context_destroy(dev_ctx: DeviceContext):
     # DeviceContext is refcounted, we don't need to explicitly destroy it
     pass
 
 
 @register_internal("mgp.sync")
 @no_inline
-def mgp_sync(ctx: StateContext, dev_ctx: DeviceContextPtr) raises:
-    dev_ctx[].synchronize()
+def mgp_sync(ctx: StateContext, dev_ctx: DeviceContext) raises:
+    dev_ctx.synchronize()
 
 
 @register_internal("mgp.debug.print")
@@ -979,7 +989,7 @@ struct MoggAsyncPackHelper:
     def __init__(
         out self,
         data: MutByteBuffer,
-        device_ctx_ptr: DeviceContextPtr,
+        device_ctx_ptr: DeviceContext,
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """
@@ -1123,7 +1133,7 @@ def mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
     external_call["MGP_RT_CreateAsync_chain", NoneType](async_ptr)
 
 
-@register_internal("mogg.async.check_task_error")
+@register_internal("mogg.async.join")
 @no_inline
 def mogg_async_check_task_error(mut error: Optional[Error]) raises:
     """Raises the captured error from an async task, if present.
@@ -1395,3 +1405,197 @@ def simd_select[
     T: TrivialRegisterPassable
 ](cond: Bool, true_case: T, false_case: T) -> T:
     return select(cond, true_case, false_case)
+
+
+# ===-----------------------------------------------------------------------===#
+# MOGG elementwise / view primitives
+# ===-----------------------------------------------------------------------===#
+
+
+@register_internal("mogg.elemwise_for_each")
+@no_inline
+def foreach[
+    dtype: DType,
+    rank: Int,
+    //,
+    func: def[width: Int, element_alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
+    *,
+    target: StaticString = "cpu",
+    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    _trace_name: StaticString = "mogg.for_each",
+](
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
+    ctx: DeviceContext,
+) raises:
+    """Apply the function `func` to each element of the tensor slice.
+
+    Parameters:
+        dtype: The data type of the elements in the tensor slice.
+        rank: The rank of the tensor slice.
+        func: The function to apply to each element of the tensor slice.
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
+        simd_width: The SIMD width for the target (usually leave this as its default value).
+        _trace_name: Name of the executed operation displayed in the trace_description.
+
+    Args:
+        tensor: The output tensor slice which receives the return values from `func`.
+        ctx: The call context (forward this from the custom operation).
+    """
+
+    @parameter
+    @always_inline
+    def elementwise_fn_wrapper[
+        width: Int,
+        rank: Int,
+        alignment: Int = 1,
+    ](index: IndexList[rank]) capturing:
+        var val = func[width, alignment](rebind[IndexList[tensor.rank]](index))
+        tensor._fused_store[element_alignment=alignment](index, val)
+
+    std.algorithm.functional.elementwise[
+        elementwise_fn_wrapper,
+        simd_width,
+        target=target,
+        _trace_description=_trace_name,
+    ](tensor.shape(), ctx)
+
+
+@register_internal("mogg.call.foreach")
+@no_inline
+def foreach_fusion[
+    dtype: DType,
+    rank: Int,
+    //,
+    E: ElementwiseFusion,
+    *,
+    target: StaticString = "cpu",
+    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    _trace_name: StaticString = "mogg.for_each",
+](
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
+    elem: E,
+    ctx: DeviceContext,
+) raises:
+    """Apply a pure elementwise fusion to each element of the tensor slice.
+
+    Parameters:
+        dtype: The data type of the elements in the tensor slice.
+        rank: The rank of the tensor slice.
+        E: The elementwise fusion struct type.
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
+        simd_width: The SIMD width for the target.
+        _trace_name: Name of the executed operation displayed in the trace.
+
+    Args:
+        tensor: The output tensor slice which receives the computed values.
+        elem: The elementwise fusion struct.
+        ctx: The call context (forward this from the custom operation).
+    """
+
+    @parameter
+    @always_inline
+    def wrapper[
+        width: Int, element_alignment: Int
+    ](index: IndexList[rank]) capturing -> SIMD[dtype, width]:
+        return elem.compute[dtype, rank, width, element_alignment](index)
+
+    foreach[
+        func=wrapper,
+        target=target,
+        simd_width=simd_width,
+        _trace_name=_trace_name,
+    ](tensor, ctx)
+
+
+@register_internal("mogg.for_each.out_func")
+@no_inline
+def foreach_out_func[
+    dtype: DType,
+    rank: Int,
+    //,
+    func: def[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
+    out_func: def[width: Int](IndexList[rank]) capturing[_] -> None,
+    *,
+    target: StaticString = "cpu",
+    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    _trace_name: StaticString = "mogg.for_each",
+](
+    tensor: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
+    ctx: DeviceContext,
+) raises:
+    """Apply the function `func` to each element of the tensor slice.
+
+    Parameters:
+        dtype: The data type of the elements in the tensor slice.
+        rank: The rank of the tensor slice.
+        func: The function to apply to each element of the tensor slice.
+        out_func: The function to apply on each output element.
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
+        simd_width: The SIMD width for the target (usually leave this as its default value).
+        _trace_name: Name of the executed operation displayed in the trace_description.
+
+    Args:
+        tensor: The input tensor slice which the consumed values.
+        ctx: The call context (forward this from the custom operation).
+    """
+
+    @parameter
+    @always_inline
+    def out_func_shim[
+        _width: Int, _rank: Int, _alignment: Int = 1
+    ](index: IndexList[_rank]) capturing:
+        idx = rebind[IndexList[rank]](index)
+        out_func[_width](idx)
+
+    std.algorithm.functional.elementwise[
+        out_func_shim,
+        simd_width,
+        target=target,
+        _trace_description=_trace_name,
+    ](tensor.shape(), ctx)
+
+
+# TensorCopy intrinsic used by view kernels.
+# z is a kernel output, and x a view of the input.
+@register_internal("mogg.call.materialize")
+@doc_hidden
+@no_inline
+def view_copy_impl[
+    dtype: DType,
+    rank: Int,
+    InFusion: InputFusion,
+    OutFusion: OutputFusion,
+    ComputeFusion: ComputeOutputFusion,
+    spec: StaticTensorSpec[dtype, rank, _, InFusion, OutFusion, ComputeFusion],
+    //,
+    *,
+    target: StaticString,
+    _trace_name: StaticString = "mogg.view_copy_impl",
+](
+    z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
+    x: ManagedTensorSlice[static_spec=spec, ...],
+    ctx: DeviceContext,
+) raises:
+    comptime assert _shape_types_compatible[
+        x.static_spec.static_layout._shape_types,
+        z.static_spec.static_layout._shape_types,
+        rank,
+    ](), "static shapes not compatible"
+    assert x.shape() == z.shape(), "runtime shapes not compatible"
+
+    @parameter
+    @always_inline
+    def func[
+        width: Int, element_alignment: Int
+    ](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
+        return simd_load_from_managed_tensor_slice[
+            simd_width=width, element_alignment=element_alignment
+        ](x, idx)
+
+    foreach[
+        func,
+        target=target,
+        _trace_name=_trace_name,
+    ](z, ctx)

@@ -13,6 +13,7 @@
 
 
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from std.gpu.host import DeviceContext
 from nn.concat import _concat_parallel, _concat_serial, concat
 
 from std.utils import IndexList, StaticTuple
@@ -82,7 +83,10 @@ def test_concat() raises:
         )
 
     concat[dtype, epilogue_fn=epilogue_plus_one](
-        output.make_dynamic[DType.int64](), concat_axis, input_tuple
+        output.make_dynamic[DType.int64](),
+        concat_axis,
+        input_tuple,
+        DeviceContext(api="cpu"),
     )
 
     # CHECK: == test_concat
@@ -97,10 +101,10 @@ def test_concat() raises:
     # CHECK-COUNT-6: 3.0
     var output_flat = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.num_elements()))),
+        row_major(Coord(output.num_elements())),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((Idx(i),)))
+        print(output_flat.load[1]((i,)))
 
 
 def test_concat_parallel() raises:
@@ -168,10 +172,10 @@ def test_concat_parallel() raises:
     # CHECK-COUNT-6: 3.0
     var output_flat = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.num_elements()))),
+        row_major(Coord(output.num_elements())),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((Idx(i),)))
+        print(output_flat.load[1]((i,)))
 
 
 # CHECK-LABEL: test_concat_inner
@@ -234,10 +238,10 @@ def test_concat_inner() raises:
     # CHECK-COUNT-12: 3.0
     var output_flat = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.num_elements()))),
+        row_major(Coord(output.num_elements())),
     )
     for i in range(output.layout.product()):
-        print(output_flat.load[1]((Idx(i),)))
+        print(output_flat.load[1]((i,)))
 
 
 def main() raises:

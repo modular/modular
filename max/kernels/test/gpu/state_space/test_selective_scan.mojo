@@ -327,49 +327,43 @@ def run_selective_scan_gpu[
     comptime delta_softplus_int8: Int8 = Int8(1) if delta_softplus else Int8(0)
 
     # Create TileTensors for CPU kernel
-    var output_cpu_tt = TileTensor(
-        output_cpu_h, row_major(Idx(batch), Idx(dim), Idx(seqlen))
-    )
+    var output_cpu_tt = TileTensor(output_cpu_h, row_major(batch, dim, seqlen))
     var x_cpu_tt = TileTensor(
         x_cpu_h,
-        row_major(Idx(batch), Idx(dim), Idx(n_chunks), Idx(2 * dstate)),
+        row_major(batch, dim, n_chunks, 2 * dstate),
     )
-    var out_z_cpu_tt = TileTensor(
-        out_z_cpu_h, row_major(Idx(batch), Idx(dim), Idx(seqlen))
-    )
-    var u_cpu_tt = TileTensor(u_h, row_major(Idx(batch), Idx(dim), Idx(seqlen)))
-    var delta_cpu_tt = TileTensor(
-        delta_h, row_major(Idx(batch), Idx(dim), Idx(seqlen))
-    )
-    var A_cpu_tt = TileTensor(A_h, row_major(Idx(dim), Idx(dstate)))
+    var out_z_cpu_tt = TileTensor(out_z_cpu_h, row_major(batch, dim, seqlen))
+    var u_cpu_tt = TileTensor(u_h, row_major(batch, dim, seqlen))
+    var delta_cpu_tt = TileTensor(delta_h, row_major(batch, dim, seqlen))
+    var A_cpu_tt = TileTensor(A_h, row_major(dim, dstate))
     var B_cpu_tt = TileTensor(
         B_h,
-        row_major(Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen)),
+        row_major(batch, n_groups, dstate, seqlen),
     )
     var C_cpu_tt = TileTensor(
         C_h,
-        row_major(Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen)),
+        row_major(batch, n_groups, dstate, seqlen),
     )
     var D_cpu_tt = TileTensor(
         D_h,
         row_major(
-            Idx(D_size),
+            D_size,
         ),
     )
     var z_cpu_tt = TileTensor(
         z_h,
         row_major(
             (
-                Idx(batch if has_z else 0),
-                Idx(dim if has_z else 0),
-                Idx(seqlen if has_z else 0),
+                batch if has_z else 0,
+                dim if has_z else 0,
+                seqlen if has_z else 0,
             )
         ),
     )
     var delta_bias_cpu_tt = TileTensor(
         delta_bias_h,
         row_major(
-            Idx(delta_bias_size),
+            delta_bias_size,
         ),
     )
 
@@ -410,56 +404,56 @@ def run_selective_scan_gpu[
     # Create TileTensors for GPU kernel
     var output_gpu_tt = TileTensor(
         output_gpu_d,
-        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+        row_major(batch, dim, seqlen),
     )
     var x_gpu_tt = TileTensor(
         x_gpu_d,
-        row_major(Idx(batch), Idx(dim), Idx(n_chunks), Idx(2 * dstate)),
+        row_major(batch, dim, n_chunks, 2 * dstate),
     )
     var out_z_gpu_tt = TileTensor(
         out_z_gpu_d,
-        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+        row_major(batch, dim, seqlen),
     )
     var u_gpu_tt = TileTensor(
         u_d,
-        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+        row_major(batch, dim, seqlen),
     )
     var delta_gpu_tt = TileTensor(
         delta_d,
-        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+        row_major(batch, dim, seqlen),
     )
     var A_gpu_tt = TileTensor(
         A_d,
-        row_major(Idx(dim), Idx(dstate)),
+        row_major(dim, dstate),
     )
     var B_gpu_tt = TileTensor(
         B_d,
-        row_major(Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen)),
+        row_major(batch, n_groups, dstate, seqlen),
     )
     var C_gpu_tt = TileTensor(
         C_d,
-        row_major(Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen)),
+        row_major(batch, n_groups, dstate, seqlen),
     )
     var D_gpu_tt = TileTensor(
         D_d,
         row_major(
-            Idx(D_size),
+            D_size,
         ),
     )
     var z_gpu_tt = TileTensor(
         z_d,
         row_major(
             (
-                Idx(batch if has_z else 0),
-                Idx(dim if has_z else 0),
-                Idx(seqlen if has_z else 0),
+                batch if has_z else 0,
+                dim if has_z else 0,
+                seqlen if has_z else 0,
             )
         ),
     )
     var delta_bias_gpu_tt = TileTensor(
         delta_bias_d,
         row_major(
-            Idx(delta_bias_size),
+            delta_bias_size,
         ),
     )
 
@@ -752,55 +746,55 @@ def run_selective_scan_update_gpu[
     # Create TileTensors for GPU kernel
     var state_in_device_tt = TileTensor(
         state_in_device,
-        row_major(Idx(batch), Idx(dim), Idx(dstate)),
+        row_major(batch, dim, dstate),
     )
     var state_out_device_tt = TileTensor(
         state_out_device,
-        row_major(Idx(batch), Idx(dim), Idx(dstate)),
+        row_major(batch, dim, dstate),
     )
     var output_device_tt = TileTensor(
         output_device,
-        row_major(Idx(batch), Idx(dim)),
+        row_major(batch, dim),
     )
     var x_device_tt = TileTensor(
         x_device,
-        row_major(Idx(batch), Idx(dim)),
+        row_major(batch, dim),
     )
     var dt_device_tt = TileTensor(
         dt_device,
-        row_major(Idx(batch), Idx(dim)),
+        row_major(batch, dim),
     )
     var A_device_tt = TileTensor(
         A_device,
-        row_major(Idx(dim), Idx(dstate)),
+        row_major(dim, dstate),
     )
     var B_device_tt = TileTensor(
         B_device,
-        row_major(Idx(batch), Idx(n_groups), Idx(dstate)),
+        row_major(batch, n_groups, dstate),
     )
     var C_device_tt = TileTensor(
         C_device,
-        row_major(Idx(batch), Idx(n_groups), Idx(dstate)),
+        row_major(batch, n_groups, dstate),
     )
     var D_device_tt = TileTensor(
         D_device,
         row_major(
-            Idx(D_size),
+            D_size,
         ),
     )
     var z_device_tt = TileTensor(
         z_device,
         row_major(
             (
-                Idx(batch if has_z else 0),
-                Idx(dim if has_z else 0),
+                batch if has_z else 0,
+                dim if has_z else 0,
             )
         ),
     )
     var dt_bias_device_tt = TileTensor(
         dt_bias_device,
         row_major(
-            Idx(dt_bias_size),
+            dt_bias_size,
         ),
     )
 
@@ -864,42 +858,34 @@ def run_selective_scan_update_gpu[
 
     # Create TileTensors for CPU reference
     var state_out_cpu_tt = TileTensor(
-        state_out_cpu_h, row_major(Idx(batch), Idx(dim), Idx(dstate))
+        state_out_cpu_h, row_major(batch, dim, dstate)
     )
-    var output_cpu_tt = TileTensor(
-        output_cpu_h, row_major(Idx(batch), Idx(dim))
-    )
-    var state_in_cpu_tt = TileTensor(
-        state_in_h, row_major(Idx(batch), Idx(dim), Idx(dstate))
-    )
-    var x_cpu_tt = TileTensor(x_h, row_major(Idx(batch), Idx(dim)))
-    var dt_cpu_tt = TileTensor(dt_h, row_major(Idx(batch), Idx(dim)))
-    var A_cpu_tt = TileTensor(A_h, row_major(Idx(dim), Idx(dstate)))
-    var B_cpu_tt = TileTensor(
-        B_h, row_major(Idx(batch), Idx(n_groups), Idx(dstate))
-    )
-    var C_cpu_tt = TileTensor(
-        C_h, row_major(Idx(batch), Idx(n_groups), Idx(dstate))
-    )
+    var output_cpu_tt = TileTensor(output_cpu_h, row_major(batch, dim))
+    var state_in_cpu_tt = TileTensor(state_in_h, row_major(batch, dim, dstate))
+    var x_cpu_tt = TileTensor(x_h, row_major(batch, dim))
+    var dt_cpu_tt = TileTensor(dt_h, row_major(batch, dim))
+    var A_cpu_tt = TileTensor(A_h, row_major(dim, dstate))
+    var B_cpu_tt = TileTensor(B_h, row_major(batch, n_groups, dstate))
+    var C_cpu_tt = TileTensor(C_h, row_major(batch, n_groups, dstate))
     var D_cpu_tt = TileTensor(
         D_h,
         row_major(
-            Idx(D_size),
+            D_size,
         ),
     )
     var z_cpu_tt = TileTensor(
         z_h,
         row_major(
             (
-                Idx(batch if has_z else 0),
-                Idx(dim if has_z else 0),
+                batch if has_z else 0,
+                dim if has_z else 0,
             )
         ),
     )
     var dt_bias_cpu_tt = TileTensor(
         dt_bias_h,
         row_major(
-            Idx(dt_bias_size),
+            dt_bias_size,
         ),
     )
 

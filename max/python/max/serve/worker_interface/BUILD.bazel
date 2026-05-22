@@ -7,6 +7,8 @@ modular_py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//max/python/max/interfaces",
+        "//max/python/max/serve:queue",
+        "//max/python/max/serve:scheduler_result",
         requirement("psutil"),
         requirement("pyzmq"),
     ],

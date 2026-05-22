@@ -37,6 +37,9 @@ Modules
    graph.quantization
    graph.weights
    interfaces
+   serve.queue
+   serve.scheduler.interface
+   serve.scheduler_result
    nn
    nn.attention
    nn.kernels

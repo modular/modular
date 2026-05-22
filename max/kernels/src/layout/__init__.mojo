@@ -27,7 +27,6 @@ from .coord import (
     CoordLike,
     ComptimeInt,
     Idx,
-    RuntimeInt,
     coord,
     coord_to_index_list,
 )

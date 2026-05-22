@@ -251,8 +251,8 @@ def test_block_scaled_mxfp4_hipblaslt[
 def main() raises:
     with DeviceContext() as ctx:
         test_block_scaled_mxfp4_hipblaslt[DType.bfloat16](
-            ctx, Idx(128), Idx[128](), Idx[256]()
+            ctx, Idx[128](), Idx[128](), Idx[256]()
         )
         test_block_scaled_mxfp4_hipblaslt[DType.bfloat16](
-            ctx, Idx(64), Idx[224](), Idx[512]()
+            ctx, Idx[64](), Idx[224](), Idx[512]()
         )

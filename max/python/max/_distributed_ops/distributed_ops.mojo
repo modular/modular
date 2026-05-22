@@ -14,9 +14,10 @@
 from std.collections import InlineArray
 from std.memory import OpaquePointer, UnsafePointer
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from comm import MAX_GPUS, Signal
 from comm.broadcast import broadcast
@@ -97,18 +98,18 @@ def _do_broadcast[
     var in_ptr = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
         unsafe_from_address=in_addr
     )
-    var in_tile = TileTensor(in_ptr, row_major(Idx(n))).as_immut()
+    var in_tile = TileTensor(in_ptr, row_major(n)).as_immut()
 
     for i in range(ngpus):
         var out_addr = Int(py=output_data_ptrs[i])
         var ctx_addr = Int(py=device_context_ptrs[i])
-        var ctx = DeviceContextPtr(
+        var ctx = DeviceContext(
             OpaquePointer[MutExternalOrigin](unsafe_from_address=ctx_addr)
-        ).get_device_context()
+        )
         var out_ptr = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
             unsafe_from_address=out_addr
         )
-        var out_tile = TileTensor(out_ptr, row_major(Idx(n)))
+        var out_tile = TileTensor(out_ptr, row_major(n))
 
         # Matches the graph-side ``mo.distributed.broadcast`` which also runs
         # without multimem. Enabling the multimem (multicast-store) path needs

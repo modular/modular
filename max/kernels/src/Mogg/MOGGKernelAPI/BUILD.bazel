@@ -13,6 +13,7 @@ mogg_lib_deps = [
     "//max:compiler_internal",
     "//max:shmem",
     "//max:comm",
+    "//max/kernels/src/Mogg/MOGGPrimitives",
     "@mojo//:std",
 ]
 

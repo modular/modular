@@ -39,7 +39,6 @@ from layout import (
     LTToTTLayout,
     LayoutTensor,
     Layout as LegacyLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     row_major,
@@ -262,12 +261,12 @@ Parameters:
 # ============================================================================
 
 comptime GMEMLayout1D = Layout[
-    Coord[RuntimeInt[DType.int64]].element_types,
+    Coord[Int64].element_types,
     Coord[ComptimeInt[1]].element_types,
 ]
 """1D layout for flat global memory arrays.
 
-Shape is dynamic (RuntimeInt), stride is 1 (ComptimeInt[1]).
+Shape is dynamic (Scalar), stride is 1 (ComptimeInt[1]).
 Rank is provably 1 at compile time.
 """
 

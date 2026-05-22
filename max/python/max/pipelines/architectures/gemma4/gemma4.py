@@ -23,8 +23,7 @@ from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.moe.moe import MoE
-from max.nn.moe.moe_fp8 import MoEQuantized
+from max.nn.moe import MoE, MoEQuantized, make_concatenated_gated_activation_fn
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
@@ -156,7 +155,9 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         num_experts_per_token=text_config.top_k_experts,
                         moe_dim=text_config.moe_intermediate_size,
                         gate_cls=moe_gate_cls,
-                        gate_activation="gelu_tanh",
+                        gated_activation_fn=make_concatenated_gated_activation_fn(
+                            functools.partial(ops.gelu, approximate="tanh")
+                        ),
                         pre_expert_norm_cls=moe_norm_cls,
                         dtype=config.dtype,
                         quant_config=quant_config,
@@ -169,7 +170,9 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         num_experts_per_token=text_config.top_k_experts,
                         moe_dim=text_config.moe_intermediate_size,
                         gate_cls=moe_gate_cls,
-                        gate_activation="gelu_tanh",
+                        gated_activation_fn=make_concatenated_gated_activation_fn(
+                            functools.partial(ops.gelu, approximate="tanh")
+                        ),
                         pre_expert_norm_cls=moe_norm_cls,
                         dtype=config.dtype,
                     )

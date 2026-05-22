@@ -36,7 +36,7 @@ from std.os import abort
 
 from std.utils import Variant
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
@@ -555,16 +555,17 @@ struct Optional[T: Movable](
             hasher.update(UInt8(0))
 
     def _to_device_type(
-        self, target: MutOpaquePointer[_]
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ) where conforms_to(Self.T, DevicePassable) and conforms_to(
         Self.T, Copyable
     ):
         """Convert to device type and store at the target address.
 
         Args:
+            encoder: Target specific device type encoder.
             target: The target pointer to store the device type.
         """
-        target.bitcast[Self]().init_pointee_copy(self)
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> (
@@ -1070,8 +1071,10 @@ struct OptionalReg[T: TrivialRegisterPassable](
     comptime device_type: AnyType = Self
     """The device-side type for this optional register."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

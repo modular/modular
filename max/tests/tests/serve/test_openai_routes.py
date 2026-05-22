@@ -38,7 +38,11 @@ from max.interfaces import (
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
 from max.pipelines.core import TextContext
 from max.pipelines.core.exceptions import InputError
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
@@ -1264,7 +1268,11 @@ def _make_response_format(
 ) -> TextGenerationResponseFormat:
     """Helper to create response format for testing."""
     return TextGenerationResponseFormat(
-        type="json_schema", json_schema=json_schema, grammar=None
+        type="json_schema",
+        json_schema=json_schema,
+        grammar=None,
+        grammar_enforced=True,
+        tools_forced=False,
     )
 
 
@@ -1273,14 +1281,20 @@ def test_resolve_grammar_constraints_tools_required() -> None:
     tools = _make_tools(["get_weather", "search"])
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=tools,
-        tool_choice="required",
-        response_format=response_format,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=tools,
+            tool_choice="required",
+            response_format=response_format,
+        )
     )
 
     assert tool_names == ["get_weather", "search"]
     assert schema is None  # response_format ignored when tools forced
+    assert tools_forced is True  # tool_choice=required forces tools
+    assert (
+        enforce_from_start is True
+    )  # forced tools enforce from the first token
 
 
 def test_resolve_grammar_constraints_named_function() -> None:
@@ -1288,14 +1302,21 @@ def test_resolve_grammar_constraints_named_function() -> None:
     tools = _make_tools(["get_weather", "search"])
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=tools,
-        tool_choice={"type": "function", "function": {"name": "get_weather"}},
-        response_format=response_format,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=tools,
+            tool_choice={
+                "type": "function",
+                "function": {"name": "get_weather"},
+            },
+            response_format=response_format,
+        )
     )
 
     assert tool_names == ["get_weather"]
     assert schema is None  # response_format ignored when tools forced
+    assert tools_forced is True  # specific function forces tools
+    assert enforce_from_start is True
 
 
 def test_resolve_grammar_constraints_auto_with_response_format() -> None:
@@ -1303,54 +1324,73 @@ def test_resolve_grammar_constraints_auto_with_response_format() -> None:
     tools = _make_tools(["get_weather", "search"])
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=tools,
-        tool_choice="auto",
-        response_format=response_format,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=tools,
+            tool_choice="auto",
+            response_format=response_format,
+        )
     )
 
     assert tool_names == ["get_weather", "search"]
     assert schema == {"type": "object"}
+    assert tools_forced is False  # auto mode doesn't force tools
+    # auto + response_format: enforce from start since schema is in play
+    assert enforce_from_start is True
 
 
 def test_resolve_grammar_constraints_auto_no_response_format() -> None:
-    """Auto mode + no response_format: no grammar generated."""
+    """Auto mode + no response_format: grammar generated for conditional enforcement."""
     tools = _make_tools(["get_weather", "search"])
 
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=tools,
-        tool_choice="auto",
-        response_format=None,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=tools,
+            tool_choice="auto",
+            response_format=None,
+        )
     )
 
-    assert tool_names is None
+    # auto with tools now generates a grammar so the bitmask can engage
+    # conditionally once a tool-call start token is detected.
+    assert tool_names == ["get_weather", "search"]
     assert schema is None
+    assert tools_forced is False
+    assert enforce_from_start is False  # conditional enforcement
 
 
 def test_resolve_grammar_constraints_response_format_only() -> None:
     """Response format only (no tools): constrain to JSON schema."""
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=None,
-        tool_choice=None,
-        response_format=response_format,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=None,
+            tool_choice=None,
+            response_format=response_format,
+        )
     )
 
     assert tool_names is None
     assert schema == {"type": "object"}
+    assert tools_forced is False
+    assert enforce_from_start is False  # no tools, no grammar to enforce
 
 
 def test_resolve_grammar_constraints_no_constraints() -> None:
     """No tools, no response_format: no grammar generated."""
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=None,
-        tool_choice=None,
-        response_format=None,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=None,
+            tool_choice=None,
+            response_format=None,
+        )
     )
 
     assert tool_names is None
     assert schema is None
+    assert tools_forced is False
+    assert enforce_from_start is False
 
 
 # ============================================================================
@@ -1483,3 +1523,228 @@ async def test_openai_chat_completion_tool_calling_with_content(
     assert response.usage.completion_tokens == 16  # 4 + 12
     assert response.usage.prompt_tokens == 8
     assert response.usage.total_tokens == 24
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_error_yields_json(
+    patch_openai_metrics: None,
+) -> None:
+    """Regression test for MXSERV-95: errors raised mid-stream are serialized as JSON."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    async def mock_next_token_chunk(request: Any) -> Any:
+        raise ValueError(
+            "Input string is larger than tokenizer's max length (264823 > 262144)."
+        )
+        yield  # makes this an async generator despite the unconditional raise
+
+    mock_pipeline.next_token_chunk = mock_next_token_chunk
+    generator = OpenAIChatResponseGenerator(mock_pipeline)
+
+    results = [p async for p in generator.stream(_make_mock_request())]
+
+    # The error path does not emit [DONE]; exactly one item should be yielded.
+    assert len(results) == 1
+    payload = results[0]
+    assert isinstance(payload, str), (
+        f"Expected a JSON string, got {type(payload).__name__}: {payload!r}"
+    )
+
+    # Must parse as JSON — not as Python repr like ErrorResponse(error=Error(...))
+    parsed = json.loads(payload)
+    assert parsed["error"]["code"] == "500"
+    assert "262144" in parsed["error"]["message"]
+
+
+# ============================================================================
+# Tests for relaxed-request runtime flags:
+#   - allow_unsupported_logprobs: drop logprobs requests that the runtime
+#     cannot honor (e.g. overlap scheduler) instead of returning 400.
+#   - allow_extra_request_fields: silently drop unknown top-level body fields
+#     instead of failing pydantic validation with 400.
+# ============================================================================
+
+
+def test_pipeline_runtime_config_allow_unsupported_logprobs_default_false() -> (
+    None
+):
+    """``allow_unsupported_logprobs`` is opt-in; default preserves strictness."""
+    runtime = PipelineRuntimeConfig()
+    assert runtime.allow_unsupported_logprobs is False
+
+
+def test_pipeline_runtime_config_allow_extra_request_fields_default_false() -> (
+    None
+):
+    """``allow_extra_request_fields`` is opt-in; default preserves strictness."""
+    runtime = PipelineRuntimeConfig()
+    assert runtime.allow_extra_request_fields is False
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_default(
+    app,  # noqa: ANN001
+) -> None:
+    """With the overlap scheduler on and the flag off, logprobs is a 400."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline_config.runtime.enable_overlap_scheduler = True
+        app.state.pipeline_config.runtime.allow_unsupported_logprobs = False
+
+        body = simple_openai_request(model_name="echo", content="hi")
+        body["logprobs"] = True
+        response = await client.post("/v1/chat/completions", json=body)
+
+    assert response.status_code == 400
+    assert "overlap" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_logprobs_with_overlap_scheduler_dropped_when_flag_set(
+    app,  # noqa: ANN001
+) -> None:
+    """With the flag on, logprobs requests succeed and return ``logprobs: null``."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline_config.runtime.enable_overlap_scheduler = True
+        app.state.pipeline_config.runtime.allow_unsupported_logprobs = True
+
+        body = simple_openai_request(
+            model_name="echo", content="logprobs please"
+        )
+        body["logprobs"] = True
+        body["top_logprobs"] = 5
+        response = await client.post("/v1/chat/completions", json=body)
+
+    assert response.status_code == 200
+    parsed = CreateChatCompletionResponse.model_validate(response.json())
+    assert len(parsed.choices) == 1
+    choice = parsed.choices[0]
+    assert choice.message.content == "logprobs please"
+    # When logprobs is downgraded, the response carries no logprob content.
+    assert choice.logprobs is None or not choice.logprobs.content
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_extra_field_rejected_by_default(
+    app,  # noqa: ANN001
+) -> None:
+    """With the flag off, an unknown top-level field returns a 400."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline_config.runtime.allow_extra_request_fields = False
+
+        body = simple_openai_request(model_name="echo", content="hello")
+        body["dynamic_temperature"] = {"</think>": 0}
+        response = await client.post("/v1/chat/completions", json=body)
+
+    assert response.status_code == 400
+    assert "dynamic_temperature" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_extra_field_dropped_when_flag_set(
+    app,  # noqa: ANN001
+) -> None:
+    """With the flag on, an unknown top-level field is dropped and the request succeeds."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline_config.runtime.allow_extra_request_fields = True
+
+        body = simple_openai_request(model_name="echo", content="hello")
+        body["dynamic_temperature"] = {"</think>": 0}
+        body["some_other_vendor_field"] = "ignored"
+        response = await client.post("/v1/chat/completions", json=body)
+
+    assert response.status_code == 200
+    parsed = CreateChatCompletionResponse.model_validate(response.json())
+    assert parsed.choices[0].message.content == "hello"
+
+
+@pytest.mark.asyncio
+async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
+    app,  # noqa: ANN001
+) -> None:
+    """Legacy /v1/completions also rejects logprobs under the overlap scheduler."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline_config.runtime.enable_overlap_scheduler = True
+        app.state.pipeline_config.runtime.allow_unsupported_logprobs = False
+
+        response = await client.post(
+            "/v1/completions",
+            json={
+                "model": "echo",
+                "prompt": "hi",
+                "logprobs": 3,
+            },
+        )
+
+    assert response.status_code == 400
+    assert "overlap" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_completion_logprobs_with_overlap_scheduler_dropped_when_flag_set(
+    app,  # noqa: ANN001
+) -> None:
+    """Legacy /v1/completions silently drops logprobs when the flag is on."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline_config.runtime.enable_overlap_scheduler = True
+        app.state.pipeline_config.runtime.allow_unsupported_logprobs = True
+
+        response = await client.post(
+            "/v1/completions",
+            json={
+                "model": "echo",
+                "prompt": "echo this",
+                "logprobs": 3,
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    # The legacy endpoint returns the OpenAI logprobs container shape even
+    # when downgraded; what matters is that no per-token logprobs were
+    # actually emitted.
+    logprobs_field = body["choices"][0]["logprobs"]
+    assert logprobs_field is None or not logprobs_field.get("token_logprobs")
+
+
+@pytest.mark.asyncio
+async def test_completion_extra_field_rejected_by_default(
+    app,  # noqa: ANN001
+) -> None:
+    """Legacy /v1/completions rejects unknown fields by default."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline_config.runtime.allow_extra_request_fields = False
+
+        response = await client.post(
+            "/v1/completions",
+            json={
+                "model": "echo",
+                "prompt": "hi",
+                "dynamic_temperature": {"</think>": 0},
+            },
+        )
+
+    assert response.status_code == 400
+    assert "dynamic_temperature" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_completion_extra_field_dropped_when_flag_set(
+    app,  # noqa: ANN001
+) -> None:
+    """Legacy /v1/completions drops unknown fields when the flag is on."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline_config.runtime.allow_extra_request_fields = True
+
+        response = await client.post(
+            "/v1/completions",
+            json={
+                "model": "echo",
+                "prompt": "echo this",
+                "dynamic_temperature": {"</think>": 0},
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["choices"][0]["text"] == "echo this"

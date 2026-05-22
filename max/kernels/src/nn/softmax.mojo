@@ -52,7 +52,6 @@ from layout import (
     LayoutTensor,
     LTToTTLayout,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -62,7 +61,7 @@ from layout import (
 )
 from layout.tensor_core import get_fragment_size
 from std.memory import stack_allocation
-from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils import IndexList, StaticTuple
@@ -553,7 +552,7 @@ def logsoftmax[
     shape: IndexList[rank],
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     softmax[dtype, simd_width, rank, input_fn, target, logsoftmax=True](
         shape, output, axis, context
@@ -569,7 +568,7 @@ def logsoftmax[
     input: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     @parameter
     @always_inline
@@ -631,7 +630,7 @@ def _softmax_cpu[
             var buffer_offset = i * inner_dim
             var output_buffer_view = TileTensor(
                 output.ptr + buffer_offset,
-                row_major(Coord(Idx(inner_dim))),
+                row_major(Coord(inner_dim)),
             )
             var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
 
@@ -932,7 +931,7 @@ def softmax[
     shape: IndexList[rank],
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     @parameter
     def trace_information() -> String:
@@ -953,7 +952,7 @@ def softmax[
                 origin_of()._mlir_origin,
                 input_fn,
                 logsoftmax=logsoftmax,
-            ](shape, output, axis, context.get_optional_device_context())
+            ](shape, output, axis, context)
         elif is_gpu[target]():
             _softmax_gpu[
                 dtype,
@@ -965,7 +964,7 @@ def softmax[
                 shape,
                 output,
                 axis,
-                context.get_device_context(),
+                context.value(),
             )
         else:
             comptime assert False, String("unsupported target ", target)
@@ -1113,7 +1112,7 @@ def _softmax_temperature_kernel[
 def softmax_with_temperature[
     dtype: DType,
     temp_dtype: DType = DType.float32,
-    TempLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    TempLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     input: TileTensor[dtype, ...],

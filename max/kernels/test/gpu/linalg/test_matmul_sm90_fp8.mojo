@@ -183,7 +183,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(199)),
+            Int(199),
             Idx[512](),
             Idx[1024](),
         )
@@ -199,7 +199,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(200)),
+            Int(200),
             Idx[256](),
             Idx[256](),
         )
@@ -216,7 +216,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(201)),
+            Int(201),
             Idx[384](),
             Idx[256](),
         )

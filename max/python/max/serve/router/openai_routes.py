@@ -295,7 +295,7 @@ class OpenAIChatResponseGenerator(
 
     async def stream(
         self, request: TextGenerationRequest
-    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+    ) -> AsyncGenerator[str | JSONResponse, None]:
         self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -522,7 +522,7 @@ class OpenAIChatResponseGenerator(
                     code=str(status_code), message=str(e), param="", type=""
                 )
             )
-            yield error_response
+            yield error_response.model_dump_json()
         finally:
             record_request_end(
                 status_code,
@@ -1052,7 +1052,7 @@ def _resolve_grammar_constraints(
     tools: list[TextGenerationRequestTool] | None,
     tool_choice: str | dict[str, Any] | None,
     response_format: TextGenerationResponseFormat | None,
-) -> tuple[list[str] | None, dict[str, Any] | None]:
+) -> tuple[list[str] | None, dict[str, Any] | None, bool, bool]:
     """Determine grammar constraints for tool calling and response format.
 
     This function decides what constraints to apply for grammar-based decoding:
@@ -1061,13 +1061,17 @@ def _resolve_grammar_constraints(
 
     The behavior depends on the combination of inputs:
     - tools forced (required or named function): grammar constrains to tool
-      calls only, response_format is ignored
+      calls only, response_format is ignored, enforcement from start,
+      no --enable-structured-output flag required
+    - auto mode + no response_format: grammar generated for tool calls,
+      conditional enforcement (only when tool call start token detected),
+      no --enable-structured-output flag required
     - auto mode + response_format: grammar allows either tool calls or JSON
-      content matching the schema
-    - auto mode + no response_format: no grammar generated (unconstrained)
+      content matching the schema, enforcement from start,
+      --enable-structured-output flag required
     - response_format only (no tools): no Kimi-specific grammar is
       generated; the caller falls through to the standard json_schema
-      flow handled by StructuredOutputHelper
+      flow handled by StructuredOutputHelper, --enable-structured-output flag required
 
     Args:
         tools: List of tool definitions from the request.
@@ -1075,13 +1079,22 @@ def _resolve_grammar_constraints(
         response_format: Response format dict from the request.
 
     Returns:
-        (grammar_tool_names, response_format_schema) tuple. Both None means
-        no grammar should be generated.
+        (grammar_tool_names, response_format_schema, tools_forced, enforce_from_start)
+        - grammar_tool_names: Tool names to include in grammar, or None.
+        - response_format_schema: JSON schema for response format, or None.
+        - tools_forced: True if tool_choice=required or named function.
+          Controls whether grammar is enforced from the first token (True)
+          or conditionally when a tool call start token is detected (False).
+          Independent of the --enable-structured-output flag.
+        - enforce_from_start: True if grammar should be enforced from the
+          first token. False for auto mode without response_format (conditional
+          enforcement - grammar activates when tool call start token detected).
     """
     grammar_tool_names: list[str] | None = None
     response_format_schema: dict[str, Any] | None = None
 
     tools_required = tool_choice == "required"
+    tools_auto = tool_choice is None or tool_choice == "auto"
 
     # Determine forced tool names from tool_choice
     forced_tool_names: list[str] | None = None
@@ -1100,27 +1113,47 @@ def _resolve_grammar_constraints(
         ):
             forced_tool_names = [tool_choice["function"]["name"]]
 
-    # Set grammar_tool_names
-    if tools_required or response_format is not None:
-        if forced_tool_names:
-            grammar_tool_names = forced_tool_names
-        else:
-            names = [
-                t["function"]["name"]
-                for t in (tools or [])
-                if "function" in t and "name" in t["function"]
-            ]
-            if names:
-                grammar_tool_names = names
+    # Set grammar_tool_names:
+    # - Forced tools (required or named): use the forced subset directly.
+    # - Otherwise extract all tool names when any tool-bearing path applies
+    #   (required, response_format present, or auto with tools available).
+    #   Auto with no tools falls through (no grammar to generate).
+    if forced_tool_names:
+        grammar_tool_names = forced_tool_names
+    elif (
+        tools_required
+        or response_format is not None
+        or (tools_auto and tools is not None)
+    ):
+        names = [
+            t["function"]["name"]
+            for t in (tools or [])
+            if "function" in t and "name" in t["function"]
+        ]
+        if names:
+            grammar_tool_names = names
+
+    # tools_forced: True only for required/named (bypasses --enable-structured-output flag)
+    tools_forced = forced_tool_names is not None
 
     # Only include response_format in grammar when tools aren't forced.
     # When tools are forced, constrain to tool calls only.
-    tools_forced = forced_tool_names is not None
     if response_format is not None and not tools_forced:
         if response_format.get("type") == "json_schema":
             response_format_schema = response_format.get("json_schema")
 
-    return grammar_tool_names, response_format_schema
+    # enforce_from_start: True for required/named OR auto+response_format
+    # False for auto without response_format (conditional enforcement)
+    enforce_from_start = tools_forced or (
+        grammar_tool_names is not None and response_format is not None
+    )
+
+    return (
+        grammar_tool_names,
+        response_format_schema,
+        tools_forced,
+        enforce_from_start,
+    )
 
 
 @router.post("/chat/completions", response_model=None)
@@ -1129,8 +1162,8 @@ async def openai_create_chat_completion(
 ) -> CreateChatCompletionResponse | EventSourceResponse | Response:
     request_id = request.state.request_id
     try:
-        completion_request = CreateChatCompletionRequest.model_validate_json(
-            await request.body()
+        completion_request = await _parse_openai_request_body(
+            request, request_id, CreateChatCompletionRequest
         )
         pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
             get_pipeline(request, completion_request.model)
@@ -1185,12 +1218,15 @@ async def openai_create_chat_completion(
             parser, "generate_tool_call_grammar"
         )
         if has_grammar_parser:
-            grammar_tool_names, response_format_schema = (
-                _resolve_grammar_constraints(
-                    tools=tools,
-                    tool_choice=completion_request.tool_choice,
-                    response_format=response_format,
-                )
+            (
+                grammar_tool_names,
+                response_format_schema,
+                tools_forced,
+                enforce_from_start,
+            ) = _resolve_grammar_constraints(
+                tools=tools,
+                tool_choice=completion_request.tool_choice,
+                response_format=response_format,
             )
             # Only invoke the architecture-specific grammar generator when
             # tools are actually involved. In the response_format-only case,
@@ -1199,10 +1235,13 @@ async def openai_create_chat_completion(
                 assert parser is not None
                 logger.debug(
                     "Generating tool call grammar for %s with tools: %s, "
-                    "response_format_schema: %s",
+                    "response_format_schema: %s, tools_forced: %s, "
+                    "enforce_from_start: %s",
                     type(parser).__name__,
                     grammar_tool_names,
                     response_format_schema,
+                    tools_forced,
+                    enforce_from_start,
                 )
                 # Create the grammar from the tools and response format schema.
                 grammar = parser.generate_tool_call_grammar(  # type: ignore[attr-defined]
@@ -1210,14 +1249,30 @@ async def openai_create_chat_completion(
                     response_format_schema=response_format_schema,
                 )
                 # Create the response format.
+                # Note:
+                # - tools_forced=True (tool_choice=required or named):
+                # - enforce_from_start=True: Grammar enforced from first token.
+                # - enforce_from_start=False (auto without response_format):
+                #   Conditional enforcement - grammar activates when tool call
+                #   start token is detected.
+                # ``requires_structured_output_flag`` is True only when the
+                # grammar embeds a user-supplied schema. Pure tool-call
+                # grammars are server-generated and don't require the flag.
                 response_format = TextGenerationResponseFormat(
                     type="grammar",
                     grammar=grammar,
                     json_schema={},
+                    grammar_enforced=enforce_from_start,
+                    tools_forced=tools_forced,
+                    requires_structured_output_flag=response_format_schema
+                    is not None,
                 )
-                logger.info(
-                    "Successfully generated tool call grammar (length=%d)",
+                logger.debug(
+                    "Successfully generated tool call grammar (length=%d, "
+                    "tools_forced=%s, enforce_from_start=%s)",
                     len(grammar),
+                    tools_forced,
+                    enforce_from_start,
                 )
         stream_options = None
         if completion_request.stream:
@@ -1273,15 +1328,24 @@ async def openai_create_chat_completion(
                 else 1
             )
 
-        if (
-            logprobs_count != 0
-            and request.app.state.pipeline_config.runtime.enable_overlap_scheduler
-        ):
-            raise InputError(
-                "Log probabilities are not supported with the overlap"
-                " scheduler. Start the server with"
-                " --no-enable-overlap-scheduler to use logprobs."
-            )
+        runtime_cfg = request.app.state.pipeline_config.runtime
+        if logprobs_count != 0 and runtime_cfg.enable_overlap_scheduler:
+            if runtime_cfg.allow_unsupported_logprobs:
+                logger.warning(
+                    "Request %s asked for logprobs but the overlap scheduler "
+                    "is enabled; allow_unsupported_logprobs=True, so the "
+                    "request will be served without logprobs.",
+                    request_id,
+                )
+                logprobs_count = 0
+            else:
+                raise InputError(
+                    "Log probabilities are not supported with the overlap"
+                    " scheduler. Start the server with"
+                    " --no-enable-overlap-scheduler to use logprobs, or"
+                    " --allow-unsupported-logprobs to silently ignore the"
+                    " field."
+                )
 
         # When the orchestrator has already tokenized the prompt for
         # KV cache-aware routing, pass the token IDs directly so MAX Serve
@@ -1458,7 +1522,12 @@ def _create_response_format(
     _validate_json_schema(json_schema)
 
     return TextGenerationResponseFormat(
-        type=response_type, json_schema=json_schema, grammar=None
+        type=response_type,
+        json_schema=json_schema,
+        grammar=None,
+        grammar_enforced=False,
+        tools_forced=False,
+        requires_structured_output_flag=True,
     )
 
 
@@ -1656,6 +1725,41 @@ def get_app_pipeline_config(app: FastAPI) -> PipelineConfig:
     pipeline_config = app.state.pipeline_config
     assert isinstance(pipeline_config, PipelineConfig)
     return pipeline_config
+
+
+_TRequest = TypeVar("_TRequest", bound="BaseModel")
+
+
+async def _parse_openai_request_body(
+    request: Request,
+    request_id: str,
+    model_cls: type[_TRequest],
+) -> _TRequest:
+    """Parse a JSON request body into a pydantic request model.
+
+    Honors ``pipeline_config.runtime.allow_extra_request_fields``: when set,
+    unknown top-level fields are dropped (with a warning) before validation
+    instead of failing pydantic's ``extra="forbid"`` check.
+    """
+    raw = await request.body()
+    pipeline_config = get_app_pipeline_config(request.app)
+    if not pipeline_config.runtime.allow_extra_request_fields:
+        return model_cls.model_validate_json(raw)
+
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        return model_cls.model_validate(parsed)
+    known = set(model_cls.model_fields)
+    extras = [k for k in parsed if k not in known]
+    if extras:
+        logger.warning(
+            "Request %s contained unknown top-level fields %s; dropping "
+            "(allow_extra_request_fields=True).",
+            request_id,
+            extras,
+        )
+        parsed = {k: v for k, v in parsed.items() if k in known}
+    return model_cls.model_validate(parsed)
 
 
 def get_tool_parser(app: FastAPI) -> ToolParser | None:
@@ -1906,8 +2010,8 @@ async def openai_create_completion(
     """
     http_req_id = request.state.request_id
     try:
-        completion_request = CreateCompletionRequest.model_validate_json(
-            await request.body()
+        completion_request = await _parse_openai_request_body(
+            request, http_req_id, CreateCompletionRequest
         )
 
         pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
@@ -1930,11 +2034,22 @@ async def openai_create_completion(
             and completion_request.logprobs != 0
             and pipeline_config.runtime.enable_overlap_scheduler
         ):
-            raise InputError(
-                "Log probabilities are not supported with the overlap"
-                " scheduler. Start the server with"
-                " --no-enable-overlap-scheduler to use logprobs."
-            )
+            if pipeline_config.runtime.allow_unsupported_logprobs:
+                logger.warning(
+                    "Request %s asked for logprobs but the overlap scheduler "
+                    "is enabled; allow_unsupported_logprobs=True, so the "
+                    "request will be served without logprobs.",
+                    http_req_id,
+                )
+                completion_request.logprobs = None
+            else:
+                raise InputError(
+                    "Log probabilities are not supported with the overlap"
+                    " scheduler. Start the server with"
+                    " --no-enable-overlap-scheduler to use logprobs, or"
+                    " --allow-unsupported-logprobs to silently ignore the"
+                    " field."
+                )
 
         response_generator = OpenAICompletionResponseGenerator(pipeline)
         prompts = get_prompts_from_openai_request(completion_request.prompt)
@@ -2027,6 +2142,11 @@ async def openai_create_completion(
     except TypeError as e:
         logger.exception("Validation error for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", http_req_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
         logger.warning("Value error in request %s: %s", http_req_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,

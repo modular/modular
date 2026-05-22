@@ -157,7 +157,9 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
             StringSlice[MutExternalOrigin](
-                ptr=buffer.unsafe_value(), length=bytes_read - 1
+                unsafe_from_utf8=Span(
+                    ptr=buffer.unsafe_value(), length=bytes_read - 1
+                )
             )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
@@ -378,8 +380,12 @@ def print[
     (like `Int`, `Float64`, `Bool`, `String`) implement the
     [`Writable`](/docs/std/format/Writable/) trait.
 
-    For string formatting, use the
-    [`format()`](/docs/std/collections/string/string/String/#format) function.
+    For string formatting, you can use the
+    [`format()`](/docs/std/collections/string/string/String/#format) method
+    or, preferably, a template string
+    ([`TString`](/docs/std/format/tstring/TString/), written `t"..."`)
+    which interpolates expressions directly without allocating an
+    intermediate `String`.
 
     Examples:
 
@@ -389,6 +395,9 @@ def print[
     print("The answer is", 42)               # The answer is 42
 
     print("{} is {}".format("Mojo", "🔥"))   # Mojo is 🔥
+
+    var name = "Mojo"
+    print(t"{name} is 🔥")                   # Mojo is 🔥
     ```
 
     Parameters:

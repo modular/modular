@@ -58,6 +58,7 @@ from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,
     shape_to_scalar,
 )
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
 from ..deepseekV3.model_config import DeepseekV3Config
@@ -82,11 +83,18 @@ class Eagle3MHAKimiK25Unified(Module):
         draft_config: Eagle3MHAKimiK25DraftConfig,
         speculative_config: SpeculativeConfig | None = None,
         enable_structured_output: bool = False,
+        enable_vision: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
         self.draft_config = draft_config
         self.enable_structured_output = enable_structured_output
+        # ``enable_vision`` controls whether the unified graph accepts
+        # per-device image embeddings + scatter indices and scatters them
+        # into the merged token embedding before the target forward.
+        # Only Kimi-style targets that carry a vision encoder set this;
+        # the bare DeepseekV3 + MHA-draft pipeline leaves it False.
+        self.enable_vision = enable_vision
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
             if speculative_config
@@ -136,6 +144,8 @@ class Eagle3MHAKimiK25Unified(Module):
         top_p: TensorValue,
         min_top_p: TensorValue,
         in_thinking_phase: TensorValue,
+        image_embeddings: list[TensorValue] | None = None,
+        image_token_indices: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
         token_bitmasks: TensorValue | None = None,
@@ -156,17 +166,55 @@ class Eagle3MHAKimiK25Unified(Module):
         merged_offsets_per_dev = ops.distributed_broadcast(
             merged_offsets, signal_buffers
         )
-        target_outputs = self.target(
-            merged_tokens,
-            signal_buffers,
-            kv_collections,
-            return_n_logits,
-            merged_offsets_per_dev,
-            host_merged_offsets,
-            data_parallel_splits,
-            batch_context_lengths,
-            ep_inputs,
-        )
+        if self.enable_vision:
+            # Mirror ``KimiK2_5MoEDecoder.__call__``: embed the merged
+            # tokens, scatter image embeddings into the merged sequence at
+            # ``image_token_indices``, then run the rest of the target
+            # stack on the resulting hidden states.
+            #
+            # During prefill K=0 (no draft tokens to merge), so the
+            # indices remain valid for the merged sequence with no
+            # remapping. During decode no new images are introduced so
+            # ``image_token_indices`` is empty.
+            assert image_embeddings is not None
+            assert image_token_indices is not None
+            h_per_dev = self.target.embed_tokens(merged_tokens, signal_buffers)
+            h_per_dev = [
+                merge_multimodal_embeddings(
+                    inputs_embeds=h_d,
+                    multimodal_embeddings=img_emb_d,
+                    image_token_indices=img_idx_d,
+                )
+                for h_d, img_emb_d, img_idx_d in zip(
+                    h_per_dev,
+                    image_embeddings,
+                    image_token_indices,
+                    strict=True,
+                )
+            ]
+            target_outputs = self.target._process_hidden_states(
+                h_per_dev,
+                signal_buffers,
+                kv_collections,
+                return_n_logits,
+                list(merged_offsets_per_dev),
+                host_merged_offsets,
+                data_parallel_splits,
+                batch_context_lengths,
+                ep_inputs,
+            )
+        else:
+            target_outputs = self.target(
+                merged_tokens,
+                signal_buffers,
+                kv_collections,
+                return_n_logits,
+                merged_offsets_per_dev,
+                host_merged_offsets,
+                data_parallel_splits,
+                batch_context_lengths,
+                ep_inputs,
+            )
         logits = target_outputs[1]
         hidden_states = list(target_outputs[3 : 3 + n_devs])
 
@@ -416,6 +464,22 @@ class Eagle3MHAKimiK25Unified(Module):
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
+        image_embeddings_types = [
+            TensorType(
+                DType.bfloat16,
+                shape=["vision_merged_seq_len", self.config.hidden_size],
+                device=DeviceRef.from_device(device),
+            )
+            for device in devices
+        ]
+        image_token_indices_types = [
+            TensorType(
+                DType.int32,
+                shape=["total_image_tokens"],
+                device=DeviceRef.from_device(device),
+            )
+            for device in devices
+        ]
         device_input_row_offsets_type = TensorType(
             DType.uint32,
             shape=["input_row_offsets_len"],
@@ -445,11 +509,18 @@ class Eagle3MHAKimiK25Unified(Module):
 
         all_input_types: list[TensorType | BufferType] = [
             tokens_type,
-            device_input_row_offsets_type,
-            host_input_row_offsets_type,
-            return_n_logits_type,
-            data_parallel_splits_type,
         ]
+        if self.enable_vision:
+            all_input_types.extend(image_embeddings_types)
+            all_input_types.extend(image_token_indices_types)
+        all_input_types.extend(
+            [
+                device_input_row_offsets_type,
+                host_input_row_offsets_type,
+                return_n_logits_type,
+                data_parallel_splits_type,
+            ]
+        )
         all_input_types.extend(signal_buffer_types)
         # Size the target's ``draft_attention_dispatch_metadata`` slot by
         # the draft's ``is_mla`` (shape [4]/CPU for MHA vs [3]/device for

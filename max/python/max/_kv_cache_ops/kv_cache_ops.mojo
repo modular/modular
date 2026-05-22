@@ -13,10 +13,11 @@
 
 from std.os import abort
 from std.memory import OpaquePointer
+from std.gpu.host import DeviceContext
 from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.gpu.host import DeviceAttribute
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
@@ -84,12 +85,12 @@ def mha_decode_num_partitions(
     if n_kv_heads < 1:
         raise Error("n_kv_heads must be positive.")
 
-    var device_ctx = DeviceContextPtr(ctx.unsafe_value())
+    var device_ctx = DeviceContext(ctx.unsafe_value())
     var num_partitions = mha_decoding_num_partitions(
         batch_size,
         max_cache_valid_length,
         n_kv_heads,
-        device_ctx.get_device_context(),
+        device_ctx,
     )
 
     ref cpython = Python().cpython()
@@ -123,16 +124,14 @@ def mla_dispatch_args_scalar(
     if num_heads < 1:
         raise Error("num_heads must be positive.")
 
-    var device_ctx = DeviceContextPtr(ctx.unsafe_value())
+    var device_ctx = DeviceContext(ctx.unsafe_value())
     var scalars = compute_mla_dispatch_scalars_runtime(
         batch_size,
         max_cache_valid_length,
         q_max_seq_len,
         num_heads,
         is_fp8_kv,
-        device_ctx.get_device_context().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        ),
+        device_ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
     )
     var result = InlineArray[Int, 3](uninitialized=True)
     result[0] = scalars[0]

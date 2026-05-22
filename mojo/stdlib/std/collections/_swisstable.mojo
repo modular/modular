@@ -302,16 +302,11 @@ struct SwissTable[
     @always_inline
     def __init__(out self):
         """Initialize an empty Swiss Table."""
-        self._capacity = INITIAL_CAPACITY
-        self._ctrl = alloc(Layout[UInt8](count=self._capacity + GROUP_WIDTH))
-        memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
-        self._slots = alloc(
-            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
-                count=self._capacity
-            )
-        )
+        self._capacity = 0
+        self._ctrl = type_of(self._ctrl).unsafe_dangling()
+        self._slots = type_of(self._slots).unsafe_dangling()
         self._len = 0
-        self._growth_left = self._capacity * 7 // 8
+        self._growth_left = 0
 
     @always_inline
     def __init__(out self, *, capacity: Int):
@@ -323,6 +318,10 @@ struct SwissTable[
         Args:
             capacity: The requested minimum number of slots.
         """
+        if capacity == 0:
+            self = Self()
+            return
+
         self._capacity = max(
             next_power_of_two(ceildiv(capacity * 8, 7)), INITIAL_CAPACITY
         )
@@ -342,6 +341,10 @@ struct SwissTable[
         Args:
             copy: The existing table to copy.
         """
+        if copy._capacity == 0:
+            self = Self()
+            return
+
         self._capacity = copy._capacity
         self._len = copy._len
         self._growth_left = copy._growth_left
@@ -368,8 +371,9 @@ struct SwissTable[
             if is_occupied(self._ctrl[i]):
                 (self._slots + i).destroy_pointee()
 
-        free(self._ctrl, {count = self._capacity + GROUP_WIDTH})
-        free(self._slots, {count = self._capacity})
+        if self._capacity > 0:
+            free(self._ctrl, {count = self._capacity + GROUP_WIDTH})
+            free(self._slots, {count = self._capacity})
 
     # ===-------------------------------------------------------------------===#
     # Core operations
@@ -406,6 +410,12 @@ struct SwissTable[
             matching slot. If not found, slot_index is the first EMPTY slot
             suitable for insertion.
         """
+        # Lazy state: no buffers allocated yet. Slot index is meaningless but
+        # safe for lookups (callers check `found`). Insert paths must go
+        # through `_ensure_capacity` first, which allocates; callers assert
+        # that invariant after the call.
+        if self._capacity == 0:
+            return (False, 0)
         var h2_val = h2(hash)
         var pos = Int(hash) & (self._capacity - 1)
 
@@ -453,6 +463,11 @@ struct SwissTable[
             determine if the slot is EMPTY or DELETED. Only insertions into
             EMPTY slots should decrement `_growth_left`.
         """
+        # Mirrors find_slot's lazy-state guard; no in-tree callers exercise
+        # this path yet (Dict uses find_slot), but kept for parity with
+        # future unordered consumers of SwissTable.
+        if self._capacity == 0:
+            return (False, 0)
         var h2_val = h2(hash)
         var pos = Int(hash) & (self._capacity - 1)
         var first_deleted = -1
@@ -514,6 +529,9 @@ struct SwissTable[
 
     def clear(mut self):
         """Remove all elements, destroying occupied entries."""
+        if self._capacity == 0:
+            return
+
         for i in range(self._capacity):
             if is_occupied(self._ctrl[i]):
                 (self._slots + i).destroy_pointee()
@@ -573,8 +591,9 @@ struct SwissTable[
                 (self._slots + new_slot).init_pointee_move(entry^)
                 relocations.append((i, new_slot))
 
-        free(old_ctrl, {count = old_capacity + GROUP_WIDTH})
-        free(old_slots, {count = old_capacity})
+        if old_capacity > 0:
+            free(old_ctrl, {count = old_capacity + GROUP_WIDTH})
+            free(old_slots, {count = old_capacity})
 
         return relocations^
 

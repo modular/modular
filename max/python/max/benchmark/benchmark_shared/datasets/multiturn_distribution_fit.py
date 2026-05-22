@@ -47,6 +47,7 @@ class _TurnSpec:
     target_out: int
     sys_variant: int
     delay_ms: float | None
+    unique_marker: str = ""
 
 
 @dataclass(frozen=True)
@@ -207,11 +208,24 @@ def build_scaled_user_message(
     sys_prompt_ratio: float,
     sys_variant: int,
     min_input_len: int,
+    *,
+    unique_marker: str = "",
 ) -> ScaledUserMessage:
-    """Optional synthetic system prefix + body scaled to the target token budget."""
+    """Optional synthetic system prefix + body scaled to the target token budget.
+
+    When ``unique_marker`` is non-empty it is prepended to the scaled user
+    body (after the system prefix) to make otherwise-identical pool entries
+    cache-distinct across pool cycles. Marker tokens are reserved from the
+    user-side budget so the on-the-wire input length stays close to
+    ``target_input_tokens``.
+    """
     sys_len, user_len = _split_sys_user_token_targets(
         target_input_tokens, sys_prompt_ratio, min_input_len
     )
+    marker_tokens = (
+        estimate_num_tokens(tokenizer, unique_marker) if unique_marker else 0
+    )
+    body_target_len = max(user_len - marker_tokens, min_input_len)
     parts: list[str] = []
     sys_prefix: SharedContext | None = None
     if sys_len > 0:
@@ -221,9 +235,9 @@ def build_scaled_user_message(
         parts.append(sys_text)
         sys_prefix = SharedContext(text=sys_text, num_tokens=sys_tokens)
     user_text, _ = _text_scaled_to_token_length(
-        tokenizer, user_body, user_len, min_len=min_input_len
+        tokenizer, user_body, body_target_len, min_len=min_input_len
     )
-    parts.append(user_text)
+    parts.append(unique_marker + user_text if unique_marker else user_text)
     combined = "\n\n".join(parts)
     return ScaledUserMessage(
         content=combined,
@@ -265,6 +279,7 @@ def _build_session(args: _SessionArgs) -> _SessionResult:
             args.sys_prompt_ratio,
             turn.sys_variant,
             args.min_input_len,
+            unique_marker=turn.unique_marker,
         )
         if (
             context_tokens + msg.num_tokens + turn.target_out
@@ -331,6 +346,12 @@ def build_chat_samples_from_user_text_pool(
     turns). Each user message is produced by token-space repeat/truncation of a
     pooled string, optionally prefixed with a scaled synthetic system block.
 
+    When the planned turn count exceeds the available pool, the cursor wraps
+    back to the start of the pool and a ``[N] `` marker (where ``N`` is the
+    1-indexed pass number) is prepended to the user body so cycled prompts are
+    cache-distinct. Distribution samples are re-drawn on every turn, so each
+    cycle produces a freshly fit workload rather than a replay.
+
     Args:
         pool: Tokenizer process pool used for batched pre-filter encodes
             and per-session worker dispatch.
@@ -348,8 +369,10 @@ def build_chat_samples_from_user_text_pool(
         log_prefix: Logger prefix for warnings.
 
     Returns:
-        Generated chat sessions (may be fewer than ``num_sessions`` if the pool
-        is exhausted).
+        Generated chat sessions. The pool is cycled with unique per-cycle
+        markers to satisfy ``num_sessions`` even when planned turns exceed the
+        pool size; the result may still contain fewer sessions if any drop
+        due to model max-context overflow.
     """
     first_in, rest_in = parse_two_part_distribution(input_len, "input_len")
     first_out, rest_out = parse_two_part_distribution(output_len, "output_len")
@@ -399,25 +422,28 @@ def build_chat_samples_from_user_text_pool(
     ]
     total_turns_needed = sum(num_turns_per_session)
     if total_turns_needed > len(filtered):
-        logger.warning(
-            "%s: need %d user turns but only %d valid rows; some sessions shorter.",
+        logger.info(
+            "%s: pool has %d valid rows but %d turns planned; will cycle "
+            "through the pool with per-cycle unique markers (e.g. '[1] ') "
+            "while re-sampling distributions on each turn.",
             log_prefix,
-            total_turns_needed,
             len(filtered),
+            total_turns_needed,
         )
 
     warmup_dict: dict[int, SharedContext] = {}
     max_variant = max(1, max_num_unique_sys_prompt)
     session_args_list: list[_SessionArgs] = []
     cursor = 0
+    pass_count = 0
     for session_id in range(num_sessions):
-        if cursor >= len(filtered):
-            break
         n_planned = num_turns_per_session[session_id]
-        n_actual = min(n_planned, len(filtered) - cursor)
 
         turns: list[_TurnSpec] = []
-        for turn_i in range(n_actual):
+        for turn_i in range(n_planned):
+            if cursor >= len(filtered):
+                cursor = 0
+                pass_count += 1
             in_dist = in_first_dist if turn_i == 0 else in_rest_dist
             out_dist = out_first_dist if turn_i == 0 else out_rest_dist
             target_in = max(round(in_dist.sample_value()), min_input_len)
@@ -428,15 +454,18 @@ def build_chat_samples_from_user_text_pool(
                 if delay_dist
                 else None
             )
+            marker = f"[{pass_count}] " if pass_count > 0 else ""
             turns.append(
                 _TurnSpec(
-                    prompt_text=filtered[cursor + turn_i],
+                    prompt_text=filtered[cursor],
                     target_in=target_in,
                     target_out=target_out,
                     sys_variant=sys_variant,
                     delay_ms=delay_ms,
+                    unique_marker=marker,
                 )
             )
+            cursor += 1
 
         session_args_list.append(
             _SessionArgs(
@@ -448,7 +477,6 @@ def build_chat_samples_from_user_text_pool(
                 log_prefix=log_prefix,
             )
         )
-        cursor += n_actual
 
     sessions: list[ChatSession] = []
     for result in pool.map(_build_session, session_args_list):

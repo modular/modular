@@ -10,31 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""AMD 4-wave-scheduled matmul correctness test.
+"""AMD 4-wave matmul correctness test vs vendor BLAS.
 
-Drives `amd_4wave_scheduled_matmul`, the schedule-compiler arm of the
-inline kernel struct. Parameterized on input dtype via `-D DTYPE=...`;
-the bazel `test_4wave_scheduled_*` targets emit a fp8 / bf16 / fp16
-variant each.
+Drives `structured_4wave_matmul` (the AMD MI355X 4-wave matmul
+launcher) against `linalg.matmul.vendor.blas` on the same shape and
+checks element-wise tolerance. Runs all three supported dtypes (FP8,
+BF16, FP16) from `main()` — single BUILD target per file, HK MHA-style
+parametrization. Optional shape overrides via `-D M=`, `-D N=`, `-D K=`;
+defaults to M=128 N=512 K=512.
 
-Compile-time configuration:
-  mojo -D DTYPE=bfloat16 -D M=128 -D N=4096 -D K=4096 test_4wave_scheduled.mojo
-
-Defaults to a small smoke shape (M=128, N=512, K=512) at FP8.
+  mojo -D M=128 -D N=4096 -D K=4096 test_4wave_matmul.mojo
 """
 
-from std.sys import get_defined_dtype, get_defined_int, get_defined_string
+from std.sys import get_defined_int, get_defined_string
 
 from layout import Idx, Coord, TileTensor, row_major
 from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
 from std.random import random_float64, seed
-from linalg.matmul.gpu.amd.amd_4wave_matmul import (
-    amd_4wave_scheduled_matmul,
-)
+from linalg.matmul.gpu.amd.amd_4wave_matmul import structured_4wave_matmul
 
-comptime IN_DTYPE = get_defined_dtype["DTYPE", DType.float8_e4m3fn]()
 comptime TEST_M = get_defined_int["M", 128]()
 comptime TEST_N = get_defined_int["N", 512]()
 comptime TEST_K = get_defined_int["K", 512]()
@@ -45,14 +41,14 @@ comptime DUMP_GPU_ASM = get_defined_string["DUMP_GPU_ASM", ""]()
 comptime REPEAT = get_defined_int["REPEAT", 1]()
 
 
-def test_4wave_scheduled[
+def test_4wave_matmul[
     dtype: DType,
     M: Int,
     N: Int,
     K: Int,
     enable_swizzle: Bool,
 ](ctx: DeviceContext, seed_value: Int = 20260513) raises:
-    """Test 4-wave-scheduled kernel against vendor BLAS at `dtype`.
+    """Test 4-wave matmul kernel against vendor BLAS at `dtype`.
 
     `seed_value` controls the PRNG seed used to generate inputs. The
     REPEAT loop in `main` advances this per repetition so each pass
@@ -88,7 +84,7 @@ def test_4wave_scheduled[
 
     ctx.enqueue_memset(device_c, 0)
 
-    amd_4wave_scheduled_matmul[
+    structured_4wave_matmul[
         enable_swizzle=enable_swizzle, dump_asm_path=DUMP_GPU_ASM
     ](
         a_tt,
@@ -148,16 +144,38 @@ def test_4wave_scheduled[
         assert_equal(errors, 0)
 
 
+def run_dtype_sweep[dtype: DType](ctx: DeviceContext, seed_value: Int) raises:
+    """Run all shape cases for one dtype at the given seed."""
+
+    # Parametric smoke shape (overridable via -D M= -D N= -D K=).
+    print("  Shape: M=", TEST_M, " N=", TEST_N, " K=", TEST_K, sep="")
+    test_4wave_matmul[dtype, TEST_M, TEST_N, TEST_K, enable_swizzle=False](
+        ctx, seed_value
+    )
+    test_4wave_matmul[dtype, TEST_M, TEST_N, TEST_K, enable_swizzle=True](
+        ctx, seed_value
+    )
+    print("  PASSED")
+
+    # Multi-block: M=1024 forces multiple BM=128 row blocks.
+    print("  Shape: M=1024 N=2048 K=2048")
+    test_4wave_matmul[dtype, 1024, 2048, 2048, enable_swizzle=True](
+        ctx, seed_value
+    )
+    print("  PASSED")
+
+    # Off-square (MHA/MLA prefill-style): tall-skinny M with small N.
+    # K must be a multiple of 2*BK = 256.
+    print("  Shape: M=4096 N=128 K=256")
+    test_4wave_matmul[dtype, 4096, 128, 256, enable_swizzle=True](
+        ctx, seed_value
+    )
+    print("  PASSED")
+
+
 def main() raises:
     with DeviceContext() as ctx:
-        print(
-            "Running AMD 4-wave-scheduled Kernel Tests (dtype=",
-            IN_DTYPE,
-            ", REPEAT=",
-            REPEAT,
-            ")",
-            sep="",
-        )
+        print("Running AMD 4-wave Kernel Tests (REPEAT=", REPEAT, ")", sep="")
 
         for rep in range(REPEAT):
             # Different seed each repetition so distinct input patterns
@@ -176,29 +194,14 @@ def main() raises:
                     sep="",
                 )
 
-            # Parametric smoke shape (overridable via -D M= -D N= -D K=).
-            print("  Shape: M=", TEST_M, " N=", TEST_N, " K=", TEST_K, sep="")
-            test_4wave_scheduled[
-                IN_DTYPE, TEST_M, TEST_N, TEST_K, enable_swizzle=False
-            ](ctx, seed_value)
-            test_4wave_scheduled[
-                IN_DTYPE, TEST_M, TEST_N, TEST_K, enable_swizzle=True
-            ](ctx, seed_value)
-            print("  PASSED")
+            # In-main dtype iteration (HK MHA pattern). Three separate
+            # specializations compile into one binary; one BUILD target
+            # runs all three.
+            print("-- dtype=float8_e4m3fn --")
+            run_dtype_sweep[DType.float8_e4m3fn](ctx, seed_value)
+            print("-- dtype=bfloat16 --")
+            run_dtype_sweep[DType.bfloat16](ctx, seed_value)
+            print("-- dtype=float16 --")
+            run_dtype_sweep[DType.float16](ctx, seed_value)
 
-            # Multi-block: M=1024 forces multiple BM=128 row blocks.
-            print("  Shape: M=1024 N=2048 K=2048")
-            test_4wave_scheduled[
-                IN_DTYPE, 1024, 2048, 2048, enable_swizzle=True
-            ](ctx, seed_value)
-            print("  PASSED")
-
-            # Off-square (MHA/MLA prefill-style): tall-skinny M with small N.
-            # K must be a multiple of 2*BK = 256.
-            print("  Shape: M=4096 N=128 K=256")
-            test_4wave_scheduled[IN_DTYPE, 4096, 128, 256, enable_swizzle=True](
-                ctx, seed_value
-            )
-            print("  PASSED")
-
-        print("==== AMD 4-wave-scheduled tests passed ====")
+        print("==== AMD 4-wave tests passed ====")

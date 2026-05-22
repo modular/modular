@@ -26,6 +26,11 @@ comptime EnableForcedOrdering = get_defined_bool[
 ]()
 comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
 
+# Bytes per CTA in shared memory that the CUDA runtime reserves for
+# its own use; subtracted from `B200.shared_memory_per_multiprocessor`
+# to get the usable smem budget for SM100 attention kernels.
+comptime SM100_RESERVED_SMEM_BYTES = 1024
+
 
 struct FA4Config[
     qkv_dtype: DType,
@@ -69,7 +74,9 @@ struct FA4Config[
     comptime scale_dtype_size: Int = size_of[Self.scale_dtype]()
 
     comptime MMA_K: Int = 16 if Self.qkv_dtype.is_half_float() else 32
-    comptime sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
+    comptime sm100_smem_carveout = (
+        B200.shared_memory_per_multiprocessor - SM100_RESERVED_SMEM_BYTES
+    )
     comptime sm100_tmem_cols = 512
     comptime mbar_size = size_of[DType.int64]()
     comptime num_correction_cols = 1

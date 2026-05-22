@@ -19,11 +19,44 @@ import logging
 import threading
 import time
 from collections.abc import Generator
+from contextvars import ContextVar
+from dataclasses import dataclass
 from types import TracebackType
 
 # Logged under "max.pipelines" so existing pipeline log filters/handlers keep
 # matching even when the timer is invoked from max.experimental.nn.Module.
 logger = logging.getLogger("max.pipelines")
+
+
+@dataclass
+class CompilationStats:
+    """Aggregate timings collected by active CompilationTimers in a region."""
+
+    build_seconds: float = 0.0
+    compile_seconds: float = 0.0
+    num_phases: int = 0
+
+
+_active_stats: ContextVar[CompilationStats | None] = ContextVar(
+    "compilation_stats", default=None
+)
+
+
+@contextlib.contextmanager
+def collect_compilation_stats() -> Generator[CompilationStats, None, None]:
+    """Collects build and compile times from CompilationTimers in this region.
+
+    Each CompilationTimer that completes while this context is active adds its
+    build and compile durations to the yielded stats object. Nesting is not
+    supported — an inner ``collect_compilation_stats`` shadows the outer one
+    and the outer accumulator stops receiving updates until the inner exits.
+    """
+    stats = CompilationStats()
+    token = _active_stats.set(stats)
+    try:
+        yield stats
+    finally:
+        _active_stats.reset(token)
 
 
 class CompilationTimer:
@@ -86,6 +119,16 @@ class CompilationTimer:
                 f"Building and compiling {self.name} took "
                 f"{end_time - self._start_time:.1f} seconds"
             )
+            stats = _active_stats.get()
+            if stats is not None:
+                if self._build_end_time is not None:
+                    stats.build_seconds += (
+                        self._build_end_time - self._start_time
+                    )
+                    stats.compile_seconds += end_time - self._build_end_time
+                else:
+                    stats.compile_seconds += end_time - self._start_time
+                stats.num_phases += 1
             self._start_time = None
             self._build_end_time = None
 

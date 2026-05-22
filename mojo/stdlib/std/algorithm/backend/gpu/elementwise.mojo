@@ -45,6 +45,7 @@ from std.sys.info import _has_sm_100x_or_newer, has_nvidia_gpu_accelerator
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
+from std.algorithm.backend.unswitch import unswitch
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 
 
@@ -98,13 +99,171 @@ def _advance_indices[
 # ===-----------------------------------------------------------------------===#
 
 
+@fieldwise_init
+struct _ClcKernel[
+    rank: Int,
+    shape_dtype: DType,
+    FuncType: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) register_passable -> None,
+    //,
+    handle_uneven_simd: Bool,
+    simd_width: Int,
+    block_size: Int,
+    elems_per_thread: Int,
+    trace_description: StaticString = "",
+](ImplicitlyCopyable, RegisterPassable, def() register_passable -> None):
+    """Work-stealing CLC kernel as a callable struct.
+
+    Parameterizing on `handle_uneven_simd` lets one struct serve both the
+    even and uneven dispatch paths — the dead branch is eliminated under
+    `comptime if Self.handle_uneven_simd:` per monomorphization, restoring
+    the deduplication the pre-`register_passable` parametric closure form
+    provided.
+    """
+
+    var func: Self.FuncType
+    var shape: IndexList[Self.rank, element_type=Self.shape_dtype]
+    var num_packed_elems: Int
+    var unpacked_tail_length: Int
+    var packed_region_length: Int
+
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.block_size)
+        )
+    )
+    @__name(
+        t"{Self.trace_description}_r{Self.rank}_w{Self.simd_width}_b{Self.block_size}.clc.{Self.handle_uneven_simd}"
+    )
+    def __call__(self) capturing:
+        var result = stack_allocation[
+            1,
+            UInt128,
+            address_space=AddressSpace.SHARED,
+            alignment=16,
+        ]()
+        var mbar = stack_allocation[
+            1,
+            Int64,
+            address_space=AddressSpace.SHARED,
+            alignment=8,
+        ]()
+        # Shared variables for single-barrier broadcast of cancel results.
+        var canceled = stack_allocation[
+            1,
+            UInt32,
+            address_space=AddressSpace.SHARED,
+        ]()
+        var next_tile = stack_allocation[
+            1,
+            UInt32,
+            address_space=AddressSpace.SHARED,
+        ]()
+
+        var tile_id = block_idx.x
+        var phase: UInt32 = 0
+
+        # Initialize mbarrier and kick-start CLC pipeline.
+        if thread_idx.x == 0:
+            mbarrier_init(mbar, Int32(1))
+            if elect_one_sync_with_mask(mask=1):
+                clusterlaunchcontrol_try_cancel(result, mbar)
+            _ = mbarrier_arrive_expect_tx_relaxed(mbar, Int32(16))
+
+        with PDL():
+            # Work-stealing loop.
+            while True:
+                # Process current tile — each thread handles multiple packed
+                # elements at stride block_size for coalesced access.
+                var base = (
+                    tile_id * Self.block_size * Self.elems_per_thread
+                    + thread_idx.x
+                )
+
+                comptime for e in range(Self.elems_per_thread):
+                    var global_packed_idx = base + e * Self.block_size
+                    if global_packed_idx < self.num_packed_elems:
+                        var start_indices = _get_start_indices_of_nth_subvolume[
+                            0
+                        ](global_packed_idx * Self.simd_width, self.shape)
+                        comptime if Self.handle_uneven_simd:
+                            if (
+                                start_indices[Self.rank - 1] + Self.simd_width
+                                > self.shape[Self.rank - 1]
+                            ):
+                                self.func[1, Self.rank](
+                                    start_indices.canonicalize()
+                                )
+                                var si = start_indices
+                                comptime for _off in range(1, Self.simd_width):
+                                    _advance_indices(si, self.shape)
+                                    self.func[1, Self.rank](si.canonicalize())
+                            else:
+                                self.func[Self.simd_width, Self.rank](
+                                    start_indices.canonicalize()
+                                )
+                        else:
+                            self.func[
+                                Self.simd_width, Self.rank, Self.simd_width
+                            ](start_indices.canonicalize())
+
+                # Leader: wait for cancel result, extract values, then
+                # immediately issue the next cancel before the barrier.
+                # This eliminates one barrier per iteration by letting
+                # thread 0 read and reuse the result buffer in the same
+                # critical section, publishing via separate shared vars.
+                if thread_idx.x == 0:
+                    _mbarrier_wait_acquire_cta(mbar, phase)
+                    phase ^= 1
+
+                    var is_canceled = (
+                        clusterlaunchcontrol_query_cancel_is_canceled(result)
+                    )
+                    var ctaid = (
+                        clusterlaunchcontrol_query_cancel_get_first_ctaid["x"](
+                            result
+                        )
+                    )
+
+                    # Issue next cancel only if this one succeeded.
+                    if Bool(is_canceled):
+                        cluster_sync_release()
+                        cluster_sync_acquire()
+                        if elect_one_sync_with_mask(mask=1):
+                            clusterlaunchcontrol_try_cancel(result, mbar)
+                        _ = mbarrier_arrive_expect_tx_relaxed(mbar, Int32(16))
+
+                    # Publish extracted values for all threads.
+                    canceled[0] = is_canceled
+                    next_tile[0] = ctaid
+
+                # Single barrier — all threads see broadcast values.
+                barrier()
+
+                if canceled[0] == 0:
+                    break
+
+                tile_id = Int(next_tile[0])
+
+            # Tail: only the first block handles remainder elements.
+            if block_idx.x == 0 and thread_idx.x < self.unpacked_tail_length:
+                self.func[1, Self.rank](
+                    _get_start_indices_of_nth_subvolume[0](
+                        self.packed_region_length + thread_idx.x, self.shape
+                    ).canonicalize()
+                )
+
+
 @always_inline
 def _elementwise_impl_gpu_clc[
     rank: Int,
     //,
     simd_width: Int,
     block_size: Int,
-    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+    FuncType: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
     elems_per_thread: Int,
@@ -150,154 +309,117 @@ def _elementwise_impl_gpu_clc[
     if num_tiles == 0:
         num_tiles = 1
 
-    @__copy_capture(
-        num_packed_elems, unpacked_tail_length, packed_region_length
-    )
     @parameter
-    @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
-    )
-    @__name(
-        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.clc.{handle_uneven_simd}"
-    )
-    def _kernel[*, handle_uneven_simd: Bool]():
-        var result = stack_allocation[
-            1,
-            UInt128,
-            address_space=AddressSpace.SHARED,
-            alignment=16,
-        ]()
-        var mbar = stack_allocation[
-            1,
-            Int64,
-            address_space=AddressSpace.SHARED,
-            alignment=8,
-        ]()
-        # Shared variables for single-barrier broadcast of cancel results.
-        var canceled = stack_allocation[
-            1,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-        var next_tile = stack_allocation[
-            1,
-            UInt32,
-            address_space=AddressSpace.SHARED,
-        ]()
-
-        var tile_id = block_idx.x
-        var phase: UInt32 = 0
-
-        # Initialize mbarrier and kick-start CLC pipeline.
-        if thread_idx.x == 0:
-            mbarrier_init(mbar, Int32(1))
-            if elect_one_sync_with_mask(mask=1):
-                clusterlaunchcontrol_try_cancel(result, mbar)
-            _ = mbarrier_arrive_expect_tx_relaxed(mbar, Int32(16))
-
-        with PDL():
-            # Work-stealing loop.
-            while True:
-                # Process current tile — each thread handles multiple packed
-                # elements at stride block_size for coalesced access.
-                var base = (
-                    tile_id * block_size * elems_per_thread + thread_idx.x
-                )
-
-                @parameter
-                @always_inline
-                def _process_elem(start_indices: IndexList[rank, ...]):
-                    comptime if handle_uneven_simd:
-                        if (
-                            start_indices[rank - 1] + simd_width
-                            > shape[rank - 1]
-                        ):
-                            func[1, rank](start_indices.canonicalize())
-                            var si = start_indices
-                            comptime for _off in range(1, simd_width):
-                                _advance_indices(si, shape)
-                                func[1, rank](si.canonicalize())
-                        else:
-                            func[simd_width, rank](start_indices.canonicalize())
-                    else:
-                        func[simd_width, rank, simd_width](
-                            start_indices.canonicalize()
-                        )
-
-                comptime for e in range(elems_per_thread):
-                    var global_packed_idx = base + e * block_size
-                    if global_packed_idx < num_packed_elems:
-                        _process_elem(
-                            _get_start_indices_of_nth_subvolume[0](
-                                global_packed_idx * simd_width, shape
-                            )
-                        )
-
-                # Leader: wait for cancel result, extract values, then
-                # immediately issue the next cancel before the barrier.
-                # This eliminates one barrier per iteration by letting
-                # thread 0 read and reuse the result buffer in the same
-                # critical section, publishing via separate shared vars.
-                if thread_idx.x == 0:
-                    _mbarrier_wait_acquire_cta(mbar, phase)
-                    phase ^= 1
-
-                    var is_canceled = (
-                        clusterlaunchcontrol_query_cancel_is_canceled(result)
-                    )
-                    var ctaid = (
-                        clusterlaunchcontrol_query_cancel_get_first_ctaid["x"](
-                            result
-                        )
-                    )
-
-                    # Issue next cancel only if this one succeeded.
-                    if Bool(is_canceled):
-                        cluster_sync_release()
-                        cluster_sync_acquire()
-                        if elect_one_sync_with_mask(mask=1):
-                            clusterlaunchcontrol_try_cancel(result, mbar)
-                        _ = mbarrier_arrive_expect_tx_relaxed(mbar, Int32(16))
-
-                    # Publish extracted values for all threads.
-                    canceled[0] = is_canceled
-                    next_tile[0] = ctaid
-
-                # Single barrier — all threads see broadcast values.
-                barrier()
-
-                if canceled[0] == 0:
-                    break
-
-                tile_id = Int(next_tile[0])
-
-            # Tail: only the first block handles remainder elements.
-            if block_idx.x == 0 and thread_idx.x < unpacked_tail_length:
-                func[1, rank](
-                    _get_start_indices_of_nth_subvolume[0](
-                        packed_region_length + thread_idx.x, shape
-                    ).canonicalize()
-                )
-
-    if shape[rank - 1] % simd_width == 0:
-        comptime kernel = _kernel[handle_uneven_simd=False]
-        ctx.enqueue_function[kernel](
+    @always_inline
+    def launch[handle_uneven_simd: Bool]() raises:
+        var k = _ClcKernel[
+            handle_uneven_simd=handle_uneven_simd,
+            simd_width=simd_width,
+            block_size=block_size,
+            elems_per_thread=elems_per_thread,
+            trace_description=trace_description,
+        ](
+            func,
+            shape,
+            num_packed_elems,
+            unpacked_tail_length,
+            packed_region_length,
+        )
+        ctx.enqueue_function(
+            k,
             grid_dim=num_tiles,
             block_dim=block_size,
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
-    else:
-        comptime kernel = _kernel[handle_uneven_simd=True]
-        ctx.enqueue_function[kernel](
-            grid_dim=num_tiles,
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(_PDL_LEVEL),
-        )
+
+    unswitch[launch](shape[rank - 1] % simd_width != 0)
 
 
 # ===-----------------------------------------------------------------------===#
 # Grid-stride elementwise (pre-SM100)
 # ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _GridStrideKernel[
+    rank: Int,
+    shape_dtype: DType,
+    FuncType: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) register_passable -> None,
+    //,
+    handle_uneven_simd: Bool,
+    simd_width: Int,
+    block_size: Int,
+    elems_per_thread: Int,
+    trace_description: StaticString = "",
+](ImplicitlyCopyable, RegisterPassable, def() register_passable -> None):
+    """Grid-stride elementwise kernel as a callable struct.
+
+    See `_ClcKernel` for the rationale behind the callable-struct form.
+    """
+
+    var func: Self.FuncType
+    var shape: IndexList[Self.rank, element_type=Self.shape_dtype]
+    var num_packed_elems: Int
+    var unpacked_tail_length: Int
+    var packed_region_length: Int
+
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.block_size)
+        )
+    )
+    @__name(
+        t"{Self.trace_description}_r{Self.rank}_w{Self.simd_width}_b{Self.block_size}.gs.{Self.handle_uneven_simd}"
+    )
+    def __call__(self) capturing:
+        # process the packed region — each thread handles multiple packed
+        # elements at stride block_size for coalesced access and ILP.
+        var tid = thread_idx.x + Self.block_size * block_idx.x
+        var stride = Self.block_size * grid_dim.x
+
+        with PDL():
+            for base_idx in range(
+                tid,
+                self.num_packed_elems,
+                stride * Self.elems_per_thread,
+            ):
+                comptime for e in range(Self.elems_per_thread):
+                    var idx = base_idx + e * stride
+                    if idx < self.num_packed_elems:
+                        var start_indices = _get_start_indices_of_nth_subvolume[
+                            0
+                        ](idx * Self.simd_width, self.shape)
+                        comptime if Self.handle_uneven_simd:
+                            if (
+                                start_indices[Self.rank - 1] + Self.simd_width
+                                > self.shape[Self.rank - 1]
+                            ):
+                                self.func[1, Self.rank](
+                                    start_indices.canonicalize()
+                                )
+                                var si = start_indices
+                                comptime for _off in range(1, Self.simd_width):
+                                    _advance_indices(si, self.shape)
+                                    self.func[1, Self.rank](si.canonicalize())
+                            else:
+                                self.func[Self.simd_width, Self.rank](
+                                    start_indices.canonicalize()
+                                )
+                        else:
+                            self.func[
+                                Self.simd_width, Self.rank, Self.simd_width
+                            ](start_indices.canonicalize())
+
+            # process the tail region
+            if tid < self.unpacked_tail_length:
+                self.func[1, Self.rank](
+                    _get_start_indices_of_nth_subvolume[0](
+                        Int(self.packed_region_length + tid), self.shape
+                    ).canonicalize()
+                )
 
 
 @always_inline
@@ -309,7 +431,8 @@ def _elementwise_impl_gpu_grid_stride[
     num_waves: Int,
     sm_count: Int,
     threads_per_multiprocessor: Int,
-    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+    FuncType: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
     elems_per_thread: Int,
@@ -359,82 +482,159 @@ def _elementwise_impl_gpu_grid_stride[
         * num_waves,
     )
 
-    @__copy_capture(
-        num_packed_elems, unpacked_tail_length, packed_region_length
-    )
     @parameter
-    @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
-    )
-    @__name(
-        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.gs.{handle_uneven_simd}"
-    )
-    def _kernel[*, handle_uneven_simd: Bool]():
-        # process the packed region — each thread handles multiple packed
-        # elements at stride block_size for coalesced access and ILP.
-        var tid = thread_idx.x + block_size * block_idx.x
-        var stride = block_size * grid_dim.x
-
-        with PDL():
-
-            @parameter
-            @always_inline
-            def _process_elem(start_indices: IndexList[rank, ...]):
-                comptime if handle_uneven_simd:
-                    if start_indices[rank - 1] + simd_width > shape[rank - 1]:
-                        func[1, rank](start_indices.canonicalize())
-                        var si = start_indices
-                        comptime for _off in range(1, simd_width):
-                            _advance_indices(si, shape)
-                            func[1, rank](si.canonicalize())
-                    else:
-                        func[simd_width, rank](start_indices.canonicalize())
-                else:
-                    func[simd_width, rank, simd_width](
-                        start_indices.canonicalize()
-                    )
-
-            for base_idx in range(
-                tid,
-                num_packed_elems,
-                stride * elems_per_thread,
-            ):
-                comptime for e in range(elems_per_thread):
-                    var idx = base_idx + e * stride
-                    if idx < num_packed_elems:
-                        _process_elem(
-                            _get_start_indices_of_nth_subvolume[0](
-                                idx * simd_width, shape
-                            )
-                        )
-
-            # process the tail region
-            if tid < unpacked_tail_length:
-                func[1, rank](
-                    _get_start_indices_of_nth_subvolume[0](
-                        Int(packed_region_length + tid), shape
-                    ).canonicalize()
-                )
-
-    if shape[rank - 1] % simd_width == 0:
-        comptime kernel = _kernel[handle_uneven_simd=False]
-        ctx.enqueue_function[kernel](
+    @always_inline
+    def launch[handle_uneven_simd: Bool]() raises:
+        var k = _GridStrideKernel[
+            handle_uneven_simd=handle_uneven_simd,
+            simd_width=simd_width,
+            block_size=block_size,
+            elems_per_thread=elems_per_thread,
+            trace_description=trace_description,
+        ](
+            func,
+            shape,
+            num_packed_elems,
+            unpacked_tail_length,
+            packed_region_length,
+        )
+        ctx.enqueue_function(
+            k,
             grid_dim=num_blocks,
             block_dim=block_size,
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
-    else:
-        comptime kernel = _kernel[handle_uneven_simd=True]
-        ctx.enqueue_function[kernel](
-            grid_dim=num_blocks,
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(_PDL_LEVEL),
-        )
+
+    unswitch[launch](shape[rank - 1] % simd_width != 0)
 
 
 # ===-----------------------------------------------------------------------===#
 # Dual-elementwise grid-stride
 # ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _DualGridStrideKernel[
+    rank: Int,
+    shape_0_dtype: DType,
+    shape_1_dtype: DType,
+    Func0Type: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) register_passable -> None,
+    Func1Type: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) register_passable -> None,
+    //,
+    handle_uneven_simd: Bool,
+    simd_width: Int,
+    block_size: Int,
+    elems_per_thread: Int,
+    trace_description: StaticString = "",
+](ImplicitlyCopyable, RegisterPassable, def() register_passable -> None):
+    """Dual-elementwise grid-stride kernel as a callable struct.
+
+    See `_ClcKernel` for the rationale behind the callable-struct form.
+    """
+
+    var func_0: Self.Func0Type
+    var func_1: Self.Func1Type
+    var shape_0: IndexList[Self.rank, element_type=Self.shape_0_dtype]
+    var shape_1: IndexList[Self.rank, element_type=Self.shape_1_dtype]
+    var num_packed_0: Int
+    var unpacked_tail_0: Int
+    var packed_region_0: Int
+    var num_packed_1: Int
+    var unpacked_tail_1: Int
+    var packed_region_1: Int
+    var max_packed: Int
+
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.block_size)
+        )
+    )
+    @__name(
+        t"{Self.trace_description}_r{Self.rank}_w{Self.simd_width}_b{Self.block_size}.dual_gs.{Self.handle_uneven_simd}"
+    )
+    def __call__(self) capturing:
+        var tid = thread_idx.x + Self.block_size * block_idx.x
+        var stride = Self.block_size * grid_dim.x
+
+        with PDL():
+            for base_idx in range(
+                tid,
+                self.max_packed,
+                stride * Self.elems_per_thread,
+            ):
+                comptime for e in range(Self.elems_per_thread):
+                    var idx = base_idx + e * stride
+                    if idx < self.num_packed_0:
+                        var start_indices_0 = (
+                            _get_start_indices_of_nth_subvolume[0](
+                                idx * Self.simd_width, self.shape_0
+                            )
+                        )
+                        comptime if Self.handle_uneven_simd:
+                            if (
+                                start_indices_0[Self.rank - 1] + Self.simd_width
+                                > self.shape_0[Self.rank - 1]
+                            ):
+                                self.func_0[1, Self.rank](
+                                    start_indices_0.canonicalize()
+                                )
+                                var si = start_indices_0
+                                comptime for _off in range(1, Self.simd_width):
+                                    _advance_indices(si, self.shape_0)
+                                    self.func_0[1, Self.rank](si.canonicalize())
+                            else:
+                                self.func_0[Self.simd_width, Self.rank](
+                                    start_indices_0.canonicalize()
+                                )
+                        else:
+                            self.func_0[
+                                Self.simd_width, Self.rank, Self.simd_width
+                            ](start_indices_0.canonicalize())
+                    if idx < self.num_packed_1:
+                        var start_indices_1 = (
+                            _get_start_indices_of_nth_subvolume[0](
+                                idx * Self.simd_width, self.shape_1
+                            )
+                        )
+                        comptime if Self.handle_uneven_simd:
+                            if (
+                                start_indices_1[Self.rank - 1] + Self.simd_width
+                                > self.shape_1[Self.rank - 1]
+                            ):
+                                self.func_1[1, Self.rank](
+                                    start_indices_1.canonicalize()
+                                )
+                                var si = start_indices_1
+                                comptime for _off in range(1, Self.simd_width):
+                                    _advance_indices(si, self.shape_1)
+                                    self.func_1[1, Self.rank](si.canonicalize())
+                            else:
+                                self.func_1[Self.simd_width, Self.rank](
+                                    start_indices_1.canonicalize()
+                                )
+                        else:
+                            self.func_1[
+                                Self.simd_width, Self.rank, Self.simd_width
+                            ](start_indices_1.canonicalize())
+
+            if tid < self.unpacked_tail_0:
+                self.func_0[1, Self.rank](
+                    _get_start_indices_of_nth_subvolume[0](
+                        Int(self.packed_region_0 + tid), self.shape_0
+                    ).canonicalize()
+                )
+            if tid < self.unpacked_tail_1:
+                self.func_1[1, Self.rank](
+                    _get_start_indices_of_nth_subvolume[0](
+                        Int(self.packed_region_1 + tid), self.shape_1
+                    ).canonicalize()
+                )
 
 
 @always_inline
@@ -446,10 +646,12 @@ def _dual_elementwise_impl_gpu_grid_stride[
     num_waves: Int,
     sm_count: Int,
     threads_per_multiprocessor: Int,
-    Func0Type: def[width: Int, rank: Int, alignment: Int = 1](
+    Func0Type: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
-    Func1Type: def[width: Int, rank: Int, alignment: Int = 1](
+    Func1Type: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
     elems_per_thread: Int,
@@ -514,113 +716,41 @@ def _dual_elementwise_impl_gpu_grid_stride[
         * num_waves,
     )
 
-    @__copy_capture(
-        num_packed_0,
-        unpacked_tail_0,
-        packed_region_0,
-        num_packed_1,
-        unpacked_tail_1,
-        packed_region_1,
-        max_packed,
+    var any_unaligned = (
+        shape_0[rank - 1] % simd_width != 0
+        or shape_1[rank - 1] % simd_width != 0
     )
+
     @parameter
-    @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
-    )
-    @__name(
-        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.dual_gs.{handle_uneven_simd}"
-    )
-    def _kernel[*, handle_uneven_simd: Bool]():
-        var tid = thread_idx.x + block_size * block_idx.x
-        var stride = block_size * grid_dim.x
-
-        with PDL():
-
-            @parameter
-            @always_inline
-            def _process_0(start_indices: IndexList[rank, ...]):
-                comptime if handle_uneven_simd:
-                    if start_indices[rank - 1] + simd_width > shape_0[rank - 1]:
-                        func_0[1, rank](start_indices.canonicalize())
-                        var si = start_indices
-                        comptime for _off in range(1, simd_width):
-                            _advance_indices(si, shape_0)
-                            func_0[1, rank](si.canonicalize())
-                    else:
-                        func_0[simd_width, rank](start_indices.canonicalize())
-                else:
-                    func_0[simd_width, rank, simd_width](
-                        start_indices.canonicalize()
-                    )
-
-            @parameter
-            @always_inline
-            def _process_1(start_indices: IndexList[rank, ...]):
-                comptime if handle_uneven_simd:
-                    if start_indices[rank - 1] + simd_width > shape_1[rank - 1]:
-                        func_1[1, rank](start_indices.canonicalize())
-                        var si = start_indices
-                        comptime for _off in range(1, simd_width):
-                            _advance_indices(si, shape_1)
-                            func_1[1, rank](si.canonicalize())
-                    else:
-                        func_1[simd_width, rank](start_indices.canonicalize())
-                else:
-                    func_1[simd_width, rank, simd_width](
-                        start_indices.canonicalize()
-                    )
-
-            for base_idx in range(
-                tid,
-                max_packed,
-                stride * elems_per_thread,
-            ):
-                comptime for e in range(elems_per_thread):
-                    var idx = base_idx + e * stride
-                    if idx < num_packed_0:
-                        _process_0(
-                            _get_start_indices_of_nth_subvolume[0](
-                                idx * simd_width, shape_0
-                            )
-                        )
-                    if idx < num_packed_1:
-                        _process_1(
-                            _get_start_indices_of_nth_subvolume[0](
-                                idx * simd_width, shape_1
-                            )
-                        )
-
-            if tid < unpacked_tail_0:
-                func_0[1, rank](
-                    _get_start_indices_of_nth_subvolume[0](
-                        Int(packed_region_0 + tid), shape_0
-                    ).canonicalize()
-                )
-            if tid < unpacked_tail_1:
-                func_1[1, rank](
-                    _get_start_indices_of_nth_subvolume[0](
-                        Int(packed_region_1 + tid), shape_1
-                    ).canonicalize()
-                )
-
-    var both_aligned = (
-        shape_0[rank - 1] % simd_width == 0
-        and shape_1[rank - 1] % simd_width == 0
-    )
-    if both_aligned:
-        comptime kernel = _kernel[handle_uneven_simd=False]
-        ctx.enqueue_function[kernel](
+    @always_inline
+    def launch[handle_uneven_simd: Bool]() raises:
+        var k = _DualGridStrideKernel[
+            handle_uneven_simd=handle_uneven_simd,
+            simd_width=simd_width,
+            block_size=block_size,
+            elems_per_thread=elems_per_thread,
+            trace_description=trace_description,
+        ](
+            func_0,
+            func_1,
+            shape_0,
+            shape_1,
+            num_packed_0,
+            unpacked_tail_0,
+            packed_region_0,
+            num_packed_1,
+            unpacked_tail_1,
+            packed_region_1,
+            max_packed,
+        )
+        ctx.enqueue_function(
+            k,
             grid_dim=num_blocks,
             block_dim=block_size,
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
-    else:
-        comptime kernel = _kernel[handle_uneven_simd=True]
-        ctx.enqueue_function[kernel](
-            grid_dim=num_blocks,
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(_PDL_LEVEL),
-        )
+
+    unswitch[launch](any_unaligned)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -633,7 +763,8 @@ def _elementwise_impl_gpu[
     rank: Int,
     //,
     simd_width: Int,
-    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+    FuncType: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
     *,
@@ -771,10 +902,12 @@ def _dual_elementwise_impl_gpu[
     rank: Int,
     //,
     simd_width: Int,
-    Func0Type: def[width: Int, rank: Int, alignment: Int = 1](
+    Func0Type: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
-    Func1Type: def[width: Int, rank: Int, alignment: Int = 1](
+    Func1Type: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
     *,

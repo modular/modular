@@ -624,7 +624,7 @@ def test_parse_delta_mid_token_splits() -> None:
             "call>",
             "<invoke na",
             'me="get_we',
-            'ather">',
+            'ather">',  # spellchecker:disable-line
             "<parameter",
             ' name="loc',
             'ation">New',

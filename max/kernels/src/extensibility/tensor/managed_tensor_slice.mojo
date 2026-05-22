@@ -23,10 +23,9 @@ from std.sys.intrinsics import _type_is_eq, strided_load, strided_store
 
 import std.algorithm
 from layout import CoordLike, IntTuple
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from compiler_internal.directives import (
     StaticTensorSpec,
-    __mogg_intrinsic_attr,
     StaticTensorSpecInternal,
     get_row_major_tensor_spec_static,
     InputFusion,
@@ -44,7 +43,7 @@ from std.gpu.host.info import is_gpu as _is_gpu
 from layout import Coord, LayoutTensor, TileTensor
 from layout.tile_layout import Layout as TileLayout, TensorLayout
 from register import register_internal
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.runtime.tracing import trace_arg
 from tensor import RuntimeTensorSpec
 
@@ -377,8 +376,10 @@ struct ManagedTensorSlice[
         Self.dtype, Self.static_spec.to_layout(), MutAnyOrigin
     ]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self.to_layout_tensor()
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self.to_layout_tensor(), target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -860,7 +861,6 @@ struct ManagedTensorSlice[
             simd_width=width, element_alignment=element_alignment
         ](self, ridx)
 
-    @__mogg_intrinsic_attr("mogg.tensor_fused_load")
     @always_inline
     def _fused_load[
         width: Int,
@@ -977,7 +977,6 @@ struct ManagedTensorSlice[
             element_alignment=element_alignment,
         ](self, ridx, val)
 
-    @__mogg_intrinsic_attr("mogg.tensor_fused_store")
     @always_inline
     def _fused_store[
         width: SIMDSize,
@@ -1661,23 +1660,18 @@ def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     return simd_width_of[dtype]()
 
 
-@__mogg_intrinsic_attr("mogg.for_each")
-@__mogg_intrinsic_attr("mogg.elemwise_for_each")
-@no_inline
 def foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: def[width: Int, element_alignment: Int](
-        IndexList[rank]
-    ) capturing -> SIMD[dtype, width],
+    func: def[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
     _trace_name: StaticString = "mogg.for_each",
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContextPtr = DeviceContextPtr(),
+    ctx: DeviceContext,
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
 
@@ -1693,9 +1687,6 @@ def foreach[
         tensor: The output tensor slice which receives the return values from `func`.
         ctx: The call context (forward this from the custom operation).
     """
-    assert (
-        ctx._handle or is_cpu[target]()
-    ), "Expecting non-null device ctx for GPU kernels"
 
     @parameter
     @always_inline
@@ -1704,7 +1695,7 @@ def foreach[
         rank: Int,
         alignment: Int = 1,
     ](index: IndexList[rank]) capturing:
-        var val = func[width, alignment](rebind[IndexList[tensor.rank]](index))
+        var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
@@ -1713,194 +1704,6 @@ def foreach[
         target=target,
         _trace_description=_trace_name,
     ](tensor.shape(), ctx)
-
-
-@__mogg_intrinsic_attr("mogg.for_each")
-@no_inline
-def foreach[
-    dtype: DType,
-    rank: Int,
-    //,
-    E: ElementwiseFusion,
-    *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
-    _trace_name: StaticString = "mogg.for_each",
-](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    elem: E,
-    ctx: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Apply a pure elementwise fusion to each element of the tensor slice.
-
-    Parameters:
-        dtype: The data type of the elements in the tensor slice.
-        rank: The rank of the tensor slice.
-        E: The elementwise fusion struct type.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
-        simd_width: The SIMD width for the target.
-        _trace_name: Name of the executed operation displayed in the trace.
-
-    Args:
-        tensor: The output tensor slice which receives the computed values.
-        elem: The elementwise fusion struct.
-        ctx: The call context (forward this from the custom operation).
-    """
-
-    @parameter
-    @always_inline
-    def wrapper[
-        width: Int, element_alignment: Int
-    ](index: IndexList[rank]) capturing -> SIMD[dtype, width]:
-        return elem.compute[dtype, rank, width, element_alignment](index)
-
-    foreach[
-        func=wrapper,
-        target=target,
-        simd_width=simd_width,
-        _trace_name=_trace_name,
-    ](tensor, ctx)
-
-
-@__mogg_intrinsic_attr("mogg.for_each")
-@__mogg_intrinsic_attr("mogg.for_each.out_func")
-@no_inline
-def foreach[
-    dtype: DType,
-    rank: Int,
-    //,
-    func: def[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
-    out_func: def[width: Int](IndexList[rank]) capturing[_] -> None,
-    *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
-    _trace_name: StaticString = "mogg.for_each",
-](
-    tensor: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
-    ctx: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Apply the function `func` to each element of the tensor slice.
-
-    Parameters:
-        dtype: The data type of the elements in the tensor slice.
-        rank: The rank of the tensor slice.
-        func: The function to apply to each element of the tensor slice.
-        out_func: The function to apply on each output element.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
-        simd_width: The SIMD width for the target (usually leave this as its default value).
-        _trace_name: Name of the executed operation displayed in the trace_description.
-
-    Args:
-        tensor: The input tensor slice which the consumed values.
-        ctx: The call context (forward this from the custom operation).
-    """
-    assert (
-        ctx._handle or is_cpu[target]()
-    ), "Expecting non-null device ctx for GPU kernels"
-
-    @parameter
-    @always_inline
-    def out_func_shim[
-        _width: Int, _rank: Int, _alignment: Int = 1
-    ](index: IndexList[_rank]) capturing:
-        idx = rebind[IndexList[rank]](index)
-        out_func[_width](idx)
-
-    std.algorithm.functional.elementwise[
-        out_func_shim,
-        simd_width,
-        target=target,
-        _trace_description=_trace_name,
-    ](tensor.shape(), ctx)
-
-
-def foreach[
-    dtype: DType,
-    rank: Int,
-    //,
-    func: def[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
-    *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
-    _trace_name: StaticString = "mogg.for_each",
-](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Apply the function `func` to each element of the tensor slice.
-
-    Parameters:
-        dtype: The data type of the elements in the tensor slice.
-        rank: The rank of the tensor slice.
-        func: The function to apply to each element of the tensor slice.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
-        simd_width: The SIMD width for the target (usually leave this as its default value).
-        _trace_name: Name of the executed operation displayed in the trace_description.
-
-    Args:
-        tensor: The output tensor slice which receives the return values from `func`.
-        ctx: The call context (forward this from the custom operation).
-    """
-
-    @parameter
-    @always_inline
-    def func_shim[
-        width: Int, element_alignment: Int
-    ](index: IndexList[rank]) capturing -> SIMD[dtype, width]:
-        return func[width](index)
-
-    foreach[
-        dtype=dtype,
-        rank=rank,
-        func=func_shim,
-        target=target,
-        simd_width=simd_width,
-        _trace_name=_trace_name,
-    ](tensor, ctx)
-
-
-# TensorCopy intrinsic used by view kernels.
-# z is a kernel output, and x a view of the input.
-@__mogg_intrinsic_attr("mogg.view_materialize")
-@doc_hidden
-@no_inline
-def view_copy_impl[
-    dtype: DType,
-    rank: Int,
-    InFusion: InputFusion,
-    OutFusion: OutputFusion,
-    ComputeFusion: ComputeOutputFusion,
-    spec: StaticTensorSpec[dtype, rank, _, InFusion, OutFusion, ComputeFusion],
-    //,
-    *,
-    target: StaticString,
-    _trace_name: StaticString = "mogg.view_copy_impl",
-](
-    z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    x: ManagedTensorSlice[static_spec=spec, ...],
-    ctx: DeviceContextPtr,
-) raises:
-    comptime assert _shape_types_compatible[
-        x.static_spec.static_layout._shape_types,
-        z.static_spec.static_layout._shape_types,
-        rank,
-    ](), "static shapes not compatible"
-    assert x.shape() == z.shape(), "runtime shapes not compatible"
-
-    @parameter
-    @always_inline
-    def func[
-        width: Int, element_alignment: Int
-    ](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
-        return simd_load_from_managed_tensor_slice[
-            simd_width=width, element_alignment=element_alignment
-        ](x, idx)
-
-    foreach[
-        func,
-        target=target,
-        _trace_name=_trace_name,
-    ](z, ctx)
 
 
 def _shape_types_compatible[

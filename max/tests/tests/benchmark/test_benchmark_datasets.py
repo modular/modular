@@ -45,6 +45,7 @@ from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
 
 # Import the module under test
 from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
+    build_chat_samples_from_user_text_pool,
     resolve_constant_delay_ms,
 )
 from PIL import Image
@@ -882,3 +883,61 @@ def test_instruct_coder_multiturn_fit_distributions(
         for user in session.messages[0::2]:
             assert user.source == "user"
             assert user.num_tokens == 80
+
+
+def test_pool_wraps_with_pass_marker_when_exhausted() -> None:
+    """When planned turns exceed the pool, the cursor wraps and each new pass
+    prepends a ``[N] `` marker to the user body so cycled prompts stay
+    cache-distinct while still satisfying ``num_sessions``."""
+    tok = _FakeTokenizer(model_max_length=50_000)
+    pool_texts = ["alpha body text", "beta body text", "gamma body text"]
+    num_sessions = 5
+    turns_per_session = 2  # 10 total turns, pool only has 3 -> wraps
+
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = build_chat_samples_from_user_text_pool(
+            pool=pool,
+            user_text_pool=pool_texts,
+            num_sessions=num_sessions,
+            num_turns=str(turns_per_session),
+            input_len="80",
+            output_len="20",
+            delay_between_turns_dist=None,
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            shuffle_pool=False,
+            log_prefix="test-wrap",
+        )
+
+    assert len(samples.chat_sessions) == num_sessions
+    user_contents: list[str] = []
+    for session in samples.chat_sessions:
+        for user in session.messages[0::2]:
+            assert user.source == "user"
+            user_contents.append(user.content)
+
+    assert len(user_contents) == num_sessions * turns_per_session
+
+    # First pass through the pool: no marker.
+    for content in user_contents[: len(pool_texts)]:
+        assert not content.startswith("["), (
+            f"first-pass content should have no marker, got: {content!r}"
+        )
+
+    # Subsequent turns are stamped with their pass number.
+    expected_prefixes = ["[1] ", "[1] ", "[1] ", "[2] ", "[2] ", "[2] ", "[3] "]
+    for content, prefix in zip(
+        user_contents[len(pool_texts) :], expected_prefixes, strict=False
+    ):
+        assert content.startswith(prefix), (
+            f"expected {prefix!r} prefix, got: {content!r}"
+        )
+
+    # Marker token budget reservation keeps on-the-wire length close to target.
+    target_in = 80
+    for user in (
+        msg
+        for session in samples.chat_sessions
+        for msg in session.messages[0::2]
+    ):
+        assert abs(user.num_tokens - target_in) <= 4

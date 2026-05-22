@@ -24,22 +24,22 @@ Prefix caching can provide significant performance improvements in the following
 scenarios:
 
 1. **Similar queries**: When a user repeatedly makes similar queries that use
-    the same system prompt instructions, the KV cache of the prefix can be
-    stored in advance to reduce redundant computation.
+   the same system prompt instructions, the KV cache of the prefix can be
+   stored in advance to reduce redundant computation.
 2. **Multi-round conversations**: In chat applications, users often ask
-    follow-up queries related to previous inputs. Since the server releases KV
-    cache memory after each request, prefix caching preserves computation from
-    past conversation turns without requiring an explicit session.
+   follow-up queries related to previous inputs. Since the server releases KV
+   cache memory after each request, prefix caching preserves computation from
+   past conversation turns without requiring an explicit session.
 
 Prefix caching won't result in performance degradation. However, it also does
 not provide additional benefit in the following cases:
 
 - **Unique queries**: If new queries do not share prefixes with previous
-    queries, there is no opportunity to reuse cached KV values, making prefix
-    caching ineffective.
+  queries, there is no opportunity to reuse cached KV values, making prefix
+  caching ineffective.
 - **Long response generation**: Prefix caching only speeds up the pre-fill phase
-    of a request. If most of the time is spent generating new tokens (decoding),
-    caching will have little impact.
+  of a request. If most of the time is spent generating new tokens (decoding),
+  caching will have little impact.
 
 ## How prefix caching works
 
@@ -48,10 +48,10 @@ applying it to future prompts that include the same prefix, reducing redundant
 computation. By default, the following flags are applied:
 
 - `--cache-strategy` : Prefix caching requires PagedAttention. To use
-    PagedAttention, the cache strategy must be `paged`.
+  PagedAttention, the cache strategy must be `paged`.
 - `--enable-prefix-caching`: Enables prefix caching.
 - `--kv-cache-page-size`: PagedAttention currently requires a page size that is
-    a multiple of 128.
+  a multiple of 128.
 
 Prefix caching with PagedAttention works on both CPU and GPU. To deploy a model
 with prefix caching using the `max` CLI, you can use the flag `--devices cpu`

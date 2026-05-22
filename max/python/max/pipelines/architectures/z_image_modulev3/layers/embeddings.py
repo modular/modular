@@ -17,6 +17,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.tensor import Tensor
+from max.graph import DimLike
 
 
 def apply_rotary_emb(
@@ -61,11 +62,12 @@ def apply_rotary_emb(
 
     input_dtype = x.dtype
 
+    new_shape: list[DimLike]
     if use_real_unbind_dim == -1:
         # Used for Flux, CogVideoX, Hunyuan-Dit
         # Reshape x: [..., D] -> [..., D//2, 2]
         x_shape = list(x.shape)
-        new_shape = x_shape[:-1] + [x_shape[-1] // 2, 2]
+        new_shape = [*x_shape[:-1], x_shape[-1] // 2, 2]
         x_reshaped = F.reshape(x, new_shape)
 
         # Split into real and imaginary parts: [..., D//2, 2] -> 2 x [..., D//2]
@@ -87,7 +89,7 @@ def apply_rotary_emb(
         # Used for Stable Audio, OmniGen, CogView4, Cosmos
         # Reshape x: [..., D] -> [..., 2, D//2]
         x_shape = list(x.shape)
-        new_shape = x_shape[:-1] + [2, x_shape[-1] // 2]
+        new_shape = [*x_shape[:-1], 2, x_shape[-1] // 2]
         x_reshaped = F.reshape(x, new_shape)
 
         # Split into real and imaginary parts: [..., 2, D//2] -> 2 x [..., D//2]

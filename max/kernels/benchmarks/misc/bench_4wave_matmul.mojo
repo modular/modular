@@ -44,9 +44,7 @@ from layout import (
     CoordLike,
     row_major,
 )
-from linalg.matmul.gpu.amd.amd_4wave_matmul import (
-    amd_4wave_matmul,
-)
+from linalg.matmul.gpu.amd.amd_4wave_matmul import structured_4wave_matmul
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
@@ -180,7 +178,7 @@ def verify_matmul[
         transpose_b=transpose_b,
     )
 
-    amd_4wave_matmul(a_device_nd, b_device_nd, c_device_nd, ctx)
+    structured_4wave_matmul(a_device_nd, b_device_nd, c_device_nd, ctx)
 
     # Launch GPU verification kernel
     comptime NUM_BLOCKS = 32
@@ -351,10 +349,10 @@ def bench_matmul[
         var a_host_ptr = ScalarArray[a_type](count=cb_a.alloc_size())
         var b_host_ptr = ScalarArray[a_type](count=cb_b.alloc_size())
         var a_host = TileTensor(
-            a_host_ptr.unsafe_ptr(), row_major(Idx(cb_a.alloc_size()))
+            a_host_ptr.unsafe_ptr(), row_major(cb_a.alloc_size())
         )
         var b_host = TileTensor(
-            b_host_ptr.unsafe_ptr(), row_major(Idx(cb_b.alloc_size()))
+            b_host_ptr.unsafe_ptr(), row_major(cb_b.alloc_size())
         )
 
         comptime if a_type.is_float8():
@@ -453,9 +451,7 @@ def bench_matmul[
         def normal_elementwise_epilogue[
             dtype: DType, width: Int, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-            tensor_c.store[width=width](
-                (Idx(idx[0]), Idx(idx[1])), val.cast[c_type]()
-            )
+            tensor_c.store[width=width]((idx[0], idx[1]), val.cast[c_type]())
 
         comptime optional_normal_lambda_fn = Optional[
             elementwise_epilogue_type
@@ -466,7 +462,7 @@ def bench_matmul[
         else:
             # 4-wave-simple kernel — direct call (no dispatcher).
             # transpose_b=True is hardcoded in the kernel (FP8 layout).
-            amd_4wave_matmul(tensor_a, tensor_b, tensor_c, ctx)
+            structured_4wave_matmul(tensor_a, tensor_b, tensor_c, ctx)
 
     @parameter
     @always_inline
@@ -597,7 +593,7 @@ def main() raises:
         ](
             ctx,
             m,
-            Idx(M),
+            M,
             Idx[N](),
             Idx[K](),
             init_type,

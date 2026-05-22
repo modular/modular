@@ -88,11 +88,11 @@ def _block_scaled_mma_smoke_kernel[
             one,
         )
         baseline_out.store[width=4](
-            Coord(Idx(lane), Idx[0]()),
+            Coord(lane, Idx[0]()),
             baseline_acc,
         )
         scaled_out.store[width=4](
-            Coord(Idx(lane), Idx[0]()),
+            Coord(lane, Idx[0]()),
             scaled_acc,
         )
     else:
@@ -113,11 +113,11 @@ def _block_scaled_mma_smoke_kernel[
             one,
         )
         baseline_out.store[width=16](
-            Coord(Idx(lane), Idx[0]()),
+            Coord(lane, Idx[0]()),
             baseline_acc,
         )
         scaled_out.store[width=16](
-            Coord(Idx(lane), Idx[0]()),
+            Coord(lane, Idx[0]()),
             scaled_acc,
         )
 

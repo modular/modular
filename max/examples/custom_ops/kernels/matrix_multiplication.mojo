@@ -18,6 +18,8 @@ from std.math.uutils import udivmod
 from std.sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
 
 import compiler
+
+from std.gpu.host import DeviceContext
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -43,7 +45,7 @@ from layout import (
 from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.tensor_core import TensorCore
 from layout.tile_io import GenericToSharedAsyncTileCopier
-from std.runtime.asyncrt import DeviceContextPtr
+
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils import StaticTuple
@@ -935,7 +937,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
         a: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         b: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
@@ -947,7 +949,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
             M = Int(a_tt.dim[0]())
             N = Int(b_tt.dim[1]())
 
-            gpu_ctx = ctx.get_device_context()
+            gpu_ctx = ctx
 
             # Zero out the memory in the outbound tensor.
             gpu_ctx.enqueue_memset(

@@ -70,7 +70,6 @@ from .pipeline_variants import (
     VideoContentPart,
     VLMTextGenerationContext,
 )
-from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
 from .reasoning import ParsedReasoningDelta, ReasoningParser, ReasoningSpan
 from .request import (
     DUMMY_REQUEST_ID,
@@ -79,7 +78,6 @@ from .request import (
     RequestID,
     RequestType,
 )
-from .scheduler import Scheduler, SchedulerResult
 from .status import GenerationStatus
 from .task import InputModality, PipelineTask
 from .tokenizer import PipelineTokenizer
@@ -142,8 +140,6 @@ __all__ = [
     "LoRAType",
     "LogProbabilities",
     "LogitsProcessor",
-    "MAXPullQueue",
-    "MAXPushQueue",
     "MessageContent",
     "OpenResponsesRequest",
     "ParsedReasoningDelta",
@@ -171,8 +167,6 @@ __all__ = [
     "SamplingParams",
     "SamplingParamsGenerationConfigDefaults",
     "SamplingParamsInput",
-    "Scheduler",
-    "SchedulerResult",
     "SharedMemoryArray",
     "SpecDecodingState",
     "TextContentPart",
@@ -191,8 +185,6 @@ __all__ = [
     "ToolParser",
     "VLMTextGenerationContext",
     "VideoContentPart",
-    "drain_queue",
-    "get_blocking",
     "msgpack_numpy_decoder",
     "msgpack_numpy_encoder",
 ]

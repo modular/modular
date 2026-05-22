@@ -107,7 +107,7 @@ the following code:
 ```mojo title="grayscale.mojo"
 from compiler import register
 from max.tensor import InputTensor, OutputTensor, foreach
-from std.runtime.asyncrt import DeviceContextPtr
+from std.gpu.host import DeviceContext
 from std.utils.index import IndexList
 
 @register("grayscale")
@@ -118,7 +118,7 @@ struct Grayscale:
     ](
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         @parameter
         @always_inline

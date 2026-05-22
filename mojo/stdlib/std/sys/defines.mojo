@@ -29,7 +29,7 @@ And on the command line:
   mojo -D FLOAT32 main.mojo
 ```
 
-For more information, see the [Mojo build docs](https://www.mojolang.org/docs/cli/build.html#d-keyvalue).
+For more information, see the [Mojo build docs](https://mojolang.org/docs/cli/build/#d-keyvalue).
 The `mojo run` command also supports the `-D` option.
 
 

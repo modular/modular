@@ -31,7 +31,7 @@ from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
 from std.hashlib import Hasher
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 import std.format._utils as fmt
 
 
@@ -178,9 +178,11 @@ struct Span[
     comptime device_type: AnyType = Self
     """The device-side type for this `Span`."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

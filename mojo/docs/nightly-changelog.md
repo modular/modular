@@ -51,21 +51,43 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `std.gpu.host.CompletionFlag`, a non-owning handle to an MLRT
+  `M::Driver::CompletionFlag` (an 8-byte slot in pinned host memory mapped
+  into a device's address space). Pairs with the new
+  `DeviceStream.wait_for_host_value(flag, value)` method, which stalls the
+  stream until the flag's 64-bit slot equals the given value. Corresponds to
+  CUDA's `cuStreamWaitValue64` and captures cleanly into a CUDA graph as a
+  wait-value node, letting a CPU thread (or an AsyncRT worker dispatched by
+  `enqueue_host_func`) gate a GPU stream on host-produced data without a
+  second stream or a blocking host-function callback. Currently CUDA-only;
+  other backends raise.
+
 - `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
   helpers now live in the standard library module
   [`std.utils.coord`](/docs/std/utils/coord/). The
-  [`layout.coord`](/mojo/layout/coord/) module re-exports the same symbols for
+  [`layout.coord`](/docs/layout/coord/) module re-exports the same symbols for
   layout and kernel code; `layout` also hoists the common names at package
   scope for convenience.
 
-- `PythonObject.__del__` now skips the `PyGILState_Ensure` /
-  `PyGILState_Release` round-trip when the current thread already holds
-  the GIL (checked via `PyGILState_Check`). The public contract is
-  unchanged - dropping a `PythonObject` from a thread that does not
-  hold the GIL is still safe, and the destructor still acquires the GIL
-  in that case. The fast path significantly reduces per-call overhead
-  for Python -> Mojo FFI calls, where CPython hands the callee an
-  already-held GIL.
+- Python -> Mojo FFI calls registered through `PythonModuleBuilder` and
+  `PythonTypeBuilder` have significantly reduced per-call overhead:
+
+  - Non-kwargs callables registered with `def_function` / `def_method` /
+    `def_staticmethod` now use CPython's `METH_FASTCALL` calling
+    convention rather than `METH_VARARGS`. Kwargs-accepting functions
+    still use `METH_VARARGS | METH_KEYWORDS`.
+
+  - `PythonObject.__del__` skips the `PyGILState_Ensure` /
+    `PyGILState_Release` round-trip when the current thread already
+    holds the GIL (checked via `PyGILState_Check`). On the common
+    Python -> Mojo FFI path (where CPython hands the callee an
+    already-held GIL) the destructor pays just the check and a direct
+    `Py_DecRef`. The public contract is unchanged - dropping a
+    `PythonObject` from a thread that does not hold the GIL remains
+    safe.
+
+  - `Int(py=obj)` and `Scalar[IntDType](py=obj)` fast-path exact
+    Python `int` via `PyLong_AsSsize_t`.
 
 - Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
   compatible tile views and splitting tiles into static or runtime-sized
@@ -74,6 +96,9 @@ This version is still a work in progress.
 - `String.as_bytes_mut()` has been renamed to `String.unsafe_as_bytes_mut()`, to
   reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
   later issues like out of bounds access.
+
+- A new `BinaryHeap` collection has been added to the `std.collections` module.
+  This is a list-backed binary max-heap.
 
 - `List[T]` no longer requires its type to be `Copyable`, but now works with
   `Movable`-only types. Iteration still requires `Copyable` and will emit
@@ -107,8 +132,6 @@ This version is still a work in progress.
   `struct_field_*` family (along with the `ReflectedType[T]` wrapper) have been
   removed; use the corresponding methods on `reflect[T]`:
 
-  <!-- markdownlint-disable MD013 -->
-
   | Removed                                 | Replacement                              |
   |-----------------------------------------|------------------------------------------|
   | `get_type_name[T]()`                    | `reflect[T].name()`                      |
@@ -123,8 +146,6 @@ This version is still a work in progress.
   | `offset_of[T, name=name]()`             | `reflect[T].field_offset[name=name]()`   |
   | `offset_of[T, index=index]()`           | `reflect[T].field_offset[index=index]()` |
   | `ReflectedType[T]`                      | `Reflected[T]`                           |
-
-  <!-- markdownlint-enable MD013 -->
 
 - Added `ReflectedFn[func]`, a function-side reflection handle accessed via
   the `reflect_fn[func]` `comptime` alias. Exposes function introspection
@@ -175,6 +196,15 @@ This version is still a work in progress.
 - `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
   that indexes by unicode codepoint offsets.
 
+- Several `StringSlice` constructors are now deprecated.
+
+  - `StringSlice(ptr=..., length=...)` is deprecated; use
+    `StringSlice(unsafe_from_utf8=Span(...))` instead.
+  - `StringSlice(unsafe_from_utf8_ptr=...)` (taking a raw nul-terminated
+    `UnsafePointer[Byte]` or `UnsafePointer[c_char]`) is deprecated; construct
+    a `CStringSlice` from the pointer and use the new
+    `StringSlice(unsafe_from_utf8=CStringSlice(...))` constructor instead.
+
 - PythonObject convertibility got simplified and cleaned up. When working with
   types that required custom conversions to `PythonObject`, we used to write
   code like this:
@@ -201,7 +231,40 @@ This version is still a work in progress.
       print(t"Hi, {a}!")
   ```
 
+- The `Intable` trait no longer inherits from `ImplicitlyDestructible`.
+  Generic code that relied on receiving the destructor bound transitively
+  through this trait must now spell it out explicitly, for example
+  `T: Intable & ImplicitlyDestructible`.
+
 ## Tooling changes
+
+- The `mojo` compiler will now print the filename and line number in diagnostics
+  that point to inaccessible source locations (e.g., from precompiled libraries)
+  instead of a location at the top of the main file:
+
+  ```text
+  # Before
+  $> mojo example.mojo
+  /path/to/example.mojo:33:16: error: invalid call to '__setitem__': violated constraint
+     vec[base + i] = values[i].cast[dtype]()
+     ~~~^~~~~~~~~~
+
+  /path/to/example.mojo:1:1: note: constraint declared here evaluated to False, expected 'mut'
+  from std.algorithm.functional import elementwise
+  ^
+  /path/to/example.mojo:1:1: note: function declared here
+  from std.algorithm.functional import elementwise
+  ^
+
+  # After
+  $> mojo example.mojo
+  /path/to/example.mojo:33:16: error: invalid call to '__setitem__': violated constraint
+      vec[base + i] = values[i].cast[dtype]()
+      ~~~^~~~~~~~~~
+
+  max/kernels/src/layout/layout_tensor.mojo:2092: note: constraint declared here evaluated to False, expected 'mut'
+  max/kernels/src/layout/layout_tensor.mojo:2090: note: function declared here
+  ```
 
 - The `mojo package` command has renamed to `mojo precompile`. Similarly, the
   `.mojopkg` file extension has been deprecated; favor the `.mojoc` file
@@ -215,7 +278,54 @@ This version is still a work in progress.
   mojo precompile my_package -o my_package.mojoc
   ```
 
+- Added `mojo --print-cache-location` and `mojo --clear-cache` for inspecting
+  and clearing the on-disk Mojo compile cache (`.mojo_cache`). The resolved
+  path honors the existing precedence (`MODULAR_CACHE_DIR`, `MODULAR_HOME`,
+  `MODULAR_DERIVED_PATH`, `XDG_CACHE_HOME`, etc.). `--clear-cache` prompts for
+  confirmation by default; pass `-f` (or `--force`) to skip the prompt for
+  scripting use.
+
+  ```text
+  $ mojo --print-cache-location
+  /home/you/.cache/modular/.mojo_cache
+
+  $ mojo --clear-cache
+  This will remove the Mojo compile cache at:
+    /home/you/.cache/modular/.mojo_cache
+  Proceed? [y/N] y
+  Removed /home/you/.cache/modular/.mojo_cache
+
+  $ mojo --clear-cache -f   # no prompt
+  ```
+
 ## GPU programming
+
+- Added `DeviceContextList[size]` in `std.gpu.host`: a fixed-size,
+  `Copyable`/`ImplicitlyCopyable`/`Sized` collection of `DeviceContext` values.
+  Multi-device custom-op `execute` methods now receive a `DeviceContextList[N]`
+  — the graph compiler synthesizes one from the per-device contexts attached to
+  the op via a variadic constructor. Kernels can index into it with
+  `dev_ctxs[i]` (runtime) or `dev_ctxs.__getitem_param__[i]()` (comptime), and
+  iterate with `len()`. This replaces the previous `DeviceContextPtrList`
+  pattern.
+
+  ```mojo
+  from gpu.host import DeviceContext, DeviceContextList
+
+  @compiler.register("mo.distributed.allreduce.sum")
+  struct DistributedAllReduceSum:
+      @staticmethod
+      def execute[
+          dtype: DType, rank: Int, target: StaticString, _trace_name: StaticString,
+      ](
+          outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
+          inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+          signal_buffers: MutableInputVariadicTensors[dtype=DType.uint8, rank=1, ...],
+          dev_ctxs: DeviceContextList,
+      ) capturing raises:
+          comptime num_devices = inputs.size
+          # ... use dev_ctxs[i] per device ...
+  ```
 
 - `DeviceContext.enqueue_function[func]` and
   `DeviceContext.compile_function[func]` now accept a single kernel argument
@@ -235,6 +345,45 @@ This version is still a work in progress.
   ```
 
 ## Removed
+
+- The `DeviceContextPtr` and `DeviceContextPtrList` types have been removed
+  from `std.runtime.asyncrt`. Custom-op `execute` methods now take
+  `DeviceContext` directly (or `Optional[DeviceContext]` where the context is
+  genuinely optional), and multi-device ops take `DeviceContextList[N]` (see
+  the new entry under *Library changes*). The helpers `get_device_context()`
+  and `get_optional_device_context()` are no longer needed — pass the
+  `DeviceContext` through directly. The `CpuDeviceContext` runtime always
+  supplies a real context for the CPU path, so the nullable wrapper is no
+  longer required.
+
+  ```mojo
+  # Before
+  from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
+
+  @compiler.register("my_op")
+  struct MyOp:
+      @staticmethod
+      def execute[target: StaticString](
+          output: OutputTensor,
+          input: InputTensor,
+          ctx: DeviceContextPtr,
+      ) raises:
+          var gpu_ctx = ctx.get_device_context()
+          ...
+
+  # After
+  from gpu.host import DeviceContext
+
+  @compiler.register("my_op")
+  struct MyOp:
+      @staticmethod
+      def execute[target: StaticString](
+          output: OutputTensor,
+          input: InputTensor,
+          ctx: DeviceContext,
+      ) raises:
+          ...
+  ```
 
 - The `use_blocking_impl` parameter has been removed from `elementwise` (in
   `std.algorithm.functional`), and the analogous
@@ -277,6 +426,12 @@ This version is still a work in progress.
   - `offset_of[T, index=...]()` → `reflect[T]().field_offset[index=...]()`
   - `ReflectedType[T]` → `Reflected[T]`
 
+- `String` and `StringSlice` can now be sliced by codepoints, e.g.
+  `String("🔄🔥🔄")[codepoint=1:2]` returns `"🔥"`.
+
+- `String` and `StringSlice` can now be indexed by graphemes, e.g.
+  `String("👨‍🚀🧑‍🌾क्षि")[grapheme=1]` returns `"🧑‍🌾"`.
+
 ## Fixed
 
 - Reduced the virtual address space reserved by every `mojo` invocation by
@@ -293,3 +448,8 @@ This version is still a work in progress.
 - Attempting to import a source Mojo package from a broken symlink will no
   longer result in a compiler crash.
   ([Issue #6424](https://github.com/modular/modular/issues/6424))
+
+- `MODULAR_NVPTX_COMPILER_PATH` is now part of mojo cache location so that when
+  switching to a different `ptxas` CUBIN cache will not hit those were
+  generated before the switch.
+  ([Issue #6540](https://github.com/modular/modular/issues/6549))

@@ -42,7 +42,7 @@ to nothing and the resulting PTX is byte-identical to a build with no
 trace plumbing at all.
 """
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.memory import UnsafePointer
 
 
@@ -87,7 +87,9 @@ struct NullTrace(TraceBuf):
         """
         pass
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         pass
 
     @staticmethod
@@ -136,8 +138,10 @@ struct GmemTrace(TraceBuf):
         """
         self.ptr.store(offset, val)
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

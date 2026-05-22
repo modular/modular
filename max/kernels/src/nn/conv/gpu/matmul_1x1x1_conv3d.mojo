@@ -129,8 +129,8 @@ def dispatch_1x1x1_matmul_conv3d[
     # --- Zero-copy TileTensor views of input, filter, output. ---
     # Input NDHWC is already C-innermost contiguous, so [M, C_in] with
     # M = batch * D_out * H_out * W_out is a pure pointer reinterpret.
-    var a_tt = TileTensor(input.ptr, row_major(Coord(Idx(full_M), Idx(K))))
-    var c_tt = TileTensor(output.ptr, row_major(Coord(Idx(full_M), Idx(N))))
+    var a_tt = TileTensor(input.ptr, row_major(Coord(full_M, K)))
+    var c_tt = TileTensor(output.ptr, row_major(Coord(full_M, N)))
 
     comptime if maybe_epilogue_func:
         comptime epilogue_5d = maybe_epilogue_func.value()
@@ -160,7 +160,7 @@ def dispatch_1x1x1_matmul_conv3d[
         comptime if filter_is_fcrs:
             # FCQRS [F, C, 1, 1, 1] -> [F, C] view. _matmul_gpu wants
             # B as [N, K] row-major when transpose_b=True.
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(Idx(N), Idx(K))))
+            var b_tt = TileTensor(filter.ptr, row_major(Coord(N, K)))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
@@ -171,7 +171,7 @@ def dispatch_1x1x1_matmul_conv3d[
         else:
             # QRSCF [1, 1, 1, C, F] -> [C, F] view. _matmul_gpu wants
             # B as [K, N] row-major when transpose_b=False.
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(Idx(K), Idx(N))))
+            var b_tt = TileTensor(filter.ptr, row_major(Coord(K, N)))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=False,
@@ -181,13 +181,13 @@ def dispatch_1x1x1_matmul_conv3d[
             ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
     else:
         comptime if filter_is_fcrs:
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(Idx(N), Idx(K))))
+            var b_tt = TileTensor(filter.ptr, row_major(Coord(N, K)))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
             ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
         else:
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(Idx(K), Idx(N))))
+            var b_tt = TileTensor(filter.ptr, row_major(Coord(K, N)))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=False,

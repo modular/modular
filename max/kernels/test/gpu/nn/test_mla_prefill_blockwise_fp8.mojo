@@ -139,26 +139,22 @@ def test_prefill[
     # ragged inputs
     var q = TileTensor(
         q_ptr.unsafe_ptr(),
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads](), Idx[depth]())),
     )
     var k = TileTensor(
         k_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads](), Idx[kv_depth]())),
     )
     var v = TileTensor(
         v_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads](), Idx[kv_depth]())),
     )
     var cache = TileTensor(
         cache_ptr.unsafe_ptr(),
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[cache_num_heads](),
                 Idx[cache_depth](),
             )
@@ -168,8 +164,8 @@ def test_prefill[
         cache_sf_ptr.unsafe_ptr(),
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[cache_num_heads](),
                 Idx[(cache_depth // scale_block_size)](),
             )
@@ -177,9 +173,7 @@ def test_prefill[
     )
     var output = TileTensor(
         o_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * seq_len, Idx[num_heads](), Idx[kv_depth]())),
     )
 
     # copy from host to device
@@ -194,26 +188,22 @@ def test_prefill[
     # construct device buffers
     var q_device = TileTensor(
         q_device_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads](), Idx[depth]())),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads](), Idx[kv_depth]())),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads](), Idx[kv_depth]())),
     )
     var cache_device = TileTensor(
         cache_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[cache_num_heads](),
                 Idx[cache_depth](),
             )
@@ -223,8 +213,8 @@ def test_prefill[
         cache_sf_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[cache_num_heads](),
                 Idx[(cache_depth // scale_block_size)](),
             )
@@ -232,17 +222,15 @@ def test_prefill[
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * seq_len, Idx[num_heads](), Idx[kv_depth]())),
     )
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
     var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     flare_mla_prefill[rank=q_device.rank](
@@ -277,8 +265,8 @@ def test_prefill[
         k_ref_ptr.unsafe_ptr(),
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -288,8 +276,8 @@ def test_prefill[
         v_ref_ptr.unsafe_ptr(),
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -299,8 +287,8 @@ def test_prefill[
         output_ref_ptr.unsafe_ptr(),
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
+                batch_size,
+                seq_len,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -344,9 +332,7 @@ def test_prefill[
     # view q_device as a rank 4 buffer
     var q_device_rank4 = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
     )
 
     # create device pointers for K_ref and V_ref
@@ -364,8 +350,8 @@ def test_prefill[
         k_ref_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -375,8 +361,8 @@ def test_prefill[
         v_ref_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -386,8 +372,8 @@ def test_prefill[
         output_ref_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
+                batch_size,
+                seq_len,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -435,8 +421,8 @@ def test_prefill[
         o_ptr.unsafe_ptr(),
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
+                batch_size,
+                seq_len,
                 Idx[num_heads](),
                 Idx[kv_depth](),
             )

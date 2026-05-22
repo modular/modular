@@ -23,6 +23,7 @@ This file tests various code paths in nn/concat.mojo:
 6. Edge cases: empty outer dims, single element inputs, etc.
 """
 
+from std.gpu.host import DeviceContext
 from layout import Coord, TensorLayout, TileTensor, row_major
 from nn.concat import (
     _concat_inner,
@@ -32,7 +33,7 @@ from nn.concat import (
     concat_shape,
     fused_concat,
 )
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.testing import assert_equal
 from std.utils import IndexList, StaticTuple
 from std.utils.index import product
@@ -289,7 +290,7 @@ def test_fused_concat_cpu() raises:
         axis,
         StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
         output_dyn,
-        DeviceContextPtr(),
+        DeviceContext(api="cpu"),
     )
 
     # Verify results
@@ -398,7 +399,10 @@ def test_concat_with_epilogue() raises:
         output.store[width=width](coord, rebind[SIMD[dtype, width]](val + 10))
 
     concat[dtype, epilogue_fn=epilogue_add_10](
-        output.make_dynamic[DType.int64](), axis, input_tuple
+        output.make_dynamic[DType.int64](),
+        axis,
+        input_tuple,
+        DeviceContext(api="cpu"),
     )
 
     # Verify epilogue was applied
@@ -462,7 +466,12 @@ def test_concat_many_inputs() raises:
         x5.make_dynamic[DType.int64]().as_any_origin().as_immut(),
     )
 
-    concat[dtype](output.make_dynamic[DType.int64](), axis, input_tuple)
+    concat[dtype](
+        output.make_dynamic[DType.int64](),
+        axis,
+        input_tuple,
+        DeviceContext(api="cpu"),
+    )
 
     # Verify each section
     for i in range(4):

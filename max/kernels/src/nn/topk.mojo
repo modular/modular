@@ -40,7 +40,6 @@ from layout import (
     CoordLike,
     Idx,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     coord_to_index_list,
@@ -54,7 +53,6 @@ from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from nn.softmax import softmax_with_temperature
 from nn.topk_fi import apply_min_p_mask_kernel, topk_topp_sampling_from_prob
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList, product
@@ -140,11 +138,11 @@ def top_k[
     out_vals: TileTensor[mut=True, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     sorted: Bool,
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
     k: Optional[
         TileTensor[
             DType.int64,
-            RowMajorLayout[RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64],
             ImmutAnyOrigin,
         ],
     ] = None,
@@ -196,7 +194,7 @@ def top_k[
     with Trace[TraceLevel.OP, target=target](
         "top_k",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
 
@@ -217,7 +215,7 @@ def top_k[
                 out_idxs,
                 grain_size,
                 sorted=sorted,
-                ctx=ctx.get_optional_device_context(),
+                ctx=Optional[DeviceContext](ctx),
                 k=k,
             )
         else:
@@ -228,9 +226,8 @@ def top_k[
                     "Warning: Unsorted top-k is not supported on GPU. Falling"
                     " back to sorted top-k."
                 )
-            var cuda_ctx = ctx.get_device_context()
             topk_gpu[sampling=False, largest=largest](
-                cuda_ctx,
+                ctx,
                 bound_max_k,
                 input,
                 out_vals,
@@ -243,7 +240,7 @@ def _top_k_cpu[
     dtype: DType,
     out_idx_type: DType,
     largest: Bool,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     input: TileTensor[dtype, ...],
     max_k: Int,
@@ -363,12 +360,10 @@ def _top_k_cpu[
 def fused_token_sampling_cpu[
     dtype: DType,
     out_idx_type: DType,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     max_k: Int,
     input: TileTensor[dtype, ...],
@@ -456,12 +451,10 @@ def fused_token_sampling_cpu[
 
 def _top_k_sampling[
     dtype: DType,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     max_k: Int,
     input: TileTensor[dtype, ...],
@@ -1588,13 +1581,11 @@ def _topk_gpu[
     sampling: Bool = True,
     largest: Bool = True,
     _force_old_impl: Bool = False,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    MinPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1872,13 +1863,11 @@ def topk_gpu[
     sampling: Bool = True,
     largest: Bool = True,
     _force_old_impl: Bool = False,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    MinPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -2128,13 +2117,11 @@ def topk_gpu[
 def _topk_topp_sampling_fi[
     dtype: DType,
     out_idx_type: DType,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    MinPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -2195,7 +2182,7 @@ def _topk_topp_sampling_fi[
     var out_shape = coord_to_index_list(out_idxs.layout.shape_coord())
     var out_1d = TileTensor(
         out_idxs.ptr,
-        row_major(Idx(out_shape[0])),
+        row_major(out_shape[0]),
     )
     topk_topp_sampling_from_prob[dtype, out_idx_type](
         ctx,
@@ -2216,13 +2203,11 @@ def fused_token_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    MinPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -2454,10 +2439,8 @@ def gumbel_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     input: TileTensor[dtype, ...],

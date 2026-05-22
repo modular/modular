@@ -183,6 +183,7 @@ class TextGenerationPipeline(
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
+            pipeline_config.runtime.tool_parser,
         )
         self.vocab_size = self._structured_output.vocab_size
 
@@ -466,6 +467,7 @@ class TextGenerationPipeline(
             # Advance FSM with the sampled token (token buffer updated later)
             # new_tokens has shape (batch_size,) - 1D array
             token = int(new_tokens_np[batch_idx])
+
             with Tracer("advance_fsm"):
                 if not context.advance_fsm(token):
                     raise RuntimeError(

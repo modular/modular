@@ -142,13 +142,13 @@ def test_case_batched[
 
     # Create tile tensors for kernel calls
 
-    var in_runtime_layout = row_major(Idx(batch_size), Idx(N))
-    var out_vals_runtime_layout = row_major(Idx(batch_size), Idx(K))
-    var out_idxs_runtime_layout = row_major(Idx(batch_size), Idx(out_idx_len))
+    var in_runtime_layout = row_major(batch_size, N)
+    var out_vals_runtime_layout = row_major(batch_size, K)
+    var out_idxs_runtime_layout = row_major(batch_size, out_idx_len)
     var local_topk_runtime_layout = row_major(
-        (Idx(batch_size), Idx(num_blocks_per_input_ * K))
+        (batch_size, num_blocks_per_input_ * K)
     )
-    var k_runtime_layout = row_major(Idx(batch_size))
+    var k_runtime_layout = row_major(batch_size)
 
     var device_in_tt = TileTensor(device_in, in_runtime_layout)
     var device_out_vals_tt = TileTensor(
@@ -374,7 +374,7 @@ def test_case_multi_rank[
     var in_runtime_layout = row_major(Coord(input_shape))
     var out_vals_runtime_layout = row_major(Coord(out_vals_shape))
     var out_idxs_runtime_layout = row_major(Coord(out_idxs_shape))
-    var k_runtime_layout = row_major(Idx(batch_size))
+    var k_runtime_layout = row_major(batch_size)
 
     var device_in_tt = TileTensor(device_in, in_runtime_layout)
     var device_out_vals_tt = TileTensor(

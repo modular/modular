@@ -103,6 +103,10 @@ class Device:
         """
 
     @property
+    def max_single_alloc_size(self) -> int:
+        """Largest single contiguous allocation, in bytes."""
+
+    @property
     def label(self) -> str:
         """
         Returns device label.
@@ -222,12 +226,53 @@ class Device:
                 callbacks, or if the driver rejects the enqueue.
         """
 
+    def __unsafe_enqueue_async_py_host_func(
+        self, fn: Callable, flag: CompletionFlag, value: int, cpu: CPU
+    ) -> None:
+        """
+        Async kickoff variant of ``__unsafe_enqueue_py_host_func``.
+
+        Like ``__unsafe_enqueue_py_host_func``, except the kickoff host
+        node dispatches ``fn`` onto ``cpu``'s AsyncRT worker pool and
+        returns immediately, so the GPU stream can proceed to
+        subsequent nodes concurrently with ``fn`` running on an
+        AsyncRT worker thread.
+
+        When ``fn`` finishes, the worker atomic-stores ``value``
+        (release ordering) to the 64-bit memory at ``flag``. Pair with
+        ``DeviceStream.wait_for_host_value(flag, value)`` on the same
+        stream to gate the downstream consumer kernel.
+
+        The trampoline keeps refcounts on ``flag``'s underlying MLRT
+        allocation AND on ``cpu``'s AsyncRT CPUDevice, so neither can
+        be released out from under the in-flight task even if the
+        Python wrappers are GC'd between enqueue and signal.
+
+        Args:
+            fn (Callable[[], None]): A zero-argument callable.
+            flag (CompletionFlag): The completion flag the worker will
+                signal when ``fn`` returns.
+            value (int): The 64-bit value to store on completion
+                (matched against the
+                ``wait_for_host_value(flag, value)`` consumer).
+            cpu (CPU): The CPU device whose AsyncRT worker pool will
+                execute ``fn``. Typically just ``max.driver.CPU()``;
+                callers needing fine-grained scheduling can pass a
+                specific CPU device.
+
+        Raises:
+            RuntimeError: If the underlying device does not support
+                host callbacks, if the supplied ``cpu`` has no
+                associated AsyncRT CPUDevice, or if the driver rejects
+                the enqueue.
+        """
+
     def __str__(self) -> str: ...
     def __repr__(self) -> str: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __hash__(self) -> int: ...
     def _device_context_ptr(self) -> int:
-        """Gets the device context pointer. Returns 0 for host devices."""
+        """Gets the device context pointer."""
 
     @staticmethod
     def cpu(id: int = -1) -> CPU:
@@ -284,6 +329,103 @@ class CPU(Device):
 
         Returns:
             CPU: A new CPU device object.
+        """
+
+class CompletionFlag:
+    """
+    An 8-byte completion flag in pinned host memory mapped into a device's address space.
+
+    Lets a CPU thread signal a GPU stream (or vice versa) by
+    writing a 64-bit value to a single location that's visible to
+    both. Pair with ``DeviceStream.wait_for_host_value`` (added in
+    a follow-on PR) or the ``mo.wait_host_value`` graph op to gate
+    downstream GPU work on a host-produced result without a
+    second stream or a blocking host callback.
+
+    Currently requires a CUDA-backed ``Device``; constructing
+    against any other backend raises ``RuntimeError``.
+
+    .. code-block:: python
+
+        from max.driver import Accelerator, CompletionFlag
+
+        accel = Accelerator()
+        flag = CompletionFlag(accel)
+        assert flag.load() == 0  # initialized to zero
+
+        # Subsequent PRs add the producer/consumer methods that
+        # actually use the flag's device pointer.
+    """
+
+    def __init__(self, device: Device) -> None:
+        """
+        Allocates a fresh device-mapped pinned u64 bound to ``device``.
+
+        Args:
+            device: A CUDA-backed device. Other backends raise
+                ``RuntimeError``.
+        """
+
+    @property
+    def device_ptr(self) -> int:
+        """
+        Device-visible 64-bit address of the 8-byte slot.
+
+        Suitable for passing to graph ops or stream APIs that wait
+        on a memory value.
+        """
+
+    def reset(self) -> None:
+        """
+        Clears the flag back to ``0`` with a relaxed atomic store.
+
+        Safe to call before any consumer has observed the address.
+        """
+
+    def signal(self, value: int) -> None:
+        """
+        Release-ordered store of ``value`` to the flag.
+
+        Pairs with the GPU-side ``cuStreamWaitValue64`` (or a
+        host-side acquire ``load``).
+
+        Primary intended use is priming the flag at setup time so
+        the first captured-graph replay's ``mo.wait_host_value``
+        passes immediately, before any async kickoff has run.
+        Direct Python signalling on the hot path is usually a
+        mistake -- prefer the async-host-func trampoline which
+        signals from its AsyncRT worker.
+
+        Args:
+            value: The 64-bit value to store.
+        """
+
+    def load(self) -> int:
+        """
+        Acquire-ordered load of the current flag value.
+
+        Pairs with a release-ordered store on the producer side.
+
+        Returns:
+            int: Current 64-bit flag value.
+        """
+
+    @property
+    def _unsafe_ptr(self) -> int:
+        """
+        Raw 64-bit address of the underlying ``M::Driver::CompletionFlag``.
+
+        Intended for packing into a graph-op payload buffer
+        (e.g. for ``mo.wait_host_value``); parallels the
+        trampoline/user_data pointers returned by
+        ``__unsafe_pack_py_host_func`` for ``mo.launch_host_func``.
+
+        The caller must keep this ``CompletionFlag`` Python object
+        alive for the duration of any graph execution that
+        references the pointer; the underlying allocation is
+        freed when the last ref to the wrapper is dropped. The
+        leading underscore marks this as an escape hatch with no
+        safety net.
         """
 
 class DeviceEvent:
@@ -465,6 +607,30 @@ class DeviceStream:
 
         Args:
             device (Device): The device whose default stream to wait for.
+        """
+
+    def wait_for_host_value(self, flag: CompletionFlag, value: int) -> None:
+        """
+        Stalls the stream until ``flag``'s 64-bit value equals ``value``.
+
+        Wraps the MLRT ``DeviceStream::enqueueWaitOnHostValue`` primitive
+        (CUDA's ``cuStreamWaitValue64``). Typically paired with
+        ``Device.__unsafe_enqueue_async_py_host_func`` to gate
+        downstream GPU work on a host-side AsyncRT task that signals
+        ``flag`` when it finishes -- a stream-internal sync that
+        avoids a host ``synchronize()`` and captures cleanly into a
+        CUDA graph as a wait-value node.
+
+        Args:
+            flag (CompletionFlag): The completion flag to wait on.
+                The stream observes ``flag.device_ptr`` via the
+                pinned device-mapped alias.
+            value (int): The 64-bit value to wait for (equality).
+
+        Raises:
+            RuntimeError: If the underlying device does not support
+                stream memory ops, or if the driver rejects the
+                enqueue.
         """
 
     @property

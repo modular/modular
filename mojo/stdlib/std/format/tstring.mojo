@@ -66,7 +66,7 @@ struct TString[
             var literal_start = encoded_bytes.unsafe_ptr() + offset
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
-                ptr=literal_start, length=literal_length
+                unsafe_from_utf8=Span(ptr=literal_start, length=literal_length)
             )
             writer.write_string(string_literal)
             return literal_length

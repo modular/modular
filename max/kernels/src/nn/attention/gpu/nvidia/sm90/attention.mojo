@@ -80,7 +80,7 @@ from nn.attention.mha_utils import (
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.utils import StaticTuple
 
 
@@ -211,8 +211,10 @@ struct Pack[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

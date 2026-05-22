@@ -71,7 +71,7 @@ from std.sys.intrinsics import _type_is_eq
 
 from std.bit import bit_width, byte_swap, pop_count
 from std.builtin._format_float import _write_float
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.format_int import _write_int
 from std.builtin.int import _FromInt
 from std.ffi import c_double, c_long, c_size_t, c_ssize_t
@@ -81,6 +81,7 @@ from std.python import ConvertibleToPython, Python, PythonObject
 
 from std.utils import IndexList, StaticTuple
 from std.utils._visualizers import lldb_formatter_wrapping_type
+from std.utils.coord import CoordLike, Coord
 from std.utils.numerics import FPUtils
 from std.utils.numerics import inf as _inf
 from std.utils.numerics import isinf as _isinf
@@ -320,8 +321,7 @@ struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterPassable):
 
     Examples:
         ```mojo
-        from builtin.simd import FastMathFlag
-
+        from std.builtin.simd import FastMathFlag
         var value = Float32(2.0)
         var multiplier = Float32(3.0)
         var accumulator = Float32(1.0)
@@ -410,6 +410,7 @@ struct SIMD[dtype: DType, size: Int](
     Ceilable,
     Comparable,
     ConvertibleToPython,
+    CoordLike,
     Defaultable,
     DevicePassable,
     DivModable,
@@ -579,9 +580,11 @@ struct SIMD[dtype: DType, size: Int](
     comptime device_type: AnyType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -3252,6 +3255,85 @@ struct SIMD[dtype: DType, size: Int](
             return res
 
         return self.shuffle[mask=indices()]()
+
+    # ===-------------------------------------------------------------------===#
+    # CoordLike
+    # ===-------------------------------------------------------------------===#
+
+    comptime ParamListType = Coord[Self].element_types
+    """The element types (Self for scalar types)."""
+
+    comptime _ParamListType = Self.ParamListType.values
+    """The low-level parameter list of element types."""
+
+    comptime static_value: Int = -1
+    """Always -1 for runtime values (not statically known)."""
+
+    comptime DTYPE = Self.dtype
+    """The data type for the runtime integer value."""
+
+    @staticmethod
+    @always_inline("nodebug")
+    def __len__() -> Int:
+        """Get the length (always 1 for scalar types).
+
+        Returns:
+            Always returns 1.
+        """
+        comptime assert (
+            Self.dtype.is_integral()
+        ), "CoordLike requires integral types"
+        comptime assert Self.size == 1, "CoordLike requires size == 1"
+        return 1
+
+    @always_inline("nodebug")
+    def product(self) -> Scalar[Self.dtype]:
+        """Calculate the product (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
+        comptime assert (
+            Self.dtype.is_integral()
+        ), "CoordLike requires integral types"
+        comptime assert Self.size == 1, "CoordLike requires size == 1"
+        return self[0]
+
+    @always_inline("nodebug")
+    def sum(self) -> Scalar[Self.dtype]:
+        """Calculate the sum (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
+        comptime assert (
+            Self.dtype.is_integral()
+        ), "CoordLike requires integral types"
+        comptime assert Self.size == 1, "CoordLike requires size == 1"
+        return self[0]
+
+    @always_inline("nodebug")
+    def value(self) -> Scalar[Self.dtype]:
+        """Get the scalar value.
+
+        Returns:
+            The runtime integer value.
+        """
+        comptime assert (
+            Self.dtype.is_integral()
+        ), "CoordLike requires integral types"
+        comptime assert Self.size == 1, "CoordLike requires size == 1"
+
+        return self[0]
+
+    @always_inline("nodebug")
+    def tuple(var self) -> Coord[*Self.ParamListType]:
+        """Get as a tuple (not valid for `Scalar` CoordLike).
+
+        Returns:
+            Never returns; aborts at compile time.
+        """
+        comptime assert False, "SIMD is not a tuple CoordLike type"
 
 
 comptime U8x16 = SIMD[DType.uint8, 16]

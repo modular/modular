@@ -38,7 +38,7 @@ from std.utils import Index, IndexList
 from std.gpu import block_dim, global_idx, grid_dim
 from std.gpu.host import DeviceBuffer, DeviceContext
 
-from layout import Coord, Idx, RuntimeInt, TileTensor
+from layout import Coord, Idx, TileTensor
 from layout.tile_layout import row_major
 
 from linalg.utils import elementwise_epilogue_type
@@ -169,7 +169,7 @@ def amd_4wave_split_k_matmul[
     sweet spot is **M ≤ ~128** at large N,K, where the plain 4-wave
     kernel has too few M-blocks to saturate the GPU. With BK=128 and
     `num_splits=4`, it beats hipBLASLt at M=64–256 by ~10–25%. Above
-    M ≈ 256, the plain `amd_4wave_scheduled_matmul` is faster.
+    M ≈ 256, the plain `structured_4wave_matmul` is faster.
 
     Note: epilogue fusion via `elementwise_lambda_fn` may tip the
     decision toward this kernel even when raw matmul is close to
@@ -232,7 +232,7 @@ def amd_4wave_split_k_matmul[
     ), "block_n_override must be 0 (auto), 64, or 128"
     comptime _is_fp8 = a_type.is_float8()
 
-    # See `amd_4wave_scheduled_matmul` for the BK selection rationale.
+    # See `structured_4wave_matmul` for the BK selection rationale.
     # `num_k_mmas = BK / MMA_K` is handled internally by QuadrantMmaOp.
     # The main loop processes 2 K-tiles per outer iter, so K_per_split
     # must be a multiple of 2*BK.
@@ -275,12 +275,7 @@ def amd_4wave_split_k_matmul[
         # the M-band inside the kernel via `pid_m + split_id*num_pid_m`.
         var ws_tile = TileTensor(
             workspace.scratch.unsafe_ptr(),
-            row_major(
-                Coord(
-                    RuntimeInt[DType.int64](Int64(num_splits * M)),
-                    Idx[N](),
-                )
-            ),
+            row_major(Coord(Int64(num_splits * M), Idx[N]())),
         )
 
         comptime kernel = AMD4WaveMatmul[

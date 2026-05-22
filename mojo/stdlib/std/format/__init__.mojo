@@ -85,7 +85,7 @@ from .repr import repr
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writer(ImplicitlyDestructible):
+trait Writer:
     """A destination for formatted text output.
 
     `Writer` is implemented by types that can accept UTF-8 formatted text, such

@@ -605,7 +605,13 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
+        self = String(
+            StringSlice(
+                unsafe_from_utf8=CStringSlice(
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.bitcast[Int8]()
+                )
+            )
+        )
 
     def __init__(
         out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8, _]
@@ -620,7 +626,13 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
+        self = String(
+            StringSlice(
+                unsafe_from_utf8=CStringSlice(
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.bitcast[Int8]()
+                )
+            )
+        )
 
     @always_inline("nodebug")
     def __init__(out self, *, copy: Self):
@@ -838,6 +850,36 @@ struct String(
             specified position.
         """
         return StringSlice(self)[codepoint=codepoint]
+
+    @always_inline
+    def __getitem__(
+        self, *, codepoint: ContiguousSlice
+    ) -> StringSlice[origin_of(self)]:
+        """Gets a substring at the specified codepoint positions.
+
+        Args:
+            codepoint: A slice that specifies codepoint positions of the new
+                substring.
+
+        Returns:
+            A StringSlice containing the codepoints in the specified range.
+        """
+        return StringSlice(self)[codepoint=codepoint]
+
+    @always_inline
+    def __getitem__(
+        self, *, grapheme: Some[Indexer]
+    ) -> StringSlice[origin_of(self)]:
+        """Gets the character at the specified position.
+
+        Args:
+            grapheme: The grapheme index.
+
+        Returns:
+            A `StringSlice` view containing the unicode grapheme at the
+            specified position.
+        """
+        return StringSlice(self)[grapheme=grapheme]
 
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
@@ -1217,18 +1259,6 @@ struct String(
             An iterator yielding `(byte_offset, grapheme)` pairs.
         """
         return StringSlice(self).grapheme_indices()
-
-    def nth_grapheme(self, n: Int) -> Optional[StringSlice[origin_of(self)]]:
-        """Return the `n`-th grapheme cluster (0-indexed), or `None` if out
-        of range.
-
-        Args:
-            n: The zero-based grapheme index. Must be non-negative.
-
-        Returns:
-            The `n`-th grapheme cluster, or `None` if `n` is out of range.
-        """
-        return StringSlice(self).nth_grapheme(n)
 
     def split_at_grapheme(
         self, n: Int

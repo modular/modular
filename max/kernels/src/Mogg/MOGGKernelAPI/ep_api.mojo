@@ -19,15 +19,14 @@ Expert Parallelism (EP) Communication Kernel.
 import compiler_internal as compiler
 from comm.sync import is_p2p_enabled
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from std.gpu.host import DeviceBuffer
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextList
 from std.gpu.host.info import is_gpu
 from std.memory.unsafe_pointer import pointer_to_int
 from layout import Coord, TileTensor, Idx, coord_to_index_list
 from layout.tile_tensor import row_major
-from std.utils import StaticTuple
 from std.utils.index import IndexList
 
-from std.runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
+from std.collections import InlineArray
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of, has_amd_gpu_accelerator
 from tensor import (
@@ -78,7 +77,8 @@ from shmem.ep_comm import (
     fused_silu_nvfp4_kernel,
 )
 
-comptime RT_LAYOUT_2D = type_of(row_major(Idx(Int64(1)), Idx(Int64(1))))
+comptime RT_LAYOUT_2D = type_of(row_major(Int64(1), Int64(1)))
+
 
 # ===-----------------------------------------------------------------------===#
 # Expert Parallelism Initialization Kernel
@@ -107,7 +107,7 @@ struct Struct_ep_init:
         my_rank_tensor: OutputTensor[dtype=DType.int32, rank=1, ...],
         atomic_counters_0: MutableInputTensor[dtype=DType.int32, ...],
         atomic_counters_1: MutableInputTensor[dtype=DType.int32, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """This kernel initializes the vendor library for Expert Parallelism
         on the current GPU device. It also allocates symmetric memory buffers.
@@ -136,7 +136,7 @@ struct Struct_ep_init:
         """
         # Ensure this kernel only runs on GPU targets
         comptime assert is_gpu[target](), "EP is only supported on GPU."
-        var gpu_ctx = context.get_device_context()
+        var gpu_ctx = context
 
         # Calculate buffer sizes for dispatch phase
         var dispatch_msg_size: Int
@@ -322,7 +322,7 @@ struct Struct_ep_dispatch_async:
         send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism async dispatch kernel. Tokens are
         transferred in either Blockwise FP8 or BF16 format.
@@ -404,7 +404,7 @@ struct Struct_ep_dispatch_async_nvfp4:
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism async dispatch kernel. Tokens are
         transferred in NVFP4 format.
@@ -469,7 +469,7 @@ struct Struct_ep_dispatch_async_mxfp4:
         send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism async dispatch kernel. Tokens are
         transferred in MXFP4 format with per-token even-mode scales packed
@@ -519,6 +519,7 @@ struct Struct_ep_dispatch_wait:
         n_nodes: Int,
         //,
         target: StaticString,
+        num_input_tokens: Int = -1,
     ](
         output_tokens: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
         row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
@@ -527,7 +528,7 @@ struct Struct_ep_dispatch_wait:
         atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel. Received
         tokens are in BF16 format.
@@ -557,6 +558,7 @@ struct Struct_ep_dispatch_wait:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             atomic_counters.to_tile_tensor[DType.int64](),
             context,
+            num_input_tokens,
         )
 
 
@@ -576,6 +578,7 @@ struct Struct_ep_dispatch_wait_fp8:
         dispatch_scale_granularity: StaticString,
         //,
         target: StaticString,
+        num_input_tokens: Int = -1,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
@@ -585,7 +588,7 @@ struct Struct_ep_dispatch_wait_fp8:
         atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel. Received
         tokens are in Blockwise FP8 format.
@@ -618,6 +621,7 @@ struct Struct_ep_dispatch_wait_fp8:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             atomic_counters.to_tile_tensor[DType.int64](),
             context,
+            num_input_tokens,
         )
 
 
@@ -636,6 +640,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
         n_nodes: Int,
         //,
         target: StaticString,
+        num_input_tokens: Int = -1,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=5, ...],
@@ -646,7 +651,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
         atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel. Received
         tokens are in NVFP4 format.
@@ -663,7 +668,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
             output_tokens_tensor,
             output_scales_tensor,
             scales_offsets_tensor,
-            context[],
+            context,
         )
 
         ep_dispatch_wait_kernel_api[
@@ -681,6 +686,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             atomic_counters.to_tile_tensor[DType.int64](),
             context,
+            num_input_tokens,
         )
 
 
@@ -699,6 +705,7 @@ struct Struct_ep_dispatch_wait_mxfp4:
         n_nodes: Int,
         //,
         target: StaticString,
+        num_input_tokens: Int = -1,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
@@ -708,7 +715,7 @@ struct Struct_ep_dispatch_wait_mxfp4:
         atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism dispatch completion kernel. Received
         tokens are in MXFP4 format: two FP4 elements packed per ``uint8`` in
@@ -741,6 +748,7 @@ struct Struct_ep_dispatch_wait_mxfp4:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             atomic_counters.to_tile_tensor[DType.int64](),
             context,
+            num_input_tokens,
         )
 
 
@@ -777,7 +785,7 @@ struct Struct_ep_dispatch:
         send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the fused Expert Parallelism dispatch kernel."""
 
@@ -844,7 +852,7 @@ struct Struct_ep_dispatch_fp8:
         send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the fused Expert Parallelism FP8 dispatch kernel. Tokens are
         dispatched in Blockwise FP8 format.
@@ -914,7 +922,7 @@ struct Struct_ep_dispatch_nvfp4:
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the fused Expert Parallelism NVFP4 dispatch kernel. Tokens
         are dispatched in NVFP4 format.
@@ -936,7 +944,7 @@ struct Struct_ep_dispatch_nvfp4:
             output_tokens_tensor,
             output_scales_tensor,
             scales_offsets_tensor,
-            context[],
+            context,
         )
 
         ep_fused_dispatch_kernel_api[
@@ -999,7 +1007,7 @@ struct DistributedEPDispatchNVFP4:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextPtrList,
+        dev_ctxs: DeviceContextList,
     ) capturing raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch.
 
@@ -1010,18 +1018,7 @@ struct DistributedEPDispatchNVFP4:
         """
         comptime num_devices = input_tokens.size
 
-        # Filter the dev_ctxs list to only GPU devices. The op also takes
-        # CPU host-pointer tensors (send_ptrs, recv_ptrs, recv_count_ptrs),
-        # so the DeviceContextPtrList may contain CPU contexts.
-        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
-        var dev_idx = 0
-        for i in range(dev_ctxs.size):
-            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
-                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
-                dev_idx += 1
-        if dev_idx != num_devices:
-            raise Error("Invalid number of GPU device contexts")
-        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+        var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
 
         @always_inline
         def launch_dispatch[
@@ -1119,7 +1116,7 @@ struct DistributedEPDispatchMXFP4:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextPtrList,
+        dev_ctxs: DeviceContextList,
     ) capturing raises:
         """Multi-device fused Expert Parallelism NVFP4 dispatch.
 
@@ -1130,18 +1127,7 @@ struct DistributedEPDispatchMXFP4:
         """
         comptime num_devices = input_tokens.size
 
-        # Filter the dev_ctxs list to only GPU devices. The op also takes
-        # CPU host-pointer tensors (send_ptrs, recv_ptrs, recv_count_ptrs),
-        # so the DeviceContextPtrList may contain CPU contexts.
-        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
-        var dev_idx = 0
-        for i in range(dev_ctxs.size):
-            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
-                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
-                dev_idx += 1
-        if dev_idx != num_devices:
-            raise Error("Invalid number of GPU device contexts")
-        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+        var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
 
         @always_inline
         def launch_dispatch[
@@ -1220,21 +1206,13 @@ struct DistributedEPDispatch:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextPtrList,
+        dev_ctxs: DeviceContextList,
     ) capturing raises:
         """Multi-device fused Expert Parallelism BF16 dispatch."""
         comptime num_devices = input_tokens.size
         comptime assert dispatch_dtype == DType.bfloat16
 
-        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
-        var dev_idx = 0
-        for i in range(dev_ctxs.size):
-            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
-                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
-                dev_idx += 1
-        if dev_idx != num_devices:
-            raise Error("Invalid number of GPU device contexts")
-        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+        var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
 
         @always_inline
         def launch_dispatch[
@@ -1313,20 +1291,12 @@ struct DistributedEPDispatchFP8:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextPtrList,
+        dev_ctxs: DeviceContextList,
     ) capturing raises:
         """Multi-device fused Expert Parallelism FP8 dispatch."""
         comptime num_devices = input_tokens.size
 
-        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
-        var dev_idx = 0
-        for i in range(dev_ctxs.size):
-            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
-                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
-                dev_idx += 1
-        if dev_idx != num_devices:
-            raise Error("Invalid number of GPU device contexts")
-        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+        var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
 
         @always_inline
         def launch_dispatch[
@@ -1407,20 +1377,12 @@ struct DistributedEPCombine:
         atomic_counters: MutableInputVariadicTensors[
             dtype=DType.int32, rank=1, ...
         ],
-        dev_ctxs: DeviceContextPtrList,
+        dev_ctxs: DeviceContextList,
     ) capturing raises:
         """Multi-device fused Expert Parallelism combine with output fusion."""
         comptime num_devices = input_tokens.size
 
-        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
-        var dev_idx = 0
-        for i in range(dev_ctxs.size):
-            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
-                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
-                dev_idx += 1
-        if dev_idx != num_devices:
-            raise Error("Invalid number of GPU device contexts")
-        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+        var gpu_ctxs = dev_ctxs.filter_gpu_contexts[num_devices]()
 
         @always_inline
         def launch_combine[
@@ -1444,9 +1406,9 @@ struct DistributedEPCombine:
             def router_weights_fn[
                 width: Int
             ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
-                return rw_tensor.load[width=width](
-                    (Idx(token_idx), Idx(topk_id))
-                ).cast[DType.float32]()
+                return rw_tensor.load[width=width]((token_idx, topk_id)).cast[
+                    DType.float32
+                ]()
 
             @parameter
             @always_inline
@@ -1513,7 +1475,7 @@ struct Struct_ep_combine_async:
         send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism combine kernel."""
 
@@ -1560,7 +1522,7 @@ struct Struct_ep_combine_wait:
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism combine completion kernel."""
         var router_weights_tensor = router_weights.to_tile_tensor[DType.int64]()
@@ -1574,7 +1536,7 @@ struct Struct_ep_combine_wait:
             width: Int
         ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
             return router_weights_tensor.load[width=width](
-                (Idx(token_idx), Idx(topk_id))
+                (token_idx, topk_id)
             ).cast[DType.float32]()
 
         @parameter
@@ -1589,6 +1551,11 @@ struct Struct_ep_combine_wait:
                 rebind[SIMD[combine_dtype, width]](val),
             )
 
+        var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
+        # `output_tokens.dim(0)` is the per-token combine result count
+        # (= num_input_tokens). Pass it to enable the decode-fast-path
+        # grid sizing in `ep_combine_wait_kernel_api`.
+        var num_input_tokens = Int(output_tokens_tensor.dim(0))
         ep_combine_wait_kernel_api[
             hidden_size,
             top_k,
@@ -1602,11 +1569,12 @@ struct Struct_ep_combine_wait:
                 output_fn
             ) if lambdas_have_fusion else None,
         ](
-            output_tokens.to_tile_tensor[DType.int64](),
+            output_tokens_tensor,
             atomic_counters.to_tile_tensor[DType.int64](),
             recv_ptrs.to_tile_tensor[DType.int64](),
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             context,
+            num_input_tokens,
         )
 
 
@@ -1638,7 +1606,7 @@ struct Struct_ep_combine:
         recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the fused Expert Parallelism combine kernel."""
         var router_weights_tensor = router_weights.to_tile_tensor[DType.int64]()
@@ -1652,7 +1620,7 @@ struct Struct_ep_combine:
             width: Int
         ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
             return router_weights_tensor.load[width=width](
-                (Idx(token_idx), Idx(topk_id))
+                (token_idx, topk_id)
             ).cast[DType.float32]()
 
         @parameter
@@ -1723,7 +1691,7 @@ struct Struct_ep_combine_skip_a2a:
         recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
         router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
         topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the fused Expert Parallelism combine kernel."""
         var router_weights_tensor = router_weights.to_tile_tensor[DType.int64]()
@@ -1737,7 +1705,7 @@ struct Struct_ep_combine_skip_a2a:
             width: Int
         ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
             return router_weights_tensor.load[width=width](
-                (Idx(token_idx), Idx(topk_id))
+                (token_idx, topk_id)
             ).cast[DType.float32]()
 
         @parameter
@@ -1800,7 +1768,7 @@ struct Struct_ep_fused_silu:
         output: OutputTensor[dtype=output_dtype, rank=2, ...],
         input: InputTensor[dtype=input_dtype, rank=2, ...],
         row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism fused SILU kernel.
 
@@ -1822,7 +1790,7 @@ struct Struct_ep_fused_silu:
             DType.int64
         ]().as_immut()
 
-        var gpu_ctx = context.get_device_context()
+        var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info
 
         comptime fused_silu = fused_silu_kernel[
@@ -1874,7 +1842,7 @@ struct Struct_ep_fused_silu_fp8:
         scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
         input: InputTensor[dtype=input_dtype, rank=2, ...],
         row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism fused SILU kernel with FP8
         quantization.
@@ -1900,7 +1868,7 @@ struct Struct_ep_fused_silu_fp8:
             DType.int64
         ]().as_immut()
 
-        var gpu_ctx = context.get_device_context()
+        var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info
 
         comptime fused_silu_fp8 = fused_silu_fp8_kernel[
@@ -1958,7 +1926,7 @@ struct Struct_ep_fused_silu_mxfp4:
         scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
         input: InputTensor[dtype=input_dtype, rank=2, ...],
         row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism fused SILU kernel with MXFP4
         quantization.
@@ -1981,7 +1949,7 @@ struct Struct_ep_fused_silu_mxfp4:
             DType.int64
         ]().as_immut()
 
-        var gpu_ctx = context.get_device_context()
+        var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info
 
         comptime fused_silu_mxfp4 = fused_silu_mxfp4_kernel[
@@ -2039,7 +2007,7 @@ struct Struct_ep_fused_silu_nvfp4:
         row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         scales_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Execute the Expert Parallelism fused SILU kernel with NVFP4
         quantization.
@@ -2069,7 +2037,7 @@ struct Struct_ep_fused_silu_nvfp4:
             DType.int64
         ]().as_immut()
 
-        var gpu_ctx = context.get_device_context()
+        var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info
 
         comptime fused_silu_nvfp4 = fused_silu_nvfp4_kernel[

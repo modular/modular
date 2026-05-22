@@ -80,7 +80,7 @@ from layout.runtime_tuple import (
 from layout.tensor_core_async import tile_layout_k_major
 
 from std.utils.index import Index, IndexList
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.utils.static_tuple import StaticTuple
 from layout.layout_tensor import LayoutTensorIter
 
@@ -535,6 +535,39 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         """
         return mbarrier_arrive(self.unsafe_ptr())
 
+    @always_inline
+    def complete_transaction(
+        ref[AddressSpace.SHARED] self,
+        dst_cta_id: UInt32,
+        bytes: Int32,
+        pred: UInt32,
+    ):
+        """Manually advances the barrier's expected-bytes count without performing a real transfer.
+
+        Used to honor an outstanding `expect_bytes` on a barrier when the
+        corresponding TMA load has been elided (for example, when all gathered
+        indices in a sparse-gather are invalid and the load was skipped). The
+        consumer still waits on the barrier; this satisfies that wait so the
+        pipeline doesn't deadlock.
+
+        Args:
+            dst_cta_id: ID of the CTA whose barrier should be advanced.
+            bytes: Number of bytes to credit toward the barrier's expected count.
+            pred: Predicate (1 to apply the credit, 0 to skip). Used so only one
+                lane in a warp issues the credit.
+        """
+        comptime asm = """{
+            .reg .pred p;
+            .reg .s32 remAddr32;
+            setp.eq.u32 p, $3, 1;
+            mapa.shared::cluster.u32  remAddr32, $0, $1;
+            @p mbarrier.complete_tx.relaxed.cluster.shared::cluster.b64 [remAddr32], $2;
+        }"""
+
+        inlined_assembly[asm, NoneType, constraints="r,r,r,r"](
+            Int32(Int(self.unsafe_ptr())), dst_cta_id, bytes, pred
+        )
+
 
 struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterPassable):
     """Manages state for a multi-stage pipeline with circular buffer semantics.
@@ -718,9 +751,11 @@ struct TMATensorTile[
     comptime device_type: AnyType = Self
     """The device-side type representation."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -2382,6 +2417,73 @@ struct TMATensorTile[
         comptime assert (
             type_of(dst).alignment % 128 == 0
         ), "TMA requires 128B alignment in shared memory"
+
+        comptime assert (
+            type_of(dst).dtype == Self.dtype
+        ), "Input tensor has a different type than the TMA op"
+
+        cp_async_bulk_tensor_2d_gather4[
+            cta_group=cta_group,
+            eviction_policy=eviction_policy,
+        ](
+            dst.ptr.mut_cast[True](),
+            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+            mem_barrier.unsafe_ptr(),
+            col_idx,
+            row0,
+            row1,
+            row2,
+            row3,
+        )
+
+    @always_inline("nodebug")
+    def async_copy_gather4[
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[Self.dtype, address_space=AddressSpace.SHARED, ...],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        col_idx: Int32,
+        row0: Int32,
+        row1: Int32,
+        row2: Int32,
+        row3: Int32,
+    ):
+        """Schedules an asynchronous gather4 copy of 4 non-contiguous rows from global memory to shared memory.
+
+        This method uses the TMA gather4 hardware instruction (SM100/Blackwell) to load 4 rows
+        at arbitrary row indices from a 2D tensor in global memory, placing them contiguously
+        in shared memory. The TMA descriptor must be configured with box dim1=1 (one row per tile).
+
+        Parameters:
+            cta_group: If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion. Defaults to 1.
+            eviction_policy: Cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: The destination tensor in shared memory where data will be copied.
+                Must be 128-byte aligned.
+            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
+            col_idx: Column offset in the source tensor (typically 0 for full-row loads).
+            row0: Row index of the first row to gather.
+            row1: Row index of the second row to gather.
+            row2: Row index of the third row to gather.
+            row3: Row index of the fourth row to gather.
+
+        Constraints:
+            - Requires rank == 2 (gather4 is 2D only).
+            - Requires desc_shape[0] == 1 (gather4 hardware requirement: one row per tile).
+            - The destination tensor must be 128-byte aligned in shared memory.
+            - Requires SM100 (Blackwell) or newer GPU architecture.
+        """
+        comptime assert (
+            Self.rank == 2
+        ), "gather4 is only supported for 2D tensors (rank == 2)"
+        comptime assert (
+            Self.desc_shape[0] == 1
+        ), "gather4 requires desc_shape row dimension == 1 (one row per tile)"
 
         comptime assert (
             type_of(dst).dtype == Self.dtype
@@ -4969,9 +5071,11 @@ struct TMATensorTileArray[
     comptime device_type: AnyType = Self
     """The device-side type representation."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -5080,9 +5184,11 @@ struct RaggedTMA3DTile[
     ]()
     """The unswizzled-smem layout copied to/from by this tma op."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -5456,14 +5562,17 @@ struct RaggedTensorMap[
     comptime ragged_descriptor_shape = Self._descriptor_shape()
     """The shape of the descriptor that will tile and load from shared -> global memory."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """
         Copies this descriptor array to device memory.
 
         Args:
+            encoder: The device specific type encoder.
             target: Opaque pointer to the target device memory location.
         """
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -5834,9 +5943,11 @@ struct TMATensorTileIm2col[
     comptime device_type: AnyType = Self
     """The device-side type representation."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

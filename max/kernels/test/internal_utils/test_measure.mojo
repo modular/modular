@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.gpu.host import DeviceContext
+
 from internal_utils import correlation, kl_div
 from internal_utils._testing import assert_with_measure
 from std.itertools import product
@@ -33,7 +35,7 @@ def test_assert_with_custom_measure() raises:
     assert_with_measure[always_zero](t0.unsafe_ptr(), t1.unsafe_ptr(), 100)
 
 
-def test_correlation() raises:
+def test_correlation(ctx: DeviceContext) raises:
     var a = 10
     var b = 10
     var len = a * b
@@ -51,26 +53,26 @@ def test_correlation() raises:
     assert_almost_equal(
         1.0,
         correlation[out_type=DType.float64](
-            u.unsafe_ptr(), u.unsafe_ptr(), len
+            u.unsafe_ptr(), u.unsafe_ptr(), len, ctx
         ),
     )
     assert_almost_equal(
         -1.0,
         correlation[out_type=DType.float64](
-            u.unsafe_ptr(), v.unsafe_ptr(), len
+            u.unsafe_ptr(), v.unsafe_ptr(), len, ctx
         ),
     )
     # +/- 0.773957299203321 is the exactly rounded fp64 answer calculated using mpfr
     assert_almost_equal(
         0.773957299203321,
         correlation[out_type=DType.float64](
-            u.unsafe_ptr(), x.unsafe_ptr(), len
+            u.unsafe_ptr(), x.unsafe_ptr(), len, ctx
         ),
     )
     assert_almost_equal(
         -0.773957299203321,
         correlation[out_type=DType.float64](
-            v.unsafe_ptr(), x.unsafe_ptr(), len
+            v.unsafe_ptr(), x.unsafe_ptr(), len, ctx
         ),
     )
 
@@ -94,6 +96,7 @@ def test_kl_div() raises:
 
 
 def main() raises:
-    test_assert_with_custom_measure()
-    test_correlation()
-    test_kl_div()
+    with DeviceContext(api="cpu") as ctx:
+        test_assert_with_custom_measure()
+        test_correlation(ctx)
+        test_kl_div()

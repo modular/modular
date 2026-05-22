@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from std.runtime.asyncrt import DeviceContextPtr
+
+from std.gpu.host import DeviceContext
 from tensor import InputTensor, OutputTensor, foreach
 
 from std.utils.index import IndexList
@@ -26,7 +27,7 @@ struct AddConstantCustom[value: Int]:
     ](
         outp: OutputTensor,
         x: InputTensor[dtype=outp.dtype, rank=outp.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         @parameter
         @always_inline

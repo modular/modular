@@ -128,6 +128,8 @@ def test_eagle_structured_output_json_schema_gpu(
                 },
                 "required": ["name", "age"],
             },
+            grammar_enforced=True,
+            tools_forced=False,
         ),
     )
 
@@ -262,6 +264,8 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
                 },
                 "required": ["name", "age"],
             },
+            grammar_enforced=True,
+            tools_forced=False,
         ),
     )
 

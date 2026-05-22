@@ -71,19 +71,19 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
     var c_tt_bf16 = TileTensor(
         c_device,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt_bf16 = TileTensor(
         UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt_bf16 = TileTensor(
         UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -120,19 +120,19 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     # Create TileTensors for fp32 kernel.
     var c_tt_fp32 = TileTensor(
         c_device_n,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt_fp32 = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt_fp32 = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -254,19 +254,19 @@ def run_matmul[
 
     var c_tt = TileTensor(
         c_device_n,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -404,19 +404,19 @@ def run_matmul_split_k[
 
     var c_tt = TileTensor(
         c_device_n,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     comptime kernel = matmul_kernel_naive[
@@ -537,19 +537,19 @@ def run_matmul_transpose[
 
     var c_tt = TileTensor(
         c_device_n,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
-        row_major(Coord(Idx(N), Idx(K))),
+        row_major(Coord(N, K)),
     )
 
     @always_inline
@@ -640,15 +640,15 @@ def run_batched_matmul(
     var c_device = ctx.enqueue_create_buffer[DType.bfloat16](B * M * N)
     var a_tensor = TileTensor(
         a_device,
-        row_major(Coord(Idx(B), Idx(M), Idx(K))),
+        row_major(Coord(B, M, K)),
     )
     var b_tensor = TileTensor(
         b_device,
-        row_major(Coord(Idx(B), Idx(K), Idx(N))),
+        row_major(Coord(B, K, N)),
     )
     var c_tensor = TileTensor(
         c_device,
-        row_major(Coord(Idx(B), Idx(M), Idx(N))),
+        row_major(Coord(B, M, N)),
     )
 
     var a_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * K)
@@ -656,16 +656,16 @@ def run_batched_matmul(
     var c_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * N)
     var a_tensor_n = TileTensor(
         a_device_n,
-        row_major(Coord(Idx(B), Idx(M), Idx(K))),
+        row_major(Coord(B, M, K)),
     )
     var b_tensor_n = TileTensor(
         b_device_n,
-        row_major(Coord(Idx(B), Idx(K), Idx(N))),
+        row_major(Coord(B, K, N)),
     )
 
     var c_tensor_n = TileTensor(
         c_device_n,
-        row_major(Coord(Idx(B), Idx(M), Idx(N))),
+        row_major(Coord(B, M, N)),
     )
 
     ctx.enqueue_copy(a_device, a_host)

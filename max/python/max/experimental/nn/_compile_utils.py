@@ -214,7 +214,7 @@ def _reconstruct_outputs(
                 raw_results[slot.start + i] for i in range(slot.count)
             )
             gshape = global_shape_from_local(
-                buffers[0].shape,
+                [buf.shape for buf in buffers],
                 _mesh,
                 _placements,
             )
@@ -229,7 +229,7 @@ def _reconstruct_outputs(
         else:
             assert isinstance(raw_results[slot.start], driver.Buffer)
             results.append(Tensor(storage=raw_results[slot.start]))
-    return results[0] if unary else results
+    return results[0] if unary else tuple(results)
 
 
 def _flatten_named_buffers(

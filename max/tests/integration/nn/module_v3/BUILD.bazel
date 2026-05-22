@@ -19,6 +19,7 @@ modular_py_test(
         "rope/test_yarn.py": ["manual"],
         "test_module.py": ["skip-external-ci"],
         "test_module_gpt2.py": ["manual"],
+        "test_module_typing.py": ["skip-external-ci"],
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -32,5 +33,6 @@ modular_py_test(
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         requirement("torch"),
+        requirement("typing-extensions"),
     ],
 )

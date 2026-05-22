@@ -21,7 +21,7 @@ from internal_utils import (
     int_list_to_tuple,
     CacheBustingBuffer,
 )
-from std.runtime.asyncrt import DeviceContextPtr
+
 from layout import (
     Coord,
     Idx,
@@ -196,13 +196,13 @@ def bench_rms_norm_fused_fp8[
                 UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
                     cb_fp8_output.offset_ptr(iteration)
                 ),
-                row_major(Coord(Idx(rows), Idx(cols))),
+                row_major(Coord(rows, cols)),
             )
             var scales_tt = TileTensor(
                 UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
                     scales_base_ptr
                 ),
-                row_major(Coord(Idx(1), Idx(rows))),
+                row_major(Coord(Idx[1](), rows)),
             )
 
             quantize_dynamic_scaled_fp8[
@@ -272,8 +272,8 @@ def bench_rms_norm_fused_fp8[
                 row_major(Coord(fused_scale_shape)),
             )
 
-            # DeviceContextPtr has an @implicit constructor from DeviceContext
-            var ctx_ptr = DeviceContextPtr(ctx_)
+            # DeviceContext is passed directly
+            var ctx_ptr = ctx_
             rms_norm_fused_fp8[
                 in_dtype,
                 out_dtype,
@@ -368,11 +368,11 @@ def bench_rms_norm_fused_fp8[
 
     var fp8_output_tt_verify = TileTensor(
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fp8_verify_base_ptr),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var scales_tt_verify = TileTensor(
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin](scales_base_ptr),
-        row_major(Coord(Idx(1), Idx(rows))),
+        row_major(Coord(Idx[1](), rows)),
     )
 
     quantize_dynamic_scaled_fp8[
@@ -410,7 +410,7 @@ def bench_rms_norm_fused_fp8[
         row_major(Coord(verify_scale_shape)),
     )
 
-    var ctx_ptr_verify = DeviceContextPtr(ctx)
+    var ctx_ptr_verify = ctx
     rms_norm_fused_fp8[
         in_dtype,
         out_dtype,

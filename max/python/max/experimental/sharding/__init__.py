@@ -49,6 +49,7 @@ from .shapes import (
     global_shape_from_local,
     local_shard_shape_from_global,
     shard_shape,
+    sharded_symbolic_dim,
 )
 from .types import (
     DistributedBufferType,
@@ -77,4 +78,5 @@ __all__ = [
     "global_shape_from_local",
     "local_shard_shape_from_global",
     "shard_shape",
+    "sharded_symbolic_dim",
 ]

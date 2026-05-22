@@ -18,6 +18,7 @@ around the target location to compute the interpolated value.
 """
 from std.math import clamp, floor
 
+from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_gpu
 from std.gpu import block_dim, block_idx, thread_idx
 from layout import (
@@ -28,7 +29,6 @@ from layout import (
     coord,
     coord_to_index_list,
 )
-from std.runtime.asyncrt import DeviceContextPtr
 from std.itertools import product
 
 
@@ -210,7 +210,7 @@ def gpu_bicubic_kernel[
 
     comptime assert input.flat_rank == 4
     comptime assert output.flat_rank == 4
-    # Provide evidence that flat_rank >= 4 for the Coord(Idx(...), ...) loads/stores below.
+    # Provide evidence that flat_rank >= 4 for the Coord(..., ...) loads/stores below.
     comptime assert input.flat_rank >= 4
     comptime assert output.flat_rank >= 4
 
@@ -266,13 +266,13 @@ def gpu_bicubic_kernel[
 
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = input.load[width=1](
-                Coord(Idx(b), Idx(c), Idx(y_pos), Idx(x_pos))
+                Coord(b, c, y_pos, x_pos)
             ).cast[DType.float32]()
             sum_value += pixel_value * weight
             sum_weights += weight
 
         output.store[width=1](
-            Coord(Idx(b), Idx(c), Idx(y_out), Idx(x_out)),
+            Coord(b, c, y_out, x_out),
             sum_value.cast[dtype](),
         )
 
@@ -286,7 +286,7 @@ def resize_bicubic[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Perform bicubic interpolation.
 
@@ -313,7 +313,7 @@ def resize_bicubic[
             input_origin=ImmutOrigin(input.origin),
             InputLayoutType=input.LayoutType,
         ]
-        ctx.get_device_context().enqueue_function[kernel](
+        ctx.enqueue_function[kernel](
             output,
             input.as_immut(),
             grid_dim=(N, C),

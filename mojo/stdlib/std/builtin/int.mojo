@@ -26,7 +26,7 @@ from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.sys.info import is_32bit
 from std.sys.info import bit_width_of
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import Absable, DivModable, Powable
 from std.python import (
     ConvertibleFromPython,
@@ -37,6 +37,7 @@ from std.python import (
 
 from std.utils._select import _select_register_value as select
 from std.utils._visualizers import lldb_formatter_wrapping_type
+from std.utils.coord import Coord, CoordLike
 
 # ===----------------------------------------------------------------------=== #
 #  Indexer
@@ -85,7 +86,7 @@ def index[T: Indexer](idx: T, /) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-trait Intable(ImplicitlyDestructible):
+trait Intable:
     """The `Intable` trait describes a type that can be converted to an Int.
 
     Any type that conforms to `Intable` or
@@ -190,6 +191,7 @@ struct Int(
     Comparable,
     ConvertibleFromPython,
     ConvertibleToPython,
+    CoordLike,
     Defaultable,
     DevicePassable,
     DivModable,
@@ -232,9 +234,11 @@ struct Int(
     comptime device_type: AnyType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1092,6 +1096,24 @@ struct Int(
         Raises:
             An error if the conversion failed.
         """
+        # Fast path: if the input is exactly a Python `int` (not a subclass),
+        # call `PyLong_AsSsize_t` directly on its borrowed pointer. This is
+        # the common case for any Mojo function bound through
+        # `PythonModuleBuilder.def_function` that accepts integer args, and
+        # the FFI overhead dominates if we route every conversion through
+        # `__int__()` + `PyNumber_Long`. `PyLong_CheckExact` rejects `int`
+        # subclasses with overridden `__int__` so they keep observing their
+        # override via the fallback (matching CPython's `int(x)` semantics);
+        # the fallback also handles non-int objects with an `__int__` method
+        # (e.g. `numpy.int64`). The error check is inlined rather than
+        # delegating to `Python.py_long_as_ssize_t` to avoid a second
+        # `Python().cpython()` lookup on the hot path.
+        ref cpy = Python().cpython()
+        if cpy.PyLong_CheckExact(py._obj_ptr):
+            self = cpy.PyLong_AsSsize_t(py._obj_ptr)
+            if self == -1 and cpy.PyErr_Occurred():
+                raise cpy.unsafe_get_error()
+            return
         self = Python.py_long_as_ssize_t(py.__int__())
 
     def to_python_object(var self) raises -> PythonObject:
@@ -1154,3 +1176,65 @@ struct Int(
             return _calc_initial_buffer_size_int32(n)
 
         return _calc_initial_buffer_size_int64(UInt64(n))
+
+    # ===-------------------------------------------------------------------===#
+    # CoordLike
+    # ===-------------------------------------------------------------------===#
+
+    comptime ParamListType = Coord[Scalar[DType.int]].element_types
+    """The element types (Self for scalar types)."""
+
+    comptime _ParamListType = Self.ParamListType.values
+    """The low-level parameter list of element types."""
+
+    comptime static_value: Int = -1
+    """Always -1 for runtime values (not statically known)."""
+
+    comptime DTYPE = DType.int
+    """The data type for the runtime integer value."""
+
+    @staticmethod
+    @always_inline("nodebug")
+    def __len__() -> Int:
+        """Get the length (always 1 for scalar types).
+
+        Returns:
+            Always returns 1.
+        """
+        return 1
+
+    @always_inline("nodebug")
+    def product(self) -> Scalar[Self.DTYPE]:
+        """Calculate the product (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
+        return self.value()
+
+    @always_inline("nodebug")
+    def sum(self) -> Scalar[Self.DTYPE]:
+        """Calculate the sum (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
+        return self.value()
+
+    @always_inline("nodebug")
+    def value(self) -> Scalar[Self.DTYPE]:
+        """Get the scalar value.
+
+        Returns:
+            The runtime integer value.
+        """
+        return Scalar[DType.int](self)
+
+    @always_inline("nodebug")
+    def tuple(var self) -> Coord[*Self.ParamListType]:
+        """Get as a tuple (not valid for `Scalar`).
+
+        Returns:
+            Never returns; aborts at compile time.
+        """
+        comptime assert False, "Int is not a tuple type"

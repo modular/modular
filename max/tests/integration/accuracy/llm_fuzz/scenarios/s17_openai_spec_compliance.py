@@ -717,7 +717,7 @@ class OpenAISpecCompliance(BaseScenario):
                     continue
                 chunk_data, err = parse_json(raw)
                 if err or chunk_data is None:
-                    all_errors.append(f"Unparseable chunk: {raw[:100]}")
+                    all_errors.append(f"Unparsable chunk: {raw[:100]}")
                     continue
                 data_chunks.append(chunk_data)
 

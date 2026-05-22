@@ -19,7 +19,6 @@ from std.utils.coord import (
     CoordLike,
     DynamicCoord,
     Idx,
-    RuntimeInt,
     coord,
     coord_to_index_list,
     crd2idx,

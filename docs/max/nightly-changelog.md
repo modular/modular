@@ -17,6 +17,26 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Added two opt-in server flags for accepting OpenAI-compatible requests
+  that the strict default behavior would reject:
+
+  - `--allow-unsupported-logprobs`: when a request asks for `logprobs`
+    against a runtime that cannot honor them (today, the overlap
+    scheduler), MAX Serve logs a warning and serves the request without
+    logprobs instead of returning a `400`.
+
+  - `--allow-extra-request-fields`: unknown top-level fields on
+    `/v1/chat/completions` and `/v1/completions` request bodies are
+    dropped (with a warning) before pydantic validation, instead of
+    returning a `400`. Useful when an upstream proxy sends vendor-specific
+    fields that MAX Serve does not need to honor.
+
+  Both flags default to `False`; the existing strict behavior is
+  unchanged. The corresponding `400` error messages now reference the new
+  flags. As a side effect, the legacy `/v1/completions` route now surfaces
+  `InputError` detail strings to the client instead of the generic
+  `"Value error."` message.
+
 - MAX Serve now emits the `maxserve.num_requests_queued` OTel/Prometheus
   metric (changed from an `UpDownCounter` to a synchronous `Gauge`). The
   gauge is sampled once per scheduler iteration from
@@ -28,6 +48,12 @@ This version is still a work in progress.
   `len(pending_reqs) + len(prefill_reqs)`). Operators can use this metric
   to observe queue buildup during overload conditions.
 
+- Added a `"none"` option for `runtime.tool_parser` and
+  `runtime.reasoning_parser` in `PipelineConfig` (CLI flags `--tool-parser`
+  and `--reasoning-parser`). Pass `none` (case-insensitive) to explicitly
+  disable the parser, overriding any architecture-declared default. Leaving
+  the field unset still applies the architecture default as before.
+
 ### `max` CLI
 
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
@@ -35,6 +61,38 @@ This version is still a work in progress.
   or config default.
 
 ### Python API
+
+- Reduced default signal buffer size from 1025 to 257 MiB per GPU and fixed
+  miscalculation of required space in `MOGGKernelAPI.mojo`. Calculation was
+  wrong by a factor of `1/num_devices` since each device only needs scratch
+  for its own portion of the collective problem. Reduces footprint for current
+  heaviest workload (Kimi-K2.5 with `BlockCopyEngine`) from 16GB to 4GB.
+
+- Added `max.driver.CompletionFlag`, an 8-byte completion flag in pinned host
+  memory mapped into a device's address space. Lets host code signal a GPU
+  stream (or peer host observer) by writing a 64-bit value to a single
+  location visible to both. Currently CUDA-only; constructing against any
+  other backend raises `RuntimeError`.
+
+- Added `Device.__unsafe_enqueue_async_py_host_func(fn, flag, value, cpu)`
+  and `DeviceStream.wait_for_host_value(flag, value)` for dispatching a
+  Python callable onto an explicit AsyncRT worker pool from a host-function
+  node and gating the GPU stream on its completion (via the
+  `CompletionFlag`). The kickoff trampoline returns immediately, letting
+  the GPU stream proceed concurrently with the worker; a downstream
+  `wait_for_host_value` blocks the stream until the worker stores `value`.
+  The `__unsafe_` prefix marks that the API has no safety net for
+  callbacks that capture state outliving the compiled graph.
+
+- Added the `mo.wait_host_value` graph op and the
+  `max.nn.kernels.wait_host_value()` Python helper that wraps it. Stalls
+  the device stream until a 64-bit host-visible flag reaches a given
+  value; lowers to CUDA's `cuStreamWaitValue64` and captures cleanly into
+  a CUDA graph as a wait-value node. Lets a captured forward graph gate
+  a downstream consumer kernel on CPU-produced data while the rest of
+  the forward body runs concurrently. Pair with `mo.launch_host_func`
+  or `Device.__unsafe_enqueue_async_py_host_func` to issue the host
+  work whose completion the consumer waits on.
 
 - Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
   per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
@@ -137,6 +195,16 @@ This version is still a work in progress.
   ```
 
   Deprecation shims with `DeprecationWarning` remain at the old path.
+
+- Custom Mojo ops used through `max.experimental.torch.CustomOpLibrary` (and
+  the rest of the graph-compiler custom-op path) must now declare their
+  `ctx` parameter as `DeviceContext` instead of `DeviceContextPtr`. The
+  `DeviceContextPtr` type has been removed from the Mojo standard library;
+  see the [Mojo nightly
+  changelog](https://docs.modular.com/mojo/changelog/) entry under
+  *Removed* for the full migration. Multi-device ops should declare their
+  variadic context argument as `DeviceContextList[N]` (also new — see the
+  Mojo changelog *GPU programming* section).
 
 - GPU and CPU diagnostic tooling has moved from `max.diagnostics` to
   `max.profiler`: `max.diagnostics.gpu` → `max.profiler.gpu` and

@@ -76,8 +76,6 @@ def main():
 
 A struct body can contain these elements:
 
-<!-- markdownlint-disable MD013 -->
-
 | Element               | Syntax                        | Role                       |
 |-----------------------|-------------------------------|----------------------------|
 | Field                 | `var name: Type`              | Instance data              |
@@ -86,8 +84,6 @@ A struct body can contain these elements:
 | Compile-time constant | `comptime name = value`       | Evaluated at compile time  |
 | Initializer           | `def __init__(out self, ...)` | Constructs an instance     |
 | Destructor            | `def __del__(deinit self)`    | Cleanup at end of lifetime |
-
-<!-- markdownlint-enable MD013 -->
 
 The most minimal struct uses `pass` for an empty body:
 

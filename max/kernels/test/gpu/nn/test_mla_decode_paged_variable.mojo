@@ -306,17 +306,17 @@ def run_test_paged_variable[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # -----------------------------------------------------------------------
@@ -426,14 +426,14 @@ def run_test_paged_variable[
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
             q_b_device,
-            row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
+            row_major((Idx[1](), Idx[1](), Idx[num_heads](), Idx[DEPTH]())),
         )
         var k_b_tt = TileTensor(
             k_b_device,
             row_major(
                 (
-                    Idx(1),
-                    Idx(ref_num_keys),
+                    Idx[1](),
+                    ref_num_keys,
                     Idx[KV_NUM_HEADS](),
                     Idx[DEPTH](),
                 )
@@ -441,7 +441,7 @@ def run_test_paged_variable[
         )
         var ref_b_tt = TileTensor(
             ref_b_device,
-            row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
+            row_major((Idx[1](), Idx[1](), Idx[num_heads](), Idx[DEPTH]())),
         )
 
         # Run mha_gpu_naive: batch_size=1, num_keys=ref_num_keys
@@ -759,17 +759,17 @@ def run_test_paged_variable_multiq[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # -----------------------------------------------------------------------
@@ -875,15 +875,15 @@ def run_test_paged_variable_multiq[
         var q_b_tt = TileTensor(
             q_b_device,
             row_major(
-                (Idx(1), Idx(q_max_seq_len), Idx[num_heads](), Idx[DEPTH]())
+                (Idx[1](), q_max_seq_len, Idx[num_heads](), Idx[DEPTH]())
             ),
         )
         var k_b_tt = TileTensor(
             k_b_device,
             row_major(
                 (
-                    Idx(1),
-                    Idx(ref_num_keys),
+                    Idx[1](),
+                    ref_num_keys,
                     Idx[KV_NUM_HEADS](),
                     Idx[DEPTH](),
                 )
@@ -892,7 +892,7 @@ def run_test_paged_variable_multiq[
         var ref_b_tt = TileTensor(
             ref_b_device,
             row_major(
-                (Idx(1), Idx(q_max_seq_len), Idx[num_heads](), Idx[DEPTH]())
+                (Idx[1](), q_max_seq_len, Idx[num_heads](), Idx[DEPTH]())
             ),
         )
 
@@ -1253,17 +1253,17 @@ def run_test_paged_variable_ragged_q[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # -----------------------------------------------------------------------
@@ -1373,14 +1373,14 @@ def run_test_paged_variable_ragged_q[
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
             q_b_device,
-            row_major((Idx(1), Idx(b_seq_len), Idx[num_heads](), Idx[DEPTH]())),
+            row_major((Idx[1](), b_seq_len, Idx[num_heads](), Idx[DEPTH]())),
         )
         var k_b_tt = TileTensor(
             k_b_device,
             row_major(
                 (
-                    Idx(1),
-                    Idx(ref_num_keys),
+                    Idx[1](),
+                    ref_num_keys,
                     Idx[KV_NUM_HEADS](),
                     Idx[DEPTH](),
                 )
@@ -1388,7 +1388,7 @@ def run_test_paged_variable_ragged_q[
         )
         var ref_b_tt = TileTensor(
             ref_b_device,
-            row_major((Idx(1), Idx(b_seq_len), Idx[num_heads](), Idx[DEPTH]())),
+            row_major((Idx[1](), b_seq_len, Idx[num_heads](), Idx[DEPTH]())),
         )
 
         # Run mha_gpu_naive: batch_size=1, seq_len=b_seq_len
@@ -1691,17 +1691,17 @@ def run_bench_paged_variable[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # Step 7: Pre-compute scalar args and benchmark
@@ -2026,17 +2026,17 @@ def run_test_paged_variable_native_fp8[
     # Q is FP8, output is BF16
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # -----------------------------------------------------------------------
@@ -2142,14 +2142,14 @@ def run_test_paged_variable_native_fp8[
         # Build 4D TileTensors (all BF16 for reference)
         var q_b_tt = TileTensor(
             q_b_device,
-            row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
+            row_major((Idx[1](), Idx[1](), Idx[num_heads](), Idx[DEPTH]())),
         )
         var k_b_tt = TileTensor(
             k_b_device,
             row_major(
                 (
-                    Idx(1),
-                    Idx(ref_num_keys),
+                    Idx[1](),
+                    ref_num_keys,
                     Idx[KV_NUM_HEADS](),
                     Idx[DEPTH](),
                 )
@@ -2157,7 +2157,7 @@ def run_test_paged_variable_native_fp8[
         )
         var ref_b_tt = TileTensor(
             ref_b_device,
-            row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
+            row_major((Idx[1](), Idx[1](), Idx[num_heads](), Idx[DEPTH]())),
         )
 
         # Run mha_gpu_naive with BF16 inputs
@@ -2449,17 +2449,17 @@ def run_bench_paged_variable_native_fp8[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # Step 7: Pre-compute scalar args and benchmark

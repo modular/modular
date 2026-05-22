@@ -37,6 +37,8 @@ from max.interfaces import (
     ToolParser,
 )
 
+__all__ = ["get_parser_cls"]
+
 logger = logging.getLogger(__name__)
 
 _TOOL_PARSERS: dict[str, type[ToolParser]] = {}
@@ -60,6 +62,18 @@ def create(name: str) -> ToolParser:
             f"Unknown tool parser: {name!r}. Available: {sorted(_TOOL_PARSERS)}"
         )
     return cls()
+
+
+def get_parser_cls(name: str | None) -> type[ToolParser] | None:
+    """Look up a registered parser *class* by name without instantiating it.
+
+    Returns ``None`` if no parser is registered under that name, or if
+    ``name`` is ``None``. Useful for callers that need to read class-level
+    attributes (e.g., structural tag delimiters).
+    """
+    if name is None:
+        return None
+    return _TOOL_PARSERS.get(name)
 
 
 # ---------------------------------------------------------------------------

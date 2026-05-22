@@ -16,7 +16,7 @@ from std.collections import Optional
 from std.math import ceildiv, floor
 from std.os import getenv
 from std.sys import argv, get_defined_bool, get_defined_string
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.memory import bitcast
 from std.benchmark import (
     Bench,
@@ -43,8 +43,10 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

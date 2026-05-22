@@ -292,9 +292,9 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
             # Tail of the input list is the EP comm buffers, present for
             # both TP_EP and DP_EP. Empty in TP_TP.
-            ep_model_inputs = list(inputs_iter)
-            if ep_manager is not None:
-                ep_manager.fetch_buffers(ep_model_inputs)
+            ep_model_inputs = (
+                list(inputs_iter) if ep_manager is not None else None
+            )
 
             outputs = nn_model(
                 tokens.tensor,
@@ -312,6 +312,7 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                     if data_parallel_splits is not None
                     else None
                 ),
+                ep_inputs=ep_model_inputs,
             )
 
             graph.output(*outputs)

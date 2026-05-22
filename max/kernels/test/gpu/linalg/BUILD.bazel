@@ -131,12 +131,12 @@ _EXTRA_CONSTRAINTS = {
     # 4-wave matmul kernels are MI355X-specific (CDNA4 16x16x128 FP8 /
     # 16x16x32 bf16+fp16 MFMA + HK chiplet/L2 swizzle); other AMD parts
     # and all NVIDIA / Apple parts can't compile or run them.
-    "test_4wave.mojo": ["//:mi355_gpu"],
-    # `test_4wave_scheduled.mojo` is dtype-parameterized; the per-dtype
-    # targets are declared explicitly below (excluded from the main glob).
-    "test_4wave_split_k.mojo": ["//:mi355_gpu"],
+    # Each test iterates dtype (FP8 / BF16 / FP16) inside `main()` —
+    # HK MHA pattern; single BUILD target per file (no dtype for-loop).
+    "test_4wave_matmul.mojo": ["//:mi355_gpu"],
     "test_4wave_epilogue.mojo": ["//:mi355_gpu"],
-    "test_4wave_split_k_epilogue.mojo": ["//:mi355_gpu"],
+    "test_4wave_split_k.mojo": ["//:mi355_gpu"],
+    "test_4wave_nonaligned.mojo": ["//:mi355_gpu"],
     "test_gemm_mma_cpasync.mojo": ["//:b200_gpu"],
 } | {
     # Grouped GEMM infra tests - work on any NVIDIA GPU with 32-thread warps
@@ -471,46 +471,8 @@ mojo_test(
             "test_matmul_pdl_race.mojo",
             "test_grouped_matmul_swiglu_nvfp4_interleave.mojo",
             "test_grouped_matmul_swiglu_nvfp4_dispatch.mojo",
-            # Dtype-parameterized 4-wave scheduled test (explicit
-            # per-dtype targets are declared after this glob).
-            "test_4wave_scheduled.mojo",
         ],
     )
-]
-
-# Dtype-parameterized 4-wave scheduled correctness tests. Single source
-# file (`test_4wave_scheduled.mojo`); one `mojo_test` target per dtype,
-# each with `-D DTYPE=<dtype>`. MI355X-only per kernel constraints.
-[
-    mojo_test(
-        name = "test_4wave_scheduled_" + dtype + ".mojo.test",
-        size = "large",
-        srcs = ["test_4wave_scheduled.mojo"],
-        copts = [
-            "-D",
-            "DTYPE=" + dtype,
-        ],
-        exec_properties = {
-            "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
-        },
-        tags = ["gpu"],
-        target_compatible_with = [
-            "//:has_gpu",
-            "//:mi355_gpu",
-        ],
-        deps = [
-            "//max:internal_utils",
-            "//max:linalg",
-            "//max:structured_kernels",
-            "@mojo//:std",
-            "@mojo//:test_utils",
-        ],
-    )
-    for dtype in [
-        "float8_e4m3fn",
-        "bfloat16",
-        "float16",
-    ]
 ]
 
 filegroup(

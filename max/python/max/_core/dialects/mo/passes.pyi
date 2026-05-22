@@ -30,9 +30,7 @@ def MOToMOGG(
     TODO: Expand this to also perform lowering search
     """
 
-def AddFallbackShapeFunctions(
-    kernel_library_paths: Sequence[str] = [],
-) -> max._core.Pass:
+def AddFallbackShapeFunctions() -> max._core.Pass:
     """
     This ensures all MO operations will have parameterized outputs by checking
     if they have already been parameterized and if not materializing a fallback
@@ -122,6 +120,21 @@ def ConstantFoldSubgraphTest() -> max._core.Pass:
     ```
     which is the full graph followed by zero or more occurrences of word
     'subgraph' with the values that compose a constant subgraph.
+    """
+
+def CreateParallelFromUnbundle() -> max._core.Pass:
+    """
+    For each `mo.tensor.unbundle` whose N results each have exactly one user
+    and whose user set is structurally identical, creates a new
+    `mo.parallel` region downstream of the unbundle containing a single
+    clone of the consumer.  The new parallel's primary input bundle is
+    built from the unbundle's N results; additional consumer operands
+    whose per-launch values vary are bundled into new inputs.
+
+    The transient `bundle(unbundle(X)...)` introduced as the primary input
+    folds back to `X` via canonicalization, leaving the new region
+    adjacent to the producer for `mo-merge-adjacent-parallels` to match by
+    SSA equality.
     """
 
 def DebugPrintAllTensorsPass() -> max._core.Pass:

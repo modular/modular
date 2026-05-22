@@ -71,8 +71,10 @@ def _sanity_check() -> None:
     """Fail fast if the binding is wired up wrong, so we don't publish noise."""
     assert mojo_module.noop_def(1) == 1
     assert mojo_module.noop_raw(1) == 1
+    assert mojo_module.noop_raw_fastcall(1) == 1
     assert mojo_module.add_def(1, 2) == 3
     assert mojo_module.add_raw(1, 2) == 3
+    assert mojo_module.add_raw_fastcall(1, 2) == 3
 
 
 def main() -> int:
@@ -81,8 +83,10 @@ def main() -> int:
     g: dict[str, object] = {
         "noop_def": mojo_module.noop_def,
         "noop_raw": mojo_module.noop_raw,
+        "noop_raw_fastcall": mojo_module.noop_raw_fastcall,
         "add_def": mojo_module.add_def,
         "add_raw": mojo_module.add_raw,
+        "add_raw_fastcall": mojo_module.add_raw_fastcall,
         "py_noop": py_noop,
         "py_add": py_add,
     }
@@ -91,26 +95,41 @@ def main() -> int:
         f"# Per-call FFI overhead "
         f"(ITERATIONS={ITERATIONS:,}, REPEATS={REPEATS}, min of repeats)\n"
     )
-    print(f"{'Variant':<44} {'min':>10}            {'max':>10}")
-    print("-" * 84)
+    print(f"{'Variant':<54} {'min':>10}            {'max':>10}")
+    print("-" * 94)
 
     # High-level `def_function` path: regression target.
     _measure(
-        "Python -> Mojo  noop_def(x)         [def_function]", "noop_def(1)", g
+        "Python -> Mojo  noop_def(x)             [def_function/FASTCALL]",
+        "noop_def(1)",
+        g,
     )
     _measure(
-        "Python -> Mojo  add_def(1, 2)       [def_function]", "add_def(1, 2)", g
+        "Python -> Mojo  add_def(1, 2)           [def_function/FASTCALL]",
+        "add_def(1, 2)",
+        g,
     )
 
-    # Low-level `def_py_c_function` path: lower bound for current METH_VARARGS.
+    # Low-level def_py_c_function paths: hand-written wrappers at each
+    # calling convention, lower bound for that convention.
     _measure(
-        "Python -> Mojo  noop_raw(x)         [def_py_c_function]",
+        "Python -> Mojo  noop_raw(x)             [def_py_c_function/VARARGS]",
         "noop_raw(1)",
         g,
     )
     _measure(
-        "Python -> Mojo  add_raw(1, 2)       [def_py_c_function]",
+        "Python -> Mojo  add_raw(1, 2)           [def_py_c_function/VARARGS]",
         "add_raw(1, 2)",
+        g,
+    )
+    _measure(
+        "Python -> Mojo  noop_raw_fastcall(x)    [def_py_c_function/FASTCALL]",
+        "noop_raw_fastcall(1)",
+        g,
+    )
+    _measure(
+        "Python -> Mojo  add_raw_fastcall(1, 2)  [def_py_c_function/FASTCALL]",
+        "add_raw_fastcall(1, 2)",
         g,
     )
 

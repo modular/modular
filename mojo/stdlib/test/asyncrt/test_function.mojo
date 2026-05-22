@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
@@ -22,7 +22,18 @@ comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime S = Scalar[T]
 
 
-struct TwoS(TrivialRegisterPassable):
+struct TwoS(DevicePassable, TrivialRegisterPassable):
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "TwoS"
+
     var s0: S
     var s1: S
 
@@ -34,10 +45,10 @@ struct TwoS(TrivialRegisterPassable):
 struct OneS(DevicePassable):
     comptime device_type: AnyType = TwoS
 
-    def _to_device_type[
-        origin: MutOrigin
-    ](self, target: UnsafePointer[NoneType, origin]):
-        target.bitcast[Self.device_type]()[] = TwoS(self.s)
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(TwoS(self.s), target)
 
     @staticmethod
     def get_type_name() -> String:

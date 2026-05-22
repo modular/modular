@@ -14,6 +14,7 @@
 """Unit tests for benchmark_shared.request module."""
 
 import concurrent.futures
+import json
 import os
 from collections.abc import AsyncIterator
 from typing import Any
@@ -524,6 +525,52 @@ class TestRequestDriver:
             "content-only and None keys must yield merged content"
         )
         assert result.prompt_len == 1
+
+    @pytest.mark.asyncio
+    async def test_openai_chat_completions_error_chunk_reports_server_message(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Regression test for MXTOOLS-203: server error message is surfaced in output.error."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="A very long prompt",
+            images=[],
+            api_url="http://localhost:8000/v1/chat/completions",
+            prompt_len=264408,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        error_msg = "Input string is larger than tokenizer's max length (264823 > 262144)."
+        error_json = json.dumps(
+            {
+                "error": {
+                    "code": "500",
+                    "message": error_msg,
+                    "param": "",
+                    "type": "",
+                }
+            }
+        )
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            yield f"data: {error_json}\n\n".encode()
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is False
+        assert result.error == error_msg
 
     @pytest.mark.asyncio
     async def test_openai_completions_request_driver_no_content(

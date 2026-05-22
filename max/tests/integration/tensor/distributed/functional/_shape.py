@@ -234,6 +234,45 @@ class _Reshape:
             out.to_numpy(), t_np.reshape(8, 4, 8), rtol=1e-5
         )
 
+    def test_split_unsharded_dim(self) -> None:
+        """S(1) on [4, 8] -> reshape [2, 2, 8]: old axis 0 splits and
+        the sharded axis 1 (size 8) shifts to new axis 2."""
+        t_np = np.arange(32, dtype=np.float32).reshape(4, 8)
+        dt = transfer_to(
+            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(1),))
+        )
+        out = reshape(dt, (2, 2, 8))
+        assert out.placements == (Sharded(2),)
+        assert list(out.shape) == [2, 2, 8]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(2, 2, 8), rtol=1e-5
+        )
+
+    def test_2d_mesh_replicated_and_sharded(self) -> None:
+        """MESH_2D is shape (2, 2). Replicated on axis 0, Sharded(1) on
+        axis 1 of a 4D tensor — static axis 1 (size 4) merges into new
+        axis 1 (size 32) and stays sharded."""
+        t_np = np.arange(2 * 4 * 8, dtype=np.float32).reshape(2, 4, 8)
+        dt = transfer_to(
+            Tensor(t_np),
+            PlacementMapping(self.MESH_2D, (Replicated(), Sharded(1))),
+        )
+        out = reshape(dt, (2, 32))
+        assert out.placements == (Replicated(), Sharded(1))
+        assert list(out.shape) == [2, 32]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(2, 32), rtol=1e-5
+        )
+
+    def test_multiple_minus_ones_raises(self) -> None:
+        """Reshape rejects targets with more than one ``-1`` sentinel."""
+        t = transfer_to(
+            Tensor(np.arange(32, dtype=np.float32).reshape(4, 8)),
+            PlacementMapping(self.MESH_1D, (Sharded(0),)),
+        )
+        with pytest.raises(ValueError, match=r"-1"):
+            reshape(t, (-1, -1, 2))
+
 
 # ── Permute ──────────────────────────────────────────────────────────
 
@@ -505,6 +544,15 @@ class _BroadcastTo:
         result = broadcast_to(dt, shape=(3, 4))
         assert any(isinstance(p, Partial) for p in result.placements)
         assert list(result.shape) == [3, 4]
+
+    def test_size_mismatch_raises(self) -> None:
+        """Input dim that's neither 1 nor equal to the target — rejected."""
+        t = transfer_to(
+            Tensor(np.arange(8, dtype=np.float32).reshape(2, 4)),
+            PlacementMapping(self.MESH_2, (Replicated(),)),
+        )
+        with pytest.raises(ValueError, match="must be either 1 or equal"):
+            broadcast_to(t, shape=(3, 4))
 
 
 # ── Flatten ─────────────────────────────────────────────────────────

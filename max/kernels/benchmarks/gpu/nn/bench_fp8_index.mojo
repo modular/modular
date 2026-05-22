@@ -73,15 +73,13 @@ def execute_fp8_index[
     var o_device_ptr = ctx.enqueue_create_buffer[DType.float32](o_size)
 
     var q_layout = row_major(
-        (Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())
+        (batch_size * seq_len, Idx[num_heads](), Idx[depth]())
     )
-    var qs_layout = row_major((Idx(batch_size * seq_len), Idx[num_heads]()))
-    var k_layout = row_major(
-        (Idx(batch_size * num_keys), Idx[1](), Idx[depth]())
-    )
-    var ks_layout = row_major(Idx(batch_size * num_keys))
-    var o_layout = row_major((Idx(batch_size * seq_len), Idx(num_keys)))
-    var iro_layout = row_major(Idx(batch_size + 1))
+    var qs_layout = row_major((batch_size * seq_len, Idx[num_heads]()))
+    var k_layout = row_major((batch_size * num_keys, Idx[1](), Idx[depth]()))
+    var ks_layout = row_major(batch_size * num_keys)
+    var o_layout = row_major((batch_size * seq_len, num_keys))
+    var iro_layout = row_major(batch_size + 1)
 
     with q_device_ptr.map_to_host() as q_host:
         random(TileTensor(q_host, q_layout))

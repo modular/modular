@@ -115,10 +115,12 @@ def main(
 
     if not config.model:
         raise SystemExit("error: the following arguments are required: --model")
-    # TODO(PAQ-2397): upload_results doesn't have to require workload_config.
+
     if config.upload_results and not config.workload_config:
-        raise SystemExit(
-            "error: --workload-config is required when --upload-results is set"
+        logger.warning(
+            "--workload-config is not set while --upload-results is set. "
+            "Run results will be recorded, but will not include any workload name, "
+            "and may not be picked up by dashboards."
         )
 
     run_sweep(config, uploader=uploader)

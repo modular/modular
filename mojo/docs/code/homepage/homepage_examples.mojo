@@ -22,7 +22,7 @@ from std.gpu.host.info import is_cpu, is_gpu
 from std.math import ceildiv
 from std.python import Python, PythonObject
 from std.reflection import reflect
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.sys import has_accelerator, simd_width_of
 
 from layout import TileTensor

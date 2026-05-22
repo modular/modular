@@ -29,7 +29,7 @@ from std.bit import log2_floor
 from std.math.math import max as _max, min as _min
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_valid_target
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils.index import Index, IndexList, StaticTuple
@@ -124,7 +124,7 @@ def _reduce_generator[
     shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     """Reduce the given tensor using the given reduction function. The
     num_reductions parameter enables callers to execute fused reductions. The
@@ -174,7 +174,7 @@ def _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](shape, init, reduce_dim, context.get_device_context())
+        ](shape, init, reduce_dim, context.value())
 
 
 @always_inline
@@ -195,7 +195,7 @@ def _reduce_generator_wrapper[
     shape: IndexList[_, element_type=DType.int64],
     init: Scalar,
     reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     @always_inline
     @parameter
@@ -248,7 +248,7 @@ def _reduce_generator[
     shape: IndexList[_, element_type=DType.int64],
     init: Scalar,
     reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     """Reduce the given tensor using the given reduction function.
 
@@ -320,7 +320,7 @@ def max[
 ](
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     """Computes the max across the input and output shape.
 
@@ -386,7 +386,7 @@ def min[
 ](
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     """Computes the min across the input and output shape.
 
@@ -452,7 +452,7 @@ def sum[
 ](
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     """Computes the sum across the input and output shape.
 
@@ -518,7 +518,7 @@ def product[
 ](
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     """Computes the product across the input and output shape.
     This performs the product computation on the domain specified by `input_shape`,
@@ -584,7 +584,7 @@ def mean[
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
     output_shape: type_of(input_shape),
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     """Computes the mean across the input and output shape.
 

@@ -67,6 +67,19 @@ def test_numpy_int() raises:
     assert_equal(Int(py=py_numpy_int), mojo_int)
 
 
+def test_int_subclass_override_takes_fallback() raises:
+    # An `int` subclass with overridden `__int__` must observe the
+    # override, matching CPython's `int(x)` semantics. `PyLong_CheckExact`
+    # rejects subclasses so the fast path is skipped and `__int__()` runs.
+    var mod = Python.evaluate(
+        "class _MyInt(int):\n    def __int__(self):\n        return 99\n",
+        file=True,
+        name="_int_subclass_test_mod",
+    )
+    var my_int = mod._MyInt(1)
+    assert_equal(Int(py=my_int), 99)
+
+
 def test_numpy_float() raises:
     var np = Python.import_module("numpy")
     var py_numpy_float = np.float64(1.0)

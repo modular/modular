@@ -18,14 +18,14 @@ from std.utils.numerics import get_accum_type
 from std.benchmark import *
 from std.benchmark import keep
 from internal_utils import ScalarArray
-from layout import Coord, RuntimeInt, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
 from std.testing import assert_almost_equal
 
 
-def _ri(v: Int) -> RuntimeInt[DType.int64]:
-    return RuntimeInt[DType.int64](Int64(v))
+def _ri(v: Int) -> Int64:
+    return Int64(v)
 
 
 def gemm_naive(a: TileTensor, b: TileTensor, c: TileTensor[mut=True, ...]):

@@ -753,7 +753,7 @@ struct MatmulConfig[
     def write_repr_to(self, mut writer: Some[Writer]):
         self.write_to(writer)
 
-    def get_kernal_name(self) -> String:
+    def get_kernel_name(self) -> String:
         return (
             "SM100_"
             + String(self.gemm_kind)
@@ -899,7 +899,7 @@ def choose_config[
         # Use MMA_N because cta_group = 2, 2 ctas cover entire MMA_N. cta_group = 1
         # has BN = MMA_N.
         # Traverse the tile sizes to find min load volume per wave.
-        # TODO: consider the L2 resue across waves.
+        # TODO: consider the L2 resue across waves. # spellchecker:disable-line
         var BM = mma_mn[0] // cta_group
         for tile_size in [1, 2, 4, 8]:
             var num_ctas_m = ceildiv(M, BM)
@@ -1248,7 +1248,7 @@ struct BlockScaledMatmulConfig[
     def write_repr_to(self, mut writer: Some[Writer]):
         self.write_to(writer)
 
-    def get_kernal_name(self) -> String:
+    def get_kernel_name(self) -> String:
         var name = String("SM100_block_scaled_" + String(self.gemm_kind) + "_")
         name += String(self.scaling_kind) + "_"
         name += _get_common_config_string[
@@ -1386,7 +1386,7 @@ def choose_block_scaled_config[
         # Use MMA_N because cta_group = 2, 2 ctas cover entire MMA_N. cta_group = 1
         # has BN = MMA_N.
         # Traverse the tile sizes to find min load volume per wave.
-        # TODO: consider the L2 resue across waves.
+        # TODO: consider the L2 resue across waves. # spellchecker:disable-line
         var BM = mma_mn[0] // cta_group
         for tile_size in [1, 2, 4, 8]:
             var num_ctas_m = ceildiv(M, BM)

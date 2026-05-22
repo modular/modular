@@ -97,7 +97,8 @@ def full(
     mesh = mapping.mesh
     resolved_dtype, _ = defaults(dtype, mesh.devices[0])
     placements = mapping.to_placements()
-    shard_shapes = local_shard_shape_from_global(Shape(shape), mesh, placements)
+    global_shape = Shape(shape)
+    shard_shapes = local_shard_shape_from_global(global_shape, mesh, placements)
     with ensure_context():
         tvs = [
             ops.broadcast_to(
@@ -111,7 +112,9 @@ def full(
             for i in builtins.range(mesh.num_devices)
         ]
         return Tensor.from_shard_values(
-            [TensorValue(tv) for tv in tvs], mapping
+            [TensorValue(tv) for tv in tvs],
+            mapping,
+            global_shape=global_shape,
         )
 
 
@@ -245,7 +248,9 @@ def uniform(
             ops.random.set_seed(base + group_ids[i])
             shard_values.append(ops.random.uniform(tt, range=range))
         ops.random.set_seed(base + n_unique)
-        return Tensor.from_shard_values(shard_values, mapping)
+        return Tensor.from_shard_values(
+            shard_values, mapping, global_shape=Shape(shape)
+        )
 
 
 def gaussian(
@@ -281,7 +286,9 @@ def gaussian(
             ops.random.set_seed(base + group_ids[i])
             shard_values.append(ops.random.gaussian(tt, mean=mean, std=std))
         ops.random.set_seed(base + n_unique)
-        return Tensor.from_shard_values(shard_values, mapping)
+        return Tensor.from_shard_values(
+            shard_values, mapping, global_shape=Shape(shape)
+        )
 
 
 normal = gaussian

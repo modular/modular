@@ -212,6 +212,10 @@ class PagedKVCacheManager:
         max_batch_size: int,
         other_kv_managers_device_buffers_per_replica: list[list[Buffer]]
         | None = None,
+        other_kv_managers_device_buffers_per_replica_not_replicated: list[
+            list[Buffer]
+        ]
+        | None = None,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
 
@@ -228,6 +232,11 @@ class PagedKVCacheManager:
                 A list of lists of device buffers for other KV managers that should
                 be offloaded by this KV manager's KVConnectors. This is a massive
                 hack due to the lack of unified KVCache that handles multiple KVs.
+            other_kv_managers_device_buffers_per_replica_not_replicated:
+                A list of lists of device buffers for other KV managers that should
+                be offloaded by this KV manager's KVConnectors. This is a massive
+                hack due to the lack of unified KVCache that handles multiple KVs.
+                This is only present for mla target and mha draft.
         """
         if max_batch_size < 1:
             raise ValueError("max_batch_size must be positive")
@@ -303,12 +312,23 @@ class PagedKVCacheManager:
                 device_buffers_to_offload.extend(
                     other_kv_managers_device_buffers_per_replica[replica_idx]
                 )
+            non_replicated_device_buffers_to_offload = []
+            if (
+                other_kv_managers_device_buffers_per_replica_not_replicated
+                is not None
+            ):
+                non_replicated_device_buffers_to_offload.extend(
+                    other_kv_managers_device_buffers_per_replica_not_replicated[
+                        replica_idx
+                    ]
+                )
             connector = create_connector(
                 params=replica_params,
                 devices=replica_devices,
                 device_buffers=device_buffers_to_offload,
                 total_num_host_blocks=total_num_host_pages,
                 total_num_blocks=total_num_pages,
+                non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
             )
 
             persistent_kv_device_input_buffers = (

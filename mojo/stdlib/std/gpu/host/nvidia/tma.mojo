@@ -32,7 +32,7 @@ from std.gpu.host.device_context import (
 )
 
 from std.utils import IndexList, StaticTuple
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 @fieldwise_init("implicit")
@@ -281,8 +281,10 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
     comptime device_type: AnyType = TMADescriptor
     """The device-side type for this TMA descriptor."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

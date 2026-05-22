@@ -14,21 +14,27 @@ Python again. The body is intentionally near-zero work so that the number we
 report is dominated by binding overhead: argument unwrapping, refcount
 traffic, GIL operations, and the CPython call protocol itself.
 
-The module exposes the same functions through two binding paths so the
+The module exposes the same functions through three binding paths so the
 overhead can be attributed:
 
-| Variant    | Binding path                                 | What's isolated                                                |
-|------------|----------------------------------------------|----------------------------------------------------------------|
-| `noop_def` | `PythonModuleBuilder.def_function[...]`      | Full high-level dispatch — the regression target               |
-| `add_def`  | `PythonModuleBuilder.def_function[...]`      | Same, plus `Int(py=...)` conversions                           |
-| `noop_raw` | `PythonModuleBuilder.def_py_c_function(...)` | Lower bound for the current `METH_VARARGS` architecture        |
-| `add_raw`  | `PythonModuleBuilder.def_py_c_function(...)` | Lower bound + direct `PyLong_AsSsize_t` / `PyLong_FromSsize_t` |
+| Variant             | Binding path                                                  | Calling conv.   | What's isolated                                          |
+|---------------------|---------------------------------------------------------------|-----------------|----------------------------------------------------------|
+| `noop_def`          | `PythonModuleBuilder.def_function[...]`                       | `METH_FASTCALL` | Full high-level dispatch — the regression target         |
+| `add_def`           | `PythonModuleBuilder.def_function[...]`                       | `METH_FASTCALL` | Same, plus `Int(py=...)` conversions                     |
+| `noop_raw`          | `PythonModuleBuilder.def_py_c_function(PyCFunction, ...)`     | `METH_VARARGS`  | Hand-written METH_VARARGS lower bound                    |
+| `add_raw`           | `PythonModuleBuilder.def_py_c_function(PyCFunction, ...)`     | `METH_VARARGS`  | Same + direct `PyLong_AsSsize_t` / `PyLong_FromSsize_t`  |
+| `noop_raw_fastcall` | `PythonModuleBuilder.def_py_c_function(PyCFunctionFast, ...)` | `METH_FASTCALL` | Hand-written METH_FASTCALL lower bound                   |
+| `add_raw_fastcall`  | `PythonModuleBuilder.def_py_c_function(PyCFunctionFast, ...)` | `METH_FASTCALL` | Same + direct `PyLong_AsSsize_t` / `PyLong_FromSsize_t`  |
 
-The gap between `*_def` and `*_raw` isolates overhead contributed by Mojo's
-generic dispatch wrapper. The gap between `*_raw` and the PyO3 numbers in
-the bug report isolates overhead contributed by CPython's `METH_VARARGS`
-tuple-packing call convention itself, which can be reduced by moving the
-bindings to `METH_FASTCALL`.
+The `*_def` and `*_raw_fastcall` pair share a calling convention, so
+the gap between them is a clean attribution of Mojo's generic dispatch
+wrapper overhead. The gap between `*_raw` (METH_VARARGS) and
+`*_raw_fastcall` (METH_FASTCALL) is the call-convention savings
+contributed by CPython skipping the tuple pack — i.e. the wedge that
+landing `METH_FASTCALL` for `def_function` (this commit) buys. `*_raw`
+remains as the comparison point against the PyO3 numbers in the bug
+report (which were captured against METH_VARARGS-shaped Mojo
+bindings).
 
 Two pure-Python baselines (`py_noop`, `py_add`) and the `timeit` floor
 (`1 + 2`) run in the same process so host drift is visible.

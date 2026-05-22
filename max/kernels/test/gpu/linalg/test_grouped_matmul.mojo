@@ -99,15 +99,15 @@ def test[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K]())),
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
+        row_major(Coord(total_num_tokens, Idx[actual_N]())),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
+        row_major(Coord(total_num_tokens, Idx[actual_N]())),
     )
 
     # Create host B buffers
@@ -150,15 +150,15 @@ def test[
 
     var a_dev = TileTensor[a_type](
         a_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K]())),
     )
     var c_dev = TileTensor[c_type](
         c_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
+        row_major(Coord(total_num_tokens, Idx[actual_N]())),
     )
     var c_ref_dev = TileTensor[c_type](
         c_ref_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
+        row_major(Coord(total_num_tokens, Idx[actual_N]())),
     )
     var b_dev = TileTensor[b_type](
         b_dev_buffer,
@@ -166,7 +166,7 @@ def test[
     )
     var a_offsets_dev = TileTensor[DType.uint32](
         a_offsets_dev_buffer,
-        row_major(Coord(Idx(num_experts + 1))),
+        row_major(Coord(num_experts + 1)),
     )
     var expert_ids_dev = TileTensor[DType.int32](
         expert_ids_dev_buffer,
@@ -356,7 +356,7 @@ def test_negative_lora_id[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K]())),
     )
 
     # Create host B buffers
@@ -396,11 +396,11 @@ def test_negative_lora_id[
 
     var a_dev = TileTensor[a_type](
         a_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K]())),
     )
     var c_dev = TileTensor[c_type](
         c_dev_buffer,
-        row_major(Coord(Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N]())),
     )
     var b_dev = TileTensor[b_type](
         b_dev_buffer,
@@ -408,11 +408,11 @@ def test_negative_lora_id[
     )
     var a_offsets_dev = TileTensor[DType.uint32](
         a_offsets_dev_buffer,
-        row_major(Coord(Idx(num_active_experts + 1))),
+        row_major(Coord(num_active_experts + 1)),
     )
     var expert_ids_dev = TileTensor[DType.int32](
         expert_ids_dev_buffer,
-        row_major(Coord(Idx(num_active_experts))),
+        row_major(Coord(num_active_experts)),
     )
 
     # Move inputs to device
@@ -529,7 +529,7 @@ def test_step3p5_moe_dims[
     var a_host_ptr = ctx.enqueue_create_host_buffer[in_type](a_size)
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_tokens), Idx[K]())),
+        row_major(Coord(total_tokens, Idx[K]())),
     )
     random(a_host)
 
@@ -540,7 +540,7 @@ def test_step3p5_moe_dims[
     var b_host_ptr = ctx.enqueue_create_host_buffer[in_type](b_size)
     var b_host = TileTensor(
         b_host_ptr,
-        row_major(Coord(Idx(num_experts), Idx[N](), Idx[K]())),
+        row_major(Coord(num_experts, Idx[N](), Idx[K]())),
     )
     random(b_host)
 
@@ -550,11 +550,11 @@ def test_step3p5_moe_dims[
     var c_ref_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx(total_tokens), Idx[N]())),
+        row_major(Coord(total_tokens, Idx[N]())),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(Idx(total_tokens), Idx[N]())),
+        row_major(Coord(total_tokens, Idx[N]())),
     )
 
     # ---- offsets & expert ids ----
@@ -586,20 +586,20 @@ def test_step3p5_moe_dims[
     var eid_dev_buf = ctx.enqueue_create_buffer[DType.int32](num_experts)
 
     var a_dev = TileTensor[in_type](
-        a_dev_buf, row_major(Coord(Idx(total_tokens), Idx[K]()))
+        a_dev_buf, row_major(Coord(total_tokens, Idx[K]()))
     )
     var b_dev = TileTensor[in_type](
         b_dev_buf,
         row_major[num_experts, N, K](),
     )
     var c_dev = TileTensor[out_type](
-        c_dev_buf, row_major(Coord(Idx(total_tokens), Idx[N]()))
+        c_dev_buf, row_major(Coord(total_tokens, Idx[N]()))
     )
     var c_ref_dev = TileTensor[out_type](
-        c_ref_dev_buf, row_major(Coord(Idx(total_tokens), Idx[N]()))
+        c_ref_dev_buf, row_major(Coord(total_tokens, Idx[N]()))
     )
     var off_dev = TileTensor[DType.uint32](
-        off_dev_buf, row_major(Coord(Idx(num_experts + 1)))
+        off_dev_buf, row_major(Coord(num_experts + 1))
     )
     var eid_dev = TileTensor[DType.int32](
         eid_dev_buf, row_major(Coord(Idx[num_experts]()))

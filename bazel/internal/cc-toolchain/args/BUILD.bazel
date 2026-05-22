@@ -138,6 +138,12 @@ cc_args(
             "-ffunction-sections",
         ],
         "@platforms//os:macos": [],
+    }) + select({
+        # Match the Mojo toolchain's target-cpu so AVX-512 doesn't leak
+        # into auto-vectorized C++ stdlib code on AVX-512-capable hosts.
+        "//:linux_x86_64": ["-march=x86-64-v3"],
+        "//:linux_aarch64": ["-mcpu=neoverse-n1"],
+        "@platforms//os:macos": [],
     }),
 )
 

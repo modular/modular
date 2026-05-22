@@ -19,7 +19,7 @@ build --disk_cache=~/.cache/bazel-disk-cache
 build --compilation_mode=dbg
 build --//:modular_config=default
 
-build:ci --mojopackagecopt=-Werror
+build:ci --mojoprecompilecopt=-Werror
 
 build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io
 build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/

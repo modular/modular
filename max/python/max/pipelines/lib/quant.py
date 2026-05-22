@@ -834,5 +834,16 @@ def parse_quant_config(
                 "Fused MLP is not supported for this model. "
                 "This may impact performance."
             )
+        # Default-on for NVFP4: the SM100 fused SwiGLU+NVFP4 grouped matmul
+        # kernel folds the MoE gate/up matmul + SwiGLU + NVFP4 quant into a
+        # single launch, saving one BF16 HBM round trip per MoE layer.
+        # Process-time kill-switch: ``MAX_DISABLE_FUSED_SWIGLU_NVFP4=1``.
+        # The kill-switch flips the QuantConfig flag so the model's
+        # ``gate_up_proj`` and ``gate_up_proj_scales`` properties (which
+        # gate the sigma-permutation on this flag) stay byte-equal to the
+        # historical chained-kernel path.
+        config.can_use_fused_swiglu_nvfp4 = bool(config.is_nvfp4) and (
+            os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1"
+        )
 
     return config

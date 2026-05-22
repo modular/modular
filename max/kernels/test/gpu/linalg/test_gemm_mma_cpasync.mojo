@@ -84,9 +84,9 @@ def run_gemm_mma_cpasync[
     ctx.enqueue_copy(ref_dev, ref_host)
 
     # --- Run our kernel ---
-    var a_shape = row_major((Idx(gemm_m), Idx(gemm_k)))
-    var w_shape = row_major((Idx(gemm_n), Idx(gemm_k)))
-    var c_shape = row_major((Idx(gemm_m), Idx(gemm_n)))
+    var a_shape = row_major((gemm_m, gemm_k))
+    var w_shape = row_major((gemm_n, gemm_k))
+    var c_shape = row_major((gemm_m, gemm_n))
 
     var a_tensor = TileTensor(act_dev, a_shape)
     var w_tensor = TileTensor(weight_dev, w_shape)
@@ -186,9 +186,9 @@ def run_gemm_mma_cpasync_residual[
     ctx.enqueue_copy(out_dev, out_host)
     ctx.enqueue_copy(ref_dev, ref_host)
 
-    var a_shape = row_major((Idx(gemm_m), Idx(gemm_k)))
-    var w_shape = row_major((Idx(gemm_n), Idx(gemm_k)))
-    var c_shape = row_major((Idx(gemm_m), Idx(gemm_n)))
+    var a_shape = row_major((gemm_m, gemm_k))
+    var w_shape = row_major((gemm_n, gemm_k))
+    var c_shape = row_major((gemm_m, gemm_n))
 
     var a_tensor = TileTensor(act_dev, a_shape)
     var w_tensor = TileTensor(weight_dev, w_shape)

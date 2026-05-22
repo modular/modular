@@ -12,10 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import OwnedKwargsDict
+from std.ffi import _CPointer
 from std.os import abort
 from std.sys.intrinsics import _type_is_eq
 
 from std.python import PythonObject as PO  # for brevity of signatures below
+from std.python._cpython import PyObjectPtr
 from std.python.bindings import check_arguments_arity
 
 
@@ -1983,14 +1985,27 @@ struct PyObjectFunction[
 
     @staticmethod
     @always_inline("nodebug")
-    def _dispatch[
+    def _dispatch_fast[
         is_method: Bool,
-    ](func: Self.func_type, py_self: PO, py_args: PO) raises -> PO:
-        """Compile-time dispatch for non-kwargs function/method calls."""
+    ](
+        func: Self.func_type,
+        py_self: PO,
+        args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+        nargs: Int,
+    ) raises -> PO:
+        """Compile-time dispatch for METH_FASTCALL non-kwargs function/method
+        calls. Reads positional arguments directly from the raw
+        `PyObject *const *` array CPython hands the callee, skipping the
+        tuple-packing path entirely.
+
+        Precondition: `args` is non-null. CPython's vectorcall protocol
+        (PEP 590) guarantees this for every METH_FASTCALL invocation,
+        including the `nargs == 0` case.
+        """
 
         comptime if Self._has_arity(0):
             comptime assert not is_method, "arity-0 methods not supported"
-            check_arguments_arity(0, py_args)
+            check_arguments_arity(0, nargs)
             comptime if Self._has_type[Self._0er]():
                 return rebind[Self._0er](func)()
             elif Self._has_type[Self._0r]():
@@ -2003,8 +2018,8 @@ struct PyObjectFunction[
                 return PO(None)
         elif Self._has_arity(1):
             comptime if not is_method:
-                check_arguments_arity(1, py_args)
-                var a0 = py_args[0]
+                check_arguments_arity(1, nargs)
+                var a0 = PO(from_borrowed=args[0])
                 comptime if Self._has_type[Self._1er]():
                     return rebind[Self._1er](func)(a0)
                 elif Self._has_type[Self._1r]():
@@ -2016,7 +2031,7 @@ struct PyObjectFunction[
                     rebind[Self._1](func)(a0)
                     return PO(None)
             else:
-                check_arguments_arity(0, py_args)
+                check_arguments_arity(0, nargs)
                 comptime if Self._has_type[Self._1er]():
                     return rebind[Self._1er](func)(py_self)
                 elif Self._has_type[Self._1r]():
@@ -2043,9 +2058,9 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(2):
             comptime if not is_method:
-                check_arguments_arity(2, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
+                check_arguments_arity(2, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
                 comptime if Self._has_type[Self._2er]():
                     return rebind[Self._2er](func)(a0, a1)
                 elif Self._has_type[Self._2r]():
@@ -2057,8 +2072,8 @@ struct PyObjectFunction[
                     rebind[Self._2](func)(a0, a1)
                     return PO(None)
             else:
-                check_arguments_arity(1, py_args)
-                var a0 = py_args[0]
+                check_arguments_arity(1, nargs)
+                var a0 = PO(from_borrowed=args[0])
                 comptime if Self._has_type[Self._2er]():
                     return rebind[Self._2er](func)(py_self, a0)
                 elif Self._has_type[Self._2r]():
@@ -2085,10 +2100,10 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(3):
             comptime if not is_method:
-                check_arguments_arity(3, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
+                check_arguments_arity(3, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
                 comptime if Self._has_type[Self._3er]():
                     return rebind[Self._3er](func)(a0, a1, a2)
                 elif Self._has_type[Self._3r]():
@@ -2100,9 +2115,9 @@ struct PyObjectFunction[
                     rebind[Self._3](func)(a0, a1, a2)
                     return PO(None)
             else:
-                check_arguments_arity(2, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
+                check_arguments_arity(2, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
                 comptime if Self._has_type[Self._3er]():
                     return rebind[Self._3er](func)(py_self, a0, a1)
                 elif Self._has_type[Self._3r]():
@@ -2133,11 +2148,11 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(4):
             comptime if not is_method:
-                check_arguments_arity(4, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
+                check_arguments_arity(4, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
                 comptime if Self._has_type[Self._4er]():
                     return rebind[Self._4er](func)(a0, a1, a2, a3)
                 elif Self._has_type[Self._4r]():
@@ -2149,10 +2164,10 @@ struct PyObjectFunction[
                     rebind[Self._4](func)(a0, a1, a2, a3)
                     return PO(None)
             else:
-                check_arguments_arity(3, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
+                check_arguments_arity(3, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
                 comptime if Self._has_type[Self._4er]():
                     return rebind[Self._4er](func)(py_self, a0, a1, a2)
                 elif Self._has_type[Self._4r]():
@@ -2183,12 +2198,12 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(5):
             comptime if not is_method:
-                check_arguments_arity(5, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
-                var a4 = py_args[4]
+                check_arguments_arity(5, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
                 comptime if Self._has_type[Self._5er]():
                     return rebind[Self._5er](func)(a0, a1, a2, a3, a4)
                 elif Self._has_type[Self._5r]():
@@ -2200,11 +2215,11 @@ struct PyObjectFunction[
                     rebind[Self._5](func)(a0, a1, a2, a3, a4)
                     return PO(None)
             else:
-                check_arguments_arity(4, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
+                check_arguments_arity(4, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
                 comptime if Self._has_type[Self._5er]():
                     return rebind[Self._5er](func)(py_self, a0, a1, a2, a3)
                 elif Self._has_type[Self._5r]():
@@ -2235,13 +2250,13 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(6):
             comptime if not is_method:
-                check_arguments_arity(6, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
-                var a4 = py_args[4]
-                var a5 = py_args[5]
+                check_arguments_arity(6, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
+                var a5 = PO(from_borrowed=args[5])
                 comptime if Self._has_type[Self._6er]():
                     return rebind[Self._6er](func)(a0, a1, a2, a3, a4, a5)
                 elif Self._has_type[Self._6r]():
@@ -2253,12 +2268,12 @@ struct PyObjectFunction[
                     rebind[Self._6](func)(a0, a1, a2, a3, a4, a5)
                     return PO(None)
             else:
-                check_arguments_arity(5, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
-                var a4 = py_args[4]
+                check_arguments_arity(5, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
                 comptime if Self._has_type[Self._6er]():
                     return rebind[Self._6er](func)(py_self, a0, a1, a2, a3, a4)
                 elif Self._has_type[Self._6r]():
@@ -2289,14 +2304,14 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(7):
             comptime if not is_method:
-                check_arguments_arity(7, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
-                var a4 = py_args[4]
-                var a5 = py_args[5]
-                var a6 = py_args[6]
+                check_arguments_arity(7, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
+                var a5 = PO(from_borrowed=args[5])
+                var a6 = PO(from_borrowed=args[6])
                 comptime if Self._has_type[Self._7er]():
                     return rebind[Self._7er](func)(a0, a1, a2, a3, a4, a5, a6)
                 elif Self._has_type[Self._7r]():
@@ -2308,13 +2323,13 @@ struct PyObjectFunction[
                     rebind[Self._7](func)(a0, a1, a2, a3, a4, a5, a6)
                     return PO(None)
             else:
-                check_arguments_arity(6, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
-                var a4 = py_args[4]
-                var a5 = py_args[5]
+                check_arguments_arity(6, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
+                var a5 = PO(from_borrowed=args[5])
                 comptime if Self._has_type[Self._7er]():
                     return rebind[Self._7er](func)(
                         py_self, a0, a1, a2, a3, a4, a5
@@ -2349,15 +2364,15 @@ struct PyObjectFunction[
                     return PO(None)
         elif Self._has_arity(8):
             comptime if not is_method:
-                check_arguments_arity(8, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
-                var a4 = py_args[4]
-                var a5 = py_args[5]
-                var a6 = py_args[6]
-                var a7 = py_args[7]
+                check_arguments_arity(8, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
+                var a5 = PO(from_borrowed=args[5])
+                var a6 = PO(from_borrowed=args[6])
+                var a7 = PO(from_borrowed=args[7])
                 comptime if Self._has_type[Self._8er]():
                     return rebind[Self._8er](func)(
                         a0, a1, a2, a3, a4, a5, a6, a7
@@ -2373,14 +2388,14 @@ struct PyObjectFunction[
                     rebind[Self._8](func)(a0, a1, a2, a3, a4, a5, a6, a7)
                     return PO(None)
             else:
-                check_arguments_arity(7, py_args)
-                var a0 = py_args[0]
-                var a1 = py_args[1]
-                var a2 = py_args[2]
-                var a3 = py_args[3]
-                var a4 = py_args[4]
-                var a5 = py_args[5]
-                var a6 = py_args[6]
+                check_arguments_arity(7, nargs)
+                var a0 = PO(from_borrowed=args[0])
+                var a1 = PO(from_borrowed=args[1])
+                var a2 = PO(from_borrowed=args[2])
+                var a3 = PO(from_borrowed=args[3])
+                var a4 = PO(from_borrowed=args[4])
+                var a5 = PO(from_borrowed=args[5])
+                var a6 = PO(from_borrowed=args[6])
                 comptime if Self._has_type[Self._8er]():
                     return rebind[Self._8er](func)(
                         py_self, a0, a1, a2, a3, a4, a5, a6

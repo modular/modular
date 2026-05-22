@@ -35,7 +35,6 @@ from layout import (
     row_major,
 )
 from std.memory import memcpy
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils import IndexList, StaticTuple, product
@@ -126,7 +125,9 @@ def memcpy_or_fuse[
         # We must run scalar to be conservative. This is because the fused
         # output lambda might operate on views (e.g., broadcast) that does not
         # always work with indices produced from a linearized address.
-        elementwise[epilogue_wrapper, simd_width=1](shape_1d)
+        elementwise[epilogue_wrapper, simd_width=1](
+            shape_1d, DeviceContext(api="cpu")
+        )
 
 
 @fieldwise_init
@@ -592,7 +593,7 @@ def concat[
         TileTensor[dtype, InputLayoutType, input_origin],
         ...,
     ],
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: DeviceContext,
 ) raises:
     comptime assert is_valid_target[target](), "not a valid target"
 
@@ -618,7 +619,7 @@ def concat[
                 output,
                 axis,
                 inputVec,
-                ctx=context.get_optional_device_context(),
+                ctx=Optional[DeviceContext](context),
             )
         else:
             _concat_gpu[dtype, epilogue_fn](
@@ -627,7 +628,7 @@ def concat[
                 output,
                 axis,
                 inputs,
-                context.get_device_context(),
+                context,
             )
 
 
@@ -999,7 +1000,7 @@ def _fused_concat_cpu[
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    ctx: DeviceContextPtr,
+    ctx: Optional[DeviceContext],
 ) raises:
     var offset = 0
 
@@ -1020,11 +1021,12 @@ def _fused_concat_cpu[
             )
 
         # TODO: we can use simd_width > 0 if all inputs are aligned.
+        var device_ctx = ctx.value() if ctx else DeviceContext(api="cpu")
         elementwise[
             elementwise_wrapper,
             1,
             _trace_description="concat_fused",
-        ](input_shape, ctx)
+        ](input_shape, device_ctx)
         offset = offset + input_shape[axis]
 
 
@@ -1591,7 +1593,7 @@ def fused_concat[
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
     output: TileTensor[mut=True, dtype, output_layout, _],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     comptime assert is_valid_target[target](), "not a valid target"
 
@@ -1607,11 +1609,11 @@ def fused_concat[
                 dtype,
                 input_fn,
                 output_0_fn,
-            ](axis, input_shapes, output, ctx)
+            ](axis, input_shapes, output, Optional[DeviceContext](ctx))
         else:
             return _fused_concat_gpu[rank, dtype, input_fn, output_0_fn](
                 axis,
                 input_shapes,
                 output.as_any_origin(),
-                ctx.get_device_context(),
+                ctx,
             )

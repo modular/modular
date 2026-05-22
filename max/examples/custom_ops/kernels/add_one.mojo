@@ -14,7 +14,9 @@
 # DOC: max/develop/build-custom-ops.mdx
 
 import compiler
-from std.runtime.asyncrt import DeviceContextPtr
+
+from std.gpu.host import DeviceContext
+
 from tensor import InputTensor, OutputTensor, foreach
 
 from std.utils.index import IndexList
@@ -30,7 +32,7 @@ struct AddOne:
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         @parameter
         @always_inline

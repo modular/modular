@@ -923,6 +923,49 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         )
 
 
+class KimiK2_5DeepseekV3LocalPathPipelineOracle(
+    KimiK2_5DeepseekV3PipelineOracle
+):
+    """DeepseekV3 Kimi-K2.5-NVFP4 oracle loading weights from a local path.
+
+    Identical to :class:`KimiK2_5DeepseekV3PipelineOracle` in every respect
+    except that ``model_path`` is an absolute filesystem path (weights are
+    pre-staged on a dedicated runner). The hf-repo-lock revision pinning is
+    skipped for local paths since they don't have an HF revision.
+    """
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        config = pipelines.PipelineConfig(
+            models=ModelManifest(
+                {
+                    "main": pipelines.MAXModelConfig(
+                        model_path=self.model_path,
+                        quantization_encoding=encoding,
+                        device_specs=device_specs,
+                        max_length=4096,
+                        trust_remote_code=self.trust_remote_code,
+                        data_parallel_degree=8,
+                    )
+                }
+            ),
+            runtime=PipelineRuntimeConfig(
+                defer_resolve=True,
+                max_num_steps=1,
+                max_batch_input_tokens=4096,
+                ep_size=8,
+            ),
+        )
+        config.resolve()
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, TextGenerationPipelineInterface)
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
+
+
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
@@ -2027,6 +2070,14 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3": KimiK2_5DeepseekV3PipelineOracle(
         "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"
+    ),
+    # NVFP4 weights pre-staged on the dedicated prod-2 8xB200 runner. Loaded
+    # as a vanilla DeepseekV3 checkpoint (same bytes as Kimi-K2.5-NVFP4 with
+    # vision stripped). See logit_verification_config.yaml for goldens. The
+    # path is pinned to the runner's staged location; this oracle only runs
+    # on that runner via the +prod-2-8xb200 tag filter.
+    "nvidia/Kimi-K2.5-NVFP4__internal": KimiK2_5DeepseekV3LocalPathPipelineOracle(
+        "/mnt/local/data/quantized/v4"
     ),
     "MiniMaxAI/MiniMax-M2.7": GenericOracle(
         model_path="MiniMaxAI/MiniMax-M2.7",

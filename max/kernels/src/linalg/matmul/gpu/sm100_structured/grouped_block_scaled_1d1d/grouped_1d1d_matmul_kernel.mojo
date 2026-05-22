@@ -37,7 +37,7 @@ This is a port of grouped_matmul_sm100_1d1d.mojo to the structured kernels
 architecture.
 """
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.memory import Pointer, UnsafePointer, bitcast
@@ -84,7 +84,6 @@ from layout import (
     Idx,
     Layout,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     row_major,
@@ -363,7 +362,9 @@ struct NullSwiGLUOutput(SwiGLUOutput):
     ):
         pass
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         pass
 
     @staticmethod
@@ -493,8 +494,10 @@ struct RealSwiGLUOutput[
             ) * SF_ATOM_K
             ptr_u32.store(byte_idx // 4, UInt32(0))
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1206,7 +1209,7 @@ struct Grouped1D1DMatmulKernel[
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
     @__name(
-        StaticString(Self.config.get_kernal_name())
+        StaticString(Self.config.get_kernel_name())
         + StaticString(
             "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
             is not None else ""
@@ -2053,11 +2056,7 @@ struct Grouped1D1DMatmulKernel[
                                             sfb_atom_layout(
                                                 Coord(
                                                     Idx[k_atom](),
-                                                    RuntimeInt(
-                                                        Scalar[DType.int64](
-                                                            row_in_atom
-                                                        )
-                                                    ),
+                                                    Int64(row_in_atom),
                                                 )
                                             )
                                         )

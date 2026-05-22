@@ -29,7 +29,7 @@ See https://github.com/modular/modular/issues/6521.
 from std.os import abort
 
 from std.python import Python, PythonObject
-from std.python._cpython import PyObjectPtr
+from std.python._cpython import PyObjectPtr, Py_ssize_t
 from std.python.bindings import PythonModuleBuilder
 
 
@@ -44,8 +44,15 @@ def PyInit_mojo_module() -> PythonObject:
 
         # Low-level `def_py_c_function` path. Same observable behavior, but
         # bypasses the generic PyObjectFunction dispatch.
+        # `*_raw` register under METH_VARARGS (hand-written PyCFunction
+        # shape); `*_raw_fastcall` register under METH_FASTCALL
+        # (hand-written PyCFunctionFast shape). The pair brackets the
+        # call-convention cost so the def-vs-raw gap at a single
+        # convention isolates Mojo's generic dispatch overhead.
         b.def_py_c_function(noop_raw, "noop_raw")
         b.def_py_c_function(add_raw, "add_raw")
+        b.def_py_c_function(noop_raw_fastcall, "noop_raw_fastcall")
+        b.def_py_c_function(add_raw_fastcall, "add_raw_fastcall")
 
         return b.finalize()
     except e:
@@ -88,4 +95,31 @@ def add_raw(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
     var b = cpy.PyTuple_GetItem(args, 1)
     var ai = cpy.PyLong_AsSsize_t(a)
     var bi = cpy.PyLong_AsSsize_t(b)
+    return cpy.PyLong_FromSsize_t(ai + bi)
+
+
+# ===-----------------------------------------------------------------------===#
+# Low-level `def_py_c_function` path, METH_FASTCALL shape
+# ===-----------------------------------------------------------------------===#
+
+
+@export
+def noop_raw_fastcall(
+    py_self: PyObjectPtr,
+    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    nargs: Py_ssize_t,
+) -> PyObjectPtr:
+    ref cpy = Python().cpython()
+    return cpy.Py_NewRef(args[0])
+
+
+@export
+def add_raw_fastcall(
+    py_self: PyObjectPtr,
+    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    nargs: Py_ssize_t,
+) -> PyObjectPtr:
+    ref cpy = Python().cpython()
+    var ai = cpy.PyLong_AsSsize_t(args[0])
+    var bi = cpy.PyLong_AsSsize_t(args[1])
     return cpy.PyLong_FromSsize_t(ai + bi)
