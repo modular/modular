@@ -306,6 +306,15 @@ struct MLA_SM100_Decode_Config:
     var per_token_scales_per_stage: Int  # BN_QK(64) tokens * 1 scale * sizeof(float32)(4) = 256 bytes per stage
     var decode_layout_g: Bool  # Layout G fold path (BM=32, MMA_M=32)
     var BK_PV: Int  # K of PV MMA. Sentinel default = BN_QK.
+    # Threshold (in log2 domain) below which the softmax rescale of the
+    # running output `O` and `mi` is SKIPPED. When `diff = mi - new_max`
+    # is greater than or equal to this threshold (i.e. the running max
+    # grew by less than `-threshold` in log2 domain), the rescale is
+    # treated as a no-op (scale_for_old_max = 1.0, new_max = mi). This
+    # matches FlashMLA's `-6.0` (TokenSpeed's `6.0`) and trades a tiny
+    # numerical bias for a saved `exp2` + TMEM publish on every iteration
+    # where the running max grows by less than ~6 in log2 domain.
+    var skip_correction_threshold: Float32
 
     def __init__(
         out self,
@@ -332,6 +341,10 @@ struct MLA_SM100_Decode_Config:
         # block sizes; existing call sites that don't pass these stay on 64.
         bn_qk: Int = 0,
         bk_pv: Int = 0,
+        # Threshold (in log2 domain) below which the softmax rescale of
+        # `O` and `mi` is skipped. Default `-6.0` matches FlashMLA's
+        # value.
+        skip_correction_threshold: Float32 = -6.0,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
@@ -339,6 +352,7 @@ struct MLA_SM100_Decode_Config:
         self.depth = depth
         self.q_depth = q_depth
         self.rope_depth = q_depth - depth
+        self.skip_correction_threshold = skip_correction_threshold
 
         self.decode_layout_g = decode_layout_g
         # Layout G uses the 1x4 datapath (BM=MMA_M=32); Layout E uses 2x2 (=64).
@@ -3586,9 +3600,8 @@ struct MLA_SM100_Decode_Common[
                 )
             current_max *= log2e_f32
 
-            # every softmax thread signals arrival on the shared-mem barrier
-            comptime rescale_threshold: Float32 = Float32(
-                -8 if size_of[Self.q_type]() >= 2 else 0
+            comptime rescale_threshold: Float32 = (
+                Self.config.skip_correction_threshold
             )
             # Double-buffered write/read: even iterations use buffer 0,
             # odd iterations use buffer 1.  Branchless selection via
