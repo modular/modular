@@ -1071,9 +1071,11 @@ struct String(
         """
         # Fast path: exact `str` reads the cached UTF-8 buffer directly,
         # skipping `py.__str__()` and the temporary `PythonObject`. Subclasses
-        # fall through so an overridden `__str__` is honored.
+        # fall through so an overridden `__str__` is honored. A null
+        # `_obj_ptr` also falls through so CPython's `PyObject_Str` can
+        # render it as the string `"<NULL>"` (preserves prior behavior).
         ref cpy = Python().cpython()
-        if cpy.PyUnicode_CheckExact(py._obj_ptr):
+        if py._obj_ptr and cpy.PyUnicode_CheckExact(py._obj_ptr):
             var maybe_slice = cpy.PyUnicode_AsUTF8AndSize(py._obj_ptr)
             if not maybe_slice:
                 raise cpy.unsafe_get_error()

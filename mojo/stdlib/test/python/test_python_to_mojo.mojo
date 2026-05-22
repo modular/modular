@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.python import Python, PythonObject
+from std.python._cpython import PyObjectPtr
 from std.testing import (
     assert_equal,
     assert_equal_pyobj,
@@ -116,6 +117,16 @@ def test_string_empty_and_unicode() raises:
     assert_equal(String(py=PythonObject("héllo")), "héllo")
     assert_equal(String(py=PythonObject("\U0001F525")), "\U0001F525")
     assert_equal(String(py=PythonObject("foo\0bar")).byte_length(), 7)
+
+
+def test_string_from_null_pythonobject() raises:
+    # `PythonObject` constructed without arguments via `from_borrowed=PyObjectPtr()`
+    # has a null `_obj_ptr`. The fast path must skip `PyUnicode_CheckExact`
+    # on null (`Py_TYPE(NULL)` aborts) and fall through to `py.__str__()`,
+    # which CPython renders as "<NULL>". Regression for an Illegal-instruction
+    # abort surfaced by the `non-trivial-init` integration test.
+    var null_obj = PythonObject(from_borrowed=PyObjectPtr())
+    assert_equal(String(py=null_obj), "<NULL>")
 
 
 def main() raises:
