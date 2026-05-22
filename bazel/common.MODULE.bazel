@@ -519,6 +519,7 @@ filegroup(
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/numpy-objects-inv/2.4/0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245/numpy-objects-inv.tar.gz",
 )
 
+# Also update rev in /.pre-commit-config.yaml when changing this.
 RUMDL_VERSION = "0.1.95"
 
 [
