@@ -14,7 +14,7 @@
 
 Dict provides an efficient, O(1) amortized
 average-time complexity for insert, lookup, and removal of dictionary elements.
-It uses a Swiss Table implementation with SIMD group probing for fast lookups:
+It uses a SwissTable implementation with SIMD group probing for fast lookups:
 
 - Performance and size are heavily optimized for small dictionaries, but can
   scale to large dictionaries.
@@ -644,8 +644,8 @@ struct Dict[
 
     # Implementation:
     #
-    # This Dict uses a Swiss Table design with flat layout + insertion-order
-    # side array. The core Swiss Table logic (control bytes, SIMD probing,
+    # This Dict uses a SwissTable design with flat layout + insertion-order
+    # side array. The core SwissTable logic (control bytes, SIMD probing,
     # slot management) lives in _swisstable.SwissTable. Dict adds:
     #
     # - Insertion-order array: A separate List[Int32] tracks the order of
@@ -677,7 +677,7 @@ struct Dict[
     # ===-------------------------------------------------------------------===#
 
     var _table: SwissTable[Self.K, Self.V, Self.H]
-    """The underlying Swiss Table managing ctrl bytes, slots, and probing."""
+    """The underlying SwissTable managing ctrl bytes, slots, and probing."""
 
     var _order: List[Int32]
     """Insertion-order array of slot indices. Stale entries (from deleted slots)
