@@ -65,6 +65,7 @@ from std.sys.info import (
     _cdna_4_or_newer,
     _is_amd_mi300x,
     _is_sm_9x_or_newer,
+    _is_sm_121x,
     _is_sm_100x_or_newer,
 )
 from std.sys.intrinsics import _type_is_eq
@@ -3515,7 +3516,7 @@ def _convert_float8_to_f32[
     dtype: DType,
     size: Int,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float32, size]:
-    comptime if _is_sm_9x_or_newer() and dtype in (
+    comptime if _is_sm_9x_or_newer() and not _is_sm_121x() and dtype in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
@@ -3558,7 +3559,7 @@ def _convert_float8_to_f16[
     dtype: DType,
     size: Int,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float16, size]:
-    comptime if _is_sm_9x_or_newer() and dtype in (
+    comptime if _is_sm_9x_or_newer() and not _is_sm_121x() and dtype in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
     ):
