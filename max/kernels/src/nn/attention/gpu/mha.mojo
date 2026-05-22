@@ -1380,7 +1380,7 @@ def flash_attention[
     comptime depth = Int(q.layout.shape[q.rank-1])
     comptime gpu_info = ctx.default_device_info
     comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
-    comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
+    comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel and not (sink and not (gpu_info == H100 or _is_sm10x_gpu(gpu_info) or has_amd_gpu_accelerator()))
 
     comptime q_half_float = q.dtype in (DType.float16, DType.bfloat16)
     comptime kv_num_heads = Int(k.layout.shape[2])
