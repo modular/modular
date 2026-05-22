@@ -34,7 +34,7 @@ def test_sum_intable[*Ts: Intable](*pack: *Ts):
 
 
 def test_forward_any_pack[*Ts: AnyType](*pack: *Ts):
-    # expected-error @+1 {{invalid call to 'test_sum_intable': cannot unpack a pack of type 'AnyType' into a call that expects a pack of type 'Intable'}}
+    # expected-error @+1 {{invalid call to 'test_sum_intable': cannot unpack a pack of type 'AnyType' ('Ts.values') into a call that expects a pack of type 'Intable' ('Ts.values')}}
     test_sum_intable(*pack)
 
 
