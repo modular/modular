@@ -35,8 +35,8 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     UnifiedEagleOutputs,
 )
+from max.pipelines.lib._hf_config import PretrainedConfig
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
-from max.pipelines.lib.registry import AutoConfig
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model_config import Llama3Config
@@ -178,7 +178,7 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
     @classmethod
     def get_kv_params(
         cls,
-        huggingface_config: AutoConfig,
+        huggingface_config: PretrainedConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
@@ -372,7 +372,9 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
 
     @classmethod
     def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: PretrainedConfig,
     ) -> int:
         return Llama3Config.calculate_max_seq_len(
             pipeline_config, huggingface_config
