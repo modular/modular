@@ -17,16 +17,15 @@ topk, expert skew, optional shared experts) instead of a hand-built
 per-slot token list. The bench builds the routing tables (a_offsets,
 expert_ids, sti, ei) so we can sweep one knob at a time.
 
-algo selects the kernel (all MXFP4):
-  - "dense"      -> mxfp4_grouped_matmul_amd (per-expert offsets, LDS-staged B)
-  - "dense_preb" -> mxfp4_grouped_matmul_amd_preb (preshuffled B, direct VGPR loads)
-  - "routed"     -> mxfp4_moe_matmul_amd_routed (scattered sort blocks)
+algo selects the kernel (both are MXFP4):
+  - "dense"  -> mxfp4_grouped_matmul_amd (per-expert offsets)
+  - "routed" -> mxfp4_moe_matmul_amd_routed (scattered sort blocks)
 """
 
 from std.math import ceildiv
 from std.memory import bitcast
 from std.os import abort
-from std.random import seed, shuffle
+from std.random import Random, seed, shuffle
 from std.sys import (
     get_defined_int,
     get_defined_string,
@@ -46,7 +45,6 @@ from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu.amd import (
     Shuffler,
     mxfp4_grouped_matmul_amd,
-    mxfp4_grouped_matmul_amd_preb,
     mxfp4_moe_matmul_amd_routed,
 )
 
@@ -56,21 +54,107 @@ from linalg.matmul.gpu.amd import (
 # ===----------------------------------------------------------------------=== #
 
 
-def _parse_csv_ints(s: String) raises -> List[Int]:
-    # Accept "," or ";" as delimiter. kbench evals every yaml value as Python,
-    # so a comma-separated string becomes a tuple and expands into a sweep
-    # dimension that explodes the build matrix. Use ";" in yaml to keep the
-    # value as one literal string.
+def _parse_csv_floats(s: String) raises -> List[Float64]:
     var stripped = s.strip("[]\"' ")
-    var out = List[Int]()
+    var out = List[Float64]()
     if stripped.byte_length() == 0:
         return out^
-    var normalized = stripped.replace(";", ",")
-    for tok in normalized.split(","):
+    for tok in stripped.split(","):
         var t = String(tok).strip()
         if t.byte_length() == 0:
             continue
-        out.append(Int(t))
+        out.append(Float64(t))
+    return out^
+
+
+def _expand_skew(spec: String, n: Int) raises -> List[Float64]:
+    """Returns length-n percentages summing to 100 over the routed set."""
+    var s = spec.strip()
+    if s.byte_length() == 0 or s == "uniform":
+        var w = Float64(100) / Float64(n)
+        var out = List[Float64]()
+        for _ in range(n):
+            out.append(w)
+        return out^
+
+    if s.startswith("top_heavy:"):
+        var frac = Float64(s.removeprefix("top_heavy:"))
+        if frac < 0.0 or frac >= 1.0:
+            abort("top_heavy fraction must be in [0, 1)")
+        var rest = (1.0 - frac) * 100.0 / Float64(n - 1) if n > 1 else 0.0
+        var out = List[Float64]()
+        out.append(frac * 100.0)
+        for _ in range(n - 1):
+            out.append(rest)
+        return out^
+
+    var parsed = _parse_csv_floats(String(s))
+    if len(parsed) != n:
+        abort(
+            "expert_skew length="
+            + String(len(parsed))
+            + " but routed expert count="
+            + String(n)
+        )
+    return parsed^
+
+
+def _largest_remainder(weights: List[Float64], total: Int) -> List[Int]:
+    """Rounds real-valued weights (summing to ~100) to ints summing to total."""
+    var n = len(weights)
+    var floors = List[Int]()
+    var fracs = List[Float64]()
+    var assigned = 0
+    for i in range(n):
+        var raw = Float64(total) * weights[i] / 100.0
+        var f = Int(raw)
+        floors.append(f)
+        fracs.append(raw - Float64(f))
+        assigned += f
+    var remaining = total - assigned
+    # Distribute remaining +1s to entries with the largest fractional part.
+    while remaining > 0:
+        var best = -1
+        var best_frac = -1.0
+        for i in range(n):
+            if fracs[i] > best_frac:
+                best_frac = fracs[i]
+                best = i
+        floors[best] += 1
+        fracs[best] = -1.0
+        remaining -= 1
+    return floors^
+
+
+# ===----------------------------------------------------------------------=== #
+# Sampling
+# ===----------------------------------------------------------------------=== #
+
+
+def _sample_distinct(
+    mut rng: Random, universe: Int, k: Int
+) raises -> List[Int]:
+    """Sample k distinct values from [0, universe). k must be <= universe."""
+    if k > universe:
+        abort(
+            "sample_distinct: k="
+            + String(k)
+            + " > universe="
+            + String(universe)
+        )
+    var pool = List[Int]()
+    for i in range(universe):
+        pool.append(i)
+    # Partial Fisher-Yates with our seeded rng.
+    for i in range(k):
+        var u = rng.step()
+        var j = i + Int(UInt32(u[0]) % UInt32(universe - i))
+        var tmp = pool[i]
+        pool[i] = pool[j]
+        pool[j] = tmp
+    var out = List[Int]()
+    for i in range(k):
+        out.append(pool[i])
     return out^
 
 
@@ -111,6 +195,32 @@ def _run_name(
 # ===----------------------------------------------------------------------=== #
 # Per-expert route construction
 # ===----------------------------------------------------------------------=== #
+
+
+def _build_target_counts(
+    M: Int,
+    topk: Int,
+    num_active_experts: Int,
+    num_shared_experts: Int,
+    skew_spec: String,
+) raises -> List[Int]:
+    """Returns length-num_active_experts route counts summing to M*topk.
+
+    Shared experts (first num_shared_experts entries) get exactly M each.
+    Routed experts share M*(topk - num_shared_experts) by skew_spec.
+    """
+    var n_routed = num_active_experts - num_shared_experts
+    var routed_total = M * (topk - num_shared_experts)
+    var counts = List[Int]()
+    for _ in range(num_shared_experts):
+        counts.append(M)
+    if n_routed == 0:
+        return counts^
+    var routed_skew = _expand_skew(skew_spec, n_routed)
+    var routed_counts = _largest_remainder(routed_skew, routed_total)
+    for c in routed_counts:
+        counts.append(c)
+    return counts^
 
 
 def _build_per_expert_routes(
@@ -171,7 +281,6 @@ def bench_dense[
     expert_id_pool: List[Int],
     skew_spec: String,
     init_type: InitializationType,
-    max_tokens_capacity: Int = 0,
 ) raises:
     comptime packed_K = K // 2
     comptime scale_K = K // 32
@@ -204,9 +313,6 @@ def bench_dense[
         b_dev, num_experts * N * packed_K, init_type, ctx
     )
 
-    # float8_e8m0fnu cannot represent zero, so init_vector_launch crashes
-    # the compiler with "format does not support Zero". memset preserves the
-    # neutral "1.0" scale (0x7F) until we wire a proper random initializer.
     ctx.enqueue_memset(a_scales_dev, bitcast[DType.float8_e8m0fnu](UInt8(127)))
     ctx.enqueue_memset(b_scales_dev, bitcast[DType.float8_e8m0fnu](UInt8(127)))
 
@@ -222,12 +328,6 @@ def bench_dense[
         ei_h[e] = Int32(expert_id_pool[e])
         if c > max_count:
             max_count = c
-    # Production carries a capacity-bound `max_num_tokens_per_expert`
-    # (default 8192 = `max_batch_input_tokens`), not the actual per-call
-    # max. When `max_tokens_capacity > 0` simulate that.
-    var max_tokens_for_kernel = (
-        max_tokens_capacity if max_tokens_capacity > 0 else max_count
-    )
     ctx.enqueue_copy(a_offsets_dev, a_off_h)
     ctx.enqueue_copy(expert_ids_dev, ei_h)
     ctx.synchronize()
@@ -267,7 +367,7 @@ def bench_dense[
                 sfb_tt,
                 aoff_tt,
                 ei_tt,
-                max_tokens_for_kernel,
+                max_count,
                 num_active_experts,
                 ctx,
             )
@@ -292,154 +392,6 @@ def bench_dense[
 
     _ = a_dev^
     _ = b_dev^
-    _ = a_scales_dev^
-    _ = b_scales_dev^
-    _ = c_dev^
-    _ = a_offsets_dev^
-    _ = expert_ids_dev^
-
-
-# ===----------------------------------------------------------------------=== #
-# Dense + preshuffled-B path (mxfp4_grouped_matmul_amd_preb)
-# ===----------------------------------------------------------------------=== #
-
-
-def bench_dense_preb[
-    num_experts: Int,
-    N: Int,
-    K: Int,
-    num_shared_experts: Int,
-    topk: Int,
-](
-    ctx: DeviceContext,
-    mut bench: Bench,
-    M: Int,
-    num_active_experts: Int,
-    target_counts: List[Int],
-    expert_id_pool: List[Int],
-    skew_spec: String,
-    init_type: InitializationType,
-    max_tokens_capacity: Int = 0,
-    estimated_total_m: Int = 0,
-) raises:
-    comptime packed_K = K // 2
-    comptime scale_K = K // 32
-
-    var total_routes = M * topk
-    var total_flops = 2 * total_routes * N * K
-
-    var a_dev = ctx.enqueue_create_buffer[DType.uint8](total_routes * packed_K)
-    # B buffer is the preshuffled layout, same total bytes as raw B. We don't
-    # actually preshuffle here (no correctness check in the bench); the bytes
-    # are random and the kernel times the same regardless of content.
-    var b_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * N * packed_K
-    )
-    var a_scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        total_routes * scale_K
-    )
-    var b_scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        num_experts * N * scale_K
-    )
-    var c_dev = ctx.enqueue_create_buffer[DType.float32](total_routes * N)
-    var a_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
-        num_active_experts + 1
-    )
-    var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](
-        num_active_experts
-    )
-
-    init_vector_launch[DType.uint8](
-        a_dev, total_routes * packed_K, init_type, ctx
-    )
-    init_vector_launch[DType.uint8](
-        b_pre_dev, num_experts * N * packed_K, init_type, ctx
-    )
-
-    # See comment in bench_dense — float8_e8m0fnu has no zero, init_vector_launch fails.
-    ctx.enqueue_memset(a_scales_dev, bitcast[DType.float8_e8m0fnu](UInt8(127)))
-    ctx.enqueue_memset(b_scales_dev, bitcast[DType.float8_e8m0fnu](UInt8(127)))
-
-    var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](
-        num_active_experts + 1
-    )
-    var ei_h = ctx.enqueue_create_host_buffer[DType.int32](num_active_experts)
-    a_off_h[0] = 0
-    var max_count = 0
-    for e in range(num_active_experts):
-        var c = target_counts[e]
-        a_off_h[e + 1] = a_off_h[e] + UInt32(c)
-        ei_h[e] = Int32(expert_id_pool[e])
-        if c > max_count:
-            max_count = c
-    var max_tokens_for_kernel = (
-        max_tokens_capacity if max_tokens_capacity > 0 else max_count
-    )
-    ctx.enqueue_copy(a_offsets_dev, a_off_h)
-    ctx.enqueue_copy(expert_ids_dev, ei_h)
-    ctx.synchronize()
-
-    var a_tt = TileTensor[mut=False](
-        a_dev, row_major(Coord(total_routes, Idx[packed_K]))
-    )
-    var b_pre_tt = TileTensor[mut=False](
-        b_pre_dev, row_major[num_experts, N * packed_K]()
-    )
-    var sfa_tt = TileTensor[mut=False](
-        a_scales_dev, row_major(Coord(total_routes, Idx[scale_K]))
-    )
-    var sfb_tt = TileTensor[mut=False](
-        b_scales_dev, row_major[num_experts, N, scale_K]()
-    )
-    var aoff_tt = TileTensor(
-        a_offsets_dev, row_major(Coord(num_active_experts + 1))
-    )
-    var ei_tt = TileTensor(expert_ids_dev, row_major(Coord(num_active_experts)))
-    var c_tt = TileTensor[mut=True](
-        c_dev, row_major(Coord(total_routes, Idx[N]))
-    )
-
-    @parameter
-    @__copy_capture(c_tt, a_tt, b_pre_tt, sfa_tt, sfb_tt, aoff_tt, ei_tt)
-    @always_inline
-    def bench_func(mut bencher: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            mxfp4_grouped_matmul_amd_preb(
-                c_tt,
-                a_tt,
-                b_pre_tt,
-                sfa_tt,
-                sfb_tt,
-                aoff_tt,
-                ei_tt,
-                max_tokens_for_kernel,
-                num_active_experts,
-                ctx,
-                estimated_total_m,
-            )
-
-        bencher.iter_custom[kernel_launch](ctx)
-
-    bench.bench_function[bench_func](
-        BenchId(
-            _run_name(
-                "gmm_amd_preb (uint8 -> float32)",
-                num_experts,
-                num_active_experts,
-                M,
-                topk,
-                N,
-                K,
-                skew_spec,
-            )
-        ),
-        [ThroughputMeasure(BenchMetric.flops, total_flops)],
-    )
-
-    _ = a_dev^
-    _ = b_pre_dev^
     _ = a_scales_dev^
     _ = b_scales_dev^
     _ = c_dev^
@@ -504,12 +456,8 @@ def bench_routed[
     init_vector_launch[DType.uint8](
         b_pre_dev, num_experts * N * packed_K, init_type, ctx
     )
-    init_vector_launch[DType.uint8](
-        sfa_pre_dev, size_expert_ids * sfa_per_block_bytes, init_type, ctx
-    )
-    init_vector_launch[DType.uint8](
-        sfb_pre_dev, num_experts * sfb_per_expert_bytes, init_type, ctx
-    )
+    ctx.enqueue_memset(sfa_pre_dev, UInt8(127))
+    ctx.enqueue_memset(sfb_pre_dev, UInt8(127))
 
     var sti_h = ctx.enqueue_create_host_buffer[DType.uint32](
         size_expert_ids * sort_block_m
@@ -632,8 +580,8 @@ def main() raises:
         num_shared_experts <= topk
     ), "num_shared_experts cannot exceed topk"
     comptime assert (
-        algo == "dense" or algo == "dense_preb" or algo == "routed"
-    ), "algo must be dense, dense_preb, or routed"
+        algo == "dense" or algo == "routed"
+    ), "algo must be dense or routed"
 
     var num_active_experts = Int(arg_parse("num_active_experts", 1))
     var M = Int(arg_parse("M", 256))
@@ -642,20 +590,6 @@ def main() raises:
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
-    # Production simulates a capacity-bound `max_num_tokens_per_expert`
-    # (e.g. 8192 = `max_batch_input_tokens` default) regardless of actual
-    # routing. When >0 this override is forwarded to the kernel instead of
-    # the routing-derived max. Default 0 = use actual.
-    var max_tokens_capacity = Int(arg_parse("max_tokens_capacity", 0))
-    # Replay a literal serve routing: pass comma-separated per-slot token
-    # counts and expert IDs. Both must be set together and both must have
-    # length == num_active_experts. Bypasses skew synthesis.
-    var target_counts_csv = String(arg_parse("target_counts", ""))
-    var expert_ids_csv = String(arg_parse("expert_ids", ""))
-    # EP topology: total GPUs the inputs are split across (DP). Used to
-    # compute `estimated_total_m = M * topk // n_gpus_per_node` for the
-    # preb dispatcher's persistent-vs-direct path switch.
-    var n_gpus_per_node = Int(arg_parse("n_gpus_per_node", 8))
 
     if num_active_experts < num_shared_experts:
         abort(
@@ -679,39 +613,12 @@ def main() raises:
             + String(num_active_experts)
         )
 
-    if (
-        target_counts_csv.byte_length() == 0
-        or expert_ids_csv.byte_length() == 0
-    ):
-        abort(
-            "target_counts and expert_ids are required (pass both as"
-            ' ";"-separated lists of length num_active_experts)'
-        )
-    var target_counts = _parse_csv_ints(target_counts_csv)
-    var expert_id_pool = _parse_csv_ints(expert_ids_csv)
-    if len(target_counts) != num_active_experts:
-        abort(
-            "target_counts length="
-            + String(len(target_counts))
-            + " must equal num_active_experts="
-            + String(num_active_experts)
-        )
-    if len(expert_id_pool) != num_active_experts:
-        abort(
-            "expert_ids length="
-            + String(len(expert_id_pool))
-            + " must equal num_active_experts="
-            + String(num_active_experts)
-        )
-    for e in expert_id_pool:
-        if e < 0 or e >= num_experts:
-            abort(
-                "expert_ids contains out-of-range value="
-                + String(e)
-                + " (num_experts="
-                + String(num_experts)
-                + ")"
-            )
+    var target_counts = _build_target_counts(
+        M, topk, num_active_experts, num_shared_experts, skew_spec
+    )
+
+    var rng = Random(seed=seed_val)
+    var expert_id_pool = _sample_distinct(rng, num_experts, num_active_experts)
 
     print(
         "Config: algo=",
@@ -761,32 +668,6 @@ def main() raises:
                 expert_id_pool,
                 skew_spec,
                 init_type,
-                max_tokens_capacity,
-            )
-        elif algo == "dense_preb":
-            # Mirror production formula in expert_parallel.py:
-            #   estimated_total_m = total_tokens * topk // n_gpus_per_node
-            # In the bench `total_tokens` is the per-GPU input batch (=M),
-            # so this collapses to `M * topk // n_gpus_per_node`. For Kimi
-            # K2.5 (topk=8, EP=8) the multiplier is 1 → estimated == M.
-            var estimated_total_m = M * topk // n_gpus_per_node
-            bench_dense_preb[
-                num_experts=num_experts,
-                N=N,
-                K=K,
-                num_shared_experts=num_shared_experts,
-                topk=topk,
-            ](
-                ctx,
-                bench,
-                M,
-                num_active_experts,
-                target_counts,
-                expert_id_pool,
-                skew_spec,
-                init_type,
-                max_tokens_capacity,
-                estimated_total_m,
             )
         else:
             var per_expert_routes = _build_per_expert_routes(

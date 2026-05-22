@@ -88,8 +88,6 @@ from .amd_matmul_schedule import (
 )
 from pipeline.pipeline_dsl import ScheduleEntry
 
-from .mxfp4_preshuffle_loaders import PreshuffledBLoader
-
 # MXFP4: 32 MXFP4 elements per E8M0 scale.
 comptime MX_BLOCK_SIZE = 32
 
@@ -109,7 +107,6 @@ struct BlockScaledMmaOp[
     num_m_mmas: Int,
     num_n_mmas: Int,
     num_k_tiles: Int,
-    num_b_slots: Int = 1,
 ]:
     """Register ownership + block-scaled MFMA execution.
 
@@ -153,10 +150,9 @@ struct BlockScaledMmaOp[
         Self.mma_frag_width_bytes,
     ]()
     comptime _b_reg_layout = row_major[
-        Self.num_b_slots * Self.num_n_mmas * Self.num_k_tiles,
+        Self.num_n_mmas * Self.num_k_tiles,
         Self.mma_frag_width_bytes,
     ]()
-    comptime _b_slot_stride = Self.num_n_mmas * Self.num_k_tiles
     comptime _c_reg_layout = row_major[
         Self.num_m_mmas,
         Self.num_n_mmas * Self.c_frag_size,
@@ -277,64 +273,6 @@ struct BlockScaledMmaOp[
             self._a_reg.vectorize[1, frag_w]()[a_idx, 0] = a_frag[0, 0]
 
     @always_inline
-    def load_a_frag_from_smem[
-        k_tile_idx: Int
-    ](
-        self,
-        a_smem_warp: TileTensor[
-            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
-        ],
-    ):
-        """A-only variant of `load_frag_from_smem` for callers that source B
-        elsewhere (e.g. preshuffled DRAM via PreshuffledBLoader)."""
-        comptime frag_w = Self.mma_frag_width_bytes  # 16
-        comptime mma_k_bytes = Self.packed_k_per_mma  # 64
-        comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
-        comptime for i in range(Self.num_m_mmas):
-            var a_idx = k_tile_idx * Self.num_m_mmas + i
-            var a_frag = (
-                a_smem_warp.tile[Self.MMA_M, mma_k_bytes](i, k_tile_idx)
-                .vectorize[1, frag_w]()
-                .distribute[lane_layout](lane_id())
-            )
-            self._a_reg.vectorize[1, frag_w]()[a_idx, 0] = a_frag[0, 0]
-
-    @always_inline
-    def load_b_frag_preshuffled[
-        k_tile_idx: Int, N: Int, K_BYTES: Int, slot: Int = 0
-    ](
-        self,
-        b_loader: PreshuffledBLoader[N, K_BYTES],
-        warp_n_off: Int,
-        k_byte_base: Int,
-    ):
-        """Load B fragments directly from preshuffled DRAM into b_reg slot `slot`.
-
-        Each lane issues one `buffer_load_dwordx4` per (k_tile, n_mma) at the
-        per-lane MFMA mapping `(lane%16 → n-row, lane//16 → k-group)`. The
-        `slot` parameter selects which b_reg half to write into when
-        `num_b_slots > 1` (depth-2 prefetch).
-        """
-        comptime assert slot < Self.num_b_slots, "slot out of range"
-        comptime frag_w = Self.mma_frag_width_bytes  # 16
-        comptime mma_k_bytes = Self.packed_k_per_mma  # 64
-        var lane_nlane = lane_id() % Self.MMA_N
-        var lane_klane = lane_id() // Self.MMA_N
-        comptime for i in range(Self.num_n_mmas):
-            var b_idx = (
-                slot * Self._b_slot_stride + k_tile_idx * Self.num_n_mmas + i
-            )
-            var n_log = warp_n_off + i * Self.MMA_N + Int(lane_nlane)
-            var k_byte_log = (
-                k_byte_base
-                + k_tile_idx * mma_k_bytes
-                + Int(lane_klane) * frag_w
-            )
-            self._b_reg.vectorize[1, frag_w]()[
-                b_idx, 0
-            ] = b_loader.load_fragment(n_log, k_byte_log)
-
-    @always_inline
     def load_scales_from_smem[
         k_tile_idx: Int
     ](
@@ -399,25 +337,18 @@ struct BlockScaledMmaOp[
         self._b_scale_packed.raw_store(k_tile_idx, b_packed)
 
     @always_inline
-    def mma[k_tile_idx: Int, slot: Int = 0](self):
-        """Execute block-scaled MFMA for k-tile k_tile_idx using B from `slot`.
+    def mma[k_tile_idx: Int](self):
+        """Execute block-scaled MFMA for k-tile k_tile_idx.
 
         B→src_a, A→src_b (AMD MFMA convention).
         The packed scale VGPRs hold one byte per spatial MMA tile.
         a_scale_byte_index=m selects byte m from _a_scale_packed,
         b_scale_byte_index=n selects byte n from _b_scale_packed.
-
-        `slot` selects which b_reg half to read when `num_b_slots > 1`.
         """
-        comptime assert slot < Self.num_b_slots, "slot out of range"
         comptime for m in range(Self.num_m_mmas):
             comptime for n in range(Self.num_n_mmas):
                 comptime a_row = k_tile_idx * Self.num_m_mmas + m
-                comptime b_row = (
-                    slot * Self._b_slot_stride
-                    + k_tile_idx * Self.num_n_mmas
-                    + n
-                )
+                comptime b_row = k_tile_idx * Self.num_n_mmas + n
                 comptime a_off = a_row * Self.mma_frag_width_bytes
                 comptime b_off = b_row * Self.mma_frag_width_bytes
                 comptime c_off = (

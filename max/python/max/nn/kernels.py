@@ -3889,7 +3889,6 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     expert_usage_stats_host: TensorValue,
     out_type: DType = DType.bfloat16,
     estimated_total_m: TensorValue | None = None,
-    preshuffled_b: bool = False,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -4001,16 +4000,6 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             f"[{weight.shape[0]}, {weight.shape[1]}, {b_scales_dim_2}] but got {b_scales.shape}"
         )
 
-    # `estimated_total_m` defaults to 0 (unknown). When `preshuffled_b` is
-    # True, the AMD preb kernel uses it to choose between persistent (small)
-    # and direct 3D-grid (large) dispatch paths. Ignored on the dense path.
-    if estimated_total_m is None:
-        estimated_total_m_arg = ops.constant(
-            0, dtype=DType.uint32, device=hidden_states.device
-        )
-    else:
-        estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
-
     output = ops.custom(
         "mo.grouped.matmul.block.scaled.mxfp4",
         device=hidden_states.device,
@@ -4023,7 +4012,6 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             expert_ids,
             expert_usage_stats_host[0],
             expert_usage_stats_host[1],
-            estimated_total_m_arg,
         ],
         out_types=[
             TensorType(
@@ -4032,7 +4020,6 @@ def grouped_dynamic_scaled_mxfp4_matmul(
                 device=hidden_states.device,
             ),
         ],
-        parameters={"preshuffled_b": preshuffled_b},
     )[0].tensor
 
     return output
@@ -5561,45 +5548,6 @@ def block_scales_interleave(
     )[0].tensor
 
     return result
-
-
-def mxfp4_preshuffle_b_5d(b: TensorValue) -> TensorValue:
-    """Applies the AMD CDNA4 MXFP4 B 5D preshuffle to a rank-3 weight.
-
-    Reorders the packed-FP4 bytes from ``[E, N, K_BYTES]`` row-major into the
-    5D ``(E, N0, K0, KLane=4, NLane=16, KPack=16)`` byte layout expected by
-    the ``mxfp4_grouped_matmul_amd_preb`` reader. Output is byte-identical to
-    ``Shuffler[E].preshuffle_b_5d`` running on the same input.
-
-    Intended for eager invocation from weight adapters (one-shot graph), not
-    inside the main forward graph — the preb matmul kernel reads weights
-    that are already in this layout.
-
-    Args:
-        b: Rank-3 ``uint8`` tensor ``[E, N, K_BYTES]`` of packed FP4 weights.
-            ``N`` must be a multiple of 16 and ``K_BYTES`` a multiple of 64.
-
-    Returns:
-        Rank-3 ``uint8`` tensor with the same shape and total byte count as
-        ``b``, with bytes reordered to the 5D layout.
-    """
-    if b.rank != 3:
-        raise ValueError("b must be a rank 3 tensor [E, N, K_BYTES]")
-    if b.dtype != DType.uint8:
-        raise ValueError(f"b must be uint8 (packed MXFP4), got {b.dtype}")
-
-    return ops.custom(
-        "mo.mxfp4.preshuffle.b.5d",
-        device=b.device,
-        values=[b],
-        out_types=[
-            TensorType(
-                dtype=DType.uint8,
-                shape=b.shape,
-                device=b.device,
-            ),
-        ],
-    )[0].tensor
 
 
 def matmul_static_scaled_float8(

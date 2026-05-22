@@ -273,16 +273,6 @@ class QuantConfig:
     Note that scales in the 5D TCGEN-interleaved layout are typically flattened
     to 2D ``[M, K//16]`` in the checkpoint."""
 
-    mxfp4_preshuffled_b: bool = False
-    """Whether MXFP4 weight ``B`` is preshuffled into the 5D layout that the
-    AMD preb kernel reads (produced by ``Shuffler.preshuffle_b_5d``). When
-    True, ``MoEQuantized`` dispatches the grouped matmul to the
-    ``mxfp4_grouped_matmul_amd_preb`` kernel variant; when False (default)
-    it dispatches to the dense row-major ``mxfp4_grouped_matmul_amd``
-    kernel. Must be set in lockstep with the weight loader actually
-    applying the preshuffle (e.g. Kimi K2.5's
-    ``weight_adapters.py:_shuffle_group``)."""
-
     @property
     def scales_granularity_mnk(self) -> tuple[int, int, int]:
         """The weight and input scale granularities on the M, N, and K axes."""

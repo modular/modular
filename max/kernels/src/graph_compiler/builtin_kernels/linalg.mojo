@@ -145,7 +145,6 @@ from linalg.fp4_quantization import (
 from linalg.matmul.gpu.amd import (
     mxfp4_block_scaled_matmul_amd,
     mxfp4_grouped_matmul_amd,
-    mxfp4_grouped_matmul_amd_preb,
 )
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.mxfp4_dequant import dequant_mxfp4
@@ -972,20 +971,11 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
 
 
 @compiler.register("mo.grouped.matmul.block.scaled.mxfp4")
-struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
+struct Struct_grouped_matmul_block_scaled_mxfp4:
     """MOGG wrapper for grouped block-scaled matrix multiplication.
 
     Provides graph compiler integration for block-scaled grouped matmul
     operations used in Mixture of Experts (MoE) layers on AMD GPUs.
-
-    Parameters:
-        preshuffled_b: When True, dispatches to `mxfp4_grouped_matmul_amd_preb`
-            which expects B in the 5D preshuffled layout from
-            `Shuffler.preshuffle_b_5d` (typically produced by the model's
-            weight adapter at load time, e.g. Kimi K2.5). When False
-            (default), dispatches to the dense `mxfp4_grouped_matmul_amd`
-            kernel that reads B row-major. The caller is responsible for
-            preparing B in the matching layout.
     """
 
     @always_inline
@@ -1004,7 +994,6 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
         expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
-        estimated_total_m: UInt32,
         context: DeviceContext,
     ) raises:
         """Executes grouped block-scaled matrix multiplication.
@@ -1026,10 +1015,6 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
             expert_ids: The expert ID for each group.
             max_num_tokens_per_expert: The maximum token count for any expert.
             num_active_experts: The number of active experts.
-            estimated_total_m: Estimated total received tokens for this GPU,
-                used by the preb dispatcher to pick the persistent vs direct
-                kernel path. Pass 0 to default to persistent. Ignored when
-                `preshuffled_b == False`.
             context: The device context pointer.
         """
         comptime assert is_gpu[
@@ -1037,39 +1022,18 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[preshuffled_b: Bool = False]:
         ](), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        comptime if Self.preshuffled_b:
-            # Preshuffled-B kernel path (mxfp4_grouped_matmul_amd_preb).
-            # Requires B in the 5D layout from `Shuffler.preshuffle_b_5d`,
-            # typically produced by the model's weight adapter at load
-            # time (e.g. kimik2_5/weight_adapters.py). Correctness
-            # requires EP-MoE sharding (axis-0); TP-MoE is unsupported.
-            mxfp4_grouped_matmul_amd_preb(
-                c.to_tile_tensor[DType.int64](),
-                a.to_tile_tensor[DType.int64](),
-                b.to_tile_tensor[DType.int64](),
-                a_scales.to_tile_tensor[DType.int64](),
-                b_scales.to_tile_tensor[DType.int64](),
-                expert_start_indices.to_tile_tensor[DType.int64](),
-                expert_ids.to_tile_tensor[DType.int64](),
-                Int(max_num_tokens_per_expert),
-                Int(num_active_experts),
-                context,
-                Int(estimated_total_m),
-            )
-        else:
-            # Dense row-major B path. Safe default for arbitrary callers.
-            mxfp4_grouped_matmul_amd(
-                c.to_tile_tensor[DType.int64](),
-                a.to_tile_tensor[DType.int64](),
-                b.to_tile_tensor[DType.int64](),
-                a_scales.to_tile_tensor[DType.int64](),
-                b_scales.to_tile_tensor[DType.int64](),
-                expert_start_indices.to_tile_tensor[DType.int64](),
-                expert_ids.to_tile_tensor[DType.int64](),
-                Int(max_num_tokens_per_expert),
-                Int(num_active_experts),
-                context,
-            )
+        mxfp4_grouped_matmul_amd(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            context,
+        )
 
 
 @compiler.register("mo.batched.matmul.dynamic.scaled.fp8")

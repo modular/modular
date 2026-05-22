@@ -55,11 +55,7 @@ class MoEQuantized(MoE):
         if self.quant_config.is_nvfp4:
             return Nvfp4Strategy(self.quant_config, self.dtype)
         elif self.quant_config.is_mxfp4:
-            return Mxfp4Strategy(
-                self.quant_config,
-                self.dtype,
-                preshuffled_b=self.quant_config.mxfp4_preshuffled_b,
-            )
+            return Mxfp4Strategy(self.quant_config, self.dtype)
         return Fp8Strategy(self.quant_config, self.dtype)
 
     @property
