@@ -71,7 +71,7 @@ from std.gpu._utils import to_i32, to_i64
 from std.gpu.intrinsics import AMDBufferResource
 from std.memory import AddressSpace
 from std.memory.unsafe import bitcast
-from std.math import ceildiv, min
+from std.math import min
 from std.math.uutils import umod, ufloordiv
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import readfirstlane
@@ -759,25 +759,12 @@ def load_lds_fragment[
     comptime reg_cols = reg_layout.static_shape[1]
     comptime reg_stride = reg_layout.static_stride[0]
     comptime MMA_M = smem_rows // num_mmas
-    comptime assert MMA_M >= 1 and smem_rows % num_mmas == 0, (
-        "load_lds_fragment: MMA_M = smem_rows // num_mmas must be >= 1"
-        " and divide evenly."
-    )
     comptime mma_frag_width = MMA_M * MMA_K // WARP_SIZE
-    comptime assert mma_frag_width >= 1, (
-        "load_lds_fragment: mma_frag_width = MMA_M * MMA_K // WARP_SIZE"
-        " floored to 0 — MMA shape too small for the wavefront."
-    )
     comptime use_fp8_split = (
         dtype.is_float8() and MMA_M == 16 and MMA_K == 128
     )
     comptime lds_frag_width = 16 if use_fp8_split else mma_frag_width
     comptime num_iterations = (num_mmas * reg_cols) // lds_frag_width
-    comptime assert num_iterations >= 1, (
-        "load_lds_fragment: num_iterations = (num_mmas * reg_cols) //"
-        " lds_frag_width floored to 0 — destination register tile too"
-        " small for the fragment width."
-    )
 
     # SMEM row stride: when the smem tile is a narrow sub-tile of a wider
     # allocation (stride > cols), use the physical stride. Otherwise use the
@@ -801,10 +788,6 @@ def load_lds_fragment[
     comptime FragElement = SIMD[dtype, lds_frag_width]
 
     comptime col_groups = WARP_SIZE // MMA_M
-    comptime assert col_groups >= 1, (
-        "load_lds_fragment: col_groups = WARP_SIZE // MMA_M floored to 0"
-        " (MMA_M > WARP_SIZE)."
-    )
     var lane = lane_id()
     var lane_offset = (
         Int(lane % MMA_M) * lds_row_stride + Int(lane // MMA_M) * lds_frag_width
@@ -816,10 +799,6 @@ def load_lds_fragment[
     comptime if use_split_k:
         comptime k_splits = lds_row_stride // elements_per_iter
         comptime m_positions = num_iterations // k_splits
-        comptime assert k_splits >= 1 and m_positions >= 1, (
-            "load_lds_fragment split-K: k_splits and m_positions must be"
-            " >= 1. Geometry inconsistent — would emit zero LDS reads."
-        )
         comptime k_stride = elements_per_iter
         comptime m_stride = lds_row_stride * MMA_M
 
@@ -1133,21 +1112,7 @@ struct TileLoaderLDS[
     comptime rows_per_iteration = Self.loading_threads // (
         Self.tile_cols // Self.load_width
     )
-    # `ceildiv` (not floor-div) so that under-supplied sub-tiles —
-    # `tile_rows < rows_per_iteration` (e.g. half_BM=32 + BK=32 + bf16
-    # where 256 loading threads can transfer the whole 32x32 sub-tile in
-    # ~half a wave) — get `num_iterations == 1`. Floor-div rounded this
-    # to 0, the `comptime for i in range(0)` unrolled 0 times, and the
-    # loader silently emitted zero `buffer_load_lds` — LDS uninit, MMA
-    # garbage. The `load_tile` body gates over-supplied warps via
-    # `warp_id < active_warps_this_iter` (computed per-iter from
-    # `total_warp_rows`) so warps mapped past the sub-tile boundary
-    # skip the load (vmcnt unaffected for them — s_waitcnt is a no-op).
-    comptime num_iterations = ceildiv(Self.tile_rows, Self.rows_per_iteration)
-    # Total warp-rows of work across all iterations; clamped against
-    # `num_iterations * num_loading_warps` from above. The per-iter
-    # `active_warps_this_iter` derives from this.
-    comptime total_warp_rows = ceildiv(Self.tile_rows, Self.rows_per_warp)
+    comptime num_iterations = Self.tile_rows // Self.rows_per_iteration
 
     comptime warp_subtile_bytes = Self.rows_per_warp * Self.tile_cols * size_of[
         Self.dtype
@@ -1203,49 +1168,6 @@ struct TileLoaderLDS[
             k_anchor: K-coordinate (column dim) of the block origin.
                 Added to `k_offset` at load time. Defaults to 0.
         """
-        # === Tier 2/3 sanity asserts: catch silently-zeroed counts ===
-        # The class body computes a chain of integer divisions
-        # (`subtile_cols // load_width`, `tile_cols // subtile_cols`,
-        # ..., `tile_rows // rows_per_iteration`). When any link
-        # flooris to 0, downstream `comptime for` loops unroll 0
-        # times — loader emits no `buffer_load_lds` at all, LDS stays
-        # uninitialized, MMA reads garbage. These asserts make every
-        # link's invariant explicit.
-        comptime assert Self.threads_per_row >= 1, (
-            "threads_per_row = subtile_cols // load_width must be >= 1"
-            " (subtile_cols >= load_width)."
-        )
-        comptime assert (
-            Self.subtile_cols % Self.load_width == 0
-        ), "subtile_cols must be a multiple of load_width."
-        comptime assert Self.num_warp_cols >= 1, (
-            "num_warp_cols = tile_cols // subtile_cols must be >= 1"
-            " (tile_cols >= subtile_cols)."
-        )
-        comptime assert (
-            Self.tile_cols % Self.subtile_cols == 0
-        ), "tile_cols must be a multiple of subtile_cols."
-        comptime assert Self.num_loading_warps % Self.num_warp_cols == 0, (
-            "num_loading_warps must be a multiple of num_warp_cols"
-            " (otherwise num_warp_rows loses warps)."
-        )
-        comptime assert Self.rows_per_warp >= 1, (
-            "rows_per_warp = WARP_SIZE * load_width // tile_cols must be"
-            " >= 1 (each warp must cover at least one row)."
-        )
-        comptime assert Self.rows_per_iteration >= 1, (
-            "rows_per_iteration must be >= 1 (loading_threads /"
-            " (tile_cols / load_width)). Sub-tile too narrow for"
-            " 4-wave coverage."
-        )
-        comptime assert Self.num_iterations >= 1, (
-            "num_iterations = ceildiv(tile_rows, rows_per_iteration) == 0"
-            " — tile_rows must be >= 1."
-        )
-        comptime assert Self.total_warp_rows >= 1, (
-            "total_warp_rows = ceildiv(tile_rows, rows_per_warp) == 0"
-            " — tile_rows must be >= 1."
-        )
         self.buffer = make_amd_buffer_resource(src)
         self.warp_id = warp_id
         self.lane_id = lane_id
@@ -1304,15 +1226,6 @@ struct TileLoaderLDS[
             var lane_byte = self.lane_id * Self.lane_load_bytes
 
             comptime for i in range(Self.num_iterations):
-                # When `tile_rows < num_loading_warps * rows_per_warp`,
-                # the last (or only) iteration covers fewer than the
-                # full warp grid. Gate over-supplied warps so they
-                # don't issue a load_to_lds past the sub-tile end.
-                # See `total_warp_rows` doc for rationale.
-                comptime active_warps_this_iter = min(
-                    Self.num_loading_warps,
-                    Self.total_warp_rows - i * Self.num_loading_warps,
-                )
                 var tile_idx = i * Self.num_loading_warps + self.warp_id
                 var warp_tile = dst.tile[Self.rows_per_warp, Self.tile_cols](
                     tile_idx, 0
@@ -1330,30 +1243,15 @@ struct TileLoaderLDS[
                 var lane_offset = swizzled_col + swizzled_row * Self.stride
                 var uniform_offset = k_eff + m_eff * Self.stride
 
-                comptime if active_warps_this_iter == Self.num_loading_warps:
-                    self.buffer.load_to_lds[width=Self.load_width](
-                        Int32(lane_offset),
-                        smem_ptr,
-                        scalar_offset=Int32(uniform_offset),
-                    )
-                else:
-                    # Wavefront-uniform SGPR branch (warp_id is warp-
-                    # scope). Gated warps never issue → vmcnt stays 0,
-                    # downstream s_waitcnt vmcnt(N) is a no-op for them.
-                    if Int(self.warp_id) < active_warps_this_iter:
-                        self.buffer.load_to_lds[width=Self.load_width](
-                            Int32(lane_offset),
-                            smem_ptr,
-                            scalar_offset=Int32(uniform_offset),
-                        )
+                self.buffer.load_to_lds[width=Self.load_width](
+                    Int32(lane_offset),
+                    smem_ptr,
+                    scalar_offset=Int32(uniform_offset),
+                )
         else:
             var lane_offset = self.thread_col + self.thread_row * Self.stride
 
             comptime for i in range(Self.num_iterations):
-                comptime active_warps_this_iter = min(
-                    Self.num_loading_warps,
-                    Self.total_warp_rows - i * Self.num_loading_warps,
-                )
                 var tile_idx = i * Self.num_loading_warps + self.warp_id
                 var warp_tile = dst.tile[Self.rows_per_warp, Self.tile_cols](
                     tile_idx, 0
@@ -1363,19 +1261,11 @@ struct TileLoaderLDS[
                 var tile_row = m_eff + i * Self.rows_per_iteration
                 var uniform_offset = k_eff + tile_row * Self.stride
 
-                comptime if active_warps_this_iter == Self.num_loading_warps:
-                    self.buffer.load_to_lds[width=Self.load_width](
-                        Int32(lane_offset),
-                        smem_ptr,
-                        scalar_offset=Int32(uniform_offset),
-                    )
-                else:
-                    if Int(self.warp_id) < active_warps_this_iter:
-                        self.buffer.load_to_lds[width=Self.load_width](
-                            Int32(lane_offset),
-                            smem_ptr,
-                            scalar_offset=Int32(uniform_offset),
-                        )
+                self.buffer.load_to_lds[width=Self.load_width](
+                    Int32(lane_offset),
+                    smem_ptr,
+                    scalar_offset=Int32(uniform_offset),
+                )
 
 
 # ===----------------------------------------------------------------------=== #

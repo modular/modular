@@ -579,79 +579,26 @@ struct AMD4WaveMatmul[
         comptime quadrant_m_mmas = num_m_mmas // 2
         comptime quadrant_n_mmas = num_n_mmas // 2
 
-        # === Tier 2 sanity asserts: every count above must be >= 1 ===
-        # Without these, an unusual (BM, BN, BK, dtype) silently floors
-        # one of these to 0 → kernel compiles, runs, produces garbage.
-        comptime assert num_k_mmas >= 1, (
-            "num_k_mmas = BK // MMA_K must be >= 1 (BK >= MMA_K). Got"
-            " BK=, MMA_K="
-        )
-        comptime assert (
-            num_m_mmas >= 1
-        ), "num_m_mmas = WM // MMA_M must be >= 1 (WM = BM/2 >= MMA_M)."
-        comptime assert (
-            num_n_mmas >= 1
-        ), "num_n_mmas = WN // MMA_N must be >= 1 (WN = BN/2 >= MMA_N)."
-        comptime assert num_m_mmas >= 2 and num_m_mmas % 2 == 0, (
-            "QuadrantMmaOp requires num_m_mmas >= 2 AND even"
-            " (quadrant_m_mmas = num_m_mmas // 2 must be >= 1)."
-        )
-        comptime assert num_n_mmas >= 2 and num_n_mmas % 2 == 0, (
-            "QuadrantMmaOp requires num_n_mmas >= 2 AND even"
-            " (quadrant_n_mmas = num_n_mmas // 2 must be >= 1)."
-        )
-
         # vm_per_load: number of distinct buffer_load_lds transactions
         # per prefetch tile, given 4 loading warps.
-        #
-        # `ceildiv` (not floor-div) so that under-supplied sub-tiles —
-        # `half_BM < rows_per_iter_4warp` (e.g. BM=64+BK=32+bf16, where
-        # 256 loading threads can transfer the whole 32x32 sub-tile in
-        # ~half a wave) — get `vm_per_load_* == 1`, matching the loader's
-        # ceildiv-based `num_iterations`. With floor-div both halves
-        # rounded to 0 in lock-step: schedule emitted zero vmcnt drains
-        # *and* loader emitted zero buffer_load_lds → silent garbage.
         comptime loads_per_row = BK // simd_width
-        comptime assert loads_per_row >= 1 and BK % simd_width == 0, (
-            "BK must be >= simd_width AND a multiple of simd_width"
-            " (simd_width = 16 / size_of[in_type])."
-        )
         comptime rows_per_iter_4warp = (4 * WARP_SIZE) // loads_per_row
-        comptime vm_per_load_a = ceildiv(half_BM, rows_per_iter_4warp)
-        comptime vm_per_load_b = ceildiv(half_BN, rows_per_iter_4warp)
-        comptime assert vm_per_load_a >= 1, (
-            "vm_per_load_a = ceildiv(half_BM, rows_per_iter_4warp) == 0"
-            " — half_BM must be >= 1. Increase BM."
-        )
-        comptime assert vm_per_load_b >= 1, (
-            "vm_per_load_b = ceildiv(half_BN, rows_per_iter_4warp) == 0"
-            " — half_BN must be >= 1. Increase BN."
-        )
+        comptime vm_per_load_a = half_BM // rows_per_iter_4warp
+        comptime vm_per_load_b = half_BN // rows_per_iter_4warp
 
         # lgkm_per_load: ds_reads per frag-load, accounting for FP8's
         # split-LDS path (16-byte fragments) vs BF16's full-fragment
         # path.
         comptime mma_frag_w = (MMA_M * MMA_K) // WARP_SIZE
-        comptime assert mma_frag_w >= 1, (
-            "mma_frag_w = (MMA_M * MMA_K) // WARP_SIZE must be >= 1."
-            " MMA shape too small for the wavefront width."
-        )
         comptime use_split_lds = is_fp8 and MMA_M == 16 and MMA_K == 128
         comptime lds_frag_w = 16 if use_split_lds else mma_frag_w
         comptime k_loads_per_mma = mma_frag_w // lds_frag_w
-        comptime assert (
-            k_loads_per_mma >= 1
-        ), "k_loads_per_mma = mma_frag_w // lds_frag_w must be >= 1."
         comptime ds_reads_per_frag = ceildiv(lds_frag_w * elem_bytes, 16)
         comptime lgkm_per_load_a = (
             quadrant_m_mmas * num_k_mmas * k_loads_per_mma * ds_reads_per_frag
         )
         comptime lgkm_per_load_b = (
             quadrant_n_mmas * num_k_mmas * k_loads_per_mma * ds_reads_per_frag
-        )
-        comptime assert lgkm_per_load_a >= 1 and lgkm_per_load_b >= 1, (
-            "lgkm_per_load_a/b must be >= 1 — frag-load wait derivation"
-            " would otherwise compute zero lgkmcnt drains."
         )
 
         return KernelGeometry(

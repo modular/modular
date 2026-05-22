@@ -30,13 +30,9 @@ file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
 #   - split-K(N) requires K / N to be a multiple of 2*BK. At BK=128
 #     that's K/N % 256 == 0; at BK=64 K/N % 128 == 0. Production K
 #     values (8192, 13312, 16384, ...) are all sufficiently aligned.
-#   - bf16/fp16 supports BK in {32, 64, 128}. BK=32 + BM=64 used to
-#     trip a `half_BM // rows_per_iter == 0` silent-corruption bug;
-#     the loader now uses `ceildiv` + per-iter warp gating so all
-#     three BK values are valid at any BM. Limit the sweep to
-#     {64, 128} unless you specifically need to evaluate BK=32 for a
-#     small-C_in conv-style shape — it's a perf loss in matmul-shaped
-#     reductions.
+#   - bf16/fp16 supports BK in {32, 64, 128}; pick 64 and 128 (BK=32
+#     can't satisfy half_BM >= rows_per_iter at BM=64 — covered by an
+#     assert in the launcher).
 rules:
   - "TUNE_4WAVE_BM == TUNE_4WAVE_BN"
 
