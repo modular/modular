@@ -81,9 +81,27 @@ _EXTRA_CONSTRAINTS = {
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _LIT_TESTS + _FILECHECK_TESTS,
+        exclude = _LIT_TESTS + _FILECHECK_TESTS + ["test_gpu_mem_alloc_validation.mojo"],
     )
 ]
+
+mojo_test(
+    name = "test_gpu_mem_alloc_validation.mojo.test",
+    srcs = ["test_gpu_mem_alloc_validation.mojo"],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)
 
 [
     mojo_filecheck_test(
