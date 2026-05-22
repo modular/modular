@@ -821,29 +821,54 @@ def flare_mla_decoding_dispatch[
                     comptime W_PARTS = get_defined_int[
                         "MODULAR_MLA_REDUCE_WPARTS", 8
                     ]()
-                    comptime MAX_PARTITIONS = get_defined_int[
-                        "MODULAR_MLA_REDUCE_MAXP", 64
-                    ]()
-                    comptime kernel_reduce = mla_splitk_reduce[
+                    # Two specializations: the 64-partition reducer is the
+                    # default and matches the high-occupancy heuristic cap.
+                    # The 128-partition reducer is only dispatched when the
+                    # heuristic returns >64 (low-occupancy shapes like bs=1
+                    # long-context), so the reducer's O(MAX_PARTITIONS) cost
+                    # does not slow the common case.
+                    comptime kernel_reduce_64 = mla_splitk_reduce[
                         intermediate_dtype,
                         output.dtype,
                         depth=depth_v,
                         num_heads=num_heads,
                         D_TILES=D_TILES,
                         W_PARTS=W_PARTS,
-                        MAX_PARTITIONS=MAX_PARTITIONS,
+                        MAX_PARTITIONS=64,
                         use_exp2=reduce_use_exp2,
                     ]
-                    ctx.enqueue_function[kernel_reduce](
-                        output_intermediate_data,
-                        output_device,
-                        exp_sum_device,
-                        qk_max_device,
-                        batch_size,
-                        num_partitions_value,
-                        grid_dim=(D_TILES, num_heads, batch_size),
-                        block_dim=(W_PARTS * WARP_SIZE, 1, 1),
-                    )
+                    comptime kernel_reduce_128 = mla_splitk_reduce[
+                        intermediate_dtype,
+                        output.dtype,
+                        depth=depth_v,
+                        num_heads=num_heads,
+                        D_TILES=D_TILES,
+                        W_PARTS=W_PARTS,
+                        MAX_PARTITIONS=128,
+                        use_exp2=reduce_use_exp2,
+                    ]
+                    if num_partitions_value <= 64:
+                        ctx.enqueue_function[kernel_reduce_64](
+                            output_intermediate_data,
+                            output_device,
+                            exp_sum_device,
+                            qk_max_device,
+                            batch_size,
+                            num_partitions_value,
+                            grid_dim=(D_TILES, num_heads, batch_size),
+                            block_dim=(W_PARTS * WARP_SIZE, 1, 1),
+                        )
+                    else:
+                        ctx.enqueue_function[kernel_reduce_128](
+                            output_intermediate_data,
+                            output_device,
+                            exp_sum_device,
+                            qk_max_device,
+                            batch_size,
+                            num_partitions_value,
+                            grid_dim=(D_TILES, num_heads, batch_size),
+                            block_dim=(W_PARTS * WARP_SIZE, 1, 1),
+                        )
                 else:
                     comptime kernel_reduce = mha_splitk_reduce[
                         intermediate_dtype,
@@ -952,8 +977,8 @@ def mla_splitk_reduce[
         depth % (D_TILES * WARP_SIZE) == 0
     ), "depth must be divisible by D_TILES * WARP_SIZE"
     comptime assert (
-        MAX_PARTITIONS <= WARP_SIZE
-    ), "MAX_PARTITIONS must be <= WARP_SIZE"
+        MAX_PARTITIONS % WARP_SIZE == 0
+    ), "MAX_PARTITIONS must be a multiple of WARP_SIZE"
     comptime assert (
         MAX_PARTITIONS % W_PARTS == 0
     ), "MAX_PARTITIONS must be divisible by W_PARTS"
@@ -965,6 +990,9 @@ def mla_splitk_reduce[
     comptime depth_per_cta = depth // D_TILES
     comptime elems_per_lane = depth_per_cta // WARP_SIZE
     comptime parts_per_warp = MAX_PARTITIONS // W_PARTS
+    # Per-lane partition stride: when MAX_PARTITIONS > WARP_SIZE the same lane
+    # owns multiple partitions. e.g. MAX_PARTITIONS=128 → each lane handles 2.
+    comptime parts_per_lane = MAX_PARTITIONS // WARP_SIZE
 
     var qk_max_tt = TileTensor(
         qk_max_ptr,
@@ -1005,31 +1033,50 @@ def mla_splitk_reduce[
     var depth_in_tile = lane_idx * elems_per_lane
     var depth_global = d_tile_idx * depth_per_cta + depth_in_tile
 
-    # Step 1: warp 0 computes per-partition scales.
+    # Step 1: warp 0 computes per-partition scales. Each lane owns
+    # `parts_per_lane` partitions strided by WARP_SIZE; `parts_per_lane`
+    # is comptime so the `comptime for` unrolls to the right shape (and
+    # to a single iteration when MAX_PARTITIONS == WARP_SIZE).
     if warp_idx == 0:
-        var partition_idx = lane_idx
-        var lse: Scalar[accum_type] = min_or_neg_inf[accum_type]()
-        if partition_idx < num_partitions:
-            lse = qk_max_tt[partition_idx, batch_idx, head_idx]
+        comptime exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
+        var lse_lane = SIMD[accum_type, parts_per_lane](
+            min_or_neg_inf[accum_type]()
+        )
+        var local_max: Scalar[accum_type] = min_or_neg_inf[accum_type]()
+        comptime for k in range(parts_per_lane):
+            var partition_idx = Int(lane_idx) + k * WARP_SIZE
+            if partition_idx < num_partitions:
+                var v = qk_max_tt[partition_idx, batch_idx, head_idx]
+                lse_lane[k] = v
+                if v > local_max:
+                    local_max = v
 
-        var qk_max_global = warp.lane_group_max[WARP_SIZE](lse)
+        var qk_max_global = warp.max(local_max)
+        # exp_sum == 0 only if every partition had qk_max == -inf;
+        # emit scale=0 instead of NaN so step 2 produces clean zero.
         if qk_max_global == min_or_neg_inf[accum_type]():
             qk_max_global = 0
 
-        comptime exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
-        var rescaled: Scalar[accum_type] = 0
-        if partition_idx < num_partitions:
-            rescaled = exp_sum_tt[partition_idx, batch_idx, head_idx] * exp_fn(
-                lse - qk_max_global
-            )
+        var rescaled_lane = SIMD[accum_type, parts_per_lane](0)
+        var local_sum: Scalar[accum_type] = 0
+        comptime for k in range(parts_per_lane):
+            var partition_idx = Int(lane_idx) + k * WARP_SIZE
+            if partition_idx < num_partitions:
+                var r = exp_sum_tt[partition_idx, batch_idx, head_idx] * exp_fn(
+                    lse_lane[k] - qk_max_global
+                )
+                rescaled_lane[k] = r
+                local_sum += r
 
-        var exp_sum = warp.sum(rescaled)
-        # exp_sum == 0 only if every partition had qk_max == -inf; emit
-        # scale = 0 instead of NaN so step 2 produces a clean zero output.
+        var exp_sum = warp.sum(local_sum)
         var inv_global_exp_sum: Scalar[accum_type] = 0
         if exp_sum > 0:
             inv_global_exp_sum = Scalar[accum_type](1) / exp_sum
-        scales_tt[partition_idx] = rescaled * inv_global_exp_sum
+
+        comptime for k in range(parts_per_lane):
+            var partition_idx = Int(lane_idx) + k * WARP_SIZE
+            if partition_idx < MAX_PARTITIONS:
+                scales_tt[partition_idx] = rescaled_lane[k] * inv_global_exp_sum
 
     barrier()
 
