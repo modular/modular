@@ -155,6 +155,7 @@ from ..sampling import (
     apply_logits_processors,
     token_sampler,
 )
+from ..utils import CompilationTimer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -1214,13 +1215,14 @@ class RealizeFutureTokenProcessor:
         num_speculative_tokens: int = 0,
         enable_dp: bool = False,
     ) -> None:
-        self._graph = session.load(
-            build_realize_future_token_graph(
+        with CompilationTimer("realize_future_token") as timer:
+            graph = build_realize_future_token_graph(
                 devices=devices,
                 num_speculative_tokens=num_speculative_tokens,
                 enable_dp=enable_dp,
             )
-        )
+            timer.mark_build_complete()
+            self._graph = session.load(graph)
         self._enable_dp = enable_dp
         self._num_speculative_tokens = num_speculative_tokens
 
@@ -1604,28 +1606,34 @@ class OverlapTextGenerationPipeline(
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
         if not is_spec_decode:
-            if pipeline_config.sampling.enable_structured_output:
-                self._sampler_with_bitmask = session.load(
-                    token_sampler(
+            with CompilationTimer("sampler") as sampler_timer:
+                if pipeline_config.sampling.enable_structured_output:
+                    with_bitmask_graph = token_sampler(
                         pipeline_config.sampling,
                         device=DeviceRef.from_device(self._devices[0]),
                     )
-                )
-                cfg_without_bitmask = copy.deepcopy(pipeline_config.sampling)
-                cfg_without_bitmask.enable_structured_output = False
-                self._sampler_without_bitmask = session.load(
-                    token_sampler(
+                    cfg_without_bitmask = copy.deepcopy(
+                        pipeline_config.sampling
+                    )
+                    cfg_without_bitmask.enable_structured_output = False
+                    without_bitmask_graph = token_sampler(
                         cfg_without_bitmask,
                         device=DeviceRef.from_device(self._devices[0]),
                     )
-                )
-            else:
-                self._sampler_without_bitmask = session.load(
-                    token_sampler(
+                    sampler_timer.mark_build_complete()
+                    self._sampler_with_bitmask = session.load(
+                        with_bitmask_graph
+                    )
+                    self._sampler_without_bitmask = session.load(
+                        without_bitmask_graph
+                    )
+                else:
+                    sampler_graph = token_sampler(
                         pipeline_config.sampling,
                         device=DeviceRef.from_device(self._devices[0]),
                     )
-                )
+                    sampler_timer.mark_build_complete()
+                    self._sampler_without_bitmask = session.load(sampler_graph)
 
         # Pre-allocate pinned buffer for D2H token copies only when structured
         # output is enabled. This buffer is used for async token transfers in

@@ -28,6 +28,8 @@ import torch
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import CompiledModel, InferenceSession, Model
+from max.engine._compilation_stats import collect_compilation_stats
+from max.experimental.nn._compilation_timer import CompilationTimer
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 
@@ -147,3 +149,66 @@ def test_load_all_after_refactor_still_works() -> None:
 
     assert len(models) == 1
     assert isinstance(next(iter(models.values())), Model)
+
+
+def test_collector_records_compile_only_for_compile() -> None:
+    """compile() updates compile_seconds; init_seconds stays at zero."""
+    session = InferenceSession(devices=[CPU()])
+    with collect_compilation_stats() as stats:
+        session.compile(_unity_graph())
+
+    assert stats.compile_seconds > 0.0
+    assert stats.init_seconds == 0.0
+    assert stats.build_seconds == 0.0
+    assert stats.num_phases == 0
+
+
+def test_collector_records_init_only_for_init_all() -> None:
+    """init_all() updates init_seconds; compile_seconds stays at zero."""
+    session = InferenceSession(devices=[CPU()])
+    compiled = session.compile(_unity_graph())
+    with collect_compilation_stats() as stats:
+        session.init_all(compiled)
+
+    assert stats.init_seconds > 0.0
+    assert stats.compile_seconds == 0.0
+
+
+def test_collector_records_compile_and_init_for_load_all() -> None:
+    """load_all() should populate both compile_seconds and init_seconds."""
+    session = InferenceSession(devices=[CPU()])
+    with collect_compilation_stats() as stats:
+        session.load_all(_unity_graph())
+
+    assert stats.compile_seconds > 0.0
+    assert stats.init_seconds > 0.0
+
+
+def test_compilation_timer_populates_outer_collector() -> None:
+    """CompilationTimer should fill build/compile/init in the outer stats."""
+    session = InferenceSession(devices=[CPU()])
+    with collect_compilation_stats() as stats:
+        with CompilationTimer("unity") as timer:
+            graph = _unity_graph()
+            timer.mark_build_complete()
+            session.load_all(graph)
+
+    assert stats.build_seconds >= 0.0
+    assert stats.compile_seconds > 0.0
+    assert stats.init_seconds > 0.0
+    assert stats.num_phases == 1
+
+
+def test_nested_collectors_both_observe_phases() -> None:
+    """Inner CompilationTimer's local stats and the outer collector both see
+    compile and init events; nesting no longer shadows."""
+    session = InferenceSession(devices=[CPU()])
+    with collect_compilation_stats() as outer:
+        with collect_compilation_stats() as inner:
+            session.load_all(_unity_graph())
+
+        assert inner.compile_seconds > 0.0
+        assert inner.init_seconds > 0.0
+
+    assert outer.compile_seconds >= inner.compile_seconds
+    assert outer.init_seconds >= inner.init_seconds
