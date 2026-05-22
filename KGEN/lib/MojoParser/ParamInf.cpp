@@ -2112,9 +2112,14 @@ LogicalResult CallParamInf::inferForCall() {
     if (posOperandIdx < numOperands) {
       const OperandValue &operand = callOperands[posOperandIdx];
       if (operand.isUnpackedPositional()) {
-        getMojoDiag(operand.expr->getLoc())
-            << "unpacked positional arguments are only supported for callees "
-               "that expect a variadic pack argument at this position";
+        auto &diag = getMojoDiag(operand.expr->getLoc());
+        diag << "unpacked positional arguments are only supported for callees "
+                "that expect a variadic pack argument at this position; to "
+                "forward a runtime pack to a fixed-arity callee, route the "
+                "call through a dispatcher whose argument is itself a "
+                "variadic pack (e.g. `def shim[Ts: TypeList[Trait=AnyType, "
+                "...], //, callee: def(*args: *Ts) thin](...): "
+                "callee(*pack)`)";
         return failure();
       }
       if (failed(inferOneOperand(operand, posOperandIdx, expectedArgIdx,

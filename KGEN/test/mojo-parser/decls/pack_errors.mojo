@@ -38,6 +38,20 @@ def test_forward_any_pack[*Ts: AnyType](*pack: *Ts):
     test_sum_intable(*pack)
 
 
+# Splatting a pack into a fixed-arity callee is not supported. The
+# count-mismatch diagnostic should attach a hint pointing at the
+# variadic-pack dispatcher pattern.
+# expected-note @+1 {{function declared here}}
+def takes_two_ints(x: Int, y: Int):
+    pass
+
+
+def test_splat_into_fixed_arity[*Ts: AnyType](*pack: *Ts):
+    # expected-error @+2 {{invalid call to 'takes_two_ints': missing 1 required positional argument: 'y'}}
+    # expected-note @+1 {{'*' splat is only supported when the callee accepts a variadic pack argument at this position}}
+    takes_two_ints(*pack)
+
+
 # Unpacking into a *args (pos-vararg) function instead of a typed pack.
 # Users may confuse *args-style variadics with typed packs.
 # expected-note @+1 {{function declared here}}
