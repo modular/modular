@@ -737,14 +737,6 @@ def int_abs[x: Int]() -> Int
     where x < 0:
     return 0 - x
 
-# CHECK: lit.fn @"int_abs_param[[INT_ABS_PARAM_NONNEG:[^"]+]]"
-def int_abs_param[x: Int where x > -1]() -> Int:
-    return x
-
-# CHECK: lit.fn @"int_abs_param[[INT_ABS_PARAM_NEG:[^"]+]]"
-def int_abs_param[x: Int where x < 0]() -> Int:
-    return 0 - x
-
 
 # CHECK: lit.fn @"constraint_overloading
 def constraint_overloading():
@@ -752,10 +744,6 @@ def constraint_overloading():
     _ = int_abs[1]()
     # CHECK: lit.call {{.*}}@"int_abs[[INT_ABS_NEG]]"
     _ = int_abs[-1]()
-    # CHECK: lit.call {{.*}}@"int_abs_param[[INT_ABS_PARAM_NONNEG]]"
-    _ = int_abs_param[1]()
-    # CHECK: lit.call {{.*}}@"int_abs_param[[INT_ABS_PARAM_NEG]]"
-    _ = int_abs_param[-1]()
 
 ##===----------------------------------------------------------------------===##
 # Structs
@@ -1527,12 +1515,12 @@ def autoparam_mangler_crash[*types: Int, constraints: StructWithParam]():
 # Dependent Constraints
 ##===----------------------------------------------------------------------===##
 
-def need_positive_int[x: Int where x > 0]():
+def need_positive_int[x: Int]() where x > 0:
     pass
 
 # CHECK-LABEL: lit.struct.decl @ConstraintStruct
-# CHECK-SAME: <a: !Int {{.*}}ge(#lit.struct.extract<:!Int a, "_mlir_value">, 1)
-struct ConstraintStruct[a: Int where a > 0]:
+# CHECK-SAME: <a: !Int,{{.*}}ge(#lit.struct.extract<:!Int a, "_mlir_value">, 1)
+struct ConstraintStruct[a: Int] where a > 0:
     comptime b = Self.a + 1
 
     def use_known_assumption(self):
@@ -1543,24 +1531,22 @@ struct ConstraintStruct[a: Int where a > 0]:
         need_positive_int[Self.a]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <x: !Int {{.*}}ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
-def use_constraint_struct[x: Int where x > 0, cs: ConstraintStruct[x]]():
+# CHECK-SAME: <x: !Int,{{.*}}ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
+def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]() where x > 0:
     need_positive_int[x]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int {{.*}}ge(#lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)
+# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int,{{.*}}ge(#lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)
 def use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
     pass
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct_in_constraint
-# CHECK-SAME: <x: !Int {
+# CHECK-SAME: <x: !Int,
 # CHECK-SAME: ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
 # CHECK-SAME: ge(add(#lit.struct.extract<:!Int x, "_mlir_value">, 1), 2)
-def use_constraint_struct_in_constraint[
-    x: Int
-        where x > 0
-        where ConstraintStruct[x].b > 1
-]():
+def use_constraint_struct_in_constraint[x: Int]()
+    where x > 0
+    where ConstraintStruct[x].b > 1:
     pass
 
 
@@ -1568,10 +1554,10 @@ def bin_pred(x: Int, y: Int) -> Bool:
     return x > y
 
 @fieldwise_init
-struct BinStruct[x: Int, y: Int where bin_pred(x, y)]:
+struct BinStruct[x: Int, y: Int] where bin_pred(x, y):
     # Accessing the same parameter through an alias should work.
     comptime xx = Self.x
     # CHECK-LABEL: lit.fn @"get_with_z
     # CHECK-SAME: %__result__: !lit.ref<!lit.struct<#BinStruct
-    def get_with_z[z: Int where bin_pred(Self.x, z)](self) -> BinStruct[Self.xx, z]:
+    def get_with_z[z: Int](self) -> BinStruct[Self.xx, z] where bin_pred(Self.x, z):
         return {}

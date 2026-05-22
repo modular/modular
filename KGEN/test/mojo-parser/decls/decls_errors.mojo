@@ -415,12 +415,9 @@ def test_constraints():
   failing_constraint_with_depth[1,2,3]()
 
 # expected-note @below {{function declared here}}
-def unprovable_param_constraints[
-  # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-  # expected-note @below {{use a trailing 'where' clause after the signature instead}}
+def unprovable_param_constraints[x: Int]()
   # expected-note @below {{constraint declared here evaluated to False, expected '(x > 1)'}}
-  x: Int where x > 1
-]():
+  where x > 1:
   pass
 
 def test_param_constraints():

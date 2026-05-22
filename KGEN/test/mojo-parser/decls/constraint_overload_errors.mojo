@@ -23,84 +23,7 @@ def is_square(x: Int) -> Bool:
     return x > 0
 
 ##===----------------------------------------------------------------------===##
-# Inconclusive Param Constraints - Single Candidate
-##===----------------------------------------------------------------------===##
-
-# expected-note @below {{cannot prove constraint}}
-def single_param_constraint[
-    # expected-note-re @below {{constraint declared here needs evidence for 'is_prime({{[0-9]+}})'}}
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where is_prime(x),
-]():
-    pass
-
-def test_single_param_constraint():
-    # expected-error @below {{invalid call to 'single_param_constraint': lacking evidence to prove correctness}}
-    # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
-    single_param_constraint[2]()
-
-
-##===----------------------------------------------------------------------===##
-# Inconclusive Param Constraints - Multi Candidate, One Inconclusive
-##===----------------------------------------------------------------------===##
-
-@always_inline("builtin")
-def is_natural_number(x: Int) -> Bool:
-    return x >= 0
-
-# expected-note @below {{cannot prove constraint for candidate}}
-def multi_param_one_inconclusive[
-    # expected-note @below {{constraint declared here}}
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where is_prime(x),
-](a: UInt32):
-    pass
-
-def multi_param_one_inconclusive[
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where is_natural_number(x),
-](a: Int32):
-    pass
-
-def test_multi_param_one_inconclusive():
-    # expected-error @below {{ambiguous call to 'multi_param_one_inconclusive': lacking evidence to select candidate}}
-    # expected-note @below {{provide evidence for or against the constraints here to aid in candidate selection}}
-    multi_param_one_inconclusive[2](1)
-
-
-##===----------------------------------------------------------------------===##
-# Inconclusive Param Constraints - Multi Candidate, Multi Inconclusive
-##===----------------------------------------------------------------------===##
-
-# expected-note @below {{cannot prove constraint for candidate}}
-def multi_param_multi_inconclusive[
-    # expected-note @below {{constraint declared here}}
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where is_prime(x),
-](a: Int32):
-    pass
-
-# expected-note @below {{cannot prove constraint for candidate}}
-def multi_param_multi_inconclusive[
-    # expected-note @below {{constraint declared here}}
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where is_square(x),
-](a: UInt32):
-    pass
-
-def test_multi_param_multi_inconclusive():
-    # expected-error @below {{ambiguous call to 'multi_param_multi_inconclusive': lacking evidence to select candidate}}
-    # expected-note @below {{provide evidence for or against the constraints here to aid in candidate selection}}
-    multi_param_multi_inconclusive[2](2)
-
-
-##===----------------------------------------------------------------------===##
-# Inconclusive def Constraints - Single Candidate
+# Inconclusive Constraints - Single Candidate
 ##===----------------------------------------------------------------------===##
 
 # expected-note @below {{cannot prove constraint}}
@@ -116,7 +39,7 @@ def test_single_fn_constraint():
 
 
 ##===----------------------------------------------------------------------===##
-# Inconclusive def Constraints - Multi Candidate, One Inconclusive, Equal Fitness
+# Inconclusive Constraints - Multi Candidate, One Inconclusive, Equal Fitness
 ##===----------------------------------------------------------------------===##
 
 # expected-note @below {{cannot prove constraint for candidate}}
@@ -137,7 +60,7 @@ def test_multi_fn_one_inconclusive():
 
 
 ##===----------------------------------------------------------------------===##
-# Inconclusive def Constraints - Multi Candidate, Multi Inconclusive, Equal Fitness
+# Inconclusive Constraints - Multi Candidate, Multi Inconclusive, Equal Fitness
 ##===----------------------------------------------------------------------===##
 
 # expected-note @below {{cannot prove constraint for candidate}}
@@ -159,7 +82,7 @@ def test_multi_fn_multi_inconclusive():
 
 
 ##===----------------------------------------------------------------------===##
-# Inconclusive def Constraints - Multi Candidate, Best Fitness Selects Non-Inconclusive
+# Inconclusive Constraints - Multi Candidate, Best Fitness Selects Non-Inconclusive
 ##===----------------------------------------------------------------------===##
 
 @fieldwise_init
@@ -187,7 +110,7 @@ def test_multi_fn_best_fitness_ok():
 
 
 ##===----------------------------------------------------------------------===##
-# Inconclusive def Constraints - Multi Candidate, Inconclusive Has Best Fitness
+# Inconclusive Constraints - Multi Candidate, Inconclusive Has Best Fitness
 ##===----------------------------------------------------------------------===##
 
 # expected-note @below {{cannot prove constraint}}
@@ -207,27 +130,20 @@ def test_multi_fn_best_fitness_inconclusive():
 
 
 ##===----------------------------------------------------------------------===##
-# Mixed Param and def Constraints
+# Multiple Constraints per Candidate
 ##===----------------------------------------------------------------------===##
 
 # expected-note @below {{cannot prove constraint for candidate}}
-def mixed_constraints[
+def mixed_constraints[x: Int, y: Int]()
     # expected-note @below {{constraint declared here}}
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where is_prime(x),
-    y: Int
-]()
-    # No errors expected here since the earlier param constraint failed.
+    where is_prime(x)
+    # No errors expected here since the earlier constraint failed.
     where y > 0:
     pass
 
-def mixed_constraints[
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where x >= 0,
-    y: Int
-]()
+# expected-note @below {{candidate is valid but cannot be selected until other candidates are disproved}}
+def mixed_constraints[x: Int, y: Int]()
+    where x >= 0
     where y >= 0:
     pass
 
@@ -242,23 +158,18 @@ def test_mixed_constraints():
 ##===----------------------------------------------------------------------===##
 
 # expected-note @below {{cannot prove constraint for candidate}}
-def ref_to_overload[
+def ref_to_overload[x: Int](a: Int32)
     # expected-note @below {{constraint declared here}}
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where is_prime(x),
-](a: Int32):
+    where is_prime(x):
     pass
 
-def ref_to_overload[
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where x >= 0
-](a: UInt32):
+# expected-note @below {{candidate is valid but cannot be selected until other candidates are disproved}}
+def ref_to_overload[x: Int](a: UInt32)
+    where x >= 0:
     pass
 
 def test_ref_to_overload():
-    # expected-error @below {{ambiguous reference to 'ref_to_overload': lacking evidence to select candidate}}
+    # expected-error @below {{ambiguous call to 'ref_to_overload': lacking evidence to select candidate}}
     # expected-note @below {{provide evidence for or against the constraints here to aid in candidate selection}}
     ref_to_overload[2]
 
@@ -267,16 +178,12 @@ def test_ref_to_overload():
 # Multiple Inconclusive Constraints on Same Candidate
 ##===----------------------------------------------------------------------===##
 
-# expected-note @below {{cannot prove constraint}}
-def multiple_inconclusive_same[
+# expected-note @below {{cannot prove or disprove constraints for candidate}}
+def multiple_inconclusive_same[x: Int, y: Int]()
     # expected-note @below {{constraint declared here}}
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where is_prime(x),
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    y: Int where is_square(y),
-]():
+    where is_prime(x)
+    # expected-note @below {{constraint declared here}}
+    where is_square(y):
     pass
 
 def test_multiple_inconclusive_same():
@@ -290,27 +197,19 @@ def test_multiple_inconclusive_same():
 ##===----------------------------------------------------------------------===##
 
 # expected-note @below {{cannot prove constraint}}
-def provable_and_inconclusive[
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where x > 0,  # This is provable with literal 2
+def provable_and_inconclusive[x: Int, y: Int](a: Int32)
+    where x > 0  # This is provable with literal 2
     # expected-note @below {{constraint declared here}}
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    y: Int where is_prime(y),  # This is not provable
-](a: Int32):
+    where is_prime(y):  # This is not provable
     pass
 
-def provable_and_inconclusive[
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where x < 0,
-](a: UInt32):
+def provable_and_inconclusive[x: Int](a: UInt32)
+    where x < 0:
     pass
 
 def test_provable_and_inconclusive():
     # expected-error @below {{invalid call to 'provable_and_inconclusive': lacking evidence to prove correctness}}
-    # expected-note @below {{provide evidence for the constraints here to aid in candidate selection}}
+    # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
     provable_and_inconclusive[2, 2](4)
 
 
@@ -319,26 +218,20 @@ def test_provable_and_inconclusive():
 ##===----------------------------------------------------------------------===##
 
 # This candidate has a violated constraint (should be rejected)
-def violated_vs_inconclusive[
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where x > 10,  # Violated by x=2
-](a: Int32):
+def violated_vs_inconclusive[x: Int](a: Int32)
+    where x > 10:  # Violated by x=2
     pass
 
 # This candidate has an inconclusive constraint
 # expected-note @below {{cannot prove constraint}}
-def violated_vs_inconclusive[
+def violated_vs_inconclusive[x: Int](a: UInt32)
     # expected-note @below {{constraint declared here}}
-    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
-    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
-    x: Int where is_prime(x),  # Inconclusive for x=2
-](a: UInt32):
+    where is_prime(x):  # Inconclusive for x=2
     pass
 
 def test_violated_vs_inconclusive():
     # The first candidate should be eliminated due to violated constraint,
     # leaving only the inconclusive one which should error
     # expected-error @below {{invalid call to 'violated_vs_inconclusive': lacking evidence to prove correctness}}
-    # expected-note @below {{provide evidence for the constraints here to aid in candidate selection}}
+    # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
     violated_vs_inconclusive[2](4)

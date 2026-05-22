@@ -247,23 +247,6 @@ def foldable_requires_param_if[a: Int, b: Int]():
         foldable_requires_1[42]()
 
 
-# CHECK-LABEL: lit.fn @"foldable_param_requires_1
-# CHECK-SAME: <x: !Int {{.*}}ne(#lit.struct.extract<:!Int x, "_mlir_value">, 0)
-def foldable_param_requires_1[x: Int where x]():
-    pass
-
-
-# CHECK-LABEL: lit.fn @"foldable_param_requires_2
-# CHECK-SAME: <x: !Int {{.*}}lt(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
-# CHECK-SAME:  y: !Int {{.*}}ge(#lit.struct.extract<:!Int y, "_mlir_value">, 11)
-def foldable_param_requires_2[
-    x: Int where x < 1,
-    y: Int where y > 10 = 11
-]():
-    pass
-
-
-
 struct FN_LITERAL_RET[x: Int, y: Int]():
     pass
 

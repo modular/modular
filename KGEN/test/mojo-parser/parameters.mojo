@@ -1257,11 +1257,13 @@ def test_indirect_default_params[
 
 
 struct ContextDefault[
-    a: Int where a > 0 = 7,
-    b: Int where b >= a = a,
-]:
+    a: Int = 7,
+    b: Int = a,
+] where a > 0 where b >= a:
     @staticmethod
-    def inner[c: Int where c >= Self.b = Self.b, d: Int = c]() where Self.b > 0:
+    def inner[c: Int = Self.b, d: Int = c]()
+        where Self.b > 0
+        where c >= Self.b:
         pass
 
 
@@ -1270,10 +1272,14 @@ struct ContextDefault[
 # CHECK-LABEL: lit.fn @"test_contextual_default_fn_ref()"
 def test_contextual_default_fn_ref():
     # CHECK: lit.alias.decl *"contextual_default_fn`": !lit.generator<
-    # CHECK-SAME: "a": !Int = {7}{{.*}}ge(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 1)
-    # CHECK-SAME: "b": !Int = *(0,0){{.*}}le(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)
-    # CHECK-SAME: "c": !Int = *(0,1){{.*}}le(#lit.struct.extract<:!Int *(0,1), "_mlir_value">, #lit.struct.extract<:!Int *(0,2), "_mlir_value">)
-    # CHECK-SAME: "d": !Int = *(0,2){{.*}}ge(#lit.struct.extract<:!Int *(0,1), "_mlir_value">, 1)
+    # CHECK-SAME: "a": !Int = {7}
+    # CHECK-SAME: "b": !Int = *(0,0)
+    # CHECK-SAME: ge(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 1)
+    # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)
+    # CHECK-SAME: "c": !Int = *(0,1)
+    # CHECK-SAME: "d": !Int = *(0,2)
+    # CHECK-SAME: ge(#lit.struct.extract<:!Int *(0,1), "_mlir_value">, 1)
+    # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,1), "_mlir_value">, #lit.struct.extract<:!Int *(0,2), "_mlir_value">)
     comptime contextual_default_fn = ContextDefault.inner
 
 
