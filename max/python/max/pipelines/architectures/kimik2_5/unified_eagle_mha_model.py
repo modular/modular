@@ -255,6 +255,10 @@ class Eagle3MHAKimiK25Unified(Module):
 
         assert draft_kv_collections is not None
 
+        draft0_kv_collections = [
+            _patch_draft0_kv_cache(kv) for kv in draft_kv_collections
+        ]
+
         # Step 0: ALL hidden states + VARIABLE logits.
         self.draft.return_hidden_states = ReturnHiddenStates.ALL
         self.draft.return_logits = ReturnLogits.VARIABLE
@@ -262,7 +266,7 @@ class Eagle3MHAKimiK25Unified(Module):
             shifted_corrected,
             hidden_states,
             signal_buffers,
-            draft_kv_collections,
+            draft0_kv_collections,
             return_n_logits,
             merged_offsets_per_dev,
             host_merged_offsets,
@@ -600,3 +604,28 @@ class Eagle3MHAKimiK25Unified(Module):
             all_input_types.append(token_bitmasks_type)
 
         return tuple(all_input_types)
+
+
+# TODO(SERVOPT-1437): This is a temporary patch, until we have a proper way
+# to pass the draft0 attention dispatch metadata.
+def _patch_draft0_kv_cache(kv: PagedCacheValues) -> PagedCacheValues:
+    """Returns ``kv`` with ``attention_dispatch_metadata`` re-sized for the
+    unified-eagle draft's step-0 prefill.
+
+    The unified-eagle graph calls the draft twice per spec-decode step:
+      1. First on a merged prefill sequence whose per-ctx q is larger than 1,
+      2. Then on single-token decode steps where q == 1.
+
+    The ``cache_manager`` resolves ``draft_attention_dispatch_metadata`` with
+    ``max_prompt_length == 1``, which is the correct width for the
+    decode steps, but not for prefill. This function patches the metadata
+    to the correct width for the prefill step.
+    """
+    decode_md = kv.draft_attention_dispatch_metadata
+    assert decode_md is not None
+    step0_max_prompt = kv.max_lengths[0, 0].cast(DType.int64).reshape([1]) + 1
+    step0_md = ops.concat(
+        [decode_md[0:1], step0_max_prompt, decode_md[2:4]],
+        axis=0,
+    )
+    return replace(kv, attention_dispatch_metadata=step0_md)
