@@ -476,3 +476,11 @@ This version is still a work in progress.
   switching to a different `ptxas` CUBIN cache will not hit those were
   generated before the switch.
   ([Issue #6540](https://github.com/modular/modular/issues/6549))
+
+- Fixed the `mojo` compiler incorrectly emitting AVX-512 instructions on
+  hosts where the CPU model (e.g. `znver4`) advertises AVX-512 but the OS
+  has not enabled it in XCR0 — for example, inside Docker containers on
+  GitHub Actions. Host CPU features are now cross-checked against the
+  runtime CPUID view, so features the kernel withholds no longer cause
+  `SIGILL` at runtime.
+  ([Issue #6413](https://github.com/modular/modular/issues/6413))
