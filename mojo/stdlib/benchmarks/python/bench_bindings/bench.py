@@ -80,9 +80,7 @@ def _sanity_check() -> None:
     assert mojo_module.add_raw(1, 2) == 3
     assert mojo_module.add_raw_fastcall(1, 2) == 3
     assert mojo_module.echo_str_def("hello world") == "hello world"
-    assert (
-        mojo_module.echo_str_raw_fastcall("hello world") == "hello world"
-    )
+    assert mojo_module.echo_str_raw_fastcall("hello world") == "hello world"
 
 
 def main() -> int:
@@ -160,9 +158,7 @@ def main() -> int:
     # Pure-Python baselines.
     _measure("Python -> Python py_noop(x)", "py_noop(1)", g)
     _measure("Python -> Python py_add(1, 2)", "py_add(1, 2)", g)
-    _measure(
-        "Python -> Python py_echo_str(s)", "py_echo_str('hello world')", g
-    )
+    _measure("Python -> Python py_echo_str(s)", "py_echo_str('hello world')", g)
 
     # timeit floor: no call at all.
     _measure("Python builtin: 1 + 2  (no call)", "1 + 2", g)

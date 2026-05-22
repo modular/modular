@@ -65,9 +65,7 @@ def test_string_construction_non_ascii_fallback() raises:
     # Long ASCII prefix followed by a high byte. Exercises the
     # non-first-iteration miss case in whichever loop the SIMD-mask width
     # makes active on the host (vectorized body or scalar tail).
-    var long_then_nonascii = (
-        "0123456789abcdef0123456789abcdef01234567" + "é"
-    )
+    var long_then_nonascii = "0123456789abcdef0123456789abcdef01234567" + "é"
     assert_equal(
         String(py=PythonObject(long_then_nonascii)), long_then_nonascii
     )
