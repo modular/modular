@@ -10,7 +10,7 @@ This version is still a work in progress.
 
 ## Language enhancements
 
-- Types can parameterize the `out` argument modifier when they want into being
+- Types can parameterize the `out` argument modifier when they want to be
   bindable to alternate address spaces, e.g.:
 
   ```mojo

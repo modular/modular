@@ -404,7 +404,7 @@ hook.remove()
 
 By default, `debug_model` runs with only 1 hidden layer to speed up debugging.
 This is usually sufficient since bugs often appear in the first layer. If
-needed, you can increase the layer coun with `--num-hidden-layers`:
+needed, you can increase the layer count with `--num-hidden-layers`:
 
 ```bash
 # Use 3 hidden layers
