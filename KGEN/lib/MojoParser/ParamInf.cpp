@@ -1909,15 +1909,25 @@ LogicalResult CallParamInf::inferForCall() {
 
         ParamMatcher matcher(callOperands[posOperandIdx].expr, *this,
                              allowImplicitConversions);
+        // Helper to format a diagnostic. `actualSide` and `expectedSide` get
+        // the actual/expected types embedded so the user can see exactly what
+        // each side looked like — both the element trait and the concrete
+        // element-type list, since either may be the source of the conflict.
+        auto emitPackMismatchDiag = [&]() -> MojoInflightDiag & {
+          auto &diag = getMojoDiag(callOperands[posOperandIdx].expr->getLoc());
+          diag << "cannot unpack a pack of type "
+               << actualRefPackType.getParamListElementType() << " ("
+               << actualRefPackType.getVariadic()
+               << ") into a call that expects a pack of type "
+               << expectedRefPackType.getParamListElementType() << " ("
+               << expectedRefPackType.getVariadic() << ")";
+          return diag;
+        };
         if (failed(matcher.matchParams(actualRefPackType.getVariadic(),
                                        expectedRefPackType.getVariadic())) ||
             failed(matcher.matchParams(actualRefPackType.getOrigin(),
                                        expectedRefPackType.getOrigin()))) {
-          auto &diag = getMojoDiag(callOperands[posOperandIdx].expr->getLoc());
-          diag << "cannot unpack a pack of type "
-               << actualRefPackType.getParamListElementType()
-               << " into a call that expects a pack of type "
-               << expectedRefPackType.getParamListElementType();
+          auto &diag = emitPackMismatchDiag();
           matcher.failureReason->addExplanation(diag);
           return failure();
         }
