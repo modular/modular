@@ -27,8 +27,8 @@ from max.interfaces import (
     BaseContext,
     PipelineOutput,
     RequestID,
-    SchedulerResult,
 )
+from max.serve.scheduler_result import SchedulerResult
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
 
 

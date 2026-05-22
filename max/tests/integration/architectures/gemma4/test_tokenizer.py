@@ -229,7 +229,11 @@ async def test_response_format_with_json_schema_key(
         request_id=RequestID("test-rf-with-schema"),
         model_name="test-model",
         response_format=TextGenerationResponseFormat(
-            type="json_schema", grammar=None, json_schema=schema
+            type="json_schema",
+            grammar=None,
+            json_schema=schema,
+            grammar_enforced=False,
+            tools_forced=False,
         ),
     )
 

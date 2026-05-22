@@ -47,7 +47,7 @@ from std.gpu.sync import (
 )
 from std.gpu.compute.arch.tcgen05 import *
 from layout import CoordLike, TileTensor
-from layout.coord import ComptimeInt, Coord, Idx, RuntimeInt
+from layout.coord import ComptimeInt, Coord, Idx
 from layout.tile_layout import row_major as tt_row_major
 from layout.tma_async import (
     PipelineState,
@@ -1261,9 +1261,9 @@ def _create_tma_and_launch[
 
     # 4D uint16 views of SF tensors (same memory, reinterpreted)
     var sfa_4d_shape = Coord(
-        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[0]()))),
-        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[1]()))),
-        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[2]()))),
+        Int64(sfa_5d_tensor.dim[0]()),
+        Int64(sfa_5d_tensor.dim[1]()),
+        Int64(sfa_5d_tensor.dim[2]()),
         Idx[sf_atom_u16](),
     )
     var sfa_4d_layout = tt_row_major(sfa_4d_shape)
@@ -1276,9 +1276,9 @@ def _create_tma_and_launch[
         sfa_4d_layout,
     )
     var sfb_4d_shape = Coord(
-        RuntimeInt[DType.int64](Int64(Int(sfb_5d_tensor.dim[0]()))),
-        RuntimeInt[DType.int64](Int64(Int(sfb_5d_tensor.dim[1]()))),
-        RuntimeInt[DType.int64](Int64(Int(sfb_5d_tensor.dim[2]()))),
+        Int64(sfb_5d_tensor.dim[0]()),
+        Int64(sfb_5d_tensor.dim[1]()),
+        Int64(sfb_5d_tensor.dim[2]()),
         Idx[sf_atom_u16](),
     )
     var sfb_4d_layout = tt_row_major(sfb_4d_shape)
@@ -1551,25 +1551,25 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     def _scales_5d_shape(
         scales: TileTensor,
     ) -> Coord[
-        RuntimeInt[DType.int64],
-        RuntimeInt[DType.int64],
-        RuntimeInt[DType.int64],
+        Int64,
+        Int64,
+        Int64,
         ComptimeInt[SF_ATOM_M[0]],
         ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
     ]:
         comptime if is_batched_matmul:
             return Coord(
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[0]()))),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[1]()))),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[2]()))),
+                Int64(scales.dim[0]()),
+                Int64(scales.dim[1]()),
+                Int64(scales.dim[2]()),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),
             )
         else:
             return Coord(
-                RuntimeInt[DType.int64](Int64(1)),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[0]()))),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[1]()))),
+                Int64(1),
+                Int64(scales.dim[0]()),
+                Int64(scales.dim[1]()),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),
             )

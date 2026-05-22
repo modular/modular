@@ -1100,7 +1100,7 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                 a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 benchmark=True,
-            ](ctx, Idx(shape[0]), Idx[shape[1]](), Idx[shape[2]]())
+            ](ctx, shape[0], Idx[shape[1]](), Idx[shape[2]]())
         except error:
             print("error")
 

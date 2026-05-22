@@ -15,7 +15,6 @@ from unittest.mock import Mock
 
 from max.interfaces import (
     RequestID,
-    SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
 )
@@ -26,6 +25,7 @@ from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
 )
+from max.serve.scheduler_result import SchedulerResult
 
 
 def create_mock_pipeline() -> Mock:

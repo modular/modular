@@ -100,7 +100,7 @@ def compute_topk_mask[
 
         var values_list = List[Scalar[dtype]]()
         for i in range(N):
-            values_list.append(values.load[width=1]((Idx(b), Idx(i))))
+            values_list.append(values.load[width=1]((b, i)))
 
         @parameter
         def _greater_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
@@ -139,7 +139,7 @@ def validate_sampling_results[
     comptime assert mask.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert sampled_idxs.flat_rank >= 1
     for b in range(batch_size):
-        var idx = Int(sampled_idxs.load[width=1]((Idx(b),)))
+        var idx = Int(sampled_idxs.load[width=1]((b,)))
 
         # Check 1: Index is within valid range.
         if idx < 0 or idx >= N:
@@ -211,7 +211,7 @@ def compute_topp_mask[
         # Collect (prob, index) pairs.
         var prob_idx = List[Tuple[Scalar[dtype], Int]]()
         for i in range(N):
-            prob_idx.append((probs.load[width=1]((Idx(b), Idx(i))), i))
+            prob_idx.append((probs.load[width=1]((b, i)), i))
 
         # Sort descending by probability.
         @parameter
@@ -251,7 +251,7 @@ def validate_topk_topp_sampling_results[
     comptime assert topp_mask.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert sampled_idxs.flat_rank >= 1
     for b in range(batch_size):
-        var idx = Int(sampled_idxs.load[width=1]((Idx(b),)))
+        var idx = Int(sampled_idxs.load[width=1]((b,)))
 
         if idx < 0 or idx >= N:
             raise Error(
@@ -316,7 +316,7 @@ def test_topk_topp_sampling[
     var input_shape = IndexList[2](batch_size, N)
     var input_runtime_layout = row_major(Coord(input_shape))
     var output_shape = IndexList[1](batch_size)
-    var output_runtime_layout = row_major(Idx(batch_size))
+    var output_runtime_layout = row_major(batch_size)
     var mask_runtime_layout = row_major(Coord(input_shape))
 
     var device_input = ctx.enqueue_create_buffer[dtype](
@@ -441,7 +441,7 @@ def test_topk_sampling[
 
     # Create layouts for output tensor [batch_size].
     var output_shape = IndexList[1](batch_size)
-    var output_runtime_layout = row_major(Idx(batch_size))
+    var output_runtime_layout = row_major(batch_size)
 
     # Create layouts for mask tensor [batch_size, N].
     var mask_runtime_layout = row_major(Coord(input_shape))
@@ -630,7 +630,7 @@ def extract_topk_from_masked[
         var indices = List[Int]()
 
         for i in range(N):
-            var val = masked_logits.load[width=1]((Idx(b), Idx(i)))
+            var val = masked_logits.load[width=1]((b, i))
             if val != min_or_neg_inf[dtype]():
                 values.append(val)
                 indices.append(i)
@@ -947,21 +947,16 @@ def _cpu_softmax[
     comptime assert probs_out.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert logits.flat_rank >= 2
     for b in range(batch_size):
-        var max_val = logits.load[width=1]((Idx(b), Idx[0]())).cast[
-            DType.float32
-        ]()
+        var max_val = logits.load[width=1]((b, Idx[0]())).cast[DType.float32]()
         for i in range(1, N):
-            var v = logits.load[width=1]((Idx(b), Idx(i))).cast[DType.float32]()
+            var v = logits.load[width=1]((b, i)).cast[DType.float32]()
             if v > max_val:
                 max_val = v
 
         var exp_sum = Float32(0.0)
         for i in range(N):
             var e = exp(
-                (
-                    logits.load[width=1]((Idx(b), Idx(i))).cast[DType.float32]()
-                    - max_val
-                )
+                (logits.load[width=1]((b, i)).cast[DType.float32]() - max_val)
                 / T
             )
             probs_out[b, i] = e
@@ -1004,7 +999,7 @@ def test_topk_topp_sampling_fi[
 
     var input_shape = IndexList[2](batch_size, N)
     var input_layout = row_major(Coord(input_shape))
-    var output_layout = row_major(Idx(batch_size))
+    var output_layout = row_major(batch_size)
     var mask_layout = row_major(Coord(input_shape))
 
     # Device buffers.
@@ -1018,7 +1013,7 @@ def test_topk_topp_sampling_fi[
     var k_buf = ctx.enqueue_create_buffer[out_idx_type](batch_size)
     var p_buf = ctx.enqueue_create_buffer[DType.float32](batch_size)
     var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
-    var batch_layout = row_major(Idx(batch_size))
+    var batch_layout = row_major(batch_size)
 
     # CPU reference buffers: probs after softmax, and masks.
     var probs_buf = ctx.enqueue_create_buffer[DType.float32](

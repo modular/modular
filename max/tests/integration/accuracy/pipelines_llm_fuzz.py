@@ -116,15 +116,29 @@ def _must_rlocation_str(runfiles: python.runfiles.Runfiles, rloc: str) -> str:
 
 
 def _resolve_pipelines_program() -> list[str]:
-    """Resolve the MAX Serve binary path (Bazel runfiles or Docker fallback)."""
+    """Resolve the MAX Serve binary path (Bazel runfiles or Docker fallback).
+
+    The same Python entrypoint serves both //max/tests/integration/accuracy:pipelines-llm-fuzz
+    (public, OSS pipelines binary) and //max_private:pipelines-llm-fuzz
+    (internal binary that ships extra reasoning/tool parsers). Each Bazel
+    target pins exactly one of the two paths via its ``data`` dep, so we
+    pick whichever the runfiles tree actually contains.
+    """
     if HAVE_RUNFILES:
         runfiles = python.runfiles.Create()
         if runfiles is not None:
-            return [
-                _must_rlocation_str(
-                    runfiles, "_main/max/python/max/entrypoints/pipelines"
-                )
-            ]
+            for rloc in (
+                "_main/max_private/max_private",
+                "_main/max/python/max/entrypoints/pipelines",
+            ):
+                loc = runfiles.Rlocation(rloc)
+                if loc is not None and Path(loc).exists():
+                    return [loc]
+            raise FileNotFoundError(
+                "Neither max_private nor pipelines binary found in runfiles;"
+                " invoke via //max_private:pipelines-llm-fuzz or"
+                " //max/tests/integration/accuracy:pipelines-llm-fuzz"
+            )
     return ["/opt/venv/bin/python", "-m", "max.entrypoints.pipelines"]
 
 

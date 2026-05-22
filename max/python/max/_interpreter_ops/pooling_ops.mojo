@@ -21,7 +21,6 @@ from std.sys.info import has_accelerator
 from std.utils.numerics import min_or_neg_inf
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
 
 
 from op_utils import (
@@ -79,7 +78,7 @@ def max_pool_op[
     dilation_w: Int,
     pad_h: Int,
     pad_w: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     var total = batch * out_h * out_w * channels
     var in_row_stride = in_w * channels
@@ -132,13 +131,12 @@ def max_pool_op[
 
         out_ptr[i] = max_val
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContext(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -169,7 +167,7 @@ struct _MaxPoolBody(Dispatchable):
     var dilation_w: Int
     var pad_h: Int
     var pad_w: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         max_pool_op(
@@ -260,7 +258,7 @@ def max_pool_dispatcher(
         out_buffer: Output buffer [N, out_h, out_w, C].
         in_buffer: Input buffer [N, H, W, C].
         params: Python tuple of pooling parameters.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     _unpack_and_dispatch(out_buffer, in_buffer, params, device_context_ptr)
 
@@ -277,6 +275,6 @@ def max_pool_ceil_dispatcher(
         out_buffer: Output buffer [N, out_h, out_w, C].
         in_buffer: Input buffer [N, H, W, C].
         params: Python tuple of pooling parameters.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     _unpack_and_dispatch(out_buffer, in_buffer, params, device_context_ptr)

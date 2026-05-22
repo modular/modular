@@ -362,9 +362,12 @@ class WanTransformer(CompiledComponent):
                 models = self._session.load_all(
                     self._graphs_module, weights_registry=combined_registry
                 )
-                pre_model = models[pre_graph.name]
-                combined_blocks_model = models[blocks_graph.name]
-                post_model = models[post_graph.name]
+                assert self._pre_graph is not None
+                assert self._blocks_graph is not None
+                assert self._post_graph is not None
+                pre_model = models[self._pre_graph.name]
+                combined_blocks_model = models[self._blocks_graph.name]
+                post_model = models[self._post_graph.name]
             self._model = BlockLevelModel(
                 pre_model,
                 post_model,

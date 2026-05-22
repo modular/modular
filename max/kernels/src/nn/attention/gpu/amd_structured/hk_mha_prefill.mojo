@@ -119,7 +119,6 @@ from layout.tile_layout import (
     ComptimeInt,
     Idx,
     Layout as TileLayout,
-    RuntimeInt,
     col_major,
     row_major,
 )
@@ -300,11 +299,11 @@ struct HKMhaPrefill[config: HKMhaConfig]:
     # plane. Layout VALUES are constructed at the call site because the
     # `seq_len` / `num_keys` dim is runtime.
     comptime _QPerHeadLayoutT = TileLayout[
-        Coord[RuntimeInt[DType.int32], ComptimeInt[Self.DEPTH]].element_types,
+        Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._Q_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
     comptime _KVPerHeadLayoutT = TileLayout[
-        Coord[RuntimeInt[DType.int32], ComptimeInt[Self.DEPTH]].element_types,
+        Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._KV_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
     # Per-tile K/V layout (KV_BLOCK x DEPTH) used by the paged path. The
@@ -1231,15 +1230,15 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         var q_2d = q_bf16.tile(
             Coord(
                 Idx[1](),
-                RuntimeInt[DType.int32](Int32(seq_len)),
+                Int32(seq_len),
                 Idx[1](),
                 Idx[Self.DEPTH](),
             ),
-            Coord(Idx(batch_idx), Idx[0](), Idx(head_idx), Idx[0]()),
+            Coord(batch_idx, Idx[0](), head_idx, Idx[0]()),
         ).reshape(
             Self._QPerHeadLayoutT(
                 Coord(
-                    RuntimeInt[DType.int32](Int32(seq_len)),
+                    Int32(seq_len),
                     Idx[Self.DEPTH](),
                 ),
                 Coord(Idx[Self._Q_ROW_STRIDE](), Idx[1]()),
@@ -1248,15 +1247,15 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         var o_2d = o.tile(
             Coord(
                 Idx[1](),
-                RuntimeInt[DType.int32](Int32(seq_len)),
+                Int32(seq_len),
                 Idx[1](),
                 Idx[Self.DEPTH](),
             ),
-            Coord(Idx(batch_idx), Idx[0](), Idx(head_idx), Idx[0]()),
+            Coord(batch_idx, Idx[0](), head_idx, Idx[0]()),
         ).reshape(
             Self._QPerHeadLayoutT(
                 Coord(
-                    RuntimeInt[DType.int32](Int32(seq_len)),
+                    Int32(seq_len),
                     Idx[Self.DEPTH](),
                 ),
                 Coord(Idx[Self._Q_ROW_STRIDE](), Idx[1]()),

@@ -21,7 +21,6 @@ from std.sys.info import has_accelerator
 
 from std.algorithm.functional import IndexList
 from std.math import sqrt
-from std.memory import OpaquePointer
 
 from tensor import ManagedTensorSlice
 from tensor.io_spec import Input
@@ -120,7 +119,7 @@ def layer_norm_op[
     shape: IndexList[2],
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     """Layer normalization on a rank-2 normalized tensor.
 
@@ -138,12 +137,12 @@ def layer_norm_op[
         shape: The normalized rank-2 shape [batch_dim, feature_dim].
         gamma_shape: The gamma shape [feature_dim].
         epsilon: Small constant for numerical stability.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var batch_dim = shape[0]
     var feature_dim = shape[1]
 
-    if not ctx:
+    if ctx.api() == "cpu":
         # CPU path: use direct implementation to avoid runtime dependency
         # (nn.normalization requires AsyncRT parallelism which isn't
         # available in the interpreter context)
@@ -205,8 +204,6 @@ def layer_norm_op[
                     io_spec=Input, static_spec=beta_spec
                 ](beta_ptr, gamma_shape)
 
-                var device_ctx = DeviceContext(ctx.unsafe_value())
-
                 nn_layer_norm[
                     dtype,
                     2,
@@ -219,7 +216,7 @@ def layer_norm_op[
                     gamma_shape,
                     beta_tensor.to_tile_tensor[DType.int64](),
                     epsilon,
-                    device_ctx,
+                    ctx,
                 )
 
             else:

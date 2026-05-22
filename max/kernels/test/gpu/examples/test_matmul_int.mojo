@@ -35,9 +35,9 @@ def matmul(
     n: Int,
     k: Int,
 ):
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(m), Idx(k))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(k), Idx(n))))
-    var c = TileTensor(c_ptr, row_major(Coord(Idx(m), Idx(n))))
+    var a = TileTensor(a_ptr, row_major(Coord(m, k)))
+    var b = TileTensor(b_ptr, row_major(Coord(k, n)))
+    var c = TileTensor(c_ptr, row_major(Coord(m, n)))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix

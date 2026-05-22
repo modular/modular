@@ -45,9 +45,9 @@ def test_dispatch_dynamic_m[
     """
     comptime b_type = a_type
 
-    var a_shape = row_major(Coord(Idx(m), Idx[K]()))
+    var a_shape = row_major(Coord(m, Idx[K]()))
     var b_shape = row_major(Coord(Idx[N](), Idx[K]()))
-    var c_shape = row_major(Coord(Idx(Int(m)), Idx[N]()))
+    var c_shape = row_major(Coord(Int(m), Idx[N]()))
 
     var a_size = m * K
     var b_size = N * K
@@ -58,7 +58,7 @@ def test_dispatch_dynamic_m[
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
-    var a_host = TileTensor(a_host_ptr, row_major(Coord(Idx(m), Idx[K]())))
+    var a_host = TileTensor(a_host_ptr, row_major(Coord(m, Idx[K]())))
     random(a_host)
 
     var b_host = TileTensor(b_host_ptr, row_major[N, K]())
@@ -579,9 +579,7 @@ def test_oob_epilogue_dynamic_m[
     var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     # A: random for [0, M), poison for [M, alloc_m)
-    var a_host = TileTensor(
-        a_host_ptr, row_major(Coord(Idx(alloc_m), Idx[K]()))
-    )
+    var a_host = TileTensor(a_host_ptr, row_major(Coord(alloc_m, Idx[K]())))
     random(a_host)
 
     for i in range(m * K, alloc_m * K):
@@ -604,15 +602,13 @@ def test_oob_epilogue_dynamic_m[
     ctx.enqueue_copy(c_ref_dev, c_ref_host_ptr)
 
     # Dynamic M: TileTensors with runtime M dimension
-    var a_tensor = TileTensor(a_dev, row_major(Coord(Idx(Int(m)), Idx[K]())))
+    var a_tensor = TileTensor(a_dev, row_major(Coord(Int(m), Idx[K]())))
     var b_tensor = TileTensor(b_dev, row_major(Coord(Idx[N](), Idx[K]())))
-    var c_tensor = TileTensor(c_dev, row_major(Coord(Idx(Int(m)), Idx[N]())))
-    var c_ref_tensor = TileTensor(
-        c_ref_dev, row_major(Coord(Idx(Int(m)), Idx[N]()))
-    )
+    var c_tensor = TileTensor(c_dev, row_major(Coord(Int(m), Idx[N]())))
+    var c_ref_tensor = TileTensor(c_ref_dev, row_major(Coord(Int(m), Idx[N]())))
 
     var out_tensor = TileTensor(
-        out_dev, row_major(Coord(Idx(Int(alloc_m)), Idx[N]()))
+        out_dev, row_major(Coord(Int(alloc_m), Idx[N]()))
     )
 
     @parameter

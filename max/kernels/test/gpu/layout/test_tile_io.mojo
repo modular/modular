@@ -311,7 +311,7 @@ def masked_async_generic_to_shared_to_generic_kernel(
     the source is fully in bounds.
 
     Verifying the actual zero-fill behavior requires a runtime-shaped
-    src (e.g. `Coord(RuntimeInt(num_rows), Idx[_N]())`) so `src.dim[0]()`
+    src (e.g. `Coord(Int(num_rows), Idx[_N]())`) so `src.dim[0]()`
     can be smaller than the distribute layout's row count. That follow-up
     test is tracked alongside the production attention adopters that will
     exercise this path.

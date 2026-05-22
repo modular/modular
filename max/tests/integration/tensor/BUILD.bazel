@@ -26,6 +26,7 @@ modular_py_test(
             "conftest.py",
             "test_flashinfer_fp4_gemm.py",
             "test_functional_custom_gpu.py",
+            "test_philox_torch_divergence.py",
         ],
     ),
     data = [
@@ -87,6 +88,25 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/dtype",
         "//max/python/max/experimental/nn",
+    ],
+)
+
+modular_py_test(
+    name = "test_philox_torch_divergence",
+    size = "small",
+    srcs = ["test_philox_torch_divergence.py"],
+    imports = ["."],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        requirement("torch"),
     ],
 )
 

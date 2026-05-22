@@ -124,9 +124,7 @@ def nan_check_count[
             if infs > 0:
                 _ = Atomic.fetch_add(inf_acc, infs)
 
-        elementwise[scan, simd_width_of[dtype]()](
-            total, Optional[DeviceContext](ctx)
-        )
+        elementwise[scan, simd_width_of[dtype]()](total, ctx)
 
         nan_count_out.unsafe_ptr()[] = nan_acc[]
         inf_count_out.unsafe_ptr()[] = inf_acc[]

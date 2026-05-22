@@ -233,6 +233,13 @@ class MemoryEstimator:
                 f"Try running a smaller model, using a smaller precision, or using a device with more memory."
             )
 
+        # KV cache is one buffer per device; budget can't exceed the
+        # per-allocation cap (Metal's maxBufferLength).
+        available_kv_cache_memory = min(
+            available_kv_cache_memory,
+            sum(d.max_single_alloc_size for d in devices),
+        )
+
         vision_cache_bytes = cls._reserve_vision_cache_memory(
             pipeline_config,
             model_config,

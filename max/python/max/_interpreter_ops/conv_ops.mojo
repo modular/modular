@@ -25,7 +25,6 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
 
 from std.sys.info import has_apple_gpu_accelerator
 
@@ -77,7 +76,7 @@ def conv2d_op[
     groups: Int,
     out_h: Int,
     out_w: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Naive 2D convolution over NHWC input with RSCF filter.
 
@@ -104,7 +103,7 @@ def conv2d_op[
         groups: Number of groups.
         out_h: Output height.
         out_w: Output width.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = batch * out_h * out_w * out_c
     var ic_per_group = in_c // groups
@@ -169,13 +168,12 @@ def conv2d_op[
                     )
         out_ptr[i] = accum
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContext(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -208,7 +206,7 @@ def conv_transpose2d_op[
     pad_w: Int,
     out_h: Int,
     out_w: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Naive 2D transposed convolution over NHWC input with RSCF filter.
 
@@ -238,7 +236,7 @@ def conv_transpose2d_op[
         pad_w: Padding before width (on output side).
         out_h: Output height.
         out_w: Output width.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = batch * out_h * out_w * out_c
     var in_hw_stride = in_w * in_c
@@ -309,13 +307,12 @@ def conv_transpose2d_op[
                     accum += in_ptr[in_hw_off + ic] * filt_ptr[filt_hw_off + ic]
         out_ptr[i] = accum
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContext(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -412,7 +409,7 @@ def _conv2d_dtype_dispatch(
     groups: Int,
     oh: Int,
     ow: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     if dtype == DType.float32:
         conv2d_op(
@@ -639,7 +636,7 @@ def _conv_transpose2d_dtype_dispatch(
     pw: Int,
     oh: Int,
     ow: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     if dtype == DType.float32:
         conv_transpose2d_op(

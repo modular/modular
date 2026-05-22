@@ -79,6 +79,18 @@ class Mistral3TextEncoderConfig(MAXModelConfigBase):
             if mapped_key in cls.model_fields:
                 init_dict[mapped_key] = value
 
+        # transformers v5 moved `rope_theta` from top-level into a nested
+        # `rope_parameters` dict. So if rope_theta isn't set by the above, scan
+        # for it in the sub-dict.
+        if "rope_theta" not in init_dict:
+            rope_params = text_config.get("rope_parameters")
+            if rope_params and "rope_theta" in rope_params:
+                init_dict["rope_theta"] = rope_params["rope_theta"]
+
+        assert "rope_theta" in init_dict, (
+            "Failed to parse rope_theta from text_config"
+        )
+
         if "head_dim" not in init_dict:
             hidden_size = init_dict.get("hidden_size", 5120)
             num_attention_heads = init_dict.get("num_attention_heads", 32)

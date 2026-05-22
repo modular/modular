@@ -401,6 +401,8 @@ def test_text_tokenizer_with_constrained_decoding(
                 },
                 "required": ["name", "age"],
             },
+            grammar_enforced=True,
+            tools_forced=False,
         ),
     )
 

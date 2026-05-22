@@ -148,16 +148,12 @@ Any other assigned string value returns `False`.
 
 This function errors when the define does not provide a value.
 
-<!-- markdownlint-disable MD013 -->
-
 | Command                        | Compiler view               | Result                                           |
 |--------------------------------|-----------------------------|--------------------------------------------------|
 | `mojo -D verbose app.mojo`     | `verbose` defined, no value | Error                                            |
 | `mojo -D verbose=on app.mojo`  | `verbose="on"`              | `True`                                           |
 | `mojo -D verbose=yes app.mojo` | `verbose="yes"`             | `False` (`yes` is not a recognized truthy value) |
 | `mojo app.mojo`                | define missing              | `default` → `False`                              |
-
-<!-- markdownlint-enable MD013 -->
 
 ```mojo
 from std.sys import get_defined_bool
@@ -291,8 +287,6 @@ mojo -D dtype=float8_e4m3fn -D ctype=bfloat16 app.mojo
 
 Code:
 
-<!-- markdownlint-disable MD013 -->
-
 ```mojo
 from std.sys import get_defined_dtype
 
@@ -305,8 +299,6 @@ def main() raises:
 
     # ... continuing code
 ```
-
-<!-- markdownlint-enable MD013 -->
 
 Unlike C-style `-D` flags, which produce preprocessor strings, Mojo
 treats `-D` values as first-class compile-time parameters in the type
@@ -411,15 +403,11 @@ compiler from a driver flag. Use the driver flag rather than `-D` so
 the define matches the compiler's behavior. The flags are shown in
 the following table:
 
-<!-- markdownlint-disable MD013 -->
-
 | Define                 | Flag                            | Type     | Values                                              |
 |------------------------|---------------------------------|----------|-----------------------------------------------------|
 | `__OPTIMIZATION_LEVEL` | `-O` / `--optimization-level`   | `Int`    | `0`, `1`, `2`, `3` (default `3`)                    |
 | `__DEBUG_LEVEL`        | `-g` / `--debug-level`          | `String` | `"line-tables"`, `"full"`                           |
 | `__SANITIZE_ADDRESS`   | `--sanitize=address`            | `Int`    | `0` (off, default), `1` (on)                        |
-
-<!-- markdownlint-enable MD013 -->
 
 If `-g` is omitted, `__DEBUG_LEVEL` is not injected; `DebugLevel.level`
 returns `"none"` as a library fallback.
@@ -440,13 +428,9 @@ def main():
 
 Mojo's `ASSERT` flag controls `debug_assert()` behavior:
 
-<!-- markdownlint-disable MD013 -->
-
 | Define   | Flag                | Type     | Values                                  |
 |----------|---------------------|----------|-----------------------------------------|
 | `ASSERT` | `-D ASSERT=<value>` | `String` | `none`, `safe` (default), `all`, `warn` |
-
-<!-- markdownlint-enable MD013 -->
 
 `debug_assert()` reads this value directly. Supported assertion levels are:
 
@@ -504,8 +488,6 @@ Debug and optimization features are controlled independently; enabling one
 does not automatically enable the others. "Debug build" can mean several
 different things in Mojo.
 
-<!-- markdownlint-disable MD013 -->
-
 **Changes how the compiler emits output**:
 
 | Goal                                            | Flag                                  | Effect                                  |
@@ -520,8 +502,6 @@ different things in Mojo.
 | Goal                                            | Flag                                  | Effect                                  |
 |-------------------------------------------------|---------------------------------------|-----------------------------------------|
 | Enable all `debug_assert()` checks              | `-D ASSERT=all`                       | Independent of `-g` and `-O`            |
-
-<!-- markdownlint-enable MD013 -->
 
 A typical debug configuration combines several of these flags:
 

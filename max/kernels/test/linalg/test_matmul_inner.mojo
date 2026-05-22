@@ -158,16 +158,16 @@ def test_micro_kernel[
         alignment=alignment,
     )
     var c_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
-    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
+    var a = TileTensor(a_ptr, row_major(m, k))
     var b_packed = TileTensor(
         b_packed_ptr,
         row_major(
-            Idx(np // config.kernel_cols),
-            Idx(kh // factor),
-            Idx(factor * config.kernel_cols),
+            np // config.kernel_cols,
+            kh // factor,
+            factor * config.kernel_cols,
         ),
     )
-    var c = TileTensor(c_ptr, row_major(Idx(m), Idx(n)))
+    var c = TileTensor(c_ptr, row_major(m, n))
 
     _ = a.fill(1)
     _ = b_packed.fill(1)

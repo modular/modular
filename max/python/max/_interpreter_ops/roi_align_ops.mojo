@@ -28,7 +28,6 @@ from std.sys.info import has_accelerator
 from std.utils.numerics import min_or_neg_inf
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
 
 
 from op_utils import (
@@ -75,7 +74,7 @@ def roi_align_op[
     sampling_ratio_val: Float32,
     aligned_flag: Int,
     mode_flag: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Compute ROI Align pooling over NHWC input.
 
@@ -99,7 +98,7 @@ def roi_align_op[
         sampling_ratio_val: Sampling points per bin (0 = adaptive).
         aligned_flag: 1 = apply half-pixel offset, 0 = no offset.
         mode_flag: 0 = average pooling, 1 = max pooling.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = n_regions * out_h * out_w * channels
     var offset = Float32(0.5) if aligned_flag else Float32(0.0)
@@ -261,13 +260,12 @@ def roi_align_op[
         else:
             out_ptr[i] = pool_val
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContext(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -295,7 +293,7 @@ struct _RoiAlignBody(Dispatchable):
     var sampling_ratio_val: Float32
     var aligned_flag: Int
     var mode_flag: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         comptime if t.is_floating_point():

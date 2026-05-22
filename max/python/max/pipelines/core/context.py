@@ -44,6 +44,189 @@ CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
 
 
+@dataclass
+class StructuredOutputRegionDelimiters:
+    """Token ID sequences that define structured output boundaries.
+
+    Used for conditional grammar enforcement: when the start sequence
+    is detected, grammar enforcement activates. When the end sequence
+    is detected, enforcement deactivates.
+    """
+
+    start_token_ids: list[int] | None = None
+    """Token ID sequence marking the start of a structured output region."""
+
+    end_token_ids: list[int] | None = None
+    """Token ID sequence marking the end of a structured output region."""
+
+
+@dataclass
+class GrammarEnforcementState:
+    """Manages grammar enforcement state for constrained decoding.
+
+    Encapsulates the logic for:
+    - Tracking whether grammar is currently being enforced
+    - Detecting tool call start/end token sequences
+    - Detecting thinking region end sequences (for thinking + constrained decoding)
+    - Managing the token buffer for multi-token sequence matching
+
+    State machine scenarios:
+
+    1. ``tool_choice=auto`` without thinking (tool region set):
+       - Starts with ``grammar_enforced=False``
+       - Detects tool_start -> ``grammar_enforced=True``
+       - Detects tool_end -> ``grammar_enforced=False``
+
+    2. ``tool_choice=auto`` with thinking (thinking + tool region set):
+       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
+       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=False``
+       - Detects tool_start -> ``grammar_enforced=True``
+       - Detects tool_end -> ``grammar_enforced=False``
+
+    3. ``tool_choice=required`` with thinking (thinking region set):
+       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
+       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
+
+    4. ``response_format: json_schema`` with thinking (thinking region set):
+       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
+       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
+    """
+
+    grammar_enforced: bool = False
+    """Whether grammar is currently being enforced via bitmask.
+
+    For tool_choice=required or response_format: True from start.
+    For tool_choice=auto without response_format: False initially,
+    flipped to True when tool call start token is detected.
+    """
+
+    tools_forced: bool = False
+    """Whether tool calling was forced (tool_choice=required or named).
+
+    Controls whether grammar_enforced is True from the first generated token.
+    Independent of the --enable-structured-output server flag (which only gates
+    user-supplied schemas; see ``requires_structured_output_flag``).
+    """
+
+    requires_structured_output_flag: bool = False
+    """Whether this request requires --enable-structured-output to be set.
+
+    True when the constraint includes a user-supplied JSON schema. False for
+    pure tool-call grammars derived from the model's tool parser.
+    """
+
+    tool_region: StructuredOutputRegionDelimiters | None = None
+    """Token sequences defining tool call boundaries, if conditional enforcement."""
+
+    thinking_region_delimiters: StructuredOutputRegionDelimiters | None = None
+    """Token sequences defining thinking boundaries (e.g., ``</think>``).
+
+    When set, grammar enforcement is suspended inside thinking regions.
+    The key insight is that when thinking is enabled, the chat template
+    already emits ``<think>`` in the prompt, so we start in thinking region
+    and only need to detect ``</think>`` to exit.
+    """
+
+    _in_thinking_region: bool = False
+    """Whether currently inside a thinking region.
+    
+    TODO: Consider consolidating with ``in_thinking_phase`` in text generation pipeline.
+    """
+
+    _tool_calling_match_buffer: list[int] = field(default_factory=list)
+    """Buffer for partial matching of multi-token start/end tags."""
+
+    _thinking_match_buffer: list[int] = field(default_factory=list)
+    """Buffer for partial matching of thinking end sequence."""
+
+    def update_enforcement_state(self, token: int) -> bool:
+        """Update enforcement state based on sampled token.
+
+        Checks if the token completes a start/end sequence and
+        toggles grammar_enforced accordingly. Thinking region transitions
+        take priority over tool region transitions.
+
+        Args:
+            token: The newly sampled token.
+
+        Returns:
+            True if enforcement state changed.
+        """
+        changed = False
+
+        # Check thinking region transitions FIRST (higher priority)
+        # When thinking is enabled, we START in thinking region (template already
+        # emits <think>). We only detect </think> to exit.
+        if (
+            self.thinking_region_delimiters is not None
+            and self._in_thinking_region
+        ):
+            if (
+                self.thinking_region_delimiters.end_token_ids is not None
+                and self._check_sequence_match_with_buffer(
+                    token,
+                    self.thinking_region_delimiters.end_token_ids,
+                    self._thinking_match_buffer,
+                )
+            ):
+                self._in_thinking_region = False
+                # After thinking ends:
+                # - For required tools (tools_forced=True): immediately enforce
+                # - For json_schema without tools (tool_region is None):
+                #   immediately enforce
+                # - For auto tools: stay free, tool region logic will handle it
+                if self.tools_forced or self.tool_region is None:
+                    self.grammar_enforced = True
+                changed = True
+
+        # Tool region logic (for tool_choice=auto)
+        if not changed and self.tool_region is not None:
+            # Check for start sequence (only when not enforcing)
+            if not self.grammar_enforced:
+                if (
+                    self.tool_region.start_token_ids is not None
+                    and self._check_sequence_match(
+                        token, self.tool_region.start_token_ids
+                    )
+                ):
+                    self.grammar_enforced = True
+                    changed = True
+            # Check for end sequence (only when enforcing)
+            else:
+                if (
+                    self.tool_region.end_token_ids is not None
+                    and self._check_sequence_match(
+                        token, self.tool_region.end_token_ids
+                    )
+                ):
+                    self.grammar_enforced = False
+                    self._tool_calling_match_buffer.clear()
+                    changed = True
+
+        return changed
+
+    def _check_sequence_match(self, token: int, target: list[int]) -> bool:
+        """Check if token completes a target sequence using the default buffer."""
+        return self._check_sequence_match_with_buffer(
+            token, target, self._tool_calling_match_buffer
+        )
+
+    def _check_sequence_match_with_buffer(
+        self, token: int, target: list[int], buffer: list[int]
+    ) -> bool:
+        """Check if token completes a target sequence using a specific buffer."""
+        buffer.append(token)
+
+        max_len = len(target)
+        if len(buffer) > max_len:
+            del buffer[: len(buffer) - max_len]
+
+        if buffer[-len(target) :] == target:
+            buffer.clear()
+            return True
+        return False
+
+
 @dataclass(kw_only=True)
 class TextContext:
     """A base class for model context, specifically for Text model variants.
@@ -85,6 +268,12 @@ class TextContext:
     When set, this takes precedence over ``json_schema``. Used for model-specific
     constrained decoding formats like Kimi's tool call grammar.
     """
+
+    grammar_state: GrammarEnforcementState = field(
+        default_factory=GrammarEnforcementState
+    )
+    """Grammar enforcement state for constrained decoding."""
+
     sampling_params: SamplingParams = field(default_factory=SamplingParams)
     model_name: str = field(default="")
     _matcher: Any | None = field(default=None)
@@ -210,6 +399,92 @@ class TextContext:
         """The optional grammar matcher for constrained decoding."""
         return self._matcher
 
+    @property
+    def grammar_enforced(self) -> bool:
+        """Whether grammar is currently being enforced."""
+        return self.grammar_state.grammar_enforced
+
+    @grammar_enforced.setter
+    def grammar_enforced(self, value: bool) -> None:
+        self.grammar_state.grammar_enforced = value
+
+    @property
+    def tools_forced(self) -> bool:
+        """Whether tool calling was forced."""
+        return self.grammar_state.tools_forced
+
+    @tools_forced.setter
+    def tools_forced(self, value: bool) -> None:
+        self.grammar_state.tools_forced = value
+
+    @property
+    def requires_structured_output_flag(self) -> bool:
+        """Whether this request requires --enable-structured-output."""
+        return self.grammar_state.requires_structured_output_flag
+
+    @requires_structured_output_flag.setter
+    def requires_structured_output_flag(self, value: bool) -> None:
+        self.grammar_state.requires_structured_output_flag = value
+
+    def set_tool_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        """Set token sequences for conditional tool call enforcement.
+
+        Args:
+            start_token_ids: Token IDs marking tool call start.
+            end_token_ids: Token IDs marking tool call end.
+        """
+        if start_token_ids is not None or end_token_ids is not None:
+            self.grammar_state.tool_region = StructuredOutputRegionDelimiters(
+                start_token_ids=start_token_ids,
+                end_token_ids=end_token_ids,
+            )
+
+    def set_thinking_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        """Configure thinking region for conditional grammar enforcement.
+
+        When a thinking region is configured and ``_in_thinking_region`` is True,
+        grammar enforcement is suspended until the end token sequence is detected.
+        This enables reasoning output during constrained decoding.
+
+        Args:
+            start_token_ids: Token IDs marking thinking start (can be None if we
+                start inside thinking, which is the case when chat template
+                already emits ``<think>``).
+            end_token_ids: Token IDs marking thinking end (e.g., ``</think>``).
+        """
+        if end_token_ids is not None:
+            self.grammar_state.thinking_region_delimiters = (
+                StructuredOutputRegionDelimiters(
+                    start_token_ids=start_token_ids,
+                    end_token_ids=end_token_ids,
+                )
+            )
+
+    def update_enforcement_state(self, token: int) -> bool:
+        """Advance the grammar-enforcement state machine by one token.
+
+        Forwards to :meth:`GrammarEnforcementState.update_enforcement_state`.
+        Used by spec-decode paths that need to advance the state machine
+        without invoking ``matcher.consume_token`` (which asserts on
+        rejection); the matcher is advanced separately via
+        ``try_consume_tokens`` for tolerance.
+
+        Args:
+            token: The newly committed token.
+
+        Returns:
+            True if enforcement state changed.
+        """
+        return self.grammar_state.update_enforcement_state(token)
+
     def to_generation_output(self) -> TextGenerationOutput:
         """Get completion tokens that are ready to be returned to the user.
 
@@ -310,7 +585,10 @@ class TextContext:
     def advance_fsm(self, token: int) -> bool:
         """Advance the FSM matcher state by one token.
 
-        This method advances only the FSM state for constrained decoding.
+        This method:
+        1. Updates enforcement state based on tool call boundaries (if conditional)
+        2. Advances the FSM if grammar is currently enforced
+
         It does NOT modify the token buffer. Use ``advance_token_buffer()``
         separately if token buffer advancement is needed, or use ``update()``
         for the common case of advancing both together.
@@ -319,22 +597,30 @@ class TextContext:
             token: The token to consume in the FSM.
 
         Returns:
-            True if the token was accepted by the matcher, False if no
-            matcher is present.
+            True if the token was processed, False if no matcher is present.
 
         Raises:
             AssertionError: If the matcher rejects the token, indicating
                 a mismatch between the bitmask and FSM state.
         """
-        if self.matcher:
+        if self.matcher is None:
+            return False
+
+        # Update enforcement state (may toggle grammar_enforced)
+        self.grammar_state.update_enforcement_state(token)
+
+        # Only consume token in FSM if enforcement is active
+        # TODO: Does this need to raise an error if consumption fails?
+        if self.grammar_state.grammar_enforced:
             try:
                 assert self.matcher.consume_token(token)
             except Exception:
                 print(
                     f"Matcher Errors: {self.matcher.get_error()} \nMatcher Warnings: {self.matcher.get_grammar_warnings()}"
                 )
-            return True
-        return False
+                raise
+
+        return True
 
     def update(
         self,

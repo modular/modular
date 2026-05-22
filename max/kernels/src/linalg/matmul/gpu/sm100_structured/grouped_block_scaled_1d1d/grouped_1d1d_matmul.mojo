@@ -38,7 +38,7 @@ from std.gpu.host import DeviceContext, Dim, FuncAttribute
 from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from layout.tma_async import create_tensor_tile
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import WarpRole1D1D
@@ -309,7 +309,7 @@ def grouped_matmul_block_scaled[
     )
     var sfb_4d_shape = Coord(
         Idx[1](),
-        RuntimeInt[DType.int64](Scalar[DType.int64](sfb_dim0)),
+        Int64(sfb_dim0),
         _b_scales.layout.shape[2](),
         Idx[sf_atom_u16](),
     )
@@ -348,11 +348,7 @@ def grouped_matmul_block_scaled[
     def _to_1d[
         target_type: DType,
     ](t: TileTensor) -> TileTensor[target_type, GMEMLayout1D, MutAnyOrigin]:
-        var shape = Coord(
-            RuntimeInt[DType.int64](
-                Scalar[DType.int64](t.layout.shape[0]().value())
-            )
-        )
+        var shape = Coord(Int64(t.layout.shape[0]().value()))
         var stride = Coord(Idx[1]())
         return TileTensor[target_type, GMEMLayout1D, MutAnyOrigin](
             ptr=Ptr[Scalar[target_type], MutAnyOrigin](

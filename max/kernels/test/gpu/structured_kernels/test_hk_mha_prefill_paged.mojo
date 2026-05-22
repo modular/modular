@@ -41,7 +41,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
-from layout.coord import Coord, Idx, RuntimeInt
+from layout.coord import Coord, Idx
 from layout.tile_layout import row_major
 
 from nn.attention.gpu.amd_structured.hk_mha_prefill import (
@@ -167,8 +167,8 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
         dev_q,
         row_major(
             Coord(
-                RuntimeInt[DType.int32](Int32(BATCH)),
-                RuntimeInt[DType.int32](Int32(SEQ_LEN)),
+                Int32(BATCH),
+                Int32(SEQ_LEN),
                 Idx[NUM_HEADS](),
                 Idx[depth](),
             )
@@ -178,8 +178,8 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
         dev_out,
         row_major(
             Coord(
-                RuntimeInt[DType.int32](Int32(BATCH)),
-                RuntimeInt[DType.int32](Int32(SEQ_LEN)),
+                Int32(BATCH),
+                Int32(SEQ_LEN),
                 Idx[NUM_HEADS](),
                 Idx[depth](),
             )
