@@ -1076,6 +1076,7 @@ struct String(
         _ = str_obj
 
     comptime ConversionToPythonErrorType = Error
+    """The error type raised if conversion to a PythonObject fails."""
 
     def to_python_object(var self) raises -> PythonObject:
         """Convert this value to a Python `str` object.
