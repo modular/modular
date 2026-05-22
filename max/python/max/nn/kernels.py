@@ -303,7 +303,56 @@ def rope_split_store_ragged(
     )
 
     if kv_params.quantized_kv_cache:
-        raise ValueError("rope_split_store does not support quantized KV cache")
+        # FP8 KV cache with float32 blockwise scales is supported via the
+        # fp8_quantized op variant. All other quantized configs are still
+        # unsupported and will raise below.
+        if not (
+            kv_params.kvcache_quant_config is not None
+            and kv_params.kvcache_quant_config.scale_dtype == DType.float32
+            and kv_params.dtype == DType.float8_e4m3fn
+        ):
+            raise ValueError(
+                "rope_split_store does not support this quantized KV cache"
+                f" configuration: dtype={kv_params.dtype},"
+                f" scale_dtype={kv_params.kvcache_quant_config.scale_dtype if kv_params.kvcache_quant_config else None}"
+            )
+        # FP8 path: route to a fused rope+quantize+store op that writes
+        # fp8-quantized K/V and fp32 per-block scales to the paged cache.
+        _check_rank(2, freqs_cis=freqs_cis)
+        head_dim = kv_params.head_dim
+        q_dim = n_heads * head_dim
+        quant_gran = kv_params.kvcache_quant_config.quantization_granularity
+
+        parameters_fp8: dict[str, bool | int | str | DType] = {
+            "interleaved": interleaved,
+            "quantization_granularity": quant_gran,
+        }
+
+        if kv_collection.kv_scales is None:
+            raise ValueError(
+                "kv_collection.kv_scales is required for fp8 quantized"
+                " rope_split_store"
+            )
+
+        return ops.inplace_custom(
+            "mo.rope_split_store.ragged.paged.fp8_quantized",
+            device=qkv.device,
+            values=[
+                qkv,
+                input_row_offsets,
+                freqs_cis,
+                *kv_collection.flatten_without_attention_dispatch_metadata(),
+                layer_idx,
+            ],
+            out_types=[
+                TensorType(
+                    dtype=DType.bfloat16,
+                    shape=qkv.shape[:-1] + [q_dim],
+                    device=qkv.device,
+                )
+            ],
+            parameters=parameters_fp8,
+        )[0].tensor
 
     _check_rank(2, freqs_cis=freqs_cis)
 
@@ -396,6 +445,56 @@ def store_k_scale_cache_ragged(
         device=x_k_scale.device,
         values=[
             x_k_scale,
+            kv_collection.kv_blocks,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            input_row_offsets,
+            kv_collection.max_lengths,
+            kv_collection.kv_scales,
+            layer_idx,
+        ],
+        parameters={
+            "quantization_granularity": quantization_granularity,
+        },
+    )
+
+
+def store_v_scale_cache_ragged(
+    kv_collection: PagedCacheValues,
+    x_v_scale: TensorValue,
+    input_row_offsets: TensorValue,
+    layer_idx: TensorValue,
+    quantization_granularity: int,
+) -> None:
+    """Store value scale tensor into the paged KV cache.
+
+    Mirrors ``store_k_scale_cache_ragged`` but writes to the V side
+    (kv_idx=1) of the shared scales buffer.  This is the second half
+    of the two-call pattern that stores fp8 KV scales for models that
+    quantize K and V separately (e.g. Gemma4 FP8 KV path):
+
+    - K scales are written by the ``mo.rope_split_store.ragged.paged.fp8_quantized``
+      fused op (which runs rope → quantize → store for K) or by
+      ``store_k_scale_cache_ragged`` directly.
+    - V scales are written here via ``mo.kv_cache.store_v_scales.paged.ragged``.
+
+    Args:
+        kv_collection: Paged KV cache collection carrying the scale buffer.
+        x_v_scale: Per-token, per-head, per-block V scale tensor.
+        input_row_offsets: Ragged row offsets [batch_size + 1].
+        layer_idx: Layer index (uint32).
+        quantization_granularity: Block size along head_dim used for
+            quantization (e.g. 64).
+    """
+    if kv_collection.kv_scales is None:
+        raise ValueError(
+            "kv_collection.kv_scales is None, expected a buffer value"
+        )
+    ops.inplace_custom(
+        "mo.kv_cache.store_v_scales.paged.ragged",
+        device=x_v_scale.device,
+        values=[
+            x_v_scale,
             kv_collection.kv_blocks,
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
@@ -2077,7 +2176,15 @@ def flash_attention_ragged(
             f"expected input of rank {input_rank_expected} but got {input.rank}"
         )
 
-    if input.dtype != kv_params.dtype:
+    # Allow the FP8 KV cache pairing: bf16 Q input with fp8_e4m3fn KV cache.
+    # The dequant-staging path handles this in the MHA kernel by
+    # materialising a bf16 staging buffer before attention.
+    _fp8_kv_pairing = (
+        kv_params.quantized_kv_cache
+        and input.dtype == DType.bfloat16
+        and kv_params.dtype == DType.float8_e4m3fn
+    )
+    if input.dtype != kv_params.dtype and not _fp8_kv_pairing:
         raise ValueError(
             f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
         )
@@ -2109,8 +2216,57 @@ def flash_attention_ragged(
         mask_variant, local_window_size=local_window_size
     )
 
-    # Select kernel based on whether sink_weights is provided.
+    # Select kernel based on whether sink_weights is provided and whether this
+    # is the bf16-Q + fp8-KV dequant-staging path.
     op_name = "mo.mha.ragged.paged"
+
+    if _fp8_kv_pairing:
+        # fp8-KV path: dequantize fp8 KV to a bf16 staging buffer inside the
+        # kernel, then run standard bf16 flash attention.  The op signature
+        # includes kv_scales and kv_staging before layer_idx, and uses
+        # quantization_granularity as an additional compile-time parameter.
+        # kv_staging is a pre-allocated bf16 scratch buffer (one layer only,
+        # shape [num_blocks, 2, 1, page_size, num_heads, head_dim]) that avoids
+        # dynamic cudaMalloc inside the CUDA graph capture region.
+        if kv_params.kvcache_quant_config is None:
+            raise ValueError(
+                "kvcache_quant_config is required for fp8_kv flash attention"
+            )
+        if kv_collection.kv_staging is None:
+            raise ValueError(
+                "kv_staging is required for fp8_kv flash attention: "
+                "the KV cache manager must allocate a bf16 staging buffer "
+                "when quantized_kv_cache is enabled"
+            )
+        fp8_kv_parameters = {
+            **parameters,
+            "quantization_granularity": kv_params.kvcache_quant_config.quantization_granularity,
+        }
+        fp8_kv_values: MutableSequence[Value[Any]] = [
+            input,
+            input_row_offsets,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            # kv_staging is NOT included by flatten_without_attention_dispatch_metadata
+            # (which only covers kv_blocks, cache_lengths, lookup_table,
+            # max_lengths, kv_scales).  Insert it here explicitly so that only
+            # the mo.mha.ragged.paged.fp8_kv op sees it — all other callers of
+            # flatten_without_attention_dispatch_metadata are unaffected.
+            kv_collection.kv_staging,
+            layer_idx,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+            dispatch_metadata.tensor,
+        ]
+        return ops.inplace_custom(
+            "mo.mha.ragged.paged.fp8_kv",
+            device=input.device,
+            values=fp8_kv_values,
+            out_types=[
+                TensorType(
+                    dtype=input.dtype, shape=input.shape, device=input.device
+                )
+            ],
+            parameters=fp8_kv_parameters,
+        )[0].tensor
 
     if sink_weights is not None:
         op_name = "mo.mha.ragged.paged.sink_weights"

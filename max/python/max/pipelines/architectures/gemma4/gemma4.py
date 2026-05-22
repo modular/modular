@@ -197,6 +197,12 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         qk_norm_eps=text_config.rms_norm_eps,
                         local_window_size=text_config.sliding_window,
                         quant_config=None if is_nvfp4 else quant_config,
+                        # `use_interleaved_rope` is vestigial: the fp8
+                        # KV kernel in `rope_split_store.mojo` handles
+                        # non-interleaved RoPE directly, so we always
+                        # defer to the rope module's own `interleaved`
+                        # flag.
+                        use_interleaved_rope=False,
                     ),
                     mlp=MLP(
                         dtype=unquantized_dtype if moe_nvfp4 else config.dtype,

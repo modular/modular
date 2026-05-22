@@ -287,6 +287,9 @@ from nn.attention.gpu.mla_graph import (
     mla_prefill_decode_graph_bf16,
 )
 from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.gpu.nvidia.sm100.mha_fp8_kv import (
+    dequant_paged_fp8_kv_to_bf16,
+)
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     compute_mla_dispatch_scalars,
 )
@@ -420,6 +423,7 @@ from nn.tpool_patch_merger import (
 from .kernels import *
 from .kernels import (
     _execute_mha_ragged_paged_scalar_args,
+    _unmarshal_mha_decode_dispatch_metadata,
     _unsafe_str_to_coord,
 )
 
@@ -1754,6 +1758,156 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
                     dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
                 ]
             ](sink_weights_rebound),
+        )
+
+
+@compiler.register("mo.mha.ragged.paged.fp8_kv")
+struct Struct_mha_ragged_paged_fp8_kv:
+    """MHA with bf16 Q and fp8_e4m3fn paged KV cache (dequant-staging path).
+
+    Dequantizes the fp8 KV blocks to a bf16 staging buffer using per-block
+    float32 scales, then calls the standard bf16 flash attention kernel on
+    the staging buffer.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        scale_dtype: DType,
+        //,
+        quantization_granularity: Int,
+        target: StaticString,
+        mask_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=DType.float8_e4m3fn, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        kv_scales: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
+        # Pre-allocated bf16 staging scratch:
+        # [num_blocks, 2, 1, page_size, num_heads, head_dim].
+        kv_staging: MutableInputTensor[dtype=DType.bfloat16, rank=6, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        mha_decode_dispatch_metadata: InputTensor[
+            dtype=DType.int64, rank=1, ...
+        ],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert (
+            scale_dtype == DType.float32
+        ), "mo.mha.ragged.paged.fp8_kv: scale_dtype must be float32"
+        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
+        comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
+        comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+        comptime kv_params = KVCacheStaticParams(num_heads, head_dim, is_mla)
+
+        var kv_shape = kv_blocks.to_layout_tensor().runtime_layout.shape.value
+        var num_blocks = Int(kv_shape[0])
+        var num_layers = Int(kv_shape[2])
+
+        var lut_shape = (
+            kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
+        )
+        var lut_extent = Int(lut_shape[0]) * Int(lut_shape[1])
+        var batch_size_val = Int(lut_shape[0])
+        var max_blocks_per_seq_val = Int(lut_shape[1])
+        var kv_lookup_table_ptr = kv_lookup_table.to_layout_tensor().ptr
+
+        var compact_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
+        var compact_count = ctx.enqueue_create_buffer[DType.uint32](1)
+        comptime DEQUANT_GRID_Z_CAP = 128
+
+        var fp32_scales_ptr = rebind[
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+        ](kv_scales.to_layout_tensor().ptr)
+        var lut_ptr_mut = rebind[
+            UnsafePointer[Scalar[DType.uint32], MutAnyOrigin]
+        ](kv_lookup_table_ptr)
+        dequant_paged_fp8_kv_to_bf16[
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            kv_blocks.to_layout_tensor().ptr,
+            fp32_scales_ptr,
+            kv_staging.to_layout_tensor().ptr,
+            num_blocks,
+            num_layers,
+            Int(layer_idx),
+            ctx,
+            dst_num_layers=1,
+            dst_layer_idx=0,
+            kv_lookup_table_ptr=lut_ptr_mut,
+            lut_extent=lut_extent,
+            compact_buf_ptr=compact_buf.unsafe_ptr(),
+            compact_count_ptr=compact_count.unsafe_ptr(),
+            batch_size=batch_size_val,
+            max_blocks_per_seq=max_blocks_per_seq_val,
+            dequant_grid_z_cap=DEQUANT_GRID_Z_CAP,
+        )
+
+        var staging_shape = (
+            kv_staging.to_layout_tensor().runtime_layout.shape.value
+        )
+        var staging_lt = LayoutTensor[
+            DType.bfloat16, Layout.row_major[6](), MutAnyOrigin
+        ](
+            kv_staging.to_layout_tensor().ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(staging_shape),
+        )
+        var kv_collection = generic_get_paged_cache[
+            DType.bfloat16, kv_params, page_size
+        ](
+            staging_lt,
+            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+                cache_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                    cache_lengths.to_layout_tensor().runtime_layout.shape.value,
+                    cache_lengths.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                kv_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                max_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    max_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+        )
+
+        var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
+            mha_decode_dispatch_metadata
+        )
+        var input_row_offsets_lt = as_dynamic_row_major_1d(
+            input_row_offsets.to_layout_tensor().get_immutable()
+        )
+
+        # Staging buffer has num_layers=1, so layer_idx=0 indexes its single
+        # valid slot.  The real layer_idx was used for the fp8 read above.
+        generic_flash_attention_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            q.to_layout_tensor(),
+            input_row_offsets_lt,
+            kv_collection,
+            UInt32(0),
+            scale,
+            output.to_layout_tensor(),
+            ctx,
+            decode_dispatch_metadata,
         )
 
 

@@ -19,7 +19,7 @@ from typing import Any
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import KVCacheQuantizationConfig, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
@@ -514,6 +514,18 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
                 global_layers += 1
             else:
                 raise ValueError(f"Unknown attention type: {attention_type}")
+
+        # When fp8 KV cache is requested, construct a quantization config with
+        # blockwise granularity=64 along head_dim.  Both sliding (head_dim=256)
+        # and global (head_dim=512) layers use the same granularity so that
+        # scale overhead stays under 4% while keeping per-block resolution tight.
+        kvcache_quant_config: KVCacheQuantizationConfig | None = None
+        if cache_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+            kvcache_quant_config = KVCacheQuantizationConfig(
+                scale_dtype=DType.float32,
+                quantization_granularity=64,
+            )
+
         sliding_window_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.text_config.num_key_value_heads,
@@ -521,6 +533,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             num_layers=sliding_window_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            kvcache_quant_config=kvcache_quant_config,
         )
         global_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
@@ -529,6 +542,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             num_layers=global_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            kvcache_quant_config=kvcache_quant_config,
         )
         return MultiKVCacheParams.from_params(
             sliding_window_kv_params, global_kv_params

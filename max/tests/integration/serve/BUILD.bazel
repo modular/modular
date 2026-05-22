@@ -211,6 +211,33 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_fp8_kv_toy_model",
+    size = "large",
+    srcs = [
+        "test_fp8_kv_toy_model.py",
+    ],
+    exec_properties = {
+        # FP8 MHA kernels require SM100 (B200). Minimal memory footprint.
+        "test.resources:gpu-memory": "4",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_max_serve_e2e",
     size = "large",
     srcs = [

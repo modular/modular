@@ -1521,6 +1521,100 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
             )
 
 
+@compiler.register("mo.rope_split_store.ragged.paged.fp8_quantized")
+struct Struct_rope_split_store_ragged_paged_fp8_quantized[interleaved: Bool]:
+    """Fused RoPE+split+store for FP8 KV cache with blockwise float32 scales.
+
+    The input QKV tensor is bfloat16; K and V are quantized to float8_e4m3fn
+    and written to the paged cache together with per-block float32 scales.
+    The roped Q output is bfloat16, matching the flash_attention input dtype.
+
+    Parameter:
+        interleaved: Whether freqs_cis uses interleaved (re, im) format.
+        quantization_granularity: Number of head_dim elements per scale block.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        freq_dtype: DType,
+        cache_dtype: DType,
+        scale_dtype: DType,
+        //,
+        quantization_granularity: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        qkv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        kv_scales: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
+        comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
+        comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+        comptime kv_params = KVCacheStaticParams(num_heads, head_dim, is_mla)
+
+        var kv_collection = generic_get_paged_cache_with_scales[
+            cache_dtype,
+            scale_dtype,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            LayoutTensor[cache_dtype, Layout.row_major[6](), MutAnyOrigin](
+                kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+                cache_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                    cache_lengths.to_layout_tensor().runtime_layout.shape.value,
+                    cache_lengths.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                kv_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                max_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    max_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](
+                kv_scales.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+        )
+        return rope_split_store_paged_ragged[
+            target=target,
+            interleaved=Self.interleaved,
+        ](
+            qkv.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            output.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # Fused QK Rope Ragged
 # ===-----------------------------------------------------------------------===#
