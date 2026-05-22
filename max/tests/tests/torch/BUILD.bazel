@@ -18,9 +18,8 @@ modular_py_test(
         "TORCH_COMPILE_FORCE_DISABLE_CACHES": "True",
     },
     mojo_deps = [
-        "//max:MOGGPrimitives",
-        "//max:compiler_internal",
-        "//max:tensor",
+        "//max:builtin_primitives",
+        "//max:extensibility",
         "@mojo//:std",
     ],
     shard_count = 4,  # QUA-331

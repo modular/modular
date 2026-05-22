@@ -20,7 +20,9 @@ from typing import Any, Generic, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
+from max.pipelines.lib import reasoning
+from max.pipelines.modeling.types import (
     AudioGenerationOutput,
     AudioGenerationRequest,
     BaseContextType,
@@ -34,8 +36,6 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
-from max.pipelines.lib import reasoning
 from max.profiler import Tracer
 from max.serve.pipelines.incremental_detokenizer import (
     BufferedDetokenizer,

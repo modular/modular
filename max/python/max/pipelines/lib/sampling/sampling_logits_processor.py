@@ -31,8 +31,11 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import Model
-from max.interfaces import BatchProcessorInputs, TextGenerationContextType
 from max.pipelines.core import TextContext
+from max.pipelines.modeling.types import (
+    BatchProcessorInputs,
+    TextGenerationContextType,
+)
 from max.profiler import Tracer, traced
 from typing_extensions import Self
 

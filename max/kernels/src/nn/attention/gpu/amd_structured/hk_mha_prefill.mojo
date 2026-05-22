@@ -436,8 +436,8 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 UInt32(t * Self.KV_BLOCK),
                 kv_head_idx,
                 Self._KvPerTileLayoutT(
-                    Coord(Idx[Self.KV_BLOCK](), Idx[Self.DEPTH]()),
-                    Coord(Idx[Self._KV_ROW_STRIDE](), Idx[1]()),
+                    Coord(Idx[Self.KV_BLOCK], Idx[Self.DEPTH]),
+                    Coord(Idx[Self._KV_ROW_STRIDE], Idx[1]),
                 ),
             )
         )
@@ -467,8 +467,8 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 UInt32(t * Self.KV_BLOCK),
                 kv_head_idx,
                 Self._KvPerTileLayoutT(
-                    Coord(Idx[Self.KV_BLOCK](), Idx[Self.DEPTH]()),
-                    Coord(Idx[Self._KV_ROW_STRIDE](), Idx[1]()),
+                    Coord(Idx[Self.KV_BLOCK], Idx[Self.DEPTH]),
+                    Coord(Idx[Self._KV_ROW_STRIDE], Idx[1]),
                 ),
             )
         )
@@ -1229,36 +1229,36 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         # downstream and the DMA loaders expect.
         var q_2d = q_bf16.tile(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int32(seq_len),
-                Idx[1](),
-                Idx[Self.DEPTH](),
+                Idx[1],
+                Idx[Self.DEPTH],
             ),
-            Coord(batch_idx, Idx[0](), head_idx, Idx[0]()),
+            Coord(batch_idx, Idx[0], head_idx, Idx[0]),
         ).reshape(
             Self._QPerHeadLayoutT(
                 Coord(
                     Int32(seq_len),
-                    Idx[Self.DEPTH](),
+                    Idx[Self.DEPTH],
                 ),
-                Coord(Idx[Self._Q_ROW_STRIDE](), Idx[1]()),
+                Coord(Idx[Self._Q_ROW_STRIDE], Idx[1]),
             )
         )
         var o_2d = o.tile(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int32(seq_len),
-                Idx[1](),
-                Idx[Self.DEPTH](),
+                Idx[1],
+                Idx[Self.DEPTH],
             ),
-            Coord(batch_idx, Idx[0](), head_idx, Idx[0]()),
+            Coord(batch_idx, Idx[0], head_idx, Idx[0]),
         ).reshape(
             Self._QPerHeadLayoutT(
                 Coord(
                     Int32(seq_len),
-                    Idx[Self.DEPTH](),
+                    Idx[Self.DEPTH],
                 ),
-                Coord(Idx[Self._Q_ROW_STRIDE](), Idx[1]()),
+                Coord(Idx[Self._Q_ROW_STRIDE], Idx[1]),
             )
         )
         var q_warp_block_idx = block_tile_idx * Self.NUM_WARPS + w_id

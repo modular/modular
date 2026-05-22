@@ -22,9 +22,9 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import IndexList
 from std.math import sqrt
 
-from tensor import ManagedTensorSlice
-from tensor.io_spec import Input
-from compiler_internal import StaticTensorSpec
+from extensibility import ManagedTensorSlice
+from extensibility import Input
+from extensibility import StaticTensorSpec
 from nn.normalization import layer_norm as nn_layer_norm
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK

@@ -19,19 +19,19 @@ import asyncio
 import logging
 from typing import cast
 
-from max.interfaces import (
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    EmbeddingsPipelineType,
+    PipelineConfig,
+    TextContext,
+)
+from max.pipelines.modeling.types import (
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
     PipelineTask,
     PipelineTokenizer,
     RequestID,
     TextGenerationRequest,
-)
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    EmbeddingsPipelineType,
-    PipelineConfig,
-    TextContext,
 )
 
 from .metrics import EmbeddingsMetrics

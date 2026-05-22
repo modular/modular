@@ -436,9 +436,9 @@ struct AttentionRDNA[
             Self.KvTileLayout(
                 Coord(
                     Int64(kv_tile_num_rows),
-                    Idx[Self.depth](),
+                    Idx[Self.depth],
                 ),
-                Coord(Idx[Self._kv_stride0](), Idx[1]()),
+                Coord(Idx[Self._kv_stride0], Idx[1]),
             ),
         )
 
@@ -603,9 +603,9 @@ struct AttentionRDNA[
             layout=Self.QTileLayout(
                 Coord(
                     Int64(valid_rows),
-                    Idx[Self.q_depth](),
+                    Idx[Self.q_depth],
                 ),
-                Coord(Idx[Self._q_stride0](), Idx[1]()),
+                Coord(Idx[Self._q_stride0], Idx[1]),
             ),
         )
         self.q_buffer = Self.QRegisterBufferType(q_tile, Int(valid_rows))
@@ -617,11 +617,11 @@ struct AttentionRDNA[
             layout=Self.OutputTileLayout(
                 Coord(
                     Int64(valid_rows),
-                    Idx[Self.output_depth](),
+                    Idx[Self.output_depth],
                 ),
                 Coord(
-                    Idx[Self._output_stride0](),
-                    Idx[1](),
+                    Idx[Self._output_stride0],
+                    Idx[1],
                 ),
             ),
         )

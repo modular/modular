@@ -79,14 +79,14 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} swapAB={swapAB} k_group_size={k_group_size}"
         )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -232,8 +232,8 @@ def main() raises:
                     ](
                         ctx,
                         Int(1000),
-                        Idx[1024](),
-                        Idx[1024 + 16](),
+                        Idx[1024],
+                        Idx[1024 + 16],
                     )
 
                     comptime for swapAB in [False, True]:
@@ -251,8 +251,8 @@ def main() raises:
                         ](
                             ctx,
                             Int(512),
-                            Idx[4096](),
-                            Idx[1024](),
+                            Idx[4096],
+                            Idx[1024],
                         )
 
                         test_blackwell_matmul_tma_umma_warp_specialized[
@@ -270,8 +270,8 @@ def main() raises:
                         ](
                             ctx,
                             Int(500),
-                            Idx[2048](),
-                            Idx[4096](),
+                            Idx[2048],
+                            Idx[4096],
                         )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -287,8 +287,8 @@ def main() raises:
                     ](
                         ctx,
                         Int(999),
-                        Idx[256](),
-                        Idx[128](),
+                        Idx[256],
+                        Idx[128],
                     )
 
                     test_blackwell_matmul_tma_umma_warp_specialized[
@@ -304,6 +304,6 @@ def main() raises:
                     ](
                         ctx,
                         Int(777),
-                        Idx[2560](),
-                        Idx[8192](),
+                        Idx[2560],
+                        Idx[8192],
                     )

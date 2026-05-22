@@ -51,22 +51,6 @@ from typing import Any, cast
 import numpy as np
 import torch
 from max.driver import DeviceSpec
-from max.interfaces import (
-    PipelineTask,
-    PixelGenerationInputs,
-    RequestID,
-)
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    ProviderOptions,
-    VideoProviderOptions,
-)
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import (
-    OpenResponsesRequestBody,
-    OutputImageContent,
-    OutputVideoContent,
-)
 from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
@@ -75,6 +59,22 @@ from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
+)
+from max.pipelines.modeling.types import (
+    PipelineTask,
+    PixelGenerationInputs,
+    RequestID,
+)
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import (
+    OpenResponsesRequestBody,
+    OutputImageContent,
+    OutputVideoContent,
+)
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
+    VideoProviderOptions,
 )
 from PIL import Image
 

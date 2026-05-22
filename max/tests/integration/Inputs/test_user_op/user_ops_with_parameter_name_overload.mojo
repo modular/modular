@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from register import *
-from tensor import InputTensor, OutputTensor
-import compiler_internal as compiler
+from extensibility import *
+from extensibility import InputTensor, OutputTensor
+import extensibility as compiler
 
 
 # This function has the same name as the parameter for the kernel registration.

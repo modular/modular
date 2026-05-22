@@ -20,7 +20,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Generic
 
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     BaseContextType,
     PipelineOutputType,
     RequestID,

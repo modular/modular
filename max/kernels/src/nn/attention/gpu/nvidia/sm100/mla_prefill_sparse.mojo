@@ -1405,14 +1405,14 @@ struct MLAPrefillSparse[
         comptime outer_row_end = col_range[1] // 64
         comptime for outer_row in range(outer_row_start, outer_row_end):
             var tma_tile = tma_smem_tensor.tile[row_dim, 64](
-                Coord(Idx[Int(outer_row)](), Idx[0]())
+                Coord(Idx[Int(outer_row)], Idx[0])
             )
             comptime for inner_row in range(64 // 16):
                 var inner_tma_tile = tma_tile.tile[16, 64](
-                    Coord(Idx[Int(inner_row)](), Idx[0]())
+                    Coord(Idx[Int(inner_row)], Idx[0])
                 )
                 var inner_warp_dist = inner_tma_tile.tile[4, 64](
-                    Coord(warp_idx, Idx[0]())
+                    Coord(warp_idx, Idx[0])
                 )
                 var indices = local_indices[inner_row]
                 tma_op.async_copy_gather4[cta_group=Self.config.cta_group](

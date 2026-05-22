@@ -113,12 +113,10 @@ def mxfp4_grouped_matmul_amd_kernel[
     var sfa_ptr = sfa_tensor.ptr + a_start_row * UInt32(K_SCALES)
     var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(K_SCALES)
 
-    var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N]())))
-    var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[K_BYTES]())))
+    var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
+    var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[K_BYTES])))
     var b_tile = TileTensor(b_ptr, row_major[N, K_BYTES]())
-    var sfa_tile = TileTensor(
-        sfa_ptr, row_major(Coord(Int(M), Idx[K_SCALES]()))
-    )
+    var sfa_tile = TileTensor(sfa_ptr, row_major(Coord(Int(M), Idx[K_SCALES])))
     var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
 
     Kernel.run[

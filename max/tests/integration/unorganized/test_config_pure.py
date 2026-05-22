@@ -23,7 +23,6 @@ import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.dtype import DType
 from max.entrypoints.cli.config import parse_task_flags
-from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -34,9 +33,10 @@ from max.pipelines.lib import (
     SamplingConfig,
 )
 from max.pipelines.lib.config import AudioGenerationConfig
-from max.pipelines.lib.config.config_enums import SupportedEncoding
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_resolve,

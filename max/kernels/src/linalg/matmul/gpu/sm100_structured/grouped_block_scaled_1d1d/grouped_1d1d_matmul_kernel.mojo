@@ -1872,12 +1872,12 @@ struct Grouped1D1DMatmulKernel[
                 # Layout mapping (k_atom, row) → flat SMEM offset within atom.
                 comptime sfb_atom_layout = TileLayout(
                     Coord(
-                        Idx[Self.config.num_sf_k_tiles](),
-                        Idx[SF_ATOM_M[0]](),
+                        Idx[Self.config.num_sf_k_tiles],
+                        Idx[SF_ATOM_M[0]],
                     ),
                     Coord(
-                        Idx[SF_ATOM_M[0] * ROW_STRIDE](),
-                        Idx[ROW_STRIDE](),
+                        Idx[SF_ATOM_M[0] * ROW_STRIDE],
+                        Idx[ROW_STRIDE],
                     ),
                 )
 
@@ -2055,7 +2055,7 @@ struct Grouped1D1DMatmulKernel[
                                         var smem_offset = Int(
                                             sfb_atom_layout(
                                                 Coord(
-                                                    Idx[k_atom](),
+                                                    Idx[k_atom],
                                                     Int64(row_in_atom),
                                                 )
                                             )

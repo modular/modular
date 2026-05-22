@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Timer that logs graph build and compilation phases."""
+"""Timer that logs graph build, compile, and init phases."""
 
 from __future__ import annotations
 
@@ -19,51 +19,38 @@ import logging
 import threading
 import time
 from collections.abc import Generator
-from contextvars import ContextVar
-from dataclasses import dataclass
 from types import TracebackType
+
+# Re-exported for backward compatibility — historical callers import these
+# from this module. The data, contextvar stack, and engine-side recording
+# helper now live in max.engine._compilation_stats so engine.api can record
+# compile/init durations without a circular dependency on experimental.nn.
+from max.engine._compilation_stats import (
+    CompilationStats,
+    _active_stats,
+    collect_compilation_stats,
+)
+
+__all__ = [
+    "CompilationStats",
+    "CompilationTimer",
+    "collect_compilation_stats",
+]
 
 # Logged under "max.pipelines" so existing pipeline log filters/handlers keep
 # matching even when the timer is invoked from max.experimental.nn.Module.
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass
-class CompilationStats:
-    """Aggregate timings collected by active CompilationTimers in a region."""
-
-    build_seconds: float = 0.0
-    compile_seconds: float = 0.0
-    num_phases: int = 0
-
-
-_active_stats: ContextVar[CompilationStats | None] = ContextVar(
-    "compilation_stats", default=None
-)
-
-
-@contextlib.contextmanager
-def collect_compilation_stats() -> Generator[CompilationStats, None, None]:
-    """Collects build and compile times from CompilationTimers in this region.
-
-    Each CompilationTimer that completes while this context is active adds its
-    build and compile durations to the yielded stats object. Nesting is not
-    supported — an inner ``collect_compilation_stats`` shadows the outer one
-    and the outer accumulator stops receiving updates until the inner exits.
-    """
-    stats = CompilationStats()
-    token = _active_stats.set(stats)
-    try:
-        yield stats
-    finally:
-        _active_stats.reset(token)
-
-
 class CompilationTimer:
-    """Timer for logging graph build and compilation phases.
+    """Timer for logging graph build, compile, and init phases.
 
     Use as a context manager. Starts timing on entry. Call
-    ``mark_build_complete()`` after graph building; timings are logged on exit.
+    ``mark_build_complete()`` after graph building; per-phase timings are
+    logged on exit. Compile and init durations come from engine
+    instrumentation inside :meth:`InferenceSession.compile` and
+    :meth:`InferenceSession.init_all`, so they are accurate even when the
+    timer wraps a higher-level call like ``session.load_all``.
 
     Args:
         name: The name to use in log messages (e.g., "model", "vision model").
@@ -96,7 +83,7 @@ class CompilationTimer:
     def _run_timer(self) -> Generator[CompilationTimer, None, None]:
         self._start_time = time.perf_counter()
         self._build_end_time = None
-        logger.info(f"Building and compiling {self.name}...")
+        logger.info(f"Building, compiling, and initializing {self.name}...")
         finish_event = threading.Event()
         reminder_thread = threading.Thread(
             target=self._reminder_thread_func,
@@ -104,31 +91,51 @@ class CompilationTimer:
             daemon=True,
         )
         reminder_thread.start()
+        # Push a local stats so engine-side compile/init instrumentation
+        # records into it (in addition to any outer collector). The local
+        # values drive the per-phase log lines below.
+        local_stats = CompilationStats()
+        token = _active_stats.set(_active_stats.get() + (local_stats,))
         try:
             yield self
         finally:
+            _active_stats.reset(token)
             end_time = time.perf_counter()
             finish_event.set()
             reminder_thread.join()
+
+            build_seconds = (
+                self._build_end_time - self._start_time
+                if self._build_end_time is not None
+                else 0.0
+            )
+            total_seconds = end_time - self._start_time
+
             if self._build_end_time is not None:
                 logger.info(
                     f"Compiling {self.name} took "
-                    f"{end_time - self._build_end_time:.1f} seconds"
+                    f"{local_stats.compile_seconds:.1f} seconds"
+                )
+                logger.info(
+                    f"Initializing {self.name} took "
+                    f"{local_stats.init_seconds:.1f} seconds"
                 )
             logger.info(
-                f"Building and compiling {self.name} took "
-                f"{end_time - self._start_time:.1f} seconds"
+                f"Building, compiling, and initializing {self.name} took "
+                f"{total_seconds:.1f} seconds"
             )
-            stats = _active_stats.get()
-            if stats is not None:
-                if self._build_end_time is not None:
-                    stats.build_seconds += (
-                        self._build_end_time - self._start_time
-                    )
-                    stats.compile_seconds += end_time - self._build_end_time
-                else:
-                    stats.compile_seconds += end_time - self._start_time
-                stats.num_phases += 1
+
+            # Propagate build_seconds and the phase count to any outer
+            # collectors. compile_seconds/init_seconds were already pushed
+            # by the engine instrumentation to every active stats; also
+            # propagate them as "labeled" subtotals so callers can compute
+            # unaccounted compile/init time (total - labeled).
+            for outer in _active_stats.get():
+                outer.build_seconds += build_seconds
+                outer.labeled_compile_seconds += local_stats.compile_seconds
+                outer.labeled_init_seconds += local_stats.init_seconds
+                outer.num_phases += 1
+
             self._start_time = None
             self._build_end_time = None
 

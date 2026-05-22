@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Generic
 
 import msgspec
-from max.interfaces.pipeline import PipelineOutputType
+from max.pipelines.modeling.types.pipeline import PipelineOutputType
 
 __all__ = ["SchedulerResult"]
 

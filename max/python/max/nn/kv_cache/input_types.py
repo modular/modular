@@ -36,6 +36,9 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     lookup_table: _Tensor
     max_lengths: _Tensor
     kv_scales: _Buffer | None = None  # KV scales for FP8 quantization
+    kv_staging: _Buffer | None = (
+        None  # Pre-allocated bf16 staging scratch for FP8 KV dequant
+    )
     attention_dispatch_metadata: _Tensor | None = None
     draft_attention_dispatch_metadata: _Tensor | None = None
 
@@ -60,6 +63,7 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.lookup_table,
             self.max_lengths,
             *((self.kv_scales,) if self.kv_scales else ()),
+            *((self.kv_staging,) if self.kv_staging else ()),
             *(
                 (self.attention_dispatch_metadata,)
                 if self.attention_dispatch_metadata
@@ -76,6 +80,10 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     def flatten_without_attention_dispatch_metadata(
         self,
     ) -> list[_Tensor | _Buffer]:
+        # NOTE: kv_staging is intentionally excluded here.  It is only
+        # consumed by the ``mo.mha.ragged.paged.fp8_kv`` op and must be
+        # inserted explicitly by the caller (``flash_attention_ragged``)
+        # so that other ops (rope_split_store, etc.) are not affected.
         return [
             self.kv_blocks,
             self.cache_lengths,
@@ -93,6 +101,7 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             lookup_table=next(it),
             max_lengths=next(it),
             kv_scales=next(it) if self.kv_scales else None,
+            kv_staging=next(it) if self.kv_staging else None,
             attention_dispatch_metadata=next(it)
             if self.attention_dispatch_metadata
             else None,

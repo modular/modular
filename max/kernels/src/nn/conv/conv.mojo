@@ -4683,7 +4683,7 @@ def conv_gpu[
             # Subtlety: the user-supplied `maybe_epilogue_func` is a
             # `@__copy_capture(output, ...)` closure that writes its
             # result into the *real* `output` tensor (see e.g.
-            # `Conv2dResidualAdd.output_fn` in MOGGKernelAPI.mojo) — its
+            # `Conv2dResidualAdd.output_fn` in kernels) — its
             # write destination is captured, not derived from the
             # `output` arg of `_conv_miopen`. So we bracket the MIOpen
             # call with snapshot/restore D2D copies: snapshot 4-wave

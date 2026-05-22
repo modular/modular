@@ -329,8 +329,8 @@ def execute_fused_qk_rope_ragged(
         row_major(
             (
                 true_ce_total_length,
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -339,8 +339,8 @@ def execute_fused_qk_rope_ragged(
         row_major(
             (
                 mixed_ce_total_length,
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -349,8 +349,8 @@ def execute_fused_qk_rope_ragged(
         row_major(
             (
                 true_ce_total_length,
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -359,8 +359,8 @@ def execute_fused_qk_rope_ragged(
         row_major(
             (
                 mixed_ce_total_length,
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )

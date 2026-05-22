@@ -245,7 +245,7 @@ def bench_conv3d[
                 in_depth,
                 in_height,
                 in_width,
-                Idx[in_channels](),
+                Idx[in_channels],
             )
         ),
     )
@@ -253,11 +253,11 @@ def bench_conv3d[
         filter_qrscf_dev,
         row_major(
             Coord(
-                Idx[filter_q](),
-                Idx[filter_r](),
-                Idx[filter_s](),
-                Idx[in_channels](),
-                Idx[out_channels](),
+                Idx[filter_q],
+                Idx[filter_r],
+                Idx[filter_s],
+                Idx[in_channels],
+                Idx[out_channels],
             )
         ),
     )
@@ -269,7 +269,7 @@ def bench_conv3d[
                 d_out,
                 h_out,
                 w_out,
-                Idx[out_channels](),
+                Idx[out_channels],
             )
         ),
     )

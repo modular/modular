@@ -231,8 +231,12 @@ def cli_serve(
     from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.cli.config import parse_task_flags
     from max.entrypoints.workers import start_workers
-    from max.interfaces import PipelineTask, SamplingParams, SamplingParamsInput
     from max.pipelines import AudioGenerationConfig, PipelineConfig
+    from max.pipelines.modeling.types import (
+        PipelineTask,
+        SamplingParams,
+        SamplingParamsInput,
+    )
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
 
@@ -344,8 +348,8 @@ def cli_pipeline(
     accepting image inputs for multimodal models.
     """
     from max.entrypoints.cli import generate_text_for_pipeline
-    from max.interfaces import SamplingParams, SamplingParamsInput
     from max.pipelines import PipelineConfig
+    from max.pipelines.modeling.types import SamplingParams, SamplingParamsInput
 
     params = SamplingParamsInput(
         top_k=top_k,

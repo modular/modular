@@ -19,15 +19,15 @@ import time
 from dataclasses import dataclass, field
 
 from max.driver import Buffer
-from max.interfaces import (
-    BatchType,
-    RequestID,
-    TextGenerationInputs,
-)
 from max.pipelines.core import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib.speculative_decoding.utils import (
     SpeculativeDecodingMetrics,
+)
+from max.pipelines.modeling.types import (
+    BatchType,
+    RequestID,
+    TextGenerationInputs,
 )
 from max.serve.queue import MAXPullQueue, drain_queue
 from max.serve.telemetry.metrics import METRICS

@@ -532,13 +532,13 @@ def run_test[
     # Q: [total_q_tokens, num_heads, 640] float8_e4m3fn
     var q_tt = TileTensor(
         q_device,
-        row_major((total_q_tokens, Idx[num_heads](), Idx[PHYSICAL_DIM]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[PHYSICAL_DIM])),
     )
 
     # Output: [total_q_tokens, num_heads, V_DEPTH=512] bfloat16
     var out_tt = TileTensor(
         out_device,
-        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged layout
@@ -649,26 +649,22 @@ def run_test[
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
             q_b_device,
-            row_major(
-                (Idx[1](), Idx[1](), Idx[num_heads](), Idx[LOGICAL_DEPTH]())
-            ),
+            row_major((Idx[1], Idx[1], Idx[num_heads], Idx[LOGICAL_DEPTH])),
         )
         var k_b_tt = TileTensor(
             k_b_device,
             row_major(
                 (
-                    Idx[1](),
+                    Idx[1],
                     ref_num_keys,
-                    Idx[KV_NUM_HEADS](),
-                    Idx[LOGICAL_DEPTH](),
+                    Idx[KV_NUM_HEADS],
+                    Idx[LOGICAL_DEPTH],
                 )
             ),
         )
         var ref_b_tt = TileTensor(
             ref_b_device,
-            row_major(
-                (Idx[1](), Idx[1](), Idx[num_heads](), Idx[LOGICAL_DEPTH]())
-            ),
+            row_major((Idx[1], Idx[1], Idx[num_heads], Idx[LOGICAL_DEPTH])),
         )
 
         # mha_gpu_naive: K used as both K and V (MLA: V = K[:,:,:512])
@@ -1209,13 +1205,13 @@ def run_test_with_scales[
     # Q: [total_q_tokens, num_heads, 640] float8_e4m3fn
     var q_tt = TileTensor(
         q_device,
-        row_major((total_q_tokens, Idx[num_heads](), Idx[PHYSICAL_DIM]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[PHYSICAL_DIM])),
     )
 
     # Output: [total_q_tokens, num_heads, V_DEPTH=512] bfloat16
     var out_tt = TileTensor(
         out_device,
-        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged layout
@@ -1364,26 +1360,22 @@ def run_test_with_scales[
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
             q_b_device,
-            row_major(
-                (Idx[1](), Idx[1](), Idx[num_heads](), Idx[LOGICAL_DEPTH]())
-            ),
+            row_major((Idx[1], Idx[1], Idx[num_heads], Idx[LOGICAL_DEPTH])),
         )
         var k_b_tt = TileTensor(
             k_b_device,
             row_major(
                 (
-                    Idx[1](),
+                    Idx[1],
                     ref_num_keys,
-                    Idx[KV_NUM_HEADS](),
-                    Idx[LOGICAL_DEPTH](),
+                    Idx[KV_NUM_HEADS],
+                    Idx[LOGICAL_DEPTH],
                 )
             ),
         )
         var ref_b_tt = TileTensor(
             ref_b_device,
-            row_major(
-                (Idx[1](), Idx[1](), Idx[num_heads](), Idx[LOGICAL_DEPTH]())
-            ),
+            row_major((Idx[1], Idx[1], Idx[num_heads], Idx[LOGICAL_DEPTH])),
         )
 
         # mha_gpu_naive: K used as both K and V (MLA: V = K[:,:,:512])

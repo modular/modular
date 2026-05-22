@@ -1511,6 +1511,301 @@ def test_conv_gpu_residual[
     _ = out_ref_dev^
 
 
+def test_conv_gpu_residual_diag_no_lambda[
+    N: Int,
+    H: Int,
+    W: Int,
+    C_in: Int,
+    R: Int,
+    S: Int,
+    C_out: Int,
+    pad: Int,
+    name: StringLiteral,
+](ctx: DeviceContext) raises:
+    """Residual-only diagnostic: zero input/filter, position-encoded source.
+
+    Bypasses the elementwise_lambda_fn branch — calls conv_gpu with
+    `has_residual=True` and no epilogue lambda. Expected output = source
+    (since Conv = 0). Any wrong-source read shows up directly as a
+    per-element mismatch — random-input tests mask this via magnitude.
+    """
+    comptime Hout = H + 2 * pad - R + 1
+    comptime Wout = W + 2 * pad - S + 1
+    comptime dtype = DType.bfloat16
+    comptime in_size = N * H * W * C_in
+    comptime filter_size = R * S * C_in * C_out
+    comptime out_size = N * Hout * Wout * C_out
+
+    print("  ", name, sep="")
+
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var source_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+
+    for i in range(in_size):
+        input_host[i] = Scalar[dtype](0.0)
+    for i in range(filter_size):
+        filter_host[i] = Scalar[dtype](0.0)
+    for b in range(N):
+        for h in range(Hout):
+            for w in range(Wout):
+                for c in range(C_out):
+                    var idx = ((b * Hout + h) * Wout + w) * C_out + c
+                    source_host[idx] = Scalar[dtype](Float32(c) * 0.01)
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var source_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+    ctx.enqueue_copy(source_dev, source_host)
+
+    comptime input_tt_layout = row_major[N, H, W, C_in]()
+    comptime filter_tt_layout = row_major[R, S, C_in, C_out]()
+    comptime output_tt_layout = row_major[N, Hout, Wout, C_out]()
+    var input_tt = TileTensor(input_dev, input_tt_layout)
+    var filter_tt = TileTensor(filter_dev, filter_tt_layout)
+    var out_tt = TileTensor(out_dev, output_tt_layout)
+
+    conv_gpu[
+        dtype,
+        dtype,
+        dtype,
+        has_residual=True,
+    ](
+        input_tt,
+        filter_tt,
+        out_tt,
+        IndexList[2](1, 1),
+        IndexList[2](1, 1),
+        IndexList[4](pad, pad, pad, pad),
+        1,
+        ctx,
+        source_dev.unsafe_ptr(),
+        Float32(1.0),
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.synchronize()
+
+    var max_diff: Float32 = 0.0
+    var errors = 0
+    var first_err_coords = IndexList[4](-1, -1, -1, -1)
+    var first_err_got: Float32 = 0.0
+    var first_err_expected: Float32 = 0.0
+    for b in range(N):
+        for h in range(Hout):
+            for w in range(Wout):
+                for c in range(C_out):
+                    var idx = ((b * Hout + h) * Wout + w) * C_out + c
+                    var got = out_host[idx].cast[DType.float32]()
+                    var expected = (
+                        (Float32(c) * 0.01)
+                        .cast[DType.bfloat16]()
+                        .cast[DType.float32]()
+                    )
+                    var diff = abs(got - expected)
+                    if diff > max_diff:
+                        max_diff = diff
+                    if diff > 0.05:
+                        if errors == 0:
+                            first_err_coords = IndexList[4](b, h, w, c)
+                            first_err_got = got
+                            first_err_expected = expected
+                        errors += 1
+
+    if errors > 0:
+        print(
+            "    FAILED: ",
+            errors,
+            "/",
+            out_size,
+            " errors, max_diff=",
+            max_diff,
+            " (first @ ",
+            first_err_coords,
+            ": got=",
+            first_err_got,
+            " want=",
+            first_err_expected,
+            ")",
+            sep="",
+        )
+    else:
+        print("    PASSED (max_diff=", max_diff, ")")
+    assert_false(errors > 0, "conv_gpu residual no-lambda mismatch")
+
+    _ = input_dev^
+    _ = filter_dev^
+    _ = source_dev^
+    _ = out_dev^
+
+
+def test_conv_gpu_residual_with_bias[
+    N: Int,
+    H: Int,
+    W: Int,
+    C_in: Int,
+    R: Int,
+    S: Int,
+    C_out: Int,
+    pad: Int,
+    name: StringLiteral,
+](ctx: DeviceContext) raises:
+    """Test conv_gpu with residual add AND a void elementwise bias lambda.
+
+    Validates the FLUX VAE pattern `D = Conv(A,B) + bias + beta*C` end-to-end.
+    Source values are position-encoded against zero-input/filter so the
+    expected output reduces to `bias + source` element-wise; any read of
+    the wrong source position (the MODELS-1484 source-loading bug) is
+    immediately visible per element.
+    """
+    comptime Hout = H + 2 * pad - R + 1
+    comptime Wout = W + 2 * pad - S + 1
+    comptime dtype = DType.bfloat16
+    comptime in_size = N * H * W * C_in
+    comptime filter_size = R * S * C_in * C_out
+    comptime out_size = N * Hout * Wout * C_out
+
+    print("  ", name, sep="")
+
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var source_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var bias_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+
+    # Zero input + filter so Conv = 0; expected = bias + source.
+    for i in range(in_size):
+        input_host[i] = Scalar[dtype](0.0)
+    for i in range(filter_size):
+        filter_host[i] = Scalar[dtype](0.0)
+
+    # Position-encoded source: source[b,h,w,c] = c * 0.01. Reading the
+    # wrong channel gives a visibly different value.
+    for b in range(N):
+        for h in range(Hout):
+            for w in range(Wout):
+                for c in range(C_out):
+                    var idx = ((b * Hout + h) * Wout + w) * C_out + c
+                    source_host[idx] = Scalar[dtype](Float32(c) * 0.01)
+
+    for i in range(out_size):
+        bias_host[i] = Scalar[dtype](1.0)
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var source_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+    ctx.enqueue_copy(source_dev, source_host)
+    # Pre-load output with bias; the void lambda reads it back and adds val.
+    ctx.enqueue_copy(out_dev, bias_host)
+
+    comptime input_tt_layout = row_major[N, H, W, C_in]()
+    comptime filter_tt_layout = row_major[R, S, C_in, C_out]()
+    comptime output_tt_layout = row_major[N, Hout, Wout, C_out]()
+    var input_tt = TileTensor(input_dev, input_tt_layout)
+    var filter_tt = TileTensor(filter_dev, filter_tt_layout)
+    var out_tt = TileTensor(out_dev, output_tt_layout)
+
+    @parameter
+    @always_inline
+    @__copy_capture(out_tt)
+    def add_bias_epilogue[
+        _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        var coord = Coord(coords[0], coords[1], coords[2], coords[3])
+        var existing = out_tt.load[
+            width=_width, alignment=align_of[_dtype]() * _alignment
+        ](coord)
+        var result = (
+            val.cast[DType.float32]() + existing.cast[DType.float32]()
+        ).cast[dtype]()
+        out_tt.store[width=_width, alignment=align_of[_dtype]() * _alignment](
+            coord, result
+        )
+
+    conv_gpu[
+        dtype,
+        dtype,
+        dtype,
+        Optional[elementwise_simd_epilogue_type](add_bias_epilogue),
+        has_residual=True,
+    ](
+        input_tt,
+        filter_tt,
+        out_tt,
+        IndexList[2](1, 1),
+        IndexList[2](1, 1),
+        IndexList[4](pad, pad, pad, pad),
+        1,
+        ctx,
+        source_dev.unsafe_ptr(),
+        Float32(1.0),
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.synchronize()
+
+    var max_diff: Float32 = 0.0
+    var errors = 0
+    var first_err_coords = IndexList[4](-1, -1, -1, -1)
+    var first_err_got: Float32 = 0.0
+    var first_err_expected: Float32 = 0.0
+    for b in range(N):
+        for h in range(Hout):
+            for w in range(Wout):
+                for c in range(C_out):
+                    var idx = ((b * Hout + h) * Wout + w) * C_out + c
+                    var got = out_host[idx].cast[DType.float32]()
+                    var expected = (
+                        (Float32(1.0) + Float32(c) * 0.01)
+                        .cast[DType.bfloat16]()
+                        .cast[DType.float32]()
+                    )
+                    var diff = abs(got - expected)
+                    if diff > max_diff:
+                        max_diff = diff
+                    if diff > 0.05:
+                        if errors == 0:
+                            first_err_coords = IndexList[4](b, h, w, c)
+                            first_err_got = got
+                            first_err_expected = expected
+                        errors += 1
+
+    if errors > 0:
+        print(
+            "    FAILED: ",
+            errors,
+            "/",
+            out_size,
+            " errors, max_diff=",
+            max_diff,
+            " (first @ ",
+            first_err_coords,
+            ": got=",
+            first_err_got,
+            " want=",
+            first_err_expected,
+            ")",
+            sep="",
+        )
+    else:
+        print("    PASSED (max_diff=", max_diff, ")")
+    assert_false(errors > 0, "conv_gpu residual+bias output mismatch")
+
+    _ = input_dev^
+    _ = filter_dev^
+    _ = source_dev^
+    _ = out_dev^
+
+
 def main() raises:
     print("=" * 60)
     print("SM100 CONV2D TEST")
@@ -1937,6 +2232,47 @@ def main() raises:
         ](ctx)
         test_conv_gpu_residual[
             1, 64, 64, 256, 3, 3, 128, 1, "3x3_256to128_res"
+        ](ctx)
+
+        # ============================================================
+        # Tests 19+: Residual add + void bias lambda — the FLUX VAE
+        # `conv2d_residual_add` pattern (MODELS-1484). These tests use
+        # zero-input/filter so any wrong-source read is visible per
+        # element; they would have caught the source-loading bug that
+        # only manifests under matching conv/source magnitudes.
+        # ============================================================
+        # Diagnostic without the elementwise lambda — isolates source loading.
+        print(
+            "\n--- Residual No-Lambda Diag (zero-conv + position-encoded"
+            " src) ---"
+        )
+        test_conv_gpu_residual_diag_no_lambda[
+            1, 16, 16, 128, 3, 3, 128, 1, "3x3_128_no_lambda"
+        ](ctx)
+
+        print(
+            "\n--- Residual + Bias Lambda (zero-conv + position-encoded"
+            " src) ---"
+        )
+        # Small / coverage shapes.
+        test_conv_gpu_residual_with_bias[
+            1, 16, 16, 128, 3, 3, 128, 1, "3x3_128_diag"
+        ](ctx)
+        test_conv_gpu_residual_with_bias[
+            1, 16, 16, 512, 3, 3, 512, 1, "3x3_512_diag"
+        ](ctx)
+        # FLUX2 VAE decoder shapes (block_out_channels = [128, 256, 512, 512];
+        # decoder spatial dims 128 -> 256 -> 512 -> 1024 for a 1024px output).
+        # We test at reduced spatial dims to keep runtime manageable while
+        # still exercising every (in_c == out_c) channel count used by FLUX2.
+        test_conv_gpu_residual_with_bias[
+            1, 32, 32, 512, 3, 3, 512, 1, "flux_mid_512"
+        ](ctx)
+        test_conv_gpu_residual_with_bias[
+            1, 32, 32, 256, 3, 3, 256, 1, "flux_up2_256"
+        ](ctx)
+        test_conv_gpu_residual_with_bias[
+            1, 32, 32, 128, 3, 3, 128, 1, "flux_up3_128"
         ](ctx)
 
     print("=" * 60)

@@ -19,14 +19,6 @@ from typing import cast
 import hf_repo_lock
 import numpy as np
 from max.driver import DeviceSpec
-from max.interfaces import (
-    RequestID,
-    SamplingParams,
-    TextGenerationInputs,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
-    TextGenerationResponseFormat,
-)
 from max.pipelines import PipelineConfig, TextGenerationPipeline
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -38,6 +30,14 @@ from max.pipelines.lib import (
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PipelineRegistry
+from max.pipelines.modeling.types import (
+    RequestID,
+    SamplingParams,
+    TextGenerationInputs,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationResponseFormat,
+)
 
 pytest_plugins = "test_common.registry"
 

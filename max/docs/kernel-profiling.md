@@ -20,7 +20,7 @@ At time of writing, those steps were:
 2. Modify the permissions in the installer and execute with:
 
     ```bash
-    sudo base nsight-compute-linux-2025.2.0.12-33266684.run
+    sudo bash nsight-compute-linux-2025.2.0.12-33266684.run
     ```
 
 3. Build the binary:

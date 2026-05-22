@@ -120,6 +120,10 @@ class RequestFuncInput(BaseRequestFuncInput):
     max_tokens: int | None
     ignore_eos: bool
     response_format: ResponseFormat | None = None
+    # Forwarded as the chat-completions ``tools`` field. Plain ``list[dict]``
+    # so datasets can pass through OpenAI-shaped or server-specific schemas
+    # without translation; ignored by non-chat drivers.
+    tools: list[dict[str, Any]] | None = None
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
         return RequestFuncOutput
@@ -731,6 +735,8 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             payload["response_format"] = dict(
                 request_func_input.response_format
             )
+        if request_func_input.tools:
+            payload["tools"] = request_func_input.tools
         for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)

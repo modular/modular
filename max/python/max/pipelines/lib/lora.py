@@ -39,21 +39,21 @@ from max.graph.quantization import QuantizationEncoding
 from max.graph.type import DeviceRef, Shape, TensorType
 from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
-from max.interfaces import (
+from max.nn.layer.layer import Module, recursive_named_layers
+from max.nn.lora import SupportsLoRA
+from max.pipelines.lib.config.lora_config import LoRAConfig
+from max.pipelines.modeling.types import (
     LoRAStatus,
     LoRAType,
     TextGenerationContextType,
 )
-from max.interfaces.pipeline import (
+from max.pipelines.modeling.types.pipeline import (
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
 )
-from max.nn.layer.layer import Module, recursive_named_layers
-from max.nn.lora import SupportsLoRA
-from max.pipelines.lib.config.lora_config import LoRAConfig
+from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 
-from .hf_utils import HuggingFaceRepo
 from .lora_request_processor import LoRARequestProcessor
 
 logger = logging.getLogger("max.serve")

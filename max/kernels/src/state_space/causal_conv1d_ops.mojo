@@ -19,7 +19,7 @@ Provides compiler-registered operations for causal 1D convolution:
 
 from std.math import ceildiv
 
-import compiler_internal as compiler
+import extensibility as compiler
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from std.memory import memcpy
@@ -33,7 +33,7 @@ from state_space.causal_conv1d import (
 )
 
 from std.utils.index import IndexList
-from tensor import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 
 # ============================================================================
