@@ -479,11 +479,31 @@ ErrorOrSuccess M::parseTargetOptions(
     // Only compute features here if not using -march/-mcpu, since those will
     // be handled later by getMArchFeatures() which computes the correct
     // features for the specified architecture/CPU.
-    ErrorOr<std::vector<std::string>> featuresOr = M::getFeatures(
-        compilationOptions.targetTriple, compilationOptions.targetCpu);
-    if (featuresOr)
-      return featuresOr.takeError();
-    compilationOptions.targetFeatures = encodeFeatures(*featuresOr);
+    //
+    // TODO: Reconsider whether `mojo build` with no target CPU/arch should
+    // default to the host CPU at all. Clang defaults to the architecture
+    // baseline (e.g. x86-64 with SSE2 only), which is conservative and
+    // portable, and relies on -march=native to opt into host-specific
+    // features. Mojo currently defaults to the host CPU, which is aggressive
+    // and matches the common case of compiling and running on the same machine,
+    // but diverges from Clang's convention.
+    //
+    // Short-term fix: when the default CPU is the host CPU, route through
+    // getHostTargetInfo() so the runtime CPUID cross-check is applied. Without
+    // this, Clang's CPU model database would enable features (e.g. AVX-512 on
+    // znver4) that the OS may not have made available.
+    if (compilationOptions.targetCpu == llvm::sys::getHostCPUName()) {
+      ErrorOr<TargetInfo> hostInfoOr = M::getHostTargetInfo();
+      if (hostInfoOr)
+        return hostInfoOr.takeError();
+      compilationOptions.targetFeatures = encodeFeatures(hostInfoOr->features);
+    } else {
+      ErrorOr<std::vector<std::string>> featuresOr = M::getFeatures(
+          compilationOptions.targetTriple, compilationOptions.targetCpu);
+      if (featuresOr)
+        return featuresOr.takeError();
+      compilationOptions.targetFeatures = encodeFeatures(*featuresOr);
+    }
   }
   if (!targetAccelerator.empty()) {
     compilationOptions.targetAccelerator = targetAccelerator.str();

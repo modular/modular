@@ -151,6 +151,10 @@ void CompilationOptions::setDefaultCPU() {
     targetCpu = "";
   } else {
     // Native target with no explicit CPU: use the host CPU.
+    // TODO: reconsider this to maybe set a more conservative default.
+    // Current behavior is that running `mojo build` on a host
+    // generates a binary that cannot be run on lower-spec CPUs of the
+    // same architecture.
     targetCpu = llvm::sys::getHostCPUName();
   }
 }
