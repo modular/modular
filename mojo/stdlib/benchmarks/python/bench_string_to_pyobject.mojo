@@ -92,7 +92,7 @@ def bench_string_to_pyobject_non_ascii(mut b: Bencher) raises:
 
 def main() raises:
     _ = Python()
-    var m = Bench(BenchConfig(num_repetitions=20, max_runtime_secs=2.0))
+    var m = Bench(BenchConfig(num_repetitions=50, max_runtime_secs=5.0))
     m.bench_function[bench_string_to_pyobject_ascii_short](
         BenchId("string_to_pyobject_ascii_short")
     )
