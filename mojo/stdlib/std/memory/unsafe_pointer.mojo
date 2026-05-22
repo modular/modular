@@ -1968,10 +1968,9 @@ struct UnsafePointer[
         __get_address_as_uninit_lvalue(self.address) = value^
 
     @always_inline
-    def init_pointee_copy[
-        T: Copyable,
-        //,
-    ](self: UnsafePointer[T, _], value: T) where type_of(self).mut:
+    def init_pointee_copy(
+        self, value: Self.type
+    ) where Self.mut and conforms_to(Self.type, Copyable):
         """Emplace a copy of `value` into the pointer location.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -1982,13 +1981,12 @@ struct UnsafePointer[
         When compared to `init_pointee_move`, this avoids an extra move on
         the callee side when the value must be copied.
 
-        Parameters:
-            T: The type the pointer points to, which must be `Copyable`.
-
         Args:
             value: The value to emplace.
         """
-        __get_address_as_uninit_lvalue(self.address) = value.copy()
+        __get_address_as_uninit_lvalue(self.address) = trait_downcast[Copyable](
+            value
+        ).copy()
 
     @always_inline
     def init_pointee_move_from[

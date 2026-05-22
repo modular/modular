@@ -64,7 +64,7 @@ def _inline_array_construction_checks[size: Int]():
 struct _InlineArrayIter[
     mut: Bool,
     //,
-    T: Copyable,
+    T: Movable,
     size: Int,
     origin: Origin[mut=mut],
     forward: Bool = True,
@@ -118,7 +118,7 @@ struct _InlineArrayIter[
         return (iter_len, {iter_len})
 
 
-struct _InlineArrayIterOwned[T: Copyable, size: Int](
+struct _InlineArrayIterOwned[T: Movable, size: Int](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for InlineArray.
@@ -204,7 +204,7 @@ struct _InlineArrayIterOwned[T: Copyable, size: Int](
         return (remaining, {remaining})
 
 
-struct InlineArray[ElementType: Copyable, size: Int](
+struct InlineArray[ElementType: Movable, size: Int](
     Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
     DevicePassable,
@@ -247,7 +247,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
     comptime __del__is_trivial: Bool = downcast[
         Self.ElementType, ImplicitlyDestructible
     ].__del__is_trivial
-    comptime __copy_ctor_is_trivial: Bool = Self.ElementType.__copy_ctor_is_trivial
+    comptime __copy_ctor_is_trivial: Bool = downcast[
+        Self.ElementType, Copyable
+    ].__copy_ctor_is_trivial if conforms_to(
+        Self.ElementType, Copyable
+    ) else False
     comptime __move_ctor_is_trivial: Bool = Self.ElementType.__move_ctor_is_trivial
 
     # Fields
@@ -378,7 +382,9 @@ struct InlineArray[ElementType: Copyable, size: Int](
     @always_inline
     def __init__[
         batch_size: SIMDSize = 64
-    ](out self, *, fill: Self.ElementType):
+    ](out self, *, fill: Self.ElementType) where conforms_to(
+        Self.ElementType, Copyable
+    ):
         """Constructs an array where each element is initialized to the supplied
         value.
 
@@ -418,6 +424,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         comptime unroll_end = std.math.align_down(Self.size, batch_size)
 
         var ptr = self.unsafe_ptr()
+        comptime assert conforms_to(ptr.type, Copyable)
 
         for _ in range(0, unroll_end, batch_size):
             comptime for _ in range(batch_size):
@@ -473,7 +480,9 @@ struct InlineArray[ElementType: Copyable, size: Int](
         # FIXME: Why doesn't consume_elements work here?
         elems^._annihilate()
 
-    def __init__(out self, *, copy: Self):
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.ElementType, Copyable):
         """Copy constructs the array from another array.
 
         Args:
@@ -491,9 +500,10 @@ struct InlineArray[ElementType: Copyable, size: Int](
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
+            var ptr = self.unsafe_ptr()
+            comptime assert conforms_to(ptr.type, Copyable)
             for idx in range(Self.size):
-                var ptr = self.unsafe_ptr() + idx
-                ptr.init_pointee_copy(copy.unsafe_get(idx))
+                (ptr + idx).init_pointee_copy(copy.unsafe_get(idx))
 
     def __init__(out self, *, deinit take: Self):
         """Move constructs the array from another array.
