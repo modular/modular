@@ -13,7 +13,12 @@
 # CHECK-SAME: attributes {sourceName = #MyValueStruct_name}
 
 # The only debug info comes from default trait method for copy.
-# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, sourceName = #{{.*}}, linkageName = "copy($0)"
+# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "copy($0)"
+
+# We also have Moveinit in Movable and __del__ in ImplicitlyDestructible.
+# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(take:$0$)"
+# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__del__($0$)"
+
 # CHECK-NOT: #debuginfo.subprogram
 
 
