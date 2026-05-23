@@ -72,7 +72,6 @@ public:
   bool isCapturing() const { return get(Impl::Capturing); }
   bool isCABI() const { return get(Impl::CABI); }
   bool isRefResult() const { return get(Impl::RefResult); }
-  bool isRegisterPassable() const { return get(Impl::RegisterPassable); }
 
   FnEffects setThrows(bool throws = true) { return set(Impl::Throws, throws); }
   FnEffects setAsync(bool async = true) { return set(Impl::Async, async); }
@@ -82,9 +81,6 @@ public:
   FnEffects setCABI(bool value = true) { return set(Impl::CABI, value); }
   FnEffects setRefResult(bool value = true) {
     return set(Impl::RefResult, value);
-  }
-  FnEffects setRegisterPassable(bool value = true) {
-    return set(Impl::RegisterPassable, value);
   }
 
   bool operator==(FnEffects rhs) const { return getImpl() == rhs.getImpl(); }

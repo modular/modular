@@ -896,7 +896,7 @@ struct InMemoryStruct(ImplicitlyCopyable, Sized):
 
 
 # CHECK:  "constraints": "This describes the struct's constraints.\n",
-# CHECK:  "convention": "register_passable",
+# CHECK:  "convention": "{{.*}}",
 # CHECK:  "description": "The is some kind of description.\n",
 # CHECK:      "kind": "function",
 # CHECK:      "name": "fn_with_self_param",

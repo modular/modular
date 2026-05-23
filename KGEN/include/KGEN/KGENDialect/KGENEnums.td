@@ -270,8 +270,6 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"Capturing", 2, "capturing">,
   /// This function has a auto-derefed result of !lit.ref or !kgen.pointer type.
   I16BitEnumAttrCaseBit<"RefResult", 5, "refresult">,
-  /// Temporary effect to special case memory type for closures.
-  I16BitEnumAttrCaseBit<"RegisterPassable", 7, "register_passable">,
   /// This function uses the C ABI for argument and return value passing.
   /// Lowering must apply platform C ABI coercion (via CABIInfo) rather than
   /// the default Mojo calling convention.

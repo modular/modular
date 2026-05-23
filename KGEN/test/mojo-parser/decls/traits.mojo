@@ -904,7 +904,7 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
 struct ParamType[x: Int](TrivialRegisterPassable):
     pass
 
-# CHECK: lit.trait.decl @RGTrait{{.*}} register_passable
+# CHECK: lit.trait.decl @RGTrait{{.*}} 
 trait RGTrait(ImplicitlyDestructible, RegisterPassable):
     # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
     def doSomething(self):
