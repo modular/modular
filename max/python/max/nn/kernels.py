@@ -4428,7 +4428,6 @@ def grouped_dynamic_scaled_fp8_matmul(
     input_scale_spec: InputScaleSpec,
     weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
-    tokens_padded_per_expert: bool = False,
 ) -> TensorValue:
     """Grouped blockwise scaled matmul used in MoE layer.
 
@@ -4446,8 +4445,6 @@ def grouped_dynamic_scaled_fp8_matmul(
         expert_usage_stats_host: The maximum number of tokens assigned to any expert, and the number of active experts.
         input_scale_spec: The scaling granularity for the input tensor.
         weight_scale_spec: The scaling granularity for the weight tensor.
-        tokens_padded_per_expert: If True, It's guaranteed that the number of tokens for each local expert will be
-            padded, so that `a_scales` is aligned to 16 bytes. This is needed by the optimized grouped matmul kernel.
 
     Returns:
         The result of the matmul operation.
@@ -4568,7 +4565,6 @@ def grouped_dynamic_scaled_fp8_matmul(
             "m_scale_granularity": input_scale_spec.block_size[0],
             "n_scale_granularity": weight_scale_spec.block_size[0],
             "k_scale_granularity": weight_scale_spec.block_size[1],
-            "tokens_padded_per_expert": tokens_padded_per_expert,
         },
     )[0].tensor
 

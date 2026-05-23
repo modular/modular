@@ -66,7 +66,6 @@ class QuantStrategy(Protocol):
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
@@ -143,7 +142,6 @@ class Fp8Strategy:
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
@@ -162,7 +160,6 @@ class Fp8Strategy:
             usage_stats.to(DeviceRef.CPU()),
             self.config.input_scale,
             self.config.weight_scale,
-            tokens_padded_per_expert=tokens_padded_per_expert,
         )
 
     def prepare_weight_scales(
@@ -233,7 +230,6 @@ class Nvfp4Strategy:
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
@@ -425,7 +421,6 @@ class Mxfp4Strategy:
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:

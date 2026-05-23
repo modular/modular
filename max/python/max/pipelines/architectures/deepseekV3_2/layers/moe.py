@@ -68,7 +68,6 @@ class DeepseekV3_2MoE(MoEQuantized):
             self.gate_up_proj,
             gate_up_scales,
             expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
-            tokens_padded_per_expert=True,
             expert_inputs=expert_inputs,
         )
         # V3.2: Cast to float32 at the silu
@@ -86,7 +85,6 @@ class DeepseekV3_2MoE(MoEQuantized):
             self.down_proj,
             down_scales,
             expert_scales=nvfp4.down_expert if nvfp4 else None,
-            tokens_padded_per_expert=True,
             expert_inputs=down_inputs,
         )
 

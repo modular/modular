@@ -265,7 +265,6 @@ class MoEQuantized(MoE):
                 self.gate_up_proj,
                 gate_up_scales,
                 expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
-                tokens_padded_per_expert=True,
                 expert_inputs=expert_inputs,
                 estimated_total_m=estimated_total_m,
             )
@@ -281,7 +280,6 @@ class MoEQuantized(MoE):
             self.down_proj,
             down_scales,
             expert_scales=nvfp4.down_expert if nvfp4 else None,
-            tokens_padded_per_expert=True,
             expert_inputs=down_inputs,
             estimated_total_m=estimated_total_m,
         )
