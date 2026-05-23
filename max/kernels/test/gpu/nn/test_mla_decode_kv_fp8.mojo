@@ -173,15 +173,15 @@ def test[
     # Construct TileTensors for Q, K, output.
     var q_tt = TileTensor(
         q_device_ptr,
-        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_tt = TileTensor(
         k_device_ptr,
-        row_major((batch_size, num_keys, Idx[kv_num_heads](), Idx[depth]())),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var out_tt = TileTensor(
         output_device_ptr,
-        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # Keep LayoutTensors for mha_gpu_naive reference path.

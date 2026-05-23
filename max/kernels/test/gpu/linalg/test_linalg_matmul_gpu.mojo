@@ -119,7 +119,5 @@ def create_matmul_test_case[
 
 def main() raises:
     with DeviceContext() as ctx:
-        create_matmul_test_case[DType.float32](ctx, Int(8), Idx[8](), Idx[4]())
-        create_matmul_test_case[DType.float32](
-            ctx, Int(16), Idx[16](), Idx[8]()
-        )
+        create_matmul_test_case[DType.float32](ctx, Int(8), Idx[8], Idx[4])
+        create_matmul_test_case[DType.float32](ctx, Int(16), Idx[16], Idx[8])

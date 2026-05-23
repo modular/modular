@@ -20,7 +20,7 @@ the fused path by comparing both against the HuggingFace torch reference.
 from __future__ import annotations
 
 import pytest
-from max.interfaces import TextGenerationContext
+from max.pipelines.modeling.types import TextGenerationContext
 from testbed.harnesses.attention_with_rope import (
     AttentionWithRopeHarness,
     AttentionWithRopeStaticParams,

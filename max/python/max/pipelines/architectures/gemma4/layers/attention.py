@@ -63,6 +63,7 @@ class Gemma4Attention(Module, Shardable):
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 1024,
         quant_config: QuantConfig | None = None,
+        use_interleaved_rope: bool = False,
     ) -> None:
         """Initializes the attention layer.
 
@@ -89,6 +90,13 @@ class Gemma4Attention(Module, Shardable):
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
             quant_config: Scaled quantization configuration. Defaults to None.
+            use_interleaved_rope: When True, forces interleaved=True in
+                rope_split_store_ragged regardless of the rope object's own
+                ``interleaved`` attribute.  Required for the fp8 KV cache path
+                because the fp8 kernel's per-block scale layout assumes
+                contiguous head_dim blocks (only achievable with interleaved
+                RoPE storage order).  Defaults to False (non-interleaved,
+                matching the bf16 baseline behaviour).
         """
 
         super().__init__()
@@ -104,6 +112,7 @@ class Gemma4Attention(Module, Shardable):
         self.local_window_size = local_window_size
         self.qk_norm_eps = qk_norm_eps
         self.quant_config = quant_config
+        self.use_interleaved_rope = use_interleaved_rope
 
         self.num_global_key_value_heads = num_global_key_value_heads
         self.global_head_dim = global_head_dim
@@ -221,6 +230,13 @@ class Gemma4Attention(Module, Shardable):
         rope = self.rope_local if self.use_local else self.rope_global
 
         freqs_cis = ops.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        # Always use the trained RoPE convention (`rope.interleaved`,
+        # which is False for Gemma4 = HuggingFace `rotate_half`).  The
+        # fp8 KV kernel stores the rope output contiguously regardless
+        # of pairing convention, so there is no need to force
+        # `interleaved=True` under fp8.  Forcing it would change the
+        # rotation pairing against trained k_proj/q_proj weights and
+        # corrupt attention.
         xq = rope_split_store_ragged(
             self.kv_params,
             qkv,
@@ -366,6 +382,7 @@ class Gemma4Attention(Module, Shardable):
                 qk_norm_eps=self.qk_norm_eps,
                 local_window_size=self.local_window_size,
                 quant_config=self.quant_config,
+                use_interleaved_rope=self.use_interleaved_rope,
             )
 
             # Assign sharded weights

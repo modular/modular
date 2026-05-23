@@ -28,8 +28,8 @@ from std.algorithm.functional import elementwise, IndexList
 from std.reflection import reflect
 
 from std.sys.info import has_apple_gpu_accelerator
-from tensor import ElementwiseUnaryMixedOp
-from MOGGKernelAPI.MOGGKernelAPI import Cast
+from extensibility import ElementwiseUnaryMixedOp
+from builtin_kernels import Cast
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 

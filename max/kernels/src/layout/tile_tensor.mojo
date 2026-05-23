@@ -325,7 +325,7 @@ struct TileTensor[
         # Create TileTensor to use on device
         var tensor = TileTensor(
              dev_buf,
-             row_major(Idx[4](), Idx[4]()),
+             row_major(Idx[4], Idx[4]),
         )
         ...
         ```
@@ -364,7 +364,7 @@ struct TileTensor[
 
         var tensor = TileTensor(
             host_buf,
-            row_major(Idx[4](), Idx[4]()),
+            row_major(Idx[4], Idx[4]),
         )
         ```
 
@@ -471,7 +471,7 @@ struct TileTensor[
         """Fix some dimensions at scalar indices and keep others, returning a
         lower-rank view.
 
-        Each argument is either a concrete index (`n` / `Idx[n]()`) to
+        Each argument is either a concrete index (`n` / `Idx[n]`) to
         collapse that dimension, or `All` to keep it. The output rank equals
         the number of `All` arguments.
 
@@ -506,7 +506,7 @@ struct TileTensor[
         var t = TileTensor(storage, row_major[2, 8, 4, 16]())
 
         # Fix batch=1 and heads=2, keep N and head_dim → 2D (8, 16)
-        var selected = t.slice(Idx[1](), All, Idx[2](), All)
+        var selected = t.slice(Idx[1], All, Idx[2], All)
         ```
         """
         # Compute pointer offset from fixed (non-All) dimensions.
@@ -1006,8 +1006,8 @@ struct TileTensor[
                 )
         else:
             comptime for i in range(num_elements):
-                var src_offset = other.layout(Idx[i]())
-                var dst_offset = self.layout(Idx[i]())
+                var src_offset = other.layout(Idx[i])
+                var dst_offset = self.layout(Idx[i])
                 self.ptr.mut_cast[True]().store[alignment=dst_alignment](
                     dst_offset,
                     other.ptr.load[
@@ -1562,7 +1562,7 @@ struct TileTensor[
 
             # TODO: MSTDL-1352 we can use memory element to fill the tensor.
             comptime for i in range(num_elements):
-                var idx = self.layout(Idx[i]())
+                var idx = self.layout(Idx[i])
                 self.ptr.mut_cast[True]()[idx] = val
         else:
             var num_elements = self.num_elements()

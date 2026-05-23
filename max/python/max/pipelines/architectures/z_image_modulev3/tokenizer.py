@@ -20,15 +20,15 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
-from max.interfaces import TokenBuffer
-from max.interfaces.provider_options import ImageProviderOptions
-from max.interfaces.request import OpenResponsesRequest
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.pixel_tokenizer import (
     PixelGenerationTokenizer,
     run_with_default_executor,
 )
+from max.pipelines.modeling.types import TokenBuffer
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.provider_options import ImageProviderOptions
 
 logger = logging.getLogger("max.pipelines")
 

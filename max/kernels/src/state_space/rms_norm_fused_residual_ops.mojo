@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """RMSNorm fused residual op registration for state space models."""
 
-import compiler_internal as compiler
+import extensibility as compiler
 
 from std.gpu.host import DeviceContext
-from tensor import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 from std.utils.index import IndexList
 

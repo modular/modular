@@ -10,7 +10,7 @@ This version is still a work in progress.
 
 ## Language enhancements
 
-- Types can parameterize the `out` argument modifier when they want into being
+- Types can parameterize the `out` argument modifier when they want to be
   bindable to alternate address spaces, e.g.:
 
   ```mojo
@@ -50,6 +50,9 @@ This version is still a work in progress.
   named `algorithm`, `memory`, etc.
 
 ## Library changes
+
+- Changed `Idx` to a `comptime` alias for `ComptimeInt`. Use `Idx[value]`
+  instead of `Idx[value]()` for compile-time coordinates.
 
 - Added `std.gpu.host.CompletionFlag`, a non-owning handle to an MLRT
   `M::Driver::CompletionFlag` (an 8-byte slot in pinned host memory mapped
@@ -235,6 +238,26 @@ This version is still a work in progress.
   Generic code that relied on receiving the destructor bound transitively
   through this trait must now spell it out explicitly, for example
   `T: Intable & ImplicitlyDestructible`.
+
+- The CPython FFI bindings now carry the `abi("C")` effect. User-written Python
+  extension callbacks passed to `def_py_c_function`, `def_py_c_method`, or
+  `PyCapsule_New` must add `abi("C")` to their signatures, e.g.
+  `def my_func(self: PyObjectPtr, args: PyObjectPtr) abi("C") -> PyObjectPtr:`.
+  Functions registered through the higher-level `def_function`, `def_method`,
+  and `def_staticmethod` paths are unaffected.
+
+- Added `take()` and `drop()` iterator adapters to `std.itertools`.
+  `take(iter, n)` yields the first `n` elements, and
+  `drop(iter, n)` drops the first `n` elements. They compose
+  naturally to select sub-ranges of any iterable:
+
+  ```mojo
+  from std.itertools import take, drop
+
+  var nums = [1, 2, 3, 4, 5]
+  for x in take(drop(nums, 1), 3):
+      print(x)  # 2, 3, 4
+  ```
 
 ## Tooling changes
 
@@ -453,3 +476,11 @@ This version is still a work in progress.
   switching to a different `ptxas` CUBIN cache will not hit those were
   generated before the switch.
   ([Issue #6540](https://github.com/modular/modular/issues/6549))
+
+- Fixed the `mojo` compiler incorrectly emitting AVX-512 instructions on
+  hosts where the CPU model (e.g. `znver4`) advertises AVX-512 but the OS
+  has not enabled it in XCR0 — for example, inside Docker containers on
+  GitHub Actions. Host CPU features are now cross-checked against the
+  runtime CPUID view, so features the kernel withholds no longer cause
+  `SIGILL` at runtime.
+  ([Issue #6413](https://github.com/modular/modular/issues/6413))

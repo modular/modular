@@ -28,19 +28,19 @@ from typing import Any, cast
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.interfaces import (
+from max.pipelines.core import TTSContext
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    AudioGenerationConfig,
+    PipelineConfig,
+)
+from max.pipelines.modeling.types import (
     AudioGenerationOutput,
     BaseContext,
     PipelineOutput,
     PipelinesFactory,
     PipelineTask,
     PipelineTokenizer,
-)
-from max.pipelines.core import TTSContext
-from max.pipelines.lib import (
-    PIPELINE_REGISTRY,
-    AudioGenerationConfig,
-    PipelineConfig,
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.media import GeneratedMediaStore

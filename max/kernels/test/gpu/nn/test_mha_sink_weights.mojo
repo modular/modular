@@ -129,15 +129,15 @@ def test[
     # Construct device tensors.
     var q_device = TileTensor(
         q_device_ptr,
-        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major((batch_size, num_keys, Idx[kv_num_heads](), Idx[depth]())),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major((batch_size, num_keys, Idx[kv_num_heads](), Idx[depth]())),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var mask4d = TileTensor(
         mask_device_ptr,
@@ -145,7 +145,7 @@ def test[
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
@@ -175,7 +175,7 @@ def test[
 
     var output_device_ref = TileTensor(
         output_ref_device_ptr,
-        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     mha_gpu_naive[sink=True](

@@ -170,29 +170,21 @@ def _pack_k_kernel[
     ](bcast_acc3, a_frag, b_frag, packed_b, bcast_a3)
 
     # Store packed acc[i] at row (4*i + lane), broadcast acc[i] same row in second buffer.
-    packed_out.store[width=4](
-        Coord(0 * WARP_SIZE + lane, Idx[0]()), packed_acc0
-    )
-    packed_out.store[width=4](
-        Coord(1 * WARP_SIZE + lane, Idx[0]()), packed_acc1
-    )
-    packed_out.store[width=4](
-        Coord(2 * WARP_SIZE + lane, Idx[0]()), packed_acc2
-    )
-    packed_out.store[width=4](
-        Coord(3 * WARP_SIZE + lane, Idx[0]()), packed_acc3
+    packed_out.store[width=4](Coord(0 * WARP_SIZE + lane, Idx[0]), packed_acc0)
+    packed_out.store[width=4](Coord(1 * WARP_SIZE + lane, Idx[0]), packed_acc1)
+    packed_out.store[width=4](Coord(2 * WARP_SIZE + lane, Idx[0]), packed_acc2)
+    packed_out.store[width=4](Coord(3 * WARP_SIZE + lane, Idx[0]), packed_acc3)
+    broadcast_out.store[width=4](
+        Coord(0 * WARP_SIZE + lane, Idx[0]), bcast_acc0
     )
     broadcast_out.store[width=4](
-        Coord(0 * WARP_SIZE + lane, Idx[0]()), bcast_acc0
+        Coord(1 * WARP_SIZE + lane, Idx[0]), bcast_acc1
     )
     broadcast_out.store[width=4](
-        Coord(1 * WARP_SIZE + lane, Idx[0]()), bcast_acc1
+        Coord(2 * WARP_SIZE + lane, Idx[0]), bcast_acc2
     )
     broadcast_out.store[width=4](
-        Coord(2 * WARP_SIZE + lane, Idx[0]()), bcast_acc2
-    )
-    broadcast_out.store[width=4](
-        Coord(3 * WARP_SIZE + lane, Idx[0]()), bcast_acc3
+        Coord(3 * WARP_SIZE + lane, Idx[0]), bcast_acc3
     )
 
 
@@ -208,8 +200,8 @@ def test_pack_k_byte_index(ctx: DeviceContext) raises:
         packed_dev,
         row_major(
             Coord(
-                Idx[WARP_SIZE * num_dispatches](),
-                Idx[num_acc_per_dispatch](),
+                Idx[WARP_SIZE * num_dispatches],
+                Idx[num_acc_per_dispatch],
             )
         ),
     )
@@ -217,8 +209,8 @@ def test_pack_k_byte_index(ctx: DeviceContext) raises:
         bcast_dev,
         row_major(
             Coord(
-                Idx[WARP_SIZE * num_dispatches](),
-                Idx[num_acc_per_dispatch](),
+                Idx[WARP_SIZE * num_dispatches],
+                Idx[num_acc_per_dispatch],
             )
         ),
     )

@@ -99,14 +99,14 @@ def test_grouped_gemm_epilogue[
     comptime max_groups = 1
     var num_groups = 1
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = Int(n.value()) * Int(k.value())
@@ -137,20 +137,20 @@ def test_grouped_gemm_epilogue[
     # Scale factor shapes (5D)
     var a_scales_shape = row_major(
         Coord(
-            Idx[ceildiv(MType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(MType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -287,15 +287,15 @@ def test_grouped_gemm_epilogue[
     )
 
     # Template tensors - 3D TileTensors with batch=1
-    var a_3d_shape = row_major(Coord(Idx[1](), m, k))
+    var a_3d_shape = row_major(Coord(Idx[1], m, k))
     var b_3d_shape = row_major(
         Coord(
-            Idx[1](),
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[1],
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_3d_shape = row_major(Coord(Idx[1](), m, n))
+    var c_3d_shape = row_major(Coord(Idx[1], m, n))
     var a_template = TileTensor(a_device, a_3d_shape)
     var b_template = TileTensor(b_device, b_3d_shape)
     var c_template = TileTensor(c_device, c_3d_shape)
@@ -303,21 +303,21 @@ def test_grouped_gemm_epilogue[
     # Scale factor template tensors - 5D with batch=1 and merged last dims
     var a_scales_5d_shape = row_major(
         Coord(
-            Idx[1](),
-            Idx[ceildiv(MType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            Idx[1],
+            Idx[ceildiv(MType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         )
     )
     var a_scales_5d = TileTensor(sfa_device, a_scales_5d_shape)
     var b_scales_5d_shape = row_major(
         Coord(
-            Idx[1](),
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            Idx[1],
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         )
     )
     var b_scales_5d = TileTensor(sfb_device, b_scales_5d_shape)
@@ -424,7 +424,7 @@ def main() raises:
             mma_shape=Index(128, 128, 32),
             cluster_shape=Index(1, 1, 1),
             register_based_epilogue=True,
-        ](ctx, Idx[256](), Idx[256](), Idx[128]())
+        ](ctx, Idx[256], Idx[256], Idx[128])
 
         # Test 2: 2SM mode with register-based epilogue (small)
         test_grouped_gemm_epilogue[
@@ -437,7 +437,7 @@ def main() raises:
             mma_shape=Index(256, 128, 32),
             cluster_shape=Index(2, 1, 1),
             register_based_epilogue=True,
-        ](ctx, Idx[256](), Idx[256](), Idx[128]())
+        ](ctx, Idx[256], Idx[256], Idx[128])
 
         # Test 3: 1SM mode with register-based epilogue (larger)
         test_grouped_gemm_epilogue[
@@ -450,7 +450,7 @@ def main() raises:
             mma_shape=Index(128, 128, 32),
             cluster_shape=Index(1, 1, 1),
             register_based_epilogue=True,
-        ](ctx, Idx[512](), Idx[512](), Idx[256]())
+        ](ctx, Idx[512], Idx[512], Idx[256])
 
         # Test 4: 2SM mode with register-based epilogue (larger)
         test_grouped_gemm_epilogue[
@@ -463,7 +463,7 @@ def main() raises:
             mma_shape=Index(256, 128, 32),
             cluster_shape=Index(2, 1, 1),
             register_based_epilogue=True,
-        ](ctx, Idx[512](), Idx[512](), Idx[256]())
+        ](ctx, Idx[512], Idx[512], Idx[256])
 
         print("\n" + "=" * 60)
         print("All epilogue tests PASSED!")

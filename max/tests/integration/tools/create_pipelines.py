@@ -36,7 +36,6 @@ import transformers
 from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
-from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
 from max.pipelines.architectures.flux2.flux2_executor import Flux2Executor
 from max.pipelines.architectures.flux2.flux2_klein_executor import (
@@ -53,6 +52,7 @@ from max.pipelines.lib import (
     PixelGenerationPipeline,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
@@ -2107,8 +2107,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "max_length": 516,
             "trust_remote_code": True,
             "max_batch_input_tokens": 512,
-            "ep_size": 8,
-            "data_parallel_degree": 8,
+            "ep_size": 4,
+            "data_parallel_degree": 4,
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),

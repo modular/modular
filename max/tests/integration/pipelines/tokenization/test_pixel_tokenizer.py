@@ -23,17 +23,17 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.interfaces import RequestID
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    ProviderOptions,
-)
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import OpenResponsesRequestBody
 from max.pipelines.lib import MAXModelConfig, PixelGenerationTokenizer
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.modeling.types import RequestID
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import OpenResponsesRequestBody
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
+)
 
 
 class TestPixelGenerationTokenizer:

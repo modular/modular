@@ -105,8 +105,8 @@ def bench_decode[
                     Coord(
                         batch_size,
                         seq_len,
-                        Idx[num_heads](),
-                        Idx[depth](),
+                        Idx[num_heads],
+                        Idx[depth],
                     )
                 ),
             )
@@ -116,8 +116,8 @@ def bench_decode[
                     Coord(
                         batch_size,
                         num_keys,
-                        Idx[kv_num_heads](),
-                        Idx[depth](),
+                        Idx[kv_num_heads],
+                        Idx[depth],
                     )
                 ),
             )
@@ -127,8 +127,8 @@ def bench_decode[
                     Coord(
                         batch_size,
                         seq_len,
-                        Idx[num_heads](),
-                        Idx[v_depth](),
+                        Idx[num_heads],
+                        Idx[v_depth],
                     )
                 ),
             )
@@ -282,8 +282,8 @@ def bench_prefill[
                 row_major(
                     Coord(
                         batch_size * seq_len,
-                        Idx[num_heads](),
-                        Idx[depth](),
+                        Idx[num_heads],
+                        Idx[depth],
                     )
                 ),
             )
@@ -292,8 +292,8 @@ def bench_prefill[
                 row_major(
                     Coord(
                         batch_size * num_keys,
-                        Idx[num_heads](),
-                        Idx[kv_depth](),
+                        Idx[num_heads],
+                        Idx[kv_depth],
                     )
                 ),
             )
@@ -302,8 +302,8 @@ def bench_prefill[
                 row_major(
                     Coord(
                         batch_size * num_keys,
-                        Idx[num_heads](),
-                        Idx[kv_depth](),
+                        Idx[num_heads],
+                        Idx[kv_depth],
                     )
                 ),
             )
@@ -313,8 +313,8 @@ def bench_prefill[
                     Coord(
                         batch_size,
                         num_keys,
-                        Idx[cache_num_heads](),
-                        Idx[cache_depth](),
+                        Idx[cache_num_heads],
+                        Idx[cache_depth],
                     )
                 ),
             )
@@ -323,8 +323,8 @@ def bench_prefill[
                 row_major(
                     Coord(
                         batch_size * seq_len,
-                        Idx[num_heads](),
-                        Idx[kv_depth](),
+                        Idx[num_heads],
+                        Idx[kv_depth],
                     )
                 ),
             )

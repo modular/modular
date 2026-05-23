@@ -16,7 +16,20 @@ import contextlib
 from collections.abc import AsyncGenerator
 from typing import Any, cast
 
-from max.interfaces import (
+from max.pipelines.core import TextContext, TTSContext
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.lib import (
+    EmbeddingsPipelineType,
+    PipelineConfig,
+    TextGenerationPipeline,
+)
+from max.pipelines.lib.audio_generator_pipeline import (
+    AudioGeneratorPipelineType,
+)
+from max.pipelines.lib.pipeline_variants.pixel_generation import (
+    PixelGenerationPipeline,
+)
+from max.pipelines.modeling.types import (
     AudioGenerationOutput,
     BaseContext,
     BaseContextType,
@@ -31,20 +44,7 @@ from max.interfaces import (
     RequestID,
     TextGenerationOutput,
 )
-from max.interfaces.generation import GenerationOutput
-from max.pipelines.core import TextContext, TTSContext
-from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.lib import (
-    EmbeddingsPipelineType,
-    PipelineConfig,
-    TextGenerationPipeline,
-)
-from max.pipelines.lib.audio_generator_pipeline import (
-    AudioGeneratorPipelineType,
-)
-from max.pipelines.lib.pipeline_variants.pixel_generation import (
-    PixelGenerationPipeline,
-)
+from max.pipelines.modeling.types.generation import GenerationOutput
 from max.serve.config import Settings
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.interface import Scheduler

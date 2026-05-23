@@ -25,15 +25,15 @@ from unittest.mock import MagicMock, NonCallableMock
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.interfaces import (
+from max.pipelines.core import TextContext
+from max.pipelines.lib.config.lora_config import LoRAConfig
+from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.modeling.types import (
     LoRAOperation,
     LoRARequest,
     LoRAResponse,
     LoRAStatus,
 )
-from max.pipelines.core import TextContext
-from max.pipelines.lib.config.lora_config import LoRAConfig
-from max.pipelines.lib.lora import LoRAManager
 from safetensors.numpy import save_file
 
 

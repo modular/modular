@@ -20,7 +20,7 @@ works correctly.
 import compiler
 
 from std.gpu.host import DeviceContext
-from tensor import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 
 @compiler.register("read_uninit_output")

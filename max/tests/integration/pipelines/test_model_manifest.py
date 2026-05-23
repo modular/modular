@@ -29,7 +29,12 @@ from max.pipelines.lib.model_manifest import ModelManifest
 LOAD_INDEX_TARGET = (
     "max.pipelines.lib.model_manifest.ModelManifest._load_model_index"
 )
-VALIDATE_HF_ACCESS_TARGET = "max.pipelines.lib.hf_utils.validate_hf_repo_access"
+VALIDATE_HF_ACCESS_TARGET = (
+    "max.pipelines.lib.config.model_config.validate_hf_repo_access"
+)
+VALIDATE_HF_ACCESS_HFUTILS_TARGET = (
+    "max.pipelines.modeling.weights.hf_utils.validate_hf_repo_access"
+)
 HF_OFFLINE_TARGET = "huggingface_hub.constants.HF_HUB_OFFLINE"
 
 
@@ -47,28 +52,35 @@ def _make_config(
     return MAXModelConfig.model_construct(**kwargs)
 
 
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
 class TestFromModelPath:
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_get_main(self, _mock_load: Any, _mock_validate: Any) -> None:
+    def test_get_main(
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         assert registry["main"].model_path == "test-model"
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_contains_main(self, _mock_load: Any, _mock_validate: Any) -> None:
+    def test_contains_main(
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         assert "main" in registry
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_does_not_contain_other(
-        self, _mock_load: Any, _mock_validate: Any
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         assert "draft" not in registry
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_items(self, _mock_load: Any, _mock_validate: Any) -> None:
+    def test_items(
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         items = list(registry.items())
         assert len(items) == 1
@@ -77,7 +89,9 @@ class TestFromModelPath:
         assert cfg.model_path == "test-model"
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
-    def test_len(self, _mock_load: Any, _mock_validate: Any) -> None:
+    def test_len(
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         assert len(registry) == 1
 
@@ -132,12 +146,13 @@ class TestSpeculativeDecoding:
         assert len(registry) == 2
 
 
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
 class TestErrorMessages:
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_get_missing_role(
-        self, _mock_load: Any, _mock_validate: Any
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         with pytest.raises(KeyError, match="draft"):
@@ -145,13 +160,14 @@ class TestErrorMessages:
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_get_missing_role_lists_available(
-        self, _mock_load: Any, _mock_validate: Any
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         registry = ModelManifest.from_model_path("test-model", device_specs=[])
         with pytest.raises(KeyError, match="main"):
             registry["draft"]
 
 
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
 class TestDiffusersAutoExpansion:
@@ -168,7 +184,9 @@ class TestDiffusersAutoExpansion:
             "scheduler": ["diffusers", "FlowMatchEulerDiscreteScheduler"],
         }
 
-    def test_expands_diffusers_model(self, _mock_validate: Any) -> None:
+    def test_expands_diffusers_model(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
             registry = ModelManifest.from_model_path("org/diffusion-model")
 
@@ -178,7 +196,7 @@ class TestDiffusersAutoExpansion:
         assert "scheduler" in registry
 
     def test_each_component_inherits_model_path(
-        self, _mock_validate: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
             registry = ModelManifest.from_model_path("org/diffusion-model")
@@ -186,14 +204,18 @@ class TestDiffusersAutoExpansion:
         for _role, component_cfg in registry.items():
             assert component_cfg.model_path == "org/diffusion-model"
 
-    def test_each_component_has_subfolder(self, _mock_validate: Any) -> None:
+    def test_each_component_has_subfolder(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
             registry = ModelManifest.from_model_path("org/diffusion-model")
 
         for role, component_cfg in registry.items():
             assert component_cfg.subfolder == role
 
-    def test_non_diffusers_stays_main(self, _mock_validate: Any) -> None:
+    def test_non_diffusers_stays_main(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=None):
             registry = ModelManifest.from_model_path(
                 "org/llm-model", device_specs=[]
@@ -203,7 +225,7 @@ class TestDiffusersAutoExpansion:
         assert len(registry) == 1
 
     def test_propagates_kwargs_to_diffusers_components(
-        self, _mock_validate: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
             registry = ModelManifest.from_model_path(
@@ -215,7 +237,9 @@ class TestDiffusersAutoExpansion:
         for config in registry.values():
             assert config.quantization_encoding == "float32"
 
-    def test_skips_private_keys(self, _mock_validate: Any) -> None:
+    def test_skips_private_keys(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         model_index: dict[str, object] = {
             "_class_name": "FluxPipeline",
             "_diffusers_version": "0.30.0",
@@ -228,7 +252,9 @@ class TestDiffusersAutoExpansion:
         assert "_class_name" not in registry
         assert "_diffusers_version" not in registry
 
-    def test_metadata_populated(self, _mock_validate: Any) -> None:
+    def test_metadata_populated(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         model_index: dict[str, object] = {
             "_class_name": "FluxPipeline",
             "_diffusers_version": "0.30.0",
@@ -246,6 +272,7 @@ class TestDiffusersAutoExpansion:
         }
 
 
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
 class TestRevisionPropagation:
@@ -253,7 +280,7 @@ class TestRevisionPropagation:
 
     @patch(LOAD_INDEX_TARGET, return_value=None)
     def test_revision_propagates_to_main(
-        self, _mock_load: Any, _mock_validate: Any
+        self, _mock_load: Any, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         registry = ModelManifest.from_model_path(
             "test-model", revision="abc123", device_specs=[]
@@ -261,7 +288,7 @@ class TestRevisionPropagation:
         assert registry["main"].huggingface_model_revision == "abc123"
 
     def test_revision_propagates_to_components(
-        self, _mock_validate: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         model_index: dict[str, object] = {
             "_class_name": "FluxPipeline",
@@ -462,10 +489,11 @@ class TestResolve:
 
         mock_resolve.assert_called_once()
 
+    @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
     @patch(DEVICES_EXIST_TARGET, return_value=True)
     @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
     def test_resolve_flux2_with_overrides(
-        self, _mock_validate: Any, _mock_devices: Any
+        self, _mock_validate: Any, _mock_devices: Any, _mock_validate_hf: Any
     ) -> None:
         """Resolve a FLUX.2-dev manifest with transformer and VAE overrides.
 
@@ -892,9 +920,12 @@ class TestPrimaryArchitectureName:
             ):
                 _ = manifest.main_architecture_name
 
+    @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
     @patch(HF_OFFLINE_TARGET, False)
     @patch(VALIDATE_HF_ACCESS_TARGET)
-    def test_diffusion_returns_class_name(self, _mock_validate: Any) -> None:
+    def test_diffusion_returns_class_name(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
         """Diffusion manifests return _class_name from stored metadata."""
         model_index: dict[str, object] = {
             "_class_name": "FluxPipeline",
@@ -965,13 +996,14 @@ def _msgpack_round_trip(manifest: ModelManifest) -> ModelManifest:
     return ModelManifest(models, metadata=unpacked.get("metadata"))
 
 
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
 class TestCrossRepoSubfolder:
     """Tests for cross-repo weight subfolder handling."""
 
     def test_huggingface_weight_repo_clears_subfolder_for_external_repo(
-        self, _mock_validate: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         """When _weights_repo_id differs from model_path, subfolder is None."""
         cfg = _make_config("org/base-model")
@@ -983,7 +1015,7 @@ class TestCrossRepoSubfolder:
         assert repo.repo_id == "org/external-weights"
 
     def test_huggingface_weight_repo_preserves_subfolder_for_same_repo(
-        self, _mock_validate: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         """When _weights_repo_id matches model_path, subfolder is preserved."""
         cfg = _make_config("org/base-model")
@@ -994,7 +1026,7 @@ class TestCrossRepoSubfolder:
         assert repo.subfolder == "transformer"
 
     def test_huggingface_weight_repo_preserves_subfolder_when_no_override(
-        self, _mock_validate: Any
+        self, _mock_validate: Any, _mock_validate_hf: Any
     ) -> None:
         """When _weights_repo_id is None, subfolder is preserved."""
         cfg = _make_config("org/base-model")
@@ -1006,7 +1038,11 @@ class TestCrossRepoSubfolder:
     @patch(DEVICES_EXIST_TARGET, return_value=True)
     @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
     def test_resolve_skips_subfolder_prepend_for_cross_repo_weights(
-        self, _mock_cfg_validate: Any, _mock_devices: Any, _mock_validate: Any
+        self,
+        _mock_cfg_validate: Any,
+        _mock_devices: Any,
+        _mock_validate: Any,
+        _mock_validate_hf: Any,
     ) -> None:
         """resolve() does not prepend subfolder to cross-repo weight paths."""
         cfg = _make_config("org/base-model")
