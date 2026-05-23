@@ -265,20 +265,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return self
 
-    comptime ConversionToPythonErrorType = Error
-    """The error type raised if conversion to a PythonObject fails."""
-
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a `PythonObject`.
-
-        Returns:
-            A PythonObject representing this value.
-
-        Raises:
-            If the Python runtime is not initialized or conversion fails.
-        """
-        return StringSlice(self).to_python_object()
-
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
