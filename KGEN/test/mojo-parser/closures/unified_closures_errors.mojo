@@ -26,18 +26,6 @@ struct Mem(ImplicitlyCopyable):
 def use(a:Mem):
     pass
 
-
-def foo(a: Mem):
-    # expected-error @below {{cannot capture a by copy or move because it is not register passable and your closure is marked as register passable}}
-    def closure() register_passable {var}:
-        use(a)
-
-
-def bar(a: Mem):
-    # expected-error @below {{cannot capture a by copy or move because it is not register passable and your closure is marked as register passable}}
-    def closure() register_passable {var}:
-        use(a)
-
 # COM: ambiguous captures
 
 def aThing(x: Int) -> Int:
@@ -69,27 +57,50 @@ def takeDevicePassable[T: DevicePassable](impl: T):
 def foo(bar: Bar) raises:
     # COM: This should fail because Bar is not trivial.
 
-    def closure(number: Int) register_passable {var bar} -> Int:
+    def closure(number: Int) {var bar} -> Int:
         return bar.x
 
     # TODO: Rename Wrappers (MOCO-2541)
-    # expected-error @below {{'takeDevicePassable' parameter 'T' has 'DevicePassable' type, but value has type 'def(number: Int) register_passable -> Int'}}
+    # expected-error @below {{'takeDevicePassable' parameter 'T' has 'DevicePassable' type, but value has type 'def(number: Int) -> Int'}}
     takeDevicePassable[type_of(closure)](closure)
 
 
-# COM: Test that a register_passable closure capturing a non trivial
-# COM: register_passable type does NOT conform to TrivialRegisterPassable.
+# COM: Test that a  closure capturing a non trivial
+# COM:  type does NOT conform to TrivialRegisterPassable.
 # expected-note @below {{function declared here}}
 def takeTrivialRegisterPassable[T: TrivialRegisterPassable](impl: T):
     pass
 
 
 def testNonTrivialClosureNotTrivialRegisterPassable(bar: Bar) raises:
-    def closure() register_passable {var bar} -> Int:
+    def closure() {var bar} -> Int:
         return bar.x
 
     # expected-error-re @below {{'{{.*}}' does not conform to trait 'TrivialRegisterPassable'}}
     takeTrivialRegisterPassable(closure)
+
+
+# COM: Test that a closure capturing a memory-only type does not conform to
+# COM: RegisterPassable.
+# expected-note @below {{function declared here}}
+def takeRegisterPassable[T: RegisterPassable](impl: T):
+    pass
+
+
+def testMemoryOnlyClosureNotRegisterPassable(mem: Mem):
+    def closure(number: Int) {var mem} -> Int:
+        _ = mem
+        return number
+
+    # expected-error-re @below {{'{{.*}}' does not conform to trait 'RegisterPassable'}}
+    takeRegisterPassable(closure)
+
+
+# COM: Test that using deprecated `register_passable` effect emits a warning.
+def testRegisterPassableEffectDeprecated():
+    # expected-warning @below {{the 'register_passable' function effect is no longer supported; use trait constraints like 'RegisterPassable & def(...) -> ...' instead}}
+    def closure(x: Int) register_passable -> Int:
+        return x
 
 
 # expected-note @below {{function declared here}}

@@ -604,7 +604,7 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
       argumentTypes, wrapperSignature.getArgConventions(),
       wrapperSignature.getArgListAttrs(), result,
       traitFnOp.getSpecialFunctionKind(), structDecl.getLoc(), b,
-      wrapperSignature.getFnEffects().setRegisterPassable(false), "", synthetic,
+      wrapperSignature.getFnEffects(), "", synthetic,
       traitFnOp.getInlineLevel());
   return {op, parameters, result};
 }
@@ -728,7 +728,7 @@ void ClosureEmitter::collectClosureExternalRefs(
 }
 
 /// Format a closure signature for diagnostics, omitting argument names.
-/// E.g. "def(Int) register_passable -> Int".
+/// E.g. "def(Int) -> Int".
 static std::string formatClosureSignature(FnTypeGeneratorType sig,
                                           SharedState &shared,
                                           unsigned numPrependedCaptures = 0) {
@@ -782,8 +782,6 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
       });
   os << ')';
 
-  if (sig.isRegisterPassable())
-    os << " register_passable";
   if (sig.isThrows())
     os << " raises";
   if (sig.isAsync())
@@ -825,9 +823,10 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
   }
-  if (typeConvention == TypeConvention::RegisterPassableTrivial)
+  if (typeConvention == TypeConvention::RegisterPassableTrivial) {
     closureParents.push_back(trivialRegisterTypeParent);
-  else if (typeConvention == TypeConvention::RegisterPassable)
+    closureParents.push_back(registerPassableParent);
+  } else if (typeConvention == TypeConvention::RegisterPassable)
     closureParents.push_back(registerPassableParent);
 
   TraitType traitType = getTraitType(closureParents, moduleDecl);
@@ -1205,7 +1204,8 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
                                      copyParent,
                                      implicitlyCopyableParent,
                                      implicitlyDestructibleParent,
-                                     trivialRegisterTypeParent};
+                                     trivialRegisterTypeParent,
+                                     registerPassableParent};
   TraitType traitType = getTraitType(parents, moduleDecl);
   declOp.setCanonicalTrait(traitType);
   b.setInsertionPointToEnd(&declOp.getFields().front());
@@ -1501,8 +1501,6 @@ ASTDecl *ClosureEmitter::createClosureTrait(
   // Generate the movable, destructable closure trait, populating the trait
   // definition with the single characteristic "__call__" method.
   SmallVector<ClosureParent> parents{moveParent, implicitlyDestructibleParent};
-  if (key.isRegisterPassable())
-    parents.push_back(registerPassableParent);
   auto populate = [&](ASTDecl &decl,
                       DenseSet<std::pair<StringAttr, StringAttr>> &functions) {
     TraitDeclOp closureTrait = cast<TraitDeclOp>(decl.getIfOperation());
@@ -1571,8 +1569,7 @@ ASTDecl *ClosureEmitter::createClosureTrait(
         decl, callName, parameters, extendedParamListAttrs, argumentTypes,
         sig.getArgConventions(), sig.getArgListAttrs(), result,
         SpecialFunctionKind::kNormal, nestedFunctionOrTypeLocation, builder,
-        sig.getFnEffects().setRegisterPassable(false).setCapturing(true), "",
-        true, InlineLevel::Always);
+        sig.getFnEffects().setCapturing(true), "", true, InlineLevel::Always);
     builder.setInsertionPointToEnd(&fnOp.getBodyRegion().front());
     UnreachableOp::create(builder);
     functions.insert({callName, fnOp.getSymNameAttr()});
@@ -1584,8 +1581,6 @@ ASTDecl *ClosureEmitter::createClosureTrait(
     auto [closureTrait, traitDecl] = createTraitOp(
         moduleDecl, name, parents, nestedFunctionOrTypeLocation, populate);
     closureTrait.setClosureSignature(key);
-    if (key.isRegisterPassable())
-      closureTrait.setConvention(TypeConvention::RegisterPassable);
     std::string prettyName =
         formatClosureSignature(dependentSignatureType, shared);
     closureTrait.setSourceNameAttr(DebugInfo::SourceNameAttr::get(
@@ -1645,8 +1640,7 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(
   FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
       nestedSignature.getInputParamTypes(), nestedSignature.getValues(),
       nestedSignature.getArgConventions(),
-      nestedSignature.getFnEffects().setRegisterPassable(false).setCapturing(
-          shouldBeCapturing),
+      nestedSignature.getFnEffects().setCapturing(shouldBeCapturing),
       nestedSignature.getFnMetadata(), nestedSignature.getMetadata(),
       nestedSignature.getArgListAttrs());
 
@@ -2126,8 +2120,6 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                                     ArrayRef<ParamDeclRefAttr> paramCaptures) {
   // (1) Create the closure instance.
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
-  bool requestedRegPassable =
-      nestedFn.getFuncTypeGenerator().isRegisterPassable();
   FnOp parent = nestedFn->getParentOfType<FnOp>();
   assert(parent && "expected the function to be a nested function");
   ImplicitLocOpBuilder builder(location, shared.getContext());
@@ -2174,14 +2166,11 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   SmallVector<TypedAttr> structParamBindings;
 
   SmallPtrSet<StringAttr, 8> byValueCapturedOriginParamNames;
-  StringAttr firstNonRegisterPassableCapture;
   auto updateCaptureConvention = [&](TypeConvention captureConventionMet,
                                      StringRef captureName) {
     highestCaptureConvention =
         meetCaptureConvention(highestCaptureConvention, captureConventionMet);
-    if (!firstNonRegisterPassableCapture &&
-        captureConventionMet == TypeConvention::MemoryOnly)
-      firstNonRegisterPassableCapture = StringAttr::get(ctx, captureName);
+    (void)captureName;
   };
   for (const Capture &capture : captures) {
     Value value = capture.getValue().getMlirValue();
@@ -2271,20 +2260,21 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     fieldDecls.push_back(StructDefFieldAttr::get(captureName, captureTypeAttr));
   }
   bool isRegPassable = highestCaptureConvention != TypeConvention::MemoryOnly;
-  if (requestedRegPassable && firstNonRegisterPassableCapture) {
-    shared.emitError(nestedFnDecl.getLoc(),
-                     "cannot capture " +
-                         firstNonRegisterPassableCapture.getValue() +
-                         " by copy or move because it is not register passable "
-                         "and your closure is marked as register passable.");
-    return {};
-  }
   KGEN::ClosureType closureType =
       ClosureType::get(ctx, closureAttr,
                        isRegPassable ? ClosureMemoryKind::REGISTER_PASSABLE
                                      : ClosureMemoryKind::NONESCAPING);
+  FnTypeGeneratorType wrapperSig = FnTypeGeneratorType::get(
+      closureSig.getInputParamTypes(), closureSig.getValues(),
+      closureSig.getArgConventions(), closureSig.getFnEffects(),
+      closureSig.getFnMetadata(), closureSig.getMetadata(),
+      closureSig.getArgListAttrs());
+  trait = cast<TraitDeclOp>(shared
+                                .getOrCreateClosureTrait(nestedFnDecl.getLoc(),
+                                                         moduleDecl, wrapperSig)
+                                ->getIfOperation());
   ASTDecl *closureWrapperDecl = shared.getOrCreateClosureWrapper(
-      nestedFnDecl.getLoc(), closureSig, &moduleDecl, isCopyable,
+      nestedFnDecl.getLoc(), wrapperSig, &moduleDecl, isCopyable,
       highestCaptureConvention, captures.empty());
   StructDeclOp wrapper =
       cast<StructDeclOp>(closureWrapperDecl->getIfOperation());
@@ -2299,9 +2289,10 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
   }
-  if (highestCaptureConvention == TypeConvention::RegisterPassableTrivial)
+  if (highestCaptureConvention == TypeConvention::RegisterPassableTrivial) {
     closureParents.push_back(trivialRegisterTypeParent);
-  else if (highestCaptureConvention == TypeConvention::RegisterPassable)
+    closureParents.push_back(registerPassableParent);
+  } else if (highestCaptureConvention == TypeConvention::RegisterPassable)
     closureParents.push_back(registerPassableParent);
 
   ParamDeclAttr origin =
@@ -2311,8 +2302,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   // TODO: Remove capturing when legacy closures are removed
   FnTypeGeneratorType closureBodySignature = FnTypeGeneratorType::get(
       original.getInputParamTypes(), original.getValues(),
-      original.getArgConventions(),
-      original.getFnEffects().setRegisterPassable(false).setCapturing(true),
+      original.getArgConventions(), original.getFnEffects().setCapturing(true),
       original.getFnMetadata(), original.getMetadata(),
       original.getArgListAttrs());
   auto [capturedRefs, _] =
@@ -3439,6 +3429,7 @@ TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
 
   if (typeConvention == TypeConvention::RegisterPassableTrivial) {
     symbols.push_back(trivialRegisterTypeParent.getSymbolRef(moduleDecl));
+    symbols.push_back(registerPassableParent.getSymbolRef(moduleDecl));
     ASTDecl *devicePassableTrait =
         shared.getBuiltinDevicePassableTrait(traitDecl.getLoc());
     if (devicePassableTrait)

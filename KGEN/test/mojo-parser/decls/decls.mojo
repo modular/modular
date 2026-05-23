@@ -754,7 +754,7 @@ def forward_ref(x: EmptyStruct):
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @EmptyStruct({{.*}}) register_passable
+# CHECK-LABEL: lit.struct.decl @EmptyStruct({{.*}}) 
 struct EmptyStruct(RegisterPassable):
     pass
 

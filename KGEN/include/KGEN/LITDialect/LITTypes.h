@@ -156,7 +156,6 @@ public:
   bool isAsync() { return getFnEffects().isAsync(); }
   bool isCapturing() { return getFnEffects().isCapturing(); }
   bool isRefResult() { return getFnEffects().isRefResult(); }
-  bool isRegisterPassable() { return getFnEffects().isRegisterPassable(); }
 
   /// Return the convention for the specified value argument.
   ArgConvention getArgConvention(size_t inputNo) {

@@ -341,11 +341,13 @@ def make_closure(x: Int, mem:String) -> Int:
 
 # COM: Check that the origin set is bound to the wrapper
 
-# CHECK: [[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable*.]] = !lit.trait<@"def() -> None", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-LABEL: lit.fn @"nonemptyOriginSet(::String&)"
+# CHECK: lit.closure.init[#kgen.type<typevalue<:[[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]]
 
 
 def nonemptyOriginSet(mut byRefMut: String):
-    # CHECK: lit.call {{.*}}::@"def() -> None_{{.*}}"::@"__init__($0$)"[{{.*}}]<:[[TRAIT]] {{.*}}, :origin.set {}>
+    # CHECK: lit.call @unified_closure::@"def() -> None_{{.*}}"::@"__init__({{.*}})"
+    # CHECK-SAME: :origin.set {}
     def myclosure() {mut byRefMut}:
         pass
 
@@ -564,7 +566,7 @@ def conditionallyDevicePassable(x: Int):
     # CHECK-NEXT: kgen.witness "_is_convertible_to_device_type{{.*}}" : !lit.generator
     # CHECK-NEXT: kgen.witness "_to_device_type{{.*}}" : !lit.generator
     # CHECK-NEXT: kgen.witness "get_type_name{{.*}}" : !lit.generator
-    def device_passable() register_passable {var} -> Int:
+    def device_passable() {var} -> Int:
         return x
 
 
@@ -593,16 +595,16 @@ def useIt[TT: DoIt, C: def(x: TT)](impl: C):
 
 # // -----
 
-# Verify the trait alias includes TrivialRegisterPassable conformance.
-# CHECK-DAG: [[TRAIT:![^=]*TrivialRegisterPassable.*]] = !lit.trait<@"def() register_passable -> Int",{{.*}}@std::@builtin::@stubs::@TrivialRegisterPassable>
+# CHECK: kgen.conformance @"{{.*}}::RegisterPassable" {
 
-
-# CHECK: lit.struct.decl @"def() register_passable -> Int_{{.*}}"<impl: [[TRAIT]]
+def takesRegisterPassable[T: RegisterPassable](impl: T):
+    pass
 
 
 def addTrivialRegisterPassable(x: Int):
-    def closure() register_passable {var} -> Int:
+    def closure() {var} -> Int:
         return x
+    takesRegisterPassable(closure)
 
 
 # // -----
@@ -804,23 +806,23 @@ struct V[dtype: Int, width: Int](RegisterPassable):
 
 # CHECK: lit.struct.decl @"def[width: Int]() -> V[42, width]_PtrWrapper"
 
-# CHECK: lit.fn @"__call__$def{{.*}} register_passable -> V{{.*}}"
+# CHECK: lit.fn @"__call__$def{{.*}} -> V{{.*}}"
 # CHECK: kgen.rebind %{{.*}} : {{.*}}{42}{{.*}} to {{.*}}_dtype{{.*}}
 # CHECK-NEXT: lit.return
 
 
-# CHECK: kgen.conformance @"def[dtype: Int, #, width: Int]() register_passable -> V[dtype, width]" {
+# CHECK: kgen.conformance @"def[dtype: Int, #, width: Int]() -> V[dtype, width]" {
 # CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK-NEXT: kgen.witness "dtype" :{{.*}} = {42}
 def callee[
     dtype: Int,
-    F: def[width: Int]() register_passable -> V[dtype, width],
+    F: RegisterPassable & def[width: Int]() -> V[dtype, width],
 ](closure: F):
     var result = closure[4]()
 
 
 def rebindResult():
-    def my_closure[width: Int]() register_passable {} -> V[42, width]:
+    def my_closure[width: Int]() {} -> V[42, width]:
         return V[42, width](0)
 
     callee[42](my_closure)
@@ -890,10 +892,10 @@ def struct_callee[
     var result = closure()
 
 
-# CHECK: lit.struct.decl @"def() -> Container[Pair(2, 0)]_{{.*}}"
-# CHECK: kgen.conformance @"def[tag: Int, #]() -> Container[Pair(tag, 0)]" {
-# CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
-# CHECK:   kgen.witness "tag" : !Int = {2}
+# CHECK-LABEL: lit.fn @"repro_struct_attr()"
+# CHECK: lit.closure.init[#kgen.type<typevalue<:trait<@"def() -> Container[Pair(2, 0)]"
+# CHECK: lit.call @unified_closure::@"struct_callee[::Int,def[tag: Int, #]() -> Container[Pair(tag, 0)]]($1){(eq $1.tag, $0)}"
+# CHECK-SAME: <:!Int {2}
 def repro_struct_attr():
     var x = 10
 
@@ -927,9 +929,9 @@ def symbol_callee[
     var result = closure()
 
 
-# CHECK: lit.struct.decl @"def() -> Dispatch[identity]_{{.*}}"
-# CHECK: kgen.conformance @"def() -> Dispatch[identity]" {
-# CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
+# CHECK-LABEL: lit.fn @"repro_symbol_attr()"
+# CHECK: lit.closure.init[#kgen.type<typevalue<:trait<@"def() -> Dispatch[identity]"
+# CHECK: lit.call @unified_closure::@"symbol_callee[::Int,def() -> Dispatch[identity]]($1)"{{.*}}<:!Int {1}
 def repro_symbol_attr():
     var x = 10
 
@@ -966,7 +968,7 @@ def repro_rebind_nonref_operand[
     tag: Int,
     F: def[w: Width](v: Vec[tag, w]) -> Bool,
 ](func: F):
-    # CHECK: lit.fn @"__call__[::Int,::Int](unified_closure::def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool_{{.*}}%val: !lit.struct<#Vec <:!Int _tag,
+    # CHECK-LABEL: lit.fn @"__call__[::Int,::Int](unified_closure::def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool_{{.*}}"
     # CHECK: [[REBIND:%.*]] = kgen.rebind %val : !lit.struct<#Vec <:!Int _tag
     # CHECK-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool", "tag">
     # CHECK: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool", "tag">
@@ -1054,7 +1056,7 @@ def thing(foo: Foo):
 
 @always_inline
 def dispatch[
-    FuncType: def() register_passable -> None, //
+    FuncType: TrivialRegisterPassable & def() -> None, //
 ](func: FuncType):
     pass
 
@@ -1116,13 +1118,12 @@ trait DoB:
         ...
 
 
-# COM: "U" cannot be called "T" until MOCO-4028 is fixed
 # CHECK-DAG: !lit.trait<@"def[U: DoB, #](y: U) -> None">
 # CHECK-DAG: !lit.trait<@"def[T: DoA](y: T) -> None">
-# CHECK-DAG: !lit.trait<@"def[U: DoA, #](y: U) -> None">
-def foo[U: DoA](x: U):
-    def closure(y: U) {var}:
-        pass
+# CHECK-DAG: !lit.trait<@"def[T: DoA, #](y: T) -> None">
+def foo[T: DoA](x: T):
+    def closure(y: T) {read x}:
+        _ = x
 
     def closure2[T: DoA](y: T) {var}:
         pass
@@ -1144,7 +1145,7 @@ def metadata_closure(x: Int):
     @__llvm_metadata(
         `nvvm.maxntid`=__mlir_attr.`#pop.array<256> : !pop.array<1, i32>`
     )
-    def _kernel() register_passable {var x} -> Int:
+    def _kernel() {var x} -> Int:
         return x
 
     _ = _kernel()
@@ -1160,7 +1161,7 @@ def metadata_closure(x: Int):
 
 def arg_metadata_closure(x: Int):
     @__llvm_arg_metadata(x, `nvvm.grid_constant`)
-    def _kernel(x: Int) register_passable {var} -> Int:
+    def _kernel(x: Int) {var} -> Int:
         return x
 
     _ = _kernel(x)
@@ -1172,7 +1173,7 @@ def arg_metadata_closure(x: Int):
 # COM: register_passable closure and a concrete register_passable struct gets
 # COM: convention register_passable (not trivial)
 
-# CHECK: lit.struct.decl @"def(y: Int) register_passable -> Int_{{.*}}"{{.*}} register_passable attributes
+# CHECK: lit.struct.decl @"def(y: Int) -> Int_{{.*}}"{{.*}} register_passable attributes
 
 
 struct NonTrivialPayload(ImplicitlyCopyable, RegisterPassable):
@@ -1183,11 +1184,11 @@ struct NonTrivialPayload(ImplicitlyCopyable, RegisterPassable):
 
 
 def call_inner[
-    F: ImplicitlyCopyable & def(Int) register_passable -> Int
+    F: ImplicitlyCopyable & RegisterPassable & def(Int) -> Int
 ](f: F, x: Int) -> Int:
     var payload = NonTrivialPayload(1)
 
-    def outer(y: Int) register_passable {var f, var payload} -> Int:
+    def outer(y: Int) {var f, var payload} -> Int:
         return f(y) + payload.value
 
     return outer(x)
@@ -1199,7 +1200,7 @@ def call_inner[
 # COM: register_passable callback and a trivial struct gets convention
 # COM: register_passable_trivial.
 
-# CHECK: lit.struct.decl @"def(y: Int) register_passable -> Int_{{.*}}"{{.*}} register_passable_trivial attributes
+# CHECK: lit.struct.decl @"def(y: Int) -> Int_{{.*}}"{{.*}} register_passable_trivial attributes
 
 
 struct TrivialPayload(TrivialRegisterPassable):
@@ -1210,11 +1211,11 @@ struct TrivialPayload(TrivialRegisterPassable):
 
 
 def call_inner[
-    F: TrivialRegisterPassable & def(Int) register_passable -> Int
+    F: TrivialRegisterPassable & def(Int) -> Int
 ](f: F, x: Int) -> Int:
     var payload = TrivialPayload(1)
 
-    def outer(y: Int) register_passable {var f, var payload} -> Int:
+    def outer(y: Int) {var f, var payload} -> Int:
         return f(y) + payload.value
 
     return outer(x)
@@ -1601,7 +1602,7 @@ def top[A:Copyable, B:Copyable](aa:A, bb:B):
 def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F)](impl:FuncType):
     pass
 
-# CHECK-LABEL: lit.struct.decl @"def[C: Copyable](a: String, b: String, c: C) -> None_{{.*}}"
+# CHECK-LABEL: lit.struct.decl @"def[{{.*}}C: Copyable](a: {{.*}}, b: {{.*}}, c: C) -> None_{{.*}}"
 # CHECK: lit.fn @"__call__$def
 # CHECK-NEXT: kgen.rebind %a : !lit.ref<:!Copyable _D, imm *"1_unnamed`"> to !lit.ref<!String, imm *"1_unnamed`">
 # CHECK-NEXT: kgen.rebind %b : !lit.ref<:!Copyable _E, imm *"2_unnamed`"> to !lit.ref<!String, imm *"2_unnamed`">

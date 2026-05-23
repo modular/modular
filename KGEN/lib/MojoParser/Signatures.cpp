@@ -1504,9 +1504,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
 
       // Otherwise maybe it was misspelled, just eat it.
       p.emitError(loc, "unknown function effect '")
-          << spelling
-          << "', expected 'raises', 'capturing', 'thin', or "
-             "'register_passable'";
+          << spelling << "', expected 'raises', 'capturing', or 'thin'";
     } else if (spelling == "raises") {
       handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
       p.consumeIdentifier();
@@ -1538,8 +1536,12 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       }
       isThin = true;
     } else if (spelling == "register_passable") {
-      handleEffect(&FnEffects::isRegisterPassable,
-                   &FnEffects::setRegisterPassable);
+      p.emitWarning(loc)
+          << "the 'register_passable' function effect is no longer supported; "
+             "use trait constraints like "
+             "'RegisterPassable & def(...) -> ...' instead";
+      p.consumeIdentifier();
+      continue;
     } else if (spelling == "abi") {
       p.consumeIdentifier(); // consume 'abi'
       if (p.parseToken(Token::l_paren, "expected '(' after 'abi'"))
