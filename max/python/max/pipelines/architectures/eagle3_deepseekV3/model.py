@@ -24,7 +24,7 @@ from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, Value
+from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
@@ -92,13 +92,25 @@ class Eagle3DeepseekV3Inputs(DeepseekV3Inputs):
     the field is required to satisfy the ``_UnifiedSpecDecodeInputs`` protocol
     used by ``OverlapTextGenerationPipeline``."""
 
-    token_bitmasks: Buffer | None = None
-    """Grammar constraint bitmask for structured output.
+    pinned_bitmask: Buffer | None = None
+    """Pinned host bitmask for constrained decoding.
 
-    Shape: [batch_size, num_speculative_tokens + 1, vocab_size].
-    Applied to target logits at the acceptance sampling step.
-    None when structured output is disabled.
+    Shape ``[batch_size, num_speculative_tokens + 1, vocab_size]``.
+    Position i contains the valid-token mask given the FSM state
+    after consuming draft[0:i-1]; position ``num_speculative_tokens``
+    is for the bonus token. ``None`` when structured output is
+    disabled.
     """
+
+    wait_payload: Buffer | None = None
+    """CPU ``int64[2]`` payload = ``[flag._unsafe_ptr, 1]`` consumed by
+    the in-graph ``mo.wait_host_value_with_dep`` op. Only set when
+    structured output is enabled."""
+
+    device_bitmask_scratch: Buffer | None = None
+    """Device scratch buffer that receives the in-graph H2D from
+    ``pinned_bitmask``; the acceptance sampler reads from it. Only
+    set when structured output is enabled."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -124,8 +136,16 @@ class Eagle3DeepseekV3Inputs(DeepseekV3Inputs):
                 self.top_p,
                 self.min_top_p,
             )
-            if self.token_bitmasks is not None:
-                buffers += (self.token_bitmasks,)
+            # Constrained-decoding bitmask inputs are only included
+            # when structured output is enabled.
+            if self.pinned_bitmask is not None:
+                assert self.wait_payload is not None
+                assert self.device_bitmask_scratch is not None
+                buffers += (
+                    self.pinned_bitmask,
+                    self.wait_payload,
+                    self.device_bitmask_scratch,
+                )
         return buffers
 
 
@@ -375,11 +395,18 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                 top_p = next(variadic_args_iter).tensor
                 min_top_p = next(variadic_args_iter).tensor
 
-                # Optional bitmask — present only when structured output is
-                # enabled (matches the conditional in input_types()).
-                token_bitmasks_graph = None
+                # Optional bitmask triple — present only when
+                # structured output is enabled (matches the
+                # conditional in input_types()).
+                pinned_bitmask_graph: TensorValue | None = None
+                wait_payload_graph: BufferValue | None = None
+                device_bitmask_scratch_graph: BufferValue | None = None
                 if nn_model.enable_structured_output:
-                    token_bitmasks_graph = next(variadic_args_iter).tensor
+                    pinned_bitmask_graph = next(variadic_args_iter).tensor
+                    wait_payload_graph = next(variadic_args_iter).buffer
+                    device_bitmask_scratch_graph = next(
+                        variadic_args_iter
+                    ).buffer
 
                 outputs = nn_model(
                     tokens=tokens.tensor,
@@ -399,7 +426,9 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                     min_top_p=min_top_p,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
-                    token_bitmasks=token_bitmasks_graph,
+                    pinned_bitmask=pinned_bitmask_graph,
+                    wait_payload=wait_payload_graph,
+                    device_bitmask_scratch=device_bitmask_scratch_graph,
                 )
                 graph.output(*outputs)
 

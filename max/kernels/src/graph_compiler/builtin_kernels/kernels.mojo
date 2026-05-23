@@ -3234,6 +3234,43 @@ struct WaitHostValue:
         ctx.stream().wait_for_host_value(flag, value)
 
 
+@compiler.register("mo.wait_host_value_with_dep")
+struct WaitHostValueWithDep:
+    """Variant of `mo.wait_host_value` that takes a fake mutable
+    dependency operand.
+
+    Behaves identically to `mo.wait_host_value` at runtime -- the `dep`
+    tensor is never read or written by the kernel body -- but the
+    graph compiler sees `dep` as mutated by this op, which forces any
+    downstream op that consumes `dep` (e.g. `mo.inplace_memcpy(scratch,
+    dep)`) to chain after this wait.
+
+    Use this when you need the wait to gate a `cuStreamWaitValue64`
+    followed by an `inplace_memcpy` of the buffer the host callback
+    fills: without a shared mutable operand the two custom ops carry no
+    data dependency and the graph compiler / cuGraph capture is free to
+    parallelise them, so the memcpy can read stale pinned data before
+    the worker signals the flag.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        dep_dtype: DType,
+        dep_rank: Int,
+    ](
+        payload: MutableInputTensor[dtype=DType.int64, rank=1, ...],
+        # `dep` is intentionally unused: it exists only to register a
+        # mutation on the buffer so downstream consumers of the same
+        # buffer chain after this op.
+        dep: MutableInputTensor[dtype=dep_dtype, rank=dep_rank, ...],
+        ctx: DeviceContext,
+    ) raises:
+        var flag = CompletionFlag(unsafe_from_address=Int(payload[0]))
+        var value = UInt64(Int(payload[1]))
+        ctx.stream().wait_for_host_value(flag, value)
+
+
 # ===-----------------------------------------------------------------------===#
 # Expert Parallelism Initialization Kernel
 # ===-----------------------------------------------------------------------===#

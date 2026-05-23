@@ -30,6 +30,8 @@ from max.graph import (
 from max.nn.comm import Signals
 from max.nn.kernels import (
     eagle_prefill_shift_tokens,
+    inplace_memcpy,
+    wait_host_value_with_dep,
 )
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
@@ -96,9 +98,11 @@ class UnifiedMTPDeepseekV3(Module):
         config: DeepseekV3Config,
         draft_config: DeepseekV3NextNConfig | None = None,
         speculative_config: SpeculativeConfig | None = None,
+        enable_structured_output: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
+        self.enable_structured_output = enable_structured_output
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
             if speculative_config
@@ -149,6 +153,9 @@ class UnifiedMTPDeepseekV3(Module):
         in_thinking_phase: TensorValue,
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
+        pinned_bitmask: TensorValue | None = None,
+        wait_payload: BufferValue | None = None,
+        device_bitmask_scratch: BufferValue | None = None,
     ) -> tuple[TensorValue, ...]:
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
@@ -184,6 +191,52 @@ class UnifiedMTPDeepseekV3(Module):
         logits = target_outputs[1]
         hidden_states = list(target_outputs[3 : 3 + n_devs])
 
+        # Constrained-decoding overlap: gate the model stream on the
+        # async callback's release-store to ``wait_payload``, then
+        # in-graph H2D from pinned host memory to
+        # ``device_bitmask_scratch``. The sampler reads the scratch.
+        # ``device_bitmask_scratch`` is threaded through the wait as
+        # a fake mutable operand so the graph compiler / cuGraph
+        # capture serialises the memcpy after the wait (both ops
+        # mutate the same buffer). The triple is all-or-none.
+        if not (
+            (pinned_bitmask is None)
+            == (wait_payload is None)
+            == (device_bitmask_scratch is None)
+        ):
+            raise ValueError(
+                "pinned_bitmask, wait_payload, and device_bitmask_scratch "
+                "must be either all None or all non-None; got "
+                f"pinned_bitmask={'set' if pinned_bitmask is not None else 'None'}, "
+                f"wait_payload={'set' if wait_payload is not None else 'None'}, "
+                f"device_bitmask_scratch={'set' if device_bitmask_scratch is not None else 'None'}"
+            )
+        effective_bitmasks: TensorValue | None = None
+        if (
+            pinned_bitmask is not None
+            and wait_payload is not None
+            and device_bitmask_scratch is not None
+        ):
+            wait_host_value_with_dep(
+                wait_payload,
+                device_bitmask_scratch,
+                device=self.config.devices[0],
+            )
+            inplace_memcpy(device_bitmask_scratch, pinned_bitmask)
+            # Trim the persistent buffer's worst-case
+            # ``num_speculative_tokens + 1`` rows down to
+            # ``num_steps + 1`` so the acceptance sampler's rebind
+            # to ``num_steps + 1`` lines up. Position ``i`` of the
+            # bitmask holds the FSM state with ``i`` drafts
+            # consumed, so positions ``0..num_steps`` cover the
+            # ``num_steps`` draft-verification slots plus the bonus
+            # slot at index ``num_steps``; the target never emits
+            # logits for the trailing rows this iter.
+            num_steps_plus_one = draft_tokens.shape[1] + 1
+            effective_bitmasks = device_bitmask_scratch[
+                :, :num_steps_plus_one, :
+            ]
+
         # ``seed`` is the per-batch ``[batch_size]`` uint64 device buffer
         # that feeds ``topk_fused_sampling`` (recovered + bonus tokens) per
         # row. The rejection-decision RNG below is a Bernoulli coin flip —
@@ -202,6 +255,7 @@ class UnifiedMTPDeepseekV3(Module):
             top_p=top_p,
             min_top_p=min_top_p,
             in_thinking_phase=in_thinking_phase,
+            token_bitmasks=effective_bitmasks,
         )
 
         target_tokens = ops.concat([recovered, bonus], axis=1)
@@ -548,5 +602,42 @@ class UnifiedMTPDeepseekV3(Module):
                 in_thinking_phase_type,
             ]
         )
+
+        # Constrained-decoding bitmask triple (pinned host bitmask +
+        # wait_payload + device scratch). The captured graph gates an
+        # in-graph H2D into ``device_bitmask_scratch`` on the host
+        # callback's release-store of ``wait_payload``, and the
+        # acceptance sampler reads the scratch in place of a direct
+        # device bitmask input. ``num_bitmask_positions =
+        # num_speculative_tokens + 1``; position
+        # ``num_speculative_tokens`` is for the bonus token.
+        if self.enable_structured_output:
+            # The pinned bitmask graph input is declared on the CPU
+            # per the engine's input binding rule ("Pinned tensors can
+            # only be used in place of CPU graph inputs."), even
+            # though the runtime ``DevicePinnedBuffer``'s ``.device``
+            # is the accelerator.
+            pinned_bitmask_type = TensorType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=DeviceRef.CPU(),
+            )
+            wait_payload_type = BufferType(
+                DType.int64,
+                shape=[2],
+                device=DeviceRef.CPU(),
+            )
+            device_bitmask_scratch_type = BufferType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=device_ref,
+            )
+            all_input_types.extend(
+                [
+                    pinned_bitmask_type,
+                    wait_payload_type,
+                    device_bitmask_scratch_type,
+                ]
+            )
 
         return tuple(all_input_types)

@@ -29,7 +29,7 @@ from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, TensorValue, Value
+from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
@@ -83,8 +83,16 @@ class Eagle3MHADeepseekV3Inputs(DeepseekV3Inputs):
     """Per-batch ``bool`` flag for relaxed-acceptance gating. Not consumed
     by the graph today but required by the ``_UnifiedEagleInputs`` protocol
     used by ``OverlapTextGenerationPipeline``."""
-    token_bitmasks: Buffer | None = None
-    """Grammar constraint bitmask for structured output (None when off)."""
+    pinned_bitmask: Buffer | None = None
+    """Pinned host bitmask for constrained decoding (None when off)."""
+
+    wait_payload: Buffer | None = None
+    """CPU ``int64[2]`` payload consumed by
+    ``mo.wait_host_value_with_dep`` (None when off)."""
+
+    device_bitmask_scratch: Buffer | None = None
+    """Device scratch buffer that receives the in-graph H2D from
+    ``pinned_bitmask`` (None when off)."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -110,8 +118,19 @@ class Eagle3MHADeepseekV3Inputs(DeepseekV3Inputs):
                 self.min_top_p,
                 self.in_thinking_phase,
             )
-        if self.token_bitmasks is not None:
-            buffers += (self.token_bitmasks,)
+            # Constrained-decoding bitmask inputs are appended only on
+            # the spec-decode path. The bitmask triple's position in
+            # the tuple must match the order in ``input_types()``,
+            # which gates the bitmask inputs on both spec-decode and
+            # ``enable_structured_output``.
+            if self.pinned_bitmask is not None:
+                assert self.wait_payload is not None
+                assert self.device_bitmask_scratch is not None
+                buffers += (
+                    self.pinned_bitmask,
+                    self.wait_payload,
+                    self.device_bitmask_scratch,
+                )
         return buffers
 
 
@@ -386,9 +405,15 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
                 min_top_p = next(variadic_args_iter).tensor
                 in_thinking_phase = next(variadic_args_iter).tensor
 
-                token_bitmasks_graph: TensorValue | None = None
+                pinned_bitmask_graph: TensorValue | None = None
+                wait_payload_graph: BufferValue | None = None
+                device_bitmask_scratch_graph: BufferValue | None = None
                 if nn_model.enable_structured_output:
-                    token_bitmasks_graph = next(variadic_args_iter).tensor
+                    pinned_bitmask_graph = next(variadic_args_iter).tensor
+                    wait_payload_graph = next(variadic_args_iter).buffer
+                    device_bitmask_scratch_graph = next(
+                        variadic_args_iter
+                    ).buffer
 
                 outputs = nn_model(
                     tokens=tokens.tensor,
@@ -409,7 +434,9 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
                     in_thinking_phase=in_thinking_phase,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
-                    token_bitmasks=token_bitmasks_graph,
+                    pinned_bitmask=pinned_bitmask_graph,
+                    wait_payload=wait_payload_graph,
+                    device_bitmask_scratch=device_bitmask_scratch_graph,
                 )
                 graph.output(*outputs)
 

@@ -81,7 +81,6 @@ class UnifiedDflashLlama3Inputs(ModelInputs):
     # ``_UnifiedSpecDecodeInputs`` runtime-checkable Protocol; not consumed
     # by the DFlash graph today.
     in_thinking_phase: Buffer | None = None
-    token_bitmasks: Buffer | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:

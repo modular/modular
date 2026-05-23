@@ -24,7 +24,7 @@ from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, TensorValue, Value
+from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
@@ -72,21 +72,48 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
     """Per-batch ``bool`` flag marking rows currently inside a
     ``<think>...</think>`` block; consumed by relaxed acceptance."""
 
-    token_bitmasks: Buffer | None = None
-    """Grammar constraint bitmask for structured output.
+    pinned_bitmask: Buffer | None = None
+    """Pinned host bitmask for constrained decoding.
 
-    Shape: [batch_size, num_speculative_tokens + 1, vocab_size].
-    Position i contains valid token mask given FSM state after consuming
-    draft[0:i-1]. Position num_speculative_tokens is for the bonus token.
-    None when structured output is not enabled (in this case an all-True
-    bitmask is passed to the graph).
+    Shape ``[batch_size, num_speculative_tokens + 1, vocab_size]``.
+    Position i contains the valid-token mask given the FSM state after
+    consuming draft[0:i-1]; position ``num_speculative_tokens`` is for
+    the bonus token. ``None`` when structured output is disabled.
     """
+
+    wait_payload: Buffer | None = None
+    """CPU ``int64[2]`` payload = ``[flag._unsafe_ptr, 1]`` consumed by
+    the in-graph ``mo.wait_host_value_with_dep`` op. Only set when
+    structured output is enabled."""
+
+    device_bitmask_scratch: Buffer | None = None
+    """Device scratch buffer that receives the in-graph H2D from
+    ``pinned_bitmask``; the acceptance sampler reads from it. Only set
+    when structured output is enabled."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         # Ordering must match ``Eagle3KimiK25Unified.input_types``: tokens,
         # then per-device image_embeddings, per-device image_token_indices,
         # then the rest of the inputs.
+        #
+        # ``language_image_embeddings`` / ``language_image_token_indices``
+        # are populated only when ``enable_vision=True`` was passed to
+        # ``Eagle3KimiK25Unified``. They must arrive here in matching
+        # pairs; with ``enable_vision=False`` upstream callers leave
+        # both lists empty so the splat below contributes zero
+        # elements. We can't assert the
+        # ``enable_vision``-and-empty-implication directly because the
+        # flag isn't plumbed onto this dataclass; the length-parity
+        # check below catches the common asymmetric-construction bug
+        # and the model's input_types() validates the remaining shape
+        # invariants.
+        assert len(self.language_image_embeddings) == len(
+            self.language_image_token_indices
+        ), (
+            "language_image_embeddings and language_image_token_indices "
+            "must have the same length"
+        )
         buffers = (
             self.tokens,
             *self.language_image_embeddings,
@@ -125,11 +152,19 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
                 self.min_top_p,
                 self.in_thinking_phase,
             )
-        # token_bitmasks is only included when structured output is enabled.
-        # The graph is compiled with or without this input based on the
-        # enable_structured_output config flag.
-        if self.token_bitmasks is not None:
-            buffers += (self.token_bitmasks,)
+            # Constrained-decoding bitmask inputs are appended only on
+            # the spec-decode path. The bitmask triple's position in
+            # the tuple must match the order in ``input_types()``,
+            # which gates the bitmask inputs on both spec-decode and
+            # ``enable_structured_output``.
+            if self.pinned_bitmask is not None:
+                assert self.wait_payload is not None
+                assert self.device_bitmask_scratch is not None
+                buffers += (
+                    self.pinned_bitmask,
+                    self.wait_payload,
+                    self.device_bitmask_scratch,
+                )
         return buffers
 
 
@@ -412,11 +447,21 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                 min_top_p = next(variadic_args_iter).tensor
                 in_thinking_phase = next(variadic_args_iter).tensor
 
-                # Optional bitmask input — present only when structured output
-                # is enabled (matches the conditional in input_types()).
-                token_bitmasks_graph: TensorValue | None = None
+                # Optional bitmask input(s) — present only when structured
+                # output is enabled (matches the conditional in
+                # input_types()). When the overlap path is on, the single
+                # device-side bitmask tensor is replaced by a (pinned,
+                # wait_payload, device_scratch) triple consumed by the
+                # in-graph wait + H2D.
+                pinned_bitmask_graph: TensorValue | None = None
+                wait_payload_graph: BufferValue | None = None
+                device_bitmask_scratch_graph: BufferValue | None = None
                 if nn_model.enable_structured_output:
-                    token_bitmasks_graph = next(variadic_args_iter).tensor
+                    pinned_bitmask_graph = next(variadic_args_iter).tensor
+                    wait_payload_graph = next(variadic_args_iter).buffer
+                    device_bitmask_scratch_graph = next(
+                        variadic_args_iter
+                    ).buffer
 
                 outputs = nn_model(
                     tokens=tokens.tensor,
@@ -439,7 +484,9 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                     image_token_indices=image_token_indices_in,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
-                    token_bitmasks=token_bitmasks_graph,
+                    pinned_bitmask=pinned_bitmask_graph,
+                    wait_payload=wait_payload_graph,
+                    device_bitmask_scratch=device_bitmask_scratch_graph,
                 )
                 graph.output(*outputs)
 

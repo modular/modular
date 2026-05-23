@@ -680,6 +680,45 @@ class DeviceStream:
                 enqueue.
         """
 
+    def __unsafe_enqueue_async_py_host_func(
+        self, fn: Callable, flag: CompletionFlag, value: int, cpu: CPU
+    ) -> None:
+        """
+        Stream-targeted variant of ``Device.__unsafe_enqueue_async_py_host_func``.
+
+        Enqueues a kickoff host node on **this** stream that dispatches ``fn``
+        onto ``cpu``'s AsyncRT worker pool and returns immediately. When ``fn``
+        finishes, the worker atomic-stores ``value`` (release ordering) to the
+        64-bit memory at ``flag``. Pair with
+        ``DeviceStream.wait_for_host_value(flag, value)`` on a consumer stream
+        to gate downstream GPU work.
+
+        Use this overload when you need the host callback to run on a side
+        stream concurrently with the model stream's forward pass; the
+        ``Device`` overload always targets the default stream and therefore
+        serializes against any other default-stream work. As of this
+        writing no production caller dispatches via this stream
+        overload -- ``StructuredOutputOverlapState.enqueue_async_callback``
+        intentionally lands on the device default stream so the
+        trampoline's ``flag.reset()`` is naturally ordered against the
+        next iter's captured-graph wait. The stream variant is exposed
+        as future-facing API and exercised by the GPU integration test
+        (``test_structured_output_overlap_gpu.py``).
+
+        Args:
+            fn (Callable[[], None]): A zero-argument callable.
+            flag (CompletionFlag): The completion flag the worker will
+                signal when ``fn`` returns.
+            value (int): The 64-bit value to store on completion.
+            cpu (CPU): The CPU device whose AsyncRT worker pool will
+                execute ``fn``.
+
+        Raises:
+            RuntimeError: If the underlying device does not support host
+                callbacks, if the supplied ``cpu`` has no associated AsyncRT
+                CPUDevice, or if the driver rejects the enqueue.
+        """
+
     @property
     def device(self) -> Device:
         """The device this stream is executing on."""

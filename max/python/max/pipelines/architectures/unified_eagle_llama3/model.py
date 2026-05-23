@@ -75,15 +75,25 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     during thinking. Not consumed by the unified_eagle_llama3 graph today,
     but the field is required to satisfy the ``_UnifiedSpecDecodeInputs`` protocol
     used by ``OverlapTextGenerationPipeline``."""
-    token_bitmasks: Buffer | None = None
-    """Grammar constraint bitmask for structured output.
 
-    Shape: [batch_size, num_speculative_tokens + 1, vocab_size].
-    Position i contains valid token mask given FSM state after consuming
-    draft[0:i-1]. Position num_speculative_tokens is for the bonus token.
-    None when structured output is not enabled (in this case an all-True
-    bitmask is passed to the graph).
+    pinned_bitmask: Buffer | None = None
+    """Pinned host bitmask for constrained decoding.
+
+    Shape ``[batch_size, num_speculative_tokens + 1, vocab_size]``.
+    Position i contains the valid-token mask given the FSM state after
+    consuming draft[0:i-1]; position ``num_speculative_tokens`` is for
+    the bonus token. ``None`` when structured output is disabled.
     """
+
+    wait_payload: Buffer | None = None
+    """CPU ``int64[2]`` payload = ``[flag._unsafe_ptr, 1]`` consumed by
+    the in-graph ``mo.wait_host_value_with_dep`` op. Only set when
+    structured output is enabled."""
+
+    device_bitmask_scratch: Buffer | None = None
+    """Device scratch buffer that receives the in-graph H2D from
+    ``pinned_bitmask``; the acceptance sampler reads from it. Only set
+    when structured output is enabled."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -112,11 +122,19 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
                 self.top_p,
                 self.min_top_p,
             )
-        # token_bitmasks is only included when structured output is enabled.
-        # The graph is compiled with or without this input based on the
-        # enable_structured_output config flag.
-        if self.token_bitmasks is not None:
-            buffers += (self.token_bitmasks,)
+            # Constrained-decoding bitmask inputs are appended only on
+            # the spec-decode path. The bitmask triple's position in the
+            # tuple must match the order in ``input_types()``, which
+            # gates the bitmask inputs on both spec-decode and
+            # ``enable_structured_output``.
+            if self.pinned_bitmask is not None:
+                assert self.wait_payload is not None
+                assert self.device_bitmask_scratch is not None
+                buffers += (
+                    self.pinned_bitmask,
+                    self.wait_payload,
+                    self.device_bitmask_scratch,
+                )
         return buffers
 
 
