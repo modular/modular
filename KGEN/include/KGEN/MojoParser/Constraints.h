@@ -71,13 +71,6 @@ TypedAttr deShortCircuitCond(TypedAttr value);
 // Type Refinement for Where Clauses
 //===----------------------------------------------------------------------===//
 
-/// Given a type expression (typically a ParamDeclRefAttr or TypeParamAttr
-/// wrapping a ParamType) and a set of scope-level assumptions, compute the
-/// effective trait bound implied by any `conforms_to(type, Trait)` constraints.
-/// Returns a null TraitType if no refinements apply.
-TraitType getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
-                                       ArrayRef<ConstraintAttr> assumptions);
-
 /// Check if `actualAttr` satisfies `expectedTrait` either by declared
 /// conformance or by scope-level comptime assumptions.
 bool attrConformsToTraitUnderAssumptions(TypedAttr actualAttr,

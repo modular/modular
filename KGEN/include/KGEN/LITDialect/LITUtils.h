@@ -244,6 +244,13 @@ ConformanceResult
 evaluateConstraint(ParameterEvaluator &evaluator, ConstraintAttr constraint,
                    ArrayRef<ConstraintAttr> callerAssumptions = {});
 
+/// Given a type expression and a set of assumptions, compute the effective
+/// trait bound implied by any `conforms_to(type, Trait)` constraints. Returns a
+/// null TraitType if no refinements apply.
+TraitType getTraitBoundFromAssumptions(
+    TypedAttr typeAttr, ArrayRef<ConstraintAttr> assumptions,
+    llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
+
 /// TODO: `ClosureEmitter.cpp` has a nearly identical helper
 /// (`getUnderlyingParamRef`). Unify these implementations to avoid drift.
 ///

@@ -319,7 +319,9 @@ struct TypeDeclInfo {
   /// move, or destructor members.
   bool isRegisterPassableTrivial(Type type) const;
 
-  SpecialMemberInfo getDestructorForType(Type type, Location loc) const;
+  SpecialMemberInfo getDestructorForType(Type type,
+                                         FuncTypeGeneratorType fnContext,
+                                         Location loc) const;
   TypedAttr getMoveInitForType(Type type, Location loc) const;
 
   /// Return the function for a given symbol name if known.
@@ -393,37 +395,96 @@ static SpecialMemberInfo getSpecialMemberForType(
   return SpecialMemberInfo::available(result);
 }
 
+/// Refine a generic trait-bound type parameter using where-clause constraints
+/// from the enclosing function signature.
+static TraitType refineWithContextualWhereClauses(
+    ParamType genericOfTraitType, FuncTypeGeneratorType fnContext,
+    llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
+  // We know this is a parameter of trait type. If we can't refine it, then that
+  // will be the default result:
+  //    def foo[T: Trait1&Trait2](...)
+  // result: T = lit.trait<Trait1, Trait2>
+  TraitType curTrait =
+      sugarCast<TraitType>(genericOfTraitType.getParam().getType());
+  if (!curTrait)
+    return curTrait;
+
+  // Collect assumptions from signature metadata (see StructEmitter.cpp).
+  SmallVector<ConstraintAttr> assumptions;
+  PogListAttr paramList = fnContext.getParamListAttrs();
+  llvm::append_range(assumptions, paramList.getBodyConstraints());
+  for (PogMetadataAttr pog : paramList.getPogs())
+    llvm::append_range(assumptions, pog.getConstraints());
+  if (assumptions.empty())
+    return curTrait;
+
+  TypedAttr paramRef = genericOfTraitType.getParam();
+  TypedAttr lookupAttr = extractParamDeclRef(paramRef);
+  if (!lookupAttr)
+    lookupAttr = getCanonicalAttr(paramRef);
+
+  TraitType refinedBound =
+      getTraitBoundFromAssumptions(lookupAttr, assumptions, traitDeclResolver);
+  if (!refinedBound)
+    return curTrait;
+
+  // Merge original bounds with refinements (see ExprNodes.cpp).
+  SmallVector<SymbolRefAttr> traitSymbols(curTrait.getSymbols());
+  canonicalizeTraitCompositionSymbols(traitSymbols, traitDeclResolver);
+  size_t origCount = traitSymbols.size();
+  llvm::append_range(traitSymbols, refinedBound.getSymbols());
+  sortAndDeduplicateSymbols(traitSymbols);
+  if (traitSymbols.size() == origCount)
+    return curTrait;
+
+  return TraitType::get(paramRef.getContext(), traitSymbols);
+}
+
 /// Given the RValue type for a value that needs to be destroyed, return the
 /// destructor the invoke, or null if there is none.
-SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type,
-                                                     Location loc) const {
+SpecialMemberInfo
+TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
+                                   Location loc) const {
+
+  // If all the types in the trait composition are linear, then the trait
+  // itself is linear.  If any of them is ImplicitlyDestructible, then the
+  // whole thing is.
+  auto getMessageIfTraitIsLinear = [&](ParamType generic,
+                                       TraitType refinedTrait) -> StringAttr {
+    // If all the types in the trait composition are linear, then the trait
+    // itself is linear.  If any of them is ImplicitlyDestructible, then the
+    // whole thing is.
+    if (refinedTrait.getSymbols().empty())
+      return StringAttr::get(generic.getContext(),
+                             "type conforms to no traits");
+
+    StringAttr message;
+    for (SymbolRefAttr symbol : llvm::reverse(refinedTrait.getSymbols())) {
+      TraitDeclOp traitDecl = shared->traitMap.at(symbol);
+      // If the trait has a linear type error message set, it means it does
+      // not conform to ImplicitlyDestructible and is a linear type.
+      if (auto errorMsg = traitDecl.getLinearTypeErrorMsgAttr()) {
+        message = errorMsg;
+        continue;
+      }
+      return {};
+    }
+    assert(message && "should have a message");
+    return message;
+  };
 
   if (auto generic = sugarDynCast<ParamType>(type)) {
     if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
-      // If all the types in the trait composition are linear, then the trait
-      // itself is linear.  If any of them is ImplicitlyDestructible, then the
-      // whole thing is.
-      if (trait.getSymbols().empty())
-        return SpecialMemberInfo::unavailable(
-            StringAttr::get(trait.getContext(), "type conforms to no traits"));
+      TraitType refinedTrait = refineWithContextualWhereClauses(
+          generic, fnContext, [&](SymbolRefAttr symbol) -> TraitDeclOp {
+            return shared->traitMap.at(symbol);
+          });
 
-      StringAttr message;
-      for (SymbolRefAttr symbol : llvm::reverse(trait.getSymbols())) {
-        TraitDeclOp traitDecl = shared->traitMap.at(symbol);
-
-        // If the trait has a linear type error message set, it means it does
-        // not conform to ImplicitlyDestructible and is a linear type.
-        if (auto errorMsg = traitDecl.getLinearTypeErrorMsgAttr()) {
-          message = errorMsg;
-          continue;
-        }
-        message = {};
-        break;
-      }
-      if (message)
+      // Check to see if this trait is linear.
+      if (StringAttr message = getMessageIfTraitIsLinear(generic, refinedTrait))
         return SpecialMemberInfo::unavailable(message);
 
-      auto traitDecls = getTraitDeclsForType(trait);
+      auto traitDecls = getTraitDeclsForType(refinedTrait);
       for (TraitDeclOp traitDecl : traitDecls) {
         if (auto dtorWitness = traitDecl.getDtorWitness()) {
           TypedAttr selfParam = generic.getParam();
@@ -952,7 +1013,8 @@ struct ValueSet {
   /// past their last use.  Without the kill marker, the -O0
   /// dbg.value→dbg.declare conversion gives them stable stack slots,
   /// keeping them visible for the whole scope.
-  bool shouldSuppressDebugKill(const ValueInfo &info) const {
+  bool shouldSuppressDebugKill(const ValueInfo &info,
+                               FuncTypeGeneratorType fnContext) const {
     if (!extendTrivialDebugLifetimes || !info.debugVariable)
       return false;
     if (!info.value)
@@ -968,7 +1030,7 @@ struct ValueSet {
       eltType = info.value.getType();
     }
     SpecialMemberInfo dtorInfo =
-        perThreadCache.typeDeclInfo.getDestructorForType(eltType,
+        perThreadCache.typeDeclInfo.getDestructorForType(eltType, fnContext,
                                                          info.value.getLoc());
     // Suppress kill when no non-trivial destructor will be emitted.
     return dtorInfo.isUnavailable() || !dtorInfo.getMember();
@@ -2257,8 +2319,10 @@ namespace {
 class DestructorInserter {
 public:
   DestructorInserter(ImplicitLocOpBuilder builder, ValueSet &valueSet,
-                     std::vector<InFlightDiagnostic> &diagsToEmit)
-      : builder(builder), valueSet(valueSet), diagsToEmit(diagsToEmit) {}
+                     std::vector<InFlightDiagnostic> &diagsToEmit,
+                     FuncTypeGeneratorType fnSignature)
+      : builder(builder), valueSet(valueSet), fnSignature(fnSignature),
+        diagsToEmit(diagsToEmit) {}
 
   /// This method indicates that the specified value needs to be destroyed after
   /// this operation.  If 'fieldsToDestroy' is non-empty then it specifies which
@@ -2320,6 +2384,9 @@ public:
 private:
   ValueSet &valueSet;
 
+  /// This is the signature of the current function we're emitting into.
+  FuncTypeGeneratorType fnSignature;
+
   /// This is a set of warnings to emit from this pass.  We buffer them and then
   /// emit them at the end of the pass, because dtor insertion is "bottom up"
   /// and we want to emit warnings in a "top down" manner.
@@ -2370,6 +2437,10 @@ void DestructorInserter::dump() const {
 /// to be deleted by the caller.
 DestructorInserter::DtorEmissionResult
 DestructorInserter::emitDestructors(Operation *opWithUse) {
+  // Exit if there is nothing to do.
+  if (valuesToDestroy.empty())
+    return DtorEmissionResult::KeepOp;
+
   // If this is a copy ctor call, we can do elision, which may subsume
   // one of our dtors that we need to emit.
   DtorEmissionResult removedOp = optimizeCopyDestroys(opWithUse);
@@ -2430,7 +2501,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
       if (info.debugVariable &&
           (consumedValues.empty() ||
            valueRef.getNumBits() == consumedValues.size()) &&
-          !valueSet.shouldSuppressDebugKill(info)) {
+          !valueSet.shouldSuppressDebugKill(info, fnSignature)) {
         DebugInfo::KillOp::create(builder, info.debugVariable);
       }
     }
@@ -2500,7 +2571,7 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
       ValueRef::getDereferencedType(value.getType(), valueRef.isIndirect);
 
   SpecialMemberInfo dtorInfo = valueSet.getTypeDeclInfo().getDestructorForType(
-      destroyedType, builder.getLoc());
+      destroyedType, fnSignature, builder.getLoc());
 
   // If there is no destructor, then this is either a trivial type or a
   // linear type.  If linear, emit the error message.
@@ -2667,7 +2738,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   // predictably generate an error message when an implicit destructor (such as
   // what we're processing in this code) is needed.
   auto dtorInfo = valueSet.getTypeDeclInfo().getDestructorForType(
-      cast<RefType>(copySrcMem.getType()).getElementType(),
+      cast<RefType>(copySrcMem.getType()).getElementType(), fnSignature,
       opWithUse->getLoc());
   if (dtorInfo.isUnavailable())
     return DtorEmissionResult::KeepOp;
@@ -3072,7 +3143,7 @@ struct DestructorInsertion {
     result.breakSet = existing.breakSet;
     result.continueSet = existing.continueSet;
     result.dryRun = existing.dryRun;
-    result.functionSignature = existing.functionSignature;
+    result.fnSignature = existing.fnSignature;
     return result;
   }
 
@@ -3112,7 +3183,7 @@ private:
   ValueSet &valueSet;
 
   /// This is the signature of the current function being analyzed.
-  FuncTypeGeneratorType functionSignature;
+  FuncTypeGeneratorType fnSignature;
 
   /// This is the set of values known to be used below this point, so they
   /// should not be destroyed if there are uses.  Any use of a value /not/ in
@@ -3177,7 +3248,7 @@ private:
 }
 
 void DestructorInsertion::scanFunction(FunctionLikeOp func) {
-  functionSignature = func.getFuncTypeGenerator();
+  fnSignature = func.getFuncTypeGenerator();
 
   consumedValues.resize(valueSet.getNumTotalBits());
   // Slot 0 indicates this block is reachable.  This will be cleared if an
@@ -3207,7 +3278,8 @@ void DestructorInsertion::scanFunction(FunctionLikeOp func) {
         loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
       ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
-      DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
+      DestructorInserter dtorInserter(builder, valueSet, diagsToEmit,
+                                      fnSignature);
       checkUse(argValue, /*isDeref=*/isIndirect, dtorInserter);
       dtorInserter.emitDestructors();
     }
@@ -3268,7 +3340,8 @@ void DestructorInsertion::scanBlock(Block &block) {
     // they are for values used by it.
     ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(),
                                  std::next(Block::iterator(&op)));
-    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
+    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit,
+                                    fnSignature);
 
     assert((resultEffects.size() == op.getNumResults() ||
             overall == OverallOpValueEffect::ifLikeOp) &&
@@ -3477,7 +3550,8 @@ void DestructorInsertion::checkIfLikeOp(
     // Insert any dtors after the 'if'.
     ImplicitLocOpBuilder builder(ifElseOp.getLoc(), ifElseOp.getBlock(),
                                  std::next(Block::iterator(&ifElseOp)));
-    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
+    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit,
+                                    fnSignature);
     for (auto [result, effect] :
          llvm::zip(ifElseOp.getResults(), resultEffects)) {
       switch (effect) {
@@ -3852,7 +3926,7 @@ void DestructorInsertion::checkConsume(Value value, Operation &op, bool isDeref,
     const ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
     if (info.debugVariable && valueRef.startBit == info.startValueBit &&
         valueRef.endBit == info.endValueBit &&
-        !valueSet.shouldSuppressDebugKill(info)) {
+        !valueSet.shouldSuppressDebugKill(info, fnSignature)) {
       DebugInfo::KillOp::create(builder, info.debugVariable);
     }
 
@@ -3945,7 +4019,8 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
   if (!valueSet.isTrivial(value, isDeref) && !dryRun) {
     // Destructor call goes ahead of the mutation, not after.
     ImplicitLocOpBuilder builder(op.getLoc(), &op);
-    DestructorInserter beforeDtorInserter(builder, valueSet, diagsToEmit);
+    DestructorInserter beforeDtorInserter(builder, valueSet, diagsToEmit,
+                                          fnSignature);
     beforeDtorInserter.add(value, /*Just do it*/ ValueRef(0, 0, 0, isDeref));
     beforeDtorInserter.emitDestructors();
   }
@@ -4240,7 +4315,8 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
 
   // Any dtor calls will be emitted at the start of the block.
   DestructorInserter dtorInserter(
-      ImplicitLocOpBuilder(loc, &block, block.begin()), valueSet, diagsToEmit);
+      ImplicitLocOpBuilder(loc, &block, block.begin()), valueSet, diagsToEmit,
+      fnSignature);
 
   int nextToDestroy = entriesToDestroy.find_first();
   while (nextToDestroy != -1) {

@@ -36,6 +36,11 @@ LogicalResult verifyAndBuildConformance(ASTDecl &structDecl,
 void canonicalizeTraitCompositionSymbols(
     SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols);
 
+/// Given a type expression and scope-level assumptions, compute the effective
+/// trait bound implied by any `conforms_to(type, Trait)` constraints.
+TraitType getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
+                                       ArrayRef<ConstraintAttr> assumptions);
+
 FnTypeGeneratorType specializeSignature(FnOp traitFn, ASTType newSelfType,
                                         DeclResolver &declResolver);
 

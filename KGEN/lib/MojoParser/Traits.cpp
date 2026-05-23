@@ -1107,6 +1107,16 @@ void LIT::canonicalizeTraitCompositionSymbols(
   sortAndDeduplicateSymbols(symbols);
 }
 
+TraitType
+LIT::getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
+                                  ArrayRef<ConstraintAttr> assumptions) {
+  return getTraitBoundFromAssumptions(
+      typeAttr, assumptions, [&](SymbolRefAttr symbol) -> TraitDeclOp {
+        ASTDecl &memberDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+        return cast<TraitDeclOp>(memberDecl.getIfOperation());
+      });
+}
+
 //===----------------------------------------------------------------------===//
 // IREmitter::emitMetaTypeToTraitConversion
 //===----------------------------------------------------------------------===//
