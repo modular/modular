@@ -37,6 +37,20 @@ This version is still a work in progress.
         return Pointer(to=b)
   ```
 
+- Types may now be conditionally "ImplicitlyDestructible" with a where clause.
+  Note you currently must implement a del method by hand, e.g.:
+
+  ```mojo
+  @explicit_destroy("Message when implicitly destroyed")
+  struct ConditionallyLinearType[T: AnyType](
+      ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible)
+  ):
+      var data: Self.T
+
+      def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDestructible):
+          self.data^.__del__()
+  ```
+
 ## Language changes
 
 - Support for "set-only" accessors has been removed. You need to define a
