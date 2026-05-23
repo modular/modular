@@ -21,7 +21,6 @@ for fast lookups. Each slot has a 1-byte control: EMPTY (0xFF), DELETED (0x80),
 or an h2 fingerprint (0x00-0x7F) derived from the top 7 bits of the hash.
 """
 
-from std.builtin.variadics import TypeList
 from std.bit import count_trailing_zeros, next_power_of_two
 from std.hashlib import Hasher, default_hasher
 from std.math import ceildiv
@@ -249,31 +248,6 @@ struct SwissTableEntry[
             The value of the entry.
         """
         return self.value^
-
-    comptime _pair_element_types = TypeList.of[Trait=AnyType, Self.K, Self.V]()
-
-    @always_inline
-    def __getitem_param__[idx: Int](ref self) -> ref[self] (Self._pair_element_types[idx]):
-        """Get a reference to the key or value using tuple-style indices.
-
-        Index ``0`` returns the key and index ``1`` returns the value. The
-        stored hash is not exposed through indexing (unlike struct field order).
-
-        Parameters:
-            idx: ``0`` for the key or ``1`` for the value.
-
-        Returns:
-            A reference to the key or value.
-        """
-        comptime assert idx == 0 or idx == 1, "index must be 0 (key) or 1 (value)"
-        # Physical layout is (hash, key, value); logical pair indices are 0 and 1.
-        comptime struct_field_idx = idx + 1
-        var storage_kgen_ptr = UnsafePointer(to=self).address
-        var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
-            index=struct_field_idx._int_mlir_index(),
-            _type=UnsafePointer[(Self._pair_element_types[idx])]._mlir_type,
-        ](storage_kgen_ptr)
-        return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[][]
 
 
 # ===-----------------------------------------------------------------------===#

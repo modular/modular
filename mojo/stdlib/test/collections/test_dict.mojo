@@ -364,35 +364,46 @@ def test_iter_items() raises:
     # _test_iter_bounds(dict.values(), len(dict))
 
 
-def test_dict_entry_tuple_indexing() raises:
-    """Phase-2 prototype: tuple-style [0]/[1] on items() entries without storage changes."""
+def test_dict_item_pairs_tuple_indexing() raises:
+    """Phase-2 prototype: Tuple pairs via item_pairs() without storage changes."""
     var dict: Dict[String, Int] = {"a": 1, "b": 2}
 
     var keys = String()
     var sum = 0
-    for entry in dict.items():
-        assert_equal(entry[0], entry.key)
-        assert_equal(entry[1], entry.value)
-        keys += entry[0]
-        sum += entry[1]
+    for pair in dict.item_pairs():
+        keys += pair[0]
+        sum += pair[1]
 
     assert_equal(keys, "ab")
     assert_equal(sum, 3)
 
 
-def test_dict_items_unpacking() raises:
-    """Whether ``for k, v in dict.items()`` works depends on compiler support."""
+def test_dict_item_pairs_unpacking() raises:
+    """Item_pairs supports ``for key, value in ...`` like Python dict.items()."""
     var dict: Dict[String, Int] = {"x": 10, "y": 20}
 
     var keys = String()
     var sum = 0
-    # If this fails to compile, keep entry[0]/entry[1] until loop unpacking lands.
-    for key, value in dict.items():
+    for key, value in dict.item_pairs():
         keys += key
         sum += value
 
-    assert_equal(len(keys), 2)
+    assert_equal(keys.byte_length(), 2)
     assert_equal(sum, 30)
+
+
+def test_dict_item_pairs_matches_items_order() raises:
+    var dict: Dict[String, Int] = {"a": 1, "b": 2, "c": 3}
+
+    var from_entries = String()
+    for entry in dict.items():
+        from_entries += entry.key + String(entry.value)
+
+    var from_pairs = String()
+    for key, value in dict.item_pairs():
+        from_pairs += key + String(value)
+
+    assert_equal(from_entries, from_pairs)
 
 
 def test_iter_take_items() raises:

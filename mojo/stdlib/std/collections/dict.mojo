@@ -451,6 +451,52 @@ struct _DictValueIter[
         return self.iter.bounds()
 
 
+struct _DictPairIter[
+    mut: Bool,
+    //,
+    K: KeyElement,
+    V: Copyable & ImplicitlyDestructible,
+    H: Hasher,
+    origin: Origin[mut=mut],
+](Copyable, ImplicitlyCopyable, Iterable, Iterator):
+    """Iterator over ``Tuple[K, V]`` pairs from a ``Dict``.
+
+    Uses a single ``_DictEntryIter`` pass so key and value are not borrowed
+    through two aliased iterators (unlike ``zip(keys(), values())``).
+
+    Parameters:
+        mut: Whether the reference to the dictionary is mutable.
+        K: The key type of the elements in the dictionary.
+        V: The value type of the elements in the dictionary.
+        H: The type of the hasher in the dictionary.
+        origin: The origin of the ``Dict``.
+    """
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime Element = Tuple[Self.K, Self.V]
+
+    var _entry_iter: _DictEntryIter[Self.K, Self.V, Self.H, Self.origin]
+
+    def __init__(
+        out self, ref[Self.origin] dict: Dict[Self.K, Self.V, Self.H]
+    ):
+        self._entry_iter = _DictEntryIter(0, 0, dict)
+
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        ref entry = self._entry_iter.__next__()
+        return Tuple(entry.key.copy(), entry.value.copy())
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        return self._entry_iter.bounds()
+
+
 # ===-----------------------------------------------------------------------===#
 # Dict
 # ===-----------------------------------------------------------------------===#
@@ -1309,12 +1355,43 @@ struct Dict[
         ```
 
         Notes:
-            Entries support tuple-style indexing with ``entry[0]`` (key) and
-            ``entry[1]`` (value). Attribute access via ``entry.key`` and
-            ``entry.value`` remains supported. Whether ``for key, value in
-            dict.items()`` unpacking works depends on compiler support.
+            Entries are ``DictEntry`` values (``SwissTableEntry``) with ``.key``
+            and ``.value`` fields. For Python-style ``Tuple[K, V]`` iteration
+            with ``pair[0]``, ``pair[1]``, and ``for key, value in ...``
+            unpacking, use [`item_pairs()`](#item_pairs).
         """
         return _DictEntryIter(0, 0, self)
+
+    def item_pairs(
+        ref self,
+    ) -> _DictPairIter[Self.K, Self.V, Self.H, origin_of(self)]:
+        """Iterate key-value pairs as ``Tuple[K, V]`` elements.
+
+        Returns:
+            An iterator that yields ``(key, value)`` tuples with indexing and
+            destructuring support.
+
+        Examples:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+
+        for key, value in my_dict.item_pairs():
+            print(key, value)
+
+        for pair in my_dict.item_pairs():
+            print(pair[0], pair[1])
+        ```
+
+        Notes:
+            This preserves Swiss-table storage (hash remains in the slot entry).
+            Order matches [`items()`](#items). Each step copies the key and
+            value into the tuple; benchmark before making this the default
+            ``items()`` implementation.
+        """
+        return _DictPairIter(self)
 
     def take_items(
         mut self,
