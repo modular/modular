@@ -16,7 +16,11 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from max.pipelines.architectures.kimik2_5.tokenizer import KimiK2_5VLTokenizer
+from max.pipelines.architectures.kimik2_5.tokenizer import (
+    KimiK2_5VLTokenizer,
+    _sanitize_kimi_schema_node,
+    _sanitize_kimi_tool_schemas,
+)
 from max.pipelines.modeling.types import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
@@ -225,3 +229,218 @@ class TestApplyChatTemplateWithTools:
         assert call_kwargs["tokenize"] is False
         # "thinking" should not be in kwargs if not provided
         assert "thinking" not in call_kwargs
+
+
+class TestSanitizeKimiSchemaNode:
+    """Tests for ``_sanitize_kimi_schema_node``.
+
+    Kimi K2.5's bundled HF tokenizer (``tool_declaration_ts.py``) only
+    recognizes ``$ref``, ``anyOf``, ``enum``, ``type``, and empty ``{}``
+    in JSON Schema. The sanitizer rewrites the two constructs Kimi
+    rejects:
+
+      * ``oneOf`` → ``anyOf``
+      * ``{"const": X}`` → ``{"enum": [X]}``
+
+    Without these rewrites Kimi's parser raises, the exception is
+    swallowed inside ``tokenization_kimi.py``, and the prompt is
+    rendered without the tool declaration — tool calling silently
+    fails for that request.
+    """
+
+    def test_one_of_rewritten_to_any_of(self) -> None:
+        schema = {"oneOf": [{"type": "string"}, {"type": "integer"}]}
+        assert _sanitize_kimi_schema_node(schema) == {
+            "anyOf": [{"type": "string"}, {"type": "integer"}]
+        }
+
+    def test_bare_const_rewritten_to_enum(self) -> None:
+        assert _sanitize_kimi_schema_node({"const": "end"}) == {"enum": ["end"]}
+
+    def test_const_with_explicit_enum_keeps_enum(self) -> None:
+        # If the user provided an explicit ``enum`` alongside ``const``
+        # the enum wins (it's at least as restrictive) and the const is
+        # dropped. JSON Schema treats them as equivalent for a singleton.
+        assert _sanitize_kimi_schema_node({"const": "a", "enum": ["a"]}) == {
+            "enum": ["a"]
+        }
+
+    def test_one_of_and_any_of_at_same_level_merged(self) -> None:
+        # When both combinators appear at the same level the branches
+        # are concatenated into a single ``anyOf`` so neither set is
+        # lost. The merge is a strict relaxation of ``oneOf``'s
+        # exclusive-OR semantics, which is fine for tool-call grammars
+        # that don't enforce branch exclusivity at the model side.
+        schema = {
+            "anyOf": [{"type": "string"}],
+            "oneOf": [{"type": "integer"}],
+        }
+        result = _sanitize_kimi_schema_node(schema)
+        assert result.keys() == {"anyOf"}
+        assert {b["type"] for b in result["anyOf"]} == {"string", "integer"}
+
+    def test_nested_one_of_inside_properties(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "value": {"oneOf": [{"type": "string"}, {"type": "integer"}]},
+            },
+            "required": ["value"],
+        }
+        assert _sanitize_kimi_schema_node(schema) == {
+            "type": "object",
+            "properties": {
+                "value": {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+            },
+            "required": ["value"],
+        }
+
+    def test_constructs_unsupported_by_kimi_tool_schema(self) -> None:
+        # The exact schema that triggered the production
+        # "Failed to convert tools to TypeScript style" error.
+        schema = {
+            "description": (
+                "Where to insert (default: end). Only for outline items."
+            ),
+            "oneOf": [
+                {"const": "end"},
+                {
+                    "properties": {"after": {"type": "string"}},
+                    "required": ["after"],
+                    "type": "object",
+                },
+                {
+                    "properties": {"index": {"minimum": 0, "type": "integer"}},
+                    "required": ["index"],
+                    "type": "object",
+                },
+            ],
+        }
+        result = _sanitize_kimi_schema_node(schema)
+        assert result["description"] == (
+            "Where to insert (default: end). Only for outline items."
+        )
+        assert "oneOf" not in result
+        # ``const`` branch was rewritten to ``enum``.
+        assert result["anyOf"][0] == {"enum": ["end"]}
+        # Object branches passed through unchanged.
+        assert result["anyOf"][1]["properties"]["after"] == {"type": "string"}
+        assert result["anyOf"][2]["properties"]["index"]["minimum"] == 0
+
+    def test_passthrough_when_no_rewrites_needed(self) -> None:
+        # Schemas using only Kimi-supported constructs should round-trip
+        # structurally identical (a new dict, but equal contents).
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer", "minimum": 0},
+                "color": {"enum": ["red", "green", "blue"]},
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        }
+        assert _sanitize_kimi_schema_node(schema) == schema
+
+    def test_primitives_pass_through_unchanged(self) -> None:
+        # The recursion bottoms out on non-dict/non-list values.
+        assert _sanitize_kimi_schema_node("string") == "string"
+        assert _sanitize_kimi_schema_node(42) == 42
+        assert _sanitize_kimi_schema_node(0.5) == 0.5
+        assert _sanitize_kimi_schema_node(True) is True
+        assert _sanitize_kimi_schema_node(None) is None
+
+    def test_lists_recursed_element_wise(self) -> None:
+        # A list value (e.g. ``anyOf`` branches or ``enum`` values) is
+        # walked element-by-element. Schema-shaped items get rewritten;
+        # literal values pass through.
+        assert _sanitize_kimi_schema_node(
+            [{"const": "a"}, {"const": "b"}, "literal"]
+        ) == [{"enum": ["a"]}, {"enum": ["b"]}, "literal"]
+
+    def test_empty_dict_returns_empty_dict(self) -> None:
+        assert _sanitize_kimi_schema_node({}) == {}
+
+    def test_deeply_nested_one_of(self) -> None:
+        # ``oneOf`` nested inside ``items`` nested inside ``properties``
+        # should still get rewritten at every depth.
+        schema = {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "oneOf": [
+                            {"const": "x"},
+                            {"type": "string"},
+                        ],
+                    },
+                },
+            },
+        }
+        result = _sanitize_kimi_schema_node(schema)
+        items = result["properties"]["tags"]["items"]
+        assert "oneOf" not in items
+        assert items["anyOf"] == [{"enum": ["x"]}, {"type": "string"}]
+
+
+class TestSanitizeKimiToolSchemas:
+    """Tests for the top-level ``_sanitize_kimi_tool_schemas`` wrapper.
+
+    Wraps :class:`TestSanitizeKimiSchemaNode` with the OpenAI tool
+    envelope: ``{"type": "function", "function": {"name": ..., "parameters": ...}}``.
+    Only ``function.parameters`` should be touched; everything else is
+    copied verbatim.
+    """
+
+    def test_none_passes_through(self) -> None:
+        assert _sanitize_kimi_tool_schemas(None) is None
+
+    def test_empty_list_passes_through(self) -> None:
+        assert _sanitize_kimi_tool_schemas([]) == []
+
+    def test_tool_envelope_preserved(self) -> None:
+        # ``type``, ``function.name``, ``function.description`` all
+        # round-trip; only ``parameters`` is sanitized.
+        tool = TextGenerationRequestTool(
+            type="function",
+            function={
+                "name": "lookup",
+                "description": "Look up a record",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"oneOf": [{"const": "id"}, {"type": "string"}]},
+                    },
+                    "required": ["key"],
+                },
+            },
+        )
+        result = _sanitize_kimi_tool_schemas([tool])
+        assert result is not None
+        assert len(result) == 1
+        sanitized = result[0]
+        assert sanitized["type"] == "function"
+        assert sanitized["function"]["name"] == "lookup"
+        assert sanitized["function"]["description"] == "Look up a record"
+        params = sanitized["function"]["parameters"]
+        assert "oneOf" not in params["properties"]["key"]
+        assert params["properties"]["key"]["anyOf"] == [
+            {"enum": ["id"]},
+            {"type": "string"},
+        ]
+
+    def test_tool_with_empty_parameters(self) -> None:
+        # A tool that defines no real parameters (e.g. ``get_time()``)
+        # should round-trip the empty schema cleanly.
+        tool = TextGenerationRequestTool(
+            type="function",
+            function={
+                "name": "now",
+                "description": "Returns the time",
+                "parameters": {},
+            },
+        )
+        result = _sanitize_kimi_tool_schemas([tool])
+        assert result is not None
+        assert result[0]["function"]["parameters"] == {}

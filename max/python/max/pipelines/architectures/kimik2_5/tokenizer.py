@@ -54,6 +54,76 @@ logger = logging.getLogger("max.pipelines")
 # Kimi K2.5 special token for image placeholder padding.
 _MEDIA_PAD_TOKEN = "<|media_pad|>"
 
+
+def _sanitize_kimi_tool_schemas(
+    tools: list[TextGenerationRequestTool] | None,
+) -> list[TextGenerationRequestTool] | None:
+    """Rewrite tool schemas to use only constructs Kimi's HF tokenizer supports.
+
+    The Kimi-bundled ``tool_declaration_ts.py:_parse_parameter_type``
+    only recognizes ``$ref``, ``anyOf``, ``enum``, ``type``, and ``{}``.
+    A tool schema containing ``oneOf`` or a bare ``{"const": X}`` makes
+    it raise ``ValueError``; ``tokenization_kimi.py`` then catches the
+    exception, prints a warning, and renders the prompt **without any
+    tool declarations**. Tool calling silently fails for that request
+    even though the server returned 200.
+
+    This function walks each tool's schema (any depth, all standard
+    JSON Schema combinator/container keys) and applies two
+    equivalence-preserving rewrites:
+
+      * ``oneOf`` → ``anyOf`` (concatenated if both keys are present).
+      * ``{"const": X}`` → ``{"enum": [X]}``.
+
+    For tool-call argument schemas these transforms preserve semantics:
+    JSON Schema defines ``const: X`` as exactly equivalent to
+    ``enum: [X]``, and a value that matches a ``oneOf`` branch also
+    matches the corresponding ``anyOf`` (the difference between the
+    combinators — exclusive vs. inclusive matching — is not enforced
+    by either Kimi's argument grammar or downstream tool runtimes).
+    """
+    if not tools:
+        return tools
+    return [
+        TextGenerationRequestTool(
+            type=tool["type"],
+            function={
+                **tool["function"],
+                "parameters": _sanitize_kimi_schema_node(
+                    tool["function"].get("parameters", {})
+                ),
+            },
+        )
+        for tool in tools
+    ]
+
+
+def _sanitize_kimi_schema_node(node: Any) -> Any:
+    """Recursive helper for :func:`_sanitize_kimi_tool_schemas`."""
+    if isinstance(node, dict):
+        out: dict[str, Any] = {}
+        any_of_branches: list[Any] = []
+        for key, value in node.items():
+            if key in ("oneOf", "anyOf"):
+                sanitized = _sanitize_kimi_schema_node(value)
+                if isinstance(sanitized, list):
+                    any_of_branches.extend(sanitized)
+                continue
+            if key == "const":
+                # Defer to the ``enum`` conversion below so an explicit
+                # ``enum`` wins if both are present.
+                continue
+            out[key] = _sanitize_kimi_schema_node(value)
+        if any_of_branches:
+            out["anyOf"] = any_of_branches
+        if "const" in node and "enum" not in node:
+            out["enum"] = [node["const"]]
+        return out
+    if isinstance(node, list):
+        return [_sanitize_kimi_schema_node(item) for item in node]
+    return node
+
+
 # Chat turn terminator. The HF tokenizer lists [EOS] as eos_token, but the
 # chat format ends assistant turns with <|im_end|>.  We need both in the
 # EOS set so generation stops.
@@ -183,6 +253,14 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
     ) -> str:
         """Applies the tokenizer's chat template to messages.
 
+        Tools are passed through :func:`_sanitize_kimi_tool_schemas` to
+        rewrite JSON Schema constructs that Kimi's HF tokenizer code
+        (``tool_declaration_ts.py``) does not recognize — without the
+        rewrite, tools containing ``oneOf`` or a bare ``{"const": X}``
+        cause the HF code to raise, swallow the exception, and render
+        the prompt with no tool declarations. The model then has no
+        idea those tools exist and silently fails to call them.
+
         Args:
             messages: List of messages for the chat template.
             tools: Optional tools available for the model to invoke.
@@ -200,7 +278,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         templated = self.delegate.apply_chat_template(
             [msg.model_dump(exclude_none=True) for msg in messages],
             tokenize=False,
-            tools=tools,
+            tools=_sanitize_kimi_tool_schemas(tools),
             **chat_template_options,
         )
         assert isinstance(templated, str)

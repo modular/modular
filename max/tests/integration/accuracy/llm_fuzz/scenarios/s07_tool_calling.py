@@ -14,7 +14,10 @@
 Scenarios: Tool calling attacks
 Target: Crashes from malformed tool definitions, empty args, huge schemas.
 Known issues: vLLM #19419 (empty args crash), #27641 (streaming divergence).
-Regression coverage: MXSERV-81 (JSON-string arguments in multi-turn tool calls)
+Regression coverage:
+- MXSERV-81 (JSON-string arguments in multi-turn tool calls).
+- Tool schemas containing ``oneOf`` / ``const`` that Kimi's HF
+  tokenizer cannot parse.
 """
 
 from __future__ import annotations
@@ -881,6 +884,84 @@ class ToolCallingAttacks(BaseScenario):
                 verdict,
                 status_code=resp.status,
                 detail=detail,
+            )
+        )
+
+        # ----- 12. Tool schemas with oneOf / const constructs -----
+        # A tool whose ``parameters`` contains ``oneOf`` or
+        # a bare ``{"const": X}`` makes Kimi's HF tokenizer code
+        # (``tool_declaration_ts.py:_parse_parameter_type``) raise.
+        # ``_sanitize_kimi_tool_schemas`` rewrites both
+        # constructs into Kimi-supported equivalents before forwarding
+        # to the delegate.
+        #
+        # End-to-end signal: with the sanitizer in place,
+        # ``tool_choice="required"`` should produce a valid tool call.
+        # Without it, ``message.content`` would be non-empty (prose
+        # explaining the answer) and ``tool_calls`` would be missing.
+        one_of_const_tool = {
+            "type": "function",
+            "function": {
+                "name": "place_item",
+                "description": "Place an item at a position in a list.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "item": {
+                            "type": "string",
+                            "description": "Name of the item to place.",
+                        },
+                        "position": {
+                            "description": (
+                                "Where to insert (default: end). The exact "
+                                "shape from the production bug: a oneOf "
+                                "containing a const literal alongside two "
+                                "object branches."
+                            ),
+                            "oneOf": [
+                                {"const": "end"},
+                                {
+                                    "type": "object",
+                                    "properties": {"after": {"type": "string"}},
+                                    "required": ["after"],
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "index": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                        }
+                                    },
+                                    "required": ["index"],
+                                },
+                            ],
+                        },
+                    },
+                    "required": ["item", "position"],
+                },
+            },
+        }
+        one_of_payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "Place the item 'apple' at the end of the list."
+                    ),
+                }
+            ],
+            "tools": [one_of_const_tool],
+            "tool_choice": "required",
+            "max_tokens": 256,
+        }
+        resp = await client.post_json(one_of_payload)
+        results.append(
+            _assert_required_clean(
+                "tool_schema_with_oneof_and_const",
+                resp.body,
+                resp.status,
             )
         )
 
