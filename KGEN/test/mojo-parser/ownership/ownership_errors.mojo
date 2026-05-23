@@ -651,7 +651,24 @@ struct ReducedStorage:
     def take[U: Movable](deinit self) -> U:
         abort()
 
+@explicit_destroy("This needs explicit destruction when T isn't linear")
+struct ConditionallyLinearType[T: AnyType](
+    ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible)
+):
+    #var data: Self.T
 
+    def __init__(out self): pass
+    def use(self): pass
+    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDestructible):
+        pass #self.data^.__del__()
+
+def testConditionallyLinearType():
+    var c = ConditionallyLinearType[String]()
+    c.use()
+
+    var d = ConditionallyLinearType[LinearType]()
+    # expected-error @+1 {{'d' abandoned without being explicitly destroyed: This needs explicit destruction when T isn't linear}}
+    d.use()
 
 
 # ===----------------------------------------------------------------------=== #
