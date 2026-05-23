@@ -15,12 +15,12 @@ import re
 import uuid
 from typing import Any
 
-from max.interfaces import (
+from max.pipelines.lib.tool_parsing import partial_tag_overlap, register
+from max.pipelines.modeling.types import (
     ParsedToolCall,
     ParsedToolCallDelta,
     ParsedToolResponse,
 )
-from max.pipelines.lib.tool_parsing import partial_tag_overlap, register
 
 # Gemma4 special tokens for tool calls
 TOOL_CALL_START = "<|tool_call>"

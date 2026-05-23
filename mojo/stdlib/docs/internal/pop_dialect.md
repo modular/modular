@@ -79,10 +79,10 @@ The pop dialect solves two problems in Mojo:
    integer size for compile time computations.
 
 5. `float_literal` - Arbitrary-precision float type for literals
-    The `!pop.float_literal` type is for use in arbitrary precision
-    compile time computations. They are implemented as infinite precision
-    rational number values. It can't be materialized, but allows for
-    arbitrary precision for compile time computations.
+   The `!pop.float_literal` type is for use in arbitrary precision
+   compile time computations. They are implemented as infinite precision
+   rational number values. It can't be materialized, but allows for
+   arbitrary precision for compile time computations.
 
 ### Type Conversions
 
@@ -107,11 +107,11 @@ The dialect provides various type conversion operations:
     ```
 
 - `cast_from_builtin` - Converts MLIR builtin types to POP types
-    The `pop.cast_from_builtin` operation casts an MLIR builtin type to a POP
-    type. If the types have the same underlying implementation, then this
-    operation is a no-op adaptor between two type systems. It can, for example,
-    cast an MLIR builtin integer or float type to a `!kgen.scalar`, or a 1-D
-    vector to `!kgen.simd`.
+  The `pop.cast_from_builtin` operation casts an MLIR builtin type to a POP
+  type. If the types have the same underlying implementation, then this
+  operation is a no-op adaptor between two type systems. It can, for example,
+  cast an MLIR builtin integer or float type to a `!kgen.scalar`, or a 1-D
+  vector to `!kgen.simd`.
 
     Example:
 
@@ -140,10 +140,10 @@ The dialect provides various type conversion operations:
     ```
 
 - `bitcast` - Performs bitwise reinterpretation between types
-    Bitcast an integer or floating point value to an integer or floating point
-    value of equal bit width. The bitcast operation should not be used to cast
-    between pointer types. For conversion between pointer types one should use
-    `pop.pointer.bitcast`.
+  Bitcast an integer or floating point value to an integer or floating point
+  value of equal bit width. The bitcast operation should not be used to cast
+  between pointer types. For conversion between pointer types one should use
+  `pop.pointer.bitcast`.
 
     Example:
 

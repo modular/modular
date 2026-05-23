@@ -44,7 +44,6 @@ from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import (
     Coord,
     Idx,
-    RuntimeInt,
     TileTensor,
     row_major,
 )
@@ -104,19 +103,15 @@ def _test_kernel_impl[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    var a_shape = row_major(
-        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[1]]())
-    )
+    var a_shape = row_major(Coord(Int(total_num_tokens), Idx[expert_shape[1]]))
     var b_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[expert_shape[0]](),
-            Idx[expert_shape[1]](),
+            Idx[num_experts],
+            Idx[expert_shape[0]],
+            Idx[expert_shape[1]],
         )
     )
-    var c_shape = row_major(
-        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[0]]())
-    )
+    var c_shape = row_major(Coord(Int(total_num_tokens), Idx[expert_shape[0]]))
 
     var a_size = total_num_tokens * K
     var b_size = num_experts * expert_shape[0] * expert_shape[1]
@@ -140,7 +135,7 @@ def _test_kernel_impl[
         a_offsets_device,
         row_major(
             Coord(
-                Idx(Int(num_active_experts + 1)),
+                Int(num_active_experts + 1),
             )
         ),
     )
@@ -153,7 +148,7 @@ def _test_kernel_impl[
         expert_ids_device,
         row_major(
             Coord(
-                Idx(Int(num_active_experts)),
+                Int(num_active_experts),
             )
         ),
     )
@@ -164,7 +159,7 @@ def _test_kernel_impl[
         a_scale_offsets_device,
         row_major(
             Coord(
-                Idx(Int(num_active_experts)),
+                Int(num_active_experts),
             )
         ),
     )
@@ -179,7 +174,7 @@ def _test_kernel_impl[
         expert_scales_device,
         row_major(
             Coord(
-                Idx[num_experts](),
+                Idx[num_experts],
             )
         ),
     )
@@ -213,21 +208,21 @@ def _test_kernel_impl[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
-            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Int(a_scale_dim0),
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[num_experts],
+            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -256,13 +251,11 @@ def _test_kernel_impl[
     if simple_init():
         for m in range(M):
             for k in range(K):
-                a_host[(Idx(m), Idx(k))] = random_ui64(0, 1).cast[a_type]()
+                a_host[m, k] = random_ui64(0, 1).cast[a_type]()
         for e in range(num_experts):
             for n in range(N):
                 for k in range(K):
-                    b_host[(Idx(e), Idx(n), Idx(k))] = random_ui64(0, 1).cast[
-                        b_type
-                    ]()
+                    b_host[e, n, k] = random_ui64(0, 1).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements())
         rand(b_host.ptr, b_host.num_elements())
@@ -312,11 +305,11 @@ def _test_kernel_impl[
             b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -414,11 +407,11 @@ def _test_kernel_impl[
             a_scales_device,
             row_major(
                 Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Int64(a_scale_dim0),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()
@@ -426,12 +419,12 @@ def _test_kernel_impl[
             b_scales_device,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[num_experts],
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()
@@ -439,7 +432,7 @@ def _test_kernel_impl[
             expert_scales_device,
             row_major(
                 Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
+                    Int64(num_experts),
                 )
             ),
         ).as_any_origin()
@@ -486,28 +479,28 @@ def _test_kernel_impl[
 
         var c_slice = TileTensor(
             c_ref_tensor.ptr + start * c_row_stride,
-            row_major((Idx(end - start), Idx[expert_shape[0]]())),
+            row_major((end - start, Idx[expert_shape[0]])),
         )
 
         var new_a_tensor = TileTensor(
             a_tensor.ptr + start * a_row_stride,
-            row_major((Idx(end - start), Idx[expert_shape[1]]())),
+            row_major((end - start, Idx[expert_shape[1]])),
         )
 
         var new_b_tensor = TileTensor(
             b_tensor.ptr + Int(expert_id) * b_expert_stride,
-            row_major((Idx[expert_shape[0]](), Idx[expert_shape[1]]())),
+            row_major((Idx[expert_shape[0]], Idx[expert_shape[1]])),
         )
 
         var new_b_scales_tensor = TileTensor(
             b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -519,11 +512,11 @@ def _test_kernel_impl[
             a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
-                    Idx(ceildiv(end - start, SF_MN_GROUP_SIZE)),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    ceildiv(end - start, SF_MN_GROUP_SIZE),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )

@@ -13,9 +13,10 @@
 
 """Shared utilities for MO interpreter Mojo kernel wrappers."""
 
-from std.python import PythonObject
-from std.memory import OpaquePointer
 from std.algorithm.functional import IndexList
+from std.gpu.host import DeviceContext
+from std.memory import OpaquePointer
+from std.python import PythonObject
 from std.sys.info import has_apple_gpu_accelerator
 
 
@@ -54,11 +55,11 @@ def _make_ptr[
 
 def _get_ctx(
     device_context_ptr: PythonObject,
-) raises -> Optional[OpaquePointer[MutExternalOrigin]]:
+) raises -> DeviceContext:
     var addr = Int(py=device_context_ptr)
-    if addr == 0:
-        return None
-    return OpaquePointer[MutExternalOrigin](unsafe_from_address=addr)
+    return DeviceContext(
+        OpaquePointer[MutExternalOrigin](unsafe_from_address=addr)
+    )
 
 
 trait Dispatchable:

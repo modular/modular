@@ -222,15 +222,15 @@ def dispatch_sm100_conv2d[
 
         var act_tt = TileTensor(
             input.ptr,
-            row_major(Idx(batch), Idx(in_h), Idx(in_w), Idx(in_c)),
+            row_major(batch, in_h, in_w, in_c),
         )
         var filter_tt = TileTensor(
             filter_krsc_ptr,
-            row_major(Idx(out_c), Idx(fh), Idx(fw), Idx(in_c)),
+            row_major(out_c, fh, fw, in_c),
         )
         var out_tt = TileTensor(
             output.ptr,
-            row_major(Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c)),
+            row_major(batch, out_h, out_w, out_c),
         )
 
         # Pick activation/filter swizzle based on C_in alignment. SWIZZLE_128B
@@ -256,7 +256,7 @@ def dispatch_sm100_conv2d[
                 var src_tt = TileTensor(
                     # SAFETY: set when has_residual == True
                     source_ptr.unsafe_value(),
-                    row_major(Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c)),
+                    row_major(batch, out_h, out_w, out_c),
                 )
                 conv2d_fprop_with_residual[
                     config=config,

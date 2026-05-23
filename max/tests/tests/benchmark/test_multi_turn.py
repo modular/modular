@@ -540,3 +540,32 @@ def test_concurrent_turns_driver_expired_deadline_cancels_without_calling_base()
 
     assert output_cls.call_args.kwargs["cancelled"] is True
     mock_driver.request.assert_not_called()
+
+
+def test_chat_session_driver_stops_when_inter_turn_delay_exceeds_deadline() -> (
+    None
+):
+    """When an inter-turn delay would land past the deadline, the driver
+    breaks instead of sleeping and dispatching another turn."""
+
+    async def run() -> tuple[list[RequestFuncOutput], float]:
+        session = _make_4turn_session(prefix_turns=0, delay_ms=60000.0)
+        counter = RequestCounter(max_requests=100)
+        driver = _CapturingDriver()
+        deadline_ns = time.perf_counter_ns() + int(0.05 * 1e9)
+        start = time.perf_counter()
+        outputs = await chat_session_driver(
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=driver,
+            request_counter=counter,
+            chat_session=session,
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            benchmark_should_end_time=deadline_ns,
+        )
+        return outputs, time.perf_counter() - start
+
+    outputs, elapsed = asyncio.run(run())
+    assert len(outputs) == 1
+    assert elapsed < 1.0

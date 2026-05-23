@@ -489,7 +489,7 @@ def variance(src: TileTensor, correction: Int = 1) raises -> Scalar[src.dtype]:
     def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
-        var src_idx = src.layout(Idx(idx))
+        var src_idx = src.layout(idx)
         return rebind[SIMD[dtype_, width]](src.raw_load[width=width](src_idx))
 
     return reduction.variance[src.dtype, input_fn_1d](
@@ -518,7 +518,7 @@ def mean(src: TileTensor) raises -> Scalar[src.dtype]:
     def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
-        var src_idx = src.layout(Idx(idx))
+        var src_idx = src.layout(idx)
         return rebind[SIMD[dtype_, width]](src.raw_load[width=width](src_idx))
 
     return reduction.mean[src.dtype, input_fn_1d](src.num_elements())

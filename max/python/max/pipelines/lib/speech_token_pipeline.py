@@ -20,13 +20,13 @@ import numpy as np
 from max.driver import Buffer, DeviceStream
 from max.engine import Model
 from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.interfaces import (
+from max.pipelines.core import TTSContext
+from max.pipelines.modeling.types import (
     BatchLogitsProcessor,
     PipelineTokenizer,
     RequestID,
     TextGenerationOutput,
 )
-from max.pipelines.core import TTSContext
 from max.profiler import Tracer, traced
 
 from .interfaces import PipelineModel

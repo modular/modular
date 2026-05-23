@@ -51,7 +51,7 @@ class CUDAGraphTests:
 
     DEVICE: ClassVar[Device]
 
-    def _single_gpu_model(self) -> CompiledModel:
+    def _single_gpu_model(self) -> CompiledModel[[Tensor], Tensor]:
         """Compiles a simple linear model on a single GPU."""
         device = self.DEVICE
         device_ref = DeviceRef(device.label, device.id)

@@ -46,7 +46,7 @@ async def parse_request_generic(
 
     .. code-block:: python
 
-        from max.interfaces import OpenResponsesRequest
+        from max.pipelines.modeling.types import OpenResponsesRequest
         parsed = await parse_request_generic(request, OpenResponsesRequest)
 
     Args:
@@ -94,7 +94,7 @@ def create_request_parser(
     .. code-block:: python
 
         from fastapi import Depends
-        from max.interfaces import OpenResponsesRequest
+        from max.pipelines.modeling.types import OpenResponsesRequest
 
         ParseOpenResponses = Depends(
             create_request_parser(OpenResponsesRequest)

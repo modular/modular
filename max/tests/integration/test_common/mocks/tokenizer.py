@@ -18,12 +18,12 @@ import string
 from collections.abc import Sequence
 
 import numpy as np
-from max.interfaces import (
+from max.pipelines.core import TextContext
+from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TextGenerationRequest,
     TokenBuffer,
 )
-from max.pipelines.core import TextContext
 
 
 class MockTextTokenizer(

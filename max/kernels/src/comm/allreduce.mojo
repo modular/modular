@@ -696,7 +696,7 @@ def _allreduce_2stage_kernel[
         # TODO(KERN-2273): Remove this once temporary buffers removed
         # Output lambda for reduce-scatter: write to scratch buffer
         var tmp_buff = TileTensor[mut=True, dtype](
-            tmp_out, row_major(Idx(rs_config.rank_part(my_rank)))
+            tmp_out, row_major(rs_config.rank_part(my_rank))
         )
 
         @always_inline
@@ -719,7 +719,7 @@ def _allreduce_2stage_kernel[
         var elem_start = rs_config.rank_start(my_rank)
         var n_elements = rs_config.rank_num_elements(my_rank)
         comptime SlicedTile = TileTensor[dtype, SlicedLayout, ImmutAnyOrigin]
-        comptime SlicedLayout = type_of(row_major(Idx(n_elements)))
+        comptime SlicedLayout = type_of(row_major(n_elements))
         var sliced_tiles = InlineArray[SlicedTile, num_tensors](
             uninitialized=True
         )
@@ -730,7 +730,7 @@ def _allreduce_2stage_kernel[
                 my_rank, i
             )
             sliced_tiles[i] = SlicedTile(
-                src_tensors[target].ptr + elem_start, row_major(Idx(n_elements))
+                src_tensors[target].ptr + elem_start, row_major(n_elements)
             )
 
         _reduce_scatter_impl[
@@ -809,9 +809,7 @@ def _allreduce_1stage_reduce_store_one[
     var accum = (
         ptrs[0]
         .address_space_cast[_target_address_space]()
-        .load[width=1, alignment=scalar_align, invariant=True](
-            Coord(Idx(elem_idx))
-        )
+        .load[width=1, alignment=scalar_align, invariant=True](Coord(elem_idx))
         .cast[accum_type]()
     )
     comptime for gpu_idx in range(1, num_tensors):
@@ -819,7 +817,7 @@ def _allreduce_1stage_reduce_store_one[
             ptrs[gpu_idx]
             .address_space_cast[_target_address_space]()
             .load[width=1, alignment=scalar_align, invariant=True](
-                Coord(Idx(elem_idx))
+                Coord(elem_idx)
             )
             .cast[accum_type]()
         )
@@ -1017,7 +1015,7 @@ def _allreduce_p2p[
         )
 
     # Flatten inputs to 1D - allreduce does not need dimension info
-    comptime FlatLayout = type_of(row_major(Idx(num_elements)))
+    comptime FlatLayout = type_of(row_major(num_elements))
     comptime FlatIn = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
     var flat_inputs = InlineArray[FlatIn, num_tensors](uninitialized=True)
     comptime for i in range(num_tensors):
@@ -1025,7 +1023,7 @@ def _allreduce_p2p[
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                 list_of_in_tensors[i].ptr
             ),
-            row_major(Idx(num_elements)),
+            row_major(num_elements),
         )
 
     var max_num_blocks = dispatch_config.num_blocks

@@ -245,28 +245,22 @@ def run_test_paged_prefill[
     # ------------------------------------------------------------------
     var q_device = TileTensor(
         q_device_buf,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_buf,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var v_device = TileTensor(
         v_device_buf,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var output_device = TileTensor(
         output_device_buf,
-        row_major(
-            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
     )
-    var input_ro_tt = TileTensor(input_ro_buf, row_major(Idx(batch_size + 1)))
-    var cache_ro_tt = TileTensor(cache_ro_buf, row_major(Idx(batch_size + 1)))
+    var input_ro_tt = TileTensor(input_ro_buf, row_major(batch_size + 1))
+    var cache_ro_tt = TileTensor(cache_ro_buf, row_major(batch_size + 1))
 
     # ------------------------------------------------------------------
     # Step 6: Build the PagedKVCacheCollection for K_rope.
@@ -417,27 +411,19 @@ def run_test_paged_prefill[
 
     var q_device_rank4 = TileTensor(
         q_device_buf,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_ref_device = TileTensor(
         k_ref_device_buf,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var v_ref_device = TileTensor(
         v_ref_device_buf,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var output_ref_device = TileTensor(
         output_ref_device_buf,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     var null_valid_length = LayoutTensor[

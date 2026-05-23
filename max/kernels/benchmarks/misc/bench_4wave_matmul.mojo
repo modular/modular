@@ -349,10 +349,10 @@ def bench_matmul[
         var a_host_ptr = ScalarArray[a_type](count=cb_a.alloc_size())
         var b_host_ptr = ScalarArray[a_type](count=cb_b.alloc_size())
         var a_host = TileTensor(
-            a_host_ptr.unsafe_ptr(), row_major(Idx(cb_a.alloc_size()))
+            a_host_ptr.unsafe_ptr(), row_major(cb_a.alloc_size())
         )
         var b_host = TileTensor(
-            b_host_ptr.unsafe_ptr(), row_major(Idx(cb_b.alloc_size()))
+            b_host_ptr.unsafe_ptr(), row_major(cb_b.alloc_size())
         )
 
         comptime if a_type.is_float8():
@@ -451,9 +451,7 @@ def bench_matmul[
         def normal_elementwise_epilogue[
             dtype: DType, width: Int, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-            tensor_c.store[width=width](
-                (Idx(idx[0]), Idx(idx[1])), val.cast[c_type]()
-            )
+            tensor_c.store[width=width]((idx[0], idx[1]), val.cast[c_type]())
 
         comptime optional_normal_lambda_fn = Optional[
             elementwise_epilogue_type
@@ -533,8 +531,8 @@ def create_matmul_bench[
     run_benchmark: Bool,
 ) raises:
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
 
     bench_matmul[
@@ -595,9 +593,9 @@ def main() raises:
         ](
             ctx,
             m,
-            Idx(M),
-            Idx[N](),
-            Idx[K](),
+            M,
+            Idx[N],
+            Idx[K],
             init_type,
             verify,
             run_benchmark=run_benchmark,

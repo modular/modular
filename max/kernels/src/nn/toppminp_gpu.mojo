@@ -811,7 +811,7 @@ def _topp_minp_sampling_gpu[
     var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
     var input_probs = TileTensor(
         probs_buf,
-        row_major(Idx(batch_size), Idx(vocab_size)),
+        row_major(batch_size, vocab_size),
     )
 
     _softmax_gpu[

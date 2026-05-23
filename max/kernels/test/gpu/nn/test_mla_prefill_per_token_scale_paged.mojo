@@ -444,9 +444,9 @@ def run_test_paged_prefill_per_token_scale[
         q_nope_device_buf,
         row_major(
             (
-                Idx(batch_size * seq_len_padded),
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                batch_size * seq_len_padded,
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
@@ -454,37 +454,37 @@ def run_test_paged_prefill_per_token_scale[
         q_rope_device_buf,
         row_major(
             (
-                Idx(batch_size * seq_len_padded),
-                Idx[num_heads](),
-                Idx[(depth - kv_depth)](),
+                batch_size * seq_len_padded,
+                Idx[num_heads],
+                Idx[(depth - kv_depth)],
             )
         ),
     )
     var q_scale_device = TileTensor(
         q_scale_device_buf,
-        row_major((Idx(batch_size * seq_len_padded), Idx[1]())),
+        row_major((batch_size * seq_len_padded, Idx[1])),
     )
     var k_device = TileTensor(
         k_device_buf,
         row_major(
             (
-                Idx(batch_size * num_keys_padded),
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                batch_size * num_keys_padded,
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
     var k_scale_device = TileTensor(
         k_scale_device_buf,
-        row_major((Idx(batch_size * num_keys_padded), Idx[1]())),
+        row_major((batch_size * num_keys_padded, Idx[1])),
     )
     var v_device = TileTensor(
         v_device_buf,
         row_major(
             (
-                Idx(batch_size * num_keys_padded),
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                batch_size * num_keys_padded,
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
@@ -492,14 +492,14 @@ def run_test_paged_prefill_per_token_scale[
         output_device_buf,
         row_major(
             (
-                Idx(batch_size * seq_len_padded),
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                batch_size * seq_len_padded,
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
-    var input_ro_tt = TileTensor(input_ro_buf, row_major(Idx(batch_size + 1)))
-    var cache_ro_tt = TileTensor(cache_ro_buf, row_major(Idx(batch_size + 1)))
+    var input_ro_tt = TileTensor(input_ro_buf, row_major(batch_size + 1))
+    var cache_ro_tt = TileTensor(cache_ro_buf, row_major(batch_size + 1))
 
     # ------------------------------------------------------------------
     # Step 7: Build the PagedKVCacheCollection for K_rope. UNLIKE the
@@ -713,10 +713,10 @@ def run_test_paged_prefill_per_token_scale[
         q_ref_device_buf,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len_padded),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                seq_len_padded,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -724,10 +724,10 @@ def run_test_paged_prefill_per_token_scale[
         k_ref_device_buf,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys_padded),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys_padded,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -735,10 +735,10 @@ def run_test_paged_prefill_per_token_scale[
         v_ref_device_buf,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys_padded),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys_padded,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -746,10 +746,10 @@ def run_test_paged_prefill_per_token_scale[
         output_ref_device_buf,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len_padded),
-                Idx[num_heads](),
-                Idx[depth](),
+                batch_size,
+                seq_len_padded,
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )

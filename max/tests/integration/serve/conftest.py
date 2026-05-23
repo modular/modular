@@ -20,18 +20,18 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
-from max.interfaces import (
-    PipelineTask,
-    RequestID,
-    TextGenerationInputs,
-    TextGenerationOutput,
-)
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
     PipelineRuntimeConfig,
+)
+from max.pipelines.modeling.types import (
+    PipelineTask,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
 )
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import Settings

@@ -125,7 +125,9 @@ def memcpy_or_fuse[
         # We must run scalar to be conservative. This is because the fused
         # output lambda might operate on views (e.g., broadcast) that does not
         # always work with indices produced from a linearized address.
-        elementwise[epilogue_wrapper, simd_width=1](shape_1d)
+        elementwise[epilogue_wrapper, simd_width=1](
+            shape_1d, DeviceContext(api="cpu")
+        )
 
 
 @fieldwise_init
@@ -1019,11 +1021,12 @@ def _fused_concat_cpu[
             )
 
         # TODO: we can use simd_width > 0 if all inputs are aligned.
+        var device_ctx = ctx.value() if ctx else DeviceContext(api="cpu")
         elementwise[
             elementwise_wrapper,
             1,
             _trace_description="concat_fused",
-        ](input_shape, ctx)
+        ](input_shape, device_ctx)
         offset = offset + input_shape[axis]
 
 

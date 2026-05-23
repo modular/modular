@@ -23,7 +23,14 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from layout import TileTensor, TensorLayout, Idx, row_major, stack_allocation
+from layout import (
+    Coord,
+    TileTensor,
+    TensorLayout,
+    Idx,
+    row_major,
+    stack_allocation,
+)
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -162,7 +169,7 @@ def sgemm_warp_tiling_kernel[
                 bb_ptr + (inner_row_b + offset) * N + inner_co_ib * 4
             )
             b_sram.store[alignment=16](
-                (Idx((inner_row_b + offset) * BN + inner_co_ib * 4),),
+                ((inner_row_b + offset) * BN + inner_co_ib * 4,),
                 tmp,
             )
 
@@ -173,31 +180,27 @@ def sgemm_warp_tiling_kernel[
             comptime for w_sub_row_idx in range(WMITER):
                 comptime for i in range(0, TM, 4):
                     var vec = a_sram.load[width=4, alignment=16](
-                        (
-                            Idx(
-                                (dot_idx * BM_padded)
-                                + warp_row * WM
-                                + w_sub_row_idx * w_sub_m
-                                + thread_row_in_warp * TM
-                                + i
-                            ),
+                        Coord(
+                            (dot_idx * BM_padded)
+                            + warp_row * WM
+                            + w_sub_row_idx * w_sub_m
+                            + thread_row_in_warp * TM
+                            + i
                         )
                     )
-                    reg_m.store((Idx(w_sub_row_idx), Idx(i)), vec)
+                    reg_m.store((w_sub_row_idx, i), vec)
 
             comptime for w_sub_col_idx in range(WNITER):
                 comptime for i in range(0, TN, 4):
                     var vec = b_sram.load[width=4, alignment=16](
-                        (
-                            Idx(
-                                (dot_idx * BN)
-                                + warp_col * WN
-                                + w_sub_col_idx * w_sub_n
-                                + thread_col_in_warp * TN
-                            ),
+                        Coord(
+                            (dot_idx * BN)
+                            + warp_col * WN
+                            + w_sub_col_idx * w_sub_n
+                            + thread_col_in_warp * TN
                         )
                     )
-                    reg_n.store((Idx(w_sub_col_idx), Idx(i)), vec)
+                    reg_n.store((w_sub_col_idx, i), vec)
 
             # Execute warptile matmul.
             comptime for w_sub_row_idx in range(WMITER):
@@ -233,10 +236,10 @@ def sgemm_warp_tiling_kernel[
                     var c_idx = M_offset_val * N + N_offset_val
                     var result_vec = thread_results.load[width=4](
                         (
-                            Idx(w_sub_row_idx),
-                            Idx(w_sub_col_idx),
-                            Idx(res_idx_m),
-                            Idx(res_idx_n),
+                            w_sub_row_idx,
+                            w_sub_col_idx,
+                            res_idx_m,
+                            res_idx_n,
                         )
                     )
 

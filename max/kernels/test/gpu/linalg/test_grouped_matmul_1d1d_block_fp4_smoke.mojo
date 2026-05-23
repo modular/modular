@@ -21,7 +21,7 @@ from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -155,44 +155,32 @@ def _test_grouped_1d1d_block_fp4_impl[
     # Construct TileTensors directly from pointers and layouts
     var a_tt = TileTensor(
         a_buf,
-        row_major(Coord(Idx(Int(total_tokens)), Idx[packed_K]())),
+        row_major(Coord(Int(total_tokens), Idx[packed_K])),
     )
     var b_tt = TileTensor(
         b_buf,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
     )
     var c_tt = TileTensor(
         c_buf,
-        row_major(Coord(Idx(Int(total_tokens)), Idx[N]())),
+        row_major(Coord(Int(total_tokens), Idx[N])),
     )
     var a_offsets_tt = TileTensor(
         a_off_buf,
-        row_major(
-            Idx(
-                Int(num_active_experts + 1),
-            )
-        ),
+        row_major((Int(num_active_experts + 1),)),
     )
     var a_scale_offsets_tt = TileTensor(
         a_soff_buf,
-        row_major(
-            Idx(
-                Int(num_active_experts),
-            )
-        ),
+        row_major((Int(num_active_experts),)),
     )
     var expert_ids_tt = TileTensor(
         eid_buf,
-        row_major(
-            Idx(
-                Int(num_active_experts),
-            )
-        ),
+        row_major((Int(num_active_experts),)),
     )
     var expert_scales_tt = TileTensor(
         es_buf,
         row_major(
-            Idx[num_experts](),
+            Idx[num_experts],
         ),
     )
 
@@ -201,11 +189,11 @@ def _test_grouped_1d1d_block_fp4_impl[
         a_sf_buf,
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Int64(a_scale_dim0),
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -213,12 +201,12 @@ def _test_grouped_1d1d_block_fp4_impl[
         b_sf_buf,
         row_major(
             Coord(
-                Idx[num_experts](),
-                Idx[n_groups](),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[num_experts],
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -386,42 +374,42 @@ def _test_grouped_1d1d_mixed_experts[
 
     var a_tt = TileTensor(
         a_buf.unsafe_ptr(),
-        row_major(Coord(Idx(Int(total_tokens)), Idx[packed_K]())),
+        row_major(Coord(Int(total_tokens), Idx[packed_K])),
     )
     var b_tt = TileTensor(
         b_buf.unsafe_ptr(),
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
     )
     var c_tt = TileTensor(
         c_buf.unsafe_ptr(),
-        row_major(Coord(Idx(Int(total_tokens)), Idx[N]())),
+        row_major(Coord(Int(total_tokens), Idx[N])),
     )
     var a_offsets_tt = TileTensor(
         a_off_buf.unsafe_ptr(),
-        row_major(Idx(Int(num_active_experts + 1))),
+        row_major(Int(num_active_experts + 1)),
     )
     var a_scale_offsets_tt = TileTensor(
         a_soff_buf.unsafe_ptr(),
-        row_major(Idx(Int(num_active_experts))),
+        row_major(Int(num_active_experts)),
     )
     var expert_ids_tt = TileTensor(
         eid_buf.unsafe_ptr(),
-        row_major(Idx(Int(num_active_experts))),
+        row_major(Int(num_active_experts)),
     )
     var expert_scales_tt = TileTensor(
         es_buf.unsafe_ptr(),
-        row_major(Idx[num_experts]()),
+        row_major(Idx[num_experts]),
     )
 
     var a_scales_tt = TileTensor(
         a_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Int64(a_scale_dim0),
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -429,12 +417,12 @@ def _test_grouped_1d1d_mixed_experts[
         b_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
         row_major(
             Coord(
-                Idx[num_experts](),
-                Idx[n_groups](),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[num_experts],
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()

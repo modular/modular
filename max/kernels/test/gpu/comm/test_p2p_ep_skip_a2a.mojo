@@ -71,7 +71,7 @@ def test_skip_a2a[
     comptime shared_expert_offset = 1 if fused_shared_expert else 0
 
     comptime output_layout = row_major(
-        (Idx[max_recv_num_tokens](), Idx[hidden_size]())
+        (Idx[max_recv_num_tokens], Idx[hidden_size])
     )
     comptime token_fmt_type = BF16TokenFormat[
         output_layout=type_of(output_layout), hidden_size, top_k
@@ -158,14 +158,14 @@ def test_skip_a2a[
     # fmt: on
 
     # --- Layouts ---
-    var topk_ids_layout = row_major(Idx(n_tokens), Idx[top_k]())
-    var input_tokens_layout = row_major((Idx(n_tokens), Idx[hidden_size]()))
+    var topk_ids_layout = row_major(n_tokens, Idx[top_k])
+    var input_tokens_layout = row_major((n_tokens, Idx[hidden_size]))
     var row_offsets_layout = row_major[
         n_local_experts + 1 + shared_expert_offset
     ]()
     var expert_ids_layout = row_major[n_local_experts + shared_expert_offset]()
-    var src_info_layout = row_major((Idx[max_recv_num_tokens](), Idx[2]()))
-    var combine_output_layout = row_major((Idx(n_tokens), Idx[hidden_size]()))
+    var src_info_layout = row_major((Idx[max_recv_num_tokens], Idx[2]))
+    var combine_output_layout = row_major((n_tokens, Idx[hidden_size]))
     comptime counters_size = EPLocalSyncCounters[n_local_experts].total_size()
     var counters_layout = row_major[counters_size]()
 
@@ -193,7 +193,7 @@ def test_skip_a2a[
     )
 
     # --- Router weights wrapper (captures TileTensor for GPU-side use) ---
-    var router_weights_layout = row_major((Idx(n_tokens), Idx[top_k]()))
+    var router_weights_layout = row_major((n_tokens, Idx[top_k]))
     var router_weights_tt = TileTensor(
         device_router_weights_buf, router_weights_layout
     )
@@ -204,7 +204,7 @@ def test_skip_a2a[
     def router_weights_fn[
         width: Int
     ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
-        var w = router_weights_tt.load[width=1]((Idx(token_idx), Idx(topk_id)))
+        var w = router_weights_tt.load[width=1]((token_idx, topk_id))
         return SIMD[DType.float32, width](w)
 
     # --- Run fused dispatch ---

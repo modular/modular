@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
 from max.pipelines.architectures.llama3 import weight_adapters
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
 )
+from max.pipelines.modeling.types import PipelineTask
 
 from .model import Qwen3EmbeddingModel
 from .model_config import Qwen3EmbeddingConfig

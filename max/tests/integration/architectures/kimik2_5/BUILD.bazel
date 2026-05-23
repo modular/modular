@@ -27,9 +27,9 @@ modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("llguidance"),
     ],
 )
@@ -52,7 +52,7 @@ modular_py_test(
     name = "test_tokenizer",
     srcs = ["test_tokenizer.py"],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/modeling",
     ],
 )

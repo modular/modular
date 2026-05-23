@@ -106,8 +106,6 @@ and should always work regardless of host architecture.
 **Success:** Each command exits cleanly and prints target information.
 **Failure:** Any error or empty output.
 
-<!-- markdownlint-disable MD013 -->
-
 | #   | Command                                                                      | Result |
 |-----|------------------------------------------------------------------------------|--------|
 | 1   | `mojo build --print-effective-target`                                        | PASS   |
@@ -115,8 +113,6 @@ and should always work regardless of host architecture.
 | 3   | `mojo build --print-supported-cpus --target-triple=aarch64-apple-macosx`     | PASS   |
 | 4   | `mojo build --print-supported-cpus --target-triple=x86_64-unknown-linux-gnu` | PASS   |
 | 2   | `mojo build --print-supported-targets`                                       | PASS   |
-
-<!-- markdownlint-enable MD013 -->
 
 **Notes:** Compare the sample output on the docs page with actual
 output. Update when targets are added or removed.
@@ -134,14 +130,10 @@ for non-host architectures.
 the target architecture.
 **Failure:** Compiler error or output for the wrong architecture.
 
-<!-- markdownlint-disable MD013 -->
-
 | # | Command                                                                                                                                     | Result |
 |---|---------------------------------------------------------------------------------------------------------------------------------------------|--------|
 | 6 | `mojo build --target-triple aarch64-unknown-linux-gnu --target-cpu cortex-a72 --emit object -o test.o test.mojo`                            | PASS   |
 | 7 | `mojo build --target-triple x86_64-unknown-linux-gnu --target-cpu x86-64-v3 --target-features "+avx512f" --emit object -o test.o test.mojo` | PASS   |
-
-<!-- markdownlint-enable MD013 -->
 
 **Verification:**
 
@@ -170,15 +162,11 @@ expected (see known issue below).
 **Failure:** Compiler error (beyond the expected warnings) or output
 for the wrong architecture.
 
-<!-- markdownlint-disable MD013 -->
-
 | #  | Command                                                                                                                               | Result               |
 |----|---------------------------------------------------------------------------------------------------------------------------------------|----------------------|
 | 8  | `mojo build --target-triple x86_64-unknown-linux-gnu --mcpu=haswell --emit object -o test.o test.mojo`                                | PASS (with warnings) |
 | 9  | `mojo build --target-triple x86_64-unknown-linux-gnu --march=skylake-avx512 --emit asm -o test.s test.mojo`                           | PASS (with warnings) |
 | 10 | `mojo build --target-triple x86_64-unknown-linux-gnu --march=x86-64 --mcpu=haswell --mtune=skylake --emit object -o test.o test.mojo` | PASS (with warnings) |
-
-<!-- markdownlint-enable MD013 -->
 
 **Verification:**
 
@@ -227,15 +215,11 @@ error messages.
 **Failure:** Command succeeds (mixing should not be allowed) or
 produces a different error message than documented.
 
-<!-- markdownlint-disable MD013 -->
-
 | #  | Command                                                            | Expected error                                            | Result |
 |----|--------------------------------------------------------------------|-----------------------------------------------------------|--------|
 | 11 | `mojo build --target-cpu=haswell --mcpu=skylake test.mojo`         | `--target-cpu cannot be used with --march or --mcpu`      | PASS   |
 | 12 | `mojo build --target-cpu=haswell --march=x86-64 test.mojo`         | `--target-cpu cannot be used with --march or --mcpu`      | PASS   |
 | 13 | `mojo build --mcpu=haswell --target-features="+avx512f" test.mojo` | `--target-features cannot be used with --march or --mcpu` | PASS   |
-
-<!-- markdownlint-enable MD013 -->
 
 **Notes:** If error messages change, update the page to match.
 
@@ -253,16 +237,12 @@ column in the emit options table on the page.
 - "Native" = command fails because it requires a linker for the target
   platform.
 
-<!-- markdownlint-disable MD013 -->
-
 | #  | Command                                                                                                             | Result        | Status |
 |----|---------------------------------------------------------------------------------------------------------------------|---------------|--------|
 | 14 | `mojo build --target-triple x86_64-unknown-linux-gnu --target-cpu x86-64 --emit llvm -o test.ll test.mojo`          | PASS          | Both   |
 | 15 | `mojo build --target-triple x86_64-unknown-linux-gnu --target-cpu x86-64 --emit llvm-bitcode -o test.bc test.mojo`  | PASS          | Both   |
 | 16 | `mojo build --target-triple x86_64-unknown-linux-gnu --target-cpu x86-64 --emit shared-lib -o test.so testlib.mojo` | FAIL (linker) | Native |
 | 17 | `mojo build --target-triple aarch64-unknown-linux-gnu --emit exe -o test test.mojo`                                 | FAIL (linker) | Native |
-
-<!-- markdownlint-enable MD013 -->
 
 **Verification:**
 
@@ -307,13 +287,9 @@ Requires a host with GPU support (e.g., Apple Silicon with Metal).
 assembly.
 **Failure:** Compilation error, or no sidecar file produced.
 
-<!-- markdownlint-disable MD013 -->
-
 | #   | Command                                                                          | Result | Sidecar              |
 |-----|----------------------------------------------------------------------------------|--------|----------------------|
 | 18  | `mojo build --target-accelerator=metal:4 --emit asm -o test-gpu.s test-gpu.mojo` | PASS   | `test-gpu_kernel.ll` |
-
-<!-- markdownlint-enable MD013 -->
 
 **Verification:**
 

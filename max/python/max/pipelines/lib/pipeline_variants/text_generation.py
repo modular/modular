@@ -40,7 +40,14 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import (
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.pipelines.kv_cache import (
+    IncrementCacheLengthsProcessor,
+    PagedKVCacheManager,
+    load_kv_manager,
+)
+from max.pipelines.modeling.types import (
     BatchLogitsProcessor,
     LogProbabilities,
     Pipeline,
@@ -51,13 +58,6 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
-)
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.pipelines.kv_cache import (
-    IncrementCacheLengthsProcessor,
-    PagedKVCacheManager,
-    load_kv_manager,
 )
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
@@ -84,6 +84,7 @@ from ..sampling import (
     apply_logits_processors,
     token_sampler,
 )
+from ..utils import CompilationTimer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -183,6 +184,7 @@ class TextGenerationPipeline(
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
+            pipeline_config.runtime.tool_parser,
         )
         self.vocab_size = self._structured_output.vocab_size
 
@@ -243,28 +245,30 @@ class TextGenerationPipeline(
         # Load sampler.
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
-        if pipeline_config.sampling.enable_structured_output:
-            self._sampler_with_bitmask = session.load(
-                token_sampler(
+        with CompilationTimer("sampler") as sampler_timer:
+            if pipeline_config.sampling.enable_structured_output:
+                with_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
                     device=DeviceRef.from_device(self._devices[0]),
                 )
-            )
-            cfg_without_bitmask = copy.deepcopy(pipeline_config.sampling)
-            cfg_without_bitmask.enable_structured_output = False
-            self._sampler_without_bitmask = session.load(
-                token_sampler(
+                cfg_without_bitmask = copy.deepcopy(pipeline_config.sampling)
+                cfg_without_bitmask.enable_structured_output = False
+                without_bitmask_graph = token_sampler(
                     cfg_without_bitmask,
                     device=DeviceRef.from_device(self._devices[0]),
                 )
-            )
-        else:
-            self._sampler_without_bitmask = session.load(
-                token_sampler(
+                sampler_timer.mark_build_complete()
+                self._sampler_with_bitmask = session.load(with_bitmask_graph)
+                self._sampler_without_bitmask = session.load(
+                    without_bitmask_graph
+                )
+            else:
+                sampler_graph = token_sampler(
                     pipeline_config.sampling,
                     device=DeviceRef.from_device(self._devices[0]),
                 )
-            )
+                sampler_timer.mark_build_complete()
+                self._sampler_without_bitmask = session.load(sampler_graph)
 
         # Pre-allocate pinned buffer for D2H token copies only when structured
         # output is enabled. This buffer is used for async token transfers in
@@ -466,6 +470,7 @@ class TextGenerationPipeline(
             # Advance FSM with the sampled token (token buffer updated later)
             # new_tokens has shape (batch_size,) - 1D array
             token = int(new_tokens_np[batch_idx])
+
             with Tracer("advance_fsm"):
                 if not context.advance_fsm(token):
                     raise RuntimeError(

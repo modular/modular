@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Any
 
@@ -35,7 +35,6 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.interfaces.request import RequestID
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import (
@@ -54,22 +53,24 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     upper_bounded_default,
 )
-from max.pipelines.lib.config.config_enums import (
-    is_float4_encoding,
-    supported_encoding_dtype,
-)
 from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.pipelines.lib.vision_encoder_cache import (
     VisionEncoderCache,
     concat_device_buffers,
 )
+from max.pipelines.modeling.config_enums import (
+    is_float4_encoding,
+    supported_encoding_dtype,
+)
+from max.pipelines.request import RequestID
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 
 from ..deepseekV3.model import DeepseekV3Inputs
 from .context import KimiK2_5TextAndVisionContext
+from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .kimik2_5 import KimiK2_5
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig, VisionConfig
 
@@ -285,6 +286,18 @@ class KimiK2_5Model(
 
         dtype = self.dtype
         quant_config = parse_quant_config(config, state_dict, dtype)
+        shared_experts_weight_dtype, dense_mlp_layers_without_quant = (
+            infer_kimi_nvfp4_weight_flags(
+                state_dict,
+                first_k_dense_replace=config.first_k_dense_replace,
+                quant_config=quant_config,
+            )
+        )
+        if quant_config is not None and shared_experts_weight_dtype is not None:
+            quant_config = replace(
+                quant_config,
+                shared_experts_weight_dtype=shared_experts_weight_dtype,
+            )
 
         # Check if EP should be configured
         ep_size = self.pipeline_config.runtime.ep_size
@@ -323,9 +336,14 @@ class KimiK2_5Model(
                 use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
             )
 
-            if config.n_shared_experts == 1 and not is_mxfp4:
-                # Only enable shared expert fusion if the shared expert is of
-                # the same shape and dtype as routed experts.
+            if (
+                config.n_shared_experts == 1
+                and not is_mxfp4
+                and quant_config is not None
+                and quant_config.shared_experts_use_quant(dtype)
+            ):
+                # Only enable shared expert fusion when shared tensors match
+                # routed NVFP4 experts (false for nvidia/Kimi-K2.6-NVFP4).
                 ep_kwargs["fused_shared_expert"] = True
 
             if quant_config is not None:
@@ -360,6 +378,9 @@ class KimiK2_5Model(
         model_config.ep_config = ep_config
         model_config.graph_mode = graph_mode
         model_config.data_parallel_degree = data_parallel_degree
+        model_config.dense_mlp_layers_without_quant = (
+            dense_mlp_layers_without_quant
+        )
         model_config.return_logits = self.return_logits
         model_config.return_hidden_states = self.return_hidden_states
 

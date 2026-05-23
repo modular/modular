@@ -73,19 +73,19 @@ def test[
     comptime b_shape_1 = K if transpose_b else N
     var a_tensor = TileTensor(
         a_device_buffer,
-        row_major(Coord(Idx(m), Idx[K.value()]())),
+        row_major(Coord(m, Idx[K.value()])),
     )
     var b_tensor = TileTensor(
         b_device_buffer,
-        row_major(Coord(Idx[b_shape_0.value()](), Idx[b_shape_1.value()]())),
+        row_major(Coord(Idx[b_shape_0.value()], Idx[b_shape_1.value()])),
     )
     var c_tensor = TileTensor(
         c_device_buffer,
-        row_major(Coord(Idx(m), Idx[N.value()]())),
+        row_major(Coord(m, Idx[N.value()])),
     )
     var c_ref_tensor = TileTensor(
         c_device_ref_buffer,
-        row_major(Coord(Idx(m), Idx[N.value()]())),
+        row_major(Coord(m, Idx[N.value()])),
     )
 
     comptime if c_type.is_float8():

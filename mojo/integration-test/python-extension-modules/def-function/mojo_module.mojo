@@ -258,7 +258,7 @@ def fastcall_concat(
     py_self: PyObjectPtr,
     args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
     nargs: Py_ssize_t,
-) -> PyObjectPtr:
+) abi("C") -> PyObjectPtr:
     """Hand-written METH_FASTCALL wrapper that concatenates `nargs` strings.
 
     Exercises the `def_py_c_function(PyCFunctionFast, ...)` overload directly:

@@ -20,7 +20,6 @@ from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     Coord,
-    Idx,
     Layout,
     LayoutTensor,
     TileTensor,
@@ -1002,11 +1001,11 @@ def _mla_decode_sm100_dispatch_impl[
             o_accum_split_data,
             row_major(
                 Coord(
-                    Idx(num_partitions),
-                    Idx(batch_size),
-                    Idx(q_max_seq_len),
-                    Idx(Int(num_heads)),
-                    Idx(Int(v_depth)),
+                    Int(num_partitions),
+                    Int(batch_size),
+                    Int(q_max_seq_len),
+                    Int(num_heads),
+                    Int(v_depth),
                 )
             ),
         )
@@ -1018,10 +1017,10 @@ def _mla_decode_sm100_dispatch_impl[
             lse_accum_data,
             row_major(
                 Coord(
-                    Idx(num_partitions),
-                    Idx(batch_size),
-                    Idx(q_max_seq_len),
-                    Idx(Int(num_heads)),
+                    Int(num_partitions),
+                    Int(batch_size),
+                    Int(q_max_seq_len),
+                    Int(num_heads),
                 )
             ),
         )

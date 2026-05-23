@@ -21,7 +21,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max._core_mojo import block_hasher
-from max.interfaces import ImageMetadata
+from max.pipelines.modeling.types import ImageMetadata
 from max.profiler import traced
 
 

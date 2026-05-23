@@ -29,8 +29,8 @@ from max.pipelines.lib import (
     parse_quant_config,
     upper_bounded_default,
 )
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces import ArchConfigWithKVCache
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 

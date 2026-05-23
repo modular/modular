@@ -46,7 +46,7 @@ from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.tensor_core import TensorCore
 from layout.tile_io import GenericToSharedAsyncTileCopier
 
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils import StaticTuple
 from std.utils.index import Index

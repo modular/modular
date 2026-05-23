@@ -469,7 +469,7 @@ struct GraphemeSliceIter[
     Example:
 
     ```mojo
-    from testing import assert_equal
+    from std.testing import assert_equal
     var text = String("cafe\\u{0301}")  # "café" with combining accent
     var count = 0
     for grapheme in text.graphemes():
@@ -794,7 +794,7 @@ struct GraphemeIndicesIter[mut: Bool, //, origin: Origin[mut=mut]](
     Example:
 
     ```mojo
-    from testing import assert_equal
+    from std.testing import assert_equal
     var s = StringSlice("abc")
     var pairs = List[Tuple[Int, String]]()
     for off, g in s.grapheme_indices():

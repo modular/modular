@@ -10,7 +10,7 @@ This version is still a work in progress.
 
 ## Language enhancements
 
-- Types can parameterize the `out` argument modifier when they want into being
+- Types can parameterize the `out` argument modifier when they want to be
   bindable to alternate address spaces, e.g.:
 
   ```mojo
@@ -51,6 +51,20 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Changed `Idx` to a `comptime` alias for `ComptimeInt`. Use `Idx[value]`
+  instead of `Idx[value]()` for compile-time coordinates.
+
+- Added `std.gpu.host.CompletionFlag`, a non-owning handle to an MLRT
+  `M::Driver::CompletionFlag` (an 8-byte slot in pinned host memory mapped
+  into a device's address space). Pairs with the new
+  `DeviceStream.wait_for_host_value(flag, value)` method, which stalls the
+  stream until the flag's 64-bit slot equals the given value. Corresponds to
+  CUDA's `cuStreamWaitValue64` and captures cleanly into a CUDA graph as a
+  wait-value node, letting a CPU thread (or an AsyncRT worker dispatched by
+  `enqueue_host_func`) gate a GPU stream on host-produced data without a
+  second stream or a blocking host-function callback. Currently CUDA-only;
+  other backends raise.
+
 - `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
   helpers now live in the standard library module
   [`std.utils.coord`](/docs/std/utils/coord/). The
@@ -86,6 +100,9 @@ This version is still a work in progress.
   reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
   later issues like out of bounds access.
 
+- A new `BinaryHeap` collection has been added to the `std.collections` module.
+  This is a list-backed binary max-heap.
+
 - `List[T]` no longer requires its type to be `Copyable`, but now works with
   `Movable`-only types. Iteration still requires `Copyable` and will emit
   a `comptime assert` if not satisfied.
@@ -118,8 +135,6 @@ This version is still a work in progress.
   `struct_field_*` family (along with the `ReflectedType[T]` wrapper) have been
   removed; use the corresponding methods on `reflect[T]`:
 
-  <!-- markdownlint-disable MD013 -->
-
   | Removed                                 | Replacement                              |
   |-----------------------------------------|------------------------------------------|
   | `get_type_name[T]()`                    | `reflect[T].name()`                      |
@@ -134,8 +149,6 @@ This version is still a work in progress.
   | `offset_of[T, name=name]()`             | `reflect[T].field_offset[name=name]()`   |
   | `offset_of[T, index=index]()`           | `reflect[T].field_offset[index=index]()` |
   | `ReflectedType[T]`                      | `Reflected[T]`                           |
-
-  <!-- markdownlint-enable MD013 -->
 
 - Added `ReflectedFn[func]`, a function-side reflection handle accessed via
   the `reflect_fn[func]` `comptime` alias. Exposes function introspection
@@ -226,6 +239,26 @@ This version is still a work in progress.
   through this trait must now spell it out explicitly, for example
   `T: Intable & ImplicitlyDestructible`.
 
+- The CPython FFI bindings now carry the `abi("C")` effect. User-written Python
+  extension callbacks passed to `def_py_c_function`, `def_py_c_method`, or
+  `PyCapsule_New` must add `abi("C")` to their signatures, e.g.
+  `def my_func(self: PyObjectPtr, args: PyObjectPtr) abi("C") -> PyObjectPtr:`.
+  Functions registered through the higher-level `def_function`, `def_method`,
+  and `def_staticmethod` paths are unaffected.
+
+- Added `take()` and `drop()` iterator adapters to `std.itertools`.
+  `take(iter, n)` yields the first `n` elements, and
+  `drop(iter, n)` drops the first `n` elements. They compose
+  naturally to select sub-ranges of any iterable:
+
+  ```mojo
+  from std.itertools import take, drop
+
+  var nums = [1, 2, 3, 4, 5]
+  for x in take(drop(nums, 1), 3):
+      print(x)  # 2, 3, 4
+  ```
+
 ## Tooling changes
 
 - The `mojo` compiler will now print the filename and line number in diagnostics
@@ -266,6 +299,26 @@ This version is still a work in progress.
 
   # After
   mojo precompile my_package -o my_package.mojoc
+  ```
+
+- Added `mojo --print-cache-location` and `mojo --clear-cache` for inspecting
+  and clearing the on-disk Mojo compile cache (`.mojo_cache`). The resolved
+  path honors the existing precedence (`MODULAR_CACHE_DIR`, `MODULAR_HOME`,
+  `MODULAR_DERIVED_PATH`, `XDG_CACHE_HOME`, etc.). `--clear-cache` prompts for
+  confirmation by default; pass `-f` (or `--force`) to skip the prompt for
+  scripting use.
+
+  ```text
+  $ mojo --print-cache-location
+  /home/you/.cache/modular/.mojo_cache
+
+  $ mojo --clear-cache
+  This will remove the Mojo compile cache at:
+    /home/you/.cache/modular/.mojo_cache
+  Proceed? [y/N] y
+  Removed /home/you/.cache/modular/.mojo_cache
+
+  $ mojo --clear-cache -f   # no prompt
   ```
 
 ## GPU programming
@@ -418,3 +471,16 @@ This version is still a work in progress.
 - Attempting to import a source Mojo package from a broken symlink will no
   longer result in a compiler crash.
   ([Issue #6424](https://github.com/modular/modular/issues/6424))
+
+- `MODULAR_NVPTX_COMPILER_PATH` is now part of mojo cache location so that when
+  switching to a different `ptxas` CUBIN cache will not hit those were
+  generated before the switch.
+  ([Issue #6540](https://github.com/modular/modular/issues/6549))
+
+- Fixed the `mojo` compiler incorrectly emitting AVX-512 instructions on
+  hosts where the CPU model (e.g. `znver4`) advertises AVX-512 but the OS
+  has not enabled it in XCR0 — for example, inside Docker containers on
+  GitHub Actions. Host CPU features are now cross-checked against the
+  runtime CPUID view, so features the kernel withholds no longer cause
+  `SIGILL` at runtime.
+  ([Issue #6413](https://github.com/modular/modular/issues/6413))

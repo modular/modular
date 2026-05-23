@@ -400,21 +400,21 @@ def flash_attention[
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
-        # TODO: This helps differentiate between CE/TG. Not batch-specific.
-        #       We'll just implement a flag on the cache object which is true
-        #       when the batch contains all cache_lens == 0. Remove this when
-        #       such flag (part of ContiguousKVCache) is implemented.
-        var is_token_generation = (
-            k.max_prompt_length() == 1 and not k.empty_cache()
-        )
-
         var max_prompt_len: Int
         var num_keys = Int(k.max_context_length())
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
+        elif decode_dispatch_metadata:
+            max_prompt_len = decode_dispatch_metadata.value().q_max_seq_len
         else:
             max_prompt_len = Int(k.max_prompt_length())
+
+        # TODO: This helps differentiate between CE/TG. Not batch-specific.
+        #       We'll just implement a flag on the cache object which is true
+        #       when the batch contains all cache_lens == 0. Remove this when
+        #       such flag (part of ContiguousKVCache) is implemented.
+        var is_token_generation = max_prompt_len == 1 and not k.empty_cache()
 
         # Whether head and depth are static. With BSHD, B and S are dynamic.
         # H and D are always known for opaque KVCache types, we only check Q.
@@ -4912,9 +4912,9 @@ def mha_gpu_naive[
         p_device,
         row_major(
             (
-                Idx(batch_size * num_heads),
-                Idx(max_prompt_len),
-                Idx(num_keys),
+                batch_size * num_heads,
+                max_prompt_len,
+                num_keys,
             )
         ),
     )
@@ -5564,6 +5564,7 @@ def _naive_attention_with_transpose[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
+    ctx: DeviceContext,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
@@ -5595,19 +5596,19 @@ def _naive_attention_with_transpose[
 
     var qt = TileTensor(
         qt_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth)),
+        row_major(batch_size, num_heads, seq_len, depth),
     )
     var kt = TileTensor(
         kt_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(depth), Idx(num_keys)),
+        row_major(batch_size, num_heads, depth, num_keys),
     )
     var vt = TileTensor(
         vt_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(num_keys), Idx(depth)),
+        row_major(batch_size, num_heads, num_keys, depth),
     )
     var ot = TileTensor(
         ot_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth)),
+        row_major(batch_size, num_heads, seq_len, depth),
     )
 
     comptime layout_4d = Layout.row_major[4]()
@@ -5664,10 +5665,10 @@ def _naive_attention_with_transpose[
         q.ptr,
         row_major(
             (
-                Idx(q.dim[0]()),
-                Idx(q.dim[1]()),
-                Idx(q.dim[2]()),
-                Idx(q.dim[3]()),
+                q.dim[0](),
+                q.dim[1](),
+                q.dim[2](),
+                q.dim[3](),
             )
         ),
     )
@@ -5675,10 +5676,10 @@ def _naive_attention_with_transpose[
         k.ptr,
         row_major(
             (
-                Idx(k.dim[0]()),
-                Idx(k.dim[1]()),
-                Idx(k.dim[2]()),
-                Idx(k.dim[3]()),
+                k.dim[0](),
+                k.dim[1](),
+                k.dim[2](),
+                k.dim[3](),
             )
         ),
     )
@@ -5686,10 +5687,10 @@ def _naive_attention_with_transpose[
         v.ptr,
         row_major(
             (
-                Idx(v.dim[0]()),
-                Idx(v.dim[1]()),
-                Idx(v.dim[2]()),
-                Idx(v.dim[3]()),
+                v.dim[0](),
+                v.dim[1](),
+                v.dim[2](),
+                v.dim[3](),
             )
         ),
     )
@@ -5697,10 +5698,10 @@ def _naive_attention_with_transpose[
         output.ptr,
         row_major(
             (
-                Idx(output.dim[0]()),
-                Idx(output.dim[1]()),
-                Idx(output.dim[2]()),
-                Idx(output.dim[3]()),
+                output.dim[0](),
+                output.dim[1](),
+                output.dim[2](),
+                output.dim[3](),
             )
         ),
     )
@@ -5710,7 +5711,7 @@ def _naive_attention_with_transpose[
     transpose(vt, v_tt, q_perm.ptr)
 
     _naive_attention[dtype, transpose_k](
-        ot_lt, qt_lt, kt_lt, vt_lt, mask, scale
+        ot_lt, qt_lt, kt_lt, vt_lt, mask, scale, ctx
     )
 
     transpose(output_tt, ot, o_perm.ptr)
@@ -5736,6 +5737,7 @@ def _naive_attention[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
+    ctx: DeviceContext,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
@@ -5752,19 +5754,17 @@ def _naive_attention[
     var score_ptr = alloc[Scalar[dtype]](score_size)
     var score = TileTensor(
         score_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
-        ),
+        row_major((batch_size, num_heads, seq_len, num_keys)),
     )
 
     var q_tt = TileTensor(
         q.ptr,
         row_major(
             (
-                Idx(q.dim[0]()),
-                Idx(q.dim[1]()),
-                Idx(q.dim[2]()),
-                Idx(q.dim[3]()),
+                q.dim[0](),
+                q.dim[1](),
+                q.dim[2](),
+                q.dim[3](),
             )
         ),
     )
@@ -5772,10 +5772,10 @@ def _naive_attention[
         k.ptr,
         row_major(
             (
-                Idx(k.dim[0]()),
-                Idx(k.dim[1]()),
-                Idx(k.dim[2]()),
-                Idx(k.dim[3]()),
+                k.dim[0](),
+                k.dim[1](),
+                k.dim[2](),
+                k.dim[3](),
             )
         ),
     )
@@ -5799,7 +5799,7 @@ def _naive_attention[
         )
 
     elementwise[scale_and_mask, simd_size](
-        Index(batch_size, num_heads, seq_len, num_keys)
+        Index(batch_size, num_heads, seq_len, num_keys), ctx
     )
 
     softmax[dtype, simd_size, 4](score, score, axis=3)
@@ -5808,10 +5808,10 @@ def _naive_attention[
         output.ptr,
         row_major(
             (
-                Idx(output.dim[0]()),
-                Idx(output.dim[1]()),
-                Idx(output.dim[2]()),
-                Idx(output.dim[3]()),
+                output.dim[0](),
+                output.dim[1](),
+                output.dim[2](),
+                output.dim[3](),
             )
         ),
     )
@@ -5819,10 +5819,10 @@ def _naive_attention[
         v.ptr,
         row_major(
             (
-                Idx(v.dim[0]()),
-                Idx(v.dim[1]()),
-                Idx(v.dim[2]()),
-                Idx(v.dim[3]()),
+                v.dim[0](),
+                v.dim[1](),
+                v.dim[2](),
+                v.dim[3](),
             )
         ),
     )

@@ -218,14 +218,10 @@ def _rms_norm_fused_fp8_gpu[
         return input_fn[simd_width, rank](indices.canonicalize())
 
     # Create 2D output TileTensor view
-    var output_2d = TileTensor(
-        output.ptr, row_major(Coord(Idx(rows), Idx(cols)))
-    )
+    var output_2d = TileTensor(output.ptr, row_major(Coord(rows, cols)))
 
     # Create 1D view of scale_output for internal kernel use
-    var scale_output_1d = TileTensor(
-        scale_output.ptr, row_major(Coord(Idx(rows)))
-    )
+    var scale_output_1d = TileTensor(scale_output.ptr, row_major(Coord(rows)))
 
     # Dispatch based on column count (following rms_norm_gpu pattern)
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
@@ -321,9 +317,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     def apply_gamma[
         width: Int
     ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
-        var gamma_val = gamma.load[width=width, alignment=align](
-            Coord(Idx(col))
-        )
+        var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
         var gamma_accum = (
             gamma_val.cast[accum_type]() + weight_offset.cast[accum_type]()
         )
@@ -529,9 +523,7 @@ def _rms_norm_fused_fp8_kernel_block[
     def apply_gamma[
         width: Int
     ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
-        var gamma_val = gamma.load[width=width, alignment=align](
-            Coord(Idx(col))
-        )
+        var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
         var gamma_accum = (
             gamma_val.cast[accum_type]() + weight_offset.cast[accum_type]()
         )

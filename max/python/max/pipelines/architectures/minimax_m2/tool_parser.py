@@ -33,12 +33,12 @@ import json
 import re
 from typing import Any
 
-from max.interfaces import ParsedToolCall
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
     generate_call_id,
     register,
 )
+from max.pipelines.modeling.types import ParsedToolCall
 
 # Regex patterns for complete parsing.
 _INVOKE_PATTERN = re.compile(r"<invoke name=([^>]+)>(.*?)</invoke>", re.DOTALL)

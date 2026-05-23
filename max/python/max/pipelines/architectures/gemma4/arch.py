@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .context import Gemma4Context
 from .model import Gemma3_MultiModalModel
@@ -41,7 +41,7 @@ gemma4_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=Gemma4Tokenizer,
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     input_modalities={
         InputModality.TEXT,
         InputModality.IMAGE,

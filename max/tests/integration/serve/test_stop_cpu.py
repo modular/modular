@@ -18,9 +18,9 @@ import httpx
 import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
-from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.modeling.types import PipelineTask
 
 request = {
     "model": "echo",

@@ -188,7 +188,7 @@ def _pipeline_resolve_mocks(
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=weight_path_return,
         ),
-        patch("max.pipelines.lib.hf_utils.validate_hf_repo_access"),
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
         patch(
             "max.pipelines.lib.config.config.load_devices",
             return_value=mock_devices,
@@ -380,8 +380,8 @@ class TestDefaultEncodingFallback:
         falls back to the architecture's default_encoding.
         """
         from max.graph.weights import WeightsFormat
-        from max.interfaces import PipelineTask
         from max.pipelines import TextContext
+        from max.pipelines.modeling.types import PipelineTask
 
         # Create an architecture with default_encoding="float32" compatible with CPU
         cpu_arch = SupportedArchitecture(
@@ -680,8 +680,8 @@ class TestRequiredArguments:
     @prepare_registry
     def test_required_arguments_override_user_config(self) -> None:
         """Architecture required_arguments should override conflicting config values."""
-        from max.interfaces import PipelineTask
         from max.pipelines import TextContext
+        from max.pipelines.modeling.types import PipelineTask
 
         arch_with_required = SupportedArchitecture(
             name="LlamaForCausalLM",

@@ -16,17 +16,17 @@ import uuid
 from unittest.mock import patch
 
 import pytest
-from max.interfaces import (
-    ParsedToolCall,
-    ParsedToolCallDelta,
-    ParsedToolResponse,
-)
 from max.pipelines.architectures.minimax_m2.tool_parser import (
     MinimaxM2ToolParser,
 )
 from max.pipelines.lib.tool_parsing import (
     _TOOL_CALL_ID_LENGTH,
     StreamingToolCallState,
+)
+from max.pipelines.modeling.types import (
+    ParsedToolCall,
+    ParsedToolCallDelta,
+    ParsedToolResponse,
 )
 
 

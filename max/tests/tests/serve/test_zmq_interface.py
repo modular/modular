@@ -23,12 +23,12 @@ from typing import cast
 from unittest.mock import Mock
 
 import pytest
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     BaseContext,
     PipelineOutput,
     RequestID,
-    SchedulerResult,
 )
+from max.serve.scheduler_result import SchedulerResult
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
 
 

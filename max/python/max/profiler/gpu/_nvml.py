@@ -41,6 +41,12 @@ _NVML_CLOCK_GRAPHICS = 0
 _NVML_CLOCK_SM = 1
 _NVML_CLOCK_MEM = 2
 
+# Sentinel value NVML writes into usedGpuMemory when the figure is unavailable.
+_NVML_VALUE_NOT_AVAILABLE: int = 0xFFFFFFFFFFFFFFFF
+
+# Buffer capacity for nvmlDeviceGetComputeRunningProcesses.
+_MAX_PROCS = 64
+
 # Bit-to-name mapping for the bitfield returned by
 # ``nvmlDeviceGetCurrentClocksThrottleReasons``. Names match
 # ``nvmlClocksThrottleReasonXxx`` (deprecated upstream; equivalent to the
@@ -97,6 +103,20 @@ class _nvmlUtilization_t(ctypes.Structure):
     memory: int
 
 
+class _nvmlProcessInfo_t(ctypes.Structure):
+    # Two-field layout compatible with all NVML versions.  Newer drivers (11+)
+    # extend this struct with gpuInstanceId/computeInstanceId for MIG, but
+    # defining only pid+usedGpuMemory avoids struct-size mismatch when the
+    # runtime library predates the MIG extension.
+    _fields_ = [
+        ("pid", ctypes.c_uint),
+        ("usedGpuMemory", ctypes.c_ulonglong),
+    ]
+
+    pid: int
+    usedGpuMemory: int
+
+
 @runtime_checkable
 class _NVMLLibrary(Protocol):
     def nvmlInit_v2(self) -> _nvmlReturn_t: ...
@@ -146,6 +166,16 @@ class _NVMLClockExtensions(Protocol):
     ) -> _nvmlReturn_t: ...
 
 
+@runtime_checkable
+class _NVMLProcessExtensions(Protocol):
+    def nvmlDeviceGetComputeRunningProcesses(
+        self,
+        device: _nvmlDevice_t,
+        info_count: ctypes._Pointer[ctypes.c_uint],
+        infos: ctypes.Array[_nvmlProcessInfo_t],
+    ) -> _nvmlReturn_t: ...
+
+
 class NVMLError(Exception):
     def __init__(self, code: _nvmlReturn_t, message: str, /) -> None:
         super().__init__(message)
@@ -188,6 +218,7 @@ class NVMLContext:
     def __init__(self) -> None:
         self._library: _NVMLLibrary | None = None
         self._clock_library: _NVMLClockExtensions | None = None
+        self._process_library: _NVMLProcessExtensions | None = None
 
     def __enter__(self) -> NVMLContext:
         if self._library is not None:
@@ -208,6 +239,12 @@ class NVMLContext:
             )
         except AttributeError:
             self._clock_library = None
+        try:
+            self._process_library = _bindtools.bind_protocol(
+                cdll, _NVMLProcessExtensions
+            )
+        except AttributeError:
+            self._process_library = None
         return self
 
     def __exit__(
@@ -220,6 +257,7 @@ class NVMLContext:
             _check_nvml_return(self._library, self._library.nvmlShutdown())
         self._library = None
         self._clock_library = None
+        self._process_library = None
 
     def _get_count(self) -> int:
         if self._library is None:
@@ -340,6 +378,46 @@ class NVMLContext:
             ),
             clocks=self._get_clock_stats(device),
         )
+
+    def get_process_memory_bytes(self, pid: int) -> int | None:
+        """Return total GPU memory in bytes used by pid across all devices.
+
+        Queries each device's compute-process list and sums the allocations
+        attributed to ``pid``.  Entries whose ``usedGpuMemory`` equals the
+        NVML sentinel ``0xFFFFFFFFFFFFFFFF`` (unavailable) are skipped.
+
+        Args:
+            pid: OS process ID to look up.
+
+        Returns:
+            Total bytes across all devices where ``pid`` has an allocation,
+            or ``None`` if the process is not found on any device or if the
+            per-process query is unsupported by this driver version.
+        """
+        if self._library is None or self._process_library is None:
+            return None
+        total = 0
+        found = False
+        for i in range(self._get_count()):
+            try:
+                device = self._get_device(i)
+            except (NoPermissionError, GPUNotFoundError):
+                continue
+            info_count = ctypes.c_uint(_MAX_PROCS)
+            infos = (_nvmlProcessInfo_t * _MAX_PROCS)()
+            ret = self._process_library.nvmlDeviceGetComputeRunningProcesses(
+                device, _bindtools.byref(info_count), infos
+            )
+            if ret != _NVML_SUCCESS:
+                continue
+            for j in range(info_count.value):
+                if (
+                    infos[j].pid == pid
+                    and infos[j].usedGpuMemory != _NVML_VALUE_NOT_AVAILABLE
+                ):
+                    total += infos[j].usedGpuMemory
+                    found = True
+        return total if found else None
 
     def get_stats(self) -> dict[int, GPUStats]:
         """Get GPU statistics for all GPUs."""

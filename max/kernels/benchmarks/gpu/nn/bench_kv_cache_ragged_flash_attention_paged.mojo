@@ -28,7 +28,6 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -189,9 +188,9 @@ def execute_kv_cache_ragged_flash_attention[
             q_host_ptr,
             row_major(
                 (
-                    Idx(total_seq_len),
-                    Idx[num_q_heads](),
-                    Idx[head_dim](),
+                    total_seq_len,
+                    Idx[num_q_heads],
+                    Idx[head_dim],
                 )
             ),
         )
@@ -205,14 +204,14 @@ def execute_kv_cache_ragged_flash_attention[
     var output_dev_buffer = ctx.enqueue_create_buffer[dtype](output_size)
     var output_device_tensor = TileTensor(
         output_dev_buffer,
-        row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
+        row_major((total_seq_len, Idx[num_q_heads], Idx[head_dim])),
     )
     # Paged LUT allocation
     var paged_lut_cols = ceildiv(max_context_length, page_size)
     var paged_lut_size = batch_size * paged_lut_cols
 
-    def _ri(v: Int) -> RuntimeInt[DType.int64]:
-        return RuntimeInt[DType.int64](Int64(v))
+    def _ri(v: Int) -> Int64:
+        return Int64(v)
 
     var paged_lut_host_ptr = List(
         length=paged_lut_size, fill=Scalar[DType.uint32](0)
@@ -304,12 +303,12 @@ def execute_kv_cache_ragged_flash_attention[
     # Create tensors for flash_attention inputs
     var q_device_tensor = TileTensor(
         q_dev_buffer,
-        row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
+        row_major((total_seq_len, Idx[num_q_heads], Idx[head_dim])),
     )
 
     var input_row_offsets_tensor = TileTensor(
         input_row_offsets_dev_buffer,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     if run_benchmark:

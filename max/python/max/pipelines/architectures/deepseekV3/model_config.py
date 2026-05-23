@@ -24,10 +24,10 @@ from max.nn.kv_cache import KVCacheParamInterface, KVCacheQuantizationConfig
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -86,6 +86,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
     quant_config: QuantConfig | None = None
+    dense_mlp_layers_without_quant: frozenset[int] = frozenset()
+    """Dense prefix layers (indices ``< first_k_dense_replace``) that skip MLP quant."""
     ep_config: EPConfig | None = None
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # Re-export ToolParser protocol and generic types from interfaces
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     ParsedToolCall,
     ParsedToolCallDelta,
     ParsedToolResponse,

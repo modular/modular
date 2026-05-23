@@ -225,6 +225,7 @@ def slice_as_copy[
     start: TileTensor[index_type, ...],
     end: TileTensor[index_type, ...],
     step: TileTensor[index_type, ...],
+    ctx: DeviceContext,
 ) raises:
     comptime assert output.flat_rank == tensor.flat_rank
     # Apply slice to the tensor
@@ -243,7 +244,7 @@ def slice_as_copy[
         )
 
     # Invoke copy.
-    elementwise[copy, 1](coord_to_index_list(output.layout.shape_coord()))
+    elementwise[copy, 1](coord_to_index_list(output.layout.shape_coord()), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -320,7 +321,7 @@ def sliced_add[
     a: TileTensor[dtype, ...],
     b: TileTensor[dtype, ...],
     lora_end_idx: TileTensor[DType.int64, ...],
-    ctx: Optional[DeviceContext],
+    ctx: DeviceContext,
 ) raises:
     """Adds tensors a and b element-wise for rows < lora_end_idx, otherwise copies a.
 
@@ -361,7 +362,6 @@ def sliced_add[
         c.store[width](coords, out_val)
 
     comptime if target == "gpu":
-        assert ctx is not None, "DeviceContext required for GPU target"
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
@@ -372,12 +372,12 @@ def sliced_add[
             _trace_description="slice_add",
         ](
             coord_to_index_list(c.layout.shape_coord()),
-            ctx.value(),
+            ctx,
         )
     else:
         comptime compile_target = _current_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[_sliced_add, simd_width, target=target](
-            coord_to_index_list(c.layout.shape_coord())
+            coord_to_index_list(c.layout.shape_coord()), ctx
         )
