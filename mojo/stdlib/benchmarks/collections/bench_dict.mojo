@@ -165,6 +165,38 @@ def bench_dict_iter[size: Int](mut b: Bencher) raises:
     _ = items
 
 
+@parameter
+def bench_dict_iter_items[size: Int](mut b: Bencher) raises:
+    """Iterate over all key-value entries via items()."""
+    var items = make_dict[size]()
+
+    @always_inline
+    @parameter
+    def call_fn() raises:
+        for entry in black_box(items).items():
+            keep(entry.key)
+            keep(entry.value)
+
+    b.iter[call_fn]()
+    _ = items
+
+
+@parameter
+def bench_dict_iter_pairs[size: Int](mut b: Bencher) raises:
+    """Iterate over all key-value pairs via item_pairs()."""
+    var items = make_dict[size]()
+
+    @always_inline
+    @parameter
+    def call_fn() raises:
+        for pair in black_box(items).item_pairs():
+            keep(pair[0])
+            keep(pair[1])
+
+    b.iter[call_fn]()
+    _ = items
+
+
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Memory Footprint
 # ===-----------------------------------------------------------------------===#
@@ -210,6 +242,12 @@ def main() raises:
         )
         m.bench_function[bench_dict_iter[size]](
             BenchId(String("bench_dict_iter[", size, "]"))
+        )
+        m.bench_function[bench_dict_iter_items[size]](
+            BenchId(String("bench_dict_iter_items[", size, "]"))
+        )
+        m.bench_function[bench_dict_iter_pairs[size]](
+            BenchId(String("bench_dict_iter_pairs[", size, "]"))
         )
 
     results = Dict[String, Tuple[Float64, Int]]()
