@@ -155,7 +155,10 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
     def compile[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
-    ](self) raises -> Tuple[RuntimeBundle, String]:
+    ](self) raises -> Tuple[
+        RuntimeBundle,
+        CompiledFunctionInfo[fn_type, func, Self.device_spec.target.value],
+    ]:
         var compiled_info = self._compile_inner[fn_type, func]()
 
         # Build the M_driver_static_bundle from the compiled object code.
@@ -206,7 +209,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
                 _context_handle=self._handle,
                 _raw=self._raw,
             ),
-            compiled_info.function_name,
+            compiled_info,
         )
 
     # ===-------------------------------------------------------------------===#

@@ -13,14 +13,18 @@
 
 from std.collections import List
 
+from std.gpu import global_idx, thread_idx
+from std.gpu.memory import external_memory
+from std.gpu.sync import barrier
 from std.gpu.host._device_context_hal import (
     DeviceBuffer,
     DeviceContext,
     DeviceEvent,
+    DeviceFunction,
     DeviceStream,
     HostBuffer,
 )
-from std.memory import alloc, Span, UnsafePointer
+from std.memory import alloc, AddressSpace, Span, UnsafePointer
 from std.testing import assert_equal
 
 
@@ -389,6 +393,195 @@ def test_host_buffer_context(ctx: DeviceContext) raises:
     assert_equal(owner.id(), ctx.id())
 
 
+# ===-----------------------------------------------------------------------===#
+# Kernel compile + launch
+# ===-----------------------------------------------------------------------===#
+
+
+def _vec_add_kernel(
+    in0: UnsafePointer[Float32, ImmutAnyOrigin],
+    in1: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
+    length: Int,
+    supplement: Int,
+):
+    var tid = global_idx.x
+    if tid >= length:
+        return
+    output[tid] = in0[tid] + in1[tid] + Float32(supplement)
+
+
+def test_enqueue_function_with_args(ctx: DeviceContext) raises:
+    comptime length = 1024
+
+    var in0 = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1 = ctx.enqueue_create_buffer[DType.float32](length)
+    var out = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var in1_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
+
+    for i in range(length):
+        in0_host[i] = Float32(i)
+        in1_host[i] = Float32(2)
+
+    ctx.enqueue_copy(in0, in0_host)
+    ctx.enqueue_copy(in1, in1_host)
+
+    comptime block_dim = 32
+    var supplement = 5
+    ctx.enqueue_function[_vec_add_kernel](
+        in0,
+        in1,
+        out,
+        length,
+        supplement,
+        grid_dim=(length // block_dim),
+        block_dim=block_dim,
+    )
+    ctx.enqueue_copy(out_host, out)
+    ctx.synchronize()
+
+    for i in range(10):
+        assert_equal(out_host[i], Float32(i) + Float32(2) + Float32(5))
+
+
+def test_compile_function_reuse(ctx: DeviceContext) raises:
+    # Pre-compile once, launch twice.
+    comptime length = 64
+    var dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var host_in = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var host_out = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
+    for i in range(length):
+        host_in[i] = Float32(i)
+
+    var compiled = ctx.compile_function[_vec_add_kernel]()
+    ctx.enqueue_copy(dev, host_in)
+    ctx.enqueue_function(
+        compiled,
+        dev,
+        dev,
+        dev,
+        length,
+        1,
+        grid_dim=length // 32,
+        block_dim=32,
+    )
+    ctx.enqueue_copy(host_out, dev)
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_out[i], Float32(i) + Float32(i) + Float32(1))
+
+    # Re-launch the same compiled function with different arguments.
+    ctx.enqueue_copy(dev, host_in)
+    ctx.enqueue_function(
+        compiled,
+        dev,
+        dev,
+        dev,
+        length,
+        7,
+        grid_dim=length // 32,
+        block_dim=32,
+    )
+    ctx.enqueue_copy(host_out, dev)
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_out[i], Float32(i) + Float32(i) + Float32(7))
+
+
+def test_external_shared_mem(ctx: DeviceContext) raises:
+    print("== test_external_shared_mem")
+
+    def dynamic_smem_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
+        var dynamic_sram = external_memory[
+            Float32, address_space=AddressSpace.SHARED, alignment=4
+        ]()
+        dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
+        barrier()
+        data[thread_idx.x] = dynamic_sram[thread_idx.x]
+
+    var res_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](16)
+    ctx.synchronize()
+    for i in range(16):
+        res_host_ptr[i] = Float32(0)
+    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
+
+    ctx.enqueue_copy(res_device, res_host_ptr)
+
+    comptime kernel = dynamic_smem_kernel
+
+    # 16 KB allocation — valid on all platforms including Metal (32 KB limit).
+    ctx.enqueue_function[kernel](
+        res_device,
+        grid_dim=1,
+        block_dim=16,
+        shared_mem_bytes=16 * 1024,
+    )
+
+    ctx.enqueue_copy(res_host_ptr, res_device)
+
+    ctx.synchronize()
+
+    var expected: List[Float32] = [
+        0.0,
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0,
+        13.0,
+        14.0,
+        15.0,
+    ]
+    for i in range(16):
+        print(res_host_ptr[i])
+        assert_equal(res_host_ptr[i], expected[i])
+
+    _ = res_device
+
+
+def test_stream_enqueue_function(ctx: DeviceContext) raises:
+    comptime length = 128
+    var stream = ctx.create_stream()
+    var dev_in = ctx.enqueue_create_buffer[DType.float32](length)
+    var dev_out = ctx.enqueue_create_buffer[DType.float32](length)
+    var host_in = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var host_out = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
+    for i in range(length):
+        host_in[i] = Float32(i)
+    ctx.enqueue_copy(dev_in, host_in)
+    ctx.synchronize()
+
+    stream.enqueue_function[_vec_add_kernel](
+        dev_in,
+        dev_in,
+        dev_out,
+        length,
+        0,
+        grid_dim=length // 32,
+        block_dim=32,
+    )
+    stream.synchronize()
+    ctx.enqueue_copy(host_out, dev_out)
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_out[i], Float32(i) * Float32(2))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_move(ctx)
@@ -421,3 +614,7 @@ def main() raises:
         test_host_buffer_alloc_and_index(ctx)
         test_host_buffer_roundtrip(ctx)
         test_host_buffer_context(ctx)
+        test_enqueue_function_with_args(ctx)
+        test_compile_function_reuse(ctx)
+        test_external_shared_mem(ctx)
+        test_stream_enqueue_function(ctx)

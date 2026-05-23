@@ -598,6 +598,7 @@ struct RawDriver(Movable):
         args: UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin],
         arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
         num_args: UInt32,
+        shared_mem_bytes: UInt32 = 0,
     ) raises HALError:
         var config = M_driver_queue_execute_config(
             mode=M_driver_queue_execute_mode.GPU,
@@ -605,7 +606,7 @@ struct RawDriver(Movable):
                 M_driver_queue_execute_config_gpu(
                     grid=M_driver_dim(x=grid[0], y=grid[1], z=grid[2]),
                     block=M_driver_dim(x=block[0], y=block[1], z=block[2]),
-                    shared_mem_bytes=UInt32(0),
+                    shared_mem_bytes=shared_mem_bytes,
                     attributes={},
                     num_attributes=UInt32(0),
                 )

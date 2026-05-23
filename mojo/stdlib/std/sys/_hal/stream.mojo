@@ -99,10 +99,19 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         args: UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin],
         arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
         num_args: UInt32,
+        shared_mem_bytes: UInt32 = 0,
     ) raises HALError:
         """Enqueues a function execution. Runs after all previous Stream ops."""
         self._chain_wait()
-        self._queue[].execute(func, grid, block, args, arg_sizes, num_args)
+        self._queue[].execute(
+            func,
+            grid,
+            block,
+            args,
+            arg_sizes,
+            num_args,
+            shared_mem_bytes=shared_mem_bytes,
+        )
         self._chain_signal()
 
     def copy_to_device(
