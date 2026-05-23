@@ -699,7 +699,6 @@ def converted_metatype_struct_element(x: Collection[Item]):
 
 
 # CHECK-LABEL: lit.struct.decl @TraitMember
-# CHECK-NEXT: destructor
 struct TraitMember[T: Movable]:
     # CHECK: lit.fn @"__del__
     var value: Self.T

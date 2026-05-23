@@ -39,7 +39,6 @@ struct MemPair:
 
 
 # CHECK-LABEL: lit.struct.decl @RegExample
-# CHECK: destructor {{.*}}@RegExample::@"__del__
 struct RegExample(ImplicitlyCopyable, RegisterPassable):
   def __init__(out self):
     return

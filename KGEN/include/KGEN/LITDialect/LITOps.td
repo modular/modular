@@ -387,9 +387,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     a SmallVector that can't be bitwise copied around or a Dictionary that
     shouldn't be.
 
-    This includes a 'destructor' field if the type has a non-trivial destructor,
-    allowing SSA passes to perform origin optimizations.  It includes a
-    'moveInit' field if the type implements the move ctor special
+    This includes a 'moveInit' field if the type implements the move ctor special
     functions if present.
   }];
 
@@ -401,7 +399,6 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
     UnitAttr:$synthetic,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
-    OptionalAttr<KGEN_SymbolConstantAttr>:$destructor,
     OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
     OptionalAttr<KGEN_SymbolConstantAttr>:$copyInit,
     // This is the error message to produce if a non-destructible type needs an
@@ -432,7 +429,6 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     $sym_name ``
     custom<StructParameterSpec>($params, $signature, $canonicalTrait) ``
     custom<TypeConvention>($convention) attr-dict-with-keyword
-    (`\n` `destructor` custom<Symbol>($destructor)^ ``)?
     (`\n` `move` custom<Symbol>($moveInit)^ ``)?
     (`\n` `copy` custom<Symbol>($copyInit)^ ``)?
     custom<OptionalDecorators>($decorators) $fields

@@ -144,10 +144,6 @@ public:
   /// its '__del__is_trivial' member.
   bool isProvablyTriviallyDeletable(llvm::SMLoc loc, SharedState &shared) const;
 
-  /// Return true if this type needs to be destroyed.  This is false for trivial
-  /// types like Int.  Note: this resolves the body of a struct type.
-  bool hasNontrivialDestructor(llvm::SMLoc loc, SharedState &shared) const;
-
   /// Return true if this type is implicitly/explicitly copyable, either because
   /// it is trivial or conforms to (Implicitly)Copyable trait. Note:
   /// this resolves the body of a struct type.

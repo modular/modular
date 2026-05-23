@@ -3672,7 +3672,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // This collects all the resolved struct fields. Now that the body is
   // parsed we can check the declared fields for extra invariants.
   bool hasBadField = false;
-  bool hasNonTrivialDestructor = false;
   SmallVector<std::pair<StructFieldOp, ASTDecl *>> structFields;
 
   // Iterate over all the parsed decls.  in general these won't be signature
@@ -3689,9 +3688,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
         hasBadField = true;
         continue;
       }
-      if (ASTType(fieldOp.getType())
-              .hasNontrivialDestructor(decl->getLoc(), shared))
-        hasNonTrivialDestructor = true;
       structFields.push_back({fieldOp, decl});
     }
   }
@@ -3741,16 +3737,10 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // Determine if there is an explicit conformance to ImplicitlyDestructible.
   bool implicitlyDestructible = conformsToTrait("ImplicitlyDestructible");
 
-  // Check to see if there is a destructor and install it into the StructDeclOp
-  // if so.
-  bool synthesizedDtor = false;
-  if (auto dtorAttr = lookupDestructor(structDecl, shared).first) {
-    // Check to see if we have an explicitly declared destructor.
-    structOp.setDestructorAttr(dtorAttr);
-  } else if (implicitlyDestructible) {
-    synthesizedDtor = true;
+  // Synthesize an empty __del__ when the type conforms to
+  // ImplicitlyDestructible but has no explicit destructor.
+  if (!lookupDestructor(structDecl, shared).first && implicitlyDestructible)
     (void)StructEmitter(structDecl).synthesizeEmptyDtor();
-  }
 
   // If the structure conforms to "ImplicitlyDestructible", we populate the
   // trivial flag.
@@ -3784,12 +3774,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
           structDecl.getShared().getEvaluationContext()));
     }
   }
-
-  // If we synthesized a destructor but the fields are all trivial, just drop
-  // the destructor so CheckLifetimes doesn't need to worry about emitting calls
-  // to it.
-  if (synthesizedDtor && !hasNonTrivialDestructor)
-    structOp.setDestructorAttr({});
 
   // Only set the convention for unconditional RP conformance. Conditional RP
   // leaves the struct as MemoryOnly at declaration time; the parametric

@@ -985,8 +985,6 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
         declOp.setMoveInitAttr(getSymbolNoParamValues(declOp, impl));
         break;
       case ClosureMethod::DEL:
-        declOp.setDestructorAttr(getSymbolNoParamValues(declOp, impl));
-        break;
       default:
         break;
       }
@@ -1265,7 +1263,6 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
 
   // Empty __del__
   auto delFnOp = structEmitter.synthesizeEmptyDtor();
-  declOp.setDestructorAttr(getSymbolNoParamValues(declOp, delFnOp));
   addWitnessEntry(implicitlyDestructibleParent, delFnOp);
 
   // Empty move ctor.
@@ -2004,15 +2001,11 @@ ClosureEmitter::buildStructCaptureInfo(StructType structType,
           ? TypeConvention::RegisterPassableTrivial
       : structDeclOp.isRegisterPassable() ? TypeConvention::RegisterPassable
                                           : TypeConvention::MemoryOnly;
-  if (structDeclOp.getDestructor().has_value())
-    del = *structDeclOp.getDestructor();
-  if (!del) {
-    ArrayRef<ASTDecl *> results = structDecl.lookupInCurrentScope("__del__");
-    if (results.size() == 1) {
-      FnOp destructor = dyn_cast<FnOp>(results.front()->getIfOperation());
-      if (destructor)
-        del = destructor.getBoundSymbolRef(shared.getEvaluationContext());
-    }
+  ArrayRef<ASTDecl *> results = structDecl.lookupInCurrentScope("__del__");
+  if (results.size() == 1) {
+    FnOp destructor = dyn_cast<FnOp>(results.front()->getIfOperation());
+    if (destructor)
+      del = destructor.getBoundSymbolRef(shared.getEvaluationContext());
   }
   if (structDeclOp.getMoveInit().has_value())
     move = *structDeclOp.getMoveInit();

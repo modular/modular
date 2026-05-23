@@ -710,9 +710,6 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
   builder = ImplicitLocOpBuilder::atBlockEnd(funcOp.getLoc(), funcOp.getBody());
   IREmitter::emitNormalReturn(builder);
 
-  // Remember this as the destructor for the struct.
-  structDeclOp.setDestructorAttr(
-      funcOp.getBoundSymbolRef(shared.getEvaluationContext()));
   return funcOp;
 }
 

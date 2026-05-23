@@ -19,7 +19,6 @@
 # CHECK-DAG: lit.fn @"__call__($0,::Int)"[mut *"self`"](%{{.*}}: !lit.ref<:{{.*}}, mut *"self`"> read_mem, |, %y: {{.*}}) capturing -> {{.*}} attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
 
 # CHECK: lit.struct.decl @"def(y: Int) -> Int_{{[^"]*}}"<impl: [[IMPL_PARENT]], origin_set: origin.set, |>([[IMPL_PARENT]]) attributes {definesClosure,{{.*}}synthetic}
-# CHECK-NEXT: destructor :
 # CHECK-NEXT: move :
 # CHECK-NEXT: copy :
 # CHECK:  lit.struct.field field0 : !kgen.param<:[[IMPL_PARENT]] impl>
