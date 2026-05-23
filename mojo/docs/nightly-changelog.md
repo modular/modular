@@ -38,7 +38,7 @@ This version is still a work in progress.
   ```
 
 - Types may now be conditionally "ImplicitlyDestructible" with a where clause.
-  Note you currently must implement a del method by hand, e.g.:
+  Note you currently must declare a del method by hand, e.g.:
 
   ```mojo
   @explicit_destroy("Message when implicitly destroyed")
@@ -48,7 +48,7 @@ This version is still a work in progress.
       var data: Self.T
 
       def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDestructible):
-          self.data^.__del__()
+          pass
   ```
 
 ## Language changes
