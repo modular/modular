@@ -244,8 +244,8 @@ def create_matmul_bench[
     init_type: InitializationType,
 ) raises:
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
 
     bench_matmul[
@@ -289,9 +289,9 @@ def main() raises:
         ](
             ctx,
             m,
-            Idx(M),
-            Idx[N](),
-            Idx[K](),
+            M,
+            Idx[N],
+            Idx[K],
             init_type,
         )
 

@@ -25,7 +25,6 @@ from max.driver import CPU, Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import RequestID, TextGenerationContext
 from max.nn.kv_cache import (
     KVCacheBuffer,
     KVCacheInputs,
@@ -42,6 +41,7 @@ from max.nn.kv_cache.utils import (
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
+from max.pipelines.modeling.types import RequestID, TextGenerationContext
 from max.profiler import traced
 from max.support.math import ceildiv
 
@@ -687,6 +687,18 @@ class PagedKVCacheManager:
                         kv_scales=(
                             device_buffer.scales[tp_shard]
                             if device_buffer.scales is not None
+                            else None
+                        ),
+                        # Pre-allocated bf16 scratch buffer used as the
+                        # destination for the fp8-KV dequant pass before
+                        # attention.  Lives on the cache manager (not
+                        # inside the MOGG op) because the op runs inside
+                        # the captured CUDA graph, which cannot allocate.
+                        # `None` on the bf16-KV path — only fp8 quantized
+                        # caches populate `device_buffer.staging`.
+                        kv_staging=(
+                            device_buffer.staging[tp_shard]
+                            if device_buffer.staging is not None
                             else None
                         ),
                         attention_dispatch_metadata=metadata,

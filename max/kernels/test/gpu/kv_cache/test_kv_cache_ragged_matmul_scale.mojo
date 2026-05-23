@@ -352,23 +352,23 @@ def execute_matmul_k_cache_ragged_scale[
     # Create TileTensors for naive_blockwise_scaled_fp8_matmul
     var ref_output_tt = TileTensor(
         ref_output.device_tensor[update=False]().ptr,
-        row_major(Coord(Idx(Int(ragged_total_length)), Idx[kv_hidden_size]())),
+        row_major(Coord(Int(ragged_total_length), Idx[kv_hidden_size])),
     )
     var hidden_state_ragged_tt = TileTensor(
         hidden_state_ragged_device,
-        row_major(Coord(Idx(Int(ragged_total_length)), Idx[hidden_size]())),
+        row_major(Coord(Int(ragged_total_length), Idx[hidden_size])),
     )
     var weight_ref_tt = TileTensor(
         weight_device,
-        row_major(Coord(Idx[kv_hidden_size](), Idx[hidden_size]())),
+        row_major(Coord(Idx[kv_hidden_size], Idx[hidden_size])),
     )
     var ref_input_scale_tt = TileTensor(
         input_scale.device_tensor[update=False]().ptr,
-        row_major(Coord(Idx[input_scale_rows](), Idx(Int(input_scale_cols)))),
+        row_major(Coord(Idx[input_scale_rows], Int(input_scale_cols))),
     )
     var ref_weight_scale_tt = TileTensor(
         weight_scale.device_tensor[update=False]().ptr,
-        row_major(Coord(Idx[weight_scale_rows](), Idx[weight_scale_cols]())),
+        row_major(Coord(Idx[weight_scale_rows], Idx[weight_scale_cols])),
     )
 
     # Use naive blockwise scaled matmul as reference

@@ -127,11 +127,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Infer scaling_kind from scales_dtype.
     comptime scaling_kind = UMMAKind.KIND_MXF4 if scales_dtype == MXFP4_SF_DTYPE else UMMAKind.KIND_MXF4NVF4
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
     var b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value // 2]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * (KType.static_value // 2)
     var b_size = Int(n.value()) * (KType.static_value // 2)
@@ -170,20 +170,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -215,12 +215,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     if simple_init():
         for m in range(Int(m.value())):
             for k in range(Int(k.value()) // 2):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
+                comptime assert a_host.flat_rank == 2
+                a_host[m, k] = UInt8(m).cast[a_type]()
         for n in range(Int(n.value())):
             for k in range(Int(k.value()) // 2):
                 comptime assert b_host.flat_rank >= 2
-                b_host[(Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
+                b_host[n, k] = UInt8(n).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
         rand(b_host.ptr, b_host.num_elements(), min=0, max=255)

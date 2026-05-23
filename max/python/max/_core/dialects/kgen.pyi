@@ -304,9 +304,6 @@ class FnMetadataAttrInterface(Protocol):
         arg3: FnEffects,
         /,
     ) -> bool: ...
-    def get_with_bound_pos_args(
-        self, arg: int, /
-    ) -> FnMetadataAttrInterface: ...
     def equals(self, arg: FnMetadataAttrInterface, /) -> bool: ...
 
 class IndexRefAttrInterface(Protocol):
@@ -1796,6 +1793,47 @@ class PreservedAttr(max._core.Attribute):
     def __init__(self, value: max._core.Attribute) -> None: ...
     @property
     def value(self) -> max._core.Attribute | None: ...
+
+class SIMDAttr(max._core.Attribute):
+    """
+    The `#kgen.simd` attribute represents a constant SIMD vector value. It
+    contains `N` values of a particular dtype. Only integer, floating point, and
+    bool dtypes are supported.
+
+    Example:
+
+    ```mlir
+    #kgen.simd<1, 2> : !kgen.simd<2, si32>
+    #kgen.simd<1.5, 2.5> : !kgen.simd<2, f64>
+    #kgen.simd<true, false> : !kgen.simd<2, bool>
+    ```
+
+    When all values of the SIMD vector are equal, the attribute has a special
+    splat syntax:
+
+    ```mlir
+    #kgen<simd 0> : !kgen.simd<4, si32>
+    #kgen<simd "1.5"> : !kgen.simd<4, f32>
+    #kgen<simd false> : !kgen.simd<4, bool>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, values: Sequence[_DTypeValue], type: SIMDType
+    ) -> None: ...
+    @overload
+    def __init__(self, value: _DTypeValue, type: SIMDType) -> None: ...
+    @overload
+    def __init__(self, int_val: int, type: SIMDType) -> None: ...
+    @overload
+    def __init__(
+        self, values: Sequence[_DTypeValue], type: SIMDType
+    ) -> None: ...
+    @property
+    def values(self) -> Sequence[_DTypeValue]: ...
+    @property
+    def type(self) -> SIMDType: ...
 
 class SIMDSplatAttr(max._core.Attribute):
     """
@@ -4662,6 +4700,7 @@ class FuncType(max._core.Type):
         arg_convs: Sequence[ArgConvention] = [],
         effects: FnEffects = FnEffects.none,
         metadata: max._core.Attribute = ...,
+        arg_list_attrs: max._core.Attribute = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -4670,6 +4709,7 @@ class FuncType(max._core.Type):
         arg_conventions: Sequence[ArgConvention],
         fn_effects: FnEffects,
         metadata: FnMetadataAttrInterface,
+        arg_list_attrs: PogListAttr,
     ) -> None: ...
     @property
     def values(self) -> max._core.dialects.builtin.FunctionType: ...
@@ -4679,6 +4719,8 @@ class FuncType(max._core.Type):
     def fn_effects(self) -> FnEffects: ...
     @property
     def metadata(self) -> FnMetadataAttrInterface: ...
+    @property
+    def arg_list_attrs(self) -> PogListAttr: ...
 
 class GeneratorType(max._core.Type):
     """
@@ -5189,9 +5231,14 @@ class FuncTypeGeneratorType(GeneratorType):
         effects: FnEffects = FnEffects.none,
         fn_metadata: max._core.Attribute = ...,
         gen_metadata: max._core.Attribute = ...,
+        arg_list_attrs: max._core.Attribute = ...,
     ) -> None: ...
 
 class _KGENDType:
+    @staticmethod
+    def get_int(arg0: int, arg1: bool, /) -> _KGENDType: ...
+
+class _DTypeValue:
     pass
 
 class ParamDefValue:

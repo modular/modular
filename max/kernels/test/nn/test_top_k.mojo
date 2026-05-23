@@ -117,14 +117,14 @@ def test_case_sampling[
         temperature_ptr[i] = temperature.cast[DType.float32]()
 
     var temperature_buf = Optional(
-        TileTensor(temperature_ptr, row_major(Idx(Int64(batch_size))))
+        TileTensor(temperature_ptr, row_major(Int64(batch_size)))
         .as_any_origin()
         .as_immut()
     )
 
     var seed_ptr = List(length=batch_size, fill=UInt64(12))
     var seed_buf = Optional(
-        TileTensor(seed_ptr, row_major(Idx(Int64(batch_size))))
+        TileTensor(seed_ptr, row_major(Int64(batch_size)))
         .as_any_origin()
         .as_immut()
     )
@@ -312,11 +312,11 @@ def main() raises:
     ](buf: TileTensor[mut=True, dtype, ...]):
         var flat_buf = TileTensor(
             buf.ptr,
-            row_major(Idx(buf.num_elements())),
+            row_major(buf.num_elements()),
         )
 
         for i in range(flat_buf.num_elements()):
-            var idx = flat_buf.layout(Coord(Idx(i)))
+            var idx = flat_buf.layout(Coord(i))
             flat_buf.raw_store(
                 idx, Scalar[dtype](flat_buf.num_elements() - i - 1)
             )

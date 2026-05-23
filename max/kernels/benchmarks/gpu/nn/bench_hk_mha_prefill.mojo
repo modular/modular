@@ -41,7 +41,7 @@ from std.utils.numerics import min_or_neg_inf
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import Idx, LayoutTensor, TileTensor, row_major
-from layout.coord import Coord, RuntimeInt
+from layout.coord import Coord
 from layout.runtime_layout import RuntimeLayout
 
 from nn.attention.mha_mask import CausalMask
@@ -149,10 +149,10 @@ def run_hk_mha_prefill[
                     q_ptr,
                     row_major(
                         Coord(
-                            RuntimeInt[DType.int32](Int32(batch_size)),
-                            RuntimeInt[DType.int32](Int32(seq_len)),
-                            Idx[num_heads](),
-                            Idx[depth](),
+                            Int32(batch_size),
+                            Int32(seq_len),
+                            Idx[num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -160,10 +160,10 @@ def run_hk_mha_prefill[
                     k_ptr,
                     row_major(
                         Coord(
-                            RuntimeInt[DType.int32](Int32(batch_size)),
-                            RuntimeInt[DType.int32](Int32(num_keys)),
-                            Idx[kv_num_heads](),
-                            Idx[depth](),
+                            Int32(batch_size),
+                            Int32(num_keys),
+                            Idx[kv_num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -171,10 +171,10 @@ def run_hk_mha_prefill[
                     v_ptr,
                     row_major(
                         Coord(
-                            RuntimeInt[DType.int32](Int32(batch_size)),
-                            RuntimeInt[DType.int32](Int32(num_keys)),
-                            Idx[kv_num_heads](),
-                            Idx[depth](),
+                            Int32(batch_size),
+                            Int32(num_keys),
+                            Idx[kv_num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -182,10 +182,10 @@ def run_hk_mha_prefill[
                     cb_o.offset_ptr(iteration).bitcast[Scalar[DType.float32]](),
                     row_major(
                         Coord(
-                            RuntimeInt[DType.int32](Int32(batch_size)),
-                            RuntimeInt[DType.int32](Int32(seq_len)),
-                            Idx[num_heads](),
-                            Idx[depth](),
+                            Int32(batch_size),
+                            Int32(seq_len),
+                            Idx[num_heads],
+                            Idx[depth],
                         )
                     ),
                 )

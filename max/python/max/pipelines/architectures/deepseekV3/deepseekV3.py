@@ -474,6 +474,11 @@ class DeepseekV3DecoderLayer(Module):
                 apply_router_weight_first=False,
                 ep_batch_manager=self.ep_manager,
                 quant_config=config.quant_config,
+                shared_experts_dtype=(
+                    config.quant_config.shared_experts_dtype(config.dtype)
+                    if config.quant_config is not None
+                    else DType.bfloat16
+                ),
             )
 
             moe: MoE
@@ -493,13 +498,31 @@ class DeepseekV3DecoderLayer(Module):
                 )
             return moe
         else:
+            dense_quant = (
+                config.quant_config
+                if layer_idx not in config.dense_mlp_layers_without_quant
+                else None
+            )
+            # ``config.dtype`` is the packed-weight / graph encoding dtype
+            # (e.g. uint8 for ``float4_e2m1fnx2``). Unquantized dense MLPs use
+            # BF16 tensors; :class:`~max.nn.Linear` only switches to uint8 when
+            # ``quant_config.is_fp4`` is true.
+            mlp_weight_dtype = (
+                config.dtype if dense_quant is not None else DType.bfloat16
+            )
+            if (
+                dense_quant is None
+                and config.quant_config
+                and config.quant_config.embedding_output_dtype
+            ):
+                mlp_weight_dtype = config.quant_config.embedding_output_dtype
             mlp = MLP(
-                dtype=config.dtype,
+                dtype=mlp_weight_dtype,
                 quantization_encoding=None,
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size,
                 devices=config.devices,
-                quant_config=config.quant_config,
+                quant_config=dense_quant,
             )
             if self.mode == ParallelismMode.TP_TP or (
                 self.config.ep_config is not None

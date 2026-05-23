@@ -64,7 +64,7 @@ from std.sys.intrinsics import _type_is_eq_parse_time
 from std.collections import check_bounds
 from std.utils.numerics import max_finite
 from std.utils import IndexList
-from layout.coord import ComptimeInt, Coord, CoordLike, RuntimeInt
+from layout.coord import ComptimeInt, Coord, CoordLike
 
 
 def _get_index_type(address_space: AddressSpace) -> DType:
@@ -2920,7 +2920,7 @@ def coord_to_int_tuple[
     """Convert a `Coord` to an `IntTuple`, preserving the nested structure.
 
     This function recursively traverses the `Coord` and converts each element:
-    - Value elements (`ComptimeInt`, `RuntimeInt`) become integer values in the `IntTuple`
+    - Value elements (`ComptimeInt`, `Scalar`) become integer values in the `IntTuple`
     - Tuple elements (nested `Coord`) become nested `IntTuple`s
 
     Parameters:
@@ -2951,7 +2951,7 @@ def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
     """Convert a `Coord` to an `IntTuple`, preserving the nested structure.
 
     This function recursively traverses the `Coord` and converts each element:
-    - Value elements (`ComptimeInt`, `RuntimeInt`) become integer values in the `IntTuple`
+    - Value elements (`ComptimeInt`, `Scalar`) become integer values in the `IntTuple`
     - Tuple elements (nested `Coord`) become nested `IntTuple`s
 
     Parameters:
@@ -2983,13 +2983,13 @@ comptime _IntTupleToCoordLikeTabulator[
     idx: Int,
 ]: CoordLike = ComptimeInt[Int(tuple[idx])] if Int(
     tuple[idx]
-) != UNKNOWN_VALUE else RuntimeInt[
+) != UNKNOWN_VALUE else Scalar[
     dtype
 ]
 """Maps a single IntTuple element to a CoordLike type.
 
 If the value is known, produces ComptimeInt[value].
-If UNKNOWN_VALUE, produces RuntimeInt.
+If UNKNOWN_VALUE, produces Scalar.
 """
 
 comptime _IntTupleToCoordLike[
@@ -3006,7 +3006,7 @@ Note:
 
 For each element in the IntTuple:
 - If the value is known (not UNKNOWN_VALUE), produces `ComptimeInt[value]`
-- If the value is UNKNOWN_VALUE, produces `RuntimeInt`
+- If the value is UNKNOWN_VALUE, produces `Scalar`
 
 Example:
     ```mojo
@@ -3014,10 +3014,10 @@ Example:
     from layout import IntTuple
     from layout.int_tuple import _IntTupleToCoordLike
 
-    # Known values become ComptimeInt, UNKNOWN_VALUE becomes RuntimeInt
+    # Known values become ComptimeInt, UNKNOWN_VALUE becomes Scalar
     comptime shape = IntTuple(3, -1, 5)
     comptime coord_types = _IntTupleToCoordLike[DType.int32, shape]
-    # coord_types is equivalent to TypeList.of[Trait=CoordLike, ComptimeInt[3], RuntimeInt, ComptimeInt[5]]()
+    # coord_types is equivalent to TypeList.of[Trait=CoordLike, ComptimeInt[3], Scalar, ComptimeInt[5]]()
 
     # Can be used to create a Coord type
     comptime my_coords = Coord[*coord_types]

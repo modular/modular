@@ -21,18 +21,21 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 from max.driver import Buffer
-from max.interfaces.context import GenerationStatus, SamplingParams
-from max.interfaces.eos_tracking import EOSTracker
-from max.interfaces.pipeline_variants.text_generation import (
+from max.pipelines.core.context import TokenBuffer
+from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.modeling.types.context import (
+    GenerationStatus,
+    SamplingParams,
+)
+from max.pipelines.modeling.types.eos_tracking import EOSTracker
+from max.pipelines.modeling.types.pipeline_variants.text_generation import (
     ImageMetadata,
     LogProbabilities,
     SpecDecodingState,
     TextGenerationOutput,
 )
-from max.interfaces.request import RequestID
-from max.pipelines.core.context import TokenBuffer
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.request import RequestID
 
 
 def _make_buffer(rows: int, cols: int = 4) -> Buffer:
@@ -95,6 +98,9 @@ class FakeContext:
         )
         self.cached_prefix_length: int | None = None
         self.in_reasoning_phase: bool = False
+        self.grammar_enforced: bool = False
+        self.tools_forced: bool = False
+        self.requires_structured_output_flag: bool = False
 
     @property
     def request_id(self) -> RequestID:
@@ -185,6 +191,23 @@ class FakeContext:
 
     def set_matcher(self, matcher: Any) -> None:
         pass
+
+    def set_tool_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        pass
+
+    def set_thinking_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        pass
+
+    def update_enforcement_state(self, token: int) -> bool:
+        return False
 
     @property
     def sampling_params(self) -> SamplingParams:

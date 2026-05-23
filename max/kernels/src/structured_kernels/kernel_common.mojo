@@ -514,7 +514,7 @@ def _to_batched_3d(
     return tensor.reshape(
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 tensor.layout.shape[0](),
                 tensor.layout.shape[1](),
             )

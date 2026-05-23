@@ -624,19 +624,19 @@ def test_qk_smoke(ctx: DeviceContext) raises:
 
     var c_ref_tt = TileTensor(
         c_ref_dev,
-        row_major(Coord(Idx(QK_M), Idx(QK_N))),
+        row_major(Coord(QK_M, QK_N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(a_ref_dev.unsafe_ptr())
         ),
-        row_major(Coord(Idx(QK_M), Idx(QK_K))),
+        row_major(Coord(QK_M, QK_K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(b_ref_dev.unsafe_ptr())
         ),
-        row_major(Coord(Idx(QK_N), Idx(QK_K))),
+        row_major(Coord(QK_N, QK_K)),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -816,19 +816,19 @@ def test_pv_smoke(ctx: DeviceContext) raises:
 
     var c_ref_tt = TileTensor(
         c_ref_dev,
-        row_major(Coord(Idx(PV_M), Idx(PV_N))),
+        row_major(Coord(PV_M, PV_N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(a_ref_dev.unsafe_ptr())
         ),
-        row_major(Coord(Idx(PV_M), Idx(PV_K))),
+        row_major(Coord(PV_M, PV_K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(b_ref_dev.unsafe_ptr())
         ),
-        row_major(Coord(Idx(PV_N), Idx(PV_K))),
+        row_major(Coord(PV_N, PV_K)),
     )
 
     comptime gemm_naive = matmul_kernel_naive[

@@ -18,14 +18,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from max.interfaces import (
+from max.pipelines.lib.reasoning import register
+from max.pipelines.lib.tokenizer import convert_token_to_id
+from max.pipelines.modeling.types import (
     ParsedReasoningDelta,
     PipelineTokenizer,
     ReasoningParser,
     ReasoningSpan,
 )
-from max.pipelines.lib.reasoning import register
-from max.pipelines.lib.tokenizer import convert_token_to_id
 
 
 @register("kimik2_5")
@@ -194,3 +194,11 @@ class KimiK2_5ReasoningParser(ReasoningParser):
             think_end_token_id=think_end_id,
             tool_section_start_token_id=tool_section_start_id,
         )
+
+    @classmethod
+    async def reasoning_end_token_id(
+        cls,
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+    ) -> int | None:
+        """Returns the ``</think>`` token id."""
+        return await convert_token_to_id(tokenizer, "</think>")

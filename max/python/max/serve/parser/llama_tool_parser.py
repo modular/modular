@@ -16,12 +16,12 @@ from __future__ import annotations
 import json
 import uuid
 
-from max.interfaces import (
+from max.pipelines.lib.tool_parsing import register
+from max.pipelines.modeling.types import (
     ParsedToolCall,
     ParsedToolCallDelta,
     ParsedToolResponse,
 )
-from max.pipelines.lib.tool_parsing import register
 
 from .json_utils import parse_json_from_text
 

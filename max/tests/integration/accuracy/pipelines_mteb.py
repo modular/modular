@@ -38,17 +38,17 @@ import numpy as np
 
 # Pipelines
 from max.entrypoints.cli import pipeline_config_options
-from max.interfaces import (
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    EmbeddingsPipelineType,
+    PipelineConfig,
+)
+from max.pipelines.modeling.types import (
     EmbeddingsGenerationInputs,
     PipelineTask,
     PipelineTokenizer,
     RequestID,
     TextGenerationRequest,
-)
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    EmbeddingsPipelineType,
-    PipelineConfig,
 )
 from transformers import AutoConfig
 

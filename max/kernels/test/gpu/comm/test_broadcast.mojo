@@ -100,9 +100,9 @@ def broadcast_test[
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
 
     # Create TileTensor types for input and output
-    var in_tile = TileTensor(input_dev, row_major(Idx(length))).as_immut()
+    var in_tile = TileTensor(input_dev, row_major(length)).as_immut()
     comptime OutputTileType = TileTensor[
-        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+        dtype, type_of(row_major(length)), MutAnyOrigin
     ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
@@ -116,15 +116,13 @@ def broadcast_test[
         if root_self_copy and i == root:
             # Special case: root does an in-place copy
             out_dev_list.append(input_dev)
-            out_tiles[i] = OutputTileType(input_dev, row_major(Idx(length)))
+            out_tiles[i] = OutputTileType(input_dev, row_major(length))
             continue
 
         var ctx = list_of_ctxs[i]
         var out_ptr = ctx.enqueue_create_buffer[dtype](length)
         out_dev_list.append(out_ptr)
-        out_tiles[i] = OutputTileType(
-            out_ptr.unsafe_ptr(), row_major(Idx(length))
-        )
+        out_tiles[i] = OutputTileType(out_ptr.unsafe_ptr(), row_major(length))
 
     # Signal buffers need payload space for 2-stage broadcast
     var num_bytes = length * size_of[dtype]()

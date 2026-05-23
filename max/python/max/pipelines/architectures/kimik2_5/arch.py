@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 from transformers import AutoConfig, PretrainedConfig
 
 from . import weight_adapters
@@ -45,6 +45,7 @@ kimik2_5_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "nvidia/Kimi-K2.5-NVFP4",
+        "nvidia/Kimi-K2.6-NVFP4",
     ],
     default_encoding="bfloat16",
     supported_encodings={

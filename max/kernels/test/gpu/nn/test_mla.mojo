@@ -147,26 +147,22 @@ def test[
     # Construct device TileTensors.
     var q_device = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys,
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth_v]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth_v])),
     )
 
     comptime q_tile_num_rows = 32
@@ -228,10 +224,10 @@ def test[
             output_ref_device_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(seq_len),
-                    Idx[num_heads](),
-                    Idx[depth](),
+                    batch_size,
+                    seq_len,
+                    Idx[num_heads],
+                    Idx[depth],
                 )
             ),
         )
@@ -373,36 +369,30 @@ def test_prefill[
     # ragged inputs
     var q = TileTensor(
         q_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
     var k = TileTensor(
         k_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var v = TileTensor(
         v_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var cache = TileTensor(
         cache_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[cache_num_heads](),
-                Idx[cache_depth](),
+                batch_size,
+                num_keys,
+                Idx[cache_num_heads],
+                Idx[cache_depth],
             )
         ),
     )
     var output = TileTensor(
         output_ptr,
-        row_major(
-            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
     )
 
     # device pointers
@@ -429,44 +419,38 @@ def test_prefill[
     # construct device TileTensors
     var q_device = TileTensor(
         q_device_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var cache_device = TileTensor(
         cache_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[cache_num_heads](),
-                Idx[cache_depth](),
+                batch_size,
+                num_keys,
+                Idx[cache_num_heads],
+                Idx[cache_depth],
             )
         ),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
     )
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
     var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     @parameter
@@ -539,21 +523,15 @@ def test_prefill[
     # create reference K and V
     var k_ref = TileTensor(
         k_ref_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var v_ref = TileTensor(
         v_ref_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var output_ref = TileTensor(
         output_ref_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # the first kv_depth elements of each head in K_ref and V_ref are the same as K and V
@@ -578,9 +556,7 @@ def test_prefill[
     # view q_device as a rank 4 buffer
     var q_device_rank4 = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # create device pointers for K_ref and V_ref
@@ -596,21 +572,15 @@ def test_prefill[
     # create device TileTensors for K_ref and V_ref
     var k_ref_device = TileTensor(
         k_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var v_ref_device = TileTensor(
         v_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
     var output_ref_device = TileTensor(
         output_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # copy from host to device
@@ -653,10 +623,10 @@ def test_prefill[
         output_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                batch_size,
+                seq_len,
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )

@@ -32,7 +32,6 @@ from std.builtin.simd import _convert_f32_to_float8_scalar
 from layout import (
     Coord,
     Idx,
-    RuntimeInt,
     TileTensor,
     row_major,
 )
@@ -91,11 +90,9 @@ def _test_dispatch[
     )
 
     # --- Host allocations ---
-    var a_shape = row_major(Coord(Idx(Int(M)), Idx[packed_K]()))
-    var b_shape = row_major(
-        Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())
-    )
-    var c_shape = row_major(Coord(Idx(Int(M)), Idx[N]()))
+    var a_shape = row_major(Coord(Int(M), Idx[packed_K]))
+    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K]))
+    var c_shape = row_major(Coord(Int(M), Idx[N]))
 
     var a_size = M * packed_K
     var b_size = num_experts * N * packed_K
@@ -125,28 +122,28 @@ def _test_dispatch[
     )
     var a_offsets_tensor = TileTensor(
         a_offsets_device,
-        row_major(Coord(Idx(Int(num_active_experts + 1)))),
+        row_major(Coord(Int(num_active_experts + 1))),
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device,
-        row_major(Coord(Idx(Int(num_active_experts)))),
+        row_major(Coord(Int(num_active_experts))),
     )
     var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
         expert_ids_device,
-        row_major(Coord(Idx(Int(num_active_experts)))),
+        row_major(Coord(Int(num_active_experts))),
     )
     var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
         num_experts
     )
     var expert_scales_tensor = TileTensor(
         expert_scales_device,
-        row_major(Coord(Idx[num_experts]())),
+        row_major(Coord(Idx[num_experts])),
     )
 
     # --- Offsets & expert IDs ---
@@ -185,21 +182,21 @@ def _test_dispatch[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
-            Idx[k_groups](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Int(a_scale_dim0),
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[n_groups](),
-            Idx[k_groups](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -272,11 +269,11 @@ def _test_dispatch[
             b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -309,11 +306,11 @@ def _test_dispatch[
         a_scales_device,
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Int64(a_scale_dim0),
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -321,22 +318,18 @@ def _test_dispatch[
         b_scales_device,
         row_major(
             Coord(
-                Idx[num_experts](),
-                Idx[n_groups](),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[num_experts],
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
     var expert_scales_tt = TileTensor(
         expert_scales_device,
-        row_major(
-            Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
-            )
-        ),
+        row_major(Coord(Int64(num_experts))),
     ).as_any_origin()
 
     # --- Call dispatch function (MOGG argument order) ---
@@ -377,28 +370,28 @@ def _test_dispatch[
 
         var c_slice = TileTensor(
             c_ref_tensor.ptr + start * c_row_stride,
-            row_major((Idx(end - start), Idx[N]())),
+            row_major((end - start, Idx[N])),
         )
 
         var new_a_tensor = TileTensor(
             a_tensor.ptr + start * a_row_stride,
-            row_major((Idx(end - start), Idx[packed_K]())),
+            row_major((end - start, Idx[packed_K])),
         )
 
         var new_b_tensor = TileTensor(
             b_tensor.ptr + Int(expert_id) * b_expert_stride,
-            row_major((Idx[N](), Idx[packed_K]())),
+            row_major((Idx[N], Idx[packed_K])),
         )
 
         var new_b_scales_tensor = TileTensor(
             b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -410,11 +403,11 @@ def _test_dispatch[
             a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
-                    Idx(ceildiv(end - start, SF_MN_GROUP_SIZE)),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    ceildiv(end - start, SF_MN_GROUP_SIZE),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )

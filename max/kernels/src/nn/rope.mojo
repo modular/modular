@@ -23,7 +23,6 @@ from layout import (
     Coord,
     CoordLike,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     coord,
@@ -127,14 +126,14 @@ def rope_ragged[
     ](),
     mrope_section: Optional[Coord[*mrope_types]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
-        *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
+        *Coord[Int64, Int64].element_types
     ],
 ](
     x: TileTensor[dtype, ...],
     input_row_offsets: TileTensor[DType.uint32, ...],
     start_pos: TileTensor[DType.uint32, ...],
     freqs_cis: TileTensor[freq_dtype, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
     position_ids: OptionalReg[
         TileTensor[DType.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
     ] = None,
@@ -258,7 +257,7 @@ def rope_ragged[
 
     comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape_index_list
+            launch_shape_index_list, context
         )
     else:
         elementwise[
@@ -266,4 +265,4 @@ def rope_ragged[
             simd_width=kernel_simd_width,
             target=target,
             _trace_description="rope",
-        ](launch_shape_index_list, context.value())
+        ](launch_shape_index_list, context)

@@ -31,15 +31,15 @@ def stencil1d(
 ):
     var tid = global_idx.x
 
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
+    var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
+    var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
 
     if 0 < tid < arr_size - 1:
         b.store(
-            Coord(Idx(tid)),
-            Float32(coeff0) * a.load[width=1](Coord(Idx(tid - 1)))
-            + Float32(coeff1) * a.load[width=1](Coord(Idx(tid)))
-            + Float32(coeff2) * a.load[width=1](Coord(Idx(tid + 1))),
+            Coord(tid),
+            Float32(coeff0) * a.load[width=1](Coord(tid - 1))
+            + Float32(coeff1) * a.load[width=1](Coord(tid))
+            + Float32(coeff2) * a.load[width=1](Coord(tid + 1)),
         )
 
 
@@ -54,31 +54,29 @@ def stencil1d_smem(
     var tid = global_idx.x
     var lindex = thread_idx.x + 1
 
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
+    var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
+    var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
 
     var a_shared = stack_allocation[
         BLOCK_DIM + 2, DType.float32, address_space=AddressSpace.SHARED
     ]()
 
-    a_shared[lindex] = a.load[width=1](Coord(Idx(tid)))
+    a_shared[lindex] = a.load[width=1](Coord(tid))
     if thread_idx.x == 0:
         a_shared[lindex - 1] = (
-            a.load[width=1](Coord(Idx(tid - 1))) if 0
-            <= tid - 1
-            < arr_size else 0
+            a.load[width=1](Coord(tid - 1)) if 0 <= tid - 1 < arr_size else 0
         )
 
         var idx = tid + Int(BLOCK_DIM)
         a_shared[lindex + BLOCK_DIM] = (
-            a.load[width=1](Coord(Idx(idx))) if idx < arr_size else 0
+            a.load[width=1](Coord(idx)) if idx < arr_size else 0
         )
 
     barrier()
 
     if 0 < tid < arr_size - 1:
         b.store(
-            Coord(Idx(tid)),
+            Coord(tid),
             Float32(coeff0) * a_shared[lindex - 1]
             + Float32(coeff1) * a_shared[lindex]
             + Float32(coeff2) * a_shared[lindex + 1],

@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 import torch
-from max.interfaces import ImageContentPart
+from max.pipelines.modeling.types import ImageContentPart
 from test_common.storage import load_image
 from test_common.test_data import MockTextGenerationRequest
 from test_common.torch_utils import _create_logits_store

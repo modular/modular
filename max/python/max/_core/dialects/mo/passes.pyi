@@ -30,9 +30,7 @@ def MOToMOGG(
     TODO: Expand this to also perform lowering search
     """
 
-def AddFallbackShapeFunctions(
-    kernel_library_paths: Sequence[str] = [],
-) -> max._core.Pass:
+def AddFallbackShapeFunctions() -> max._core.Pass:
     """
     This ensures all MO operations will have parameterized outputs by checking
     if they have already been parameterized and if not materializing a fallback

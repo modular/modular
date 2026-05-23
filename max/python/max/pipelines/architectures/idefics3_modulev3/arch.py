@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 # Reuse the tokenizer from the V2 implementation.
 from ..idefics3.tokenizer import Idefics3Tokenizer

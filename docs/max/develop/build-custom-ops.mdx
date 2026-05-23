@@ -137,11 +137,11 @@ parameter](https://mojolang.org/docs/manual/parameters/#parameterized-functions)
 
 - The runtime arguments include the op's inputs and outputs, which take the form
 of
-[`InputTensor`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/#inputtensor)
+[`InputTensor`](/max/api/kernels/extensibility/managed_tensor_slice/#inputtensor)
 and
-[`OutputTensor`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/#outputtensor),
+[`OutputTensor`](/max/api/kernels/extensibility/managed_tensor_slice/#outputtensor),
 respectively. These are specialized versions of the
-[`ManagedTensorSlice`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/ManagedTensorSlice)
+[`ManagedTensorSlice`](/max/api/kernels/extensibility/managed_tensor_slice/ManagedTensorSlice)
 type, which represents a tensor of a specific rank and datatype whose memory is
 managed outside of the operation.
 
@@ -171,7 +171,7 @@ struct AddOne:
 ```
 
 We call `elementwise_add_one()` using
-[`foreach()`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/foreach/),
+[`foreach()`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/),
 which distributes an elementwise computation in parallel across all elements in
 the output tensor. At compile time, `foreach()` optimizes the computation for
 the hardware its running on, optimally distributing parallel workloads to make
@@ -277,7 +277,7 @@ pixi run python addition.py
 
 ## Example 2: Write device-specific kernels
 
-[`foreach()`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/foreach/)
+[`foreach()`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/)
 is a device-independent abstraction designed for elementwise computation: it
 handles hardware dispatch and achieves excellent performance for that class of
 operation. When you need direct control over thread dispatch, block sizes, or
@@ -285,7 +285,7 @@ GPU-specific memory patterns, you write separate code paths for CPU and GPU
 using Mojo's `comptime if` and the GPU thread model.
 
 The `add_one` custom op above uses
-[`foreach()`](/max/api/kernels/extensibility/tensor/managed_tensor_slice/foreach/)
+[`foreach()`](/max/api/kernels/extensibility/managed_tensor_slice/foreach/)
 to run our custom op computation. This function is a device-independent
 abstraction to perform calculations on each element of a tensor, and it offers
 great out-of-the-box performance for a range of CPUs and GPUs. However, there

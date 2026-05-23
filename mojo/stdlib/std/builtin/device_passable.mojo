@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the `DevicePassable` trait for types transferable to accelerator devices."""
 
+from std.os import abort
 from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq
 from std.builtin.rebind import downcast
@@ -107,8 +108,7 @@ trait DeviceTypeEncoder:
             comptime T = downcast[ValueType, Copyable & ImplicitlyDestructible]
             target.bitcast[T]()[] = rebind[T](value).copy()
         else:
-            # TODO: Once MOCO-3858 is fixed use abort here instead
-            comptime assert False, (
+            abort(
                 "encode: Type must conform to ImplicitlyCopyable or Copyable &"
                 " ImplicitlyDestructible"
             )

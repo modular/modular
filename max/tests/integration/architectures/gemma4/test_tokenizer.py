@@ -22,7 +22,10 @@ from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 import pytest
-from max.interfaces import (
+from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
+from max.pipelines.architectures.gemma4.video_processor import VideoMetadata
+from max.pipelines.lib import KVCacheConfig
+from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
     TextContentPart,
@@ -31,9 +34,6 @@ from max.interfaces import (
     TextGenerationResponseFormat,
     VideoContentPart,
 )
-from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
-from max.pipelines.architectures.gemma4.video_processor import VideoMetadata
-from max.pipelines.lib import KVCacheConfig
 from PIL import Image
 from pytest_mock import MockerFixture
 
@@ -229,7 +229,11 @@ async def test_response_format_with_json_schema_key(
         request_id=RequestID("test-rf-with-schema"),
         model_name="test-model",
         response_format=TextGenerationResponseFormat(
-            type="json_schema", grammar=None, json_schema=schema
+            type="json_schema",
+            grammar=None,
+            json_schema=schema,
+            grammar_enforced=False,
+            tools_forced=False,
         ),
     )
 

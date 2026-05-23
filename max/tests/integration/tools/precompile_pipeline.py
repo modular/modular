@@ -33,11 +33,11 @@ from max.driver import (
     set_virtual_device_target_arch,
 )
 from max.entrypoints.cli.entrypoint import configure_cli_logging
-from max.pipelines.lib.config.config_enums import SupportedEncoding
 from max.pipelines.lib.device_specs import (
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.serve.config import parse_api_and_target_arch
 
 logger = logging.getLogger(__name__)

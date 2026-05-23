@@ -19,8 +19,8 @@ import logging
 import queue
 from typing import TYPE_CHECKING
 
-from max.interfaces import RequestID
-from max.interfaces.lora import (
+from max.pipelines.modeling.types import RequestID
+from max.pipelines.modeling.types.lora import (
     LORA_REQUEST_ENDPOINT,
     LORA_RESPONSE_ENDPOINT,
     LoRAOperation,

@@ -19,14 +19,17 @@ import asyncio
 import logging
 import queue
 
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     LoRAOperation,
     LoRARequest,
     LoRAResponse,
     LoRAStatus,
     RequestID,
 )
-from max.interfaces.lora import LORA_REQUEST_ENDPOINT, LORA_RESPONSE_ENDPOINT
+from max.pipelines.modeling.types.lora import (
+    LORA_REQUEST_ENDPOINT,
+    LORA_RESPONSE_ENDPOINT,
+)
 from max.serve.worker_interface.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")

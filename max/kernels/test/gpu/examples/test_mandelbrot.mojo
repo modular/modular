@@ -63,7 +63,7 @@ def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
     if row >= height:
         return
 
-    var out = TileTensor(out_ptr, row_major(Idx(height), Idx(width)))
+    var out = TileTensor(out_ptr, row_major(height, width))
 
     comptime scale_x = (max_x - min_x) / width
     comptime scale_y = (max_y - min_y) / height
@@ -83,7 +83,7 @@ def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
         ](scale_y)
         var c = ComplexSIMD[float_type, simd_width](cx, cy)
         out.store[width=simd_width](
-            (Idx(row), Idx(col)), mandelbrot_kernel[simd_width](c)
+            (row, col), mandelbrot_kernel[simd_width](c)
         )
 
     # We vectorize the call to compute_vector where call gets a chunk of

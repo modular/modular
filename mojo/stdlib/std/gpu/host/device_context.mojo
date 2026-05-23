@@ -110,6 +110,10 @@ struct _DeviceTimerCpp:
     pass
 
 
+struct _CompletionFlagCpp:
+    pass
+
+
 struct _DeviceContextScopeCpp:
     pass
 
@@ -163,6 +167,12 @@ comptime _DeviceTimerPtr[
     //,
     origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
 ] = _CPointer[_DeviceTimerCpp, origin]
+
+comptime _CompletionFlagPtr[
+    mut: Bool,
+    //,
+    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+] = _CPointer[_CompletionFlagCpp, origin]
 
 comptime _DeviceContextScopePtr[
     mut: Bool,
@@ -2182,6 +2192,48 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         )
 
     @always_inline
+    def wait_for_host_value(
+        self,
+        flag: CompletionFlag,
+        value: UInt64,
+    ) raises:
+        """Stalls this stream until ``flag``'s 64-bit value equals ``value``.
+
+        Corresponds to CUDA's `cuStreamWaitValue64`. The stream blocks
+        at this node until the 64-bit slot owned by ``flag`` (allocated
+        in device-mapped pinned host memory by its owning C++
+        ``DeviceContext``) holds ``value``. A CPU thread, or the
+        AsyncRT worker dispatched by `enqueue_host_func`, calling the
+        C++ producer-side ``signal(value)`` lets the GPU stream
+        synchronize on CPU-produced data without a second stream or a
+        blocking host-function callback on the consumer's critical
+        path.
+
+        Captures cleanly into a CUDA graph as a wait-value (batch-mem-op)
+        node, so this operation can be placed between graph-captured
+        kernels to gate a downstream consumer on CPU-produced data.
+
+        Currently only implemented for CUDA streams; other backends raise.
+
+        Args:
+            flag: A non-owning handle to a ``M::Driver::CompletionFlag``
+                allocated by the same device's C++ context.
+            value: The 64-bit value to wait for (equality).
+
+        Raises:
+            If the underlying device does not support stream memory ops,
+            or if the driver rejects the enqueue.
+        """
+        # const char *AsyncRT_DeviceStream_enqueueWaitOnHostValue(
+        #     const DeviceStream *stream, CompletionFlag *flag, uint64_t value)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceStream_enqueueWaitOnHostValue",
+                _CString[],
+            ](self._handle, flag._handle, value)
+        )
+
+    @always_inline
     def enqueue_function[
         *Ts: DevicePassable
     ](
@@ -2278,6 +2330,81 @@ struct EventFlags(TrivialRegisterPassable):
             A new EventFlags instance with the combined flags.
         """
         return Self(self._flags | other._flags)
+
+
+struct CompletionFlag(ImplicitlyCopyable):
+    """Non-owning handle to an MLRT ``CompletionFlag``.
+
+    A ``CompletionFlag`` is an 8-byte slot in pinned host memory mapped
+    into a device's address space. A CPU thread (or an AsyncRT worker
+    dispatched by `DeviceStream.enqueue_host_func`) writes a 64-bit
+    value to the slot; the GPU side waits on the same slot via
+    `DeviceStream.wait_for_host_value`. The pairing lets a CUDA stream
+    block on a value produced by a host thread without a second stream
+    or a blocking host callback on the consumer's critical path.
+
+    This struct is intentionally non-owning. The C++
+    ``M::Driver::CompletionFlag`` it points to is allocated and
+    freed elsewhere (typically by `max.driver.CompletionFlag` on the
+    Python side), and the caller is responsible for keeping the
+    underlying allocation alive for the duration of any in-flight
+    use. Constructed from a raw pointer extracted from a graph-op
+    payload buffer; do not allocate or free through this wrapper.
+
+    Currently usable only on CUDA-backed devices, matching
+    `DeviceStream.wait_for_host_value`.
+    """
+
+    var _handle: _CompletionFlagPtr[mut=True]
+
+    @always_inline
+    def __init__(out self, *, handle: _CompletionFlagPtr[mut=True]):
+        """Constructs a non-owning handle from a raw pointer to the C++
+        ``M::Driver::CompletionFlag``.
+
+        Args:
+            handle: Opaque pointer to an existing
+                ``M::Driver::CompletionFlag``. Lifetime is the caller's
+                responsibility.
+        """
+        self._handle = handle
+
+    @always_inline
+    def __init__(out self, *, unsafe_from_address: Int):
+        """Constructs a non-owning handle from an integer address.
+
+        Intended for graph-op execute methods that extract a packed
+        pointer from a payload buffer (mirroring how
+        `mo.launch_host_func` rebuilds its trampoline/user-data
+        pointers). The caller asserts that ``unsafe_from_address``
+        points to a valid ``M::Driver::CompletionFlag`` and that the
+        underlying object outlives any in-flight use.
+
+        Args:
+            unsafe_from_address: Raw address of an
+                ``M::Driver::CompletionFlag`` (as packed into a graph
+                payload buffer by the producer side).
+        """
+        var opaque = OpaquePointer[MutAnyOrigin](
+            unsafe_from_address=unsafe_from_address
+        )
+        self._handle = rebind[_CompletionFlagPtr[mut=True]](opaque)
+
+    @always_inline
+    def device_ptr(self) -> UInt64:
+        """Returns the device-visible 64-bit address of the flag's slot.
+
+        This is the same value the host-side ``signal()`` writes through
+        and that the GPU's ``cuStreamWaitValue64`` polls.
+
+        Returns:
+            Device-visible address of the 8-byte slot.
+        """
+        # uint64_t AsyncRT_CompletionFlag_devicePtr(const CompletionFlag *flag)
+        return external_call[
+            "AsyncRT_CompletionFlag_devicePtr",
+            UInt64,
+        ](self._handle)
 
 
 struct DeviceEvent(ImplicitlyCopyable):
@@ -5309,227 +5436,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     @parameter
     @always_inline
-    def enqueue_function_unchecked[
-        func_type: TrivialRegisterPassable,
-        //,
-        func: func_type,
-        *Ts: AnyType,
-        link_options: StaticString = "",
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[SourceLocation] = None,
-    ) raises:
-        """Compiles and enqueues a kernel for execution on this device.
-
-        Parameters:
-            func_type: The dtype of the function to launch.
-            func: The function to launch.
-            Ts: The dtypes of the arguments being passed to the function.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            args: Variadic arguments which are passed to the `func`.
-            grid_dim: The grid dimensions.
-            block_dim: The block dimensions.
-            cluster_dim: The cluster dimensions.
-            shared_mem_bytes: Per-block memory shared between blocks.
-            attributes: A `List` of launch attributes.
-            constant_memory: A `List` of constant memory mappings.
-            func_attribute: `CUfunction_attribute` enum.
-            location: Source location for the function call.
-
-        You can pass the function directly to `enqueue_function_unchecked`
-        without compiling it first:
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            ctx.enqueue_function_unchecked[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
-        first to remove the overhead:
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function_unchecked[kernel]()
-            ctx.enqueue_function_unchecked(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function_unchecked(compiled_func, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        Raises:
-            If the operation fails.
-
-        Notes:
-
-        - This method doesn't perform compile-time type-checking of the kernel
-          function arguments. You will encounter run-time errors if the values
-          you pass don't conform to the expected argument types.
-        - This method will be deprecated and eventually removed.
-          Use `enqueue_function()` instead for type-checked kernel execution.
-        """
-        _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim["DeviceContext.enqueue_function_unchecked", "block_dim"](
-            block_dim, location=call_location()
-        )
-
-        var gpu_kernel = self.compile_function_unchecked[
-            func,
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            link_options=link_options,
-            _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=func_attribute)
-
-        gpu_kernel._call_with_pack(
-            self,
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location.or_else(call_location()),
-        )
-
-    @parameter
-    @always_inline
-    def enqueue_function_unchecked[
-        *Ts: AnyType
-    ](
-        self,
-        f: DeviceFunction,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
-    ) raises:
-        """Enqueues a compiled function for execution on this device.
-
-        Parameters:
-            Ts: Argument dtypes.
-
-        Args:
-            f: The compiled function to execute.
-            args: Arguments to pass to the function.
-            grid_dim: Dimensions of the compute grid, made up of thread
-                blocks.
-            block_dim: Dimensions of each thread block in the grid.
-            cluster_dim: Dimensions of clusters (if the thread blocks are
-                grouped into clusters).
-            shared_mem_bytes: Amount of shared memory per thread block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mapping.
-            location: Source location for the function call.
-
-        You can pass the function directly to `enqueue_function_unchecked`
-        without compiling it first:
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            ctx.enqueue_function_unchecked[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
-        the function first to remove the overhead:
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function_unchecked[kernel]()
-            ctx.enqueue_function_unchecked(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function_unchecked(compiled_func, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        Raises:
-            If the operation fails.
-
-        Notes:
-
-        - This method doesn't perform compile-time type-checking of the kernel
-          function arguments. You will encounter run-time errors if the values
-          you pass don't conform to the expected argument types.
-        - This method will be deprecated and eventually removed.
-          Use `enqueue_function()` instead for type-checked kernel execution.
-        """
-        _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim["DeviceContext.enqueue_function_unchecked", "block_dim"](
-            block_dim, location=call_location()
-        )
-
-        comptime assert (
-            not f.declared_arg_types
-        ), "A checked DeviceFunction should be called with `enqueue_function`."
-        f._call_with_pack(
-            self,
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location.or_else(call_location()),
-        )
-
-    @parameter
-    @always_inline
     def enqueue_function[
         *Ts: DevicePassable
     ](
@@ -6250,13 +6156,16 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             block_dim, location=call_location()
         )
 
-        self.enqueue_function_unchecked[
+        var gpu_kernel = self.compile_function_unchecked[
             FuncType.__call__,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
             _ptxas_info_verbose=_ptxas_info_verbose,
-        ](
+        ]()
+
+        gpu_kernel._call_with_pack(
+            self,
             func,
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -8109,6 +8018,35 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         )
 
         return (free, total)
+
+    @always_inline
+    def max_single_alloc_size(self) raises -> c_size_t:
+        """Returns the largest single contiguous allocation, in bytes.
+
+        On Metal this is `maxBufferLength`; on other backends it is the
+        device's total memory.
+
+        Returns:
+            The maximum size, in bytes, of a single contiguous allocation
+            supported by this device.
+
+        Raises:
+            If the underlying device query fails.
+        """
+        var result = c_size_t(0)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_maxSingleAllocationSize",
+                _CString[],
+                _DeviceContextPtr[mut=True],
+                UnsafePointer[c_size_t, origin_of(result)],
+            ](
+                self._handle,
+                UnsafePointer(to=result),
+            ),
+            location=call_location(),
+        )
+        return result
 
     @always_inline
     def can_access(self, peer: DeviceContext) raises -> Bool:

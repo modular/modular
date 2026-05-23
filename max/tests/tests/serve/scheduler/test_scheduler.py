@@ -16,20 +16,20 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.interfaces import (
+from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.kv_cache import DummyKVCache
+from max.pipelines.modeling.types import (
     RequestID,
-    SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.kv_cache import DummyKVCache
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
+from max.serve.scheduler_result import SchedulerResult
 from max.support.math import ceildiv
 
 ARBITRARY_TOKEN_ID = 999

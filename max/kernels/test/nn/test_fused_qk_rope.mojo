@@ -40,7 +40,7 @@ from testdata.fused_qk_rope_goldens import (
 from std.utils import IndexList
 
 
-def test_fused_qk_rope[dtype: DType]() raises -> None:
+def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert (
         dtype == DType.float32
@@ -168,7 +168,7 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
     )
     var valid_lengths = TileTensor(
         valid_lengths_buffer,
-        row_major(Idx(batch_size)),
+        row_major(batch_size),
     )
 
     fused_qk_rope[
@@ -180,7 +180,7 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
         layer_idx=UInt32(0),
         valid_lengths=valid_lengths,
         output=q_out,
-        context=Optional[DeviceContext](),
+        context=ctx,
     )
 
     # Compare output and expected query tensors.
@@ -212,4 +212,5 @@ def test_fused_qk_rope[dtype: DType]() raises -> None:
 
 
 def main() raises -> None:
-    test_fused_qk_rope[DType.float32]()
+    with DeviceContext(api="cpu") as ctx:
+        test_fused_qk_rope[DType.float32](ctx)

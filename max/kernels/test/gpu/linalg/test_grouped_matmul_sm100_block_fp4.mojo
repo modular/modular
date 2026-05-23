@@ -51,7 +51,6 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -113,18 +112,16 @@ def _test_kernel_impl_base[
     )
 
     var a_shape = row_major(
-        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[1] // 2]())
+        Coord(Int(total_num_tokens), Idx[expert_shape[1] // 2])
     )
     var b_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[expert_shape[0]](),
-            Idx[expert_shape[1] // 2](),
+            Idx[num_experts],
+            Idx[expert_shape[0]],
+            Idx[expert_shape[1] // 2],
         )
     )
-    var c_shape = row_major(
-        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[0]]())
-    )
+    var c_shape = row_major(Coord(Int(total_num_tokens), Idx[expert_shape[0]]))
 
     var a_size = total_num_tokens * K // 2
     var b_size = num_experts * expert_shape[0] * expert_shape[1] // 2
@@ -146,7 +143,7 @@ def _test_kernel_impl_base[
     )
     var a_offsets_tensor = TileTensor(
         a_offsets_device,
-        row_major(Coord(Idx(Int(num_active_experts + 1)))),
+        row_major(Coord(Int(num_active_experts + 1))),
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var b_tensor = TileTensor(b_device, b_shape)
@@ -155,21 +152,21 @@ def _test_kernel_impl_base[
     )
     var expert_ids_tensor = TileTensor(
         expert_ids_device,
-        row_major(Coord(Idx(Int(num_active_experts)))),
+        row_major(Coord(Int(num_active_experts))),
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device,
-        row_major(Coord(Idx(Int(num_active_experts)))),
+        row_major(Coord(Int(num_active_experts))),
     )
     var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
         num_experts
     )
     var expert_scales_tensor = TileTensor(
         expert_scales_device,
-        row_major(Coord(Idx[num_experts]())),
+        row_major(Coord(Idx[num_experts])),
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_tensor = TileTensor(c_device, c_shape)
@@ -206,21 +203,21 @@ def _test_kernel_impl_base[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
-            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Int(a_scale_dim0),
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[num_experts],
+            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -249,11 +246,11 @@ def _test_kernel_impl_base[
     if simple_init():
         for m in range(M):
             for k in range(K // 2):
-                a_host[(Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
+                a_host[m, k] = UInt8(m).cast[a_type]()
         for e in range(num_experts):
             for n in range(N):
                 for k in range(K // 2):
-                    b_host[(Idx(e), Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
+                    b_host[e, n, k] = UInt8(n).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
         rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
@@ -315,11 +312,11 @@ def _test_kernel_impl_base[
             b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups_local](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups_local],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -431,11 +428,11 @@ def _test_kernel_impl_base[
             a_scales_device,
             row_major(
                 Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Int64(a_scale_dim0),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()
@@ -443,22 +440,18 @@ def _test_kernel_impl_base[
             b_scales_device,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[num_experts],
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()
         var expert_scales_tt = TileTensor(
             expert_scales_device,
-            row_major(
-                Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
-                )
-            ),
+            row_major(Coord(Int64(num_experts))),
         ).as_any_origin()
 
         grouped_matmul_block_scaled[

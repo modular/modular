@@ -24,8 +24,9 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -241,7 +242,7 @@ def _create_llama3_text_config(
         num_attention_heads=hf_text_config.num_attention_heads,
         num_key_value_heads=hf_text_config.num_key_value_heads,
         num_hidden_layers=hf_text_config.num_hidden_layers,
-        rope_theta=hf_text_config.rope_theta,
+        rope_theta=get_rope_theta(hf_text_config),
         rope_scaling_params=rope_scaling_params,
         longrope_scaling_params=None,
         intermediate_size=hf_text_config.intermediate_size,

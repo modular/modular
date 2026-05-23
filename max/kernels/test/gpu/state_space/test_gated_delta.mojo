@@ -182,28 +182,26 @@ def run_slot_indexed_gpu[
         ctx.enqueue_copy(pool_device, pool_initial_h.ptr)
         ctx.enqueue_copy(slot_idx_device, slot_idx_h.ptr)
 
-    var qkv_tt = TileTensor(
-        qkv_device, row_major(Idx(total_seq_len), Idx(conv_dim))
-    )
+    var qkv_tt = TileTensor(qkv_device, row_major(total_seq_len, conv_dim))
     var decay_tt = TileTensor(
-        decay_device, row_major(Idx(total_seq_len), Idx(num_value_heads))
+        decay_device, row_major(total_seq_len, num_value_heads)
     )
     var beta_tt = TileTensor(
-        beta_device, row_major(Idx(total_seq_len), Idx(num_value_heads))
+        beta_device, row_major(total_seq_len, num_value_heads)
     )
-    var offsets_tt = TileTensor(offsets_device, row_major(Idx(batch_size + 1)))
+    var offsets_tt = TileTensor(offsets_device, row_major(batch_size + 1))
     var pool_tt = TileTensor(
         pool_device,
         row_major(
-            Idx(max_slots),
-            Idx(num_value_heads),
-            Idx(KEY_HEAD_DIM),
-            Idx(VALUE_HEAD_DIM),
+            max_slots,
+            num_value_heads,
+            KEY_HEAD_DIM,
+            VALUE_HEAD_DIM,
         ),
     )
-    var slot_idx_tt = TileTensor(slot_idx_device, row_major(Idx(batch_size)))
+    var slot_idx_tt = TileTensor(slot_idx_device, row_major(batch_size))
     var recur_out_tt = TileTensor(
-        recur_out_device, row_major(Idx(total_seq_len), Idx(value_dim))
+        recur_out_device, row_major(total_seq_len, value_dim)
     )
 
     var qkv_seqlen_stride: UInt32 = UInt32(conv_dim)

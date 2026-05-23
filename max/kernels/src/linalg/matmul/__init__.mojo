@@ -24,7 +24,6 @@ from layout import (
     Layout,
     LayoutTensor,
     RowMajorLayout,
-    RuntimeInt,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
@@ -65,7 +64,7 @@ def matmul[
     epilogue_tensor: OptionalReg[
         TileTensor[
             c.dtype,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64, Int64],
             ImmutAnyOrigin,
         ]
     ] = None,

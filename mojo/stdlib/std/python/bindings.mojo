@@ -169,7 +169,9 @@ struct PyMojoObject[T: ImplicitlyDestructible]:
     """Whether the Mojo value has been initialized."""
 
 
-def _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
+def _tp_dealloc_wrapper[
+    T: ImplicitlyDestructible
+](py_self: PyObjectPtr) abi("C"):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
 
     This function serves as the tp_dealloc slot for Python type objects that
@@ -197,7 +199,7 @@ def _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
 
 def _tp_repr_wrapper[
     T: ImplicitlyDestructible
-](py_self: PyObjectPtr) -> PyObjectPtr:
+](py_self: PyObjectPtr) abi("C") -> PyObjectPtr:
     """Python-compatible wrapper for generating string representation of a
     `PyMojoObject`.
 
@@ -1050,7 +1052,7 @@ struct PythonTypeBuilder(Copyable):
 
 def _py_init_function_nonregistered(
     py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
-) -> c_int:
+) abi("C") -> c_int:
     ref cpython = Python().cpython()
     var error_type = cpython.get_error_global("PyExc_TypeError")
     cpython.PyErr_SetString(
@@ -1062,8 +1064,8 @@ def _py_init_function_nonregistered(
 
 def _py_new_function_wrapper[
     T: AnyType
-](
-    subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+](subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
+    "C"
 ) -> PyObjectPtr:
     ref cpython = Python().cpython()
 
@@ -1081,8 +1083,8 @@ def _py_new_function_wrapper[
 def _py_init_function_wrapper[
     T: Movable & ImplicitlyDestructible,
     init_func: def(out T, args: PythonObject, kwargs: PythonObject) thin raises,
-](
-    py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+](py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
+    "C"
 ) -> c_int:
     """Wrapper function that adapts a Mojo `PyInitFunction` to be callable from
     Python.
@@ -1119,8 +1121,8 @@ def _raising_py_init_wrapper[
 @always_inline
 def _py_c_function_wrapper[
     user_func: GenericPyFunction
-](
-    py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+](py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
+    "C"
 ) -> PyObjectPtr:
     """
     1. Wraps a raw Python C function to convert raw `PyObjectPtr`s to `PythonObject`s.
@@ -1282,7 +1284,7 @@ def _py_function_fastcall_wrapper[
         py_self_ptr: PyObjectPtr,
         args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
         nargs: Py_ssize_t,
-    ) -> PyObjectPtr:
+    ) abi("C") -> PyObjectPtr:
         var py_self = PythonObject(from_borrowed=py_self_ptr)
         ref cpython = Python().cpython()
 

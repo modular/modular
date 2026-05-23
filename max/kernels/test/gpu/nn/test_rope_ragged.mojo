@@ -195,7 +195,7 @@ def _test_rope_ragged_gpu_impl[
             input_row_offsets=input_row_offsets_device_tensor.as_any_origin(),
             start_pos=start_pos_device_tensor.as_any_origin(),
             freqs_cis=freqs_cis_device_tensor.as_any_origin(),
-            context=Optional[DeviceContext](ctx),
+            context=ctx,
             position_ids=position_ids_device_tensor,
         )
     else:
@@ -210,7 +210,7 @@ def _test_rope_ragged_gpu_impl[
             input_row_offsets=input_row_offsets_device_tensor.as_any_origin(),
             start_pos=start_pos_device_tensor.as_any_origin(),
             freqs_cis=freqs_cis_device_tensor.as_any_origin(),
-            context=Optional[DeviceContext](ctx),
+            context=ctx,
         )
 
     # Copy results back to host for validation

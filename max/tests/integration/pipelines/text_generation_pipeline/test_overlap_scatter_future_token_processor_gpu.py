@@ -21,7 +21,6 @@ import pytest
 from max.driver import Accelerator, Buffer
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import TextGenerationInputs, TokenBuffer
 from max.pipelines.core import TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
 from max.pipelines.lib.interfaces import ModelInputs
@@ -29,6 +28,7 @@ from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     AsyncBatch,
     RealizeFutureTokenProcessor,
 )
+from max.pipelines.modeling.types import TextGenerationInputs, TokenBuffer
 
 OOB_IDX = np.iinfo(np.int32).min
 

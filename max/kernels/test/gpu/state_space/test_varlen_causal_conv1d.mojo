@@ -249,43 +249,43 @@ def run_varlen_causal_conv1d_fwd_gpu[
     # Create TileTensors for GPU kernel
     var x_device_tt = TileTensor(
         x_device,
-        row_major(Idx(dim), Idx(total_seqlen)),
+        row_major(dim, total_seqlen),
     )
     var weight_device_tt = TileTensor(
         weight_device,
-        row_major(Idx(dim), Idx(width)),
+        row_major(dim, width),
     )
     var bias_device_tt = TileTensor(
         bias_device,
         row_major(
-            Idx(dim),
+            dim,
         ),
     )
     var query_start_loc_device_tt = TileTensor(
         query_start_loc_device,
         row_major(
-            Idx(batch + 1),
+            batch + 1,
         ),
     )
     var cache_indices_device_tt = TileTensor(
         cache_indices_device,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var has_initial_state_device_tt = TileTensor(
         has_initial_state_device,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var conv_states_device_tt = TileTensor(
         conv_states_device,
-        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+        row_major(batch, dim, state_len),
     )
     var output_device_tt = TileTensor(
         output_device,
-        row_major(Idx(dim), Idx(total_seqlen)),
+        row_major(dim, total_seqlen),
     )
 
     # Run GPU kernel
@@ -531,40 +531,38 @@ def run_varlen_causal_conv1d_fwd_gpu[
     ctx.synchronize()
 
     # Create TileTensors for CPU reference
-    var x_cpu_tt = TileTensor(x_buf.ptr, row_major(Idx(dim), Idx(total_seqlen)))
-    var weight_cpu_tt = TileTensor(
-        weight_buf.ptr, row_major(Idx(dim), Idx(width))
-    )
+    var x_cpu_tt = TileTensor(x_buf.ptr, row_major(dim, total_seqlen))
+    var weight_cpu_tt = TileTensor(weight_buf.ptr, row_major(dim, width))
     var bias_cpu_tt = TileTensor(
         bias_buf.ptr,
         row_major(
-            Idx(dim),
+            dim,
         ),
     )
     var query_start_loc_cpu_tt = TileTensor(
         query_start_loc_buf.ptr,
         row_major(
-            Idx(batch + 1),
+            batch + 1,
         ),
     )
     var cache_indices_cpu_tt = TileTensor(
         cache_indices_buf.ptr,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var has_initial_state_cpu_tt = TileTensor(
         has_initial_state_buf.ptr,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var conv_states_cpu_tt = TileTensor(
         conv_states_buf.ptr,
-        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+        row_major(batch, dim, state_len),
     )
     var output_cpu_tt = TileTensor(
-        output_cpu_buf.ptr, row_major(Idx(dim), Idx(total_seqlen))
+        output_cpu_buf.ptr, row_major(dim, total_seqlen)
     )
 
     # Run CPU reference
@@ -811,37 +809,37 @@ def run_varlen_causal_conv1d_update_gpu[
     # Create TileTensors for GPU kernel
     var x_upd_device_tt = TileTensor(
         x_device,
-        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+        row_major(batch, dim, seqlen),
     )
     var weight_upd_device_tt = TileTensor(
         weight_device,
-        row_major(Idx(dim), Idx(width)),
+        row_major(dim, width),
     )
     var bias_upd_device_tt = TileTensor(
         bias_device,
         row_major(
-            Idx(dim),
+            dim,
         ),
     )
     var conv_state_upd_device_tt = TileTensor(
         conv_state_device,
-        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+        row_major(batch, dim, state_len),
     )
     var cache_seqlens_device_tt = TileTensor(
         cache_seqlens_device,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var conv_state_indices_device_tt = TileTensor(
         conv_state_indices_device,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var output_upd_device_tt = TileTensor(
         output_device,
-        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+        row_major(batch, dim, seqlen),
     )
 
     # Run GPU kernel
@@ -1079,36 +1077,32 @@ def run_varlen_causal_conv1d_update_gpu[
     ctx.synchronize()
 
     # Create TileTensors for CPU reference
-    var x_upd_cpu_tt = TileTensor(
-        x_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
-    )
-    var weight_upd_cpu_tt = TileTensor(
-        weight_buf.ptr, row_major(Idx(dim), Idx(width))
-    )
+    var x_upd_cpu_tt = TileTensor(x_buf.ptr, row_major(batch, dim, seqlen))
+    var weight_upd_cpu_tt = TileTensor(weight_buf.ptr, row_major(dim, width))
     var bias_upd_cpu_tt = TileTensor(
         bias_buf.ptr,
         row_major(
-            Idx(dim),
+            dim,
         ),
     )
     var conv_state_upd_cpu_tt = TileTensor(
         conv_state_cpu_buf.ptr,
-        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+        row_major(batch, dim, state_len),
     )
     var cache_seqlens_cpu_tt = TileTensor(
         cache_seqlens_buf.ptr,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var conv_state_indices_cpu_tt = TileTensor(
         conv_state_indices_buf.ptr,
         row_major(
-            Idx(batch),
+            batch,
         ),
     )
     var output_upd_cpu_tt = TileTensor(
-        output_cpu_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+        output_cpu_buf.ptr, row_major(batch, dim, seqlen)
     )
 
     # Run CPU reference

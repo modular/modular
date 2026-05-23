@@ -20,7 +20,6 @@ from std.utils.coord import (
     Coord,
     CoordLike,
     Idx,
-    RuntimeInt,
     _Idx2CrdResultTypes,
     coord,
     crd2idx,
@@ -30,8 +29,8 @@ from std.utils.coord import (
 
 def test_nested_layouts() raises:
     # Create nested layouts
-    var inner = Coord(Idx[2](), Idx(Int(3)))
-    var nested = Coord(inner, Idx[4]())
+    var inner = Coord(Idx[2], Int(3))
+    var nested = Coord(inner, Idx[4])
     assert_equal(inner[1].value(), 3)
     assert_equal(nested[0][0].value(), 2)
     assert_equal(nested[1].value(), 4)
@@ -40,9 +39,9 @@ def test_nested_layouts() raises:
 
 
 def test_list_literal_construction() raises:
-    var t = Coord[ComptimeInt[2], RuntimeInt[DType.int]](
-        Idx[2](),
-        Idx(Int(3)),
+    var t = Coord[ComptimeInt[2], Int](
+        Idx[2],
+        Int(3),
     )
     assert_equal(t[0].value(), 2)
     assert_equal(t[1].value(), 3)
@@ -82,9 +81,9 @@ def test_static_product() raises:
 def test_default_init() raises:
     var c = Coord[
         ComptimeInt[5],
-        RuntimeInt[DType.int32],
+        Int32,
         ComptimeInt[3],
-        RuntimeInt[DType.int64],
+        Int64,
     ]()
     assert_equal(c[0].value(), 5)
     assert_equal(c[1].value(), 0)
@@ -93,11 +92,7 @@ def test_default_init() raises:
 
 
 def test_default_init_nested() raises:
-    var c = Coord[
-        ComptimeInt[5],
-        Coord[RuntimeInt[DType.int32], ComptimeInt[3]],
-        RuntimeInt[DType.int64],
-    ]()
+    var c = Coord[ComptimeInt[5], Coord[Int32, ComptimeInt[3]], Int64]()
     assert_equal(c[0].value(), 5)
     assert_equal(c[1][0].value(), 0)
     assert_equal(c[1][1].value(), 3)
@@ -106,8 +101,8 @@ def test_default_init_nested() raises:
 
 def test_idx2crd_basic() raises:
     """Test basic idx2crd correctness with row-major layout."""
-    var shape = Coord(Idx[3](), Idx[4]())
-    var stride = Coord(Idx[4](), Idx[1]())
+    var shape = Coord(Idx[3], Idx[4])
+    var stride = Coord(Idx[4], Idx[1])
 
     var c0 = idx2crd(0, shape, stride)
     assert_equal(c0[0].value(), 0)
@@ -124,8 +119,8 @@ def test_idx2crd_basic() raises:
 
 def test_idx2crd_static_shape_1() raises:
     """When a shape dim is statically 1, the coordinate is ComptimeInt[0]."""
-    var shape = Coord(Idx[1](), Idx[4]())
-    var stride = Coord(Idx[4](), Idx[1]())
+    var shape = Coord(Idx[1], Idx[4])
+    var stride = Coord(Idx[4], Idx[1])
 
     var c0 = idx2crd(0, shape, stride)
     assert_equal(c0[0].value(), 0)
@@ -137,14 +132,14 @@ def test_idx2crd_static_shape_1() raises:
 
     # First dim should be ComptimeInt[0] (static shape 1).
     assert_true(_type_is_eq[type_of(c0[0]), ComptimeInt[0]]())
-    # Second dim should be RuntimeInt.
-    assert_true(_type_is_eq[type_of(c0[1]), RuntimeInt[DType.int64]]())
+    # Second dim should be Scalar.
+    assert_true(_type_is_eq[type_of(c0[1]), Int64]())
 
 
 def test_idx2crd_all_static_1() raises:
     """When all shape dims are 1, all coordinates are ComptimeInt[0]."""
-    var shape = Coord(Idx[1](), Idx[1]())
-    var stride = Coord(Idx[1](), Idx[1]())
+    var shape = Coord(Idx[1], Idx[1])
+    var stride = Coord(Idx[1], Idx[1])
 
     var c0 = idx2crd(0, shape, stride)
     assert_equal(c0[0].value(), 0)
@@ -156,57 +151,53 @@ def test_idx2crd_all_static_1() raises:
 
 def test_idx2crd_mixed_static_dynamic() raises:
     """Shape (3, 1, 4): middle dim is statically 1, others are dynamic."""
-    var shape = Coord(Idx[3](), Idx[1](), Idx[4]())
-    var stride = Coord(Idx[4](), Idx[4](), Idx[1]())
+    var shape = Coord(Idx[3], Idx[1], Idx[4])
+    var stride = Coord(Idx[4], Idx[4], Idx[1])
 
     var c5 = idx2crd(5, shape, stride)
     assert_equal(c5[0].value(), 1)
     assert_equal(c5[1].value(), 0)
     assert_equal(c5[2].value(), 1)
 
-    assert_true(_type_is_eq[type_of(c5[0]), RuntimeInt[DType.int64]]())
+    assert_true(_type_is_eq[type_of(c5[0]), Int64]())
     assert_true(_type_is_eq[type_of(c5[1]), ComptimeInt[0]]())
-    assert_true(_type_is_eq[type_of(c5[2]), RuntimeInt[DType.int64]]())
+    assert_true(_type_is_eq[type_of(c5[2]), Int64]())
 
 
 def test_idx2crd_no_static_1() raises:
-    """When no shape dim is 1, all coordinates are RuntimeInt."""
-    var shape = Coord(Idx[3](), Idx[4]())
-    var stride = Coord(Idx[4](), Idx[1]())
+    """When no shape dim is 1, all coordinates are Scalar."""
+    var shape = Coord(Idx[3], Idx[4])
+    var stride = Coord(Idx[4], Idx[1])
 
     var _c = idx2crd(0, shape, stride)
-    assert_true(_type_is_eq[type_of(_c[0]), RuntimeInt[DType.int64]]())
-    assert_true(_type_is_eq[type_of(_c[1]), RuntimeInt[DType.int64]]())
+    assert_true(_type_is_eq[type_of(_c[0]), Int64]())
+    assert_true(_type_is_eq[type_of(_c[1]), Int64]())
 
 
 def test_idx2crd_result_types_runtime_idx() raises:
-    """No shape-1 dims with runtime idx: all RuntimeInt."""
+    """No shape-1 dims with runtime idx: all Scalar."""
     comptime shape = TypeList.of[
         Trait=CoordLike, ComptimeInt[3], ComptimeInt[4]
     ]()
     comptime stride = TypeList.of[
         Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
     ]()
-    comptime types = _Idx2CrdResultTypes[
-        DType.int64, RuntimeInt[DType.int64], stride, shape
-    ]
-    assert_true(_type_is_eq[types[0], RuntimeInt[DType.int64]]())
-    assert_true(_type_is_eq[types[1], RuntimeInt[DType.int64]]())
+    comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
+    assert_true(_type_is_eq[types[0], Int64]())
+    assert_true(_type_is_eq[types[1], Int64]())
 
 
 def test_idx2crd_result_types_shape_1() raises:
-    """Shape dim of 1 produces ComptimeInt[0], others RuntimeInt."""
+    """Shape dim of 1 produces ComptimeInt[0], others Scalar."""
     comptime shape = TypeList.of[
         Trait=CoordLike, ComptimeInt[1], ComptimeInt[4]
     ]()
     comptime stride = TypeList.of[
         Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
     ]()
-    comptime types = _Idx2CrdResultTypes[
-        DType.int64, RuntimeInt[DType.int64], stride, shape
-    ]
+    comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
     assert_true(_type_is_eq[types[0], ComptimeInt[0]]())
-    assert_true(_type_is_eq[types[1], RuntimeInt[DType.int64]]())
+    assert_true(_type_is_eq[types[1], Int64]())
 
 
 def test_idx2crd_result_types_all_shape_1() raises:
@@ -217,26 +208,22 @@ def test_idx2crd_result_types_all_shape_1() raises:
     comptime stride = TypeList.of[
         Trait=CoordLike, ComptimeInt[1], ComptimeInt[1]
     ]()
-    comptime types = _Idx2CrdResultTypes[
-        DType.int64, RuntimeInt[DType.int64], stride, shape
-    ]
+    comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
     assert_true(_type_is_eq[types[0], ComptimeInt[0]]())
     assert_true(_type_is_eq[types[1], ComptimeInt[0]]())
 
 
 def test_idx2crd_result_types_runtime_shape() raises:
-    """RuntimeInt shape dims always produce RuntimeInt result."""
+    """Scalar shape dims always produce Scalar result."""
     comptime shape = TypeList.of[
-        Trait=CoordLike, RuntimeInt[DType.int], RuntimeInt[DType.int]
+        Trait=CoordLike, Scalar[DType.int], Scalar[DType.int]
     ]()
     comptime stride = TypeList.of[
-        Trait=CoordLike, RuntimeInt[DType.int], RuntimeInt[DType.int]
+        Trait=CoordLike, Scalar[DType.int], Scalar[DType.int]
     ]()
-    comptime types = _Idx2CrdResultTypes[
-        DType.int64, RuntimeInt[DType.int64], stride, shape
-    ]
-    assert_true(_type_is_eq[types[0], RuntimeInt[DType.int64]]())
-    assert_true(_type_is_eq[types[1], RuntimeInt[DType.int64]]())
+    comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
+    assert_true(_type_is_eq[types[0], Int64]())
+    assert_true(_type_is_eq[types[1], Int64]())
 
 
 def test_idx2crd_result_types_all_static() raises:
@@ -259,12 +246,12 @@ def test_idx2crd_result_types_all_static() raises:
 
 def test_idx2crd_single_dim() raises:
     """Test idx2crd with a single (non-tuple) shape."""
-    var c = idx2crd(7, Idx[10](), Idx[1]())
+    var c = idx2crd(7, Idx[10], Idx[1])
     assert_equal(c[0].value(), 7)
-    assert_true(_type_is_eq[type_of(c[0]), RuntimeInt[DType.int64]]())
+    assert_true(_type_is_eq[type_of(c[0]), Int64]())
 
     # Single dim with shape 1 should produce ComptimeInt[0].
-    var c1 = idx2crd(0, Idx[1](), Idx[1]())
+    var c1 = idx2crd(0, Idx[1], Idx[1])
     assert_equal(c1[0].value(), 0)
     assert_true(_type_is_eq[type_of(c1[0]), ComptimeInt[0]]())
 
@@ -273,8 +260,8 @@ def test_idx2crd_col_major() raises:
     """Test idx2crd with col-major strides (which was broken with sequential algorithm).
     """
     # Shape (3, 4), col-major strides (1, 3)
-    var shape = Coord(Idx[3](), Idx[4]())
-    var stride = Coord(Idx[1](), Idx[3]())
+    var shape = Coord(Idx[3], Idx[4])
+    var stride = Coord(Idx[1], Idx[3])
 
     # idx=0 -> (0, 0)
     var c0 = idx2crd(0, shape, stride)
@@ -304,11 +291,11 @@ def test_idx2crd_col_major() raises:
 
 def test_idx2crd_comptime_idx() raises:
     """Test idx2crd with a compile-time index producing compile-time results."""
-    var shape = Coord(Idx[3](), Idx[4]())
-    var stride = Coord(Idx[4](), Idx[1]())
+    var shape = Coord(Idx[3], Idx[4])
+    var stride = Coord(Idx[4], Idx[1])
 
     # Compile-time idx=5 with static shape and stride should yield ComptimeInt results.
-    var c5 = idx2crd(Idx[5](), shape, stride)
+    var c5 = idx2crd(Idx[5], shape, stride)
     # (5 // 4) % 3 = 1
     assert_equal(c5[0].value(), 1)
     # (5 // 1) % 4 = 1
@@ -318,7 +305,7 @@ def test_idx2crd_comptime_idx() raises:
     assert_true(_type_is_eq[type_of(c5[1]), ComptimeInt[1]]())
 
     # Compile-time idx=0 should yield ComptimeInt[0] for both dims.
-    var c0 = idx2crd(Idx[0](), shape, stride)
+    var c0 = idx2crd(Idx[0], shape, stride)
     assert_equal(c0[0].value(), 0)
     assert_equal(c0[1].value(), 0)
     assert_true(_type_is_eq[type_of(c0[0]), ComptimeInt[0]]())
@@ -327,18 +314,16 @@ def test_idx2crd_comptime_idx() raises:
 
 def test_idx2crd_mixed_static_dynamic_idx() raises:
     """Test idx2crd with static idx but one runtime stride dimension."""
-    # shape=(3, 4), stride=(RuntimeInt, ComptimeInt[1])
-    var shape = Coord(Idx[3](), Idx[4]())
-    var stride = Coord[RuntimeInt[DType.int], ComptimeInt[1]](
-        Idx(Int(4)), Idx[1]()
-    )
+    # shape=(3, 4), stride=(Scalar, ComptimeInt[1])
+    var shape = Coord(Idx[3], Idx[4])
+    var stride = Coord[Int, ComptimeInt[1]](Int(4), Idx[1])
 
-    # Static idx=5, but first stride is runtime -> first dim is RuntimeInt.
+    # Static idx=5, but first stride is runtime -> first dim is Scalar.
     # Second stride is static, shape is static, idx is static -> ComptimeInt.
-    var c5 = idx2crd(Idx[5](), shape, stride)
+    var c5 = idx2crd(Idx[5], shape, stride)
     assert_equal(c5[0].value(), 1)
     assert_equal(c5[1].value(), 1)
-    assert_true(_type_is_eq[type_of(c5[0]), RuntimeInt[DType.int64]]())
+    assert_true(_type_is_eq[type_of(c5[0]), Int64]())
     # (5 // 1) % 4 = 1
     assert_true(_type_is_eq[type_of(c5[1]), ComptimeInt[1]]())
 
@@ -352,12 +337,12 @@ def test_idx2crd_nested_depth2() raises:
     # Shape: ((2, 3), (4, 5)), Stride: ((60, 20), (5, 1))
     # This represents a 4D layout with strides grouped into two pairs.
     var shape = Coord(
-        Coord(Idx[2](), Idx[3]()),
-        Coord(Idx[4](), Idx[5]()),
+        Coord(Idx[2], Idx[3]),
+        Coord(Idx[4], Idx[5]),
     )
     var stride = Coord(
-        Coord(Idx[60](), Idx[20]()),
-        Coord(Idx[5](), Idx[1]()),
+        Coord(Idx[60], Idx[20]),
+        Coord(Idx[5], Idx[1]),
     )
 
     # idx=0 -> ((0,0), (0,0))
@@ -383,13 +368,12 @@ def test_idx2crd_nested_depth2() raises:
 
 
 def test_idx2crd_nested_depth3() raises:
-    """Test idx2crd with depth-3 nested shape: Coord(Coord(Coord(2, 3), Idx(4))).
-    """
+    """Test idx2crd with depth-3 nested shape: Coord(Coord(Coord(2, 3), 4))."""
     var shape = Coord(
-        Coord(Coord(Idx[2](), Idx[3]()), Idx[4]()),
+        Coord(Coord(Idx[2], Idx[3]), Idx[4]),
     )
     var stride = Coord(
-        Coord(Coord(Idx[12](), Idx[4]()), Idx[1]()),
+        Coord(Coord(Idx[12], Idx[4]), Idx[1]),
     )
 
     # idx=0 -> (((0, 0), 0))
@@ -416,12 +400,12 @@ def test_idx2crd_nested_depth4() raises:
     # Shape: ((2, 3), ((4, 5), 6)) — depth 4 at the deepest path
     # Using stride-per-element formula: (idx // stride) % shape
     var shape = Coord(
-        Coord(Idx[2](), Idx[3]()),
-        Coord(Coord(Idx[4](), Idx[5]()), Idx[6]()),
+        Coord(Idx[2], Idx[3]),
+        Coord(Coord(Idx[4], Idx[5]), Idx[6]),
     )
     var stride = Coord(
-        Coord(Idx[360](), Idx[120]()),
-        Coord(Coord(Idx[30](), Idx[6]()), Idx[1]()),
+        Coord(Idx[360], Idx[120]),
+        Coord(Coord(Idx[30], Idx[6]), Idx[1]),
     )
 
     # idx=0 -> ((0, 0), ((0, 0), 0))
@@ -446,10 +430,10 @@ def test_idx2crd_nested_depth4() raises:
 def test_idx2crd_nested_depth4_linear() raises:
     """Test idx2crd with a linear chain of 4 nested Coords."""
     var shape = Coord(
-        Coord(Coord(Coord(Idx[2](), Idx[3]()), Idx[4]()), Idx[5]()),
+        Coord(Coord(Coord(Idx[2], Idx[3]), Idx[4]), Idx[5]),
     )
     var stride = Coord(
-        Coord(Coord(Coord(Idx[60](), Idx[20]()), Idx[5]()), Idx[1]()),
+        Coord(Coord(Coord(Idx[60], Idx[20]), Idx[5]), Idx[1]),
     )
 
     # idx=0 -> ((((0, 0), 0), 0))
@@ -471,12 +455,12 @@ def test_idx2crd_nested_mixed_flat_and_nested() raises:
     """Test idx2crd with a mix of flat and nested elements at depth 2."""
     # Shape: (Coord(2, 3), 4) — first element nested, second flat.
     var shape = Coord(
-        Coord(Idx[2](), Idx[3]()),
-        Idx[4](),
+        Coord(Idx[2], Idx[3]),
+        Idx[4],
     )
     var stride = Coord(
-        Coord(Idx[12](), Idx[4]()),
-        Idx[1](),
+        Coord(Idx[12], Idx[4]),
+        Idx[1],
     )
 
     # idx=0 -> ((0, 0), 0)
@@ -518,14 +502,14 @@ def test_crd2idx_default_int64_over_32_bits() raises:
     # i * 65536 crosses 2^32 at i >= 65536. Pick i = 131072 to force overflow.
     comptime OUTER = 200000
     comptime INNER = 65536
-    var shape = Coord(Idx(Int(OUTER)), Idx(Int(INNER)))
-    var stride = Coord(Idx(Int(INNER)), Idx(Int(1)))
+    var shape = Coord(Int(OUTER), Int(INNER))
+    var stride = Coord(Int(INNER), Int(1))
 
     # Pick a coord whose single term `i * INNER` exceeds 2^32:
     # 131072 * 65536 = 2^33 = 8_589_934_592.
     comptime I = 131072
     comptime J = 12345
-    var crd = Coord(Idx(Int(I)), Idx(Int(J)))
+    var crd = Coord(Int(I), Int(J))
 
     comptime expected: Int = I * INNER + J * 1
     # Sanity: confirm this really does cross 2^32.
@@ -547,12 +531,12 @@ def test_crd2idx_narrow_uint32_within_range() raises:
     # 1024x1024 row-major: max index 1024*1023 + 1023 = 1_048_575 — well
     # under 2^32.
     comptime DIM = 1024
-    var shape = Coord(Idx(Int(DIM)), Idx(Int(DIM)))
-    var stride = Coord(Idx(Int(DIM)), Idx(Int(1)))
+    var shape = Coord(Int(DIM), Int(DIM))
+    var stride = Coord(Int(DIM), Int(1))
 
     comptime I = 777
     comptime J = 543
-    var crd = Coord(Idx(Int(I)), Idx(Int(J)))
+    var crd = Coord(Int(I), Int(J))
 
     comptime expected: Int = I * DIM + J
 
@@ -562,6 +546,25 @@ def test_crd2idx_narrow_uint32_within_range() raises:
     var idx_i64 = crd2idx(crd, shape, stride)
     assert_equal(Int(idx_i64), expected)
     assert_equal(Int(idx_u32), Int(idx_i64))
+
+
+def test_cast_preserves_static_dims() raises:
+    var c = Coord[
+        ComptimeInt[5],
+        Int32,
+        ComptimeInt[3],
+        Int64,
+    ](Idx[5], Int32(7), Idx[3], Int64(11))
+
+    var casted = c.cast[DType.uint32]()
+    assert_equal(casted[0].value(), 5)
+    assert_equal(casted[1].value(), 7)
+    assert_equal(casted[2].value(), 3)
+    assert_equal(casted[3].value(), 11)
+    assert_true(_type_is_eq[type_of(casted[0]), ComptimeInt[5]]())
+    assert_true(_type_is_eq[type_of(casted[1]), UInt32]())
+    assert_true(_type_is_eq[type_of(casted[2]), ComptimeInt[3]]())
+    assert_true(_type_is_eq[type_of(casted[3]), UInt32]())
 
 
 def main() raises:

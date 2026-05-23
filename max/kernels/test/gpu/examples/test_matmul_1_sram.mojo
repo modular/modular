@@ -44,9 +44,9 @@ def matmul_sram(
     access.
     """
 
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(M), Idx(K))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(K), Idx(N))))
-    var c = TileTensor(c_ptr, row_major(Coord(Idx(M), Idx(N))))
+    var a = TileTensor(a_ptr, row_major(Coord(M, K)))
+    var b = TileTensor(b_ptr, row_major(Coord(K, N)))
+    var c = TileTensor(c_ptr, row_major(Coord(M, N)))
 
     # Allocate A, B tile in shared memory.
     var a_shared = stack_allocation[
@@ -89,12 +89,12 @@ def matmul_sram(
         var a_val: Float32
 
         comptime if not full_tile:
-            a_val = a.load[width=1](
-                Coord(Idx(row), Idx(offset + localCol))
-            ) if (row < M and offset + localCol < K) else 0.0
+            a_val = a.load[width=1](Coord(row, offset + localCol)) if (
+                row < M and offset + localCol < K
+            ) else 0.0
         else:
             a_val = (
-                a.load[width=1](Coord(Idx(row), Idx(offset + localCol))) if row
+                a.load[width=1](Coord(row, offset + localCol)) if row
                 < M else 0.0
             )
         a_shared[localRow * tile_size + localCol] = a_val
@@ -103,12 +103,12 @@ def matmul_sram(
         var b_val: Float32
 
         comptime if not full_tile:
-            b_val = b.load[width=1](
-                Coord(Idx(offset + localRow), Idx(col))
-            ) if (col < N and offset + localRow < K) else 0.0
+            b_val = b.load[width=1](Coord(offset + localRow, col)) if (
+                col < N and offset + localRow < K
+            ) else 0.0
         else:
             b_val = (
-                b.load[width=1](Coord(Idx(offset + localRow), Idx(col))) if col
+                b.load[width=1](Coord(offset + localRow, col)) if col
                 < N else 0.0
             )
         b_shared[localRow * tile_size + localCol] = b_val
@@ -125,7 +125,7 @@ def matmul_sram(
     tile_and_unswitch[update_tile](0, K, tile_size, K_remainder)
 
     if row < M and col < N:
-        c.store(Coord(Idx(row), Idx(col)), result)
+        c.store(Coord(row, col), result)
 
 
 def run_matmul(ctx: DeviceContext) raises:
@@ -171,7 +171,7 @@ def run_matmul(ctx: DeviceContext) raises:
     var failed = False
     for i in range(M - 10, M):
         for j in range(N - 10, N):
-            var val = c_host.load[width=1](Coord(Idx(i), Idx(j)))
+            var val = c_host.load[width=1](Coord(i, j))
             if val != Float32(K):
                 print(
                     "Fail at index = [",

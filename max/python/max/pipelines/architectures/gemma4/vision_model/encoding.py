@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef, ShardingStrategy, TensorValue
 from max.nn import MLP
 from max.nn.layer import LayerList, Module
 
@@ -38,6 +40,7 @@ class Gemma4VisionEncoderLayer(Module):
         device: DeviceRef | None = None,
     ) -> None:
         super().__init__()
+        self.config = config
         vision_config = config.vision_config
         vision_dtype = DType.bfloat16
 
@@ -121,12 +124,80 @@ class Gemma4VisionEncoderLayer(Module):
 
         return hidden_states
 
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self.self_attn.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        self.input_layernorm.sharding_strategy = strategy
+        self.self_attn.sharding_strategy = strategy
+        self.post_attention_layernorm.sharding_strategy = strategy
+        self.pre_feedforward_layernorm.sharding_strategy = strategy
+        self.mlp.sharding_strategy = strategy
+        self.post_feedforward_layernorm.sharding_strategy = strategy
+
+    def shard(
+        self, devices: Iterable[DeviceRef]
+    ) -> list[Gemma4VisionEncoderLayer]:
+        assert self.sharding_strategy
+
+        self_attn_shards = self.self_attn.shard(devices)
+        mlp_shards = self.mlp.shard(devices)
+
+        input_layernorm_shards = self.input_layernorm.shard(devices)
+        post_attention_layernorm_shards = self.post_attention_layernorm.shard(
+            devices
+        )
+        pre_feedforward_layernorm_shards = self.pre_feedforward_layernorm.shard(
+            devices
+        )
+        post_feedforward_layernorm_shards = (
+            self.post_feedforward_layernorm.shard(devices)
+        )
+
+        shards = []
+        for (
+            device,
+            attn_shard,
+            mlp_shard,
+            input_norm_shard,
+            post_attn_norm_shard,
+            pre_ffn_norm_shard,
+            post_ffn_norm_shard,
+        ) in zip(
+            devices,
+            self_attn_shards,
+            mlp_shards,
+            input_layernorm_shards,
+            post_attention_layernorm_shards,
+            pre_feedforward_layernorm_shards,
+            post_feedforward_layernorm_shards,
+            strict=True,
+        ):
+            sharded = Gemma4VisionEncoderLayer(
+                self.config, self.layer_idx, device
+            )
+
+            sharded.self_attn = attn_shard
+            sharded.mlp = mlp_shard
+            sharded.input_layernorm = input_norm_shard
+            sharded.post_attention_layernorm = post_attn_norm_shard
+            sharded.pre_feedforward_layernorm = pre_ffn_norm_shard
+            sharded.post_feedforward_layernorm = post_ffn_norm_shard
+
+            shards.append(sharded)
+
+        return shards
+
 
 class Gemma4VisionEncoder(Module):
     """Stack of ``Gemma4VisionEncoderLayer`` blocks for the SigLIP encoder."""
 
     def __init__(self, config: Gemma4ForConditionalGenerationConfig) -> None:
         super().__init__()
+        self.config = config
+        self._sharding_strategy: ShardingStrategy | None = None
         encoder_layers = [
             Gemma4VisionEncoderLayer(config, layer_idx)
             for layer_idx in range(config.vision_config.num_hidden_layers)
@@ -160,3 +231,33 @@ class Gemma4VisionEncoder(Module):
                 hidden_state, freqs_cis, cu_seqlen, max_seq_len
             )
         return hidden_state
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        for layer in self.layers:
+            layer.sharding_strategy = strategy
+
+        self._sharding_strategy = strategy
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Gemma4VisionEncoder]:
+        assert self.sharding_strategy
+
+        layer_shards = [layer.shard(devices) for layer in self.layers]
+
+        shards = []
+        for shard_idx, _ in enumerate(devices):
+            sharded = Gemma4VisionEncoder(self.config)
+            sharded.layers = LayerList(
+                [
+                    layer_shards[layer_idx][shard_idx]
+                    for layer_idx in range(len(self.layers))
+                ]
+            )
+
+            shards.append(sharded)
+
+        return shards

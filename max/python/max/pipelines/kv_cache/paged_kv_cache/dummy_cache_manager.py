@@ -19,7 +19,7 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.interfaces import RequestID
+from max.pipelines.modeling.types import RequestID
 
 from .cache_manager import KVCacheMetrics, KVCacheParams, PagedKVCacheManager
 

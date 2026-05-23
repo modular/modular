@@ -26,7 +26,6 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
 
 from std.sys.info import has_apple_gpu_accelerator
 
@@ -78,7 +77,7 @@ def avg_pool2d_op[
     pad_h_before: Int,
     pad_w_before: Int,
     count_boundary_flag: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Compute 2D average pooling over NHWC input.
 
@@ -103,7 +102,7 @@ def avg_pool2d_op[
         pad_h_before: Padding before height.
         pad_w_before: Padding before width.
         count_boundary_flag: 1 = include padding in divisor, 0 = exclude.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = batch * out_h * out_w * channels
 
@@ -157,13 +156,12 @@ def avg_pool2d_op[
         else:
             out_ptr[i] = Scalar[dtype](0)
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContext(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -195,7 +193,7 @@ struct _AvgPool2dBody(Dispatchable):
     var pad_h_before: Int
     var pad_w_before: Int
     var count_boundary_flag: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         comptime if t.is_numeric():
