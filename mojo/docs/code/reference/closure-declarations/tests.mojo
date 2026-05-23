@@ -26,7 +26,7 @@
 #     `{mut name}` on an immutable register-passable arg.
 #   - "cannot capture <name> by copy or move because it is not
 #     register passable" for a non-register-passable `var` capture
-#     inside a register_passable closure.
+#     inside a closure.
 #   - "use of uninitialized value '<name>'" after `{var name^}`.
 #   - `{var^}` copy-ctor timing assertion (the [copied] print at
 #     closure-value assignment, not at declaration). Verified
@@ -348,13 +348,13 @@ def test_closure_raises_actually_raises() raises:
     assert_true(caught)
 
 
-# --- Effects: register_passable on closure ---
+# --- Device-passable closure behavior ---
 
 
-def test_closure_register_passable() raises:
+def test_closure_device_passable() raises:
     var base = 10
 
-    def shift(x: Int) register_passable {var base} -> Int:
+    def shift(x: Int) {var base} -> Int:
         return x + base
 
     assert_equal(shift(3), 13)
@@ -413,6 +413,6 @@ def main() raises:
     test_parametric_closure_with_capture()
     test_closure_raises()
     test_closure_raises_actually_raises()
-    test_closure_register_passable()
+    test_closure_device_passable()
     test_nested_closures()
     test_nested_capture_closure_value()

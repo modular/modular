@@ -110,9 +110,7 @@ def quantize_static_scaled_fp8[
         in_dtype, target=get_gpu_target()
     ]()
 
-    def scaled_fp8_quant_unified[
-        width: Int, alignment: Int = 1
-    ](idx: Coord) register_passable {}:
+    def scaled_fp8_quant_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
         scaled_fp8_quant[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[simd_width=target_simd_width](
@@ -1658,9 +1656,7 @@ def convert_e4m3fn_to_e4m3fnuz(
         DType.float8_e4m3fn, target=get_gpu_target()
     ]()
 
-    def convert_kernel_unified[
-        width: Int, alignment: Int = 1
-    ](idx: Coord) register_passable {}:
+    def convert_kernel_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
         convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[simd_width=target_simd_width](

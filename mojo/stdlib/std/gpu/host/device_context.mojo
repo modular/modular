@@ -3927,7 +3927,7 @@ struct DeviceGraphBuilder(Movable):
 
     @always_inline
     def add_function[
-        FuncType: def() register_passable -> None,
+        FuncType: def() -> None,
         //,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -6065,7 +6065,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     @always_inline
     def enqueue_function[
-        FuncType: def() register_passable -> None,
+        FuncType: def() -> None,
         //,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,

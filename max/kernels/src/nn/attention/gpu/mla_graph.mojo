@@ -1477,9 +1477,7 @@ def convert_bf16_to_fp8_e4m3fn(
         DType.bfloat16, target=get_gpu_target()
     ]()
 
-    def convert_kernel_unified[
-        width: Int, alignment: Int = 1
-    ](idx: Coord) register_passable {}:
+    def convert_kernel_unified[width: Int, alignment: Int = 1](idx: Coord):
         convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     comptime if input_buffer.rank == 2:

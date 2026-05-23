@@ -3972,9 +3972,7 @@ def _k_cache_to_buffer[
     var launch_shape = Coord(Int(length), Int(buffer.dim[1]()))
     comptime target_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
-    def copy_fn_unified[
-        width: Int, alignment: Int = 1
-    ](idx: Coord) register_passable:
+    def copy_fn_unified[width: Int, alignment: Int = 1](idx: Coord):
         copy_fn[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[simd_width=target_simd_width](

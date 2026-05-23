@@ -211,7 +211,7 @@ def elementwise[
 
     def func_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) register_passable {}:
+    ](indices: IndexList[rank]) {}:
         func[width, rank, alignment](indices)
 
     _elementwise_impl[
@@ -224,11 +224,10 @@ def elementwise[
 @always_inline
 def elementwise[
     rank: Int,
-    FuncType: ImplicitlyCopyable
-    & def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
     //,
+    FuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     simd_width: Int,
     *,
     target: StaticString = "cpu",
@@ -236,7 +235,7 @@ def elementwise[
 ](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext,) raises:
     """Unified-closure entry point for `elementwise` (DeviceContext).
 
-    Accepts a parametric `register_passable` body (already in
+    Accepts a parametric body (already in
     unified-closure form, with explicit captures) and dispatches to
     `_elementwise_impl`. `rank` and `FuncType` are inferred from the
     runtime `shape` and `func` arguments, so `simd_width` is the only
@@ -245,7 +244,7 @@ def elementwise[
 
     Parameters:
         rank: The rank of the buffer.
-        FuncType: A parametric `register_passable` callable taking
+        FuncType: A parametric callable taking
             `IndexList[rank]` and template parameters `width`, `rank`,
             `alignment`.
         simd_width: The SIMD vector width to use.
@@ -273,9 +272,8 @@ def _elementwise_impl[
     //,
     simd_width: Int,
     FuncType: ImplicitlyCopyable
-    & def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     /,
     *,
     target: StaticString = "cpu",
@@ -311,9 +309,7 @@ def _elementwise_impl[
             var shape_coord = Coord(shape)
 
             @always_inline
-            def func_wrap[
-                width: Int, alignment: Int = 1
-            ](coords: Coord) register_passable {read}:
+            def func_wrap[width: Int, alignment: Int = 1](coords: Coord) {read}:
                 func[width, rank, alignment](
                     rebind[IndexList[rank]](coord_to_index_list(coords))
                 )
@@ -375,12 +371,12 @@ def dual_elementwise[
 
     def func_0_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) register_passable {}:
+    ](indices: IndexList[rank]) {}:
         func_0[width, rank, alignment](indices)
 
     def func_1_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) register_passable {}:
+    ](indices: IndexList[rank]) {}:
         func_1[width, rank, alignment](indices)
 
     _dual_elementwise_impl[
@@ -396,13 +392,11 @@ def _dual_elementwise_impl[
     //,
     simd_width: Int,
     Func0Type: ImplicitlyCopyable
-    & def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     Func1Type: ImplicitlyCopyable
-    & def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     /,
     *,
     target: StaticString = "gpu",

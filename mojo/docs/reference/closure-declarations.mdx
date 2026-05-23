@@ -66,7 +66,7 @@ def name(argument-list) raises {capture-list} -> ReturnType:
 <!--
 Removed for now:
 
-def name(argument-list) register_passable {capture-list}
+def name(argument-list) {capture-list}
     -> ReturnType:
     body
 -->
@@ -465,7 +465,6 @@ Effects appear between the argument list and the capture list.
 | Effect              | Form                                       |
 |---------------------|--------------------------------------------|
 | `raises`            | `(args) raises {captures} -> T`            |
-| `register_passable` | `(args) register_passable {captures} -> T` |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -482,26 +481,6 @@ def main() raises:
 
     print(divide(10))   # 5
 ```
-
-`register_passable` example:
-
-```mojo
-def main():
-    var base = 10
-
-    def shift(x: Int) register_passable {var base} -> Int:
-        return x + base
-
-    print(shift(3))     # 13
-```
-
-<!--
-Removed for now:
-`register_passable` requires every captured value to be itself
-register-passable, or to be captured by reference (`read`,
-`mut`, `ref`). Capturing a `String` or `List` by `var` in a
-`register_passable` closure is rejected.
--->
 
 `thin` and `abi("C")` apply only to closure *types* used as
 function parameters, not to closure declarations. `thin`
@@ -566,7 +545,6 @@ names an outer closure must declare the same kind of capture (`var`,
 | Missing comma between entries                                                     | Identifier followed by an unrecognized token                                 |
 | Unterminated capture list                                                         | Missing closing `}`                                                          |
 | Outer name not covered by capture list                                            | Body references an outer name the capture list doesn't cover                 |
-| Copy or move capture of non-register-passable type in `register_passable` closure | `{var name}` or `{var name^}` with a non-register-passable type              |
 | Use after move capture                                                            | Reference to a name after `{var name^}` consumed it                          |
 
 <!-- Removed for now:

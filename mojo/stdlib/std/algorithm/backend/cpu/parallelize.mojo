@@ -51,10 +51,10 @@ def sync_parallelize[
     """
 
     # The try/except here is required to satisfy the non-raising
-    # `register_passable -> None` signature. The overload's
+    # ` -> None` signature. The overload's
     # inner `func_wrapped` has its own try/except for the same reason, but
     # that outer catch is unreachable since abort() here terminates first.
-    def func_unified(i: Int) register_passable:
+    def func_unified(i: Int):
         try:
             func(i)
         except e:
@@ -65,7 +65,7 @@ def sync_parallelize[
 
 @always_inline
 def sync_parallelize[
-    FuncType: def(Int) register_passable -> None,
+    FuncType: def(Int) -> None,
 ](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
@@ -129,7 +129,7 @@ def parallelize[
         ctx: Optional CPU DeviceContext to execute the work on.
     """
 
-    def func_unified(i: Int) register_passable:
+    def func_unified(i: Int):
         func(i)
 
     _parallelize_impl(func_unified, num_work_items, parallelism_level(ctx), ctx)
@@ -152,7 +152,7 @@ def parallelize[
         ctx: Optional CPU DeviceContext to execute the work on.
     """
 
-    def func_unified(i: Int) register_passable:
+    def func_unified(i: Int):
         func(i)
 
     _parallelize_impl(func_unified, num_work_items, num_workers, ctx)
@@ -160,7 +160,7 @@ def parallelize[
 
 @always_inline
 def parallelize[
-    FuncType: def(Int) register_passable -> None,
+    FuncType: def(Int) -> None,
 ](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
@@ -178,7 +178,7 @@ def parallelize[
 
 @always_inline
 def parallelize[
-    FuncType: def(Int) register_passable -> None,
+    FuncType: def(Int) -> None,
 ](
     func: FuncType,
     num_work_items: Int,
@@ -202,7 +202,7 @@ def parallelize[
 
 @always_inline
 def _parallelize_impl[
-    FuncType: def(Int) register_passable -> None,
+    FuncType: def(Int) -> None,
 ](
     func: FuncType,
     num_work_items: Int,
@@ -294,14 +294,14 @@ def parallelize_over_rows[
         ctx: Optional CPU DeviceContext to execute the work on.
     """
 
-    def func_unified(start: Int, end: Int) register_passable:
+    def func_unified(start: Int, end: Int):
         func(start, end)
 
     parallelize_over_rows(func_unified, shape, axis, grain_size, ctx)
 
 
 def parallelize_over_rows[
-    FuncType: def(Int, Int) register_passable -> None,
+    FuncType: def(Int, Int) -> None,
 ](
     func: FuncType,
     shape: IndexList,
