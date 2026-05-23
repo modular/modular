@@ -4534,11 +4534,10 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
   childTraitFnDecl.setIRValue(clonedFunc.getOperation());
   childTraitFnDecl.resolvedness = DeclResolvedness::body;
 
-  // Clear the function body and replace with just kgen.unreachable
-  // since we don't need to preserve the actual implementation
-  clonedFunc.getBody()->clear();
-
-  {
+  // If present, clear the function body and replace with just kgen.unreachable
+  // since we don't need to preserve the actual implementation.
+  if (!isa<UnreachableOp>(clonedFunc.getBody()->front())) {
+    clonedFunc.getBody()->clear();
     auto builder = OpBuilder::atBlockEnd(clonedFunc.getBody());
     UnreachableOp::create(builder, clonedFunc.getLoc());
   }

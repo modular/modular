@@ -262,6 +262,23 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
       return WalkResult::skip();
 
     if (isa<mlir::SymbolOpInterface, FnOp>(op) && !liveSymbols.contains(op)) {
+      // Never remove the __del__ function from ImplicitlyDestructible or the
+      // __moveinit__ function from Movable.  These are used by CheckLifetimes.
+      if (auto fnOp = dyn_cast<FnOp>(op);
+          // Some REPL tests are not resolving MoveInit at all.
+          fnOp && fnOp->getNumRegions() == 1 && !fnOp.getBodyRegion().empty()) {
+        auto parentOp = fnOp->getParentOp();
+        if (fnOp.getSpecialFunctionKind() == SpecialFunctionKind::kDel &&
+            isa_and_nonnull<TraitDeclOp>(parentOp) &&
+            cast<TraitDeclOp>(parentOp).getSymName() ==
+                "ImplicitlyDestructible")
+          return WalkResult::skip();
+        if (fnOp.getSpecialFunctionKind() == SpecialFunctionKind::kMoveCtor &&
+            isa_and_nonnull<TraitDeclOp>(parentOp) &&
+            cast<TraitDeclOp>(parentOp).getSymName() == "Movable")
+          return WalkResult::skip();
+      }
+
       op->erase();
       return WalkResult::skip();
     }

@@ -79,60 +79,6 @@ struct FunctionLikeOp {
 };
 } // namespace
 
-namespace {
-struct StructInfo {
-  /// This is the decl for the struct type, and is always present.
-  LIT::StructDeclOp decl;
-  /// This is the conformance information for ImplicitlyDestructible if it
-  /// exists.
-  ConformanceOp implicitlyDestructible;
-};
-} // namespace
-
-/// Find all the functions and types in the module.
-static std::tuple<std::vector<FunctionLikeOp>, DenseMap<SymbolRefAttr, FnOp>,
-                  DenseMap<SymbolRefAttr, StructInfo>,
-                  DenseMap<SymbolRefAttr, LIT::TraitDeclOp>>
-collectFunctionsAndTypes(Operation *module) {
-  std::vector<FunctionLikeOp> funcList;
-  DenseMap<SymbolRefAttr, FnOp> funcMap;
-  DenseMap<SymbolRefAttr, StructInfo> structMap;
-  DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
-
-  module->walk([&](Operation *op) {
-    // Collect functions and nested functions.
-    if (auto funcOp = dyn_cast<FnOp>(op)) {
-      if (!funcOp.isOptionalSymbol())
-        funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
-
-      // We don't process external functions. They don't have a body to check.
-      if (funcOp.isExternal())
-        return;
-      funcList.emplace_back(funcOp);
-    }
-    if (auto closureOp = dyn_cast<LIT::ClosureInitOp>(op))
-      funcList.emplace_back(closureOp);
-
-    // Collect structs.
-    else if (auto structOp = dyn_cast<LIT::StructDeclOp>(op)) {
-      // Find the conformance to ImplicitlyDestructible if it exists.
-      ConformanceOp implicitlyDestructibleConformance;
-      for (auto conformance : structOp.getFields().getOps<ConformanceOp>()) {
-        if (conformance.getSymName().ends_with("::ImplicitlyDestructible")) {
-          implicitlyDestructibleConformance = conformance;
-          break;
-        }
-      }
-      structMap[getFullyResolvedSymbolRef(structOp)] = {
-          structOp, implicitlyDestructibleConformance};
-    } else if (auto traitOp = dyn_cast<LIT::TraitDeclOp>(op)) {
-      traitMap[getFullyResolvedSymbolRef(traitOp)] = traitOp;
-    }
-  });
-  return {std::move(funcList), std::move(funcMap), std::move(structMap),
-          std::move(traitMap)};
-}
-
 /// Create DebugInfo::DILocalVariableAttr if this VarDecl needs it.
 /// `funcSpAttr` is the DISubprogramAttr of the surrounding function.
 static DebugInfo::DILocalVariableAttr
@@ -220,24 +166,70 @@ insertDebugVariableForArg(OpBuilder &builder, FunctionLikeOp func,
 }
 
 //===----------------------------------------------------------------------===//
-// TypeDeclInfo
+// WholeProgramState
 //===----------------------------------------------------------------------===//
+
+namespace {
+struct StructInfo {
+  /// This is the decl for the struct type, and is always present.
+  LIT::StructDeclOp decl;
+  /// This is the conformance information for ImplicitlyDestructible if it
+  /// exists.
+  ConformanceOp implicitlyDestructible;
+};
+} // namespace
 
 /// Module-level state shared across all worker threads in the CheckLifetimes
 /// pass. The declaration maps are immutable after construction; the counter
 /// uses atomic operations so no external lock is needed.
+namespace {
 struct WholeProgramState {
-  WholeProgramState(DenseMap<SymbolRefAttr, StructInfo> structMap,
-                    DenseMap<SymbolRefAttr, FnOp> funcMap,
-                    DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap)
-      : structMap(std::move(structMap)), funcMap(std::move(funcMap)),
-        traitMap(std::move(traitMap)) {}
-
+  WholeProgramState(Operation *module, std::vector<FunctionLikeOp> &funcList);
   /// Immutable declaration maps, populated once before threading begins.
   DenseMap<SymbolRefAttr, StructInfo> structMap;
   DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
 };
+} // namespace
+
+/// Find all the functions and types in the module.
+WholeProgramState::WholeProgramState(Operation *module,
+                                     std::vector<FunctionLikeOp> &funcList) {
+  module->walk([&](Operation *op) {
+    // Collect functions and nested functions.
+    if (auto funcOp = dyn_cast<FnOp>(op)) {
+      if (!funcOp.isOptionalSymbol())
+        funcMap[getFullyResolvedSymbolRef(funcOp)] = funcOp;
+
+      // We don't process external functions. They don't have a body to check.
+      if (funcOp.isExternal())
+        return;
+      funcList.emplace_back(funcOp);
+    }
+    if (auto closureOp = dyn_cast<LIT::ClosureInitOp>(op))
+      funcList.emplace_back(closureOp);
+
+    // Collect structs.
+    else if (auto structOp = dyn_cast<LIT::StructDeclOp>(op)) {
+      // Find the conformance to ImplicitlyDestructible if it exists.
+      ConformanceOp implicitlyDestructibleConformance;
+      for (auto conformance : structOp.getFields().getOps<ConformanceOp>()) {
+        if (conformance.getSymName().ends_with("::ImplicitlyDestructible")) {
+          implicitlyDestructibleConformance = conformance;
+          break;
+        }
+      }
+      structMap[getFullyResolvedSymbolRef(structOp)] = {
+          structOp, implicitlyDestructibleConformance};
+    } else if (auto traitOp = dyn_cast<LIT::TraitDeclOp>(op)) {
+      traitMap[getFullyResolvedSymbolRef(traitOp)] = traitOp;
+    }
+  });
+}
+
+//===----------------------------------------------------------------------===//
+// TypeDeclInfo
+//===----------------------------------------------------------------------===//
 
 /// This is a wrapper to provide safer access to special members that are looked
 /// up from traits.  Members can be in one of three states:
@@ -4276,16 +4268,12 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
   using CheckLifetimesBase::CheckLifetimesBase;
 
   void runOnOperation() override {
-    // Find all the functions and structs in the module.
-    auto [functionVector, funcMap, structMap, traitMap] =
-        collectFunctionsAndTypes(getOperation());
+    // Build the shared, immutable module-level state.
+    std::vector<FunctionLikeOp> functionVector;
+    WholeProgramState sharedState(getOperation(), functionVector);
 
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     mlir::LockedSymbolTableCollection sharedSymtabs(analysis.getSymbolTables());
-
-    // Build the shared, immutable module-level state.
-    WholeProgramState sharedState(std::move(structMap), std::move(funcMap),
-                                  std::move(traitMap));
 
     TypeDeclInfo typeDeclInfo(&sharedState, getOperation(), &sharedSymtabs);
 
