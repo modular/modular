@@ -13,7 +13,6 @@
 
 from std.bit import log2_floor
 from std.gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
     block_dim,
@@ -672,9 +671,6 @@ def _block_reduce_value_count[
 @__name(
     t"topk_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
 )
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
-)
 def TopKSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
     probs_origin: ImmutOrigin,
@@ -971,12 +967,20 @@ def topk_sampling_from_prob[
 
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+            # Consumer Blackwell (sm_120/sm_121) allows only 1536 threads/SM vs
+            # 2048 on datacenter parts, so a 1024-thread block exhausts SM
+            # resources and the launch fails with LAUNCH_OUT_OF_RESOURCES. Cap the
+            # block size to 512 on those GPUs only; datacenter behavior is unchanged.
+            comptime hw_info = ctx.default_device_info
+            comptime bs = min(
+                block_size, 512
+            ) if hw_info.threads_per_multiprocessor < 2048 else block_size
             comptime kernel = TopKSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmutOrigin(probs.origin),
                 output.LayoutType,
                 output.origin,
-                block_size,
+                bs,
                 vec_size,
                 dtype,
                 out_idx_type,
@@ -992,7 +996,7 @@ def topk_sampling_from_prob[
                 rng_seed,
                 rng_offset,
                 grid_dim=batch_size,
-                block_dim=block_size,
+                block_dim=bs,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
@@ -1055,9 +1059,6 @@ def apply_min_p_mask_kernel[
 
 @__name(
     t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
-)
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
 def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
@@ -1403,12 +1404,20 @@ def topk_topp_sampling_from_prob[
 
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+            # Consumer Blackwell (sm_120/sm_121) allows only 1536 threads/SM vs
+            # 2048 on datacenter parts, so a 1024-thread block exhausts SM
+            # resources and the launch fails with LAUNCH_OUT_OF_RESOURCES. Cap the
+            # block size to 512 on those GPUs only; datacenter behavior is unchanged.
+            comptime hw_info = ctx.default_device_info
+            comptime bs = min(
+                block_size, 512
+            ) if hw_info.threads_per_multiprocessor < 2048 else block_size
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmutOrigin(probs.origin),
                 output.LayoutType,
                 output.origin,
-                block_size,
+                bs,
                 vec_size,
                 dtype,
                 out_idx_type,
@@ -1426,7 +1435,7 @@ def topk_topp_sampling_from_prob[
                 seed_ptr,
                 rng_offset,
                 grid_dim=batch_size,
-                block_dim=block_size,
+                block_dim=bs,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
@@ -1443,9 +1452,6 @@ def topk_topp_sampling_from_prob[
 
 
 @__name(t"topk_softmax_sample_{dtype}_{out_idx_type}")
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
-)
 def topk_softmax_sample_kernel[
     block_size: Int,
     vec_size: Int,
@@ -1794,8 +1800,16 @@ def topk_softmax_sample[
 
         @parameter
         def launch_kernel[vec_size: Int]() raises:
+            # Consumer Blackwell (sm_120/sm_121) allows only 1536 threads/SM vs
+            # 2048 on datacenter parts, so a 1024-thread block exhausts SM
+            # resources and the launch fails with LAUNCH_OUT_OF_RESOURCES. Cap the
+            # block size to 512 on those GPUs only; datacenter behavior is unchanged.
+            comptime hw_info = ctx.default_device_info
+            comptime bs = min(
+                block_size, 512
+            ) if hw_info.threads_per_multiprocessor < 2048 else block_size
             comptime kernel = topk_softmax_sample_kernel[
-                block_size,
+                bs,
                 vec_size,
                 dtype,
                 out_idx_type,
@@ -1815,7 +1829,7 @@ def topk_softmax_sample[
                 seed_ptr,
                 d,
                 grid_dim=batch_size,
-                block_dim=block_size,
+                block_dim=bs,
                 shared_mem_bytes=shared_mem_bytes,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
