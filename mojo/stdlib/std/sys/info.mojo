@@ -564,6 +564,19 @@ def _has_sm_120x() -> Bool:
     return _has_nvidia_gpu_any[_SM_120X_ARCHS]()
 
 
+comptime _SM_121X_ARCHS: List[String] = ["sm_121", "sm_121a"]
+
+
+@always_inline("nodebug")
+def _is_sm_121x() -> Bool:
+    return _is_nvidia_gpu_any[_SM_121X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_121x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_121X_ARCHS]()
+
+
 @always_inline("nodebug")
 def _has_blackwell_tcgen05() -> Bool:
     return _has_nvidia_gpu_any[
@@ -618,12 +631,12 @@ def _has_sm_110x_or_newer() -> Bool:
 
 @always_inline("nodebug")
 def _is_sm_120x_or_newer() -> Bool:
-    return _is_sm_120x()
+    return _is_sm_120x() or _is_sm_121x()
 
 
 @always_inline("nodebug")
 def _has_sm_120x_or_newer() -> Bool:
-    return _has_sm_120x()
+    return _has_sm_120x() or _has_sm_121x()
 
 
 @always_inline("nodebug")
