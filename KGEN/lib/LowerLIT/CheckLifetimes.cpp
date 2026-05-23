@@ -448,23 +448,19 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type,
   }
 
   auto getDestructor = [&](StructInfo info) -> SpecialMemberInfo {
-    // If the type is linear, then ignore an explicitly declared
-    // destructor for the purposes of destructor insertion.
-    // FIXME: This is wrong, we should check the 'where' clause on the
-    // conformance.
-    if (info.decl.getLinearTypeErrorMsg().value_or("") != "")
-      return SpecialMemberInfo::unavailable(
-          info.decl.getLinearTypeErrorMsgAttr());
-
-    // The type has to conform to implicitly destructible to have a destructor.
+    // The type has to conform to implicitly destructible to have a
+    // destructor. If it is missing, then the struct body isn't resolved. This
+    // happens in LSP and lazy parsing situations.  We treat this as trivial
+    // in this case.
     auto conformance = info.implicitlyDestructible;
-    if (!conformance)
-      // resolveBody always synthesizes an ImplicitlyDestructible ConformanceOp
-      // for non-linear structs.  So if we get here with no conformance, the
-      // struct body was not yet resolved — which happens when LSP skips
-      // resolveBody for source-parsed imports.  Treat as trivial, matching the
-      // !dtorAttr guard below for the analogous empty-body (bytecode) case.
+    if (!conformance) {
+      // May also just be unconditionally linear.
+      if (info.decl.getLinearTypeErrorMsg().value_or("") != "")
+        return SpecialMemberInfo::unavailable(
+            info.decl.getLinearTypeErrorMsgAttr());
+
       return SpecialMemberInfo::available({});
+    }
 
     // Ok, the type has a destructor.  Check to see if there is any
     // conditional conformance involved.
@@ -496,7 +492,27 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type,
 
     ParameterEvaluator evaluator(info.decl.getParams(),
                                  actualStructType.getParamValues());
+    evaluator.setEvaluationContext(getEvaluationContext());
     isTrivialAttr = evaluator.getReboundAttribute(isTrivialAttr);
+
+    // Substitute parameters into the 'where' clause on the conformance, and
+    // check to see if it is valid. If not, this is a (potentially
+    // conditionally) linear type.
+    auto whereClause = conformance.getConstraint().getProposition();
+    whereClause = evaluator.getReboundAttribute(whereClause);
+    auto whereCst = dyn_cast<SIMDAttr>(whereClause);
+    if (!whereCst || !isAllIntLikeOne(whereCst)) {
+      // If the type is linear, then ignore an explicitly declared
+      // destructor for the purposes of destructor insertion.
+      // FIXME: This is wrong, we should check the 'where' clause on the
+      // conformance.
+      assert(
+          info.decl.getLinearTypeErrorMsg().value_or("") != "" &&
+          "Shouldn't conditionally conform to ImplicitlyDestructible without a "
+          "linear type error message");
+      return SpecialMemberInfo::unavailable(
+          info.decl.getLinearTypeErrorMsgAttr());
+    }
 
     // The type of the trivial witness is Bool which wraps an i1.  If we can
     // prove that it is 1, then we can ignore this destructor.

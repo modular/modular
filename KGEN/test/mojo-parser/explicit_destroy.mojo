@@ -6,7 +6,6 @@
 
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
-
 struct MyAffine:
     def __init__(out self):
         pass
@@ -117,6 +116,9 @@ struct _MapIterator[
     def __init__(out self):
         while True:
             pass
+
+    def __del__(deinit self):
+        pass
 
 
 def f(x: Int) -> Int:
