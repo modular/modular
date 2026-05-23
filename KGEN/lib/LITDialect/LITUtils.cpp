@@ -833,6 +833,83 @@ LIT::evaluateConstraint(ParameterEvaluator &evaluator,
   return ConformanceResult::NeedsEvidence;
 }
 
+/// Visit each TypeConformsToTraitAttr found in a constraint proposition.
+/// Canonical AND is already flattened to a single n-ary node, so a single
+/// top-level loop over its operands is sufficient. OR / NOT are not visited
+/// since they are not definite knowledge.
+static void forEachConformsToInProposition(
+    TypedAttr proposition,
+    llvm::function_ref<void(TypeConformsToTraitAttr)> callback) {
+  proposition = getCanonicalAttr(proposition);
+
+  auto visit = [&](TypedAttr attr) {
+    if (auto ct = dyn_cast<TypeConformsToTraitAttr>(getCanonicalAttr(attr)))
+      callback(ct);
+  };
+
+  // Canonical AND is flattened to a single n-ary node, so iterate its
+  // operands directly. Otherwise treat the proposition itself as a single
+  // candidate.
+  if (auto op = dyn_cast<ParamOperatorAttr>(proposition);
+      op && op.getOpcode() == POC::And) {
+    for (TypedAttr operand : op.getOperands())
+      visit(operand);
+    return;
+  }
+  visit(proposition);
+}
+
+/// Peel off transparent wrappers that do not change identity for the purpose
+/// of matching a type parameter against a conforms_to constraint: rebind,
+/// upcast, and downcast. Stripping upcasts/downcasts lets us match the same
+/// underlying parameter even when one side has been statically widened
+/// (e.g. `T: Movable` upcast to `AnyType`) or narrowed.
+static TypedAttr stripIdentityWrappers(TypedAttr attr) {
+  while (true) {
+    TypedAttr stripped = ParamOperatorAttr::stripRebind(attr);
+    stripped = UpcastAttr::strip(stripped);
+    stripped = DowncastAttr::strip(stripped);
+    if (stripped == attr)
+      return attr;
+    attr = stripped;
+  }
+}
+
+TraitType LIT::getTraitBoundFromAssumptions(
+    TypedAttr typeAttr, ArrayRef<ConstraintAttr> assumptions,
+    llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
+  typeAttr = getCanonicalAttr(typeAttr);
+
+  if (assumptions.empty())
+    return {};
+
+  TypedAttr targetStripped = stripIdentityWrappers(typeAttr);
+
+  // Collect trait symbols from all relevant conforms_to constraints.
+  SmallVector<SymbolRefAttr> allTraits;
+  for (ConstraintAttr assumption : assumptions) {
+    forEachConformsToInProposition(
+        assumption.getProposition(), [&](TypeConformsToTraitAttr ct) {
+          TypedAttr ctStripped =
+              stripIdentityWrappers(getCanonicalAttr(ct.getTypeValue()));
+          if (!isEqualCanon(ctStripped, targetStripped))
+            return;
+          for (SymbolRefAttr symbol : ct.getTraitSymbols()) {
+            if (!llvm::is_contained(allTraits, symbol))
+              allTraits.push_back(symbol);
+          }
+        });
+  }
+
+  if (allTraits.empty())
+    return {};
+
+  // Canonicalize to include ancestor traits.
+  canonicalizeTraitCompositionSymbols(allTraits, traitDeclResolver);
+
+  return TraitType::get(typeAttr.getContext(), allTraits);
+}
+
 ParamDeclRefAttr LIT::extractParamDeclRef(TypedAttr attr) {
   if (auto upcast = dyn_cast<UpcastAttr>(attr))
     return extractParamDeclRef(upcast.getInputTypeValue());

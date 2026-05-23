@@ -1506,3 +1506,19 @@ def test_is_trivial(var a0: OccasionallyTrivial[0],
     # CHECK-NEXT: lit.call {{.*}}OccasionallyTrivial::@"__del__{{.*}}(%a1)
 
     # CHECK-NEXT: kgen.param.constant: none
+
+
+# CHECK-LABEL: lit.struct.decl @TestConditionallyLinearType
+@explicit_destroy
+struct TestConditionallyLinearType[T: Movable](
+    ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible)
+):
+    var data: Self.T
+
+# CHECK: lit.fn @"__del__
+# CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[data]
+# CHECK-NEXT: lit.call{{.*}}__del__{{.*}}([[TMP]])
+# CHECK-NEXT: kgen.param.constant: none
+
+    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDestructible):
+        pass
