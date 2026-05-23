@@ -542,13 +542,13 @@ class StructuredOutputHelper:
             index: Position in the bitmask for this request.
 
         Raises:
-            ValueError: If a JSON schema is provided but structured output is
+            InputError: If a JSON schema is provided but structured output is
                 not enabled, or if constrained decoding is not available.
         """
         # Check for grammar first (e.g., tool call grammars from tool_choice=required)
         if context.grammar and context.matcher is None:
             if not self.enabled:
-                raise ValueError(
+                raise InputError(
                     "grammar provided but constrained decoding is not available."
                 )
 
@@ -560,7 +560,7 @@ class StructuredOutputHelper:
                 context.requires_structured_output_flag
                 and not self.enable_response_format_schema
             ):
-                raise ValueError(
+                raise InputError(
                     "response_format with a JSON schema requires "
                     "--enable-structured-output. Drop response_format to use "
                     "tool-call constraints only, or pass the flag to allow "
@@ -582,7 +582,7 @@ class StructuredOutputHelper:
         # json_schema requires enable_response_format_schema (--enable-structured-output flag)
         elif context.json_schema and context.matcher is None:
             if not self.enable_response_format_schema:
-                raise ValueError(
+                raise InputError(
                     "json_schema provided but structured output is not enabled. "
                     "Pass --enable-structured-output to enable this feature."
                 )

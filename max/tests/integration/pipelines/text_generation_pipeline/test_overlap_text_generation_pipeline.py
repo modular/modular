@@ -19,6 +19,7 @@ import numpy.typing as npt
 import pytest
 from max.pipelines.core import TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
+from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     TextGenerationPipeline,
@@ -1456,3 +1457,34 @@ class TestComputeSpeculativeBitmasksRowRemapping:
         assert result is True
         assert spec_state.callback_request_ids == [rid_x, rid_y]
         assert spec_state.has_precomputed_bitmask is True
+
+
+def test_structured_output_helper_raises_input_error_for_json_schema_without_flag() -> (
+    None
+):
+    """Verify that InputError is raised when json_schema is provided without enabling structured output.
+
+    This test ensures that when a user provides a json_schema but the
+    --enable-structured-output flag is not set, an InputError is raised.
+    This allows the serving layer to return a proper HTTP 400 response
+    instead of crashing the server.
+    """
+    helper = StructuredOutputHelper(
+        enabled=True,
+        enable_response_format_schema=False,
+        vocab_size=1000,
+    )
+    request_id = RequestID()
+    ctx = TextContext(
+        request_id=request_id,
+        max_length=1000,
+        tokens=TokenBuffer(np.array([42, 67, 21])),
+        json_schema='{"type": "object", "properties": {"name": {"type": "string"}}}',
+    )
+    bitmask = np.zeros((1, 32), dtype=np.int32)
+
+    with pytest.raises(
+        InputError,
+        match=r"json_schema provided but structured output is not enabled\.",
+    ):
+        helper.update_context(ctx, bitmask, index=0)

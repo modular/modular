@@ -42,6 +42,9 @@ from max.graph.weights import (
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.pipelines.core.exceptions import (
+    InputError,  # noqa: F401 (for docstring)
+)
 from max.pipelines.kv_cache import (
     IncrementCacheLengthsProcessor,
     PagedKVCacheManager,
@@ -328,7 +331,7 @@ class TextGenerationPipeline(
             index: Global position into the bitmask for this request.
 
         Raises:
-            ValueError: If a JSON schema is provided but structured output is not
+            InputError: If a JSON schema is provided but structured output is not
                 enabled via sampling configuration.
         """
         self._structured_output.update_context(context, bitmask, index)
