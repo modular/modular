@@ -455,7 +455,6 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type,
     }
   }
 
-  // TODO: Remove getDestructorAttr from StructDeclOp entirely.
   auto getDestructor = [&](StructInfo info) -> SpecialMemberInfo {
     // If the type is linear, then ignore an explicitly declared
     // destructor for the purposes of destructor insertion.
@@ -960,16 +959,11 @@ struct ValueSet {
     } else {
       eltType = info.value.getType();
     }
-    // Use a cheap attribute check: for concrete struct types, just look at the
-    // destructor attribute directly.  This avoids expensive parameter
-    // specialization that getDestructorForType() would perform for generic
-    // types.  For non-struct types (generics, traits), conservatively keep
-    // the kill.
-    auto structType = sugarDynCast<LIT::StructType>(eltType);
-    if (!structType)
-      return false;
-    return !perThreadCache.typeDeclInfo.getStructInfoForType(structType)
-                .decl.getDestructorAttr();
+    SpecialMemberInfo dtorInfo =
+        perThreadCache.typeDeclInfo.getDestructorForType(eltType,
+                                                         info.value.getLoc());
+    // Suppress kill when no non-trivial destructor will be emitted.
+    return dtorInfo.isUnavailable() || !dtorInfo.getMember();
   }
 
   raw_ostream &printBV(const BitVector &bits, raw_ostream &os) const;

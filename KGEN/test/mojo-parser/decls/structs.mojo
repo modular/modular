@@ -21,46 +21,33 @@ trait RPTTrait(TrivialRegisterPassable):
 
 
 # CHECK-LABEL: lit.struct.decl @DtorExample1
-# Shouldn't have a registered destructor because it's trivial and not explicit.
-# It does have a destructor though because of AnyType conformance.
-# CHECK-NOT: destructor :!lit.generator
-# CHECK: lit.fn @"__del__
+# Trivial destructor because it's trivial and not explicit.
+# CHECK: kgen.witness "__del__is_trivial" : !Bool = {:i1 1}
 struct DtorExample1(AnyType, TrivialRegisterPassable):
     var a: Int
 
-
 # CHECK-LABEL: lit.struct.decl @DtorExample2
-# Shouldn't have a registered destructor because it's trivial and not explicit
-# CHECK-NOT: destructor :!lit.generator
-# CHECK: lit.fn @"__del__
-struct DtorExample2(AnyType, TrivialRegisterPassable):
-    var a: Int
-
-
-# CHECK-LABEL: lit.struct.decl @DtorExample3
-# Should have a registered destructor because it's explicit.
-# CHECK-NEXT: destructor :!lit.generator
-# CHECK: lit.fn @"__del__
-struct DtorExample3(AnyType, RegisterPassable):
+# Non-trivial destructor because it is explicit.
+# CHECK: kgen.witness "__del__is_trivial" : !Bool = {:i1 0}
+struct DtorExample2(AnyType, RegisterPassable):
     var a: Int
 
     def __del__(deinit self):
         pass
 
 
-# CHECK-LABEL: lit.struct.decl @DtorExample4
-# Shouldn't have a registered destructor because it's trivial and not explicit
-# CHECK-NOT: destructor :!lit.generator
-# CHECK: lit.fn @"__del__
-struct DtorExample4[T: RPTTrait]:
+# CHECK-LABEL: lit.struct.decl @DtorExample3
+# Trivial destructor RPT is obviously trivial
+# CHECK: kgen.witness "__del__is_trivial" : !Bool = {:i1 1}
+struct DtorExample3[T: RPTTrait]:
     var thing: Self.T
 
 
-# CHECK-LABEL: lit.struct.decl @DtorExample5
-# Should have a registered destructor because T has a destructor.
-# CHECK-NEXT: destructor :!lit.generator
-# CHECK: lit.fn @"__del__
-struct DtorExample5[T: AnyType]:
+# CHECK-LABEL: lit.struct.decl @DtorExample4
+# Dtor is trivial if T's dtor is trivial.
+# CHECK: lit.alias.decl __del__is_trivial:
+# CHECK-SAME: <#kgen.get_witness<:!AnyType T, {{.*}}"__del__is_trivial">>
+struct DtorExample4[T: AnyType]:
     var thing: Self.T
 
 
@@ -329,9 +316,9 @@ def useNonmaterializable(p: Bool):
 
     # Test that parameter inference using nonmaterializable gives the target,
     # not the nonmaterializable type.
-    # CHECK: lit.call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [], :!AnyType !NmTarget, 
+    # CHECK: lit.call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [], :!AnyType !NmTarget,
     tail_types(NmStruct(5))
-    # CHECK: lit.call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!NmTarget], :!AnyType !NmTarget, 
+    # CHECK: lit.call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!NmTarget], :!AnyType !NmTarget,
     tail_types(NmStruct(5), NmStruct(6))
 
     # However, if the type is the explicitly not the nm-target, it should also work

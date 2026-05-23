@@ -18,8 +18,6 @@ lit.struct.decl @EmptyStruct {
 
 // CHECK-LABEL: lit.struct.decl @ValueType
 lit.struct.decl @ValueType
- // CHECK-NEXT: destructor :() -> () @ValueType::@__del__
- destructor :() -> () @ValueType::@__del__
  // CHECK-NEXT: move :() -> () @ValueType::@__moveinit__
  move :() -> () @ValueType::@__moveinit__
  // CHECK-NEXT: copy :() -> () @ValueType::@__copyinit__
