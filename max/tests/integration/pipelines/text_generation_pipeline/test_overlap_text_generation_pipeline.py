@@ -258,7 +258,7 @@ class TestUpdateWithFutureTokenStructuredOutput:
         )
         # Set up a mock matcher
         mock_matcher = MagicMock()
-        mock_matcher.consume_token = MagicMock(return_value=True)
+        mock_matcher.try_consume_tokens = MagicMock(return_value=1)
         ctx._matcher = mock_matcher
 
         initial_length = len(ctx.tokens.all)
@@ -270,8 +270,8 @@ class TestUpdateWithFutureTokenStructuredOutput:
         assert len(ctx.tokens.all) == initial_length + 1
         assert ctx.tokens.all[-1] == FUTURE_TOKEN
 
-        # FSM (matcher.consume_token) should NOT have been called
-        mock_matcher.consume_token.assert_not_called()
+        # FSM (matcher.try_consume_tokens) should NOT have been called
+        mock_matcher.try_consume_tokens.assert_not_called()
 
         # On the other hand, update_with_future_token should advance FSM when no matcher present.
         # For non-structured output, the standard update() path is used
@@ -306,8 +306,8 @@ class TestSyncAndProcessOutputsStructuredOutput:
         real_tokens = np.array([100, 200], dtype=np.int64)
 
         # Create contexts with mock matchers. ``advance_fsm`` only calls
-        # ``consume_token`` while ``grammar_enforced=True``, so flip it on
-        # for this test path.
+        # ``try_consume_tokens`` while ``grammar_enforced=True``, so flip
+        # it on for this test path.
         contexts = []
         for i in range(batch_size):
             ctx = TextContext(
@@ -317,7 +317,7 @@ class TestSyncAndProcessOutputsStructuredOutput:
             )
             ctx.grammar_enforced = True
             mock_matcher = MagicMock()
-            mock_matcher.consume_token = MagicMock(return_value=True)
+            mock_matcher.try_consume_tokens = MagicMock(return_value=1)
             ctx._matcher = mock_matcher
             contexts.append(ctx)
 
@@ -358,8 +358,8 @@ class TestSyncAndProcessOutputsStructuredOutput:
             # Verify FSM was advanced with real tokens for each context
             for i, ctx in enumerate(contexts):
                 assert ctx._matcher is not None
-                ctx._matcher.consume_token.assert_called_once_with(
-                    int(real_tokens[i])
+                ctx._matcher.try_consume_tokens.assert_called_once_with(
+                    [int(real_tokens[i])]
                 )
 
     def test_updates_bitmask_for_continuing_requests(self) -> None:
@@ -373,7 +373,7 @@ class TestSyncAndProcessOutputsStructuredOutput:
             tokens=TokenBuffer(np.array([42, 67, 21])),
         )
         mock_matcher = MagicMock()
-        mock_matcher.consume_token = MagicMock(return_value=True)
+        mock_matcher.try_consume_tokens = MagicMock(return_value=1)
         ctx._matcher = mock_matcher
 
         # Previous batch inputs
@@ -438,7 +438,7 @@ class TestSyncAndProcessOutputsStructuredOutput:
         )
         ctx.tokens._actively_chunked = True  # Simulate chunked prefill
         mock_matcher = MagicMock()
-        mock_matcher.consume_token = MagicMock(return_value=True)
+        mock_matcher.try_consume_tokens = MagicMock(return_value=1)
         ctx._matcher = mock_matcher
 
         mock_inputs = MagicMock()
@@ -464,7 +464,7 @@ class TestSyncAndProcessOutputsStructuredOutput:
             async_batch.sync_and_process_outputs()
 
             # FSM should NOT be advanced for actively chunked context
-            mock_matcher.consume_token.assert_not_called()
+            mock_matcher.try_consume_tokens.assert_not_called()
 
 
 class TestAdvanceFsmAndComputeBitmasks:

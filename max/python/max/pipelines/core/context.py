@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from dataclasses import dataclass, field
@@ -43,6 +44,8 @@ from max.pipelines.request.open_responses import OutputImageContent
 
 CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
+
+logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
@@ -637,15 +640,19 @@ class TextContext:
         separately if token buffer advancement is needed, or use ``update()``
         for the common case of advancing both together.
 
+        Matcher rejection is not expected at this point (assuming the
+        bitmask was applied correctly). But if the matcher does reject
+        a token, enforcement is disabled for the rest of the request.
+        Continuing to enforce against a desynced matcher would produce schema-shaped nonsense
+        (every downstream bitmask would be filtered against a stale
+        grammar position with no relation to what was emitted).
+        Instead we let the request finish unconstrained.
+
         Args:
             token: The token to consume in the FSM.
 
         Returns:
             True if the token was processed, False if no matcher is present.
-
-        Raises:
-            AssertionError: If the matcher rejects the token, indicating
-                a mismatch between the bitmask and FSM state.
         """
         if self.matcher is None:
             return False
@@ -654,15 +661,25 @@ class TextContext:
         self.grammar_state.update_enforcement_state(token)
 
         # Only consume token in FSM if enforcement is active
-        # TODO: Does this need to raise an error if consumption fails?
         if self.grammar_state.grammar_enforced:
-            try:
-                assert self.matcher.consume_token(token)
-            except Exception:
-                print(
-                    f"Matcher Errors: {self.matcher.get_error()} \nMatcher Warnings: {self.matcher.get_grammar_warnings()}"
+            if self.matcher.try_consume_tokens([token]) != 1:
+                # Matcher rejected a token the bitmask was supposed to
+                # filter. Either the bitmask wasn't applied for this step
+                # (scheduler wiring bug) or matcher state desynced from
+                # ``fill_next_token_bitmask`` (spec-decode rollback or
+                # tokenizer-grammar mismatch). Disable enforcement so we
+                # don't continue filtering against a stale state.
+                logger.error(
+                    "Matcher rejected token %d under grammar enforcement "
+                    "(request %s); disabling enforcement for the rest of "
+                    "the request. matcher_errors=%s "
+                    "matcher_warnings=%s",
+                    token,
+                    self.request_id,
+                    self.matcher.get_error(),
+                    self.matcher.get_grammar_warnings(),
                 )
-                raise
+                self.grammar_state.grammar_enforced = False
 
         return True
 
