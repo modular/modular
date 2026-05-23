@@ -347,10 +347,7 @@ def run_routed_test_case[
         n_e, expert_ids_input, topk, sort_block_m, sti_h, ei_h
     )
 
-    # ---- Host preshuffle (B per expert, SFB per expert, SFA per chunk) ----
-    var b_pre_hb = ctx.enqueue_create_host_buffer[DType.uint8](
-        num_experts * N * k_bytes
-    )
+    # ---- Host preshuffle (SFB per expert, SFA per chunk; B is preshuffled on-GPU below) ----
     var sfb_pre_hb = ctx.enqueue_create_host_buffer[DType.uint8](
         num_experts * sfb_per_expert_bytes
     )
@@ -361,14 +358,6 @@ def run_routed_test_case[
         sfa_per_block_bytes
     )
     ctx.synchronize()
-
-    var b_h_tt = TileTensor(
-        b_h,
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[k_bytes])),
-    )
-    _ = Shuffler[num_experts].preshuffle_b_5d[N=N, K_BYTES=k_bytes](
-        b_h_tt, b_pre_hb
-    )
 
     var sfb_h_tt = TileTensor(
         sfb_h,
@@ -412,6 +401,9 @@ def run_routed_test_case[
 
     # ---- Device buffers + copy ----
     var a_dev = ctx.enqueue_create_buffer[DType.uint8](num_input_rows * k_bytes)
+    var b_raw_dev = ctx.enqueue_create_buffer[DType.uint8](
+        num_experts * N * k_bytes
+    )
     var b_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
         num_experts * N * k_bytes
     )
@@ -428,11 +420,23 @@ def run_routed_test_case[
     var c_dev = ctx.enqueue_create_buffer[DType.float32](num_tokens * topk * N)
 
     ctx.enqueue_copy(a_dev, a_h)
-    ctx.enqueue_copy(b_pre_dev, b_pre_hb)
+    ctx.enqueue_copy(b_raw_dev, b_h)
     ctx.enqueue_copy(sfa_pre_dev, sfa_pre_hb)
     ctx.enqueue_copy(sfb_pre_dev, sfb_pre_hb)
     ctx.enqueue_copy(sti_dev, sti_h)
     ctx.enqueue_copy(ei_dev, ei_h)
+
+    # GPU-side preshuffle b_raw_dev → b_pre_dev.
+    var b_raw_dev_tt = TileTensor[mut=False](
+        b_raw_dev, row_major[num_experts, N, k_bytes]()
+    )
+    var b_pre_dev_tt = TileTensor[mut=True](
+        b_pre_dev,
+        Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=k_bytes],
+    )
+    Shuffler[num_experts].preshuffle_b_5d[N=N, K_BYTES=k_bytes](
+        b_raw_dev_tt, b_pre_dev_tt, ctx
+    )
 
     # Zero output buffer (sentinel rows / inactive blocks won't write).
     c_dev.enqueue_fill(Float32(0.0))
