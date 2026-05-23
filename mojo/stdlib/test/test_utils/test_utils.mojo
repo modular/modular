@@ -113,7 +113,8 @@ def libm_call[
 def check_convertible_to_python(
     var value: Some[ConvertibleToPython], expected: String
 ) raises:
-    """Check that the value can be converted to a Python object and equals the expected string.
+    """Check that the value can be converted to a Python object.
+    Tests for equality with the expected string.
 
     Args:
         value: The value to check.
@@ -132,7 +133,8 @@ def check_convertible_to_python(
 
 
 def check_python_object(var value: PythonObject, expected: String) raises:
-    """Check that the value can be converted to a Python object and equals the expected string.
+    """Check that the value can be implicitly converted to a Python object.
+    Tests for equality with the expected string.
 
     Args:
         value: The value to check.

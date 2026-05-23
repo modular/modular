@@ -23,7 +23,6 @@ from std.collections.string.string_slice import (
 )
 from std.os import PathLike
 from std.ffi import c_char, CStringSlice
-from std.python import ConvertibleToPython, PythonObject
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
