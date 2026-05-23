@@ -113,6 +113,7 @@ struct BlockwiseFP8Accumulator[
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_size: Int,
+    n_scale_granularity: Int = 128,
 ]:
     """Register-based accumulator for blockwise FP8 matmul.
 
@@ -127,6 +128,9 @@ struct BlockwiseFP8Accumulator[
         block_tile_shape: Block tile dimensions (BM, BN, BK).
         mma_shape: MMA operation dimensions (MMA_M, MMA_N, MMA_K).
         cluster_size: Number of CTAs in the cluster.
+        n_scale_granularity: B-scale N-direction block size (defaults to
+            BK; set smaller when the matmul's N-tile spans multiple
+            finer-grained scale blocks).
     """
 
     # Derived tile dimensions
@@ -243,19 +247,23 @@ struct BlockwiseFP8Accumulator[
         var b_scale_0: Scalar[Self.accum_type]
         var b_scale_1: Scalar[Self.accum_type]
 
-        comptime if Self.MMA_N != Self.BK:
-            comptime assert Self.stageN <= gcd(Self.MMA_N, Self.BK) and (
-                gcd(Self.MMA_N, Self.BK) % Self.stageN == 0
-            ), "gcd(MMA_N, BK) must be divisible by stageN"
+        # B-scale N-direction block size is independent of the kernel's
+        # K-tile size; defaults to BK but can be smaller when the matmul
+        # spans multiple finer-grained scale blocks per MMA tile.
+        comptime NScaleBlock = Self.n_scale_granularity
+        comptime if Self.MMA_N != NScaleBlock:
+            comptime assert Self.stageN <= gcd(Self.MMA_N, NScaleBlock) and (
+                gcd(Self.MMA_N, NScaleBlock) % Self.stageN == 0
+            ), "gcd(MMA_N, n_scale_granularity) must be divisible by stageN"
 
             var global_bn_start = bn * Self.MMA_N
             var begin_n = min(
-                Int32(Self.BK) - Int32(umod(global_bn_start, Self.BK)),
+                Int32(NScaleBlock) - Int32(umod(global_bn_start, NScaleBlock)),
                 Int32(Self.MMA_N),
             )
             var end_n = min(N - Int32(global_bn_start), Int32(Self.MMA_N))
 
-            b_scale_idx0 = ufloordiv(global_bn_start, Self.BK)
+            b_scale_idx0 = ufloordiv(global_bn_start, NScaleBlock)
             b_scale_next_n = Int(begin_n) if begin_n < end_n else Self.MMA_N
 
             b_scale_0 = rebind[Scalar[Self.accum_type]](
@@ -352,7 +360,7 @@ struct BlockwiseFP8Accumulator[
 
             var b_scale: Scalar[Self.accum_type]
 
-            comptime if Self.MMA_N != Self.BK:
+            comptime if Self.MMA_N != Self.n_scale_granularity:
                 b_scale = (
                     b_scale_0 if (stage * Self.stageN + staged_c_col)
                     < b_scale_next_n else b_scale_1

@@ -18,6 +18,7 @@ import math
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
+import numpy as np
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -145,6 +146,18 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         assert quant_config.input_scale.block_size is not None
         self.weight_block_size = quant_config.weight_scale.block_size
         input_k_block = quant_config.input_scale.block_size[1]
+
+        # Granularity at which every per-head K-chunk fits in a single
+        # on-disk scale block. Equals `weight_block_size[0]` when the
+        # per-head row count is a multiple of it; otherwise the GCD of
+        # the residue and the block (e.g. 64 when (Dn + Dv) % 128 != 0).
+        block_m = int(self.weight_block_size[0])
+        per_head = self.qk_nope_head_dim + self.v_head_dim
+        residue = per_head % block_m
+        if residue == 0 and self.qk_nope_head_dim % block_m == 0:
+            self._b_scale_granularity = block_m
+        else:
+            self._b_scale_granularity = math.gcd(residue, block_m)
 
         proj_dtype = DType.float8_e4m3fn
         self.q_a_proj = Weight(
@@ -536,59 +549,111 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
         return kv_b_proj_weight
 
-    @property
-    def _qk_nope_head_scale_dim(self) -> int:
-        return self.qk_nope_head_dim // self.weight_block_size[0]
+    def _gather_per_head_scale(
+        self, start_row_offset: int, n_rows: int
+    ) -> TensorValue:
+        """Gathers per-head B-scale chunks from the flat on-disk
+        `kv_b_proj_scale` for all heads in a single op.
 
-    @property
-    def _v_head_scale_dim(self) -> int:
-        return self.v_head_dim // self.weight_block_size[0]
+        For each head `h` and chunk `k` of `g` rows, the on-disk
+        scale row is `(h * per_head_row + start_row_offset + k * g) //
+        block_m`. When `block_k > g` (finer-than-on-disk N
+        granularity), gathered cols are replicated by `block_k // g`
+        so the kernel — called with `n/k_scale_granularity = g` —
+        sees a matching block count along the on-disk K axis.
 
-    @property
-    def _kv_b_proj_weight_scale(self) -> TensorValue:
-        """Returns reshaped `kv_b_proj_scale` aligned with `_kv_b_proj_weight`."""
-        kv_b_proj_weight_scale = self.kv_b_proj_scale.transpose(0, 1)
-        kv_b_proj_weight_scale = kv_b_proj_weight_scale.reshape(
-            (self.kv_lora_rank // self.weight_block_size[0], self.n_heads, -1)
+        Returns a `[H, n_chunks, n_cols_kernel]` tensor.
+        """
+        g = self._b_scale_granularity
+        block_m = int(self.weight_block_size[0])
+        block_k = int(self.weight_block_size[1])
+        per_head_row = self.qk_nope_head_dim + self.v_head_dim
+        n_chunks = ceildiv(n_rows, g)
+        heads = np.arange(self.n_heads, dtype=np.int32)
+        chunks = np.arange(n_chunks, dtype=np.int32)
+        row_indices = (
+            (
+                heads[:, None] * per_head_row
+                + start_row_offset
+                + chunks[None, :] * g
+            )
+            // block_m
+        ).reshape(-1)
+        gathered = ops.gather(
+            self.kv_b_proj_scale,
+            ops.constant(
+                row_indices,
+                DType.int32,
+                device=self.kv_b_proj_scale.device,
+            ),
+            axis=0,
         )
-        return kv_b_proj_weight_scale
+        n_cols_on_disk = int(self.kv_b_proj_scale.shape[1])
+        gathered = gathered.reshape((self.n_heads, n_chunks, n_cols_on_disk))
+        col_repeat = block_k // g
+        if col_repeat == 1:
+            return gathered
+        col_indices = np.repeat(
+            np.arange(n_cols_on_disk, dtype=np.int32), col_repeat
+        )
+        return ops.gather(
+            gathered,
+            ops.constant(
+                col_indices,
+                DType.int32,
+                device=self.kv_b_proj_scale.device,
+            ),
+            axis=2,
+        )
 
     @property
     def w_uk(self) -> tuple[TensorValue, TensorValue]:
-        """Returns decode K-projection tensor/scale with shape [H, kv_rank, qk_nope_dim]."""
-        w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
-        w_uk = w_uk_base.transpose(0, 1)
+        """Decode K-up projection: weight `[H, R, Dn]`, scale
+        `[H, R/block_k_kernel, ceildiv(Dn, g)]` after transpose.
 
-        w_uk_scale_base = self._kv_b_proj_weight_scale[
-            ..., : self._qk_nope_head_scale_dim
-        ]
-        w_uk_scale = w_uk_scale_base.transpose(0, 1)
+        The batched FP8 matmul reads `b_scales` as `[H, N_blk,
+        K_blk]`. For `Q @ w_uk` the matmul has `N = R` and
+        `K = Dn`, so the gather returns `[H, K_blk, N_blk]` and we
+        transpose the trailing two axes to match the kernel layout.
+        """
+        w_uk = self._kv_b_proj_weight[..., : self.qk_nope_head_dim].transpose(
+            0, 1
+        )
+        w_uk_scale = self._gather_per_head_scale(
+            start_row_offset=0, n_rows=self.qk_nope_head_dim
+        ).transpose(1, 2)
         return (w_uk, w_uk_scale)
 
     @property
     def w_uv(self) -> tuple[TensorValue, TensorValue]:
-        """Returns decode V-projection tensor/scale with shape [H, v_dim, kv_rank]."""
-        w_uv_base = self._kv_b_proj_weight[..., self.qk_nope_head_dim :]
-        w_uv = w_uv_base.permute([1, 2, 0])
+        """Decode V-up projection: weight `[H, Dv, R]`, scale
+        `[H, ceildiv(Dv, g), R/block_k_kernel]`.
 
-        w_uv_scale_base = self._kv_b_proj_weight_scale[
-            ..., self._qk_nope_head_scale_dim :
-        ]
-        w_uv_scale = w_uv_scale_base.permute([1, 2, 0])
+        For `raw_out @ w_uv`: `N_matmul = Dv`, `K_matmul = R`.
+        The gather chunks `Dv` at granularity `g`, so the rows axis
+        is already `N_blk_matmul` and no transpose is needed.
+        """
+        w_uv = self._kv_b_proj_weight[..., self.qk_nope_head_dim :].permute(
+            [1, 2, 0]
+        )
+        w_uv_scale = self._gather_per_head_scale(
+            start_row_offset=self.qk_nope_head_dim, n_rows=self.v_head_dim
+        )
         return (w_uv, w_uv_scale)
 
     @property
     def w_k(self) -> tuple[TensorValue, TensorValue]:
-        """Returns prefill K-projection tensor/scale with shape [H*qk_nope_dim, kv_rank]."""
-        w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
-        w_k = w_uk_base.permute([1, 2, 0]).reshape((-1, self.kv_lora_rank))
-
-        w_uk_scale_base = self._kv_b_proj_weight_scale[
-            ..., : self._qk_nope_head_scale_dim
-        ]
-        w_k_scale = w_uk_scale_base.permute([1, 2, 0]).reshape(
-            (-1, self.kv_lora_rank // self.weight_block_size[0])
+        """Prefill K-up projection: weight `[H*Dn, R]`, scale
+        `[H*ceildiv(Dn, g), R/block_k_kernel]`."""
+        w_k = (
+            self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
+            .permute([1, 2, 0])
+            .reshape((-1, self.kv_lora_rank))
         )
+        block_k_kernel = self._b_scale_granularity
+        w_k_scale = self._gather_per_head_scale(
+            start_row_offset=0, n_rows=self.qk_nope_head_dim
+        ).reshape((-1, self.kv_lora_rank // block_k_kernel))
         return (w_k, w_k_scale)
 
     def _mla_impl(
@@ -617,6 +682,11 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             "scale": self.scale,
             "v_head_dim": self.v_head_dim,
             "quant_config": self.quant_config,
+            # When the per-head row count straddles the on-disk block,
+            # the kernel must use the finer granularity at which every
+            # per-head K-chunk fits in a single on-disk scale block
+            # instead of the on-disk `weight_scale.block_size`.
+            "scale_granularity_override": self._b_scale_granularity,
         }
 
         w_k, w_k_scale = self.w_k

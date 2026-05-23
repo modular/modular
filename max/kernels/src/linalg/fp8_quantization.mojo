@@ -1705,18 +1705,24 @@ def blockwise_scaled_fp8_with_epilogue[
     the matmul result is written into `c` and then read back by the lambda.
     """
 
-    # 1D/2D (1x128)x(128x128) blockwise scaling
+    # 1D/2D blockwise scaling with (m, n, k) granularity in
+    # (1, {64,128}, 128).
     comptime if (
         _is_sm10x_gpu(ctx.default_device_info)
         and transpose_b
         and c_type == DType.bfloat16
         and scales_granularity_mnk[0] == 1
-        and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128
+        and scales_granularity_mnk[2] == 128
+        and scales_granularity_mnk[1] in (64, 128)
     ):
-        comptime BK = 128
+        comptime N_G = scales_granularity_mnk[1]
         comptime MMA_K = 32
-        comptime block_tile_shape = Index(64, 96, BK)
-        comptime umma_shape = Index(128, 192, MMA_K)
+        comptime block_tile_shape = Index(64, 96, 128)
+        # MMA_N must be <= 2 * n_scale_granularity because the accumulator
+        # only loads 2 b_scales per MMA tile.
+        comptime umma_shape = Index(128, 192, MMA_K) if N_G == 128 else Index(
+            128, 128, MMA_K
+        )
         comptime cluster_shape = Index(2, 1, 1)
         comptime matmul_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
@@ -1735,6 +1741,7 @@ def blockwise_scaled_fp8_with_epilogue[
                 a_scales_type=a_scales_type,
                 b_scales_type=b_scales_type,
                 config=matmul_config,
+                n_scale_granularity=scales_granularity_mnk[1],
             ](c, a, b, a_scales, b_scales, ctx)
         else:
             comptime epilogue = elementwise_lambda_fn.value()
@@ -1767,6 +1774,7 @@ def blockwise_scaled_fp8_with_epilogue[
                 a_scales_type=a_scales_type,
                 b_scales_type=b_scales_type,
                 config=matmul_config,
+                n_scale_granularity=scales_granularity_mnk[1],
             ](c, a, b, a_scales, b_scales, ctx)
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
                 Index(m, n), ctx

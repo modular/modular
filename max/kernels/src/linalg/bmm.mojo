@@ -1057,6 +1057,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    b_scaling_block_n: Int = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
@@ -1136,6 +1137,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
             elementwise_epilogue_fn_wrapper
         ) if elementwise_lambda_fn else None,
+        b_scaling_block_n=b_scaling_block_n,
     ](
         a_tma_op,
         b_tma_op,
@@ -1159,6 +1161,7 @@ def bmm_sm100_blockwise_scaled_fp8[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    b_scaling_block_n: Int = 128,
 ](
     c_: TileTensor[mut=True, c_type, ...],
     a_: TileTensor[mut=False, a_type, ...],
@@ -1194,7 +1197,10 @@ def bmm_sm100_blockwise_scaled_fp8[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    comptime assert BK == 128, "blockwise scaled fp8 only works with BK = 128"
+    comptime assert BK in (
+        64,
+        128,
+    ), "blockwise scaled fp8 only supports BK in (64, 128)"
 
     var batch_size = c.dim(0)
     var M = c.dim(1)
@@ -1209,21 +1215,24 @@ def bmm_sm100_blockwise_scaled_fp8[
     var b_scales_dim0 = b_scales.dim(1)
     var b_scales_dim1 = b_scales.dim(2)
 
+    # The K-direction scale granularity is fixed at BK
+    # (k_scale_granularity == BK). The N-direction granularity may be
+    # finer and is independent of BK_kernel — encoded in b_scales.dim(1)
+    # = N // n_scale_granularity.
     if (
         a_scales_dim0 != b_scales_dim1
         or K % a_scales_dim0 != 0
         or (K // a_scales_dim0) != BK
     ):
         raise Error(
-            "a_scales_3D.dim(1) must be equal to b_scales.dim(1) and K must be"
-            " divisible by a_scales.dim(0) and (K // a_scales.dim(0)) must be"
-            " equal to 128"
+            "a_scales.dim(1) must equal b_scales.dim(2), K must be divisible"
+            " by a_scales.dim(1), and (K // a_scales.dim(1)) must equal BK."
         )
 
-    if N % b_scales_dim0 != 0 or (N // b_scales_dim0) != BK:
+    if N % b_scales_dim0 != 0 or (N // b_scales_dim0) not in (64, 128):
         raise Error(
-            "N must be divisible by b_scales.dim(0) and (N // b_scales.dim(0)) "
-            " must be equal to 128"
+            "N must be divisible by b_scales.dim(1) and (N // b_scales.dim(1))"
+            " must be in (64, 128)."
         )
 
     var padding_size = 16 // size_of[a_scales_type]()
@@ -1307,6 +1316,7 @@ def bmm_sm100_blockwise_scaled_fp8[
         b_swizzle=b_swizzle,
         num_threads=block_dim,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        b_scaling_block_n=b_scaling_block_n,
     ]
 
     ctx.enqueue_function[kernel](
@@ -1461,9 +1471,12 @@ def batched_matmul_dynamic_scaled_fp8[
     ), "Only support SM100 or SM90"
     comptime assert (
         m_scale_granularity == 1
-        and n_scale_granularity == 128
-        and k_scale_granularity == 128
-    ), "Only support (1,128,128) scale granularity"
+        and k_scale_granularity in (64, 128)
+        and n_scale_granularity in (64, 128)
+    ), (
+        "Only support m_scale_granularity == 1 and k/n_scale_granularity"
+        " in (64, 128)."
+    )
     comptime assert (
         a_type == b_type == DType.float8_e4m3fn
     ), "input A and B dtype should be float8_e4m3fn"
@@ -1477,9 +1490,18 @@ def batched_matmul_dynamic_scaled_fp8[
     ), "Only support block-wise scale granularity"
 
     comptime if _is_sm10x_gpu(ctx.default_device_info):
-        comptime umma_shape = Index(64, 64, 32)
-        comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
-        comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
+        # BN per CTA tracks n_scale_granularity so each N-tile fits in
+        # exactly one B-scale block; BK_kernel tracks k_scale_granularity.
+        # K-tile bytes = BK * sizeof(fp8) = BK. SWIZZLE_128B requires a
+        # 128-byte K-tile, so BK=64 needs SWIZZLE_64B instead.
+        comptime umma_shape = Index(64, n_scale_granularity, 32)
+        comptime block_tile_shape = Index(
+            umma_shape[0], umma_shape[1], k_scale_granularity
+        )
+        comptime swizzle = (
+            TensorMapSwizzle.SWIZZLE_128B if k_scale_granularity
+            == 128 else TensorMapSwizzle.SWIZZLE_64B
+        )
 
         bmm_sm100_blockwise_scaled_fp8[
             transpose_b=transpose_b,
@@ -1487,6 +1509,7 @@ def batched_matmul_dynamic_scaled_fp8[
             block_tile_shape=block_tile_shape,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
+            b_scaling_block_n=n_scale_granularity,
         ](
             c,
             a,

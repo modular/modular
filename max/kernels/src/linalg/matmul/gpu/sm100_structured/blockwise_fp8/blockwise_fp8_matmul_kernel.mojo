@@ -118,6 +118,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     # Cluster shape (for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    # B-scale N-direction block size (independent of BK_kernel).
+    n_scale_granularity: Int = 128,
 ]:
     """Blockwise FP8 matmul kernel with register-based accumulation.
 
@@ -399,6 +401,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.config.block_tile_shape,
         Self.config.mma_shape,
         Self.CLUSTER_SIZE,
+        Self.n_scale_granularity,
     ]
 
     # ========== Output Writer Type ==========
@@ -587,7 +590,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             1,
             2,
         ), "Only support cta_group == 1 or 2"
-        comptime assert Self.BK == 128, "Only support BK = 128"
+        comptime assert Self.BK in (64, 128), "Only support BK in (64, 128)"
 
     # ========== Static Helper Methods ==========
 

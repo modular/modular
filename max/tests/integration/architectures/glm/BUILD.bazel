@@ -1,0 +1,52 @@
+# GLM tests.
+
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# CPU-only correctness tests for the FP8 MLA load-time scale gather.
+# Pins the per-head gather formula against direct on-disk dequant for
+# both DeepSeek (granularity=128, no replication regression) and GLM
+# (granularity=64, replicated scalars) geometries.
+modular_py_test(
+    name = "glm_scale_gather",
+    size = "small",
+    srcs = ["test_mla_fp8_scale_gather.py"],
+    deps = [
+        requirement("numpy"),
+    ],
+)
+
+# Graph-level GPU test that builds the FP8 MLA layer at GLM dims, runs a
+# forward pass through `mla_prefill_decode_graph` (and the SM100 BK=64
+# blockwise FP8 matmul kernel), and compares against a BF16 reference
+# layer consuming the FP8-dequantized weights.
+modular_py_test(
+    name = "glm_mla_fp8",
+    size = "large",
+    srcs = ["test_mla_fp8_glm.py"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
