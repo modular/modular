@@ -182,9 +182,8 @@ def testTakePointeeAsOwned1(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`])
   # This should run the destructor and not get omitted.
   # CHECK-NEXT: [[REF2:%.*]] = lit.ref.from_pointer %ptr end_uninit :
   # CHECK-NEXT: lit.ownership.use [[REF2]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF2]])
   _ = __get_address_as_owned_value(ptr)
-
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF2]])
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF1]])
 
 
@@ -729,10 +728,10 @@ def call_variadic_mems(a: MemExample, b: MemExample):
   # CHECK: lit.call {{.*}}VariadicList::@"__init__
   # CHECK: lit.call {{.*}}variadic_mems{{.*}}:origin<0> (mutcast mut *"c`4")>
   variadic_mems(c)
-  # CHECK: lit.call {{.*}}__del__{{.*}}(%c)
-  # CHECK-NEXT: lit.var.lifetime.end %c
   # CHECK-NEXT: lit.var.lifetime.end %anonymous
   # CHECK-NEXT: lit.var.lifetime.end %__passed_varargs__
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%c)
+  # CHECK-NEXT: lit.var.lifetime.end %c
   # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: lit.fn @"variadic_field_sensitivity
@@ -792,13 +791,12 @@ def call_variadic_inout_mems():
   # CHECK: lit.call {{.*}}VariadicList::@"__init__
   # CHECK: lit.call {{.*}}variadic_inout_mems{{.*}}:origin<1> {*"a`", *"b`1"}
   variadic_inout_mems(a, b)
-
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AR]])
-  # CHECK-NEXT: lifetime.end %a
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BR]])
-  # CHECK-NEXT: lifetime.end %b
   # CHECK-NEXT: lit.var.lifetime.end %anonymous
   # CHECK-NEXT: lit.var.lifetime.end %__passed_varargs__
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BR]])
+  # CHECK-NEXT: lifetime.end %b
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[AR]])
+  # CHECK-NEXT: lifetime.end %a
 
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK-NEXT: kgen.return
@@ -994,8 +992,8 @@ def test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExamp
     # CHECK-NEXT:  [[RESULT:%.*]] = lit.call {{.*}}__init__{{.*}}copy"
 
     # Last use of both x and b.
-    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%a)
     # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
+    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%a)
 
     # CHECK-NEXT:  kgen.return [[RESULT]]
     return a if x else b
@@ -1344,10 +1342,10 @@ def test_min2(a: String):
     # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
     # CHECK-NEXT: lit.call {{.*}}String::@"__iadd__{{.*}}([[REF]], [[SLICE]])
     my_min2(x, y) += a
-    # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%x)
-    # CHECK-NEXT: lit.var.lifetime.end %x
     # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%y)
     # CHECK-NEXT: lit.var.lifetime.end %y
+    # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%x)
+    # CHECK-NEXT: lit.var.lifetime.end %x
 
 # MOCO-1500: Can't take origin of read-only String arg
 def origin_of_def_arg(a: String) raises:
@@ -1532,3 +1530,28 @@ struct TestSynthesizedConditionalDtor[T: Movable](
     var data: Self.T
 
 # CHECK: lit.fn @"__del__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!Movable T, {{.*}}ImplicitlyDestructible{{.*}}synthetic
+
+
+# MOCO-3880: The destructor for one value can extend the lifetime of another value.
+@fieldwise_init
+struct Driver:
+    def __del__(deinit self): pass
+
+@fieldwise_init
+struct Event[origin: ImmutOrigin]:
+    def __del__(deinit self): pass
+
+def record_event(driver: Driver) -> Event[origin_of(driver)]:
+    return {}
+
+# CHECK-LABEL: lit.fn @"test_mojo_3880
+def test_mojo_3880():
+    var driver = Driver()
+    _ = record_event(driver)
+
+    # CHECK: lit.call {{.*}}record_event
+    # CHECK-NEXT: lit.ownership.use [[EVENT:%.*]] : !lit.ref<
+    # CHECK-NEXT: lit.call {{.*}}Event::@"__del__{{.*}}([[EVENT]])
+    # CHECK-NEXT: lit.var.lifetime.end [[EVENT]]
+    # CHECK-NEXT: lit.call {{.*}}Driver::@"__del__{{.*}}(%driver)
+    # CHECK-NEXT: lit.var.lifetime.end %driver

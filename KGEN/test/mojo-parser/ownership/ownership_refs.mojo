@@ -87,10 +87,10 @@ def testUseConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CV]])
   # CHECK-NEXT: lit.ref.immut [[MREF]]
   # CHECK-NEXT: lit.call {{.*}}noop
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
-  # CHECK-NEXT: lifetime.end %a
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
   # CHECK-NEXT: lifetime.end %b
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lifetime.end %a
 
 # CHECK-LABEL: lit.fn @"testDefConditional
 def testDefConditional(cond: __mlir_type.i1):
@@ -175,10 +175,6 @@ def testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[REF]])
 
-  # Ok, this was the last use of A so it can go away.
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
-  # CHECK-NEXT: lifetime.end %a
-
   # The reference being alive doesn't keep the underlying stuff alive, only
   # accesses
   # CHECK-NEXT: %aref2 = lit.var.decl "aref2"
@@ -189,6 +185,10 @@ def testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK-NEXT: lifetime.end %aref2
   # expected-warning @+1 {{assignment to 'aref2' was never used}}
   var aref2 = aref
+
+  # Ok, this was the last use of A so it can go away.
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lifetime.end %a
 
   # Pointer can bind to immutable things as well, no problem.
   # CHECK-NEXT: [[IMMRV:%.*]] = lit.call tail @std::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%imm)
@@ -452,8 +452,8 @@ def test_parameter_closure_captures(var x: MemExample, var y: MemExample):
     _ = y^
 
   # CHECK: lit.call[!lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}:
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   capture()
 
 def higher_order_function[lts: __mlir_type.`!lit.origin.set`, //, f: def() capturing [lts] -> None]():
@@ -468,8 +468,8 @@ def test_higher_order_capture(var x: MemExample, var y: MemExample):
     _ = y^
 
   # CHECK: lit.call {{.*}}higher_order_function{{.*}} !lit.generator<:{mut *"x`{{.*}}", mut *"y`{{.*}}"}
-  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
+  # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   higher_order_function[capture]()
 
 # CHECK-LABEL: lit.fn @"test_origin_ref_spec
