@@ -37,8 +37,7 @@ This version is still a work in progress.
         return Pointer(to=b)
   ```
 
-- Types may now be conditionally "ImplicitlyDestructible" with a where clause.
-  Note you currently must declare a del method by hand, e.g.:
+- Types may now be conditionally "ImplicitlyDestructible" with a where clause:
 
   ```mojo
   @explicit_destroy("Message when implicitly destroyed")
@@ -46,9 +45,6 @@ This version is still a work in progress.
       ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible)
   ):
       var data: Self.T
-
-      def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDestructible):
-          pass
   ```
 
 ## Language changes
