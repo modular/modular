@@ -370,9 +370,19 @@ struct _Once[T: Movable](
         return Tuple(n_remaining, Optional(n_remaining))
 
 
-def once[T: Movable](var value: T) -> _Once[T]:
-    """Creates an iterator that yields an element exactly once."""
-    return _Once(value^)
+def once[T: Movable](var element: T) -> _Once[T]:
+    """Creates an iterator that yields an element exactly once.
+
+    Parameters:
+        T: The type of the element to be yielded exactly once.
+
+    Args:
+        element: The element to be yielded exactly once.
+
+    Returns:
+        An iterator that yields the specified element exactly once.
+    """
+    return _Once(element^)
 
 
 # ===-----------------------------------------------------------------------===#
