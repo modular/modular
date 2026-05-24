@@ -307,6 +307,10 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
   if (auto declRef = dyn_cast<ParamDeclRefAttr>(attr)) {
     // If the referenced parameter is not bound, forward the reference.
     auto declRefType = doReplace(declRef.getType(), rootDepth);
+    // Forward nullptr from elaborator to signal a skipped node to avoid race
+    // condition.
+    if (!declRefType)
+      return nullptr;
     if (auto it = declBindings.find(declRef.getName());
         it != declBindings.end()) {
       auto resultV = upbindValue(it->second);
@@ -326,6 +330,10 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
     assert(indexRef.getIndex() < indexBindings.size() &&
            "parameter index out of range");
     auto indexRefType = doReplace(indexRef.getType(), rootDepth);
+    // Forward nullptr from elaborator to signal a skipped node to avoid race
+    // condition.
+    if (!indexRefType)
+      return nullptr;
     TypedAttr resultV = indexBindings[indexRef.getIndex()];
     if (resultV) {
       resultV = cast<TypedAttr>(upbindValue(resultV));
