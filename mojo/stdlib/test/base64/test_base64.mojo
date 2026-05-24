@@ -18,12 +18,8 @@ from std.testing import assert_equal, assert_raises
 from std.testing import TestSuite
 
 
-def bytes_to_str(b: Span[mut=False, UInt8, _]) -> String:
-    # Helper to convert Span[UInt8] to String for test comparison
-    var s = String(capacity=len(b))
-    for byte in b:
-        s._unsafe_append_byte(byte)
-    return s^
+def _bytes(s: StringSlice) -> List[Byte]:
+    return List[Byte](s.as_bytes())
 
 
 def test_b64encode() raises:
@@ -61,28 +57,17 @@ def test_b64encode() raises:
 
 
 def test_b64decode() raises:
-    assert_equal(bytes_to_str(b64decode("YQ==")), "a")
-
-    assert_equal(bytes_to_str(b64decode("Zm8=")), "fo")
-
+    assert_equal(b64decode("YQ=="), _bytes("a"))
+    assert_equal(b64decode("Zm8="), _bytes("fo"))
+    assert_equal(b64decode("SGVsbG8gTW9qbyEhIQ=="), _bytes("Hello Mojo!!!"))
+    assert_equal(b64decode("SGVsbG8g8J+UpSEhIQ=="), _bytes("Hello 🔥!!!"))
     assert_equal(
-        bytes_to_str(b64decode("SGVsbG8gTW9qbyEhIQ==")), "Hello Mojo!!!"
-    )
-
-    assert_equal(
-        bytes_to_str(b64decode("SGVsbG8g8J+UpSEhIQ==")), "Hello 🔥!!!"
-    )
-
-    assert_equal(
-        bytes_to_str(
-            b64decode(
-                "dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZw=="
-            )
+        b64decode(
+            "dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZw=="
         ),
-        "the quick brown fox jumps over the lazy dog",
+        _bytes("the quick brown fox jumps over the lazy dog"),
     )
-
-    assert_equal(bytes_to_str(b64decode("QUJDREVGYWJjZGVm")), "ABCDEFabcdef")
+    assert_equal(b64decode("QUJDREVGYWJjZGVm"), _bytes("ABCDEFabcdef"))
 
     with assert_raises(
         contains="ValueError: Input length '21' must be divisible by 4"
@@ -108,21 +93,61 @@ def test_b16encode() raises:
 
 
 def test_b16decode() raises:
-    assert_equal(bytes_to_str(b16decode("61")), "a")
-    assert_equal(bytes_to_str(b16decode("666F")), "fo")
+    assert_equal(b16decode("61"), _bytes("a"))
+    assert_equal(b16decode("666F"), _bytes("fo"))
     assert_equal(
-        bytes_to_str(b16decode("48656C6C6F204D6F6A6F212121")), "Hello Mojo!!!"
+        b16decode("48656C6C6F204D6F6A6F212121"), _bytes("Hello Mojo!!!")
     )
+    assert_equal(b16decode("48656C6C6F20F09F94A5212121"), _bytes("Hello 🔥!!!"))
     assert_equal(
-        bytes_to_str(b16decode("48656C6C6F20F09F94A5212121")), "Hello 🔥!!!"
+        b16decode(
+            "74686520717569636B2062726F776E20666F78206A756D7073206F76657220746865206C617A7920646F67"
+        ),
+        _bytes("the quick brown fox jumps over the lazy dog"),
     )
-    assert_equal(
-        b16encode("the quick brown fox jumps over the lazy dog"),
-        "74686520717569636B2062726F776E20666F78206A756D7073206F76657220746865206C617A7920646F67",
-    )
-    assert_equal(
-        bytes_to_str(b16decode("414243444546616263646566")), "ABCDEFabcdef"
-    )
+    assert_equal(b16decode("414243444546616263646566"), _bytes("ABCDEFabcdef"))
+
+
+def test_b64encode_reuse_buffer() raises:
+    var buf = String()
+    b64encode("hello".as_bytes(), buf)
+    assert_equal(buf, "aGVsbG8=")
+    b64encode("hi".as_bytes(), buf)  # reuse same buffer; expect shrink
+    assert_equal(buf, "aGk=")
+    b64encode(
+        "a longer payload to grow capacity".as_bytes(), buf
+    )  # reuse; expect grow
+    assert_equal(buf, "YSBsb25nZXIgcGF5bG9hZCB0byBncm93IGNhcGFjaXR5")
+
+
+def test_b64decode_reuse_buffer() raises:
+    var buf = List[Byte]()
+    b64decode("aGVsbG8=", buf)
+    assert_equal(buf, _bytes("hello"))
+    b64decode("aGk=", buf)  # reuse; expect shrink
+    assert_equal(buf, _bytes("hi"))
+    b64decode("YSBsb25nZXIgcGF5bG9hZCB0byBncm93IGNhcGFjaXR5", buf)  # grow
+    assert_equal(buf, _bytes("a longer payload to grow capacity"))
+
+
+def test_b16encode_reuse_buffer() raises:
+    var buf = String()
+    b16encode("hi".as_bytes(), buf)
+    assert_equal(buf, "6869")
+    b16encode("a".as_bytes(), buf)  # reuse; expect shrink
+    assert_equal(buf, "61")
+    b16encode("hello world".as_bytes(), buf)  # reuse; expect grow
+    assert_equal(buf, "68656C6C6F20776F726C64")
+
+
+def test_b16decode_reuse_buffer() raises:
+    var buf = List[Byte]()
+    b16decode("6869", buf)
+    assert_equal(buf, _bytes("hi"))
+    b16decode("61", buf)  # reuse; expect shrink
+    assert_equal(buf, _bytes("a"))
+    b16decode("68656C6C6F20776F726C64", buf)  # reuse; expect grow
+    assert_equal(buf, _bytes("hello world"))
 
 
 def main() raises:

@@ -20,6 +20,7 @@ from std.base64 import b64encode
 """
 
 
+from std.math import ceildiv
 from std.memory import Span
 
 from ._b64encode import _b64encode
@@ -79,18 +80,40 @@ def _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
 
 
 @always_inline
-def b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
-    """Performs base64 encoding on the input string.
+def unsafe_b64encode(
+    input_bytes: Span[mut=False, Byte, _],
+    output_bytes: Span[mut=True, Byte, _],
+) -> Int:
+    """Performs base64 encoding from input bytes to output bytes.
+
+    The caller must ensure the output buffer is at least
+    `4 * ceildiv(len(input_bytes), 3)` bytes; no bounds check is performed.
 
     Args:
-        input_bytes: The input string buffer.
-        result: The string in which to store the values.
+        input_bytes: The input bytes to encode.
+        output_bytes: The output buffer to write encoded bytes into.
 
-    Notes:
-        This method reserves the necessary capacity. `result` can be a 0
-        capacity string.
+    Returns:
+        The number of bytes written to output_bytes.
     """
-    _b64encode(input_bytes, result)
+    return _b64encode(input_bytes, output_bytes)
+
+
+@always_inline
+def b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
+    """Performs base64 encoding, writing into a reusable `String` buffer.
+
+    `result` is resized to fit the encoded output; existing contents are
+    overwritten. Capacity is reused when possible, so calling this in a
+    loop with the same `result` avoids per-call allocation.
+
+    Args:
+        input_bytes: The input bytes to encode.
+        result: The string buffer to write into.
+    """
+    var output_len = 4 * ceildiv(len(input_bytes), 3)
+    result.resize(unsafe_uninit_length=output_len)
+    _ = unsafe_b64encode(input_bytes, result.unsafe_as_bytes_mut())
 
 
 @always_inline
@@ -108,10 +131,10 @@ def b64encode(input_string: StringSlice[mut=False, _]) -> String:
 
 @always_inline
 def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
-    """Performs base64 encoding on the input string.
+    """Performs base64 encoding on the input bytes.
 
     Args:
-        input_bytes: The input string buffer.
+        input_bytes: The input bytes to encode.
 
     Returns:
         The ASCII base64 encoded string.
@@ -126,30 +149,45 @@ def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-def b64decode[
+def unsafe_b64decode[
     *, validate: Bool = False
 ](
-    input_bytes: Span[mut=False, Byte, _],
+    str: StringSlice[mut=False, _],
     mut output_bytes: Span[mut=True, Byte, _],
 ) raises -> Int:
-    """Performs base64 decoding from input bytes to output bytes.
+    """Performs base64 decoding from a string to output bytes.
 
-    The output buffer must be at least (input length * 3) // 4 bytes.
+    The caller must ensure the output buffer is at least
+    `(len(str) * 3) // 4` bytes; no bounds check is performed.
 
     Parameters:
         validate: If true, the function will validate the input and that the
             output buffer is large enough.
 
     Args:
-        input_bytes: The input base64 encoded bytes.
+        str: A base64 encoded string.
         output_bytes: The output buffer to write decoded bytes into.
 
     Returns:
         The number of bytes written to output_bytes.
+
+    Raises:
+        If `validate` is true and the input length is not a multiple of 4,
+        the output buffer is too small, or the input contains non-base64
+        characters.
     """
     comptime `=` = Byte(ord("="))
-    var n = len(input_bytes)
+    var input_bytes = str.as_bytes()
+    var n = str.byte_length()
     var write_pos = 0
+
+    debug_assert(
+        len(output_bytes) >= n * 3 // 4,
+        "output buffer too small for base64 decoding: need ",
+        n * 3 // 4,
+        ", got ",
+        len(output_bytes),
+    )
 
     comptime if validate:
         if n % 4 != 0:
@@ -190,9 +228,37 @@ def b64decode[
     return write_pos
 
 
+@always_inline
 def b64decode[
     *, validate: Bool = False
-](str: StringSlice[mut=False, _]) raises -> List[UInt8]:
+](str: StringSlice[mut=False, _], mut result: List[Byte]) raises:
+    """Performs base64 decoding into a reusable `List[Byte]` buffer.
+
+    `result` is resized to fit the decoded output; existing contents are
+    overwritten. Capacity is reused when possible, so calling this in a
+    loop with the same `result` avoids per-call allocation.
+
+    Parameters:
+        validate: If true, the function will validate the input string.
+
+    Args:
+        str: A base64 encoded string.
+        result: The byte buffer to write into.
+
+    Raises:
+        If `validate` is true and the input is not valid base64.
+    """
+    var output_len = str.byte_length() * 3 // 4
+    result.resize(unsafe_uninit_length=output_len)
+    var output_span = Span(result)
+    var written = unsafe_b64decode[validate=validate](str, output_span)
+    result.resize(unsafe_uninit_length=written)
+
+
+@always_inline
+def b64decode[
+    *, validate: Bool = False
+](str: StringSlice[mut=False, _]) raises -> List[Byte]:
     """Performs base64 decoding on a string, returning decoded bytes.
 
     Parameters:
@@ -202,15 +268,13 @@ def b64decode[
         str: A base64 encoded string.
 
     Returns:
-        The decoded bytes as a List[UInt8].
+        The decoded bytes as a List[Byte].
+
+    Raises:
+        If `validate` is true and the input is not valid base64.
     """
-    var data = str.as_bytes()
-    var n = str.byte_length()
-    var result = List[UInt8](capacity=n * 3 // 4)
-    result.resize(n * 3 // 4, 0)
-    var output_span = Span(result)
-    var written = b64decode[validate=validate](data, output_span)
-    result.resize(written, 0)
+    var result = List[Byte]()
+    b64decode[validate=validate](str, result)
     return result^
 
 
@@ -219,29 +283,54 @@ def b64decode[
 # ===-----------------------------------------------------------------------===#
 
 
-def b16encode[origin: Origin](input_bytes: Span[UInt8, origin]) -> String:
-    """Performs base16 encoding on input bytes, returning a String.
+def unsafe_b16encode(
+    input_bytes: Span[mut=False, Byte, _],
+    output_bytes: Span[mut=True, Byte, _],
+) -> Int:
+    """Performs base16 encoding from input bytes to output bytes.
+
+    The caller must ensure the output buffer is at least
+    `2 * len(input_bytes)` bytes; no bounds check is performed.
 
     Args:
         input_bytes: The input bytes to encode.
+        output_bytes: The output buffer to write encoded bytes into.
 
     Returns:
-        Base16 encoding of the input bytes.
+        The number of bytes written to output_bytes.
     """
+    var length = len(input_bytes)
+    debug_assert(
+        len(output_bytes) >= 2 * length,
+        "output buffer too small for base16 encoding: need ",
+        2 * length,
+        ", got ",
+        len(output_bytes),
+    )
     comptime lookup = "0123456789ABCDEF"
     var b16chars = lookup.unsafe_ptr()
-
-    var length = len(input_bytes)
-    var result = String(capacity=length * 2)
-
     for i in range(length):
         var byte = input_bytes[i]
-        var hi = byte >> 4
-        var lo = byte & 0b1111
-        result._unsafe_append_byte(b16chars[hi])
-        result._unsafe_append_byte(b16chars[lo])
+        output_bytes[2 * i] = b16chars[byte >> 4]
+        output_bytes[2 * i + 1] = b16chars[byte & 0b1111]
+    return length * 2
 
-    return result^
+
+@always_inline
+def b16encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
+    """Performs base16 encoding, writing into a reusable `String` buffer.
+
+    `result` is resized to fit the encoded output; existing contents are
+    overwritten. Capacity is reused when possible, so calling this in a
+    loop with the same `result` avoids per-call allocation.
+
+    Args:
+        input_bytes: The input bytes to encode.
+        result: The string buffer to write into.
+    """
+    var output_len = 2 * len(input_bytes)
+    result.resize(unsafe_uninit_length=output_len)
+    _ = unsafe_b16encode(input_bytes, result.unsafe_as_bytes_mut())
 
 
 @always_inline
@@ -257,44 +346,69 @@ def b16encode(str: StringSlice[mut=False, _]) -> String:
     return b16encode(str.as_bytes())
 
 
+@always_inline
+def b16encode(input_bytes: Span[mut=False, Byte, _]) -> String:
+    """Performs base16 encoding on the input bytes.
+
+    Args:
+        input_bytes: The input bytes to encode.
+
+    Returns:
+        Base16 encoding of the input bytes.
+    """
+    var result = String()
+    b16encode(input_bytes, result)
+    return result^
+
+
 # ===-----------------------------------------------------------------------===#
 # b16decode
 # ===-----------------------------------------------------------------------===#
 
 
-def b16decode(
-    input_bytes: Span[mut=False, UInt8, _],
-    mut output_bytes: Span[mut=True, UInt8, _],
+def unsafe_b16decode(
+    str: StringSlice[mut=False, _],
+    mut output_bytes: Span[mut=True, Byte, _],
 ):
-    """Performs base16 decoding from input bytes to output bytes.
+    """Performs base16 decoding from a string to output bytes.
 
-    The output buffer must be exactly input length / 2 bytes.
+    The caller must ensure the output buffer is at least
+    `len(str) // 2` bytes; no bounds check is performed.
 
     Args:
-        input_bytes: The input base16 encoded bytes.
+        str: A base16 encoded string.
         output_bytes: The output buffer to write decoded bytes into.
     """
-    comptime `A` = UInt8(ord("A"))
-    comptime `a` = UInt8(ord("a"))
-    comptime `Z` = UInt8(ord("Z"))
-    comptime `z` = UInt8(ord("z"))
-    comptime `0` = UInt8(ord("0"))
-    comptime `9` = UInt8(ord("9"))
+    comptime `A` = Byte(ord("A"))
+    comptime `a` = Byte(ord("a"))
+    comptime `Z` = Byte(ord("Z"))
+    comptime `z` = Byte(ord("z"))
+    comptime `0` = Byte(ord("0"))
+    comptime `9` = Byte(ord("9"))
 
+    # TODO: Measure perf against lookup table approach
     @parameter
     @always_inline
-    def decode(c: UInt8) -> UInt8:
+    def decode(c: Byte) -> Byte:
         if `A` <= c <= `Z`:
-            return c - `A` + UInt8(10)
+            return c - `A` + Byte(10)
         elif `a` <= c <= `z`:
-            return c - `a` + UInt8(10)
+            return c - `a` + Byte(10)
         elif `0` <= c <= `9`:
             return c - `0`
         else:
-            return UInt8(-1)
+            return Byte(-1)
 
-    var n = len(input_bytes)
+    var input_bytes = str.as_bytes()
+    var n = str.byte_length()
     debug_assert(n % 2 == 0, "Input length '", n, "' must be divisible by 2")
+    debug_assert(
+        len(output_bytes) >= n // 2,
+        "output buffer too small for base16 decoding: need ",
+        n // 2,
+        ", got ",
+        len(output_bytes),
+    )
 
     for i in range(0, n, 2):
         var hi = input_bytes[i]
@@ -302,19 +416,34 @@ def b16decode(
         output_bytes[i // 2] = decode(hi) << 4 | decode(lo)
 
 
-def b16decode(str: StringSlice[mut=False, _]) -> List[UInt8]:
+@always_inline
+def b16decode(str: StringSlice[mut=False, _], mut result: List[Byte]):
+    """Performs base16 decoding into a reusable `List[Byte]` buffer.
+
+    `result` is resized to fit the decoded output; existing contents are
+    overwritten. Capacity is reused when possible, so calling this in a
+    loop with the same `result` avoids per-call allocation.
+
+    Args:
+        str: A base16 encoded string.
+        result: The byte buffer to write into.
+    """
+    var output_len = str.byte_length() // 2
+    result.resize(unsafe_uninit_length=output_len)
+    var output_span = Span(result)
+    unsafe_b16decode(str, output_span)
+
+
+@always_inline
+def b16decode(str: StringSlice[mut=False, _]) -> List[Byte]:
     """Performs base16 decoding on a string, returning decoded bytes.
 
     Args:
         str: A base16 encoded string.
 
     Returns:
-        The decoded bytes as a List[UInt8].
+        The decoded bytes as a List[Byte].
     """
-    var data = str.as_bytes()
-    var output_len = str.byte_length() // 2
-    var result = List[UInt8](capacity=output_len)
-    result.resize(output_len, 0)
-    var output_span = Span(result)
-    b16decode(data, output_span)
+    var result = List[Byte]()
+    b16decode(str, result)
     return result^

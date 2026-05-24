@@ -203,16 +203,29 @@ def load_incomplete_simd[
 
 
 @no_inline
-def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
+def _b64encode(
+    input_bytes: Span[mut=False, Byte, _],
+    output_bytes: Span[mut=True, Byte, _],
+) -> Int:
+    """Writes base64-encoded `input_bytes` into `output_bytes`.
+
+    The output buffer must be at least `4 * ceildiv(len(input_bytes), 3)`
+    bytes. Returns the number of bytes written.
+    """
+    debug_assert(
+        len(output_bytes) >= 4 * ceildiv(len(input_bytes), 3),
+        "output buffer too small for base64 encoding: need ",
+        4 * ceildiv(len(input_bytes), 3),
+        ", got ",
+        len(output_bytes),
+    )
     comptime simd_width = sys.simd_byte_width()
     comptime input_simd_width = simd_width * 3 // 4
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
-    # 4 character bytes for each 3 bytes (or less) block
-    result.resize(unsafe_uninit_length=4 * ceildiv(len(input_bytes), 3))
     var input_bytes_len = len(input_bytes)
     var input_index = 0
-    var res_ptr = result.unsafe_ptr_mut()
+    var res_ptr = output_bytes.unsafe_ptr()
     var res_offset = 0
 
     # Main loop
@@ -266,7 +279,7 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
         res_offset += nb_of_elements_to_store
         input_index += input_simd_width
 
-    result.resize(res_offset)
+    return res_offset
 
 
 # Utility functions
