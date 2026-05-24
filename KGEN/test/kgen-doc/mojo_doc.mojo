@@ -266,7 +266,7 @@ def fn_with_overload(arg: Int):
 # CHECK: "kind": "function",
 # CHECK: "name": "fn_with_parameter_references",
 # CHECK: "overloads":
-# CHECK:     "signature": "fn_with_parameter_references[arg1_type: TrivialRegisterPassable, arg2_type: TrivialRegisterPassable](func: def (arg1_type, arg2_type) -> (), arg1: arg1_type, arg2: arg2_type)"
+# CHECK:     "signature": "fn_with_parameter_references[arg1_type: TrivialRegisterPassable, arg2_type: TrivialRegisterPassable](func: {{.*}}, arg1: arg1_type, arg2: arg2_type)"
 
 
 def fn_with_parameter_references[

@@ -92,7 +92,7 @@ def callOverload(a: Int):
     # CHECK: %4 = kgen.param.constant: !alias_IntToFloat32Type1 = <rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>
     var float2: IntToFloat32Type = testThing
 
-    # CHECK: lit.call {{.*}}@"takeIntToFloat32Param[def({{.*}}Int, /) -> {{.*}}FloatDyn]()"<:
+    # CHECK: lit.call {{.*}}@"takeIntToFloat32Param[def({{.*}}Int) -> {{.*}}FloatDyn]()"<:
     # CHECK-SAME: !alias_IntToFloat32Type1 rebind(:!lit.generator<("a": !Int) -> !FloatDyn> @decls::@"testThing(::Int)")>()
     takeIntToFloat32Param[testThing]()
 
@@ -754,7 +754,7 @@ def forward_ref(x: EmptyStruct):
     pass
 
 
-# CHECK-LABEL: lit.struct.decl @EmptyStruct({{.*}}) 
+# CHECK-LABEL: lit.struct.decl @EmptyStruct({{.*}})
 struct EmptyStruct(RegisterPassable):
     pass
 

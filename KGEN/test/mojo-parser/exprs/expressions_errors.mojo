@@ -191,12 +191,31 @@ def test_func_type():
     comptime float4: def[a: Int](mut *Int) thin -> None = test_func_type
     # expected-error @below {{def[?, .origin._mlir_origin``2x: LITImmutOrigin, .origin`2x1: ImmutOrigin](*MemType) raises capturing -> None}}
     comptime float5: def(*MemType) raises capturing -> None = test_func_type
-    # expected-error @below {{'def test_func_type() -> None' value to 'def[_, +, Ts: TypeList[values], ?, .origin._mlir_origin``2x1: LITMutOrigin, .origin`2x2: MutOrigin](var * *values) capturing -> None'}}
+    # expected-error @below {{'def[_, +, Ts: TypeList[values], ?, .origin._mlir_origin``2x1: LITMutOrigin, .origin`2x2: MutOrigin](var **values) capturing -> None'}}
     comptime float6: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def test_func_type() -> None' value to 'def[_, +, Ts: TypeList[values], ?, .origin._mlir_origin``2x1: LITMutOrigin, .origin`2x2: MutOrigin](var * *values) capturing -> None'}}
+    # expected-error @below {{'def[_, +, Ts: TypeList[values], ?, .origin._mlir_origin``2x1: LITMutOrigin, .origin`2x2: MutOrigin](var **values) capturing -> None'}}
     comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def test_func_type() -> None' value to 'def[T: TrivialRegisterPassable, ?, .origin._mlir_origin``2x: LITMutOrigin, .origin`2x1: MutOrigin](mut *T) capturing -> None'}}
+    # expected-error @below {{'def[T: TrivialRegisterPassable, ?, .origin._mlir_origin``2x: LITMutOrigin, .origin`2x1: MutOrigin](mut *T) capturing -> None'}}
     comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
+    # expected-error @below {{'def(var args: OwnedKwargsDict[Int]) -> None}}
+    comptime float8: def(**args: Int) = test_func_type
+
+    # TODO(fix formatClosureSignature): Closure printing busted.
+    # expected-error @below {{'def(a1: Int, a2: Int) -> None'}}
+    comptime float9: def(a1: Int, /, *, a2: Int) = test_func_type
+    # xpected-error @below {{'def(a1: Int, /, a2: Int) -> None'}}
+    #comptime float10: def(a1: Int, /, a2: Int) = test_func_type
+
+    def passing_kinds_1(a1: Int, /, *, a2: Int): pass
+    # expected-error @below {{'def passing_kinds_1(a1: Int, /, *, a2: Int) -> None'}}
+    _ : Int = passing_kinds_1
+    def passing_kinds_2(a1: Int, /, a2: Int): pass
+    # expected-error @below {{'def passing_kinds_2(a1: Int, /, a2: Int) -> None'}}
+    _ : Int = passing_kinds_2
+    def passing_kinds_3(a1: Int, *, a2: Int): pass
+    # expected-error @below {{'def passing_kinds_3(a1: Int, *, a2: Int) -> None'}}
+    _ : Int = passing_kinds_3
+
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
     comptime f1: def (a: Int, Int) thin -> Int

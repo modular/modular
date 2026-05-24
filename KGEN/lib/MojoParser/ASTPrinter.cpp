@@ -1519,6 +1519,155 @@ static T getSingleElementStructAttr(TypedAttr param) {
   return {};
 }
 
+static void printRef(RefType refType, raw_ostream &os,
+                     SharedState *diagShared) {
+  os << "ref[";
+  ASTType::printRefOriginParam(os, refType.getOrigin(), diagShared);
+  if (!refType.isDefaultAddrSpace()) {
+    os << ", ";
+    ASTType::printParam(os, refType.getAddressSpace(), diagShared);
+  }
+  os << "] ";
+}
+
+static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
+                                 raw_ostream &os, SharedState *diagShared) {
+  if (type.isAsync())
+    os << "async ";
+  os << "def";
+  if (auto fnLiteralGen = type.getIfFnLiteralTypeGenerator()) {
+    os << " "
+       << getNameFromSymbolRef(
+              fnLiteralGen.getSymbolConstantAttr().getSymbol());
+  }
+
+  FnType fnType = type.getBodyFnType();
+  auto paramTypes =
+      sugarCast<GeneratorType>(type.getAsType()).getInputParamTypes();
+  if (!paramTypes.empty()) {
+    // FIXME: Need to improve printGeneratorInterface.
+    fnType = printGeneratorInterface(os, paramTypes, type.getParamListAttrs(),
+                                     diagShared, fnType);
+  }
+  os << '(';
+  bool hadAnyNames = false;
+  for (auto [idx, typeX, conventionX] :
+       llvm::enumerate(fnType.getArguments(), fnType.getArgConventions())) {
+    ASTType type = typeX;
+    ArgConvention convention = conventionX;
+    if (isResultSlot(convention))
+      continue; // Don't print result in argument list.
+
+    if (idx)
+      os << ", ";
+
+    // Print / if moving from positional only to PosOrKw or KwOnly.
+    auto curPassingKind = fnType.getArgListAttrs().getPassingKind(idx);
+    PassingKind lastPassingKind =
+        idx ? fnType.getArgListAttrs().getPassingKind(idx - 1) : curPassingKind;
+    if (lastPassingKind == PassingKind::PosOnly && idx &&
+        (curPassingKind != PassingKind::PosOnly ||
+         fnType.getArgListAttrs().getVariadicKind(idx) != VariadicKind::None)) {
+      os << "/, ";
+      lastPassingKind = PassingKind::PosOrKw;
+    }
+
+    // The formal type is VariadicPack[] and the thing to print is a pack
+    // attribute, not a type.
+    StringAttr name = fnType.getArgName(idx);
+    hadAnyNames |= !name.empty();
+
+    const char *stars = "";
+    if (fnType.isPosVarArg(idx)) { // Print with the element of the variadic.
+      type = RefType::stripRefConvention(type, convention);
+      type = ASTType(type).getVariadicListInfo().getElementRefType();
+      convention = fnType.getVariadicConvention(idx);
+      stars = "*";
+    } else if (fnType.isPack(idx)) {
+      convention = fnType.getVariadicConvention(idx);
+      stars = "*";
+    } else if (fnType.isKwVarArg(idx)) {
+      type = ASTType(type).getKwargsDictRefValueType();
+      convention = ArgConvention::ReadReg;
+      stars = "**";
+    } else {
+      if (curPassingKind == PassingKind::KwOnly &&
+          (idx == 0 || lastPassingKind == PassingKind::PosOrKw))
+        os << "*, ";
+    }
+
+    if (convention == ArgConvention::OwnedMem)
+      os << "var ";
+    else if (convention == ArgConvention::Mut)
+      os << "mut ";
+    else if (convention == ArgConvention::ByRefResult)
+      os << "out ";
+    else if (convention == ArgConvention::DeinitMem)
+      os << "deinit ";
+    else if (convention == ArgConvention::Ref ||
+             convention == ArgConvention::MutRef)
+      printRef(cast<RefType>(type), os, diagShared);
+
+    os << stars;
+    if (!name.empty())
+      os << name.getValue() << ": ";
+
+    if (fnType.isPack(idx)) {
+      os << '*';
+      TypedAttr variadic = ASTType(fnType.getIfVariadicListOrPack(idx))
+                               .getVariadicPackInfo()
+                               .typeList;
+      ASTType::printParam(os, variadic, diagShared);
+    } else {
+      type = RefType::stripRefConvention(type, convention);
+      type.print(os, diagShared);
+    }
+
+    // Check if we are at the end; if so, we might still have to print a
+    // '/'. If we're pretty printing for a diagnostic, and don't have any
+    // names, then we don't print the trailing slash. This makes the
+    // extremely common case of a source signature `def(...) -> ...` look
+    // nicer.
+    if (hadAnyNames && curPassingKind == PassingKind::PosOnly &&
+        idx == fnType.getNumArguments() - 1)
+      os << ", /";
+  }
+  os << ')';
+  for (auto [enabled, effect] :
+       {std::make_pair(fnType.isThrows(), "raises"),
+        std::make_pair(fnType.isCapturing(), "capturing"),
+        std::make_pair(fnType.isCABI(), "abi(\"C\")")})
+
+    if (enabled)
+      os << ' ' << effect;
+
+  if (fnType.isThrows()) {
+    ASTType errorType = fnType.getUserThrownType();
+    // Do this the hard way because we may not have diagShared here.
+    StringRef typeName;
+    if (auto structType = sugarDynCast<LIT::StructType>(errorType))
+      typeName = structType.getSymbol().getLeafReference().strref();
+    if (typeName != "Error") {
+      os << ' ';
+      ASTType(errorType).print(os, diagShared);
+    }
+  }
+
+  os << " -> ";
+  Type resultType = fnType.getUserResultType();
+
+  if (fnType.isRefResult()) {
+    auto refType = cast<RefType>(resultType);
+    printRef(refType, os, diagShared);
+    resultType = refType.getElementType();
+  }
+
+  if (isa<KGEN::NoneType>(resultType))
+    os << "None";
+  else
+    ASTType(resultType).print(os, diagShared);
+}
+
 void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   if (!mlirType) {
     os << "<<NULL ASTTYPE>>";
@@ -1618,27 +1767,6 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     printParamList(os, paramInfo, params, diagShared, /*typesImplied*/ true);
   };
 
-  auto printConvention = [&os](ArgConvention conv) {
-    if (conv == ArgConvention::OwnedMem)
-      os << "var ";
-    else if (conv == ArgConvention::Mut)
-      os << "mut ";
-    else if (conv == ArgConvention::ByRefResult)
-      os << "out ";
-    else if (conv == ArgConvention::DeinitMem)
-      os << "deinit ";
-  };
-
-  auto printRef = [&](RefType refType) {
-    os << "ref[";
-    printRefOriginParam(os, refType.getOrigin(), diagShared);
-    if (!refType.isDefaultAddrSpace()) {
-      os << ", ";
-      printParam(os, refType.getAddressSpace(), diagShared);
-    }
-    os << "] ";
-  };
-
   if (auto structTy = dyn_cast<StructType>(type)) {
     ASTDecl *decl = nullptr;
     if (diagShared)
@@ -1684,128 +1812,15 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   } else if (isNoneType()) {
     os << "None";
   } else if (auto ref = dyn_cast<RefType>(type)) {
-    printRef(ref);
+    printRef(ref, os, diagShared);
     ASTType(ref.getElementType()).print(os, diagShared);
   } else if (auto variadic = dyn_cast<ParamListType>(type)) {
     os << "KGENParamList[";
     ASTType(variadic.getElementType()).print(os, diagShared);
     os << "]";
   } else if (sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(type)) {
-    auto sigGen = FnOrFnLiteralTypeGeneratorType::get(type);
-    if (sigGen.isAsync())
-      os << "async ";
-    os << "def";
-    if (auto fnLiteralGen = sigGen.getIfFnLiteralTypeGenerator()) {
-      os << " "
-         << getNameFromSymbolRef(
-                fnLiteralGen.getSymbolConstantAttr().getSymbol());
-    }
-
-    FnType sig = sigGen.getBodyFnType();
-    auto paramTypes = sugarCast<GeneratorType>(type).getInputParamTypes();
-    if (!paramTypes.empty()) {
-      sig = printGeneratorInterface(os, paramTypes, sigGen.getParamListAttrs(),
-                                    diagShared, sig);
-    }
-    os << '(';
-    PassingKindPrinter passingKindPrinter(os, sig.getArgListAttrs());
-    bool hadAnyNames = false;
-    for (auto [idx, typeX, conventionX] :
-         llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
-      ASTType type = typeX;
-      ArgConvention convention = conventionX;
-      if (isResultSlot(convention))
-        continue; // Don't print result in argument list.
-
-      if (idx)
-        os << ", ";
-      passingKindPrinter.printOptionalStarSlash(idx);
-
-      bool printStar = false;
-      if (sig.isPosVarArg(idx)) { // Print with the element of the variadic.
-        type = RefType::stripRefConvention(type, convention);
-        type = ASTType(type).getVariadicListInfo().getElementRefType();
-        convention = sig.getVariadicConvention(idx);
-        printStar = true;
-      }
-
-      // The formal type is VariadicPack[] and the thing to print is a pack
-      // attribute, not a type.
-      StringAttr name = sig.getArgName(idx);
-      hadAnyNames |= !name.empty();
-      if (sig.isPack(idx)) {
-        convention = sig.getVariadicConvention(idx);
-        printConvention(convention);
-        os << '*';
-        if (!name.empty())
-          os << name.getValue() << ": ";
-        else
-          os << ' ';
-        os << '*';
-
-        TypedAttr variadic = ASTType(sig.getIfVariadicListOrPack(idx))
-                                 .getVariadicPackInfo()
-                                 .typeList;
-        printParam(os, variadic, diagShared);
-      } else {
-        printConvention(convention);
-
-        if (printStar)
-          os << '*';
-
-        if (convention == ArgConvention::Ref ||
-            convention == ArgConvention::MutRef)
-          printRef(cast<RefType>(type));
-
-        if (!name.empty())
-          os << name.getValue() << ": ";
-
-        type = RefType::stripRefConvention(type, convention);
-        type.print(os, diagShared);
-      }
-
-      // Check if we are at the end; if so, we might still have to print a
-      // '/'. If we're pretty printing for a diagnostic, and don't have any
-      // names, then we don't print the trailing slash. This makes the
-      // extremely common case of a source signature `def(...) -> ...` look
-      // nicer.
-      if (!diagShared || hadAnyNames)
-        passingKindPrinter.printOptionalTrailingSlash(idx);
-    }
-    os << ')';
-    for (auto [enabled, effect] :
-         {std::make_pair(sig.isThrows(), "raises"),
-          std::make_pair(sig.isCapturing(), "capturing"),
-          std::make_pair(sig.isCABI(), "abi(\"C\")")})
-
-      if (enabled)
-        os << ' ' << effect;
-
-    if (sig.isThrows()) {
-      ASTType errorType = sig.getUserThrownType();
-      // Do this the hard way because we may not have diagShared here.
-      StringRef typeName;
-      if (auto structType = sugarDynCast<StructType>(errorType))
-        typeName = structType.getSymbol().getLeafReference().strref();
-      if (typeName != "Error") {
-        os << ' ';
-        ASTType(errorType).print(os, diagShared);
-      }
-    }
-
-    os << " -> ";
-    Type resultType = sig.getUserResultType();
-
-    if (sig.isRefResult()) {
-      auto refType = cast<RefType>(resultType);
-      printRef(refType);
-      resultType = refType.getElementType();
-    }
-
-    if (isa<KGEN::NoneType>(resultType))
-      os << "None";
-    else
-      ASTType(resultType).print(os, diagShared);
+    printFnGeneratorType(FnOrFnLiteralTypeGeneratorType::get(type), os,
+                         diagShared);
   } else if (auto paramRef = dyn_cast<ParamType>(type)) {
     printParam(os, paramRef.getParam(), diagShared);
   } else if (auto genType = dyn_cast<GeneratorType>(type)) {
@@ -1816,6 +1831,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     ASTType(reboundBody).print(os, diagShared);
   } else if (isa<TypeType>(type)) {
     os << "__TypeOfAllTypes";
+#if 0
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
     os << "def (";
     llvm::interleaveComma(fnType.getInputs(), os, [&](Type type) {
@@ -1826,6 +1842,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
       ASTType(type).print(os, diagShared);
     });
     os << ')';
+#endif
   } else if (auto originType = dyn_cast<OriginType>(type)) {
     if (originType.isMutableKnown(true))
       os << "LITMutOrigin";

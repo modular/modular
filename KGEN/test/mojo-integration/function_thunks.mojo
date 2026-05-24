@@ -32,7 +32,7 @@ def test_fn():
     # CHECK: lit.call {{.*}}bar
     _ = bar()
 
-    # CHECK: kgen.create_closure{{.*}}@"def(::Int, /) -> None|def(x: ::Int) -> None|{{.*}}[def(x: ::Int) -> None](::Int)"
+    # CHECK: kgen.create_closure{{.*}}@"def(::Int) -> None|def(x: ::Int) -> None|{{.*}}[def(x: ::Int) -> None](::Int)"
     var f: def(Int) thin -> None = thunk[Int]
 
 
@@ -41,20 +41,20 @@ def test_fn():
 # CHECK-LABEL: lit.package @std attributes {
 # CHECK-SAME: postParseModule =
 
-# CHECK-NOT: lit.fn @"def(::Int, /) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
+# CHECK-NOT: lit.fn @"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
 
 # CHECK-LABEL: lit.package @func_package_foo
 # CHECK-SAME: postParseModule
 # CHECK: lit.fn @"foo
-# CHECK: kgen.create_closure{{.*}}@"def(::Int, /) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
+# CHECK: kgen.create_closure{{.*}}@"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
 
-# CHECK-COUNT-1: lit.fn @"def(::Int, /) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
+# CHECK-COUNT-1: lit.fn @"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
 
 # CHECK-LABEL: lit.package @func_package_bar
 # CHECK-SAME: postParseModule
 # CHECK: lit.fn @"bar
-# CHECK: kgen.create_closure{{.*}}@"def(::Int, /) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
+# CHECK: kgen.create_closure{{.*}}@"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
 
-# CHECK-NOT: lit.fn @"def(::Int, /) -> None|def(::Int, /) -> None|{{.*}}[def(::Int, /) -> None](::Int)"
+# CHECK-NOT: lit.fn @"def(::Int) -> None|def(::Int) -> None|{{.*}}[def(::Int) -> None](::Int)"
 
 # CHECK-LABEL: dialect_resources

@@ -601,7 +601,7 @@ def test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <#alias_i>
   return i
 
-# CHECK-LABEL: lit.fn @"callable_mv[def(::Int, /) -> ::Int](::Int)"
+# CHECK-LABEL: lit.fn @"callable_mv[def(::Int) -> ::Int](::Int)"
 # CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !Int>>(%a: !Int) -> !Int
 def callable_mv[callable: def (Int) thin -> Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !Int>: callable](%a)
@@ -627,7 +627,7 @@ def returnIndex2() -> Int:
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
-# CHECK-LABEL: lit.fn @"callInParam[def[::Int](::Int, /) -> ::Int]()"
+# CHECK-LABEL: lit.fn @"callInParam[def[::Int](::Int) -> ::Int]()"
 # CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !Int>>() -> !Int
 def callInParam[callable: def[x: Int](Int) thin -> Int]() -> Int:
   # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_params({{.*}}callable, :!Int {1}), {1})>()
