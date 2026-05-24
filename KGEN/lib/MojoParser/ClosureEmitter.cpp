@@ -734,6 +734,11 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
                                           unsigned numPrependedCaptures = 0) {
   std::string result;
   llvm::raw_string_ostream os(result);
+
+  // FIXME: This is incorrectly replicating function printing logic!
+  // Switch to:
+  //   ASTType(sig).print(os, &shared);
+  //   return result;
   os << "def";
   SmallVector<ParamDeclAttr> parameters =
       populateParametersFromFnGeneratorType(sig);

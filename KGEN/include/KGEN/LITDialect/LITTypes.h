@@ -370,6 +370,12 @@ public:
     return dyn_cast<FnLiteralTypeGeneratorType>(getAsVariant());
   }
 
+  Type getAsType() const {
+    if (auto ty = dyn_cast<FnTypeGeneratorType>(getAsVariant()))
+      return ty;
+    return cast<FnLiteralTypeGeneratorType>(getAsVariant());
+  }
+
   // CRTP for FnTypeWrapperGeneratorType
   FnType getBodyFnType() {
     if (auto fnGen = getIfFnTypeGenerator())
