@@ -670,41 +670,17 @@ class TextTokenizer(
         )
 
         json_schema = (
-            json.dumps(request.response_format.get("json_schema"))
-            if request.response_format
-            and request.response_format.get("json_schema")
+            json.dumps(request.response_format.json_schema)
+            if request.response_format and request.response_format.json_schema
             else None
         )
 
         grammar = (
-            request.response_format.get("grammar")
-            if request.response_format
-            else None
+            request.response_format.grammar if request.response_format else None
         )
 
-        grammar_enforced = bool(
-            request.response_format.get("grammar_enforced")
-            if request.response_format
-            else False
-        )
-
-        tools_forced = bool(
-            request.response_format.get("tools_forced")
-            if request.response_format
-            else False
-        )
-
-        requires_structured_output_flag = bool(
-            request.response_format.get("requires_structured_output_flag")
-            if request.response_format
-            else False
-        )
-
-        # Create grammar enforcement state
-        grammar_state = GrammarEnforcementState(
-            grammar_enforced=grammar_enforced,
-            tools_forced=tools_forced,
-            requires_structured_output_flag=requires_structured_output_flag,
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
         )
 
         # Calculate Max Length
@@ -1060,16 +1036,17 @@ class TextAndVisionTokenizer(
             ]
 
         json_schema = (
-            json.dumps(request.response_format.get("json_schema"))
-            if request.response_format
-            and request.response_format.get("json_schema")
+            json.dumps(request.response_format.json_schema)
+            if request.response_format and request.response_format.json_schema
             else None
         )
 
         grammar = (
-            request.response_format.get("grammar")
-            if request.response_format
-            else None
+            request.response_format.grammar if request.response_format else None
+        )
+
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
@@ -1095,6 +1072,7 @@ class TextAndVisionTokenizer(
             else self.max_length,
             json_schema=json_schema,
             grammar=grammar,
+            grammar_state=grammar_state,
             sampling_params=request.sampling_params,
             external_block_metadata=_parse_dkv_cache_hint(
                 request.dkv_cache_hint

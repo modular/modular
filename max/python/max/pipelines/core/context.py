@@ -36,6 +36,7 @@ from max.pipelines.modeling.types import (
     SpecDecodingState,
     TextGenerationContext,
     TextGenerationOutput,
+    TextGenerationResponseFormat,
     TokenBuffer,
     VLMTextGenerationContext,
 )
@@ -133,7 +134,7 @@ class GrammarEnforcementState:
 
     _in_thinking_region: bool = False
     """Whether currently inside a thinking region.
-    
+
     TODO: Consider consolidating with ``in_thinking_phase`` in text generation pipeline.
     """
 
@@ -142,6 +143,19 @@ class GrammarEnforcementState:
 
     _thinking_match_buffer: list[int] = field(default_factory=list)
     """Buffer for partial matching of thinking end sequence."""
+
+    @classmethod
+    def from_response_format(
+        cls, response_format: TextGenerationResponseFormat | None
+    ) -> GrammarEnforcementState:
+        """Creates a state from the given response format, or a default state."""
+        if not response_format:
+            return cls()
+        return cls(
+            grammar_enforced=response_format.grammar_enforced,
+            tools_forced=response_format.tools_forced,
+            requires_structured_output_flag=response_format.requires_structured_output_flag,
+        )
 
     def update_enforcement_state(self, token: int) -> bool:
         """Update enforcement state based on sampled token.

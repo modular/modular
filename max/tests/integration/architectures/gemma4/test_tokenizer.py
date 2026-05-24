@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import io
 import json
-from typing import cast
 from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
@@ -192,9 +191,7 @@ async def test_response_format_without_json_schema_key(
         ],
         request_id=RequestID("test-rf-no-schema"),
         model_name="test-model",
-        response_format=cast(
-            TextGenerationResponseFormat, {"type": "json_object"}
-        ),
+        response_format=TextGenerationResponseFormat(type="json_object"),
     )
 
     context = await tokenizer.new_context(request)

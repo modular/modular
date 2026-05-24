@@ -402,16 +402,13 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         )[0].astype(np.int32)
 
         json_schema = (
-            json.dumps(request.response_format.get("json_schema"))
-            if request.response_format
-            and request.response_format.get("json_schema")
+            json.dumps(request.response_format.json_schema)
+            if request.response_format and request.response_format.json_schema
             else None
         )
 
         grammar = (
-            request.response_format.get("grammar")
-            if request.response_format
-            else None
+            request.response_format.grammar if request.response_format else None
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:

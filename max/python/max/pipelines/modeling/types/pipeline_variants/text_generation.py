@@ -62,7 +62,6 @@ from max.pipelines.modeling.types.status import GenerationStatus
 from max.pipelines.modeling.types.tokens import TokenBuffer
 from max.pipelines.request import RequestID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from typing_extensions import NotRequired
 
 
 class TextGenerationRequestFunction(TypedDict):
@@ -88,23 +87,24 @@ class TextGenerationRequestTool(TypedDict):
     """The function definition associated with the tool, including its name, description, and parameters."""
 
 
-class TextGenerationResponseFormat(TypedDict):
+@dataclass
+class TextGenerationResponseFormat:
     """Represents the response format specification for a text generation request."""
 
     type: str
     """The type of response format, for example, ``json_object`` or ``grammar``."""
 
-    json_schema: dict[str, Any]
+    json_schema: dict[str, Any] = field(default_factory=dict)
     """A JSON schema dictionary that defines the structure and validation rules for the generated response."""
 
-    grammar: str | None
+    grammar: str | None = None
     """Grammar for constrained decoding.
 
     When set with ``type="grammar"``, this takes precedence over ``json_schema``.
     Used for model-specific constrained decoding formats like Kimi's tool call grammar.
     """
 
-    grammar_enforced: bool
+    grammar_enforced: bool = False
     """Whether to actively enforce grammar via bitmask.
 
     When True from the start, enforce grammar from the first token.
@@ -113,7 +113,7 @@ class TextGenerationResponseFormat(TypedDict):
     detected.
     """
 
-    tools_forced: bool
+    tools_forced: bool = False
     """Whether tool calling was forced (tool_choice=required or named function).
 
     Controls whether ``grammar_enforced`` is ``True`` from the first generated
@@ -121,16 +121,13 @@ class TextGenerationResponseFormat(TypedDict):
     gates user-supplied schemas; see ``requires_structured_output_flag``).
     """
 
-    requires_structured_output_flag: NotRequired[bool]
+    requires_structured_output_flag: bool = False
     """Whether this request requires ``--enable-structured-output`` to be set.
 
     True when the constraint includes a user-supplied JSON schema (from
-    ``response_format``). False (or absent) for pure tool-call grammars
-    derived from the model's tool parser, which work without the operator
-    flag because the grammar is server-controlled, not user-controlled.
-
-    Optional (defaults to False) so existing call sites that construct
-    ``TextGenerationResponseFormat`` directly don't need to be updated.
+    ``response_format``). False for pure tool-call grammars derived from
+    the model's tool parser, which work without the operator flag because
+    the grammar is server-controlled, not user-controlled.
     """
 
 

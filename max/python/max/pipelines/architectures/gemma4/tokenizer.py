@@ -432,7 +432,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         )
 
         response_format_schema = (
-            request.response_format.get("json_schema")
+            request.response_format.json_schema
             if request.response_format
             else None
         )

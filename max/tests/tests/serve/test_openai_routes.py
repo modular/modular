@@ -1201,9 +1201,9 @@ def test_create_response_format_json_object() -> None:
 
     assert result is not None
     # json_object should be normalized to json_schema internally
-    assert result["type"] == "json_schema"
+    assert result.type == "json_schema"
     # Should use a permissive schema that accepts any JSON object
-    assert result["json_schema"] == {"type": "object"}
+    assert result.json_schema == {"type": "object"}
 
 
 def test_create_response_format_json_schema() -> None:
@@ -1225,11 +1225,11 @@ def test_create_response_format_json_schema() -> None:
     )
 
     assert result is not None
-    assert result["type"] == "json_schema"
+    assert result.type == "json_schema"
     # Schema should contain the provided JSON schema
-    assert "properties" in result["json_schema"]
-    assert "name" in result["json_schema"]["properties"]
-    assert "age" in result["json_schema"]["properties"]
+    assert "properties" in result.json_schema
+    assert "name" in result.json_schema["properties"]
+    assert "age" in result.json_schema["properties"]
 
 
 def test_create_response_format_text() -> None:
@@ -1237,8 +1237,8 @@ def test_create_response_format_text() -> None:
     result = _create_response_format({"type": "text"})
 
     assert result is not None
-    assert result["type"] == "text"
-    assert result["json_schema"] == {}
+    assert result.type == "text"
+    assert result.json_schema == {}
 
 
 def test_create_response_format_none() -> None:

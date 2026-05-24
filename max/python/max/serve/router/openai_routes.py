@@ -1139,8 +1139,8 @@ def _resolve_grammar_constraints(
     # Only include response_format in grammar when tools aren't forced.
     # When tools are forced, constrain to tool calls only.
     if response_format is not None and not tools_forced:
-        if response_format.get("type") == "json_schema":
-            response_format_schema = response_format.get("json_schema")
+        if response_format.type == "json_schema":
+            response_format_schema = response_format.json_schema or None
 
     # enforce_from_start: True for required/named OR auto+response_format
     # False for auto without response_format (conditional enforcement)
