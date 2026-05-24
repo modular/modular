@@ -680,7 +680,7 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
   return funcOp;
 }
 
-FnOp StructEmitter::synthesizeEmptyDtor() {
+FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
   auto builder = ImplicitLocOpBuilder::atBlockEnd(
       structDeclOp.getLoc(), &structDeclOp.getFields().front());
 
@@ -693,9 +693,18 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
   selfType = selfType.getRefForArgument("self", /*isMut*/ true);
   StringAttr selfName = builder.getStringAttr("self");
 
+  SmallVector<ConstraintAttr> constraints;
+  if (conformanceConstraint)
+    constraints.push_back(conformanceConstraint);
+
   // Create the FnOp and ASTDecl for the method.
   auto [funcOp, funcDecl] = synthesizeMethodInStruct(
-      "__del__", selfType.mlirType, ArgConvention::DeinitMem,
+      "__del__", /*params=*/{},
+      /*paramListAttrs=*/
+      PogListAttr::get(getContext(), /*numPogs=*/0, constraints),
+      /*argTypes=*/{selfType.mlirType},
+      /*argConvs=*/{ArgConvention::DeinitMem},
+      /*argListAttrs=*/
       PogListAttr::get(getContext(), selfName, PassingKind::PosOnly),
       shared.getNoneType(), SpecialFunctionKind::kDel);
   if (!funcOp)
