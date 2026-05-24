@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -413,6 +414,13 @@ class StructuredOutputHelper:
     vocab_size: int | None = None
     _tokenizer_info: Any = field(default=None, repr=False)
     tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = None
+    # Serialises access to per-context ``ctx.matcher`` between the async
+    # FSM-advance host callback and the synchronous spec-decode bitmask
+    # path; concurrent calls into llguidance's ``LLInterpreter`` trip a
+    # ``RuntimeError: Already borrowed`` and kill the worker coroutine.
+    _matcher_lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False
+    )
 
     @staticmethod
     def _get_tool_region_tags(
@@ -782,36 +790,43 @@ class StructuredOutputHelper:
             bitmask_out: Packed int32 bitmask output, shape [batch, K+1, packed_vocab].
                 Initialized to -1 (unconstrained) per context before filling.
         """
-        for ctx_idx, ctx in enumerate(context_batch):
-            bitmask_out[ctx_idx, :, :] = -1
+        # This method runs on an AsyncRT worker thread. The main thread
+        # may try to access the same ``ctx.matcher`` via
+        # ``compute_speculative_bitmasks`` for the next iter while this
+        # callback is still in flight; without serialisation llguidance
+        # raises ``RuntimeError: Already borrowed`` and the worker dies.
+        # See the comment on ``_matcher_lock``.
+        with self._matcher_lock:
+            for ctx_idx, ctx in enumerate(context_batch):
+                bitmask_out[ctx_idx, :, :] = -1
 
-            if ctx.matcher is None:
-                continue
+                if ctx.matcher is None:
+                    continue
 
-            # Part 1: Advance the enforcement state machine through committed
-            # tokens, one at a time so special tokens (e.g. tool-call
-            # structural tag) can flip grammar enforcement mid-sequence.
-            # Only advance the matcher while grammar is enforced — this keeps
-            # matcher/state-machine in sync.
-            n_accepted = int(num_accepted[ctx_idx])
-            bonus_token = int(bonus_tokens[ctx_idx])
-            committed_tokens = [
-                int(accepted_draft_tokens[ctx_idx, j])
-                for j in range(n_accepted)
-            ]
-            committed_tokens.append(bonus_token)
-            for token in committed_tokens:
-                if ctx.update_enforcement_state(token):
-                    ctx.matcher.try_consume_tokens([token])
+                # Part 1: Advance the enforcement state machine through committed
+                # tokens, one at a time so special tokens (e.g. tool-call
+                # structural tag) can flip grammar enforcement mid-sequence.
+                # Only advance the matcher while grammar is enforced — this keeps
+                # matcher/state-machine in sync.
+                n_accepted = int(num_accepted[ctx_idx])
+                bonus_token = int(bonus_tokens[ctx_idx])
+                committed_tokens = [
+                    int(accepted_draft_tokens[ctx_idx, j])
+                    for j in range(n_accepted)
+                ]
+                committed_tokens.append(bonus_token)
+                for token in committed_tokens:
+                    if ctx.update_enforcement_state(token):
+                        ctx.matcher.try_consume_tokens([token])
 
-            # Part 2: speculative window for the next batch's bitmasks.
-            # A draft that flips enforcement on mid-window causes
-            # downstream slots to be constrained.
-            self._speculatively_fill_bitmask_window(
-                ctx,
-                drafts=next_draft_tokens[ctx_idx],
-                bitmask_window=bitmask_out[ctx_idx],
-            )
+                # Part 2: speculative window for the next batch's bitmasks.
+                # A draft that flips enforcement on mid-window causes
+                # downstream slots to be constrained.
+                self._speculatively_fill_bitmask_window(
+                    ctx,
+                    drafts=next_draft_tokens[ctx_idx],
+                    bitmask_window=bitmask_out[ctx_idx],
+                )
 
     @traced
     def compute_speculative_bitmasks(
@@ -865,31 +880,37 @@ class StructuredOutputHelper:
             batch_size, num_positions, packed_vocab_size
         )
 
-        # Initialize matchers for contexts with json_schema or grammar
-        for ctx in context_batch:
-            needs_matcher = ctx.matcher is None and (
-                ctx.json_schema or ctx.grammar is not None
-            )
-            if needs_matcher:
-                self.update_context(
-                    ctx,
-                    packed_bitmask[0, 0, :].reshape(
-                        1, -1
-                    ),  # Dummy, will be overwritten
-                    index=0,
+        # Serialise against the async FSM-advance host callback
+        # (``advance_fsm_and_compute_bitmasks``). Both paths touch the
+        # same ``ctx.matcher`` LLInterpreter; concurrent access trips
+        # llguidance's "Already borrowed" Rust panic and kills the
+        # worker. See the comment on ``_matcher_lock``.
+        with self._matcher_lock:
+            # Initialize matchers for contexts with json_schema or grammar
+            for ctx in context_batch:
+                needs_matcher = ctx.matcher is None and (
+                    ctx.json_schema or ctx.grammar is not None
                 )
+                if needs_matcher:
+                    self.update_context(
+                        ctx,
+                        packed_bitmask[0, 0, :].reshape(
+                            1, -1
+                        ),  # Dummy, will be overwritten
+                        index=0,
+                    )
 
-        # Fill bitmasks for each context. ``packed_bitmask`` is
-        # initialized to -1 (all bits set = all tokens valid), so the
-        # helper only needs to write slots where the FSM is enforced.
-        for ctx_idx, ctx in enumerate(context_batch):
-            if not ctx.matcher:
-                continue
-            self._speculatively_fill_bitmask_window(
-                ctx,
-                drafts=draft_tokens[ctx_idx],
-                bitmask_window=packed_bitmask[ctx_idx],
-            )
+            # Fill bitmasks for each context. ``packed_bitmask`` is
+            # initialized to -1 (all bits set = all tokens valid), so the
+            # helper only needs to write slots where the FSM is enforced.
+            for ctx_idx, ctx in enumerate(context_batch):
+                if not ctx.matcher:
+                    continue
+                self._speculatively_fill_bitmask_window(
+                    ctx,
+                    drafts=draft_tokens[ctx_idx],
+                    bitmask_window=packed_bitmask[ctx_idx],
+                )
         # Unpack packed int32 bitmask to bool using vectorized bitwise ops.
         bits = 2 ** np.arange(32, dtype=np.int32)
         # Shape: [batch, num_positions, packed_vocab, 32]

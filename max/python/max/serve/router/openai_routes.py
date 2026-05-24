@@ -875,6 +875,22 @@ async def openai_parse_chat_completion_request(
             # validator, so we hand it a list of dicts when not wrapping.
             message_content: list[MessageContent | dict[str, Any]] = []
             for content_part in content:
+                # Each entry of the OpenAI ``content`` array must be a
+                # ``ChatCompletionContentPart`` object. Scalars and
+                # lists bypass pydantic's ``Iterable[ContentPart]``
+                # typing because ``messages`` is declared as
+                # ``list[dict[str, Any]]`` on
+                # ``CreateChatCompletionRequest`` (see
+                # ``serve/schemas/openai.py``), so the value reaches
+                # this loop as raw JSON. Reject anything we cannot
+                # ``.get("type")`` on with a 400 rather than letting
+                # ``AttributeError`` escape as a 500.
+                if not isinstance(content_part, dict):
+                    raise InputError(
+                        "Each entry of message.content must be a content "
+                        "part object (e.g. {'type': 'text', 'text': ...}); "
+                        f"got {type(content_part).__name__}."
+                    )
                 part_type = content_part.get("type")
                 if part_type == "image_url":
                     image_refs.append(AnyUrl(content_part["image_url"]["url"]))
