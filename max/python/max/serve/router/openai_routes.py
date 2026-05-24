@@ -1186,6 +1186,8 @@ async def openai_create_chat_completion(
             request.app.state.settings,
         )
 
+        pipeline_config = get_app_pipeline_config(request.app)
+
         # Unless the user explicitly disabled tools with tool_choice='none', generate the tools list.
         tools = None
         if (
@@ -1197,7 +1199,8 @@ async def openai_create_chat_completion(
             )
 
         response_format = _create_response_format(
-            completion_request.response_format
+            completion_request.response_format,
+            enable_response_format_schema=pipeline_config.sampling.enable_structured_output,
         )
 
         # For architectures with a grammar-based tool parser (e.g., Kimi),
@@ -1283,12 +1286,12 @@ async def openai_create_chat_completion(
         temp = (
             completion_request.temperature
             if completion_request.temperature is not None
-            else request.app.state.pipeline_config.runtime.temperature
+            else pipeline_config.runtime.temperature
         )
         thinking_temp = (
             completion_request.thinking_temperature
             if completion_request.thinking_temperature is not None
-            else request.app.state.pipeline_config.runtime.thinking_temperature
+            else pipeline_config.runtime.thinking_temperature
         )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
@@ -1307,7 +1310,7 @@ async def openai_create_chat_completion(
                 stop_token_ids=completion_request.stop_token_ids,
                 stop=_convert_stop(completion_request.stop),
             ),
-            sampling_params_defaults=request.app.state.pipeline_config.model.sampling_params_defaults,
+            sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
         )
 
         # For chat completions, logprobs is a bool and top_logprobs is the count.
@@ -1320,7 +1323,7 @@ async def openai_create_chat_completion(
                 else 1
             )
 
-        runtime_cfg = request.app.state.pipeline_config.runtime
+        runtime_cfg = pipeline_config.runtime
         if logprobs_count != 0 and runtime_cfg.enable_overlap_scheduler:
             if runtime_cfg.allow_unsupported_logprobs:
                 logger.warning(
@@ -1476,15 +1479,32 @@ def _create_response_format(
     | ResponseFormatJsonObject
     | ResponseFormatJsonSchema
     | None,
+    enable_response_format_schema: bool,
 ) -> TextGenerationResponseFormat | None:
-    """Convert OpenAI response format to TextGenerationResponseFormat."""
+    """Convert OpenAI response format to TextGenerationResponseFormat.
+
+    Raises:
+        InputError: If ``response_format`` is ``json_schema`` or
+            ``json_object`` but ``enable_response_format_schema`` is False.
+            Reject at the route boundary so the scheduler worker never sees
+            a request that would crash it from inside ``execute()``.
+    """
     if not response_format:
         return None
 
-    json_schema: dict[Any, Any] = {}
-
     # ``response_format`` is an OpenAI TypedDict, accessed via keys.
     response_type = response_format["type"]
+    if response_type in ("json_schema", "json_object") and (
+        not enable_response_format_schema
+    ):
+        raise InputError(
+            "response_format requires --enable-structured-output. Restart "
+            "the server with --enable-structured-output to allow "
+            "schema-constrained responses."
+        )
+
+    json_schema: dict[Any, Any] = {}
+
     if response_type == "json_object":
         # For json_object mode (any valid JSON), use a permissive schema that
         # accepts any JSON object. llguidance's grammar_from_json_schema supports

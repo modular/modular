@@ -1197,7 +1197,9 @@ async def test_openai_chat_stream_kimi_tool_prefix_maps_to_delta_content(
 
 def test_create_response_format_json_object() -> None:
     """Test that json_object format is converted to json_schema with permissive schema."""
-    result = _create_response_format({"type": "json_object"})
+    result = _create_response_format(
+        {"type": "json_object"}, enable_response_format_schema=True
+    )
 
     assert result is not None
     # json_object should be normalized to json_schema internally
@@ -1221,7 +1223,8 @@ def test_create_response_format_json_schema() -> None:
         {
             "type": "json_schema",
             "json_schema": {"name": "person", "schema": person_schema},
-        }
+        },
+        enable_response_format_schema=True,
     )
 
     assert result is not None
@@ -1234,7 +1237,9 @@ def test_create_response_format_json_schema() -> None:
 
 def test_create_response_format_text() -> None:
     """Test that text format returns empty json_schema."""
-    result = _create_response_format({"type": "text"})
+    result = _create_response_format(
+        {"type": "text"}, enable_response_format_schema=False
+    )
 
     assert result is not None
     assert result.type == "text"
@@ -1243,8 +1248,33 @@ def test_create_response_format_text() -> None:
 
 def test_create_response_format_none() -> None:
     """Test that None input returns None."""
-    result = _create_response_format(None)
+    result = _create_response_format(None, enable_response_format_schema=False)
     assert result is None
+
+
+@pytest.mark.parametrize("response_type", ["json_schema", "json_object"])
+def test_create_response_format_rejects_schema_without_flag(
+    response_type: str,
+) -> None:
+    """Reject json_schema / json_object at the route boundary when the
+    server was not started with --enable-structured-output.
+
+    Without this guard the worker hits the same condition later in
+    ``StructuredOutputHelper.update_context`` and the InputError escapes
+    the scheduler loop, killing the worker (MXSERV-106).
+    """
+    response_format: dict[str, Any] = {"type": response_type}
+    if response_type == "json_schema":
+        response_format["json_schema"] = {
+            "name": "person",
+            "schema": {"type": "object"},
+        }
+
+    with pytest.raises(InputError, match=r"--enable-structured-output"):
+        _create_response_format(
+            response_format,  # type: ignore[arg-type]
+            enable_response_format_schema=False,
+        )
 
 
 # ============================================================================
