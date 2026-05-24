@@ -3357,37 +3357,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   return success();
 }
 
-/// Look up the __del__ destructor for the specified `type` which is needed
-/// for the specified declaration (typically a var or argument declaration).
-/// This returns the destructor if successful, diagnoses an error if not, and
-/// returns null if there is no defined destructor.
-/// The second return element is the symbol this destructor is inherited from,
-/// or null if it is self-declared.
-static std::pair<SymbolConstantAttr, std::optional<SymbolRefAttr>>
-lookupDestructor(ASTDecl &structDecl, SharedState &shared) {
-  auto dels = shared.lookupAndResolveDecl(
-      "__del__", structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
-  ArrayRef<ASTDecl *> entries = dels.getIfSuccess();
-  // If there are no __del__ methods, return null.  This is valid.
-  if (entries.empty())
-    return {};
-  if (entries.size() != 1) {
-    auto diag = shared.emitError(structDecl.getLoc(),
-                                 "invalid overloaded '__del__' method");
-    for (auto candidate : entries)
-      diag.attachNote(candidate->getLoc()) << "candidate declared here";
-    return {};
-  }
-  ASTDecl &delDecl = *entries[0];
-  FnOp func = dyn_cast_or_null<FnOp>(delDecl.getIfOperation());
-  if (!func) {
-    shared.emitError(delDecl.getLoc(), "'__del__' must be a method");
-    return {};
-  }
-  return {func.getBoundSymbolRef(shared.getEvaluationContext()),
-          func.getInheritedFrom()};
-}
-
 /// Look up a special method impl for the specified `type` when there is exactly
 /// one implementation (not overloaded).  This returns the method if successful,
 /// and returns null if there is none.
@@ -3735,19 +3704,18 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   }
 
   // Determine if there is an explicit conformance to ImplicitlyDestructible.
-  bool implicitlyDestructible = conformsToTrait("ImplicitlyDestructible");
+  if (conformsToTrait("ImplicitlyDestructible")) {
+    // Synthesize an empty __del__ when the type conforms to
+    // ImplicitlyDestructible but has no explicit destructor.
+    if (!shared.typeHasMember(structDecl, "__del__", structDecl.getLoc()))
+      (void)StructEmitter(structDecl)
+          .synthesizeEmptyDtor(
+              getConformanceConstraint("ImplicitlyDestructible"));
 
-  // Synthesize an empty __del__ when the type conforms to
-  // ImplicitlyDestructible but has no explicit destructor.
-  if (!lookupDestructor(structDecl, shared).first && implicitlyDestructible)
-    (void)StructEmitter(structDecl)
-        .synthesizeEmptyDtor(
-            getConformanceConstraint("ImplicitlyDestructible"));
-
-  // If the structure conforms to "ImplicitlyDestructible", we populate the
-  // trivial flag.
-  if (implicitlyDestructible)
+    // If the structure conforms to "ImplicitlyDestructible", we populate the
+    // trivial flag.
     synthesizeTrivialFlagIfNeeded("__del__");
+  }
 
   // If the struct conforms to well-known traits but doesn't have explicit
   // implementations of the corresponding methods, add signatures for them.
@@ -4367,18 +4335,6 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
         }
       }
     }
-  }
-
-  auto [dtor, inheritedFrom] = lookupDestructor(traitDecl, shared);
-  if (dtor) {
-    std::string traitName = getFlattenedSymbolName(
-        inheritedFrom.value_or(traitDecl.getSymbolRef()));
-    // No need to fold here since the typeValue is always non-concrete.
-    auto getWitnessAttr = GetWitnessAttr::get(
-        PValue(traitDecl.getTypeDeclSelf()),
-        StringAttr::get(traitDecl.getContext(), traitName),
-        dtor.getSymbol().getLeafReference(), dtor.getType());
-    traitOp.setDtorWitnessAttr(getWitnessAttr);
   }
 }
 
