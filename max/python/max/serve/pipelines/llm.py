@@ -209,7 +209,7 @@ class TokenGeneratorPipeline(
                 # legitimately contain ``</think>`` from prior assistant
                 # turns) don't false-trigger "reasoning already ended".
                 assert reasoning_parser is not None
-                is_still_reasoning = reasoning_parser.is_prompt_in_reasoning(
+                is_still_reasoning = reasoning_parser.will_reason_after_prompt(
                     cast(Sequence[int], context.tokens.prompt)
                 )
 

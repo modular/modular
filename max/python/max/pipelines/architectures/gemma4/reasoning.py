@@ -176,41 +176,21 @@ class Gemma4ReasoningParser(ReasoningParser):
             reasoning_text_formatter=self._format_reasoning_text,
         )
 
-    def is_prompt_in_reasoning(
+    def will_reason_after_prompt(
         self,
         prompt_token_ids: Sequence[int],
     ) -> bool:
-        """Decide whether the next generated token is in a reasoning span.
+        """Predicts whether the model will emit reasoning after this prompt.
 
-        Gemma 4 chat templates can prefill multiple
-        ``<|channel>thought\\n...<channel|>`` blocks across a multi-turn
-        conversation, and ``<|think|>`` lives in the *system* message
-        merely to enable the behavior globally — its mere presence does
-        not mean the current assistant turn is mid-reasoning.
-
-        Scan right-to-left and return based on the first delimiter seen:
-
-        * ``<|channel>`` → reasoning is currently open → ``True``.
-        * ``<channel|>`` (or ``<|tool_call>``) → reasoning is currently
-          closed → ``False``.
-        * No delimiters → the model will self-generate ``<|channel>`` if
-          it wants to reason; we are not yet in reasoning → ``False``.
+        Gemma 4 enables thinking by injecting ``<|think|>`` in the
+        system message. When present, every assistant turn opens a
+        ``<|channel>thought\\n...`` block. Checking for ``<|think|>``
+        is the right signal — channel delimiters from prior turns are
+        irrelevant because a new thinking block always starts.
         """
-        end_token_ids: tuple[int, ...]
-        if self.tool_call_start_token_id is not None:
-            end_token_ids = (
-                self.channel_end_token_id,
-                self.tool_call_start_token_id,
-            )
-        else:
-            end_token_ids = (self.channel_end_token_id,)
-
-        for token_id in reversed(prompt_token_ids):
-            if token_id == self.channel_start_token_id:
-                return True
-            if token_id in end_token_ids:
-                return False
-        return False
+        if self.think_token_id is None:
+            return False
+        return self.think_token_id in prompt_token_ids
 
     @classmethod
     async def from_tokenizer(

@@ -92,7 +92,7 @@ async def _configure_thinking_region(
     parser_cls = get_parser_cls(reasoning_parser_name)
     if parser_cls is not None:
         parser = await parser_cls.from_tokenizer(tokenizer)
-        if parser.is_prompt_in_reasoning(prompt_token_ids):
+        if parser.will_reason_after_prompt(prompt_token_ids):
             reasoning_end_id = await parser_cls.reasoning_end_token_id(
                 tokenizer
             )

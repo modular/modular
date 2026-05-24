@@ -48,7 +48,7 @@ class KimiK2_5ReasoningParser(ReasoningParser):
 
     Reasoning can be disabled through the chat template by including a
     ``</think>`` token at the end of the prompt; this is detected by
-    :meth:`is_prompt_in_reasoning`.
+    :meth:`will_reason_after_prompt`.
     """
 
     def __init__(
@@ -60,7 +60,7 @@ class KimiK2_5ReasoningParser(ReasoningParser):
         self.think_start_token_id = think_start_token_id
         self.think_end_token_id = think_end_token_id
         # Retained only to disambiguate the "implicit pre-fill" path in
-        # :meth:`is_prompt_in_reasoning`. ``stream()`` never treats it as
+        # :meth:`will_reason_after_prompt`. ``stream()`` never treats it as
         # an end-of-reasoning delimiter.
         self.tool_section_start_token_id = tool_section_start_token_id
 
@@ -135,17 +135,15 @@ class KimiK2_5ReasoningParser(ReasoningParser):
             is_still_reasoning=is_still_reasoning,
         )
 
-    def is_prompt_in_reasoning(
+    def will_reason_after_prompt(
         self,
         prompt_token_ids: Sequence[int],
     ) -> bool:
-        """Decide whether the next generated token is in a reasoning span.
+        """Predicts whether the model will emit reasoning after this prompt.
 
         Kimi K2.5 chat templates emit ``<think>`` to open the new assistant
         turn's reasoning section, and ``</think>`` to close the prior
-        assistant turn's reasoning section. A multi-turn prompt therefore
-        can contain many ``<think>``/``</think>`` tokens, only the
-        most-recently-emitted one of which describes the *current* state.
+        assistant turn's reasoning section.
 
         Scan right-to-left and return based on the first delimiter seen:
 
