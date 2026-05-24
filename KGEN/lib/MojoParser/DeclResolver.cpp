@@ -1292,6 +1292,12 @@ void DeclResolver::resolveAllWithin(ASTDecl &decl) {
 // Top-Level Decl Resolution
 
 void DeclResolver::resolveReferencedDecls() {
+  // ImplicitlyDestructible and its members will be referenced by
+  // CheckLifetimes, so make sure to resolve it.
+  if (ASTDecl *traitDecl =
+          shared.lookupBuiltinTrait("ImplicitlyDestructible", SMLoc()))
+    resolveAllWithin(*traitDecl);
+
   // Iteratively resolve all of the parsed decls that got referenced outside
   // the main container (typically stdlib/library declarations).
   llvm::SetVector<ASTDecl *> deferredDecls;

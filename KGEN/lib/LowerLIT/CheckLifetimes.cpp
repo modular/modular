@@ -185,10 +185,14 @@ struct StructInfo {
 namespace {
 struct WholeProgramState {
   WholeProgramState(Operation *module, std::vector<FunctionLikeOp> &funcList);
+
   /// Immutable declaration maps, populated once before threading begins.
   DenseMap<SymbolRefAttr, StructInfo> structMap;
   DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
+
+  // This is the ImplicitlyDestructible.__del__ trait member function.
+  FnOp implicitlyDestructibleDtor;
 };
 } // namespace
 
@@ -205,6 +209,13 @@ WholeProgramState::WholeProgramState(Operation *module,
       if (funcOp.isExternal())
         return;
       funcList.emplace_back(funcOp);
+
+      // Remember the ImplicitlyDestructible.__del__ member function.
+      if (funcOp.getSpecialFunctionKind() == SpecialFunctionKind::kDel &&
+          isa<TraitDeclOp>(funcOp->getParentOp()) &&
+          cast<TraitDeclOp>(funcOp->getParentOp()).getSymName() ==
+              "ImplicitlyDestructible")
+        implicitlyDestructibleDtor = funcOp;
     }
     if (auto closureOp = dyn_cast<LIT::ClosureInitOp>(op))
       funcList.emplace_back(closureOp);
@@ -484,27 +495,34 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
       if (StringAttr message = getMessageIfTraitIsLinear(generic, refinedTrait))
         return SpecialMemberInfo::unavailable(message);
 
-      auto traitDecls = getTraitDeclsForType(refinedTrait);
-      for (TraitDeclOp traitDecl : traitDecls) {
-        if (auto dtorWitness = traitDecl.getDtorWitness()) {
-          TypedAttr selfParam = generic.getParam();
-          if (traitDecls.size() > 1) {
-            // For trait compositions, upcast the self parameter to the dtor
-            // expected type.
-            auto expectedSelfType = traitDecl.bindReference();
-            selfParam = UpcastAttr::get(expectedSelfType, selfParam);
-          }
-          // Bind the *(0,0) parameter to a concrete type we're using in this
-          // context.
-          auto specSig = cast<FuncTypeGeneratorType>(dtorWitness->getType())
-                             .getSpecializedGenerator({selfParam},
-                                                      &evaluationContext, loc);
-          auto result =
-              GetWitnessAttr::get(selfParam, dtorWitness->getTraitName(),
-                                  dtorWitness->getWitnessName(), specSig);
-          return SpecialMemberInfo::available(result);
-        }
-      }
+      // Otherwise, it is ImplicitlyDestructible, take the
+      // ImplicitlyDestructible.__del__ member function and rebind Self to the
+      // right type. If we didn't find ImplicitlyDestructible.__del__ (e.g. in
+      // LSP cases) just assume everything is trivial.
+      FnOp delFn = shared->implicitlyDestructibleDtor;
+      if (!delFn)
+        return SpecialMemberInfo::available({});
+
+      // Bind Self to the right type.
+      TraitDeclOp impDestroyTrait = cast<TraitDeclOp>(delFn->getParentOp());
+      assert(impDestroyTrait.getParams().size() == 1 &&
+             "Should have Self as a parameter");
+
+      // Determine the result Self type.  We upcast the current
+      // trait/composition up to ImplicitlyDestructible so we can set the
+      // type.
+      auto selfParam = UpcastAttr::get(impDestroyTrait.getParams()[0].getType(),
+                                       generic.getParam());
+      ParameterEvaluator evaluator(impDestroyTrait.getParams(), {selfParam});
+      auto specSig = evaluator.getReboundType(delFn.getFuncTypeGenerator());
+
+      // Okay, build the GetWitnessAttr.
+      StringAttr traitName = StringAttr::get(
+          specSig.getContext(),
+          getFlattenedSymbolName(getFullyResolvedSymbolRef(impDestroyTrait)));
+      auto result = GetWitnessAttr::get(selfParam, traitName,
+                                        delFn.getSymNameAttr(), specSig);
+      return SpecialMemberInfo::available(result);
     }
   }
 
