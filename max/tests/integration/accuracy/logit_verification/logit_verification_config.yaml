@@ -861,17 +861,19 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.7e-02
     kl_div_threshold: 2.2e+01
 
-  # Same NVFP4 weights as austinpowers/Kimi-K2.5-NVFP4-DeepseekV3, but loaded
-  # from a directory pre-staged on the dedicated prod-2 8xB200 runner. The
-  # `prod-2-8xb200` tag pins this entry to the matching matrix entry in
-  # pipelineVerification.yaml — no other matrix label includes `+prod-2-8xb200`.
+  # Same NVFP4 weights as austinpowers/Kimi-K2.5-NVFP4-DeepseekV3, loaded from
+  # a directory pre-staged on the dedicated prod-2 8xB200 runner. The tags
+  # restrict this pipeline to that runner only: `prod-2-8xb200` matches the
+  # `+prod-2-8xb200` requirement on the prod-2 matrix entry, while
+  # `nvidia-only` and `no-b200` exclude it from the single-B200 and MI355
+  # runners (which do not have the weights staged).
   nvidia/Kimi-K2.5-NVFP4__internal:
     pre_submit_agents: []
     post_submit_agents: []
     pipeline: "nvidia/Kimi-K2.5-NVFP4__internal"
     compatible_with: [gpu]
     encoding: float4_e2m1fnx2
-    tags: [prod-2-8xb200]
+    tags: [prod-2-8xb200, nvidia-only, no-b200]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/nvidia_Kimi-K2.5-NVFP4__internal_golden/1/1e59f3ee02ae446ebcaccb0b1fd4ff7d92122771c9306e5c2e7147ab595045f2/nvidia_Kimi-K2.5-NVFP4__internal_golden.tar.gz"
       json_file: "vllm_nvidia_Kimi-K2.5-NVFP4__internal_float4_e2m1fnx2_golden.json"
