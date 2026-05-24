@@ -1411,9 +1411,6 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
 SmallVector<ValueRef> ValueSet::getValueRefsForOrigin(TypedAttr origin) {
   SmallVector<ValueRef> result;
 
-  // FIXME: This isn't digging into apply expressions and other things that
-  // could be laundering origins.
-
   // Look through imm cast and unions to find the underlying attrs.
   processRawOrigin(getCanonicalAttr(origin), [&](TypedAttr raw) {
     auto [valueRef, type] = getValueRefAndTypeForOrigin(raw);
@@ -2463,9 +2460,17 @@ DestructorInserter::emitDestructors(Operation *opWithUse) {
   // one of our dtors that we need to emit.
   DtorEmissionResult removedOp = optimizeCopyDestroys(opWithUse);
 
-  // TODO: There can be dependencies between dtor calls (e.g. an array of
-  // references needs to be destroyed before the elements it references).
-  // Sort them before emitting.
+  // There can be dependencies between dtor calls (e.g. an array of references
+  // needs to be destroyed before the elements it references). However, values
+  // are discovered and numbered in dominance order, so we know we can have a
+  // stable order between things destroyed at the same time.
+  if (valuesToDestroy.size() > 1) {
+    // This sorts in reverse order because emitters insert code at the top.
+    std::stable_sort(valuesToDestroy.begin(), valuesToDestroy.end(),
+                     [](const ValueToDestroy &a, const ValueToDestroy &b) {
+                       return a.valueRef.valueId > b.valueRef.valueId;
+                     });
+  }
 
   // Emit each value destruction in turn.
   for (auto &v : valuesToDestroy)
@@ -4035,6 +4040,14 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
   // it in a field sensitive way.  The uninitialized checker verified that the
   // value is guaranteed live-in when nontrivial and indirect.
   if (!valueSet.isTrivial(value, isDeref) && !dryRun) {
+    Type valueTy = ValueRef::getDereferencedType(value.getType(), isDeref);
+
+    // Ok, this may run the destructor.  Make we account for any origins the
+    // type captures, because the destructor may reference them.
+    for (auto origin : valueSet.getOriginFinder().findOriginsIn(valueTy))
+      if (!isa<AnyOriginAttr>(origin))
+        checkOriginEffect(origin, dtorInserter);
+
     // Destructor call goes ahead of the mutation, not after.
     ImplicitLocOpBuilder builder(op.getLoc(), &op);
     DestructorInserter beforeDtorInserter(builder, valueSet, diagsToEmit,
@@ -4236,9 +4249,11 @@ bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
   if (didAdjustUse && !valueSet.isTrivial(value, use.isIndirect))
     isFullObjectDestroy = false;
 
+  auto valueUseType = use.getValueType(value);
+
   // Get the type for the value so we can poke at it.
   // If a generic type or trivial, then emit a destructor call (or nothing).
-  auto valueType = sugarDynCast<LIT::StructType>(use.getValueType(value));
+  auto valueType = sugarDynCast<LIT::StructType>(valueUseType);
   if (!valueType) {
     // We are going to emit a destructor for the specified ValueRef, so all none
     // of the things we are about to destroy should already be destroyed.
@@ -4248,6 +4263,13 @@ bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
     use.markBits(consumedValues, true);
     return isFullObjectDestroy; // Destroyed the full value.
   }
+
+  // The type we are destroying may reference other values, e.g. consider a
+  // InterestingPointer[origin o].  Its destructor could touch the origin, so we
+  // need to make sure to treat any destructions of the interesting pointer as a
+  // use of the origins it may reference.
+  for (auto origin : valueSet.getOriginFinder().findOriginsIn(valueUseType))
+    checkOriginEffect(origin, dtorInserter);
 
   // Trivial types don't have __del__ methods and can't be tracked, so if
   // this is referring to one of them, make sure to clear the bits so we

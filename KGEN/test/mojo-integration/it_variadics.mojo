@@ -162,8 +162,8 @@ def test_mut_varargs():
             tm[i].state *= 2
 
     double(v1, v2)
-    # CHECK-NEXT: destroying 2
     # CHECK-NEXT: destroying 4
+    # CHECK-NEXT: destroying 2
 
     # CHECK-NEXT: test forwarding
     print("test forwarding")
@@ -295,8 +295,8 @@ def test_non_trivial_reg_varargs():
     # CHECK-NEXT: here
     # CHECK-NEXT: talkative 3
     # CHECK-NEXT: destroying 3
-    # CHECK-NEXT: destroying 2
     # CHECK-NEXT: destroying 3
+    # CHECK-NEXT: destroying 2
     callee(TalkativeCopableReg(2), TalkativeCopableReg(3))
 
 

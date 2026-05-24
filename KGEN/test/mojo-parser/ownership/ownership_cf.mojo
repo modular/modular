@@ -337,10 +337,10 @@ def loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
             # CHECK-NEXT: hlcf.break
             break
         # CHECK-NEXT: } else {
-        # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%a)
-        # CHECK-NEXT:   lifetime.end %a
         # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%c)
         # CHECK-NEXT:   lifetime.end %c
+        # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%a)
+        # CHECK-NEXT:   lifetime.end %a
         # CHECK-NEXT:   hlcf.yield
         # CHECK-NEXT: }
 
@@ -593,10 +593,10 @@ def test_elif(cond: Bool, cond2: Bool):
     # CHECK-NEXT: hlcf.elif.yield
     # CHECK-NEXT: } then {
     if cond:
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
-        # CHECK-NEXT: lifetime.end %mem2
         # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
         # CHECK-NEXT: lifetime.end %mem3
+        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
+        # CHECK-NEXT: lifetime.end %mem2
         # CHECK-NEXT: lit.call {{.*}}use_mut{{.*}}(%mem1)
         use_mut(mem1)
         # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem1)
@@ -614,10 +614,10 @@ def test_elif(cond: Bool, cond2: Bool):
 
     # CHECK-NEXT: } then {
     elif cond2:
-        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
-        # CHECK-NEXT: lifetime.end %mem2
         # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
         # CHECK-NEXT: lifetime.end %mem3
+        # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem2)
+        # CHECK-NEXT: lifetime.end %mem2
 
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
@@ -661,8 +661,8 @@ def loop_any_origin(var mem: MemExample, cond: Bool):
     # CHECK-NEXT:     hlcf.if
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     } else {
-    # CHECK-NEXT:       lit.var.lifetime.end %ptr
     # CHECK-NEXT:       lit.call {{.*}}MemExample::@"__del__
+    # CHECK-NEXT:       lit.var.lifetime.end %ptr
     # CHECK-NEXT:       hlcf.break
     while cond:
         ptr[] = 4
