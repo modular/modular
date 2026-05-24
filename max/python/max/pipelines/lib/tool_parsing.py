@@ -28,7 +28,7 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from max.pipelines.modeling.types import (
     ParsedToolCall,
@@ -40,6 +40,53 @@ from max.pipelines.modeling.types import (
 __all__ = ["get_parser_cls"]
 
 logger = logging.getLogger(__name__)
+
+
+def name_from_tool(tool: dict[str, Any]) -> str:
+    """Extracts the function name from an OpenAI-style tool dict."""
+    return tool["function"]["name"]
+
+
+def maybe_name_from_tool(tool: dict[str, Any]) -> str | None:
+    """Extracts the function name from an OpenAI-style tool dict, or ``None``."""
+    func = tool.get("function")
+    if isinstance(func, dict):
+        name = func.get("name")
+        if isinstance(name, str) and name:
+            return name
+    return None
+
+
+def names_from_tools(
+    tools: list[dict[str, Any]] | None,
+) -> list[str] | None:
+    """Extracts function names from an OpenAI-style tools list.
+
+    Returns ``None`` when *tools* is ``None`` or empty, matching the
+    semantics expected by ``generate_tool_call_grammar`` implementations.
+    """
+    if not tools:
+        return None
+    names = [
+        name for t in tools if (name := maybe_name_from_tool(t)) is not None
+    ]
+    return names or None
+
+
+_JSON_TYPE_TO_GRAMMAR_RULE: dict[str, str] = {
+    "string": "string_val",
+    "number": "number_val",
+    "integer": "number_val",
+    "boolean": "bool_val",
+    "array": "array_val",
+    "object": "object_val",
+}
+
+
+def grammar_rule_for_json_type(json_type: str, default: str = "value") -> str:
+    """Maps a JSON Schema type name to its Lark grammar rule name."""
+    return _JSON_TYPE_TO_GRAMMAR_RULE.get(json_type, default)
+
 
 _TOOL_PARSERS: dict[str, type[ToolParser]] = {}
 
@@ -110,6 +157,11 @@ def generate_call_id() -> str:
     return f"call_{uuid.uuid4().hex[:_TOOL_CALL_ID_LENGTH]}"
 
 
+def escape_for_lark_string(s: str) -> str:
+    """Escapes a string for use inside a Lark double-quoted terminal."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
 @dataclass
 class StreamingToolCallState:
     """State for a single tool call being streamed.
@@ -138,21 +190,21 @@ class StreamingState:
 
 
 class StructuralTagToolParser(ABC):
-    """Abstract base for tool parsers that wrap tool calls in section markers.
+    """Abstract base for tool parsers that use structural tag markers.
 
-    Captures the structure shared by Kimi K2.5, DeepSeek V3 / V3.1, and
-    MiniMax M2: an outer "section" tag pair containing one or more inner
-    "call" tag pairs. Subclasses configure the four marker constants
-    (:attr:`SECTION_BEGIN`, :attr:`SECTION_END`, :attr:`CALL_BEGIN`,
-    :attr:`CALL_END`) and implement a small number of hooks that handle
-    grammar-specific body splitting, header parsing, and argument
-    formatting. Everything else — buffer accumulation, content-delta
-    extraction with partial-marker holdback, multi-section iteration,
-    argument diffing, and ``reset`` — is shared.
+    Supports two layouts:
 
-    The reference inspiration is SGLang's ``BaseFormatDetector``, although
-    the API here is narrower (we only deal with the structural-tag family;
-    JSON-only and pythonic formats are out of scope).
+    * **Section-wrapped** (e.g. Kimi K2.5, DeepSeek V3, MiniMax M2):
+      an outer ``SECTION_BEGIN``/``SECTION_END`` pair wrapping one or more
+      inner ``CALL_BEGIN``/``CALL_END`` pairs.
+    * **Flat** (e.g. Gemma 4): only ``CALL_BEGIN``/``CALL_END`` are set;
+      ``SECTION_BEGIN``/``SECTION_END`` are left empty (the default).
+      The base class scans for call pairs directly with no nesting.
+
+    Subclasses implement a small number of hooks for grammar-specific
+    body splitting, header parsing, and argument formatting. Everything
+    else — buffer accumulation, content-delta extraction with
+    partial-marker holdback, argument diffing, and ``reset`` — is shared.
     """
 
     # Marker constants — subclasses override.
@@ -165,47 +217,63 @@ class StructuralTagToolParser(ABC):
         self._buffer: str = ""
         self._state: StreamingState = StreamingState()
 
+    @property
+    def _start_marker(self) -> str:
+        """The marker that opens the tool-call region (section or call)."""
+        return self.SECTION_BEGIN if self.SECTION_BEGIN else self.CALL_BEGIN
+
     # ----- Public ToolParser protocol -----------------------------------
 
     def parse_complete(self, response: str) -> ParsedToolResponse:
         """Parses a complete response into tool calls.
 
-        Walks every ``SECTION_BEGIN`` ... ``SECTION_END`` pair so the
-        result matches what streaming would emit. Content before the
-        first section is preserved; text between or after sections is
-        dropped (mirroring streaming, which only emits content prior to
-        the first marker).
+        In section-wrapped mode, walks every ``SECTION_BEGIN`` …
+        ``SECTION_END`` pair. In flat mode (no section markers), passes
+        everything from the first ``CALL_BEGIN`` onward to
+        :meth:`_parse_complete_section`. Content before the first marker
+        is preserved.
         """
-        first_section_idx = response.find(self.SECTION_BEGIN)
-        if first_section_idx == -1:
+        start_marker = self._start_marker
+        first_marker_idx = response.find(start_marker)
+        if first_marker_idx == -1:
             return ParsedToolResponse(content=response, tool_calls=[])
 
         content_before: str | None = None
-        if first_section_idx > 0:
-            content_before = response[:first_section_idx].strip() or None
+        if first_marker_idx > 0:
+            content_before = response[:first_marker_idx].strip() or None
 
         tool_calls: list[ParsedToolCall] = []
-        cursor = first_section_idx
-        while True:
-            section_start = response.find(self.SECTION_BEGIN, cursor)
-            if section_start == -1:
-                break
-            body_start = section_start + len(self.SECTION_BEGIN)
-            section_end = response.find(self.SECTION_END, body_start)
-            if section_end == -1:
-                tool_calls.extend(
-                    self._parse_complete_section(response[body_start:])
-                )
-                break
+
+        if not self.SECTION_BEGIN:
+            # Flat mode: everything from the first CALL_BEGIN onward is
+            # the tool-call region (call markers included).
             tool_calls.extend(
-                self._parse_complete_section(response[body_start:section_end])
+                self._parse_complete_section(response[first_marker_idx:])
             )
-            cursor = section_end + len(self.SECTION_END)
+        else:
+            cursor = first_marker_idx
+            while True:
+                section_start = response.find(self.SECTION_BEGIN, cursor)
+                if section_start == -1:
+                    break
+                body_start = section_start + len(self.SECTION_BEGIN)
+                section_end = response.find(self.SECTION_END, body_start)
+                if section_end == -1:
+                    tool_calls.extend(
+                        self._parse_complete_section(response[body_start:])
+                    )
+                    break
+                tool_calls.extend(
+                    self._parse_complete_section(
+                        response[body_start:section_end]
+                    )
+                )
+                cursor = section_end + len(self.SECTION_END)
 
         if not tool_calls:
             raise ValueError(
                 "Tool calls section found but no valid tool calls parsed "
-                f"from: {response[first_section_idx:]}"
+                f"from: {response[first_marker_idx:]}"
             )
 
         return ParsedToolResponse(content=content_before, tool_calls=tool_calls)
@@ -233,15 +301,15 @@ class StructuralTagToolParser(ABC):
         deltas: list[ParsedToolCallDelta] = []
 
         try:
-            section_begin_pos = self._buffer.find(self.SECTION_BEGIN)
+            marker_pos = self._buffer.find(self._start_marker)
 
-            content_delta = self._extract_content_delta(section_begin_pos)
+            content_delta = self._extract_content_delta(marker_pos)
             if content_delta:
                 deltas.append(
                     ParsedToolCallDelta(index=0, content=content_delta)
                 )
 
-            tool_call_bodies = self._extract_tool_call_bodies(section_begin_pos)
+            tool_call_bodies = self._extract_tool_call_bodies(marker_pos)
 
             for i, (body, is_complete) in enumerate(tool_call_bodies):
                 while i >= len(self._state.tool_calls):
@@ -280,7 +348,7 @@ class StructuralTagToolParser(ABC):
             # Return [] (not None) while inside the tool-calls section so
             # the streaming path knows to suppress raw structural tokens
             # even when there are no deltas to emit yet.
-            in_tool_section = section_begin_pos != -1
+            in_tool_section = marker_pos != -1
             return deltas if (deltas or in_tool_section) else None
 
         except Exception:
@@ -357,18 +425,18 @@ class StructuralTagToolParser(ABC):
 
     # ----- Shared internals --------------------------------------------
 
-    def _extract_content_delta(self, section_begin_pos: int) -> str | None:
-        """Returns unsent text before the first section marker, if any.
+    def _extract_content_delta(self, marker_pos: int) -> str | None:
+        """Returns unsent text before the first tool-call marker, if any.
 
-        Holds back any trailing suffix that partially matches
-        :attr:`SECTION_BEGIN` so that incremental tokens never leak
-        marker bytes as assistant content.
+        Holds back any trailing suffix that partially matches the start
+        marker so that incremental tokens never leak marker bytes as
+        assistant content.
         """
-        if section_begin_pos == -1:
-            overlap = partial_tag_overlap(self._buffer, self.SECTION_BEGIN)
+        if marker_pos == -1:
+            overlap = partial_tag_overlap(self._buffer, self._start_marker)
             sendable_idx = len(self._buffer) - overlap
         else:
-            sendable_idx = section_begin_pos
+            sendable_idx = marker_pos
 
         if sendable_idx > self._state.sent_content_idx:
             content = self._buffer[self._state.sent_content_idx : sendable_idx]
@@ -377,26 +445,26 @@ class StructuralTagToolParser(ABC):
         return None
 
     def _extract_tool_call_bodies(
-        self, section_begin_pos: int
+        self, marker_pos: int
     ) -> list[tuple[str, bool]]:
-        """Extracts call bodies from one or more section blocks.
+        """Extracts call bodies from the buffer.
 
-        Walks every ``SECTION_BEGIN`` block in the buffer, then within
-        each block iterates over ``CALL_BEGIN`` ... ``CALL_END`` pairs.
-        For incomplete calls, holds back any partial ``CALL_END`` suffix
-        so that streaming chunks do not include marker fragments.
+        In section-wrapped mode, walks every ``SECTION_BEGIN`` block,
+        then within each block iterates over ``CALL_BEGIN`` …
+        ``CALL_END`` pairs. In flat mode (no section markers), scans
+        for ``CALL_BEGIN`` … ``CALL_END`` pairs directly.
 
         Returns ``(body, is_complete)`` tuples where ``is_complete``
         indicates whether the closing call marker has been seen.
-        Subclasses can use the flag to finalize argument parsing
-        (relevant for grammars with closing fences adjacent to the end
-        marker, such as DeepSeek V3's markdown ``json`` fence).
         """
-        if section_begin_pos == -1:
+        if marker_pos == -1:
             return []
 
+        if not self.SECTION_BEGIN:
+            return self._extract_flat_call_bodies(marker_pos)
+
         results: list[tuple[str, bool]] = []
-        search_pos = section_begin_pos + len(self.SECTION_BEGIN)
+        search_pos = marker_pos + len(self.SECTION_BEGIN)
 
         while True:
             section_end_pos = self._buffer.find(self.SECTION_END, search_pos)
@@ -434,6 +502,39 @@ class StructuralTagToolParser(ABC):
             if next_section_pos == -1:
                 break
             search_pos = next_section_pos + len(self.SECTION_BEGIN)
+
+        return results
+
+    def _extract_flat_call_bodies(
+        self, marker_pos: int
+    ) -> list[tuple[str, bool]]:
+        """Extracts call bodies without section wrappers.
+
+        Scans for ``CALL_BEGIN`` … ``CALL_END`` pairs directly starting
+        from ``marker_pos``. Holds back any partial ``CALL_END`` suffix
+        on the last incomplete call.
+        """
+        results: list[tuple[str, bool]] = []
+        search_pos = marker_pos
+
+        while True:
+            start = self._buffer.find(self.CALL_BEGIN, search_pos)
+            if start == -1:
+                break
+
+            body_start = start + len(self.CALL_BEGIN)
+            end = self._buffer.find(self.CALL_END, body_start)
+
+            if end != -1:
+                results.append((self._buffer[body_start:end], True))
+                search_pos = end + len(self.CALL_END)
+            else:
+                body = self._buffer[body_start:]
+                overlap = partial_tag_overlap(body, self.CALL_END)
+                if overlap:
+                    body = body[:-overlap]
+                results.append((body, False))
+                break
 
         return results
 
