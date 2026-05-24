@@ -681,8 +681,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
       }
     }
     ```
-
-    TODO: Add decorators support.
   }];
   let arguments = (ins
     SymbolNameAttr:$sym_name,
@@ -695,7 +693,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     // then this is a compiler generated trait
     // used to implement a closure
     UnitAttr:$definesClosure,
-    OptionalAttr<KGEN_GetWitnessAttr>:$dtorWitness,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     // Present if the decl has an @stable decorator on it.
