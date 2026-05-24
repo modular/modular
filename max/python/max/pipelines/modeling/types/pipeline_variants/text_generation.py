@@ -130,6 +130,9 @@ class TextGenerationResponseFormat:
     the grammar is server-controlled, not user-controlled.
     """
 
+    has_json_schema: bool = False
+    """Whether this request includes a JSON schema response format."""
+
 
 class _ContentPart(BaseModel):
     """A single part of a multi-modal message content."""
@@ -965,15 +968,13 @@ class TextGenerationContext(BaseContext, Protocol):
 
         Unlike ``advance_fsm``, this only updates the enforcement-state
         machine (e.g., detecting tool-call boundary tokens) without
-        advancing the underlying matcher. Used by the spec-decode async
-        callback path where the matcher is advanced separately via
-        ``try_consume_tokens`` for tolerance.
+        advancing the underlying matcher.
 
         Args:
             token: The newly committed token.
 
         Returns:
-            True if enforcement state changed.
+            True if the matcher should consume the token.
         """
         ...
 

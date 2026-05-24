@@ -1266,6 +1266,7 @@ async def openai_create_chat_completion(
                     tools_forced=tools_forced,
                     requires_structured_output_flag=response_format_schema
                     is not None,
+                    has_json_schema=response_format_schema is not None,
                 )
                 logger.debug(
                     "Successfully generated tool call grammar (length=%d, "
@@ -1533,6 +1534,7 @@ def _create_response_format(
         grammar_enforced=bool(json_schema),
         tools_forced=False,
         requires_structured_output_flag=True,
+        has_json_schema=bool(json_schema),
     )
 
 

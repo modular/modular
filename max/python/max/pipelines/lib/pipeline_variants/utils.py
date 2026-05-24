@@ -712,22 +712,15 @@ class StructuredOutputHelper:
             if draft_token < 0 or draft_token >= vocab_size:
                 break
 
-            enforced_before = ctx.grammar_enforced
-
-            # Advance the enforcement state first, then conditionally
-            # feed the matcher. A draft like ``</think>`` flips
-            # enforcement on but is not in the regex — matcher rejects,
-            # which is fine because slot ``i`` was unconstrained anyway.
-            ctx.update_enforcement_state(draft_token)
-
-            if ctx.grammar_enforced:
+            consumed = False
+            if ctx.update_enforcement_state(draft_token):
                 if ctx.matcher.try_consume_tokens([draft_token]) == 1:
                     tokens_consumed += 1
-                elif enforced_before:
-                    # Slot ``i`` was constrained, so the target should
-                    # not have sampled a token the matcher rejects.
-                    # Verification stops here.
+                    consumed = True
+                else:
                     break
+
+            if consumed or ctx.grammar_enforced:
                 llguidance.numpy.fill_next_token_bitmask(
                     ctx.matcher,
                     bitmask_window[i + 1, :].reshape(1, -1),
@@ -789,8 +782,7 @@ class StructuredOutputHelper:
             ]
             committed_tokens.append(bonus_token)
             for token in committed_tokens:
-                ctx.update_enforcement_state(token)
-                if ctx.grammar_enforced:
+                if ctx.update_enforcement_state(token):
                     ctx.matcher.try_consume_tokens([token])
 
             # Part 2: speculative window for the next batch's bitmasks.

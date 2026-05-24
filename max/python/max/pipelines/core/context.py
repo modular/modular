@@ -95,6 +95,12 @@ class GrammarEnforcementState:
     4. ``response_format: json_schema`` with thinking (thinking region set):
        - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
        - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
+
+    5. ``tool_choice=auto`` + ``response_format: json_schema`` + thinking:
+       - Combined grammar constrains to tool calls OR JSON schema
+       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
+       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
+         (``has_json_schema`` triggers re-enforcement even with ``tool_region`` set)
     """
 
     grammar_enforced: bool = False
@@ -119,6 +125,9 @@ class GrammarEnforcementState:
     True when the constraint includes a user-supplied JSON schema. False for
     pure tool-call grammars derived from the model's tool parser.
     """
+
+    has_json_schema: bool = False
+    """Whether this request includes a JSON schema response format."""
 
     tool_region: StructuredOutputRegionDelimiters | None = None
     """Token sequences defining tool call boundaries, if conditional enforcement."""
@@ -155,6 +164,7 @@ class GrammarEnforcementState:
             grammar_enforced=response_format.grammar_enforced,
             tools_forced=response_format.tools_forced,
             requires_structured_output_flag=response_format.requires_structured_output_flag,
+            has_json_schema=response_format.has_json_schema,
         )
 
     def update_enforcement_state(self, token: int) -> bool:
@@ -168,13 +178,11 @@ class GrammarEnforcementState:
             token: The newly sampled token.
 
         Returns:
-            True if enforcement state changed.
+            True if the matcher should consume the token.
         """
-        changed = False
-
-        # Check thinking region transitions FIRST (higher priority)
-        # When thinking is enabled, we START in thinking region (template already
-        # emits <think>). We only detect </think> to exit.
+        # Check thinking region transitions FIRST (higher priority).
+        # Thinking-end delimiter is NOT grammar content — return False
+        # so the caller skips the matcher even though enforcement resumed.
         if (
             self.thinking_region_delimiters is not None
             and self._in_thinking_region
@@ -188,28 +196,16 @@ class GrammarEnforcementState:
                 )
             ):
                 self._in_thinking_region = False
-                # After thinking ends:
-                # - For required tools (tools_forced=True): immediately enforce
-                # - For json_schema without tools (tool_region is None):
-                #   immediately enforce
-                # - For auto tools: stay free, tool region logic will handle it
-                if self.tools_forced or self.tool_region is None:
+                if self.tools_forced or self.has_json_schema:
                     self.grammar_enforced = True
-                changed = True
+            return False
 
         # Tool region logic (for tool_choice=auto). Skipped when tools_forced
-        # is set: forced grammars enforce from start to finish via the regex
-        # itself, so the auto-mode start/end toggles must not flip
-        # ``grammar_enforced`` mid-sequence. Without this guard, the
-        # <|tool_calls_section_end|> token would trigger the auto-mode exit
-        # and re-enable free decoding, allowing the model to emit prose
-        # after the tool call section.
-        if (
-            not changed
-            and self.tool_region is not None
-            and not self.tools_forced
-        ):
-            # Check for start sequence (only when not enforcing)
+        # is set: forced grammars enforce start-to-finish via the regex
+        # itself, so auto-mode toggles must not flip grammar_enforced.
+        # Both start and end tags ARE grammar content — return True so the
+        # caller feeds the token to the matcher before enforcement flips.
+        if self.tool_region is not None and not self.tools_forced:
             if not self.grammar_enforced:
                 if (
                     self.tool_region.start_token_ids is not None
@@ -218,8 +214,7 @@ class GrammarEnforcementState:
                     )
                 ):
                     self.grammar_enforced = True
-                    changed = True
-            # Check for end sequence (only when enforcing)
+                    return True
             else:
                 if (
                     self.tool_region.end_token_ids is not None
@@ -229,9 +224,9 @@ class GrammarEnforcementState:
                 ):
                     self.grammar_enforced = False
                     self._tool_calling_match_buffer.clear()
-                    changed = True
+                    return True
 
-        return changed
+        return self.grammar_enforced
 
     def snapshot(self) -> GrammarEnforcementSnapshot:
         """Capture state needed to roll back a speculative advance.
@@ -523,16 +518,12 @@ class TextContext:
         """Advance the grammar-enforcement state machine by one token.
 
         Forwards to :meth:`GrammarEnforcementState.update_enforcement_state`.
-        Used by spec-decode paths that need to advance the state machine
-        without invoking ``matcher.consume_token`` (which asserts on
-        rejection); the matcher is advanced separately via
-        ``try_consume_tokens`` for tolerance.
 
         Args:
             token: The newly committed token.
 
         Returns:
-            True if enforcement state changed.
+            True if the matcher should consume the token.
         """
         return self.grammar_state.update_enforcement_state(token)
 
@@ -666,23 +657,16 @@ class TextContext:
             token: The token to consume in the FSM.
 
         Returns:
-            True if the token was processed, False if no matcher is present.
+            True if the token was handled — either consumed by the FSM,
+            recognized as a state-transition delimiter (e.g. a
+            thinking-end token), or skipped because enforcement is
+            inactive. False only when no matcher is present.
         """
         if self.matcher is None:
             return False
 
-        # Update enforcement state (may toggle grammar_enforced)
-        self.grammar_state.update_enforcement_state(token)
-
-        # Only consume token in FSM if enforcement is active
-        if self.grammar_state.grammar_enforced:
+        if self.grammar_state.update_enforcement_state(token):
             if self.matcher.try_consume_tokens([token]) != 1:
-                # Matcher rejected a token the bitmask was supposed to
-                # filter. Either the bitmask wasn't applied for this step
-                # (scheduler wiring bug) or matcher state desynced from
-                # ``fill_next_token_bitmask`` (spec-decode rollback or
-                # tokenizer-grammar mismatch). Disable enforcement so we
-                # don't continue filtering against a stale state.
                 logger.error(
                     "Matcher rejected token %d under grammar enforcement "
                     "(request %s); disabling enforcement for the rest of "

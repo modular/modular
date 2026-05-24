@@ -31,6 +31,7 @@ from max.pipelines.modeling.types import (
     Pipeline,
     PipelineTask,
     PipelineTokenizer,
+    ReasoningParser,
     TextGenerationContext,
     TextGenerationRequest,
 )
@@ -58,6 +59,7 @@ from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
 from .pipeline_variants.text_generation import TextGenerationPipeline
+from .reasoning import get_parser_cls
 from .speculative_decoding import StandaloneSpeculativeDecodingPipeline
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
@@ -360,6 +362,77 @@ def _apply_context_validators(
     ensuring validators run automatically after context creation.
     """
     wrapper = _ValidatedNewContext(tokenizer, validators)
+    tokenizer.new_context = wrapper  # type: ignore[method-assign]
+
+
+class _ThinkingRegionNewContext:
+    """Wraps ``new_context`` to configure the thinking region on each context.
+
+    When a reasoning parser is registered and the context uses constrained
+    decoding (grammar or json_schema), the model may start generation
+    inside a reasoning span. This wrapper detects that case and suspends
+    grammar enforcement until the reasoning-end token fires.
+
+    The reasoning parser and end-token ID are resolved lazily on the first
+    call (async), then cached for subsequent requests.
+    """
+
+    def __init__(
+        self,
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+        original_new_context: Callable[..., Any],
+        reasoning_parser_name: str,
+    ) -> None:
+        self._tokenizer = tokenizer
+        self._original = original_new_context
+        self._parser_name = reasoning_parser_name
+        self._parser: ReasoningParser | None = None
+        self._end_token_id: int | None = None
+        self._resolved = False
+
+    async def __call__(self, request: Any) -> Any:
+        context = await self._original(request)
+
+        if not self._resolved:
+            self._resolved = True
+            parser_cls = get_parser_cls(self._parser_name)
+            if parser_cls is not None:
+                self._parser = await parser_cls.from_tokenizer(self._tokenizer)
+                self._end_token_id = await parser_cls.reasoning_end_token_id(
+                    self._tokenizer
+                )
+
+        has_constrained_decoding = (
+            context.grammar is not None or context.json_schema is not None
+        )
+        if (
+            self._parser is not None
+            and self._end_token_id is not None
+            and has_constrained_decoding
+            and self._parser.will_reason_after_prompt(
+                context.tokens.prompt,
+            )
+        ):
+            context.set_thinking_region(None, [self._end_token_id])
+            context.grammar_state._in_thinking_region = True
+            context.grammar_state.grammar_enforced = False
+
+        return context
+
+
+def _apply_thinking_region(
+    tokenizer: PipelineTokenizer[Any, Any, Any],
+    reasoning_parser_name: str | None,
+) -> None:
+    """Wraps a tokenizer's ``new_context`` to configure thinking regions.
+
+    No-op when *reasoning_parser_name* is ``None``.
+    """
+    if reasoning_parser_name is None:
+        return
+    wrapper = _ThinkingRegionNewContext(
+        tokenizer, tokenizer.new_context, reasoning_parser_name
+    )
     tokenizer.new_context = wrapper  # type: ignore[method-assign]
 
 
@@ -808,6 +881,10 @@ class PipelineRegistry:
 
         if arch.context_validators:
             _apply_context_validators(tokenizer, arch.context_validators)
+
+        _apply_thinking_region(
+            tokenizer, pipeline_config.runtime.reasoning_parser
+        )
 
         # Cast tokenizer to the proper type for text generation pipeline compatibility
         typed_tokenizer = cast(
