@@ -13,6 +13,7 @@
 
 import json
 import uuid
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -672,12 +673,17 @@ def test_special_characters_in_arguments() -> None:
     assert parsed_args == special_args
 
 
+def _tools(*names: str) -> list[dict[str, Any]]:
+    """Build a minimal OpenAI-style tools list from function names."""
+    return [{"type": "function", "function": {"name": n}} for n in names]
+
+
 def test_generate_tool_call_grammar_with_tool_names(
     ll_tokenizer: LLTokenizer,
 ) -> None:
     """Test generating a regex grammar for constrained decoding with specific tools."""
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tool_names=["get_weather", "search"]
+        tools=_tools("get_weather", "search")
     )
 
     # Verify the grammar is a non-empty string
@@ -693,7 +699,7 @@ def test_generate_tool_call_grammar_without_tool_names(
     ll_tokenizer: LLTokenizer,
 ) -> None:
     """Test generating a regex grammar that accepts any valid identifier."""
-    grammar = KimiToolParser.generate_tool_call_grammar(tool_names=None)
+    grammar = KimiToolParser.generate_tool_call_grammar(tools=None)
 
     # Verify the grammar is a non-empty string
     assert isinstance(grammar, str)
@@ -710,7 +716,7 @@ def test_generate_tool_call_grammar_escapes_special_chars(
     """Test that special regex characters in tool names are escaped."""
     # Tool names with regex special characters
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tool_names=["get_weather.v2", "search+plus", "tool[0]"]
+        tools=_tools("get_weather.v2", "search+plus", "tool[0]")
     )
 
     # Should not raise and should produce valid grammar
@@ -736,7 +742,7 @@ def test_generate_tool_call_grammar_with_response_format_schema(
     }
 
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tool_names=["get_weather", "search"],
+        tools=_tools("get_weather", "search"),
         response_format_schema=response_format_schema,
     )
 
@@ -763,7 +769,7 @@ def test_generate_tool_call_grammar_combined_accepts_json_object_type(
     response_format_schema = {"type": "object"}
 
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tool_names=["calculate"],
+        tools=_tools("calculate"),
         response_format_schema=response_format_schema,
     )
 
@@ -781,7 +787,7 @@ def test_generate_tool_call_grammar_no_schema_returns_regex_grammar(
 ) -> None:
     """Test that without response_format_schema, we get regex-only grammar."""
     grammar = KimiToolParser.generate_tool_call_grammar(
-        tool_names=["get_weather"],
+        tools=_tools("get_weather"),
         response_format_schema=None,
     )
 

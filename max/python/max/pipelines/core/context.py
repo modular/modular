@@ -101,6 +101,12 @@ class GrammarEnforcementState:
        - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
        - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
          (``has_json_schema`` triggers re-enforcement even with ``tool_region`` set)
+
+    For section-wrapped parsers (e.g. Kimi K2.5, DeepSeek V3) that define
+    ``SECTION_BEGIN``/``SECTION_END``, the tool region end tag turns off
+    enforcement after the entire tool-calling section.  For flat parsers
+    (e.g. Gemma 4) the tool region has no end tag — the grammar handles
+    termination.
     """
 
     grammar_enforced: bool = False
@@ -665,19 +671,26 @@ class TextContext:
         if self.matcher is None:
             return False
 
-        if self.grammar_state.update_enforcement_state(token):
-            if self.matcher.try_consume_tokens([token]) != 1:
-                logger.error(
-                    "Matcher rejected token %d under grammar enforcement "
-                    "(request %s); disabling enforcement for the rest of "
-                    "the request. matcher_errors=%s "
-                    "matcher_warnings=%s",
-                    token,
-                    self.request_id,
-                    self.matcher.get_error(),
-                    self.matcher.get_grammar_warnings(),
-                )
-                self.grammar_state.grammar_enforced = False
+        # EOS tokens are not part of the grammar — they signal the end of
+        # generation, not schema content.  Skip the matcher so it stays in
+        # a clean terminal state rather than logging a spurious rejection.
+        if token in self.eos_tracker.eos_token_ids:
+            self.grammar_state.grammar_enforced = False
+        elif (
+            self.grammar_state.update_enforcement_state(token)
+            and self.matcher.try_consume_tokens([token]) != 1
+        ):
+            logger.error(
+                "Matcher rejected token %d under grammar enforcement "
+                "(request %s); disabling enforcement for the rest of "
+                "the request. matcher_errors=%s "
+                "matcher_warnings=%s",
+                token,
+                self.request_id,
+                self.matcher.get_error(),
+                self.matcher.get_grammar_warnings(),
+            )
+            self.grammar_state.grammar_enforced = False
 
         return True
 

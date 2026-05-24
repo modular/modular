@@ -34,6 +34,7 @@ from typing import Any
 from llguidance import LLMatcher
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
+    names_from_tools,
     register,
 )
 from max.pipelines.modeling.types import ParsedToolCall
@@ -199,8 +200,9 @@ class KimiToolParser(StructuralTagToolParser):
 
     @staticmethod
     def generate_tool_call_grammar(
-        tool_names: list[str] | None = None,
         response_format_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
     ) -> str:
         """Generates a grammar for constrained decoding of Kimi tool calls.
 
@@ -208,6 +210,7 @@ class KimiToolParser(StructuralTagToolParser):
         Lark grammar that accepts either tool calls or JSON content
         matching the schema (the model's first tokens select the branch).
         """
+        tool_names = names_from_tools(tools)
         tool_call_regex = KimiToolParser._build_tool_call_regex(tool_names)
 
         if response_format_schema is None:

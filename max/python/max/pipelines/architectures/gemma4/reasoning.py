@@ -27,7 +27,7 @@ from max.pipelines.modeling.types import (
     ReasoningSpan,
 )
 
-EMPTY_THINKING_BLOCK = "<|channel>thought\n<channel|>"
+from .tokenizer import SpecialToken
 
 
 @register("gemma4")
@@ -208,7 +208,7 @@ class Gemma4ReasoningParser(ReasoningParser):
             )
 
         tool_call_start_id = await convert_token_to_id(
-            tokenizer, "<|tool_call>"
+            tokenizer, SpecialToken.TOOL_CALL_START
         )
         think_id = await convert_token_to_id(tokenizer, "<|think|>")
 

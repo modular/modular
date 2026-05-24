@@ -24,9 +24,10 @@ Two pieces live here:
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -42,12 +43,12 @@ __all__ = ["get_parser_cls"]
 logger = logging.getLogger(__name__)
 
 
-def name_from_tool(tool: dict[str, Any]) -> str:
+def name_from_tool(tool: Mapping[str, Any]) -> str:
     """Extracts the function name from an OpenAI-style tool dict."""
     return tool["function"]["name"]
 
 
-def maybe_name_from_tool(tool: dict[str, Any]) -> str | None:
+def maybe_name_from_tool(tool: Mapping[str, Any]) -> str | None:
     """Extracts the function name from an OpenAI-style tool dict, or ``None``."""
     func = tool.get("function")
     if isinstance(func, dict):
@@ -58,7 +59,7 @@ def maybe_name_from_tool(tool: dict[str, Any]) -> str | None:
 
 
 def names_from_tools(
-    tools: list[dict[str, Any]] | None,
+    tools: Sequence[Mapping[str, Any]] | None,
 ) -> list[str] | None:
     """Extracts function names from an OpenAI-style tools list.
 
@@ -76,10 +77,11 @@ def names_from_tools(
 _JSON_TYPE_TO_GRAMMAR_RULE: dict[str, str] = {
     "string": "string_val",
     "number": "number_val",
-    "integer": "number_val",
+    "integer": "integer_val",
     "boolean": "bool_val",
     "array": "array_val",
     "object": "object_val",
+    "null": "null_val",
 }
 
 
@@ -160,6 +162,33 @@ def generate_call_id() -> str:
 def escape_for_lark_string(s: str) -> str:
     """Escapes a string for use inside a Lark double-quoted terminal."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def get_token_id(tokenizer: Any, token: str) -> int | None:
+    """Resolve a single token string to its ID, or ``None`` if unknown."""
+    delegate = getattr(tokenizer, "delegate", tokenizer)
+    convert = getattr(delegate, "convert_tokens_to_ids", None)
+    if convert is None:
+        return None
+
+    unk_id = getattr(delegate, "unk_token_id", None)
+    tid = convert(token)
+    if isinstance(tid, int) and tid != unk_id:
+        return tid
+    return None
+
+
+def resolve_lark_token_reference(token_id: int) -> str:
+    """Format a token ID as llguidance's ``<[N]>`` reference."""
+    return f"<[{token_id}]>"
+
+
+def canonicalize_lark_rule_name(s: str) -> str:
+    """Convert *s* to a string safe for use as a Lark rule name.
+
+    Lark rule names must be lowercase (uppercase starts a terminal).
+    """
+    return re.sub(r"[^a-z0-9_]", "_", s.lower())
 
 
 @dataclass

@@ -415,20 +415,36 @@ class StructuredOutputHelper:
     tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = None
 
     @staticmethod
-    def _get_tool_structural_tags(
+    def _get_tool_region_tags(
         tool_parser_name: str | None,
     ) -> tuple[str | None, str | None]:
-        """Extract tool call start/end tags from a registered parser.
+        """Extract tool-calling *region* start/end tags from a registered parser.
+
+        These tags control when ``GrammarEnforcementState`` toggles
+        ``grammar_enforced``.  The start tag tells the state machine
+        when to begin constraining (for ``tool_choice=auto`` where
+        enforcement doesn't start immediately).  The end tag, if
+        present, tells it when to stop.
+
+        For **section-wrapped** parsers (e.g. Kimi K2.5, DeepSeek V3)
+        that define ``SECTION_BEGIN``/``SECTION_END``, the outer
+        section pair is returned — enforcement spans all tool calls.
+
+        For **flat** parsers (e.g. Gemma 4) that only define
+        ``CALL_BEGIN``/``CALL_END``, only ``CALL_BEGIN`` is returned
+        as the start trigger; the end is ``None``.  ``CALL_END`` is a
+        per-call delimiter, not a region boundary — using it would
+        prematurely disable enforcement between consecutive tool calls,
+        causing the model to generate unconstrained tokens before the
+        next call.  With no end tag the grammar itself governs what
+        follows each ``CALL_END`` (another call, or a terminal like
+        ``<|tool_response>``).
 
         Args:
             tool_parser_name: Name of the registered tool parser, or None.
 
         Returns:
-            A (start, end) pair of structural tags. Prefers
-            ``SECTION_BEGIN``/``SECTION_END`` so the grammar stays enforced
-            across the whole tool-call section (no ``<think>`` between calls).
-            Falls back to ``CALL_BEGIN``/``CALL_END`` for parsers that only
-            define the per-call boundary. Returns ``(None, None)`` if neither.
+            A (start, end) pair of region tags.
         """
         parser_cls = get_parser_cls(tool_parser_name)
         if parser_cls is None:
@@ -442,8 +458,8 @@ class StructuredOutputHelper:
 
         if parser_cls.SECTION_BEGIN and parser_cls.SECTION_END:
             return (parser_cls.SECTION_BEGIN, parser_cls.SECTION_END)
-        if parser_cls.CALL_BEGIN and parser_cls.CALL_END:
-            return (parser_cls.CALL_BEGIN, parser_cls.CALL_END)
+        if parser_cls.CALL_BEGIN:
+            return (parser_cls.CALL_BEGIN, None)
 
         return (None, None)
 
@@ -486,7 +502,7 @@ class StructuredOutputHelper:
             tokenizer_info = LLTokenizer(wrapper, n_vocab=vocab_size)
 
         # Extract structural tags from tool parser if available
-        tool_start, tool_end = cls._get_tool_structural_tags(tool_parser_name)
+        tool_start, tool_end = cls._get_tool_region_tags(tool_parser_name)
 
         # Tokenize start/end tags to get token ID sequences
         tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = (
@@ -588,8 +604,11 @@ class StructuredOutputHelper:
                 )
 
             try:
+                # Compact JSON (no structural whitespace) to match
+                # the tool-call grammar convention.
                 grammar = LLMatcher.grammar_from_json_schema(
                     context.json_schema,
+                    overrides={"whitespace_pattern": ""},
                 )
                 matcher = LLMatcher(self._tokenizer_info, grammar)
                 context.set_matcher(matcher)

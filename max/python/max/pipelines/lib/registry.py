@@ -394,6 +394,8 @@ class _ThinkingRegionNewContext:
         context = await self._original(request)
 
         if not self._resolved:
+            # Set immediately — no await between check and set, so no
+            # interleaving is possible in asyncio's cooperative model.
             self._resolved = True
             parser_cls = get_parser_cls(self._parser_name)
             if parser_cls is not None:
