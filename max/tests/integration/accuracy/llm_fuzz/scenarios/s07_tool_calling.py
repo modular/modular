@@ -26,6 +26,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from scenarios import BaseScenario, ScenarioResult, Verdict, register_scenario
+from scenarios._kimi_fixtures import PRODUCTION_ONEOF_TOOL
 
 if TYPE_CHECKING:
     from client import FuzzClient, RunConfig
@@ -899,49 +900,9 @@ class ToolCallingAttacks(BaseScenario):
         # ``tool_choice="required"`` should produce a valid tool call.
         # Without it, ``message.content`` would be non-empty (prose
         # explaining the answer) and ``tool_calls`` would be missing.
-        one_of_const_tool = {
-            "type": "function",
-            "function": {
-                "name": "place_item",
-                "description": "Place an item at a position in a list.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "item": {
-                            "type": "string",
-                            "description": "Name of the item to place.",
-                        },
-                        "position": {
-                            "description": (
-                                "Where to insert (default: end). The exact "
-                                "shape from the production bug: a oneOf "
-                                "containing a const literal alongside two "
-                                "object branches."
-                            ),
-                            "oneOf": [
-                                {"const": "end"},
-                                {
-                                    "type": "object",
-                                    "properties": {"after": {"type": "string"}},
-                                    "required": ["after"],
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "index": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                        }
-                                    },
-                                    "required": ["index"],
-                                },
-                            ],
-                        },
-                    },
-                    "required": ["item", "position"],
-                },
-            },
-        }
+        # The schema lives in ``scenarios/_kimi_fixtures.py`` so the
+        # freeze-repro scenario (``kimi_freeze_repro``) and this test
+        # cannot drift.
         one_of_payload = {
             "model": model,
             "messages": [
@@ -952,7 +913,7 @@ class ToolCallingAttacks(BaseScenario):
                     ),
                 }
             ],
-            "tools": [one_of_const_tool],
+            "tools": [PRODUCTION_ONEOF_TOOL],
             "tool_choice": "required",
             "max_tokens": 256,
         }
