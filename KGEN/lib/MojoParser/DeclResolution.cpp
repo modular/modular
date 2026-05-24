@@ -3740,7 +3740,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // Synthesize an empty __del__ when the type conforms to
   // ImplicitlyDestructible but has no explicit destructor.
   if (!lookupDestructor(structDecl, shared).first && implicitlyDestructible)
-    (void)StructEmitter(structDecl).synthesizeEmptyDtor();
+    (void)StructEmitter(structDecl)
+        .synthesizeEmptyDtor(
+            getConformanceConstraint("ImplicitlyDestructible"));
 
   // If the structure conforms to "ImplicitlyDestructible", we populate the
   // trivial flag.

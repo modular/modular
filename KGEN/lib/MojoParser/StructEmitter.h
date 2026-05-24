@@ -72,7 +72,10 @@ public:
   /// new one with an empty body. This allows the CheckLifetimes pass to insert
   /// field dels as needed, and makes sure that anything that refers to this
   /// struct properly runs its destructor.
-  FnOp synthesizeEmptyDtor();
+  /// When \p conformanceConstraint is non-null, it is attached as a
+  /// where-clause so that overload resolution rejects calls when the
+  /// conditional conformance cannot be proven.
+  FnOp synthesizeEmptyDtor(ConstraintAttr conformanceConstraint = {});
   /// Add an empty move/copy ctor stub for this struct, to be filled in later.
   /// When \p conformanceConstraint is non-null, it is attached as a
   /// where-clause so that overload resolution rejects calls when the

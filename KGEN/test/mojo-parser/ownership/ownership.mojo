@@ -1522,3 +1522,13 @@ struct TestConditionallyLinearType[T: Movable](
 
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDestructible):
         pass
+
+
+# CHECK-LABEL: lit.struct.decl @TestSynthesizedConditionalDtor
+@explicit_destroy
+struct TestSynthesizedConditionalDtor[T: Movable](
+    ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible)
+):
+    var data: Self.T
+
+# CHECK: lit.fn @"__del__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!Movable T, {{.*}}ImplicitlyDestructible{{.*}}synthetic
