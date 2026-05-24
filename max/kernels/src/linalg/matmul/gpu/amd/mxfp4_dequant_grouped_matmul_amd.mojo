@@ -26,6 +26,7 @@ A activations are BF16. Both are dequantized/cast to FP8 before the GEMM.
 
 from std.math import ceildiv
 from std.gpu.host import DeviceContext
+from std.gpu.compute.mma import get_amd_fp8_dtype
 
 from layout import Coord, Idx, TileTensor, row_major
 
@@ -82,7 +83,7 @@ def mxfp4_dequant_grouped_matmul_amd(
     comptime static_N = b_packed.static_shape[1]
     comptime packed_K = b_packed.static_shape[2]
     comptime static_K = packed_K * 2
-    comptime fp8_type = DType.float8_e4m3fn
+    comptime fp8_type = get_amd_fp8_dtype()
 
     # Step 1: Dequantize all expert weights from MXFP4 to FP8.
     # B_packed is [num_experts, N, K//2], B_scales is [num_experts, N, K//32].

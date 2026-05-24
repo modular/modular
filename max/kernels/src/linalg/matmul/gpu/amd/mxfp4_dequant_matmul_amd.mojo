@@ -59,7 +59,7 @@ def mxfp4_dequant_matmul_amd(
     var M = Int(c.dim[0]())
     comptime static_N = type_of(c).static_shape[1]
     comptime static_K = type_of(a).static_shape[1]
-    comptime fp8_type = DType.float8_e4m3fn
+    comptime fp8_type = get_amd_fp8_dtype()
 
     # Step 1: Dequantize MXFP4 weights to FP8
     var b_fp8_buf = ctx.enqueue_create_buffer[fp8_type](static_N * static_K)
