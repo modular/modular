@@ -322,6 +322,9 @@ struct _Empty[T: Movable](
 def empty[T: Movable]() -> _Empty[T]:
     """Creates an iterator that yields nothing.
 
+    Parameters:
+        Type of the iterator's notional elements.
+
     Returns:
         An iterator that yields nothing.
     """
