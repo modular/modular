@@ -168,6 +168,10 @@ def test_concurrent_func() raises:
     var ctx2 = create_test_device_context()
     _run_test_concurrent_func(ctx1, ctx2)
 
+    # FIXME(GEX-3771): This shouldn't be necessary. DeviceContext destructor
+    # crashes if ctx2 is destroyed before ctx1.
+    _ = ctx2
+
 
 def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     comptime length = 20 * 1024 * 1024
