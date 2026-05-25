@@ -4015,12 +4015,16 @@ struct DeviceGraphBuilder(Movable):
         _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
-        var compiled = self._ctx.compile_function_unchecked[
+        var compiled = DeviceFunction[
             FuncType.__call__,
+            None,
+            target=DeviceContext.default_device_info.target(),
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](self._ctx)
+        compiled.dump_rep[
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
         ]()
         # Build a transient enqueuer that pairs the builder handle with the
         # caller-supplied deps. It implements `_FunctionEnqueuer` so the
@@ -4853,89 +4857,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         ```
         """
         return HostBuffer[dtype](self, size)
-
-    @always_inline
-    def compile_function_unchecked[
-        func_type: TrivialRegisterPassable,
-        //,
-        func: func_type,
-        *,
-        compile_options: StaticString = CompilationTarget[
-            Self.default_device_info.target()
-        ].default_compile_options(),
-        link_options: StaticString = "",
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *,
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        out result: DeviceFunction[
-            func,
-            None,
-            target=Self.default_device_info.target(),
-            compile_options=compile_options,
-            link_options=link_options,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ],
-    ) raises:
-        """Compiles the provided function for execution on this device.
-
-        Parameters:
-            func_type: Type of the function.
-            func: The function to compile.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            func_attribute: An attribute to use when compiling the code (such
-                as maximum shared memory size).
-
-        Returns:
-            The compiled function via the `result` output parameter.
-
-        Raises:
-            If the operation fails.
-
-        Notes:
-
-        - This method doesn't perform compile-time type-checking of the kernel
-          function arguments. You will encounter run-time errors if the values
-          you pass don't conform to the expected argument types.
-        - This method will be deprecated and eventually removed.
-          Use `compile_function()` instead for type-checked kernel compilation.
-        """
-        assert (
-            not func_attribute
-            or func_attribute.value().attribute
-            != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-            or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
-        ), "Requested more than available shared memory."
-        comptime result_type = type_of(result)
-        result = result_type(
-            self,
-            func_attribute=func_attribute,
-        )
-
-        result.dump_rep[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-        ]()
 
     @deprecated("Pass the kernel only once: `compile_function[func]`.")
     @always_inline
@@ -6156,12 +6077,16 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             block_dim, location=call_location()
         )
 
-        var gpu_kernel = self.compile_function_unchecked[
+        var gpu_kernel = DeviceFunction[
             FuncType.__call__,
+            None,
+            target=Self.default_device_info.target(),
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](self)
+        gpu_kernel.dump_rep[
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
         ]()
 
         gpu_kernel._call_with_pack(
