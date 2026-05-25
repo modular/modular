@@ -847,6 +847,66 @@ def test_grammar_accepts_multiple_back_to_back_sections(
     )
 
 
+def test_grammar_accepts_unbounded_argument_body(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Argument body has no length cap; matcher must accept >8192 chars.
+
+    Regression for the removal of ``_MAX_TOOL_CALL_ARGUMENT_CHARS``.
+    The old grammar capped the JSON body at 8192 chars with
+    ``\\{[^<]{0,8192}\\}``, which silently truncated legitimate large
+    arguments (file blobs, embedded documents, search-result payloads)
+    by forcing the matcher to require ``}`` once the count was hit.
+    The current grammar uses ``\\{[^<]*\\}`` so only ``max_tokens`` /
+    context bounds the body.
+
+    Feeds a synthetic tool call whose ``content`` field contains
+    ~10 KB of ASCII filler — well past the old cap — and verifies the
+    matcher consumes every token. Tokens come from the same byte-level
+    ``_MinimalTokenizer`` the fixture wraps, so this routes through the
+    same encoding path real serving uses (just with a 256-token vocab
+    instead of Kimi's full vocab).
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("echo_document")
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+
+    # ~10 KB filler, deliberately past the old 8192 cap and free of
+    # ``<`` so the regex character class ``[^<]`` accepts every byte.
+    filler = ("abcdefghijklmnopqrstuvwxyz0123456789 " * 300)[:10_000]
+    assert len(filler) > 8192
+    assert "<" not in filler
+
+    tool_call = (
+        "<|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.echo_document:0"
+        "<|tool_call_argument_begin|>"
+        f'{{"content": "{filler}"}}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    tokens = _MinimalTokenizer()(tool_call)
+    # Feed in chunks rather than one call so a partial reject is
+    # localisable to the surrounding context (the old cap would refuse
+    # somewhere deep inside the filler, not at the boundary tags).
+    chunk = 64
+    consumed = 0
+    for start in range(0, len(tokens), chunk):
+        batch = tokens[start : start + chunk]
+        n = matcher.try_consume_tokens(batch)
+        if n != len(batch):
+            raise AssertionError(
+                f"matcher rejected token at offset {start + n} of "
+                f"{len(tokens)} (consumed {consumed + n} so far); "
+                f"context={tool_call[max(0, start + n - 20) : start + n + 20]!r}"
+            )
+        consumed += n
+
+    assert consumed == len(tokens)
+
+
 def test_parser_handles_json_content_when_no_tool_calls() -> None:
     """Test that parser returns content as-is when no tool call markers present."""
     parser = KimiToolParser()
