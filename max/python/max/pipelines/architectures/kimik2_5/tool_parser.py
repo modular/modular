@@ -54,6 +54,7 @@ TOOL_CALL_ARGUMENT_BEGIN = "<|tool_call_argument_begin|>"
 _MAX_TOOL_CALL_INDEX_DIGITS = 8  # up to 99_999_999 tool calls per turn
 _MAX_TOOL_CALL_ARGUMENT_CHARS = 8192  # ~2K tokens of arguments per call
 _MAX_TOOL_CALLS_PER_SECTION = 16
+_MAX_TOOL_CALL_SECTIONS = 8
 
 # Regex for one ``<|tool_call_begin|>...<|tool_call_end|>`` body. The
 # function id and arguments are captured; the call markers are anchored.
@@ -177,6 +178,13 @@ class KimiToolParser(StructuralTagToolParser):
         the ``_MAX_TOOL_CALL_*`` constants for the limits and rationale.
         Real argument validation still happens at parse time; the regex
         only enforces structural balance and bounded length.
+
+        The outer ``{1,_MAX_TOOL_CALL_SECTIONS}`` quantifier allows the
+        model to emit several back-to-back tool-call sections in a
+        single response (Kimi does this when it wants to think between
+        batches of calls). Without it, the matcher reaches a terminal
+        state after the first ``<|tool_calls_section_end|>`` and rejects
+        the next ``<|tool_calls_section_begin|>``.
         """
         if tool_names is not None:
             escaped_names = [re.escape(name) for name in tool_names]
@@ -186,7 +194,7 @@ class KimiToolParser(StructuralTagToolParser):
             # spinning model can't pad the identifier forever.
             func_name_pattern = r"[a-zA-Z0-9_-]{1,128}"
 
-        return (
+        single_section = (
             rf"{re.escape(TOOL_CALLS_SECTION_BEGIN)}"
             r"("
             rf"{re.escape(TOOL_CALL_BEGIN)}"
@@ -197,6 +205,7 @@ class KimiToolParser(StructuralTagToolParser):
             rf"){{1,{_MAX_TOOL_CALLS_PER_SECTION}}}"
             rf"{re.escape(TOOL_CALLS_SECTION_END)}"
         )
+        return rf"({single_section}){{1,{_MAX_TOOL_CALL_SECTIONS}}}"
 
     @staticmethod
     def generate_tool_call_grammar(

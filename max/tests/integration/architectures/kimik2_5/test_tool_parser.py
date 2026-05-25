@@ -804,6 +804,49 @@ def test_generate_tool_call_grammar_no_schema_returns_regex_grammar(
     assert matcher is not None
 
 
+def test_grammar_accepts_multiple_back_to_back_sections(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Matcher must accept a second ``<|tool_calls_section_begin|>`` after
+    the first section closes.
+
+    A single-section grammar leaves the matcher in a terminal state after
+    the first ``<|tool_calls_section_end|>`` and rejects any subsequent
+    ``<|tool_calls_section_begin|>``. The outer ``{1,N}`` quantifier on
+    the section pattern lets the model open a new section after closing
+    the previous one (e.g. when emitting a thinking region between
+    batches of tool calls).
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather")
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+
+    two_sections = (
+        "<|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.get_weather:0"
+        "<|tool_call_argument_begin|>"
+        '{"location": "NYC"}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+        "<|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.get_weather:1"
+        "<|tool_call_argument_begin|>"
+        '{"location": "SF"}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+    tokens = list(two_sections.encode("utf-8"))
+
+    consumed = matcher.try_consume_tokens(tokens)
+
+    assert consumed == len(tokens), (
+        f"matcher rejected token at offset {consumed} of {len(tokens)}; "
+        f"rejected near: {two_sections.encode('utf-8')[max(0, consumed - 20) : consumed + 20]!r}, "
+        f"matcher error: {matcher.get_error()}"
+    )
+
+
 def test_parser_handles_json_content_when_no_tool_calls() -> None:
     """Test that parser returns content as-is when no tool call markers present."""
     parser = KimiToolParser()
