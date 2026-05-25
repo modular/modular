@@ -1115,6 +1115,9 @@ def tanh[
         The result of the elementwise tanh operation.
     """
 
+    comptime if CurrentPlugin.tanh_fn[dtype, width]:
+        return comptime (CurrentPlugin.tanh_fn[dtype, width].value())(x)
+
     comptime if is_nvidia_gpu():
         comptime instruction = "tanh.approx.f32"
 
