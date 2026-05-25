@@ -371,13 +371,11 @@ static BodyT printGeneratorInterface(raw_ostream &os,
     return body;
   }
 
-  // FIXME: This is printing in MLIR style, not like Mojo source code.
-  ParameterEvaluator evaluator;
-  PassingKindPrinter passingKindPrinter(os, paramInfo);
-
   bool needComma = false;
+  PassingKind lastPassingKind = PassingKind::Implicit;
+  ParameterEvaluator evaluator;
   for (auto [i, type] : llvm::enumerate(inputParamTypes)) {
-    Type reboundType = evaluator.getReboundType(type);
+    ASTType reboundType = evaluator.getReboundType(type);
 
     StringRef name = paramInfo.getName(i).strref();
     if (!name.empty())
@@ -392,28 +390,53 @@ static BodyT printGeneratorInterface(raw_ostream &os,
         curPassingKind == PassingKind::Implicit)
       continue;
 
+    // Handle the param separator.
     if (needComma)
       os << ", ";
     else
       os << "[";
     needComma = true;
 
-    passingKindPrinter.printOptionalStarSlash(i);
+    // Print parameter group separators if needed.
+    if (lastPassingKind != PassingKind::Implicit) { // Not on first param.
+      if (lastPassingKind == PassingKind::PosOnly &&
+          curPassingKind != PassingKind::PosOnly) {
+        os << "/, ";
+        lastPassingKind = PassingKind::PosOrKw;
+      }
+      if (lastPassingKind == PassingKind::Inferred &&
+          curPassingKind != PassingKind::Inferred) {
+        os << "//, ";
+        lastPassingKind = PassingKind::PosOrKw;
+      }
+    }
+
+    // Handle variadics correctly.
+    if (paramInfo.isPosVarArg(i)) {
+      os << "*";
+      reboundType = reboundType.getParameterListInfo().elementType;
+    } else {
+      if (curPassingKind == PassingKind::KwOnly &&
+          (i == 0 || lastPassingKind != PassingKind::KwOnly))
+        os << "*, ";
+    }
 
     if (!name.empty())
       os << name << ": ";
-    ASTType(reboundType).print(os, diagShared);
+    reboundType.print(os, diagShared);
 
     if (TypedAttr defaultOr = paramInfo.getDefault(i)) {
       os << " = ";
       ASTType::printParam(os, defaultOr, diagShared);
     }
-
-    // If all the parameters are positional, print the trailing /.
-    if (curPassingKind == PassingKind::PosOnly &&
-        i == inputParamTypes.size() - 1)
-      os << ", /";
+    lastPassingKind = curPassingKind;
   };
+
+  // If all the parameters are positional, print the trailing /.
+  if (lastPassingKind == PassingKind::PosOnly)
+    os << ", /";
+  else if (lastPassingKind == PassingKind::Inferred)
+    os << ", //";
 
   if (needComma)
     os << ']';
@@ -1628,6 +1651,8 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       os << name.getValue() << ": ";
 
     if (fnType.isPack(idx)) {
+      if (name.empty())
+        os << ' '; // Don't print "def (**Ts)" when name is missing.
       os << '*';
       TypedAttr variadic = ASTType(fnType.getIfVariadicListOrPack(idx))
                                .getVariadicPackInfo()
