@@ -388,7 +388,8 @@ static BodyT printGeneratorInterface(raw_ostream &os,
     auto curPassingKind = paramInfo.getPassingKind(i);
 
     // Don't print this if it is an autoparam.
-    if (curPassingKind == PassingKind::Inferred && name.contains('.'))
+    if ((curPassingKind == PassingKind::Inferred && name.contains('.')) ||
+        curPassingKind == PassingKind::Implicit)
       continue;
 
     if (needComma)
@@ -413,7 +414,9 @@ static BodyT printGeneratorInterface(raw_ostream &os,
         i == inputParamTypes.size() - 1)
       os << ", /";
   };
-  os << ']';
+
+  if (needComma)
+    os << ']';
 
   // Replace all the *(0, 0) style parameters with names so they print nicely
   // by the client.

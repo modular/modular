@@ -52,7 +52,7 @@ def device_func(i: Int):
 
 
 def test_infer_variadic():
-    # expected-error @below {{converted from 'def device_func(i: Int) -> None' to 'def[?, args.origin._mlir_origin``2x: LITImmutOrigin, args.origin`2x1: ImmutOrigin](x: Int, y: Int, *args: *ArgTypes.values) -> None'}}
+    # expected-error @below {{converted from 'def device_func(i: Int) -> None' to 'def(x: Int, y: Int, *args: *ArgTypes.values) -> None'}}
     infer_variadic[device_func]()
 
 
@@ -87,7 +87,7 @@ def device_func(i: ZInt, j: ZInt):
 
 def test_infer_variadic():
     # expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
-    # expected-error @below {{converted from 'def device_func(i: ZInt, j: ZInt) -> None' to 'def[?, args.origin._mlir_origin``2x: LITImmutOrigin, args.origin`2x1: ImmutOrigin](*args: *ArgTypes.values) -> None'}}
+    # expected-error @below {{converted from 'def device_func(i: ZInt, j: ZInt) -> None' to 'def(*args: *ArgTypes.values) -> None'}}
     infer_variadic[device_func]()
 
 
@@ -149,15 +149,13 @@ def compile[
 
 
 def test_reject_generic_device_func_unusedT():
-    # TODO(MOCO-1828): Better error message.
-    # expected-error @below {{converted from 'def device_func_unusedT[T: AnyType](a: Int, b: Bool) -> Int' to 'def[?, args.origin._mlir_origin``2x: LITImmutOrigin, args.origin`2x1: ImmutOrigin](*args: *ArgTypes.values) -> Int'}}
+    # expected-error @below {{converted from 'def device_func_unusedT[T: AnyType](a: Int, b: Bool) -> Int' to 'def(*args: *ArgTypes.values) -> Int'}}
     var thing = compile[device_func_unusedT]()
 
 
 # Slightly different case, for no particular reason
 def test_reject_generic_device_func_usedT():
-    # TODO(MOCO-1828): Better error message.
-    # expected-error @below {{converted from 'def device_func_usedT[T: AnyType](a: T, b: Bool) -> Int' to 'def[?, args.origin._mlir_origin``2x: LITImmutOrigin, args.origin`2x1: ImmutOrigin](*args: *ArgTypes.values) -> Int'}}
+    # expected-error @below {{converted from 'def device_func_usedT[T: AnyType](a: T, b: Bool) -> Int' to 'def(*args: *ArgTypes.values) -> Int'}}
     var thing = compile[device_func_usedT]()
 
 
@@ -209,7 +207,7 @@ def compile[
 
 
 def main():
-    # expected-error @below {{converted from 'def device_func(a: Int, b: Bool) raises -> Int' to 'def[?, args.origin._mlir_origin``2x: LITImmutOrigin, args.origin`2x1: ImmutOrigin](*args: *ArgTypes.values) -> Int'}}
+    # expected-error @below {{converted from 'def device_func(a: Int, b: Bool) raises -> Int' to 'def(*args: *ArgTypes.values) -> Int'}}
     compile[device_func]()
 
 
