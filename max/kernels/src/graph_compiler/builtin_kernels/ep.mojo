@@ -22,11 +22,9 @@ from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextList
 from std.gpu.host.info import is_gpu
 from std.memory.unsafe_pointer import pointer_to_int
-from layout import Coord, TileTensor, Idx, coord_to_index_list
 from layout.tile_tensor import row_major
 from std.utils.index import IndexList
 
-from std.collections import InlineArray
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of, has_amd_gpu_accelerator
 from extensibility import (

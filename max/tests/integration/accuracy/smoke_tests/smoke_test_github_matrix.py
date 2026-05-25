@@ -96,7 +96,7 @@ HF_MODELS: dict[str, set[str]] = {
     "Qwen/Qwen3-8B": MULTI,
     "Qwen/Qwen3-VL-4B-Instruct": XL | {"vllm@B200"},  # MODELS-1020
     "Qwen/Qwen3-VL-4B-Instruct-FP8": XL | {"MI355", "2xMI355"},  # MI355: no FP8
-    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": DISABLE,  # MODELS-1442
+    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": XL | {"MI355", "2xMI355", "max-ci@B200", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
     "Qwen/Qwen3-VL-30B-A3B-Thinking": XL | {"max"},
     "Qwen/Qwen3.5-9B": MULTI | {"max", "max-ci@MI355"},
     "Qwen/Qwen3.6-27B": MULTI | {"max", "max-ci@MI355"},

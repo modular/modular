@@ -34,25 +34,20 @@ from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
 from max.pipelines.modeling.base.component_model import ComponentModel
-from max.pipelines.modeling.base.first_block_cache import FirstBlockCache
-from max.pipelines.modeling.base.taylorseer import (
-    TaylorSeer,
-    run_denoising_step,
-)
 from max.pipelines.modeling.types import PixelGenerationContext
 from tqdm import tqdm
 
+from .cache import DenoisingCacheConfig, DenoisingCacheState
+from .first_block_cache import FirstBlockCache
+from .taylorseer import TaylorSeer, run_denoising_step
+
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
-    from max.pipelines.modeling.base.cache_mixin import (
-        DenoisingCacheConfig,
-        DenoisingCacheState,
-    )
 
-logger = logging.getLogger("max.pipelines")
+_logger = logging.getLogger("max.pipelines")
 
-CompileTarget: TypeAlias = Callable[..., Any] | Module[..., Any]
-CompileDecorator: TypeAlias = Callable[[CompileTarget], "CompileWrapper"]
+_CompileTarget: TypeAlias = Callable[..., Any] | Module[..., Any]
+_CompileDecorator: TypeAlias = Callable[[_CompileTarget], "CompileWrapper"]
 
 
 @dataclass
@@ -124,8 +119,6 @@ class DiffusionPipeline(ABC):
         cache_config: DenoisingCacheConfig | None = None,
         **kwargs: Any,
     ) -> None:
-        from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
-
         self.cache_config: DenoisingCacheConfig = (
             cache_config or DenoisingCacheConfig()
         )
@@ -293,8 +286,6 @@ class DiffusionPipeline(ABC):
             text_seq_len: Text sequence length. Reserved for cache modes that
                 require text-aware allocations.
         """
-        from max.pipelines.modeling.base.cache_mixin import DenoisingCacheState
-
         for attr in (
             "num_attention_heads",
             "attention_head_dim",
@@ -411,7 +402,7 @@ class CompileWrapper:
 
     def __init__(
         self,
-        compile_target: CompileTarget,
+        compile_target: _CompileTarget,
         input_types: Iterable[TensorType] | None = None,
     ) -> None:
         """Initialize the CompileWrapper.
@@ -493,7 +484,7 @@ class CompileWrapper:
 
 @overload
 def max_compile(
-    compile_target: CompileTarget,
+    compile_target: _CompileTarget,
     input_types: Iterable[TensorType] | None = ...,
 ) -> CompileWrapper: ...
 
@@ -502,13 +493,13 @@ def max_compile(
 def max_compile(
     compile_target: None = ...,
     input_types: Iterable[TensorType] | None = ...,
-) -> CompileDecorator: ...
+) -> _CompileDecorator: ...
 
 
 def max_compile(
-    compile_target: CompileTarget | None = None,
+    compile_target: _CompileTarget | None = None,
     input_types: Iterable[TensorType] | None = None,
-) -> CompileDecorator | CompileWrapper:
+) -> _CompileDecorator | CompileWrapper:
     """Decorator or function to compile a target with specified input types.
 
     Args:
@@ -520,7 +511,7 @@ def max_compile(
     """
     if compile_target is None:
 
-        def decorator(f: CompileTarget) -> CompileWrapper:
+        def decorator(f: _CompileTarget) -> CompileWrapper:
             return CompileWrapper(f, input_types)
 
         return decorator

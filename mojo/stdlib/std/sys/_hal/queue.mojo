@@ -95,6 +95,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         args: UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin],
         arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
         num_args: UInt32,
+        shared_mem_bytes: UInt32 = 0,
     ) raises HALError:
         """
         Enqueue an execution of the passed function as a kernel on this queue.
@@ -103,7 +104,14 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         if backed by a stream.
         """
         self._raw[].execute_function(
-            self._handle, func, grid, block, args, arg_sizes, num_args
+            self._handle,
+            func,
+            grid,
+            block,
+            args,
+            arg_sizes,
+            num_args,
+            shared_mem_bytes=shared_mem_bytes,
         )
 
     def copy_to_device(

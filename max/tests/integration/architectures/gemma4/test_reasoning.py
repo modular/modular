@@ -231,33 +231,27 @@ def test_stream_not_currently_reasoning_stray_tool_call_token_ignored() -> None:
     assert delta.is_still_reasoning is False
 
 
-def test_is_prompt_in_reasoning_think_alone_does_not_seed_reasoning() -> None:
-    """``<|think|>`` lives in the system message and just enables thinking
-    globally — its mere presence does not mean the current assistant turn
-    is mid-reasoning. The model self-emits ``<|channel>`` at turn start.
-    """
+def test_will_reason_after_prompt_think_present() -> None:
+    """``<|think|>`` in the prompt means the model will start reasoning."""
     parser = _make_parser()
     prompt = [THINK_TOKEN_ID, 10, 20]
-    assert parser.is_prompt_in_reasoning(prompt) is False
+    assert parser.will_reason_after_prompt(prompt) is True
 
 
-def test_is_prompt_in_reasoning_no_markers_returns_false() -> None:
+def test_will_reason_after_prompt_no_markers_returns_false() -> None:
     parser = _make_parser()
     prompt = [10, 20, 30]
-    assert parser.is_prompt_in_reasoning(prompt) is False
+    assert parser.will_reason_after_prompt(prompt) is False
 
 
-def test_is_prompt_in_reasoning_empty_prompt_defaults_false() -> None:
+def test_will_reason_after_prompt_empty_prompt_defaults_false() -> None:
     parser = _make_parser()
-    assert parser.is_prompt_in_reasoning([]) is False
+    assert parser.will_reason_after_prompt([]) is False
 
 
-def test_is_prompt_in_reasoning_multi_turn_after_close_returns_false() -> None:
-    """Right-to-left scan: most recent delimiter is ``<channel|>`` (reasoning
-    closed in a prior turn), so the new turn is not mid-reasoning. Regression
-    coverage for the case where the old behavior returned True whenever
-    ``<|think|>`` appeared anywhere in the prompt.
-    """
+def test_will_reason_after_prompt_multi_turn_with_think() -> None:
+    """Even after a closed channel block, ``<|think|>`` means the model
+    will open a new thinking block on the next assistant turn."""
     parser = _make_parser()
     prompt = [
         THINK_TOKEN_ID,
@@ -266,29 +260,20 @@ def test_is_prompt_in_reasoning_multi_turn_after_close_returns_false() -> None:
         CHANNEL_END_TOKEN_ID,
         20,
     ]
-    assert parser.is_prompt_in_reasoning(prompt) is False
+    assert parser.will_reason_after_prompt(prompt) is True
 
 
-def test_is_prompt_in_reasoning_open_channel_returns_true() -> None:
-    """Most recent delimiter is ``<|channel>`` with no following close;
-    the prompt was cut mid-reasoning, so seed True."""
+def test_will_reason_after_prompt_no_think_token_returns_false() -> None:
+    """Without ``<|think|>`` in the prompt, model won't reason."""
     parser = _make_parser()
     prompt = [10, CHANNEL_START_TOKEN_ID, 20, 30]
-    assert parser.is_prompt_in_reasoning(prompt) is True
+    assert parser.will_reason_after_prompt(prompt) is False
 
 
-def test_is_prompt_in_reasoning_after_tool_call_returns_false() -> None:
-    """``<|tool_call>`` ends the reasoning span without consuming a closer;
-    the new turn after a tool call is not mid-reasoning."""
-    parser = _make_parser()
-    prompt = [CHANNEL_START_TOKEN_ID, 10, TOOL_CALL_START_TOKEN_ID, 20]
-    assert parser.is_prompt_in_reasoning(prompt) is False
-
-
-def test_is_prompt_in_reasoning_no_think_token_id_configured() -> None:
+def test_will_reason_after_prompt_no_think_token_id_configured() -> None:
     parser = _make_parser(think_token_id=None)
     prompt = [10, 20, 30]
-    assert parser.is_prompt_in_reasoning(prompt) is False
+    assert parser.will_reason_after_prompt(prompt) is False
 
 
 def test_format_reasoning_full_prefix_in_one_chunk() -> None:

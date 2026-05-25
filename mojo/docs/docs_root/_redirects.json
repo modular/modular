@@ -30,6 +30,11 @@
     "status": 301
   },
   {
+    "source": "https://www\\.mojolang\\.com/(.*)",
+    "dest": "https://mojolang.org/{0}",
+    "status": 301
+  },
+  {
     "source": "https://mojolang\\.com/(.*)",
     "dest": "https://mojolang.org/{0}",
     "status": 301

@@ -135,8 +135,6 @@ class FnEffects(enum.Enum):
 
     refresult = 32
 
-    register_passable = 128
-
     cabi = 512
 
 class InlineLevel(enum.Enum):

@@ -195,7 +195,7 @@ def _assemble_stream_tool_args(chunks: list[str]) -> dict[int, str]:
         if not cd:
             continue
         delta = _get_delta(cd)
-        for tc in delta.get("tool_calls", []):
+        for tc in delta.get("tool_calls") or []:
             idx = tc.get("index", 0)
             fn_args = (tc.get("function") or {}).get("arguments", "")
             args_by_index.setdefault(idx, "")
@@ -214,7 +214,7 @@ def _get_stream_tool_names(chunks: list[str]) -> list[str]:
         if not cd:
             continue
         delta = _get_delta(cd)
-        for tc in delta.get("tool_calls", []):
+        for tc in delta.get("tool_calls") or []:
             name = (tc.get("function") or {}).get("name")
             if name:
                 names.append(name)

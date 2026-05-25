@@ -355,6 +355,34 @@ struct RawDriver(Movable):
                 message=String(t"failed to free_sync: {err.message}"),
             )
 
+    def alloc_pinned(
+        self, context: ContextHandle, byte_size: UInt64
+    ) raises HALError -> MemoryHandle:
+        var mem = UnsafeMaybeUninit[MemoryHandle]()
+        var status = self._raw.memory_alloc_pinned.f(
+            context, byte_size, OutParam[MemoryHandle](to=mem)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to alloc_pinned: {err.message}"),
+            )
+        return mem.unsafe_assume_init_ref()
+
+    def free_pinned(
+        self,
+        context: ContextHandle,
+        mem: MemoryHandle,
+    ) raises HALError:
+        var status = self._raw.memory_free_pinned.f(context, mem)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to free_pinned: {err.message}"),
+            )
+
     def get_memory_property[
         name: StringLiteral, T: TrivialRegisterPassable
     ](self, mem: MemoryHandle) raises HALError -> T:
@@ -570,6 +598,7 @@ struct RawDriver(Movable):
         args: UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin],
         arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
         num_args: UInt32,
+        shared_mem_bytes: UInt32 = 0,
     ) raises HALError:
         var config = M_driver_queue_execute_config(
             mode=M_driver_queue_execute_mode.GPU,
@@ -577,7 +606,7 @@ struct RawDriver(Movable):
                 M_driver_queue_execute_config_gpu(
                     grid=M_driver_dim(x=grid[0], y=grid[1], z=grid[2]),
                     block=M_driver_dim(x=block[0], y=block[1], z=block[2]),
-                    shared_mem_bytes=UInt32(0),
+                    shared_mem_bytes=shared_mem_bytes,
                     attributes={},
                     num_attributes=UInt32(0),
                 )

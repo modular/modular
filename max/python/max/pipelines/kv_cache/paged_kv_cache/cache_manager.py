@@ -651,6 +651,8 @@ class PagedKVCacheManager:
             draft_resolved_metadata: list[Buffer] | None = (
                 draft_resolver.resolve_for_replica(
                     batch_size,
+                    # TODO(SERVOPT-1437): During draft 0, this must be patched
+                    # to the correct prefill width.
                     1,
                     absolute_max_cached_len,
                 )

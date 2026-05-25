@@ -16,3 +16,9 @@ from .scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
 )
 from .scheduling_unipc_multistep import UniPCMultistepScheduler
+
+__all__ = [
+    "FlowMatchEulerDiscreteScheduler",
+    "SchedulerFactory",
+    "UniPCMultistepScheduler",
+]

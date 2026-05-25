@@ -708,8 +708,12 @@ def mla_prefill_branch_fp8[
 
     comptime assert m_scale_granularity == 1, "m_scale_granularity should be 1"
     comptime assert (
-        n_scale_granularity == k_scale_granularity == 128
-    ), "n, k scale_granularity should be 128"
+        n_scale_granularity == k_scale_granularity
+        and n_scale_granularity in (64, 128)
+    ), (
+        "n_scale_granularity and k_scale_granularity must be equal and in"
+        " (64, 128)"
+    )
 
     # Return early if we have no tokens to process.
     if buffer_length == 0:
@@ -1477,9 +1481,7 @@ def convert_bf16_to_fp8_e4m3fn(
         DType.bfloat16, target=get_gpu_target()
     ]()
 
-    def convert_kernel_unified[
-        width: Int, alignment: Int = 1
-    ](idx: Coord) register_passable {}:
+    def convert_kernel_unified[width: Int, alignment: Int = 1](idx: Coord):
         convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     comptime if input_buffer.rank == 2:

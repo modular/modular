@@ -14,7 +14,7 @@
 from std.collections import Set
 from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
-from std.sys import get_defined_dtype, get_defined_int
+from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
 from std.benchmark import (
     Bench,
@@ -59,6 +59,8 @@ def _get_run_name[
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
+    cross_attention: Bool,
+    sink: Bool,
 ](
     batch_size: Int,
     seq_len: Int,
@@ -89,6 +91,10 @@ def _get_run_name[
         cache_len,
         ", use_random_cache_lengths=",
         use_random_cache_lengths,
+        ", cross_attention=",
+        cross_attention,
+        ", sink=",
+        sink,
     )
 
 
@@ -99,6 +105,8 @@ def execute_kv_cache_ragged_flash_attention[
     num_q_heads: Int,
     num_kv_heads: Int,
     page_size: Int,
+    cross_attention: Bool = False,
+    sink: Bool = False,
 ](
     ctx: DeviceContext,
     mut m: Bench,
@@ -311,6 +319,47 @@ def execute_kv_cache_ragged_flash_attention[
         row_major(batch_size + 1),
     )
 
+    # Phase-10 cross-attention path: an independent kv-side
+    # input_row_offsets. For the bench harness we set it equal to
+    # the Q-side so the dispatcher routes through the cross-attention
+    # launcher (`hk_mha_prefill_ragged[cross_attention=True]`) but
+    # `num_keys` derives identically; this measures the comptime-
+    # monomorphized path, not a true encoder-decoder shape.
+    var kv_input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[
+        DType.uint32
+    ](batch_size + 1)
+    comptime if cross_attention:
+        ctx.enqueue_copy(
+            kv_input_row_offsets_dev_buffer, input_row_offsets_host_ptr
+        )
+
+    var kv_input_row_offsets_view = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ](
+        kv_input_row_offsets_dev_buffer.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](batch_size + 1)
+        ),
+    )
+
+    # Phase-5b sink path: per-q-head sink weight buffer. Filled with
+    # a small fixed value so the seeded `(max_vec, norm_vec)` init
+    # state has a non-trivial sink contribution.
+    var sink_weights_dev_buffer = ctx.enqueue_create_buffer[dtype](num_q_heads)
+    comptime if sink:
+        var sw_host = List(length=num_q_heads, fill=Scalar[dtype](0.05))
+        ctx.enqueue_copy(sink_weights_dev_buffer, sw_host)
+        _ = sw_host^
+
+    var sink_weights_view = LayoutTensor[
+        dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ](
+        sink_weights_dev_buffer.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](num_q_heads)
+        ),
+    )
+
     if run_benchmark:
 
         @parameter
@@ -320,22 +369,68 @@ def execute_kv_cache_ragged_flash_attention[
             v_cache_device,
             output_device_tensor,
             input_row_offsets_tensor,
+            kv_input_row_offsets_view,
+            sink_weights_view,
         )
         @always_inline
         def bench_func(mut b: Bencher):
             @parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
-                flash_attention[ragged=True](
-                    output_device_tensor.to_layout_tensor().as_any_origin(),
-                    q_device_tensor.to_layout_tensor(),
-                    k_cache_device,
-                    v_cache_device,
-                    CausalMask(),
-                    input_row_offsets_tensor.to_layout_tensor(),
-                    rsqrt(Float32(head_dim)),
-                    ctx,
-                )
+                # Sink/cross_attention dispatch: passing
+                # `sink_weights=…` to `flash_attention[sink=True]`
+                # selects the dispatcher's `comptime if sink:`
+                # branch (HK Phase 5b). Passing
+                # `kv_input_row_offsets=…` selects the runtime
+                # `if kv_input_row_offsets:` branch (HK Phase 10).
+                comptime if sink and cross_attention:
+                    flash_attention[ragged=True, sink=True](
+                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        q_device_tensor.to_layout_tensor(),
+                        k_cache_device,
+                        v_cache_device,
+                        CausalMask(),
+                        input_row_offsets_tensor.to_layout_tensor(),
+                        rsqrt(Float32(head_dim)),
+                        ctx,
+                        kv_input_row_offsets=kv_input_row_offsets_view,
+                        sink_weights=sink_weights_view,
+                    )
+                elif sink:
+                    flash_attention[ragged=True, sink=True](
+                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        q_device_tensor.to_layout_tensor(),
+                        k_cache_device,
+                        v_cache_device,
+                        CausalMask(),
+                        input_row_offsets_tensor.to_layout_tensor(),
+                        rsqrt(Float32(head_dim)),
+                        ctx,
+                        sink_weights=sink_weights_view,
+                    )
+                elif cross_attention:
+                    flash_attention[ragged=True](
+                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        q_device_tensor.to_layout_tensor(),
+                        k_cache_device,
+                        v_cache_device,
+                        CausalMask(),
+                        input_row_offsets_tensor.to_layout_tensor(),
+                        rsqrt(Float32(head_dim)),
+                        ctx,
+                        kv_input_row_offsets=kv_input_row_offsets_view,
+                    )
+                else:
+                    flash_attention[ragged=True](
+                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        q_device_tensor.to_layout_tensor(),
+                        k_cache_device,
+                        v_cache_device,
+                        CausalMask(),
+                        input_row_offsets_tensor.to_layout_tensor(),
+                        rsqrt(Float32(head_dim)),
+                        ctx,
+                    )
 
             b.iter_custom[kernel_launch](ctx)
 
@@ -348,7 +443,14 @@ def execute_kv_cache_ragged_flash_attention[
         )
         m.bench_function[bench_func](
             BenchId(
-                _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
+                _get_run_name[
+                    dtype,
+                    num_q_heads,
+                    num_kv_heads,
+                    head_dim,
+                    cross_attention,
+                    sink,
+                ](
                     batch_size,
                     seq_len,
                     use_random_seq_lengths,
@@ -381,6 +483,8 @@ def execute_kv_cache_ragged_flash_attention[
     _ = output_dev_buffer^
     _ = paged_lut_dev_buffer^
     _ = kv_block_paged_dev_buffer^
+    _ = kv_input_row_offsets_dev_buffer^
+    _ = sink_weights_dev_buffer^
     _ = kv_block_paged_host_ptr^
     _ = paged_lut_host_ptr^
     _ = output_host_ptr^
@@ -396,6 +500,8 @@ def main() raises:
     comptime num_q_heads = get_defined_int["num_q_heads", 32]()
     comptime num_kv_heads = get_defined_int["num_kv_heads", 8]()
     comptime page_size = get_defined_int["page_size", 256]()
+    comptime cross_attention = get_defined_bool["cross_attention", False]()
+    comptime sink = get_defined_bool["sink", False]()
 
     var batch_size = arg_parse("batch_size", 1)
     var use_random_seq_lengths = arg_parse("use_random_seq_lengths", False)
@@ -416,6 +522,8 @@ def main() raises:
                 num_q_heads=num_q_heads,
                 num_kv_heads=num_kv_heads,
                 page_size=page_size,
+                cross_attention=cross_attention,
+                sink=sink,
             ](
                 ctx,
                 m,

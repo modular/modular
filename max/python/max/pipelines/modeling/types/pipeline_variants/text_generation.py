@@ -17,6 +17,7 @@ from __future__ import annotations
 
 __all__ = [
     "BatchType",
+    "GrammarEnforcementSnapshot",
     "ImageContentPart",
     "ImageMetadata",
     "MessageContent",
@@ -61,7 +62,6 @@ from max.pipelines.modeling.types.status import GenerationStatus
 from max.pipelines.modeling.types.tokens import TokenBuffer
 from max.pipelines.request import RequestID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from typing_extensions import NotRequired
 
 
 class TextGenerationRequestFunction(TypedDict):
@@ -87,23 +87,24 @@ class TextGenerationRequestTool(TypedDict):
     """The function definition associated with the tool, including its name, description, and parameters."""
 
 
-class TextGenerationResponseFormat(TypedDict):
+@dataclass
+class TextGenerationResponseFormat:
     """Represents the response format specification for a text generation request."""
 
     type: str
     """The type of response format, for example, ``json_object`` or ``grammar``."""
 
-    json_schema: dict[str, Any]
+    json_schema: dict[str, Any] = field(default_factory=dict)
     """A JSON schema dictionary that defines the structure and validation rules for the generated response."""
 
-    grammar: str | None
+    grammar: str | None = None
     """Grammar for constrained decoding.
 
     When set with ``type="grammar"``, this takes precedence over ``json_schema``.
     Used for model-specific constrained decoding formats like Kimi's tool call grammar.
     """
 
-    grammar_enforced: bool
+    grammar_enforced: bool = False
     """Whether to actively enforce grammar via bitmask.
 
     When True from the start, enforce grammar from the first token.
@@ -112,7 +113,7 @@ class TextGenerationResponseFormat(TypedDict):
     detected.
     """
 
-    tools_forced: bool
+    tools_forced: bool = False
     """Whether tool calling was forced (tool_choice=required or named function).
 
     Controls whether ``grammar_enforced`` is ``True`` from the first generated
@@ -120,17 +121,17 @@ class TextGenerationResponseFormat(TypedDict):
     gates user-supplied schemas; see ``requires_structured_output_flag``).
     """
 
-    requires_structured_output_flag: NotRequired[bool]
+    requires_structured_output_flag: bool = False
     """Whether this request requires ``--enable-structured-output`` to be set.
 
     True when the constraint includes a user-supplied JSON schema (from
-    ``response_format``). False (or absent) for pure tool-call grammars
-    derived from the model's tool parser, which work without the operator
-    flag because the grammar is server-controlled, not user-controlled.
-
-    Optional (defaults to False) so existing call sites that construct
-    ``TextGenerationResponseFormat`` directly don't need to be updated.
+    ``response_format``). False for pure tool-call grammars derived from
+    the model's tool parser, which work without the operator flag because
+    the grammar is server-controlled, not user-controlled.
     """
+
+    has_json_schema: bool = False
+    """Whether this request includes a JSON schema response format."""
 
 
 class _ContentPart(BaseModel):
@@ -580,6 +581,27 @@ class TextGenerationOutput:
         )
 
 
+@dataclass
+class GrammarEnforcementSnapshot:
+    """Captured grammar-enforcement state for rollback.
+
+    The speculative bitmask path walks the enforcement state through
+    draft tokens to compute downstream slot constraints and then
+    restores this snapshot so committed-token processing on the next
+    batch replays the same transitions from a clean state. Lives next
+    to :class:`TextGenerationContext` because the protocol exposes it
+    via :meth:`TextGenerationContext.snapshot_grammar_state` /
+    :meth:`TextGenerationContext.restore_grammar_state`; the concrete
+    implementation in ``max.pipelines.core.context`` constructs and
+    consumes instances.
+    """
+
+    in_thinking_region: bool
+    grammar_enforced: bool
+    tool_calling_match_buffer: list[int]
+    thinking_match_buffer: list[int]
+
+
 @runtime_checkable
 class TextGenerationContext(BaseContext, Protocol):
     """Protocol defining the interface for text generation contexts in token generation.
@@ -946,16 +968,32 @@ class TextGenerationContext(BaseContext, Protocol):
 
         Unlike ``advance_fsm``, this only updates the enforcement-state
         machine (e.g., detecting tool-call boundary tokens) without
-        advancing the underlying matcher. Used by the spec-decode async
-        callback path where the matcher is advanced separately via
-        ``try_consume_tokens`` for tolerance.
+        advancing the underlying matcher.
 
         Args:
             token: The newly committed token.
 
         Returns:
-            True if enforcement state changed.
+            True if the matcher should consume the token.
         """
+        ...
+
+    def snapshot_grammar_state(self) -> GrammarEnforcementSnapshot:
+        """Capture enforcement state for a speculative rollback.
+
+        The speculative bitmask path walks the enforcement state through
+        draft tokens to compute downstream slot constraints, then
+        unwinds so that committed-token processing on the next batch
+        replays the same transitions from a clean state. The returned
+        snapshot is opaque to callers; pass it to
+        ``restore_grammar_state``.
+        """
+        ...
+
+    def restore_grammar_state(
+        self, snapshot: GrammarEnforcementSnapshot
+    ) -> None:
+        """Restore state captured by ``snapshot_grammar_state``."""
         ...
 
 

@@ -115,7 +115,7 @@ trait PluginHooks:
         func: Some[
             def[
                 width: Int, rank: Int, alignment: Int = 1
-            ](IndexList[rank]) register_passable -> None
+            ](IndexList[rank]) -> None
         ],
         shape: IndexList[rank, ...],
         ctx: DeviceContext,
@@ -223,7 +223,7 @@ struct DefaultPlugin(PluginHooks):
         func: Some[
             def[
                 width: Int, rank: Int, alignment: Int = 1
-            ](IndexList[rank]) register_passable -> None
+            ](IndexList[rank]) -> None
         ],
         shape: IndexList[rank, ...],
         ctx: DeviceContext,

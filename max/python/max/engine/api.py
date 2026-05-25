@@ -24,15 +24,19 @@ from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
 from typing import Any, Literal, cast
+from unittest import mock
 
 import numpy as np
+from max._core.engine import CompiledModels as _CompiledModels
 from max._core.engine import DebugConfig as DebugConfig
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
+from max._core.engine import ModelMetadata as ModelMetadata
 from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
+from max._core.mlrt import AsyncValue as _AsyncValue
 from max._core.profiler import set_gpu_profiling_state
-from max.driver import CPU, Buffer, Device, DLPackArray
+from max.driver import CPU, Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.engine._compilation_stats import _record_phase
 from max.graph import Graph, Module
 from max.profiler import traced
@@ -384,7 +388,7 @@ class CompiledModel:
     initialization, so a single artifact can be initialized more than once.
     """
 
-    _handle: Model
+    _compiled: _AsyncValue[_CompiledModels]
     _expected_weights: dict[str, Any] | None
     # Top-level graph names captured from the source MLIR module when known.
     # Empty for path-compiled artifacts (no module to inspect). Used by the
@@ -394,12 +398,12 @@ class CompiledModel:
 
     def __init__(
         self,
-        handle: Model,
+        compiled: _AsyncValue[_CompiledModels],
         expected_weights: dict[str, Any] | None,
     ) -> None:
         # Internal constructor; users obtain instances from
         # :meth:`InferenceSession.compile`.
-        self._handle = handle
+        self._compiled = compiled
         self._expected_weights = expected_weights
         self._graph_names = ()
 
@@ -700,7 +704,7 @@ class InferenceSession:
                 raise RuntimeError("The model is not a valid path or module.")
 
         compiled = CompiledModel(
-            handle=handle, expected_weights=expected_weights
+            compiled=handle, expected_weights=expected_weights
         )
         if module is not None:
             compiled._graph_names = tuple(module.top_level_graph_names())
@@ -762,6 +766,12 @@ class InferenceSession:
             A mapping from each model's ``sym_name`` to its initialized
             :class:`Model`, ready to execute.
         """
+        if is_virtual_device_mode():
+            # Virtual device mode can't actually initialize the model, but users
+            # (eg. cross compilation, benchmarking) want it to not fail. Return
+            # a mock instead.
+            return mock.Mock(Model)
+
         weights_registry_real: Mapping[str, DLPackArray] = (
             weights_registry or {}
         )
@@ -799,28 +809,9 @@ class InferenceSession:
                     f"Weight '{weight_name}' is not contiguous: {str(e)}"
                 ) from e
 
-        # Check if we're using virtual devices (compile-only mode)
-        # Import here to avoid circular dependency issues
-        from max.driver import is_virtual_device_mode
-
-        if is_virtual_device_mode():
-            # In compile-only mode with virtual devices, skip initialization.
-            # Initialization requires device memory allocation which virtual
-            # devices don't support. Return one handle per top-level graph in
-            # the module (skipping subgraphs, which are inlined callees) so
-            # callers that key by graph name still work.
-            if not compiled._graph_names:
-                raise ValueError(
-                    "Cannot initialize a path-compiled artifact in "
-                    "virtual-device mode: graph names are unknown without "
-                    "an MLIR module to inspect. Initialize on a real device "
-                    "instead, or compile from a Graph/Module."
-                )
-            return {name: compiled._handle for name in compiled._graph_names}
-
         with _record_phase("init_seconds"):
             models = self._impl._load_all(
-                compiled._handle, weights_registry_real
+                compiled._compiled, weights_registry_real
             )
         result = {m.name: m for m in models}
         if len(result) != len(models):
@@ -834,7 +825,7 @@ class InferenceSession:
         self,
         module: Module,
         custom_extensions_final: list[CustomExtensionType],
-    ) -> Model:
+    ) -> _AsyncValue[_CompiledModels]:
         """Compile an MLIR Module under the session's compilation lock.
 
         Wraps any compilation failure in a RuntimeError pointing at the

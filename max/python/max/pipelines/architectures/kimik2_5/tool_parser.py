@@ -34,6 +34,7 @@ from typing import Any
 from llguidance import LLMatcher
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
+    names_from_tools,
     register,
 )
 from max.pipelines.modeling.types import ParsedToolCall
@@ -44,6 +45,15 @@ TOOL_CALLS_SECTION_END = "<|tool_calls_section_end|>"
 TOOL_CALL_BEGIN = "<|tool_call_begin|>"
 TOOL_CALL_END = "<|tool_call_end|>"
 TOOL_CALL_ARGUMENT_BEGIN = "<|tool_call_argument_begin|>"
+
+# Bounds on the constrained-decoding grammar quantifiers. Without these,
+# a model can spin emitting non-``<`` characters inside a tool call,
+# digits in the call index, or an unbounded number of back-to-back
+# calls, holding a GPU slot until ``max_tokens``. The limits below are
+# well above anything a sane tool call needs.
+_MAX_TOOL_CALL_INDEX_DIGITS = 8  # up to 99_999_999 tool calls per turn
+_MAX_TOOL_CALL_ARGUMENT_CHARS = 8192  # ~2K tokens of arguments per call
+_MAX_TOOL_CALLS_PER_SECTION = 16
 
 # Regex for one ``<|tool_call_begin|>...<|tool_call_end|>`` body. The
 # function id and arguments are captured; the call markers are anchored.
@@ -160,31 +170,39 @@ class KimiToolParser(StructuralTagToolParser):
 
     @staticmethod
     def _build_tool_call_regex(tool_names: list[str] | None = None) -> str:
-        """Builds the regex pattern for Kimi tool calls."""
+        """Builds the regex pattern for Kimi tool calls.
+
+        Each quantifier is bounded so a model cannot hold a GPU slot
+        until ``max_tokens`` by spinning inside any single field. See
+        the ``_MAX_TOOL_CALL_*`` constants for the limits and rationale.
+        Real argument validation still happens at parse time; the regex
+        only enforces structural balance and bounded length.
+        """
         if tool_names is not None:
             escaped_names = [re.escape(name) for name in tool_names]
             func_name_pattern = "(" + "|".join(escaped_names) + ")"
         else:
-            func_name_pattern = r"[a-zA-Z0-9_-]+"
+            # Fallback for the no-menu case: cap the name length so a
+            # spinning model can't pad the identifier forever.
+            func_name_pattern = r"[a-zA-Z0-9_-]{1,128}"
 
-        # Permissive JSON pattern: any sequence of non-'<' characters
-        # between braces. Real validation happens at parse time.
         return (
             rf"{re.escape(TOOL_CALLS_SECTION_BEGIN)}"
             r"("
             rf"{re.escape(TOOL_CALL_BEGIN)}"
-            rf"functions\.{func_name_pattern}:[0-9]+"
+            rf"functions\.{func_name_pattern}:[0-9]{{1,{_MAX_TOOL_CALL_INDEX_DIGITS}}}"
             rf"{re.escape(TOOL_CALL_ARGUMENT_BEGIN)}"
-            r"\{[^<]*\}"
+            rf"\{{[^<]{{0,{_MAX_TOOL_CALL_ARGUMENT_CHARS}}}\}}"
             rf"{re.escape(TOOL_CALL_END)}"
-            r")+"
+            rf"){{1,{_MAX_TOOL_CALLS_PER_SECTION}}}"
             rf"{re.escape(TOOL_CALLS_SECTION_END)}"
         )
 
     @staticmethod
     def generate_tool_call_grammar(
-        tool_names: list[str] | None = None,
         response_format_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
     ) -> str:
         """Generates a grammar for constrained decoding of Kimi tool calls.
 
@@ -192,6 +210,7 @@ class KimiToolParser(StructuralTagToolParser):
         Lark grammar that accepts either tool calls or JSON content
         matching the schema (the model's first tokens select the branch).
         """
+        tool_names = names_from_tools(tools)
         tool_call_regex = KimiToolParser._build_tool_call_regex(tool_names)
 
         if response_format_schema is None:

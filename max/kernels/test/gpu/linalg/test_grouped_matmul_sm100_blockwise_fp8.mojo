@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.sys import align_of, size_of
+from std.sys import align_of
 
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -66,10 +66,6 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         var M = num_tokens_by_expert[i]
         total_num_tokens += M
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, M)
-
-    assert (
-        total_num_tokens * size_of[scales_type]() % 16 == 0
-    ), "TMA expects total_num_tokens to be divisible by 16 bytes"
 
     print(
         "== test_grouped_sm100_blockwise_scaled_fp8_matmul",
@@ -308,6 +304,50 @@ def main() raises:
             expert_shape=Index(256, 256),
             use_epilogue=True,
         ](1, [128], [0], ctx)
+
+        # Single expert, last M-tile partial (100 mod 64 != 0).
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=1,
+            expert_shape=Index(256, 256),
+        ](1, [100], [0], ctx)
+
+        # Qwen3-VL-30B-A3B FP8 gate_up shape (N=1536, K=2048), two experts
+        # with per-expert M counts not aligned to ``16 / size_of(scales_type)``
+        # (here 4 for fp32 scales). Expert 1 starts at row 707, which makes
+        # the scales TMA's strided-coord byte offset 707*4=2828, not a
+        # multiple of 16. Before the per-tile alignment check, that faulted
+        # with CUDA_ERROR_ILLEGAL_INSTRUCTION in the full-TMA path.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=2,
+            expert_shape=Index(1536, 2048),
+        ](2, [707, 709], [0, 1], ctx)
+
+        # Misaligned per-expert offset against the production umma_shape
+        # (64, 128, 32) so the BN=128 dispatch hits the partial-tile A copy
+        # path. Expert 1 starts at row 5 → byte offset 5*4=20, not 16-aligned.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=2,
+            expert_shape=Index(256, 256),
+            umma_shape=Index(64, 128, 32),
+        ](2, [5, 11], [0, 1], ctx)
+
+        # total_m stride misalignment: total_num_tokens=7 with fp32 scales
+        # gives a K-row stride of 7*4=28, not a multiple of 16, so
+        # `create_tma_tile` would reject the descriptor. The host gate in
+        # `grouped_matmul_sm100_blockwise_scaled_fp8_persistent` detects this
+        # and routes to the naive kernel.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            num_experts=2,
+            expert_shape=Index(256, 256),
+        ](2, [3, 4], [0, 1], ctx)
 
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,

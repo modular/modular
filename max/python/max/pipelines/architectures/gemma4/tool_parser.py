@@ -12,55 +12,58 @@
 # ===----------------------------------------------------------------------=== #
 import json
 import re
-import uuid
-from typing import Any
+from typing import Any, ClassVar
 
-from max.pipelines.lib.tool_parsing import partial_tag_overlap, register
+from max.pipelines.lib.tool_parsing import (
+    StructuralTagToolParser,
+    canonicalize_lark_rule_name,
+    escape_for_lark_string,
+    generate_call_id,
+    get_token_id,
+    grammar_rule_for_json_type,
+    maybe_name_from_tool,
+    names_from_tools,
+    register,
+    resolve_lark_token_reference,
+)
 from max.pipelines.modeling.types import (
     ParsedToolCall,
-    ParsedToolCallDelta,
-    ParsedToolResponse,
+    PipelineTokenizer,
 )
 
-# Gemma4 special tokens for tool calls
-TOOL_CALL_START = "<|tool_call>"
-TOOL_CALL_END = "<tool_call|>"
-TOOL_START = "<|tool>"
-TOOL_END = "<tool|>"
-TOOL_RESPONSE_START = "<|tool_response>"
-TOOL_RESPONSE_END = "<tool_response|>"
-STRING_DELIM = '<|"|>'
+from .tokenizer import SpecialToken
 
 TOOL_CALL_PATTERN = re.compile(
-    r"<\|tool_call>call:([\w\-\.]+)\{(.*?)\}<tool_call\|>",
+    re.escape(SpecialToken.TOOL_CALL_START)
+    + r"call:([\w\-\.]+)\{(.*?)\}"
+    + re.escape(SpecialToken.TOOL_CALL_END),
     re.DOTALL,
 )
 
 
-def forced_tool_name(tool_choice: str | dict[str, Any]) -> str | None:
-    """Return the function name if *tool_choice* forces a specific tool."""
-    if not isinstance(tool_choice, dict):
-        return None
-    choice_type = tool_choice.get("type")
-    if choice_type != "function":
-        return None
-    function = tool_choice.get("function")
-    if not isinstance(function, dict):
-        return None
-    name = function.get("name")
-    if not name:
-        return None
-    return name
+def _tool_call_rule(
+    func_ref: str,
+    body: str,
+    tcs_ref: str = SpecialToken.TOOL_CALL_START.name,
+    tce_ref: str = SpecialToken.TOOL_CALL_END.name,
+) -> str:
+    """Build a Lark rule fragment for a single tool call alternative."""
+    return f'{tcs_ref} "call:" {func_ref} "{{" {body} "}}" {tce_ref}'
 
 
-def prompt_for_tool_choice(tool_choice: str | dict[str, Any]) -> str | None:
-    """Return the prompt prefix implied by *tool_choice*, or ``None``."""
-    if tool_choice == "required":
-        return TOOL_CALL_START
-    name = forced_tool_name(tool_choice)
-    if name:
-        return f"{TOOL_CALL_START}call:{name}" + "{"
-    return None
+def _extract_tool_schemas(
+    tools: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]] | None:
+    """Extract parameter schemas from an OpenAI-style tools list."""
+    schemas: dict[str, dict[str, Any]] = {}
+    for t in tools:
+        name = maybe_name_from_tool(t)
+        if not name:
+            continue
+        params = t.get("function", {}).get("parameters")
+        if params:
+            schemas[name] = params
+    return schemas or None
 
 
 def _parse_gemma4_value(value_str: str) -> object:
@@ -68,6 +71,9 @@ def _parse_gemma4_value(value_str: str) -> object:
     value_str = value_str.strip()
     if not value_str:
         return value_str
+
+    if value_str == "null":
+        return None
 
     # Boolean
     if value_str == "true":
@@ -77,7 +83,7 @@ def _parse_gemma4_value(value_str: str) -> object:
 
     # Number (int or float)
     try:
-        if "." in value_str:
+        if "." in value_str or "e" in value_str or "E" in value_str:
             return float(value_str)
         return int(value_str)
     except ValueError:
@@ -144,16 +150,16 @@ def _parse_gemma4_args(
             break
 
         # String value: <|"|>...<|"|>
-        if args_str[i:].startswith(STRING_DELIM):
-            i += len(STRING_DELIM)
+        if args_str[i:].startswith(SpecialToken.STRING_DELIM):
+            i += len(SpecialToken.STRING_DELIM)
             val_start = i
-            end_pos = args_str.find(STRING_DELIM, i)
+            end_pos = args_str.find(SpecialToken.STRING_DELIM, i)
             if end_pos == -1:
                 # Unterminated string — take rest
                 result[key] = args_str[val_start:]
                 break
             result[key] = args_str[val_start:end_pos]
-            i = end_pos + len(STRING_DELIM)
+            i = end_pos + len(SpecialToken.STRING_DELIM)
 
         # Nested object: {...}
         elif args_str[i] == "{":
@@ -161,14 +167,14 @@ def _parse_gemma4_args(
             obj_start = i + 1
             i += 1
             while i < n and depth > 0:
-                if args_str[i:].startswith(STRING_DELIM):
+                if args_str[i:].startswith(SpecialToken.STRING_DELIM):
                     # Skip over string contents to avoid counting { inside strings
-                    i += len(STRING_DELIM)
-                    next_delim = args_str.find(STRING_DELIM, i)
+                    i += len(SpecialToken.STRING_DELIM)
+                    next_delim = args_str.find(SpecialToken.STRING_DELIM, i)
                     i = (
                         n
                         if next_delim == -1
-                        else next_delim + len(STRING_DELIM)
+                        else next_delim + len(SpecialToken.STRING_DELIM)
                     )
                     continue
                 if args_str[i] == "{":
@@ -191,13 +197,13 @@ def _parse_gemma4_args(
             arr_start = i + 1
             i += 1
             while i < n and depth > 0:
-                if args_str[i:].startswith(STRING_DELIM):
-                    i += len(STRING_DELIM)
-                    next_delim = args_str.find(STRING_DELIM, i)
+                if args_str[i:].startswith(SpecialToken.STRING_DELIM):
+                    i += len(SpecialToken.STRING_DELIM)
+                    next_delim = args_str.find(SpecialToken.STRING_DELIM, i)
                     i = (
                         n
                         if next_delim == -1
-                        else next_delim + len(STRING_DELIM)
+                        else next_delim + len(SpecialToken.STRING_DELIM)
                     )
                     continue
                 if args_str[i] == "[":
@@ -239,14 +245,14 @@ def _parse_gemma4_array(arr_str: str, *, partial: bool = False) -> list[Any]:
             break
 
         # String element
-        if arr_str[i:].startswith(STRING_DELIM):
-            i += len(STRING_DELIM)
-            end_pos = arr_str.find(STRING_DELIM, i)
+        if arr_str[i:].startswith(SpecialToken.STRING_DELIM):
+            i += len(SpecialToken.STRING_DELIM)
+            end_pos = arr_str.find(SpecialToken.STRING_DELIM, i)
             if end_pos == -1:
                 items.append(arr_str[i:])
                 break
             items.append(arr_str[i:end_pos])
-            i = end_pos + len(STRING_DELIM)
+            i = end_pos + len(SpecialToken.STRING_DELIM)
 
         # Nested object
         elif arr_str[i] == "{":
@@ -254,10 +260,10 @@ def _parse_gemma4_array(arr_str: str, *, partial: bool = False) -> list[Any]:
             obj_start = i + 1
             i += 1
             while i < n and depth > 0:
-                if arr_str[i:].startswith(STRING_DELIM):
-                    i += len(STRING_DELIM)
-                    nd = arr_str.find(STRING_DELIM, i)
-                    i = nd + len(STRING_DELIM) if nd != -1 else n
+                if arr_str[i:].startswith(SpecialToken.STRING_DELIM):
+                    i += len(SpecialToken.STRING_DELIM)
+                    nd = arr_str.find(SpecialToken.STRING_DELIM, i)
+                    i = nd + len(SpecialToken.STRING_DELIM) if nd != -1 else n
                     continue
                 if arr_str[i] == "{":
                     depth += 1
@@ -301,167 +307,428 @@ def _parse_gemma4_array(arr_str: str, *, partial: bool = False) -> list[Any]:
     return items
 
 
-def _tool_call_id() -> str:
-    return str(uuid.uuid4()).replace("-", "")[:8]
+def _enum_value_rule(
+    rule_name: str,
+    enum_values: list[Any],
+    sd_ref: str,
+    rules_parts: list[str],
+) -> str:
+    """Generate a Lark rule matching only the given enum literals."""
+    alternatives: list[str] = []
+    for val in enum_values:
+        if isinstance(val, bool):
+            alternatives.append('"true"' if val else '"false"')
+        elif isinstance(val, str):
+            alternatives.append(
+                f'{sd_ref} "{escape_for_lark_string(val)}" {sd_ref}'
+            )
+        elif isinstance(val, int):
+            alternatives.append(f'"{val}"')
+        elif isinstance(val, float):
+            alternatives.append(f'"{val}"')
+        elif val is None:
+            alternatives.append('"null"')
+        elif isinstance(val, dict):
+            alternatives.append("object_val")
+        elif isinstance(val, list):
+            alternatives.append("array_val")
+    if not alternatives:
+        return "value"
+    rules_parts.append(f"{rule_name}: " + " | ".join(alternatives))
+    return rule_name
 
 
-# TODO(MODELS-1456): Implement generate_tool_call_grammar for Gemma 4 so
-# tool_choice can use grammar-based constrained decoding instead of prompt
-# prefilling.
+def _generate_ordered_args_rule(
+    prefix: str,
+    prop_rule_names: list[str],
+    required: set[str],
+    prop_names: list[str],
+    rules_parts: list[str],
+) -> str:
+    """Generate Lark suffix rules enforcing fixed property order.
+
+    Properties must appear in schema-definition order. Required properties
+    cannot be skipped; optional ones may be omitted. Duplicates are
+    impossible by construction since each property has exactly one slot.
+    """
+    n = len(prop_rule_names)
+    if n == 0:
+        return ""
+
+    is_req = [name in required for name in prop_names]
+
+    has_req_after = [False] * n
+    for i in range(n - 2, -1, -1):
+        has_req_after[i] = is_req[i + 1] or has_req_after[i + 1]
+
+    for i in range(n - 1, -1, -1):
+        sfx = f"{prefix}_sfx_{i}"
+        prop = prop_rule_names[i]
+
+        if i == n - 1:
+            rules_parts.append(f"{sfx}: {prop}")
+        else:
+            next_sfx = f"{prefix}_sfx_{i + 1}"
+            if has_req_after[i]:
+                if is_req[i]:
+                    rules_parts.append(f'{sfx}: {prop} "," {next_sfx}')
+                else:
+                    rules_parts.append(
+                        f'{sfx}: {prop} "," {next_sfx} | {next_sfx}'
+                    )
+            else:
+                if is_req[i]:
+                    rules_parts.append(f'{sfx}: {prop} ("," {next_sfx})?')
+                else:
+                    rules_parts.append(
+                        f'{sfx}: {prop} ("," {next_sfx})? | {next_sfx}'
+                    )
+
+    top_sfx = f"{prefix}_sfx_0"
+    if any(is_req):
+        return top_sfx
+    return f"{top_sfx}?"
+
+
 @register("gemma4")
-class Gemma4ToolParser:
-    def __init__(self) -> None:
-        self._buffer: str = ""
-        self._prefill: str = ""
-        # Walking cursor into ``_buffer``. Everything before this has either
-        # been emitted as content or consumed as a complete tool call.
-        self._sent_idx: int = 0
-        # Index of the next tool call we will emit. Gemma 4 emits each tool
-        # call atomically (all of id/name/arguments together) when its
-        # ``<tool_call|>`` close marker arrives.
-        self._next_call_index: int = 0
-        # Sticky flag: once we've seen ``<|tool_call>`` we stay in
-        # suppression mode (return ``[]`` rather than ``None``) so the
-        # streaming layer keeps raw bytes out of the content channel even
-        # between complete calls.
-        self._in_tool_section: bool = False
+class Gemma4ToolParser(StructuralTagToolParser):
+    """Gemma 4 tool parser using flat ``<|tool_call>`` … ``<tool_call|>`` pairs.
 
-    def apply_tool_choice(self, tool_choice: str | dict[str, Any]) -> None:
-        """Aligns the parser with any tokens the tokenizer injected for *tool_choice*."""
-        tool_choice_prompt = prompt_for_tool_choice(tool_choice)
-        if tool_choice_prompt is not None:
-            self._buffer = tool_choice_prompt
-            self._prefill = tool_choice_prompt
+    Uses the flat (no-section-wrapper) mode of :class:`StructuralTagToolParser`:
+    only ``CALL_BEGIN``/``CALL_END`` are set. Arguments are emitted atomically
+    (withheld until the close marker) because Gemma4's ``<|"|>`` string
+    delimiters make incremental JSON conversion non-monotonic.
+    """
 
-    def parse_complete(self, response: str) -> ParsedToolResponse:
-        """Parses a complete response into tool calls."""
+    CALL_BEGIN: ClassVar[str] = SpecialToken.TOOL_CALL_START
+    CALL_END: ClassVar[str] = SpecialToken.TOOL_CALL_END
+
+    # ----- StructuralTagToolParser hooks ----------------------------------
+
+    def _parse_complete_section(
+        self, tool_section: str
+    ) -> list[ParsedToolCall]:
         tool_calls: list[ParsedToolCall] = []
-
-        # Prepend any prefilled prompt tokens so the regex can match.
-        response = self._prefill + response
-
-        # Check if response contains tool calls section
-        if TOOL_CALL_START not in response:
-            # No tool calls in response
-            return ParsedToolResponse(content=response, tool_calls=[])
-
-        # Extract content before tool calls section (if any)
-        content_before: str | None = None
-        section_start_idx = response.find(TOOL_CALL_START)
-        if section_start_idx > 0:
-            content_before = response[:section_start_idx].strip() or None
-
-        # Parse individual tool calls
-        tool_call_tuples = TOOL_CALL_PATTERN.findall(response)
-        for func_name, args_str in tool_call_tuples:
+        for match in TOOL_CALL_PATTERN.finditer(tool_section):
+            func_name = match.group(1)
+            args_str = match.group(2)
             args_obj = _parse_gemma4_args(args_str)
-            arguments_json = json.dumps(args_obj, ensure_ascii=False)
-            tool_call = ParsedToolCall(
-                id=_tool_call_id(),
-                name=func_name,
-                arguments=arguments_json,
+            tool_calls.append(
+                ParsedToolCall(
+                    id=generate_call_id(),
+                    name=func_name,
+                    arguments=json.dumps(args_obj, ensure_ascii=False),
+                )
             )
-            tool_calls.append(tool_call)
+        return tool_calls
 
-        if not tool_calls:
-            raise ValueError(
-                f"Tool calls section found but no valid tool calls parsed from: {response}"
+    def _split_tool_call_body(
+        self, body: str, is_complete: bool
+    ) -> tuple[str | None, str | None]:
+        prefix = "call:"
+        if not body.startswith(prefix):
+            return (None, None)
+        brace_pos = body.find("{")
+        if brace_pos == -1:
+            return (None, None)
+        header = body[:brace_pos]
+        if is_complete and body.endswith("}"):
+            args = body[brace_pos + 1 : -1]
+        else:
+            args = body[brace_pos + 1 :]
+        return (header, args)
+
+    def _extract_tool_id_and_name(
+        self, header: str
+    ) -> tuple[str | None, str | None]:
+        prefix = "call:"
+        if not header.startswith(prefix):
+            return (None, None)
+        name = header[len(prefix) :].strip()
+        if not name:
+            return (None, None)
+        return generate_call_id(), name
+
+    def _format_args_for_streaming(
+        self, args_text: str, is_complete: bool
+    ) -> str:
+        if not is_complete:
+            return ""
+        try:
+            args_obj = _parse_gemma4_args(args_text)
+            return json.dumps(args_obj, ensure_ascii=False)
+        except Exception:
+            return "{}"
+
+    # ----- Constrained decoding grammar (Gemma4-specific) ---------------
+
+    @staticmethod
+    def _build_func_name_pattern(
+        tool_names: list[str] | None = None,
+    ) -> str:
+        """Return a Lark regex terminal for the function name."""
+        if tool_names is not None:
+            escaped = [re.escape(n) for n in tool_names]
+            return "(" + "|".join(escaped) + ")"
+        return r"[a-zA-Z0-9_\-\.]+"
+
+    @staticmethod
+    def _generate_property_value_rule(
+        prop_schema: dict[str, Any],
+        rule_prefix: str,
+        sd_ref: str,
+        rules_parts: list[str],
+        depth: int = 0,
+        max_depth: int = 5,
+    ) -> str:
+        """Return the Lark rule name for a property's value, recursing for objects/arrays."""
+        if depth > max_depth:
+            return "value"
+
+        enum_values = prop_schema.get("enum")
+        if enum_values is not None and len(enum_values) > 0:
+            return _enum_value_rule(
+                f"{rule_prefix}_enum", enum_values, sd_ref, rules_parts
             )
 
-        return ParsedToolResponse(content=content_before, tool_calls=tool_calls)
+        json_type = prop_schema.get("type", "")
 
-    def parse_delta(self, delta: str) -> list[ParsedToolCallDelta] | None:
-        """Parses incremental deltas for streaming tool calls.
-
-        Gemma 4 has no outer section wrapper — tool calls appear as
-        consecutive ``<|tool_call>...<tool_call|>`` blocks. Each complete
-        block is emitted as a single :class:`ParsedToolCallDelta` carrying
-        id/name/arguments; the streaming layer suppresses the raw wrapper
-        bytes via the empty-list signal until a closer arrives.
-        """
-        self._buffer += delta
-        deltas: list[ParsedToolCallDelta] = []
-
-        while self._sent_idx < len(self._buffer):
-            next_open = self._buffer.find(TOOL_CALL_START, self._sent_idx)
-
-            if next_open == -1:
-                # No (full) opener visible after the cursor. Emit pending
-                # content up to a potential partial opener at the tail so
-                # we never leak ``<|tool_call`` bytes as text.
-                tail = self._buffer[self._sent_idx :]
-                overlap = partial_tag_overlap(tail, TOOL_CALL_START)
-                sendable_end = len(self._buffer) - overlap
-                if sendable_end > self._sent_idx:
-                    content = self._buffer[self._sent_idx : sendable_end]
-                    if content:
-                        deltas.append(
-                            ParsedToolCallDelta(index=0, content=content)
-                        )
-                    self._sent_idx = sendable_end
-                break
-
-            # Emit any plain content sitting between the cursor and the
-            # next opener.
-            if next_open > self._sent_idx:
-                content = self._buffer[self._sent_idx : next_open]
-                if content:
-                    deltas.append(ParsedToolCallDelta(index=0, content=content))
-                self._sent_idx = next_open
-
-            self._in_tool_section = True
-
-            body_start = next_open + len(TOOL_CALL_START)
-            close = self._buffer.find(TOOL_CALL_END, body_start)
-            if close == -1:
-                # Tool call still streaming. Hold the cursor at the open
-                # marker so we don't leak partial body bytes, and let the
-                # caller suppress this chunk via the empty-list signal.
-                break
-
-            # Complete ``<|tool_call>BODY<tool_call|>`` block. Parse and
-            # emit it atomically; Gemma 4 doesn't benefit from argument
-            # diffing because its arg syntax (``<|"|>...<|"|>``) isn't
-            # token-incrementally parseable.
-            body = self._buffer[body_start:close]
-            match = re.match(
-                r"\s*call:([\w\-\.]+)\{(.*)\}\s*$", body, re.DOTALL
+        if isinstance(json_type, list):
+            alternatives = list(
+                dict.fromkeys(grammar_rule_for_json_type(t) for t in json_type)
             )
-            if match:
-                func_name = match.group(1)
-                args_str = match.group(2)
-                try:
-                    args_obj = _parse_gemma4_args(args_str)
-                    arguments_json = json.dumps(args_obj, ensure_ascii=False)
-                except Exception:
-                    # Fall back to the raw arg text rather than dropping
-                    # the call entirely — better to surface a malformed
-                    # tool call upstream than to silently drop it.
-                    arguments_json = "{}"
-                deltas.append(
-                    ParsedToolCallDelta(
-                        index=self._next_call_index,
-                        id=_tool_call_id(),
-                        name=func_name,
-                        arguments=arguments_json,
+            if len(alternatives) == 1:
+                return alternatives[0]
+            union_rule = f"{rule_prefix}_union"
+            rules_parts.append(f"{union_rule}: " + " | ".join(alternatives))
+            return union_rule
+
+        if json_type == "object" and prop_schema.get("properties"):
+            nested_props = prop_schema["properties"]
+            nested_required = set(prop_schema.get("required", []))
+            nested_prop_rules: list[str] = []
+            nested_prop_names: list[str] = []
+            for nested_name, nested_schema in nested_props.items():
+                nested_rule = (
+                    f"{rule_prefix}_{canonicalize_lark_rule_name(nested_name)}"
+                )
+                nested_val = Gemma4ToolParser._generate_property_value_rule(
+                    nested_schema,
+                    nested_rule,
+                    sd_ref,
+                    rules_parts,
+                    depth + 1,
+                )
+                rules_parts.append(
+                    f'{nested_rule}: "{escape_for_lark_string(nested_name)}" ":" {nested_val}'
+                )
+                nested_prop_rules.append(nested_rule)
+                nested_prop_names.append(nested_name)
+
+            obj_rule = f"{rule_prefix}_obj"
+            args_rule = _generate_ordered_args_rule(
+                rule_prefix,
+                nested_prop_rules,
+                nested_required,
+                nested_prop_names,
+                rules_parts,
+            )
+            rules_parts.append(f'{obj_rule}: "{{" {args_rule} "}}"')
+            return obj_rule
+
+        if json_type == "array" and prop_schema.get("items"):
+            items_val = Gemma4ToolParser._generate_property_value_rule(
+                prop_schema["items"],
+                f"{rule_prefix}_item",
+                sd_ref,
+                rules_parts,
+                depth + 1,
+            )
+            arr_rule = f"{rule_prefix}_arr"
+            rules_parts.append(
+                f'{arr_rule}: "[" ({items_val} ("," {items_val})*)? "]"'
+            )
+            return arr_rule
+
+        return grammar_rule_for_json_type(json_type)
+
+    @staticmethod
+    def _generate_schema_aware_rules(
+        tool_names: list[str],
+        tool_schemas: dict[str, dict[str, Any]],
+        tcs_ref: str = SpecialToken.TOOL_CALL_START.name,
+        tce_ref: str = SpecialToken.TOOL_CALL_END.name,
+        sd_ref: str = SpecialToken.STRING_DELIM.name,
+    ) -> tuple[str, str]:
+        """Generate per-tool argument rules based on parameter schemas."""
+        tool_call_alternatives: list[str] = []
+        rules_parts: list[str] = []
+
+        for name in set(tool_names):
+            safe = canonicalize_lark_rule_name(name)
+            schema = tool_schemas.get(name, {})
+            properties = schema.get("properties", {})
+
+            if not properties:
+                tool_call_alternatives.append(
+                    _tool_call_rule(
+                        f'"{escape_for_lark_string(name)}"',
+                        "args_body",
+                        tcs_ref,
+                        tce_ref,
                     )
                 )
-                self._next_call_index += 1
+                continue
 
-            self._sent_idx = close + len(TOOL_CALL_END)
+            required = set(schema.get("required", []))
+            prop_rule_names: list[str] = []
+            prop_names: list[str] = []
+            for prop_name, prop_schema in properties.items():
+                rule_name = (
+                    f"tc_{safe}_{canonicalize_lark_rule_name(prop_name)}"
+                )
+                value_rule = Gemma4ToolParser._generate_property_value_rule(
+                    prop_schema, rule_name, sd_ref, rules_parts
+                )
+                rules_parts.append(
+                    f'{rule_name}: "{escape_for_lark_string(prop_name)}" ":" {value_rule}'
+                )
+                prop_rule_names.append(rule_name)
+                prop_names.append(prop_name)
 
-        if deltas:
-            return deltas
-        # Inside a tool call section but nothing emittable yet — suppress
-        # the raw chunk via the empty-list signal so wrapper bytes don't
-        # show up in the assistant content.
-        if self._in_tool_section:
-            return []
-        return None
+            args_rule = _generate_ordered_args_rule(
+                f"tc_{safe}",
+                prop_rule_names,
+                required,
+                prop_names,
+                rules_parts,
+            )
+            tool_call_alternatives.append(
+                _tool_call_rule(
+                    f'"{escape_for_lark_string(name)}"',
+                    args_rule,
+                    tcs_ref,
+                    tce_ref,
+                )
+            )
 
-    def reset(self) -> None:
-        """Resets internal state for a new streaming session."""
-        self._buffer = self._prefill
-        self._sent_idx = 0
-        self._next_call_index = 0
-        self._in_tool_section = False
+        tool_call_rule = "tool_call: " + " | ".join(tool_call_alternatives)
+        extra_rules = "\n".join(rules_parts)
+        return tool_call_rule, extra_rules
+
+    @staticmethod
+    def _get_special_token_ids(
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+    ) -> dict[str, int] | None:
+        """Resolve Gemma4 special token IDs from the tokenizer."""
+        result: dict[str, int] = {}
+        for token in SpecialToken:
+            tid = get_token_id(tokenizer, token.value)
+            if tid is not None:
+                result[token.name] = tid
+        return result if result else None
+
+    @staticmethod
+    def generate_tool_call_grammar(
+        response_format_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Generates a Lark grammar for constrained decoding of Gemma4 tool calls."""
+        tool_names = names_from_tools(tools)
+
+        special_token_ids = (
+            Gemma4ToolParser._get_special_token_ids(tokenizer)
+            if tokenizer is not None
+            else None
+        )
+        if not special_token_ids:
+            raise ValueError(
+                "tokenizer is required for grammar generation; "
+                "it must resolve Gemma4 special token IDs"
+            )
+        tool_schemas = _extract_tool_schemas(tools) if tools else None
+
+        sd_ref = resolve_lark_token_reference(
+            special_token_ids[SpecialToken.STRING_DELIM.name]
+        )
+        tcs_ref = resolve_lark_token_reference(
+            special_token_ids[SpecialToken.TOOL_CALL_START.name]
+        )
+        tce_ref = resolve_lark_token_reference(
+            special_token_ids[SpecialToken.TOOL_CALL_END.name]
+        )
+        te_ref = resolve_lark_token_reference(
+            special_token_ids[SpecialToken.TURN_END.name]
+        )
+        trs_ref = resolve_lark_token_reference(
+            special_token_ids[SpecialToken.TOOL_RESPONSE_START.name]
+        )
+
+        use_schema_aware = (
+            tool_schemas is not None
+            and tool_names is not None
+            and any(
+                tool_schemas.get(n, {}).get("properties") for n in tool_names
+            )
+        )
+
+        if use_schema_aware:
+            assert tool_names is not None
+            assert tool_schemas is not None
+            tool_call_rule, schema_rules = (
+                Gemma4ToolParser._generate_schema_aware_rules(
+                    tool_names, tool_schemas, tcs_ref, tce_ref, sd_ref
+                )
+            )
+            func_name_terminal = ""
+        else:
+            func_name_pattern = Gemma4ToolParser._build_func_name_pattern(
+                tool_names
+            )
+            tool_call_rule = "tool_call: " + _tool_call_rule(
+                "FUNC_NAME", "args_body", tcs_ref, tce_ref
+            )
+            schema_rules = ""
+            func_name_terminal = f"FUNC_NAME: /{func_name_pattern}/"
+
+        rules = [
+            f"tool_calls: tool_call+ ({te_ref} | {trs_ref})",
+            tool_call_rule,
+            schema_rules,
+            'args_body: (arg ("," arg)*)?',
+            'arg: KEY ":" value',
+            "value: string_val | number_val | bool_val | object_val | array_val | null_val",
+            f"string_val: {sd_ref} STRING_CONTENT {sd_ref}",
+            "number_val: NUMBER",
+            "integer_val: INTEGER",
+            "bool_val: BOOL",
+            'null_val: "null"',
+            'object_val: "{" args_body "}"',
+            'array_val: "[" (value ("," value)*)? "]"',
+        ]
+        terminals = [
+            r"STRING_CONTENT: /[\s\S]*/",
+            func_name_terminal,
+            r"KEY: /[a-zA-Z_][-a-zA-Z0-9_.]*/",
+            r"NUMBER: /\-?[0-9]+(\.[0-9]+)?([eE][\+\-]?[0-9]+)?/",
+            r"INTEGER: /\-?[0-9]+([eE][\+\-]?[0-9]+)?/",
+            'BOOL: "true" | "false"',
+        ]
+        rule_lines = "\n".join(line for line in rules if line)
+        terminal_lines = "\n".join(line for line in terminals if line)
+        tool_grammar = f"\n{rule_lines}\n\n{terminal_lines}\n"
+
+        if response_format_schema is None:
+            return f"\nstart: tool_calls\n{tool_grammar}"
+
+        schema_with_opts = {
+            **response_format_schema,
+            "x-guidance": {"whitespace_pattern": ""},
+        }
+        schema_json = json.dumps(schema_with_opts, separators=(",", ":"))
+        return (
+            f"\nstart: tool_calls | json_response\n"
+            f"json_response: %json {schema_json}\n{tool_grammar}"
+        )

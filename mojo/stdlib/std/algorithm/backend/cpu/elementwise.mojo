@@ -35,7 +35,7 @@ def _elementwise_impl_cpu[
     simd_width: Int,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) register_passable -> None,
+    ) -> None,
     *,
     trace_description: StaticString = "",
 ](
@@ -70,7 +70,7 @@ def _elementwise_impl_cpu_1d[
     simd_width: Int,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) register_passable -> None,
+    ) -> None,
 ](
     func: FuncType,
     shape: IndexList[rank, ...],
@@ -125,7 +125,7 @@ def _elementwise_impl_cpu_nd[
     simd_width: Int,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) register_passable -> None,
+    ) -> None,
 ](
     func: FuncType,
     shape: IndexList[rank, ...],

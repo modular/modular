@@ -680,10 +680,10 @@ class UniPCMultistepScheduler:
     def build_step_coefficients(self) -> npt.NDArray[np.float32]:
         """Pre-compute all UniPC step coefficients as a dense numpy array.
 
-        Returns array of shape ``[num_steps, 9]`` with columns:
-        ``[sigma, corrected_input_scale,
-          corrector_sample_scale, corrector_m0_scale, corrector_m1_scale, corrector_mt_scale,
-          predictor_sample_scale, predictor_m0_scale, predictor_m1_scale]``
+        Returns array of shape ``[num_steps, 9]`` with columns
+        ``[sigma, corrected_input_scale, corrector_sample_scale,
+        corrector_m0_scale, corrector_m1_scale, corrector_mt_scale,
+        predictor_sample_scale, predictor_m0_scale, predictor_m1_scale]``.
 
         Must be called AFTER ``set_timesteps()``.
         """

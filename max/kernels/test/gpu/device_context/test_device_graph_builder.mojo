@@ -83,7 +83,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
 
 
 def test_closure_node(ctx: DeviceContext) raises:
-    print("Test using a register_passable closure as a device graph node.")
+    print("Test using a closure as a device graph node.")
     comptime length = 1024
     comptime block_dim = 256
     var scale = Float32(2.0)
@@ -102,9 +102,7 @@ def test_closure_node(ctx: DeviceContext) raises:
     var in1_ptr = in1_dev.unsafe_ptr()
 
     # Closure captures device pointers and scale from enclosing scope.
-    def scaled_vec_add() register_passable {
-        var scale, var out_ptr, var in0_ptr, var in1_ptr
-    }:
+    def scaled_vec_add() {var scale, var out_ptr, var in0_ptr, var in1_ptr}:
         var tid = global_idx.x
         if tid >= length:
             return

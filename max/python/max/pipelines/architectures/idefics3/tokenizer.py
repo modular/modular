@@ -263,8 +263,8 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             ]
 
         json_schema = (
-            json.dumps(request.response_format.get("json_schema", None))
-            if request.response_format
+            json.dumps(request.response_format.json_schema)
+            if request.response_format and request.response_format.json_schema
             else None
         )
 

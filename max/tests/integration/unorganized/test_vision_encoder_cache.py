@@ -30,6 +30,7 @@ from max.pipelines.modeling.types.context import (
 )
 from max.pipelines.modeling.types.eos_tracking import EOSTracker
 from max.pipelines.modeling.types.pipeline_variants.text_generation import (
+    GrammarEnforcementSnapshot,
     ImageMetadata,
     LogProbabilities,
     SpecDecodingState,
@@ -208,6 +209,19 @@ class FakeContext:
 
     def update_enforcement_state(self, token: int) -> bool:
         return False
+
+    def snapshot_grammar_state(self) -> GrammarEnforcementSnapshot:
+        return GrammarEnforcementSnapshot(
+            in_thinking_region=False,
+            grammar_enforced=False,
+            tool_calling_match_buffer=[],
+            thinking_match_buffer=[],
+        )
+
+    def restore_grammar_state(
+        self, snapshot: GrammarEnforcementSnapshot
+    ) -> None:
+        pass
 
     @property
     def sampling_params(self) -> SamplingParams:

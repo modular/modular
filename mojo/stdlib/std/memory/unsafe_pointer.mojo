@@ -36,7 +36,7 @@ from std.builtin.simd import _simd_construction_checks
 from std.collections import OptionalReg
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.reflection import reflect
-from std.memory import memcpy
+from std.memory import is_trivially_movable, memcpy
 from std.memory.memory import _free, _malloc
 from std.memory import UnsafeMaybeUninit
 from std.memory._poison import _check_not_poison, _check_not_poison_masked
@@ -1134,7 +1134,7 @@ struct UnsafePointer[
               of `T`.
         """
 
-        comptime if U.__move_ctor_is_trivial:
+        comptime if is_trivially_movable[U]():
             # If `moveinit` is trivial, we can avoid the branch introduced from
             # checking if the pointers are equal by using temporary stack
             # values.

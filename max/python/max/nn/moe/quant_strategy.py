@@ -66,7 +66,6 @@ class QuantStrategy(Protocol):
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
@@ -143,7 +142,6 @@ class Fp8Strategy:
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
@@ -162,7 +160,6 @@ class Fp8Strategy:
             usage_stats.to(DeviceRef.CPU()),
             self.config.input_scale,
             self.config.weight_scale,
-            tokens_padded_per_expert=tokens_padded_per_expert,
         )
 
     def prepare_weight_scales(
@@ -233,7 +230,6 @@ class Nvfp4Strategy:
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
@@ -375,11 +371,26 @@ class Nvfp4Strategy:
 
 
 class Mxfp4Strategy:
-    """MXFP4 quantization for MoE."""
+    """MXFP4 quantization for MoE.
 
-    def __init__(self, config: QuantConfig, dtype: DType):
+    When `preshuffled_b=True`, the MOGG MXFP4 grouped-matmul op dispatches
+    to the preshuffled-B kernel variant (`mxfp4_grouped_matmul_amd_preb`),
+    which expects B in the 5D layout from `Shuffler.preshuffle_b_5d`. The
+    caller is responsible for applying that preshuffle at weight load
+    time (e.g. Kimi K2.5's `weight_adapters.py:_batch_preshuffle_experts`).
+    Models without a preshuffle weight adapter must leave
+    `preshuffled_b=False` so the dense row-major kernel is used.
+    """
+
+    def __init__(
+        self,
+        config: QuantConfig,
+        dtype: DType,
+        preshuffled_b: bool = False,
+    ):
         self.config = config
         self.dtype = dtype
+        self.preshuffled_b = preshuffled_b
 
     def quantize(
         self,
@@ -410,7 +421,6 @@ class Mxfp4Strategy:
         weight: TensorValue,
         weight_scales: TensorValue,
         expert_scales: TensorValue | None = None,
-        tokens_padded_per_expert: bool = False,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
@@ -432,6 +442,7 @@ class Mxfp4Strategy:
             expert_ids,
             usage_stats.to(DeviceRef.CPU()),
             estimated_total_m=estimated_total_m,
+            preshuffled_b=self.preshuffled_b,
         )
 
     def prepare_weight_scales(

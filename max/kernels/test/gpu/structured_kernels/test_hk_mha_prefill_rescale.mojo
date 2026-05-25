@@ -189,11 +189,24 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
     # the rescale-mid-PV at the OLD max scale = V[KV/4..KV-1].
     # Tiles 1..NUM_TILES-1 add at the new max scale = V[KV..NUM_TILES*KV-1].
     #
-    # Denominator (norm_vec): the epilogue's UNCONDITIONAL `mul(norm_vec,
-    # norm_vec, scale_vec)` at every tail step zeroes the accumulated
-    # tiles-1..(N-5) norm against the stale post-rescale `scale_vec`.
-    # Only the final 4 tiles (N-4..N-1) contribute — denominator =
-    # 4 * KV_BLOCK.
+    # Denominator (norm_vec): after the iter j=3 C2 lazy rescale fires
+    # (tile 1's max jumps from 128 → 256), `scale_vec` is reset to 1
+    # by `_pv_strip_with_partial_softmax`'s else-branch on every
+    # subsequent no-growth iter. The epilogue's unconditional
+    # `norm_vec *= scale_vec` then becomes identity, so tiles 1..N-1
+    # all contribute their full `sum(P)=KV_BLOCK` to the denominator
+    # — total denominator = (NUM_TILES - 1) * KV_BLOCK. Tile 0's
+    # contribution was correctly zeroed by C4's `norm_vec *= 0` when
+    # the rescale fired (pending_scale=True).
+    #
+    # NOTE: prior to the `scale_vec=1` reset in
+    # `_pv_strip_with_partial_softmax`'s else-branch (PR #86745), the
+    # stale tiny `scale_vec` from iter j=3 was re-applied at every
+    # epilogue tail cluster, flushing the accumulated norm down to
+    # only the final 4 tiles' worth — denominator was effectively
+    # `4 * KV_BLOCK`. That was a latent correctness bug that this
+    # test calibrated against; the corrected denominator below is the
+    # mathematically faithful one.
     var sum_strips_1_3: Float32 = 0
     for r in range(KV_BLOCK // 4, KV_BLOCK):
         sum_strips_1_3 += Float32(r) / Float32(32)
@@ -201,7 +214,7 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
     for r in range(KV_BLOCK, NUM_TILES * KV_BLOCK):
         sum_tiles_1_n += Float32(r) / Float32(32)
     var expected: Float32 = (sum_strips_1_3 + sum_tiles_1_n) / Float32(
-        4 * KV_BLOCK
+        (NUM_TILES - 1) * KV_BLOCK
     )
     print("  expected per-lane (HK approx) =", expected)
 

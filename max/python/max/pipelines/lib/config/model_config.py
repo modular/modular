@@ -28,12 +28,12 @@ from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.nn.kv_cache.cache_params import KVConnectorType
+from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.device_specs import (
     _default_device_specs,
     coerce_device_specs_input,
 )
 from max.pipelines.lib.memory_estimation import to_human_readable_bytes
-from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.modeling.config_enums import (
     RopeType,
     SupportedEncoding,
@@ -62,7 +62,6 @@ from transformers import PretrainedConfig
 from transformers.generation import GenerationConfig
 
 logger = logging.getLogger("max.pipelines")
-
 
 # Encodings that can be casted to/from each other.
 # We currently only support float32 <-> bfloat16 weight type casting.
@@ -866,13 +865,11 @@ class MAXModelConfig(MAXModelConfigBase):
                 model repo/subfolder.
         """
         # Note: For multiprocessing, __getstate__ clears _huggingface_config
-        # before pickling. Each worker process will reload the config fresh,
-        # which properly handles trust_remote_code dynamic class loading.
+        # before pickling. Each worker process reloads fresh, which correctly
+        # handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
-            self._huggingface_config = (
-                PIPELINE_REGISTRY.get_active_huggingface_config(
-                    huggingface_repo=self.huggingface_model_repo,
-                )
+            self._huggingface_config = load_huggingface_config(
+                self.huggingface_model_repo
             )
         return self._huggingface_config
 

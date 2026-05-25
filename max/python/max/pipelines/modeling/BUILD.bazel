@@ -7,7 +7,13 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     # TODO: pydeps test crashes because modeling/types/ shadows stdlib `types`
     # module when pydeps adds the library source dir to sys.path.
-    tags = ["no-pydeps"],
+    # diffusion depends on modeling at runtime, so modeling cannot depend on
+    # diffusion — TYPE_CHECKING import of DenoisingCacheConfig in
+    # component_model.py cannot be resolved by mypy in isolation.
+    tags = [
+        "no-mypy",
+        "no-pydeps",
+    ],
     deps = [
         "//max/python/max:_core",
         "//max/python/max/config",

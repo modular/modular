@@ -87,7 +87,12 @@ from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
 from .amd_rdna.mha_prefill import AttentionRDNA
 from .amd_structured.attention import Attention
-from .amd_structured.hk_mha_prefill import HKMhaConfig, hk_mha_prefill
+from .amd_structured.hk_mha_prefill import (
+    HKMhaConfig,
+    HKMhaPrefill,
+    hk_mha_prefill,
+    hk_mha_prefill_ragged,
+)
 from .amd_structured.mha_decode import Attention
 from .amd_structured.mha_decode_streaming import Attention
 from .amd_structured.mha_prefill import Attention
@@ -692,34 +697,43 @@ def flash_attention_dispatch[
                         )
 
             else:
-                # Long-context AMD CDNA prefill gate. Routes BF16 causal
+                # Long-context AMD CDNA prefill gate. Routes BF16
                 # prefill to the 8-warp structured kernel in
                 # `amd_structured/hk_mha_prefill.mojo`; otherwise falls
                 # through to the FA2 launch below. Gate (all comptime
                 # except the seq-length / page-size run-time checks):
                 # - BF16 throughout;
                 # - depth in (64, 128) (MFMA shape `32x32x16_bf16`);
-                # - causal mask, no attention sink, no ragged batch;
+                # - any `MHAMask` (HK handles Causal natively + the
+                #   generic `_maybe_apply_mask` path covers
+                #   SlidingWindow / Chunked / Null / etc.);
+                # - no attention sink;
                 # - AMD CDNA (not RDNA, not Nvidia);
                 # - K/V operand is either contiguous (`page_size == 0`)
                 #   or paged with `page_size >= KV_BLOCK = 64`;
-                # - max_prompt_len >= 4096 and a multiple of
-                #   BM = NUM_WARPS * Q_BLOCK_SIZE = 256 (no partial-Q
-                #   tile path in this kernel).
+                # - max_prompt_len >= 4096 (perf gate).
+                # The `scale_vec=1` reset in
+                # `_pv_strip_with_partial_softmax`'s else-branch ensures
+                # non-causal masks don't blow up `norm_vec` in the
+                # epilogue (see comment there).
                 comptime _hk_eligible = (
                     config.dtype == DType.bfloat16
                     and output.dtype == DType.bfloat16
                     and (config.depth == 64 or config.depth == 128)
-                    and _type_is_eq[mask_t, CausalMask]()
-                    and not sink
-                    and not ragged
                     and has_amd_gpu_accelerator()
                     and not _is_amd_rdna()
                     and (k_t.page_size == 0 or k_t.page_size >= 64)
                 )
 
                 comptime if _hk_eligible:
-                    if max_prompt_len >= 4096 and max_prompt_len % 256 == 0:
+                    # Long-context perf threshold. Below this HK doesn't
+                    # fill the GPU at BM=256 and FA2 (BM=128) wins.
+                    # Partial-Q-tile masking inside HK now handles
+                    # `seq_len % 256 != 0` correctly, so the alignment
+                    # guard is gone; per-block early-return + writeback
+                    # skip together handle mixed-length multi-sequence
+                    # ragged.
+                    if max_prompt_len >= 4096:
                         comptime hk_config = HKMhaConfig(
                             q_block_size=32,
                             kv_block=64,
@@ -729,29 +743,157 @@ def flash_attention_dispatch[
                             num_warps=8,
                             output_dtype=DType.bfloat16,
                         )
-                        var q_tt = lt_to_tt(q)
-                        var o_tt = lt_to_tt(output)
-                        # `mask_functor` is the dispatcher's
-                        # `mask_t` instance (the gate filtered to
-                        # `CausalMask` for now; future phases will
-                        # widen to sliding/chunked causal).
-                        # `start_pos = max_cache_valid_length -
-                        # max_prompt_len` is the number of pre-existing
-                        # KV entries before this prefill batch's tokens
-                        # — zero for fresh prefill, positive for cache
-                        # reuse.
-                        hk_mha_prefill[hk_config](
-                            q_tt,
-                            k,
-                            v,
-                            o_tt,
-                            mask_functor,
-                            scale,
-                            max_cache_valid_length,
-                            max_cache_valid_length - max_prompt_len,
-                            ctx,
-                        )
-                        return
+                        comptime if ragged:
+                            # Ragged batch: per-sequence setup happens
+                            # inside the dedicated ragged-HK kernel so
+                            # HK keeps its tuned single-kernel
+                            # register-allocation context. Avoids the
+                            # ~14% perf hit observed when HK is inlined
+                            # into the FA2 host `def mha[]`.
+                            #
+                            # Handles any `batch_size`: the `ragged:
+                            # Bool` flag inside `HKMhaPrefill.run` forces
+                            # the Q/O batch coord to 0 so each block
+                            # reads from the per-sequence pre-offset
+                            # pointer regardless of `block_idx.z` (the
+                            # singleton batch_dim in the ragged BSHD
+                            # view would OOB-read otherwise). The
+                            # partial-Q-tile writeback skip in
+                            # `_store_o_to_gmem` covers non-BM-aligned
+                            # sequence lengths.
+                            #
+                            # Cross-attention path (`cross_attention`
+                            # comptime flag on the launcher) fires when
+                            # the caller passed `kv_input_row_offsets`
+                            # — encoder/decoder workloads with K/V
+                            # length independent of Q. Self-attention
+                            # path is bit-identical to the pre-Phase-10
+                            # codegen at the comptime monomorphization
+                            # level.
+                            var q_off_ptr = (
+                                valid_length.value().as_any_origin().ptr
+                            )
+                            # Sink-weights pointer: when `sink=True` the
+                            # caller MUST pass non-None `sink_weights`
+                            # (mirrors the existing FA2 contract). The
+                            # gate-time `comptime if sink:` selects the
+                            # launcher instantiation; the runtime
+                            # `if kv_input_row_offsets:` selects the
+                            # cross-attention vs self-attention variant.
+                            comptime if sink:
+                                var sw_ptr = (
+                                    sink_weights.value().as_any_origin().ptr
+                                )
+                                if kv_input_row_offsets:
+                                    hk_mha_prefill_ragged[
+                                        config=hk_config,
+                                        cross_attention=True,
+                                        sink=True,
+                                    ](
+                                        q.as_any_origin().ptr,
+                                        k,
+                                        v,
+                                        output.as_any_origin().ptr,
+                                        mask_functor,
+                                        scale,
+                                        q_off_ptr,
+                                        kv_input_row_offsets.value()
+                                        .as_any_origin()
+                                        .ptr,
+                                        max_prompt_len,
+                                        batch_size,
+                                        ctx,
+                                        sw_ptr,
+                                    )
+                                else:
+                                    hk_mha_prefill_ragged[
+                                        config=hk_config, sink=True
+                                    ](
+                                        q.as_any_origin().ptr,
+                                        k,
+                                        v,
+                                        output.as_any_origin().ptr,
+                                        mask_functor,
+                                        scale,
+                                        q_off_ptr,
+                                        q_off_ptr,
+                                        max_prompt_len,
+                                        batch_size,
+                                        ctx,
+                                        sw_ptr,
+                                    )
+                            else:
+                                if kv_input_row_offsets:
+                                    hk_mha_prefill_ragged[
+                                        config=hk_config, cross_attention=True
+                                    ](
+                                        q.as_any_origin().ptr,
+                                        k,
+                                        v,
+                                        output.as_any_origin().ptr,
+                                        mask_functor,
+                                        scale,
+                                        q_off_ptr,
+                                        kv_input_row_offsets.value()
+                                        .as_any_origin()
+                                        .ptr,
+                                        max_prompt_len,
+                                        batch_size,
+                                        ctx,
+                                    )
+                                else:
+                                    hk_mha_prefill_ragged[config=hk_config](
+                                        q.as_any_origin().ptr,
+                                        k,
+                                        v,
+                                        output.as_any_origin().ptr,
+                                        mask_functor,
+                                        scale,
+                                        q_off_ptr,
+                                        q_off_ptr,
+                                        max_prompt_len,
+                                        batch_size,
+                                        ctx,
+                                    )
+                            return
+                        else:
+                            var q_tt = lt_to_tt(q)
+                            var o_tt = lt_to_tt(output)
+                            # `mask_functor` is the dispatcher's
+                            # `mask_t` instance (the gate filtered to
+                            # `CausalMask` for now; future phases will
+                            # widen to sliding/chunked causal).
+                            # `start_pos = max_cache_valid_length -
+                            # max_prompt_len` is the number of pre-existing
+                            # KV entries before this prefill batch's tokens
+                            # — zero for fresh prefill, positive for cache
+                            # reuse.
+                            comptime if sink:
+                                hk_mha_prefill[hk_config, sink=True](
+                                    q_tt,
+                                    k,
+                                    v,
+                                    o_tt,
+                                    mask_functor,
+                                    scale,
+                                    max_cache_valid_length,
+                                    max_cache_valid_length - max_prompt_len,
+                                    ctx,
+                                    sink_weights.value().as_any_origin().ptr,
+                                )
+                            else:
+                                hk_mha_prefill[hk_config](
+                                    q_tt,
+                                    k,
+                                    v,
+                                    o_tt,
+                                    mask_functor,
+                                    scale,
+                                    max_cache_valid_length,
+                                    max_cache_valid_length - max_prompt_len,
+                                    ctx,
+                                )
+                            return
 
                 comptime BM = config.block_m()
                 comptime smem_use = config.shared_mem_bytes[is_shared_kv]()
@@ -1510,10 +1652,10 @@ def flash_attention_ragged[
     type: DType,
     q_layout: Layout,
     //,
-    config: MHAConfig[type] = {
-        Int(q_layout.shape[q_layout.rank() - 2]),  # num_heads
-        Int(q_layout.shape[q_layout.rank() - 1]),  # head_dim
-    },
+    config: MHAConfig[type] = MHAConfig[type](
+        Int(q_layout.shape[q_layout.rank() - 2]),
+        Int(q_layout.shape[q_layout.rank() - 1]),
+    ),
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
 ](
@@ -1820,6 +1962,11 @@ def mha[
             )
             attention.mha_prefill()
         else:
+            # AMD CDNA prefill via FA2. The long-context HK path is dispatched
+            # host-side from `flash_attention_dispatch` so HK keeps its tuned
+            # single-kernel register-allocation context (`def mha[]`'s body
+            # holding the FA2 fallback inflates spills when HK is inlined
+            # here — measured ~14% loss vs HK as a top-level kernel).
             var attention = Attention[config, group, sink](
                 output_ptr + q_batch_offset,
                 q_ptr + q_batch_offset,

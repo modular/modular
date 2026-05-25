@@ -16,6 +16,35 @@ from std.gpu.host import DeviceAttribute, DeviceContext
 from std.math import ceildiv
 
 
+@always_inline
+def _bucket_partitions(n: Int) -> Int:
+    """Bucket a partition count up to a fixed grid-shape ladder.
+
+    Power-of-two bucketing leaves a 2x gap between 64 and 128 — meaningful
+    for h=64 / h=128 shapes where the target landing point is often in the
+    65..127 range and 128 is wasteful. We insert mid-points {48, 96} to
+    halve the worst-case over-partitioning above 32 while keeping the
+    bucket count small enough for HIP graph capture.
+
+    Ladder: 1, 2, 4, 8, 16, 32, 48, 64, 96, 128.
+
+    The SM100 path has an analogous helper, `_bucket_num_partitions` in
+    `nvidia/sm100/mla_decode_dispatch.mojo`, with a different ladder
+    (top = `half_sms`, parameterized on GPU SM count) — driven by SM100's
+    wave-fill target instead of an AMD-reducer hard cap. They aren't
+    shared because the constraints differ; the pattern is the same.
+    """
+    if n <= 32:
+        return next_power_of_two(n)
+    if n <= 48:
+        return 48
+    if n <= 64:
+        return 64
+    if n <= 96:
+        return 96
+    return 128
+
+
 def cuda_mha_decoding_num_partitions(
     batch_size: Int,
     num_keys: Int,
@@ -41,36 +70,98 @@ def hip_mha_decoding_num_partitions(
     heads_per_group: Int,
     sm_count: Int,
 ) -> Int:
-    # Matches the wavefront reduction limit in `mha_splitk_reduce`
-    # (<= WARP_SIZE).
-    comptime MAX_HIP_PARTITIONS = 64
+    """Wave-aligned split-K target for MI355X MHA + MLA decode.
 
-    # AMD split-k strategy: scale partitioning based on occupancy.
-    # 256: min context length where split-k overhead is worthwhile.
-    if num_keys <= 256:
+    Two regimes, distinguished by whether the kernel packs queries
+    by BM (MLA) or spawns one CTA per kv-head (MHA):
+
+    - **MHA-style** (`heads_per_group < BM`): the call comes from
+      `get_mha_decoding_num_partitions` passing
+      `heads_per_group = num_heads // group = kv_num_heads`, which is
+      typically small (≤ 8). Each (kv_head, batch) is its own CTA in
+      grid_y, so `actual_ctas_per_partition = heads_per_group ×
+      batch_size`. When `work_items = heads_per_group × batch_size ≥
+      sm_count`, one partition already fills the GPU — use few
+      partitions, just enough to amortize key reads. This matches the
+      original heuristic's HIGH_OCC branch (preserved verbatim to
+      avoid regressing the MHA bench grid).
+
+    - **MLA-style** (`heads_per_group ≥ BM`): the call comes from
+      `mla.mojo` passing `heads_per_group = num_heads` (≥ BM=32 for
+      h ∈ {32, 64, 128}). MLA packs BM queries into one CTA, so
+      `actual_ctas_per_partition = ceildiv(num_heads, BM) ×
+      batch_size`. Even when `work_items` looks large (e.g. bs=8
+      h=64 → 512), actual CTAs are only 16 — needs many partitions.
+      Apply the 2-wave wave-aligned formula:
+          one_wave    = sm_count // ctas_per_partition
+          two_wave    = 2 × sm_count // ctas_per_partition
+          work_floor  = ceildiv(pages, MAX_PAGES_PER_SPLIT)
+          np_target   = max(one_wave, min(work_floor, two_wave))
+
+    Phase 0 sweep (PARTITIONING_PLAN.md) validated MLA-style at h=64:
+        bs=1  ctx=131K → np=128 (capped, fills GPU at 1-wave + cap)
+        bs=2  ctx=65K  → np=64  (one_wave=64 dominates)
+        bs=2  ctx=80K  → np=64  (one_wave=64 dominates; work_floor 64 capped)
+        bs=2  ctx=131K → np=128 (work_floor=103 → bucket to 128)
+        bs=8  ctx=80K  → np=32  (work_floor 64 capped by two_wave=32)
+        bs=8  ctx=131K → np=32  (work_floor 103 capped by two_wave=32)
+        bs=16 ctx=131K → np=16  (work_floor 103 capped by two_wave=16)
+
+    AMD reducer constraint: `mla_splitk_reduce` supports MAX_PARTITIONS
+    up to `parts_per_lane × WARP_SIZE = 128`. Cap at 128.
+
+    Tunables (MLA-style):
+        BM                   = 32   (MLA decode block-M on MI355)
+        SPLIT_PAGE_SIZE      = 256  (min keys per partition)
+        MAX_PAGES_PER_SPLIT  = 5    (= 1280 keys per partition cap)
+        MAX_HIP_PARTITIONS   = 128  (reducer's MAX_PARTITIONS limit)
+    """
+    comptime BM = 32
+    comptime SPLIT_PAGE_SIZE = 256
+    comptime MAX_PAGES_PER_SPLIT = 5
+    comptime MAX_HIP_PARTITIONS = 128
+    # Empirically-tuned divisor used in the MHA HIGH_OCC branch to scale
+    # partitions inversely with work_items. NOT WARP_SIZE — it's a
+    # workload-shaping constant inherited from the pre-Phase-1 heuristic
+    # (happens to equal 64 on gfx950 by coincidence).
+    comptime MHA_OCC_SCALE_DIVISOR = 64
+
+    # No partitioning for very short caches — split-K overhead exceeds win.
+    if num_keys <= SPLIT_PAGE_SIZE:
         return 1
 
-    # Compute total work items (occupancy).
-    work_items = batch_size * heads_per_group
+    var work_items = heads_per_group * batch_size
 
-    var num_partitions: Int
-    # High occupancy when work_items >= sm_count (>=1 work item per CU).
-    if work_items >= sm_count:
-        # High occupancy: scale partition size to avoid over-partitioning.
-        # 256: base partition size matching the kernel block width.
-        # 64: scaling factor that reduces partitions as occupancy increases.
-        occupancy_scale = work_items // 64
-        num_partitions = min(
-            ceildiv(num_keys, 256 * occupancy_scale), MAX_HIP_PARTITIONS
-        )
-    else:
-        # Low occupancy: aggressive partitioning for more parallelism.
-        # 256: keys per partition matching the kernel block width.
-        num_partitions = min(ceildiv(num_keys, 256), MAX_HIP_PARTITIONS)
+    # MHA-style: kv_num_heads spawns CTAs directly in grid_y.
+    if heads_per_group < BM:
+        if work_items >= sm_count:
+            # High occupancy: 1 partition already fills the GPU. Scale
+            # partition size up as work_items grows so we don't
+            # over-partition (more concurrent CTAs → fewer per-CTA pages
+            # is fine). The divisor is empirical, not WARP_SIZE.
+            var occupancy_scale = max(1, work_items // MHA_OCC_SCALE_DIVISOR)
+            var np_mha = min(
+                ceildiv(num_keys, SPLIT_PAGE_SIZE * occupancy_scale),
+                MAX_HIP_PARTITIONS // 2,  # cheap reducer (≤ 64)
+            )
+            return min(_bucket_partitions(np_mha), MAX_HIP_PARTITIONS)
+        # Low occupancy MHA: rare. Fall through to MLA-style formula
+        # since it handles the wave-fill case correctly with
+        # ctas_per_partition = work_items (BM packing is a no-op when
+        # heads_per_group < BM).
 
-    # Bucket to power of two so HIP graph capture sees <= 7 decode grid
-    # shapes instead of up to 64; extra partitions early-exit in the kernel.
-    return min(next_power_of_two(num_partitions), MAX_HIP_PARTITIONS)
+    # MLA-style (or low-occupancy MHA).
+    var ctas_per_partition = max(1, ceildiv(heads_per_group, BM) * batch_size)
+    var pages = ceildiv(num_keys, SPLIT_PAGE_SIZE)
+    var one_wave = max(1, sm_count // ctas_per_partition)
+    var two_wave = max(1, (2 * sm_count) // ctas_per_partition)
+    var work_floor = ceildiv(pages, MAX_PAGES_PER_SPLIT)
+    var np_target = max(one_wave, min(work_floor, two_wave))
+    var num_partitions = min(np_target, pages, MAX_HIP_PARTITIONS)
+
+    # Bucket to a fixed ladder (1, 2, 4, ..., 32, 48, 64, 96, 128) so
+    # HIP graph capture sees a small number of decode grid shapes.
+    return min(_bucket_partitions(num_partitions), MAX_HIP_PARTITIONS)
 
 
 def mha_decoding_num_partitions(

@@ -177,16 +177,28 @@ def amd_4wave_conv[
     pad_w: Int = 0,
     # Real input channel count. 0 (default) means infer from filter
     # (no K-padding). Set explicitly when caller has K-padded the
-    # filter for shapes where R*S*C_in isn't a multiple of 2*BK = 256.
+    # filter for shapes where Q*R*S*C_in isn't a multiple of 2*BK = 256.
     C_in: Int = 0,
-    # Runtime-HW path: when True, H/W/H_out/W_out above are ignored;
-    # the kernel reads input.dim[1] / .dim[2] at runtime and recomputes
-    # H_out / W_out from `(R, S, stride, dilation, pad)`. Use this for
+    # Runtime-HW path: when True, H/W/H_out/W_out (and D/D_out in 3D
+    # mode) above are ignored; the kernel reads input.dim[1] /
+    # input.dim[2] (and input.dim[3] for 3D) at runtime and recomputes
+    # the output spatial dims from `(R, S, stride, dilation, pad)` (and
+    # `(Q, stride_d, dilation_d, pad_d)` for 3D). Use this for
     # graph-compiled callers (e.g. FLUX VAE) with symbolic image
     # resolution. See `TileLoaderLDSIm2col.use_runtime_hw` for the perf
     # cost (one runtime divmod per `load_tile` on the BF16 path; one
     # per (lane, iter) on the FP8 swizzle path).
     use_runtime_hw: Bool = False,
+    # 3D-conv mode (NDHWC + Q×R×S filter). Defaults reproduce 2D mode
+    # so existing 2D callers compile unchanged. Q > 1 activates 3D
+    # mode: the launcher expects a 5D NDHWC `a` tensor and the kernel
+    # decomposes M = N*D_out*H_out*W_out, K = Q*R*S*C.
+    Q: Int = 1,
+    D: Int = 1,
+    D_out: Int = 1,
+    stride_d: Int = 1,
+    dilation_d: Int = 1,
+    pad_d: Int = 0,
 ](
     a: TileTensor[mut=False, a_type, ...],
     b: TileTensor[mut=False, b_type, ...],
@@ -260,12 +272,22 @@ def amd_4wave_conv[
             filter for shapes where R*S*C_in is not a multiple of
             2*BK = 256. Default 0 means "infer from K_filter // (R*S)"
             (no K-padding).
-        use_runtime_hw: When True, H/W/H_out/W_out are read from
-            `a.dim()` at runtime instead of the comptime params above.
-            Required for graph-compiled callers with symbolic image
-            resolution (e.g. FLUX VAE). The K-decomposition and conv
-            params (R, S, stride, dilation, pad, C_in) still need to
-            be static.
+        use_runtime_hw: When True, H/W/H_out/W_out (and D/D_out in 3D
+            mode) are read from `a.dim()` at runtime instead of the
+            comptime params above. Required for graph-compiled callers
+            with symbolic image resolution (e.g. FLUX VAE). The
+            K-decomposition and conv params (Q, R, S, stride, dilation,
+            pad, C_in) still need to be static.
+        Q: Filter temporal extent. `Q == 1` (default) keeps the kernel
+            in 2D mode (4D NHWC input). `Q > 1` activates 3D mode (5D
+            NDHWC input, K = Q*R*S*C); the loader decomposes
+            `M = N*D_out*H_out*W_out` and `K = Q*R*S*C` internally.
+        D: Input temporal depth (3D mode only; unused when Q == 1).
+        D_out: Output temporal depth (3D mode only).
+        stride_d: Conv temporal stride (3D mode only).
+        dilation_d: Conv temporal dilation (3D mode only).
+        pad_d: Temporal pad (3D mode only). Halo lanes route to the
+            SRD-OOB sentinel for zero-clamp behavior.
 
     Args:
         a: 4D NHWC input tile-tensor of shape `(N, H, W, C)`.
@@ -310,6 +332,9 @@ def amd_4wave_conv[
     var M = Int(c.dim[0]())
 
     # Bundle the conv geometry once — passed to `run_conv2d` below.
+    # Q > 1 activates 3D mode inside the kernel (the loader expects
+    # a 5D NDHWC `a`); Q=1 defaults to 2D mode and the 3D-only fields
+    # (D, D_out, stride_d, dilation_d, pad_d) are ignored.
     comptime conv_cfg = Conv2DKernelConfig(
         H=H,
         W=W,
@@ -325,6 +350,12 @@ def amd_4wave_conv[
         pad_w=pad_w,
         C_in=C_in,
         use_runtime_hw=use_runtime_hw,
+        Q=Q,
+        D=D,
+        D_out=D_out,
+        stride_d=stride_d,
+        dilation_d=dilation_d,
+        pad_d=pad_d,
     )
 
     @always_inline
