@@ -13,15 +13,14 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/MojoParser/SignatureModel.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
-#include <cctype>
 #include <map>
 #include <mutex>
 
@@ -331,99 +330,9 @@ TypeMetadata extractLibraryInfo(llvm::StringRef typeStr,
   return makeMetadata(ResolvedPath{});
 }
 
-namespace {
-
-/// True if `s` is a Mojo identifier (`[A-Za-z_][A-Za-z0-9_]*`).
-bool isIdentifier(llvm::StringRef s) {
-  if (s.empty() || (!llvm::isAlpha(s[0]) && s[0] != '_'))
-    return false;
-  for (char c : s.drop_front())
-    if (!llvm::isAlnum(c) && c != '_')
-      return false;
-  return true;
-}
-
-/// True if `param` is a member access on `argName`, i.e. `argName.X(.Y)*`.
-/// Matches `output.origin` or `arg.x.y` but not `output`, `outputFoo`, or
-/// `output + 1`.
-bool isMemberAccessOn(llvm::StringRef param, llvm::StringRef argName) {
-  param = param.trim();
-  if (!param.consume_front(argName) || !param.consume_front("."))
-    return false;
-  while (true) {
-    auto [seg, rest] = param.split('.');
-    if (!isIdentifier(seg))
-      return false;
-    if (rest.empty())
-      return true;
-    param = rest;
-  }
-}
-
-} // namespace
-
 std::string stripImplicitArgParams(llvm::StringRef typeStr,
                                    llvm::StringRef argName) {
-  if (argName.empty())
-    return typeStr.str();
-
-  std::string result;
-  result.reserve(typeStr.size());
-
-  for (size_t i = 0; i < typeStr.size();) {
-    if (typeStr[i] != '[') {
-      result += typeStr[i++];
-      continue;
-    }
-
-    // Find the matching ']' and the comma positions at this bracket depth.
-    size_t depth = 1;
-    size_t j = i + 1;
-    llvm::SmallVector<size_t> commas;
-    for (; j < typeStr.size() && depth > 0; ++j) {
-      char c = typeStr[j];
-      if (c == '[')
-        ++depth;
-      else if (c == ']') {
-        if (--depth == 0)
-          break;
-      } else if (c == ',' && depth == 1) {
-        commas.push_back(j);
-      }
-    }
-    assert(depth == 0 && "type printer emitted unbalanced brackets");
-    if (depth != 0) {
-      // Release-build fallback: emit the remainder verbatim.
-      result += typeStr.substr(i);
-      return result;
-    }
-
-    llvm::SmallVector<llvm::StringRef> params;
-    size_t prev = i + 1;
-    for (size_t comma : commas) {
-      params.push_back(typeStr.slice(prev, comma));
-      prev = comma + 1;
-    }
-    params.push_back(typeStr.slice(prev, j));
-
-    llvm::SmallVector<std::string> kept;
-    for (llvm::StringRef p : params) {
-      if (isMemberAccessOn(p, argName))
-        continue;
-      kept.push_back(stripImplicitArgParams(p.trim(), argName));
-    }
-
-    if (!kept.empty()) {
-      result += '[';
-      llvm::interleave(
-          kept, [&](const std::string &k) { result += k; },
-          [&] { result += ", "; });
-      result += ']';
-    }
-
-    i = j + 1;
-  }
-  return result;
+  return ::stripImplicitArgParams(typeStr, argName);
 }
 
 } // namespace TypeExtractionUtils

@@ -8,6 +8,7 @@
 #define KGEN_MOJOTOOLING_PublicASTDecl_H
 
 #include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/SignatureModel.h"
 #include "KGEN/MojoTooling/TypeMetadata.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
@@ -346,15 +347,15 @@ private:
 /// Decl for parameters of structs or functions.
 class PublicParameterDecl : public PublicDecl {
 public:
-  // AST-based constructor to resolve the type metadata used for doc links
-  PublicParameterDecl(StringRef name, StringRef type,
-                      const MojoASTTypeRef &astType,
+  /// Build a documented parameter from a fully-resolved `ParameterInfo`
+  /// (which carries the type string with any conforms_to trait bounds
+  /// already merged in). Type metadata for doc cross-linking is computed
+  /// once during construction.
+  PublicParameterDecl(KGEN::ParameterInfo info,
                       KGEN::LIT::SharedState &sharedState,
-                      KGEN::PassingKind passingKind,
-                      KGEN::VariadicKind variadicKind, TypedAttr defaultValue,
                       const MojoASTDeclRef *currentDeclContext = nullptr);
 
-  KGEN::PassingKind getPassingKind() const { return passingKind; }
+  KGEN::PassingKind getPassingKind() const { return info.passingKind; }
 
   std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
@@ -367,17 +368,12 @@ public:
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
 
-  /// Set the constraints of this decl.
-  void setConstraints(StringRef cnstr) { constraints = cnstr; }
-
-  /// Append additional trait bounds to this parameter's type string.
-  /// Used when merging conforms_to constraints into the type declaration.
-  void appendTraitBounds(ArrayRef<std::string> traitNames,
-                         KGEN::LIT::SharedState &shared,
-                         const MojoASTDeclRef *currentDeclContext);
-
   /// Get constraints of this declaration as string. It might be empty.
-  StringRef getConstraints() const { return constraints; }
+  StringRef getConstraints() const { return info.constraints; }
+
+  /// The underlying signature-shape view of this parameter, used by both the
+  /// rendering algorithm and JSON serialization.
+  const KGEN::ParameterInfo &getInfo() const { return info; }
 
   /// The output of the generation is defined in the following schema:
   ///
@@ -406,13 +402,9 @@ public:
   }
 
 private:
-  std::string type;
+  KGEN::ParameterInfo info;
   TypeMetadata typeMetadata;
-  std::string constraints;
   SmallVector<TypeMetadata, kTypicalTraitCompositionSize> traitMetadata;
-  KGEN::PassingKind passingKind;
-  KGEN::VariadicKind variadicKind;
-  TypedAttr defaultValue;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
@@ -424,23 +416,13 @@ private:
 /// Decl for function arguments, including varargs arguments.
 class PublicArgumentDecl : public PublicDecl {
 public:
-  /// The convention this argument is passed with.
-  enum class Convention {
-    kBorrowed,
-    kDeinit,
-    kInOut,
-    kOwned,
-    kRef,
-    kOut,
-  };
+  /// The convention this argument is passed with. Aliased to the shared
+  /// signature model's `ArgumentConvention` so callers can use either name.
+  using Convention = KGEN::ArgumentConvention;
 
-  // AST-based constructor to resolve the type metadata used for doc links
-  PublicArgumentDecl(StringRef name, std::string prefix, std::string type,
-                     const MojoASTTypeRef &astType,
+  /// Build a documented argument from a fully-resolved `ArgumentInfo`.
+  PublicArgumentDecl(KGEN::ArgumentInfo info,
                      KGEN::LIT::SharedState &sharedState,
-                     KGEN::PassingKind passingKind,
-                     KGEN::VariadicKind variadicKind, TypedAttr defaultValue,
-                     Convention convention, bool isSelf,
                      const MojoASTDeclRef *currentDeclContext = nullptr);
 
   std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
@@ -451,13 +433,18 @@ public:
 
   std::string getMarkdownDocString() const override;
 
-  Convention getConvention() const { return convention; }
+  Convention getConvention() const { return info.convention; }
 
-  KGEN::PassingKind getPassingKind() const { return passingKind; }
-  void setPassingKind(KGEN::PassingKind kind) { passingKind = kind; }
+  KGEN::PassingKind getPassingKind() const { return info.passingKind; }
+  void setPassingKind(KGEN::PassingKind kind) { info.passingKind = kind; }
 
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
+
+  /// The underlying signature-shape view of this argument, used by both the
+  /// rendering algorithm and JSON serialization.
+  const KGEN::ArgumentInfo &getInfo() const { return info; }
+  KGEN::ArgumentInfo &getInfo() { return info; }
 
   /// The output of the generation is defined in the following schema:
   ///
@@ -487,16 +474,9 @@ public:
   }
 
 private:
-  /// The prefix is the ref origin + addr space marker.
-  std::string prefix;
-  std::string type;
+  KGEN::ArgumentInfo info;
   TypeMetadata typeMetadata;
   SmallVector<TypeMetadata, kTypicalTraitCompositionSize> traitMetadata;
-  KGEN::PassingKind passingKind;
-  KGEN::VariadicKind variadicKind;
-  TypedAttr defaultValue;
-  Convention convention;
-  bool isSelf; // self argument of a method.
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
@@ -572,6 +552,9 @@ private:
 
   PublicAliasDecl(MojoASTDeclRef declRef);
 
+  /// The underlying decl. Retained so that `getSignature` can delegate to the
+  /// op-driven signature printer in MojoParser.
+  MojoASTDeclRef decl;
   SmallVector<PublicParameterDecl, kTypicalParameterCount> parameters;
   std::string value;
   std::string type;
@@ -701,6 +684,11 @@ private:
   /// parameters and args.
   void augmentWithDocumentation(ArrayRef<StringRef> description);
 
+  /// The underlying decl. Retained so that `getSignature` can delegate to the
+  /// op-driven signature printer in MojoParser when an `FnOp` is available.
+  /// May be null if this `PublicFunctionDecl` was synthesized from a derived
+  /// signature without a backing op.
+  MojoASTDeclRef decl;
   SmallVector<PublicArgumentDecl, kTypicalArgumentCount> args;
   SmallVector<PublicParameterDecl, kTypicalParameterCount> parameters;
   std::string fnConstraints;
