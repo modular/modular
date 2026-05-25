@@ -370,6 +370,7 @@ struct _Once[T: Movable](
         return Tuple(n_remaining, Optional(n_remaining))
 
 
+@always_inline
 def once[T: Movable](var element: T) -> _Once[T]:
     """Creates an iterator that yields an element exactly once.
 
