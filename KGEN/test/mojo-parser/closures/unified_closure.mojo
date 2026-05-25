@@ -1452,16 +1452,16 @@ def trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
 # COM: build a wrapper whose Impl type is self-contained while preserving the
 # COM: promoted function symbol's native parameter ordering.
 
-# CHECK-LABEL: lit.struct.decl @"def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"
+# CHECK-LABEL: lit.struct.decl @"def[dtype: DType, //, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"
 # CHECK: lit.alias.decl dtype: !DType = <__capture_dtype>
-# CHECK: lit.fn @"__call__[::DType,::Int](unified_closure::def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper[$0, $1])"
+# CHECK: lit.fn @"__call__[::DType,::Int](unified_closure::def[dtype: DType, //, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper[$0, $1])"
 # CHECK: {{.*}} = lit.call tail[!lit.generator<() -> !lit.struct<#SIMD <:!DType _dtype, :!Int simd_width>>>: bind_params(:!lit.generator<<"dtype": !DType, +, "simd_width": !Int>() -> !lit.struct<#SIMD <:!DType *(0,0), :!Int *(0,1)>>> Impl, :!DType _dtype, :!Int simd_width)]()
 # CHECK: kgen.witness "dtype" : !DType = __capture_dtype
 
 # CHECK-LABEL: lit.fn @"trigger[::Int,::DType]()"
 # CHECK: %[[WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct
 # CHECK-SAME: @{{.*}}::@"compute_init2[::Int]()`0x"<:!DType ?, :!Int ?>
-# CHECK: %[[INIT:.*]] = lit.call @{{.*}}::@"def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"::@"__init__()"{{.*}}(%[[WRAP]])
+# CHECK: %[[INIT:.*]] = lit.call @{{.*}}::@"def[dtype: DType, //, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"::@"__init__()"{{.*}}(%[[WRAP]])
 # CHECK: %[[IMM:.*]] = lit.ref.immut %[[WRAP]]
 # CHECK: lit.call @{{.*}}::@"local_higher_order
 

@@ -191,9 +191,9 @@ def test_func_type():
     comptime float4: def[a: Int](mut *Int) thin -> None = test_func_type
     # expected-error @below {{'def(*MemType) raises capturing -> None'}}
     comptime float5: def(*MemType) raises capturing -> None = test_func_type
-    # expected-error @below {{'def[+, Ts: TypeList[values]](var **values) capturing -> None'}}
+    # expected-error @below {{'def[*Ts: AnyType](var * *values) capturing -> None'}}
     comptime float6: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[+, Ts: TypeList[values]](var **values) capturing -> None'}}
+    # expected-error @below {{'def[*Ts: AnyType](var * *values) capturing -> None'}}
     comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'def[T: TrivialRegisterPassable](mut *T) capturing -> None'}}
     comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
@@ -241,9 +241,16 @@ def test_func_type():
     # expected-error @+1 {{cannot implicitly convert 'def has_foo_kw(*, foo: Int) -> None' value to 'def(*, bar: Int) -> None'}}
     var f10: def (*, bar: Int) thin -> None = has_foo_kw
 
-
-
-##===----------------------------------------------------------------------===##
+def param_passing_kinds():
+    def f1[a: Int, //, b: Int]() -> None: pass
+    _ : Int = f1 # expected-error {{'def f1[a: Int, //, b: Int]() -> None'}}
+    def f2[a: Int, *, b: Int]() -> None: pass
+    _ : Int = f2 # expected-error {{'def f2[a: Int, *, b: Int]() -> None'}}
+    def f3[a: Int, *b: Int]() -> None: pass
+    _ : Int = f3 # expected-error {{'def f3[a: Int, *b: Int]() -> None'}}
+    def f4(*, a: Int) -> None: pass
+    _ : Int = f4 # expected-error {{'def f4(*, a: Int) -> None'}}
+#===----------------------------------------------------------------------===##
 # LValue and RValues
 ##===----------------------------------------------------------------------===##
 
