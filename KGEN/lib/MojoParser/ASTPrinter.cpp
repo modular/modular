@@ -361,53 +361,66 @@ static BodyT printGeneratorInterface(raw_ostream &os,
                                      ArrayRef<Type> inputParamTypes,
                                      PogListAttr paramInfo,
                                      SharedState *diagShared, BodyT body) {
-  os << '[';
-  // FIXME: This is printing in MLIR style, not like Mojo source code.
-  if (paramInfo && diagShared) {
-    ParameterEvaluator evaluator;
-    PassingKindPrinter passingKindPrinter(os, paramInfo);
-    auto printFn = [&](auto p) {
-      auto [i, type] = p;
-      passingKindPrinter.printOptionalStarSlash(i);
-      Type reboundType = evaluator.getReboundType(type);
-
-      StringRef name = paramInfo.getName(i).strref();
-      if (!name.empty())
-        evaluator.appendIndexBinding(ParamDeclRefAttr::get(name, reboundType));
-      else
-        evaluator.appendIndexBinding(ParamIndexRefAttr::get(i, reboundType));
-
-      // Don't print this if it is an autoparam.
-      if (paramInfo.getPassingKind(i) == PassingKind::Inferred &&
-          name.contains('.')) {
-        // Ideally we'd just drop it, but then we'll get extra commas.
-        os << "_";
-        return;
-      }
-
-      if (!name.empty())
-        os << name << ": ";
-      ASTType(reboundType).print(os, diagShared);
-
-      if (TypedAttr defaultOr = paramInfo.getDefault(i)) {
-        os << " = ";
-        ASTType::printParam(os, defaultOr, diagShared);
-      }
-
-      passingKindPrinter.printOptionalTrailingSlash(i);
-    };
-    llvm::interleaveComma(llvm::enumerate(inputParamTypes), os, printFn);
-
-    if constexpr (std::is_base_of_v<Attribute, BodyT>)
-      body = cast<BodyT>(evaluator.getReboundAttribute(body));
-    else
-      body = cast<BodyT>(evaluator.getReboundType(body));
-  } else {
+  assert(paramInfo && "always present");
+  if (!diagShared) {
+    os << '[';
     // If no param metadata, just print the types.
     auto printFn = [&](Type type) { ASTType(type).print(os, diagShared); };
     llvm::interleaveComma(inputParamTypes, os, printFn);
+    os << ']';
+    return body;
   }
+
+  // FIXME: This is printing in MLIR style, not like Mojo source code.
+  ParameterEvaluator evaluator;
+  PassingKindPrinter passingKindPrinter(os, paramInfo);
+
+  bool needComma = false;
+  for (auto [i, type] : llvm::enumerate(inputParamTypes)) {
+    Type reboundType = evaluator.getReboundType(type);
+
+    StringRef name = paramInfo.getName(i).strref();
+    if (!name.empty())
+      evaluator.appendIndexBinding(ParamDeclRefAttr::get(name, reboundType));
+    else
+      evaluator.appendIndexBinding(ParamIndexRefAttr::get(i, reboundType));
+
+    auto curPassingKind = paramInfo.getPassingKind(i);
+
+    // Don't print this if it is an autoparam.
+    if (curPassingKind == PassingKind::Inferred && name.contains('.'))
+      continue;
+
+    if (needComma)
+      os << ", ";
+    else
+      os << "[";
+    needComma = true;
+
+    passingKindPrinter.printOptionalStarSlash(i);
+
+    if (!name.empty())
+      os << name << ": ";
+    ASTType(reboundType).print(os, diagShared);
+
+    if (TypedAttr defaultOr = paramInfo.getDefault(i)) {
+      os << " = ";
+      ASTType::printParam(os, defaultOr, diagShared);
+    }
+
+    // If all the parameters are positional, print the trailing /.
+    if (curPassingKind == PassingKind::PosOnly &&
+        i == inputParamTypes.size() - 1)
+      os << ", /";
+  };
   os << ']';
+
+  // Replace all the *(0, 0) style parameters with names so they print nicely
+  // by the client.
+  if constexpr (std::is_base_of_v<Attribute, BodyT>)
+    body = cast<BodyT>(evaluator.getReboundAttribute(body));
+  else
+    body = cast<BodyT>(evaluator.getReboundType(body));
 
   return body;
 }
@@ -1545,7 +1558,6 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   auto paramTypes =
       sugarCast<GeneratorType>(type.getAsType()).getInputParamTypes();
   if (!paramTypes.empty()) {
-    // FIXME: Need to improve printGeneratorInterface.
     fnType = printGeneratorInterface(os, paramTypes, type.getParamListAttrs(),
                                      diagShared, fnType);
   }

@@ -538,9 +538,9 @@ def unused_init_self_param():
     var slice = UnusedInitSelfParam()
 
 # expected-note @below {{candidate not viable: missing 1 required keyword-only argument: 'take'}}
-# expected-note @below {{generated function with type 'def[arg1: Int, size: Int, +](*, deinit take: SimpleSIMD[arg1, size]) -> SimpleSIMD[arg1, size]'}}
+# expected-note @below {{generated function with type 'def[arg1: Int, size: Int](*, deinit take: SimpleSIMD[arg1, size]) -> SimpleSIMD[arg1, size]'}}
 # expected-note @below {{candidate not viable: missing 1 required keyword-only argument: 'copy'}}
-# expected-note @below {{generated function with type 'def[arg1: Int, size: Int, +](*, copy: SimpleSIMD[arg1, size]) -> SimpleSIMD[arg1, size]'}}
+# expected-note @below {{generated function with type 'def[arg1: Int, size: Int](*, copy: SimpleSIMD[arg1, size]) -> SimpleSIMD[arg1, size]'}}
 struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):
     # expected-note @below {{candidate not viable: return type 'SimpleSIMD[50, 1]' parameter 'size' value '1' doesn't match expected value '4'}}
     def __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
