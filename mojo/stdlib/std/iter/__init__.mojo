@@ -319,6 +319,7 @@ struct _Empty[T: Movable](
         return Tuple(0, Optional(0))
 
 
+@always_inline
 def empty[T: Movable]() -> _Empty[T]:
     """Creates an iterator that yields nothing.
 
