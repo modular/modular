@@ -187,15 +187,15 @@ def test_func_type():
     # expected-error @below {{def[a: Int](var Int) -> MemType}}
     comptime float3: def[a: Int](var Int) thin -> MemType = test_func_type
     # FIXME: Function type printing is really bad.
-    # expected-error @below {{'def[a: Int, ?, .origin._mlir_origin``2x: LITMutOrigin, .origin`2x1: MutOrigin](mut *Int) -> None'}}
+    # expected-error @below {{'def[a: Int](mut *Int) -> None'}}
     comptime float4: def[a: Int](mut *Int) thin -> None = test_func_type
-    # expected-error @below {{def[?, .origin._mlir_origin``2x: LITImmutOrigin, .origin`2x1: ImmutOrigin](*MemType) raises capturing -> None}}
+    # expected-error @below {{'def(*MemType) raises capturing -> None'}}
     comptime float5: def(*MemType) raises capturing -> None = test_func_type
-    # expected-error @below {{'def[+, Ts: TypeList[values], ?, .origin._mlir_origin``2x1: LITMutOrigin, .origin`2x2: MutOrigin](var **values) capturing -> None'}}
+    # expected-error @below {{'def[+, Ts: TypeList[values]](var **values) capturing -> None'}}
     comptime float6: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[+, Ts: TypeList[values], ?, .origin._mlir_origin``2x1: LITMutOrigin, .origin`2x2: MutOrigin](var **values) capturing -> None'}}
+    # expected-error @below {{'def[+, Ts: TypeList[values]](var **values) capturing -> None'}}
     comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[T: TrivialRegisterPassable, ?, .origin._mlir_origin``2x: LITMutOrigin, .origin`2x1: MutOrigin](mut *T) capturing -> None'}}
+    # expected-error @below {{'def[T: TrivialRegisterPassable](mut *T) capturing -> None'}}
     comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
     # expected-error @below {{'def(var args: OwnedKwargsDict[Int]) -> None}}
     comptime float8: def(**args: Int) = test_func_type
@@ -793,7 +793,7 @@ def unbound_function_type():
   # expected-error @below {{function type missing required origin set parameter}}
   var f: def() thin [_] -> None
 
-  # expected-error @below {{cannot use parametric function type at runtime 'def[?, .p`2x: Int](HasIntParam[p]) -> None'}}
+  # expected-error @below {{cannot use parametric function type at runtime 'def(HasIntParam[p]) -> None'}}
   var g: def(HasIntParam) thin -> None
 
   # expected-error @below {{'HasIntParamAlias' is not a concrete type, use '[]' to bind missing parameters}}
