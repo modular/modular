@@ -225,7 +225,8 @@ class StructuredOutputAttacks(BaseScenario):
                 },
                 "accept",
             ),
-            # Recursive $ref — infinite grammar, must reject
+            # Recursive $ref — valid JSON Schema; grammar backends
+            # (xgrammar, llguidance) support it with depth limits.
             "schema_recursive": (
                 {
                     "type": "json_schema",
@@ -242,7 +243,7 @@ class StructuredOutputAttacks(BaseScenario):
                         },
                     },
                 },
-                "reject",
+                "accept",
             ),
             # 50-level nesting — valid but may truncate at max_tokens
             "schema_deeply_nested": (
