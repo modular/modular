@@ -224,9 +224,8 @@ def cli_serve(
 ) -> None:
     """Start a model serving endpoint for inference.
 
-    This command launches a server that can handle inference requests for the
-    specified model. The server supports various performance optimization
-    options and monitoring capabilities.
+    Loads a model from a Hugging Face model ID or local path and
+    exposes OpenAI-compatible HTTP endpoints for inference requests.
     """
     from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.cli.config import parse_task_flags

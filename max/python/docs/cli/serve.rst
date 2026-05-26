@@ -13,6 +13,25 @@ For example, start a server for a Gemma 3 model on the first GPU:
       --max-batch-size 8 \
       --device-memory-utilization 0.9
 
+The endpoints exposed depend on the value of the ``MAX_SERVE_API_TYPES``
+environment variable (default: ``openai,sagemaker``):
+
+- ``openai``: ``/v1/completions``, ``/v1/chat/completions``,
+  ``/v1/embeddings``, ``/v1/audio/speech``, ``/v1/models``, ``/v1/health``
+- ``sagemaker``: SageMaker-compatible inference endpoints
+- ``kserve``: KServe-compatible inference endpoints
+- ``responses``: ``/v1/responses`` (required for the ``pixel_generation``
+  task)
+
+The OpenAI routes are always registered when the ``openai`` API type is
+enabled, but each only functions when the model is served with a
+compatible ``--task`` value (for example ``embeddings_generation`` for
+``/v1/embeddings``, or ``audio_generation`` for ``/v1/audio/speech``).
+
+To run inference without an HTTP server, see
+`max generate </max/cli/generate>`_ (text completion) or
+`max encode </max/cli/encode>`_ (embeddings).
+
 For details about the endpoint APIs provided by the server, see [the MAX REST
 API reference](/max/rest-api/).
 
