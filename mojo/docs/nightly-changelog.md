@@ -59,6 +59,17 @@ This version is still a work in progress.
   thus no longer squats on these module names, paving the way for user modules
   named `algorithm`, `memory`, etc.
 
+- Specifying `ABI="C"` in an `@export` decorator is now deprecated; `abi("C")`
+  should be used instead.
+
+  ```mojo
+  @export("old", ABI="C")
+  def old(): pass
+
+  @export("new")
+  def new() abi("C"): pass
+  ```
+
 ## Library changes
 
 - Changed `Idx` to a `comptime` alias for `ComptimeInt`. Use `Idx[value]`

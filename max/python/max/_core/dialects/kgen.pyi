@@ -122,8 +122,6 @@ class ExportKind(enum.Enum):
 
     exported = 1
 
-    c_exported = 2
-
 class FnEffects(enum.Enum):
     none = 0
 
