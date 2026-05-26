@@ -61,9 +61,11 @@ class Gemma4ReasoningParser(ReasoningParser):
         self.tool_call_start_token_id = tool_call_start_token_id
         self.think_token_id = think_token_id
         self._prefix_cursor = 0
+        self._channel_started = False
 
     def reset(self) -> None:
         self._prefix_cursor = 0
+        self._channel_started = False
 
     def _format_reasoning_text(self, reasoning: str) -> str | None:
         if self._prefix_cursor >= len(self.reasoning_prefix):
@@ -131,16 +133,27 @@ class Gemma4ReasoningParser(ReasoningParser):
                     end_token_idx = i
                     break
 
-        if start_token_idx is None and not is_currently_reasoning:
-            # No reasoning section in this chunk and we weren't already
-            # inside one. Empty span, all tokens are content.
+        if start_token_idx is not None:
+            self._channel_started = True
+
+        # Fall through to the main reasoning logic only for confirmed
+        # mid-reasoning continuations: the caller says we're inside a
+        # reasoning span AND we've actually seen ``<|channel>`` open
+        # the block.  Everything else — not reasoning, or pre-seeded
+        # but the model never emitted ``<|channel>`` (skipped thinking)
+        # — returns an empty reasoning span so tokens route to content.
+        if start_token_idx is None and not (
+            is_currently_reasoning and self._channel_started
+        ):
             empty_span = ReasoningSpan(
                 reasoning_with_delimiters=(0, 0),
                 reasoning=(0, 0),
             )
             return ParsedReasoningDelta(
                 span=empty_span,
-                is_still_reasoning=False,
+                is_still_reasoning=(
+                    is_currently_reasoning and not delta_token_ids
+                ),
                 reasoning_text_formatter=self._format_reasoning_text,
             )
 

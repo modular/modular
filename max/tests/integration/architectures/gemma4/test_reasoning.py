@@ -73,17 +73,10 @@ def _make_parser(
         ),
         pytest.param(
             [10, 20, 30],
-            [10, 20, 30],
             [],
-            True,
-            id="no_channel_tokens",
-        ),
-        pytest.param(
-            [10, CHANNEL_END_TOKEN_ID, 30],
-            [10],
-            [30],
+            [10, 20, 30],
             False,
-            id="channel_end_only",
+            id="no_channel_tokens_skips_reasoning",
         ),
         pytest.param(
             [],
@@ -107,10 +100,10 @@ def _make_parser(
         ),
         pytest.param(
             [10, CHANNEL_END_TOKEN_ID, CHANNEL_START_TOKEN_ID, 20],
-            [10],
-            [CHANNEL_START_TOKEN_ID, 20],
+            [],
+            [10, CHANNEL_END_TOKEN_ID, CHANNEL_START_TOKEN_ID, 20],
             False,
-            id="channel_end_before_channel_start",
+            id="channel_end_before_channel_start_skips_reasoning",
         ),
     ],
 )
@@ -143,6 +136,8 @@ def test_stream_tool_call_ends_reasoning() -> None:
 
 def test_stream_channel_end_wins_over_tool_call() -> None:
     parser = _make_parser()
+    # Establish mid-reasoning state from a prior chunk.
+    parser.stream([CHANNEL_START_TOKEN_ID, 50])
     tokens = [
         10,
         CHANNEL_END_TOKEN_ID,
@@ -162,6 +157,8 @@ def test_stream_channel_end_wins_over_tool_call() -> None:
 
 def test_stream_no_tool_call_support() -> None:
     parser = _make_parser(tool_call_start_token_id=None)
+    # Establish mid-reasoning state from a prior chunk.
+    parser.stream([CHANNEL_START_TOKEN_ID, 50])
     tokens = [10, TOOL_CALL_START_TOKEN_ID, 30]
     delta = parser.stream(tokens)
     assert delta.span.extract_reasoning(tokens) == [
@@ -171,6 +168,76 @@ def test_stream_no_tool_call_support() -> None:
     ]
     assert delta.span.extract_content(tokens) == []
     assert delta.is_still_reasoning
+
+
+# ---- Continuation scenarios (channel already started) --------------------
+
+
+def test_stream_continuation_no_delimiters() -> None:
+    """Mid-reasoning continuation: ``<|channel>`` seen in prior chunk, so
+    subsequent tokens without delimiters are still reasoning."""
+    parser = _make_parser()
+    parser.stream([CHANNEL_START_TOKEN_ID, 50])
+    tokens = [10, 20, 30]
+    delta = parser.stream(tokens)
+    assert delta.span.extract_reasoning(tokens) == [10, 20, 30]
+    assert delta.span.extract_content(tokens) == []
+    assert delta.is_still_reasoning is True
+
+
+def test_stream_continuation_channel_end_only() -> None:
+    """Mid-reasoning continuation: ``<channel|>`` closes the block."""
+    parser = _make_parser()
+    parser.stream([CHANNEL_START_TOKEN_ID, 50])
+    tokens = [10, CHANNEL_END_TOKEN_ID, 30]
+    delta = parser.stream(tokens)
+    assert delta.span.extract_reasoning(tokens) == [10]
+    assert delta.span.extract_content(tokens) == [30]
+    assert delta.is_still_reasoning is False
+
+
+def test_stream_continuation_channel_end_before_channel_start() -> None:
+    """Mid-reasoning: ``<channel|>`` ends the block, subsequent
+    ``<|channel>`` falls into the content region."""
+    parser = _make_parser()
+    parser.stream([CHANNEL_START_TOKEN_ID, 50])
+    tokens = [10, CHANNEL_END_TOKEN_ID, CHANNEL_START_TOKEN_ID, 20]
+    delta = parser.stream(tokens)
+    assert delta.span.extract_reasoning(tokens) == [10]
+    assert delta.span.extract_content(tokens) == [CHANNEL_START_TOKEN_ID, 20]
+    assert delta.is_still_reasoning is False
+
+
+# ---- Model skips thinking (CENG-249 regression) -------------------------
+
+
+def test_stream_skips_reasoning_routes_to_content() -> None:
+    """When ``enable_thinking`` is on but the model decides to skip
+    the thinking phase (no ``<|channel>`` emitted), tokens must be
+    routed to content, not reasoning."""
+    parser = _make_parser()
+    # Chunk 1: pre-seeded into reasoning but no <|channel> — model
+    # skipped thinking.
+    tokens1 = [10, 20, 30]
+    delta1 = parser.stream(tokens1, is_currently_reasoning=True)
+    assert delta1.span.extract_reasoning(tokens1) == []
+    assert delta1.span.extract_content(tokens1) == [10, 20, 30]
+    assert delta1.is_still_reasoning is False
+
+    # Chunk 2: caller now passes is_currently_reasoning=False.
+    tokens2 = [40, 50]
+    delta2 = parser.stream(tokens2, is_currently_reasoning=False)
+    assert delta2.span.extract_reasoning(tokens2) == []
+    assert delta2.span.extract_content(tokens2) == [40, 50]
+    assert delta2.is_still_reasoning is False
+
+
+def test_stream_skips_reasoning_empty_chunk_stays_reasoning() -> None:
+    """An empty first chunk is not enough to conclude the model skipped
+    thinking — we need to see actual non-channel tokens first."""
+    parser = _make_parser()
+    delta = parser.stream([], is_currently_reasoning=True)
+    assert delta.is_still_reasoning is True
 
 
 # ---- is_currently_reasoning=False (dynamic mid-stream detection) ----------
@@ -325,6 +392,20 @@ def test_reset_clears_prefix_state() -> None:
     assert delta2.reasoning_text_formatter is not None
     result = delta2.reasoning_text_formatter("thought\nactual")
     assert result == "actual"
+
+
+def test_reset_clears_channel_started_state() -> None:
+    """After reset, the parser should again detect skipped thinking."""
+    parser = _make_parser()
+    parser.stream([CHANNEL_START_TOKEN_ID, 10])
+
+    parser.reset()
+
+    tokens = [10, 20, 30]
+    delta = parser.stream(tokens, is_currently_reasoning=True)
+    assert delta.span.extract_reasoning(tokens) == []
+    assert delta.span.extract_content(tokens) == [10, 20, 30]
+    assert delta.is_still_reasoning is False
 
 
 @pytest.mark.asyncio
