@@ -291,24 +291,6 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// FnLiteralType
-//===----------------------------------------------------------------------===//
-
-class FnLiteralType : public FuncLiteralType {
-public:
-  using FuncLiteralType::FuncLiteralType;
-  FnLiteralType(FuncLiteralType fnLiteral);
-
-  FnType getFnType() const { return cast<FnType>(getFuncLiteral().getType()); }
-
-  /// True if this literal's signature is an LIT `FnType`.
-  static bool classof(FuncLiteralType type);
-  static bool classof(Type type);
-
-  static FnLiteralType get(TypedAttr funcLiteral);
-};
-
-//===----------------------------------------------------------------------===//
 // FnLiteralTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
@@ -321,10 +303,10 @@ public:
   FnLiteralTypeGeneratorType(FuncLiteralTypeGeneratorType gen);
 
   // CRTP for FnTypeWrapperGeneratorType
-  FnType getBodyFnType() { return getBody().getFnType(); }
+  FnType getBodyFnType() { return cast<FnType>(getBody().getFuncType()); }
   PogListAttr getMetadata();
 
-  FnLiteralType getBody();
+  FuncLiteralType getBody();
 
   static bool classof(FuncLiteralTypeGeneratorType type);
   static bool classof(Type type);

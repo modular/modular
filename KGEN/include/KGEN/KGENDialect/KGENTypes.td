@@ -398,6 +398,7 @@ def KGEN_FuncLiteralType : KGENType<"FuncLiteral", "func.literal", [
 
   let extraClassDeclaration = [{
     FuncSymbolAttr getTargetLiteral() const;
+    FuncType getFuncType() const { return cast<FuncType>(getFuncLiteral().getType()); }
   }];
 }
 
