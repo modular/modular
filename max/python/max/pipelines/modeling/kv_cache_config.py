@@ -127,10 +127,10 @@ class KVCacheConfig(ConfigFileModel):
     device_memory_utilization: float = Field(
         default=0.9,
         description=(
-            "The fraction of available device memory that the process should "
-            "consume. This informs the KVCache workspace size: "
-            "``kv_cache_workspace = (total_free_memory * device_memory_utilization) "
-            "- model_weights_size``."
+            "The fraction of available device memory that the process "
+            "should consume. The remaining headroom holds the KV cache: "
+            "``kv_cache_workspace = (total_free_memory * "
+            "device_memory_utilization) - model_weights_size``."
         ),
     )
     """The fraction of available device memory the process should consume."""
