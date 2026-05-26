@@ -160,7 +160,10 @@ class MAXModelConfig(MAXModelConfigBase):
 
     weight_path: list[Path] = Field(
         default_factory=list,
-        description="Optional path or URL of the model weights to use.",
+        description=(
+            "Optional path or URL of the model weights to use. "
+            "Overrides default weight discovery."
+        ),
     )
     """The path or URL of the model weights to use."""
 
