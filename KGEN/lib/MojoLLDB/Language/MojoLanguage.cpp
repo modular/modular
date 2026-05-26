@@ -11,6 +11,7 @@
 #include "Formatters/MojoDictTypeFormatter.h"
 #include "Formatters/MojoKGENVariantTypeFormatter.h"
 #include "Formatters/MojoListTypeFormatter.h"
+#include "Formatters/MojoPythonObjectFormatter.h"
 #include "Formatters/MojoStringHelpers.h"
 #include "Formatters/MojoVariantTypeFormatter.h"
 #include "lldb/API/SBValue.h"
@@ -593,6 +594,13 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
                 "collections::dict::Dict summary provider", kDictRegex,
                 summaryFlags, /*regex=*/true);
+
+  summaryFlags.SetDontShowChildren(true);
+  AddCXXSummary(
+      mojoCategorySP, mojoPythonObjectSummaryProvider,
+      "Mojo PythonObject summary provider",
+      R"(!lit\.struct<(@std::)?@python::@python_object::@PythonObject>)",
+      summaryFlags, /*regex=*/true);
 }
 
 lldb::TypeCategoryImplSP MojoLanguage::GetFormatters() {
