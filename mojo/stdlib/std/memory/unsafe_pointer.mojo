@@ -533,6 +533,22 @@ struct UnsafePointer[
         ), "Pointer/Int size mismatch"
         self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
 
+    @always_inline
+    @doc_hidden
+    def __init__(out self, *, unsafe_from_address: IntLiteral):
+        """Create a pointer from a raw address.
+
+        This checks at compile time if the address is invalid and emits a compilation error.
+        """
+        comptime assert type_of(unsafe_from_address)() != 0, (
+            "UnsafePointer is non-nullable. To construct a null pointer, use"
+            " Optional[UnsafePointer] to model nullability."
+        )
+        comptime assert (
+            type_of(unsafe_from_address)() > 0
+        ), "UnsafePointer's address cannot be negative."
+        self = Self(unsafe_from_address=Int(unsafe_from_address))
+
     @always_inline("nodebug")
     def __init__(
         out self,
