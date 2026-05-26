@@ -21,8 +21,9 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParamInterface,
 )
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithDecoderSubconfigKVParams,
     ArchConfigWithKVAndVisionCache,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -327,7 +328,9 @@ class VisionConfig:
 
 
 @dataclass(kw_only=True)
-class KimiK2_5Config(ArchConfigWithKVAndVisionCache):
+class KimiK2_5Config(
+    ArchConfigWithDecoderSubconfigKVParams, ArchConfigWithKVAndVisionCache
+):
     """Configuration for Kimi-K2.5 models."""
 
     devices: list[DeviceRef]
@@ -416,26 +419,6 @@ class KimiK2_5Config(ArchConfigWithKVAndVisionCache):
             )
         max_tokens = (pos_h * pos_w) // merge_sq
         return max_tokens * hidden * 2
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParamInterface:
-        # Delegate to KimiK2_5TextConfig for language model parameters.
-        llm_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return KimiK2_5TextConfig.construct_kv_params(
-            huggingface_config=llm_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
