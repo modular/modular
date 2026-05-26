@@ -835,9 +835,10 @@ def isinf[
     """
 
     comptime if not dtype.is_floating_point() or dtype in (
+        DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
-        # The OCP MX FP4 (E2M1) format has no Inf encoding.
+        DType.float8_e8m0fnu,
         DType.float4_e2m1fn,
     ):
         return SIMD[DType.bool, width](fill=False)
