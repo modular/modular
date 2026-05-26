@@ -340,7 +340,6 @@ def test_tuple_conditional_conformances() raises:
     assert_false(conforms_to(Tuple[MoveOnly[Int]], Copyable))
     assert_false(conforms_to(Tuple[MoveOnly[Int]], Defaultable))
     assert_false(conforms_to(Tuple[MoveOnly[Int]], ImplicitlyCopyable))
-    assert_false(conforms_to(Tuple[MoveOnly[Int]], Writable))
 
 
 def test_tuple_hash() raises:

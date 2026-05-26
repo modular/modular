@@ -157,10 +157,19 @@ def test_optional_conformance() raises:
     assert_true(conforms_to(Optional[Int], Writable))
 
 
+@fieldwise_init
+struct _NonWritable(Movable):
+    """A `Movable & ImplicitlyDestructible` type that is not `Writable`,
+    `Copyable`, or `Hashable` — used to exercise the negative case of
+    `Optional`'s conditional conformances."""
+
+    var n: Int
+
+
 def test_optional_conditional_conformances() raises:
     assert_true(conforms_to(Optional[Int], Writable))
     assert_true(conforms_to(Optional[String], Writable))
-    assert_false(conforms_to(Optional[MoveOnly[Int]], Writable))
+    assert_false(conforms_to(Optional[_NonWritable], Writable))
 
     assert_true(conforms_to(Optional[Int], Copyable))
     assert_true(conforms_to(Optional[String], Copyable))

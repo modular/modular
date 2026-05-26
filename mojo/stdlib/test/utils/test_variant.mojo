@@ -411,6 +411,15 @@ def test_variant_hash() raises:
     assert_true(hash(V1(42)) != hash(V1(99)))
 
 
+@fieldwise_init
+struct _Bare(Movable):
+    """A `Movable & ImplicitlyDestructible` type that conforms to nothing
+    else — used to exercise the negative case of `Variant`'s conditional
+    conformances."""
+
+    var n: Int
+
+
 def test_variant_conditional_conformances() raises:
     assert_true(conforms_to(Variant[Int, String], Equatable))
     assert_true(conforms_to(Variant[Int], Equatable))
@@ -419,9 +428,9 @@ def test_variant_conditional_conformances() raises:
     assert_true(conforms_to(Variant[Int, String], Writable))
     assert_true(conforms_to(Variant[Int], Writable))
 
-    assert_false(conforms_to(Variant[MoveOnly[Int]], Equatable))
-    assert_false(conforms_to(Variant[MoveOnly[Int]], Hashable))
-    assert_false(conforms_to(Variant[MoveOnly[Int]], Writable))
+    assert_false(conforms_to(Variant[_Bare], Equatable))
+    assert_false(conforms_to(Variant[_Bare], Hashable))
+    assert_false(conforms_to(Variant[_Bare], Writable))
 
     # Copyable: all types Copyable
     assert_true(conforms_to(Variant[Int, String], Copyable))

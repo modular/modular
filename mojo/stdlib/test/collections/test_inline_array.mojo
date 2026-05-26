@@ -21,7 +21,13 @@ from std.memory import (
     is_trivially_destructible,
     is_trivially_movable,
 )
-from test_utils import CopyCounter, DelRecorder, MoveCounter, check_write_to
+from test_utils import (
+    CopyCounter,
+    DelRecorder,
+    MoveCounter,
+    MoveOnly,
+    check_write_to,
+)
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 
@@ -557,6 +563,25 @@ def test_inline_array_iter_owned_bounds() raises:
     assert_equal(it.bounds()[0], 1)
     _ = it.__next__()
     assert_equal(it.bounds()[0], 0)
+
+
+def test_inline_array_move_only() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `InlineArray[T: Movable, size]`.
+    assert_false(conforms_to(InlineArray[MoveOnly[Int], 2], Copyable))
+
+    var arr: InlineArray[MoveOnly[Int], 3] = [
+        MoveOnly[Int](0),
+        MoveOnly[Int](1),
+        MoveOnly[Int](2),
+    ]
+    assert_equal(arr[0], MoveOnly[Int](0))
+    assert_equal(arr[1], MoveOnly[Int](1))
+    assert_equal(arr[2], MoveOnly[Int](2))
+    assert_equal(len(arr), 3)
+
+    # `unsafe_get` is a non-copying accessor.
+    assert_equal(arr.unsafe_get(2), MoveOnly[Int](2))
 
 
 def main() raises:

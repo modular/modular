@@ -129,9 +129,11 @@ This version is still a work in progress.
 - A new `BinaryHeap` collection has been added to the `std.collections` module.
   This is a list-backed binary max-heap.
 
-- `List[T]` no longer requires its type to be `Copyable`, but now works with
-  `Movable`-only types. Iteration still requires `Copyable` and will emit
-  a `comptime assert` if not satisfied.
+- The core collection types no longer require their element type to be
+  `Copyable` — `Movable & ImplicitlyDestructible` is now the minimum bound.
+  This applies to `List[T]`, `Deque[T]`, `LinkedList[T]`, `InlineArray[T,
+  size]`, and the value type `V` of `Dict[K, V, H]` (and the underlying
+  `SwissTable`/`SwissTableEntry` and `OwnedKwargsDict`).
 
 - `reflect[T]` is now a `comptime` alias for the `Reflected[T]` handle type
   rather than a function returning a zero-sized handle instance. All methods on

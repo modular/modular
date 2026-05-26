@@ -19,6 +19,7 @@ traversal. The implementation includes iterator support for forward and reverse
 traversal.
 """
 
+from std.builtin.rebind import downcast
 from std.collections import check_bounds
 from std.reflection import call_location
 import std.format._utils as fmt
@@ -30,8 +31,8 @@ from std.sys import align_of, size_of
 
 
 struct Node[
-    ElementType: Copyable & ImplicitlyDestructible,
-](Copyable):
+    ElementType: Movable & ImplicitlyDestructible,
+](Movable):
     """A node in a linked list data structure.
 
     Parameters:
@@ -99,7 +100,7 @@ struct Node[
 
 
 def _make_node[
-    T: Copyable & ImplicitlyDestructible
+    T: Movable & ImplicitlyDestructible
 ](
     out node: Node[T],
     var value: T,
@@ -213,14 +214,15 @@ struct _LinkedListIterOwned[T: Copyable & ImplicitlyDestructible](
         return (sz, {sz})
 
 
-struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
+struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
     Boolable,
-    Copyable,
+    Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
     Iterable,
     IterableOwned,
+    Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
 ):
@@ -228,7 +230,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
     Parameters:
         ElementType: The type of elements stored in the list. Must implement the
-            `Copyable` trait.
+            `Movable` trait.
 
     A doubly-linked list is a data structure where each element points to both
     the next and previous elements, allowing for efficient insertion and deletion
@@ -239,9 +241,14 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         UnsafePointer[Node[Self.ElementType], MutExternalOrigin]
     ]
 
+    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the
+    # `downcast`s below — it is already implied by `ElementType`'s bound.
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _LinkedListIter[Self.ElementType, iterable_origin]
+    ]: Iterator = _LinkedListIter[
+        downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+        iterable_origin,
+    ]
     """The iterator type for this linked list.
 
     Parameters:
@@ -250,7 +257,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     """
 
     comptime IteratorOwnedType: Iterator = _LinkedListIterOwned[
-        Self.ElementType
+        downcast[Self.ElementType, Copyable & ImplicitlyDestructible]
     ]
     """The owned iterator type for this linked list."""
 
@@ -293,7 +300,9 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         elements^.consume_elements(init_elt)
 
-    def __init__(out self, *, copy: Self):
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.ElementType, Copyable):
         """Initialize this list as a copy of another list.
 
         Args:
@@ -661,9 +670,13 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
             Time Complexity: O(n) in len(self).
         """
-        for i, ref elem in enumerate(self):
-            if elem == value:
+        var current = self._head
+        var i = 0
+        while current:
+            if current.unsafe_value()[].value == value:
                 return i
+            current = current.unsafe_value()[].next()
+            i += 1
 
         raise "ValueError: Given element is not in linked list"
 
@@ -707,15 +720,15 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         if self._size != other._size:
             return False
 
-        var self_cursor = self._head
-        var other_cursor = other._head
+        var self_curr = self._head
+        var other_curr = other._head
 
-        while self_cursor:
-            if self_cursor.value()[].value != other_cursor.value()[].value:
+        while self_curr:
+            if self_curr.value()[].value != other_curr.value()[].value:
                 return False
 
-            self_cursor = self_cursor.value()[].next()
-            other_cursor = other_cursor.value()[].next()
+            self_curr = self_curr.value()[].next()
+            other_curr = other_curr.value()[].next()
 
         return True
 
@@ -806,7 +819,19 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
-        return {self^}
+        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
+        comptime assert conforms_to(
+            Self.ElementType, Copyable
+        ), "LinkedList iteration requires the element to be `Copyable`."
+        return {
+            rebind_var[
+                LinkedList[
+                    downcast[
+                        Self.ElementType, Copyable & ImplicitlyDestructible
+                    ]
+                ]
+            ](self^)
+        }
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
@@ -819,11 +844,32 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
-        return _LinkedListIter(Pointer(to=self))
+        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
+        comptime assert conforms_to(
+            Self.ElementType, Copyable
+        ), "LinkedList iteration requires the element to be `Copyable`."
+        return _LinkedListIter(
+            rebind[
+                Pointer[
+                    LinkedList[
+                        downcast[
+                            Self.ElementType, Copyable & ImplicitlyDestructible
+                        ]
+                    ],
+                    origin_of(self),
+                ]
+            ](Pointer(to=self))
+        )
 
+    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the
+    # `downcast`s below — it is already implied by `ElementType`'s bound.
     def __reversed__(
-        self,
-    ) -> _LinkedListIter[Self.ElementType, origin_of(self), forward=False]:
+        ref self,
+    ) -> _LinkedListIter[
+        downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+        origin_of(self),
+        forward=False,
+    ]:
         """Iterate backwards over the list, returning immutable references.
 
         Returns:
@@ -834,9 +880,26 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
+        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
+        comptime assert conforms_to(
+            Self.ElementType, Copyable
+        ), "LinkedList iteration requires the element to be `Copyable`."
         return _LinkedListIter[
-            Self.ElementType, origin_of(self), forward=False
-        ](Pointer(to=self))
+            downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+            origin_of(self),
+            forward=False,
+        ](
+            rebind[
+                Pointer[
+                    LinkedList[
+                        downcast[
+                            Self.ElementType, Copyable & ImplicitlyDestructible
+                        ]
+                    ],
+                    origin_of(self),
+                ]
+            ](Pointer(to=self))
+        )
 
     def __bool__(self) -> Bool:
         """Check if the list is non-empty.

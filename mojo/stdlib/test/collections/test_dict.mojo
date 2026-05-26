@@ -21,7 +21,7 @@ from std.collections._swisstable import GROUP_WIDTH
 
 from std.hashlib import Hasher, default_comp_time_hasher
 
-from test_utils import CopyCounter, DelCounter, check_write_to
+from test_utils import CopyCounter, DelCounter, MoveOnly, check_write_to
 from std.testing import (
     assert_equal,
     assert_false,
@@ -149,7 +149,7 @@ def test_dict_fromkeys_optional() raises:
         "b": None,
         "c": None,
     }
-    var dict = Dict[_, Int].fromkeys(materialize[keys]())
+    var dict = Dict[String, Optional[Int]].fromkeys(materialize[keys](), None)
 
     assert_equal(len(dict), len(expected_dict))
 
@@ -1333,6 +1333,38 @@ def test_dict_iter_owned_bounds() raises:
     assert_equal(it.bounds()[0], 1)
     _ = it.__next__()
     assert_equal(it.bounds()[0], 0)
+
+
+def test_dict_move_only_value() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `Dict[K, V: Movable & ImplicitlyDestructible, H]`.
+    assert_false(conforms_to(Dict[String, MoveOnly[Int]], Copyable))
+
+    var d = Dict[String, MoveOnly[Int]]()
+    d["a"] = MoveOnly[Int](1)
+    d["b"] = MoveOnly[Int](2)
+    d["c"] = MoveOnly[Int](3)
+    assert_equal(d["a"], MoveOnly[Int](1))
+    assert_equal(d["b"], MoveOnly[Int](2))
+    assert_equal(d["c"], MoveOnly[Int](3))
+    assert_equal(len(d), 3)
+    assert_true("a" in d)
+    assert_false("missing" in d)
+
+    # `pop` moves the value out.
+    var v = d.pop("a")
+    assert_equal(v, MoveOnly[Int](1))
+    assert_equal(len(d), 2)
+    assert_false("a" in d)
+
+    # `popitem` returns an owned entry, draining the dict.
+    var seen: Int = 0
+    while len(d) > 0:
+        var entry = d.popitem()
+        seen += 1
+        _ = entry^
+    assert_equal(seen, 2)
+    assert_equal(len(d), 0)
 
 
 def main() raises:

@@ -13,7 +13,7 @@
 
 from std.collections import Deque
 
-from test_utils import Observable, check_write_to
+from test_utils import MoveOnly, Observable, check_write_to
 from std.testing import assert_equal, assert_false, assert_raises, assert_true
 from std.testing import TestSuite
 
@@ -1269,6 +1269,35 @@ def test_deque_iter_owned_bounds() raises:
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
     assert_equal(0, upper.value())
+
+
+def test_deque_move_only() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `Deque[T: Movable & ImplicitlyDestructible]`.
+    assert_false(conforms_to(Deque[MoveOnly[Int]], Copyable))
+
+    var d = Deque[MoveOnly[Int]]()
+    d.append(MoveOnly[Int](0))
+    d.append(MoveOnly[Int](1))
+    d.appendleft(MoveOnly[Int](-1))
+    assert_equal(len(d), 3)
+    assert_equal(d[0], MoveOnly[Int](-1))
+    assert_equal(d[1], MoveOnly[Int](0))
+    assert_equal(d[2], MoveOnly[Int](1))
+
+    # Methods that take/move don't require `Copyable`.
+    var right = d.pop()
+    assert_equal(right, MoveOnly[Int](1))
+    var left = d.popleft()
+    assert_equal(left, MoveOnly[Int](-1))
+    assert_equal(len(d), 1)
+
+    d.insert(0, MoveOnly[Int](42))
+    assert_equal(d[0], MoveOnly[Int](42))
+    assert_equal(d[1], MoveOnly[Int](0))
+
+    d.clear()
+    assert_equal(len(d), 0)
 
 
 # ===-------------------------------------------------------------------===#

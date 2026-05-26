@@ -38,7 +38,11 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveOnly[T: Movable & ImplicitlyDestructible](Movable):
+struct MoveOnly[T: Movable & ImplicitlyDestructible](
+    Equatable where conforms_to(T, Equatable),
+    Movable,
+    Writable where conforms_to(T, Writable),
+):
     """Utility for testing MoveOnly types.
 
     Parameters:
@@ -56,6 +60,27 @@ struct MoveOnly[T: Movable & ImplicitlyDestructible](Movable):
             i: The test data payload.
         """
         self.data = i^
+
+    def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+        """Compare two `MoveOnly` instances for equality on their payload.
+
+        Args:
+            other: The other instance to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.data == other.data
+
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
+        """Write the payload to a `Writer`.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(self.data)
 
 
 # ===----------------------------------------------------------------------=== #
