@@ -50,6 +50,9 @@ private:
 // we want to limit the scope of these functions to the TCMallocAllocator class.
 struct TCMallocGlobals {
   static MODULAR_CXX_EXPORT void *tc_new(size_t alignment, size_t size);
+  /// Allocate from a specific TCMalloc NUMA partition (0 or 1).
+  static MODULAR_CXX_EXPORT void *tc_new(size_t alignment, size_t size,
+                                         size_t numaPartition);
   static MODULAR_CXX_EXPORT void tc_delete(void *ptr);
 };
 

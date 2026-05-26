@@ -19,6 +19,7 @@ modular_cc_test(
         "//MLRT:AsyncRT/RuntimeGlobals",
         "//Support:Base",
         "//Support:Globals",
+        "//Support:Threading",
     ],
 )
 

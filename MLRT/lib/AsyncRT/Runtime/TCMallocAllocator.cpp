@@ -20,12 +20,26 @@ public:
   explicit TCMallocAllocator(int numaPlacement) : Allocator(numaPlacement) {}
 
 private:
-  /// Allocate the specified number of bytes with the specified alignment.
   void *allocateBytes(size_t size, size_t alignment) override {
     TimeTraceScope scope(MemAllocFreeProfilerEntry::create("mem.alloc.tcmalloc",
                                                            (uint64_t)size));
-    // TODO: honor getNumaPlacement() at allocation time; today the
-    // node is stored on the allocator but tc_new itself is not yet NUMA-aware.
+    if (getNumaPlacement() != kAnyNumaNode) {
+      // TCMalloc uses a maximum of two partitions, even if there are more than
+      // two NUMA nodes, NUMA nodes are mapped to alternating partitions, so
+      // here we match this.
+      // TODO: This is a know limitation of TCMalloc that we don't intend to
+      // fix, instead this will be resolved when we introduce our own allocation
+      // library to replace TCMalloc.
+      const size_t partition = static_cast<size_t>(getNumaPlacement()) % 2;
+      void *ptr = TCMallocGlobals::tc_new(alignment, size, partition);
+#if MODULAR_ALLOC_LOGGING
+      MLOG_DEBUG("tcmalloc alloc (numa partition {}): ptr={} size={} "
+                 "alignment={}",
+                 partition, ptr, size, alignment);
+#endif
+      return ptr;
+    }
+
     void *ptr = TCMallocGlobals::tc_new(alignment, size);
 #if MODULAR_ALLOC_LOGGING
     MLOG_DEBUG("tcmalloc alloc: ptr={} size={} alignment={}", ptr, size,
@@ -34,7 +48,6 @@ private:
     return ptr;
   }
 
-  /// Deallocate the specified pointer that has the specified size.
   void deallocateBytes(void *ptr, size_t size) override {
     TimeTraceScope scope(
         MemAllocFreeProfilerEntry::create("mem.free.tcmalloc", (uint64_t)size));
