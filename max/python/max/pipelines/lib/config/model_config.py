@@ -26,7 +26,11 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.graph.weights import WeightsFormat, weights_format
+from max.graph.weights import (
+    WeightsFormat,
+    load_weights,
+    weights_format,
+)
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.device_specs import (
@@ -34,6 +38,11 @@ from max.pipelines.lib.device_specs import (
     coerce_device_specs_input,
 )
 from max.pipelines.lib.memory_estimation import to_human_readable_bytes
+from max.pipelines.lib.weight_loader import (
+    WeightLoader,
+    _loader_over_weights,
+    dict_loader,
+)
 from max.pipelines.modeling.config_enums import (
     RopeType,
     SupportedEncoding,
@@ -1381,6 +1390,32 @@ class MAXModelConfig(MAXModelConfigBase):
         else:
             local_path = Path(weight_repo.repo_id)
             return [local_path / x for x in self.weight_path]
+
+    def loader(self) -> WeightLoader:
+        """Returns a :class:`WeightLoader` over this config's weights.
+
+        The loader's namespace is the raw parameter names from the source
+        files (un-prefixed). Pass this directly to a single-model
+        pipeline's Module tree; for multi-component pipelines, use
+        :meth:`~max.pipelines.lib.model_manifest.ModelManifest.loader`
+        which exposes the role-prefixed union across configs.
+
+        Resolution is lazy: the safetensors mmap stays cold for
+        parameters the Module never asks for. Inherits the HuggingFace
+        download side-effect from :meth:`resolved_weight_paths` for
+        online repos.
+
+        Returns an empty loader when there are no weight paths -- common
+        for components in a diffusion manifest that are config-only
+        (for example, the scheduler).
+
+        Returns:
+            A :class:`WeightLoader` over this config's source namespace.
+        """
+        paths = self.resolved_weight_paths()
+        if not paths:
+            return dict_loader({})
+        return _loader_over_weights(load_weights(paths))
 
     @property
     def default_device_spec(self) -> DeviceSpec:

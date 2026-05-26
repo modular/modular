@@ -67,8 +67,22 @@ modular_py_test(
     name = "test_model_manifest",
     srcs = ["test_model_manifest.py"],
     deps = [
+        "//max/python/max/graph",
         "//max/python/max/pipelines/lib",
         requirement("msgspec"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_weight_loader",
+    srcs = ["test_weight_loader.py"],
+    deps = [
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
     ],
 )
 
@@ -120,6 +134,7 @@ modular_py_test(
             "test_structured_output_spec_decode_gpu.py",
             "test_model_manifest.py",
             "test_model_manifest_hf.py",
+            "test_weight_loader.py",
         ],
     ),
     tags = [
