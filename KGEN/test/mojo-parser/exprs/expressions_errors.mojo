@@ -191,9 +191,9 @@ def test_func_type():
     comptime float4: def[a: Int](mut *Int) thin -> None = test_func_type
     # expected-error @below {{'def(*MemType) raises capturing -> None'}}
     comptime float5: def(*MemType) raises capturing -> None = test_func_type
-    # expected-error @below {{'def[*Ts: AnyType](var * *values) capturing -> None'}}
+    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) capturing -> None'}}
     comptime float6: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'def[*Ts: AnyType](var * *values) capturing -> None'}}
+    # expected-error @below {{'def[*Ts: AnyType](var * *Ts) capturing -> None'}}
     comptime float6a: def[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'def[T: TrivialRegisterPassable](mut *T) capturing -> None'}}
     comptime float7: def[T: TrivialRegisterPassable](mut *T) capturing -> None = test_func_type
@@ -800,7 +800,7 @@ def unbound_function_type():
   # expected-error @below {{function type missing required origin set parameter}}
   var f: def() thin [_] -> None
 
-  # expected-error @below {{cannot use parametric function type at runtime 'def(HasIntParam[p]) -> None'}}
+  # expected-error @below {{cannot use parametric function type at runtime 'def(HasIntParam[_]) -> None'}}
   var g: def(HasIntParam) thin -> None
 
   # expected-error @below {{'HasIntParamAlias' is not a concrete type, use '[]' to bind missing parameters}}
@@ -1127,7 +1127,7 @@ struct TwoParamsType[a: Int, b: Int]:
 comptime TwoParamsTypeAlias[B: Int] = TwoParamsType[B, ...]
 # expected-note @+1 {{function declared here}}
 def take_anytype[T: AnyType]():
-  # expected-error @below {{'take_anytype' parameter 'T' has 'AnyType' type, but value has type '[B: Int] AnyStruct[TwoParamsType[B, ?]]'}}
+  # expected-error @below {{'take_anytype' parameter 'T' has 'AnyType' type, but value has type '[B: Int] AnyStruct[TwoParamsType[B, _]]'}}
     take_anytype[TwoParamsTypeAlias]()
 
 def ternary_missing_else(a: Int, b: Int) -> Int:

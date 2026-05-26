@@ -36,7 +36,7 @@ struct ParamType[x: Int](FooTrait):
 
 
 def invalid_trait_bind():
-    # expected-error @below {{'ParamType[?]' is not concrete, use '[]' to bind missing parameters}}
+    # expected-error @below {{'ParamType[_]' is not concrete, use '[]' to bind missing parameters}}
     comptime Bound: FooTrait = ParamType
 
 

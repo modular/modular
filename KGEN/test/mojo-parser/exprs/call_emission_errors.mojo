@@ -221,10 +221,10 @@ def test_ref[mut: Bool, //, origin: Origin[mut=mut]](ref[origin] arg: String):
 
 
 def call_test_ref(mut s: String):
-    # expected-error @+1 {{cannot use parameterized function of type 'def[mut: Bool, //, origin: Origin[mut=mut]](ref[_mlir_origin] arg: String) -> None'}}
+    # expected-error @+1 {{cannot use parameterized function of type 'def[mut: Bool, //, origin: Origin[mut=mut]](ref[origin] arg: String) -> None'}}
     var f1 = test_ref
 
-    # expected-error @+1 {{cannot use parameterized function of type 'def[origin: MutOrigin](ref[_mlir_origin] arg: String) -> None' without binding all its parameters}}
+    # expected-error @+1 {{cannot use parameterized function of type 'def[origin: MutOrigin](ref[origin] arg: String) -> None' without binding all its parameters}}
     var f2 = test_ref[mut=True, ...]
     # expected-error @+1 {{cannot call dynamic function with parameterized type}}
     f2(s)

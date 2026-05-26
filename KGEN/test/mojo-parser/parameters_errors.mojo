@@ -684,7 +684,7 @@ struct UnboundFieldContainer[T: AnyType, size: Int]:
     def __init__(out self): pass
 
 struct UnboundFieldHolder:
-    # expected-error @below {{'UnboundFieldContainer[Int, ?]' is not concrete, use '[]' to bind missing parameters}}
+    # expected-error @below {{'UnboundFieldContainer[Int, _]' is not concrete, use '[]' to bind missing parameters}}
     var data: UnboundFieldContainer[Int, _]
 
 def use_unbound_field_holder():

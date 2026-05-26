@@ -49,10 +49,10 @@ comptime MyDep[T: AnyType, v: T] = Dep[T, v]
 # expected-note @below {{'MyDep' is aka 'comptime[T: AnyType, v: T] Dep[T, v]'}}
 comptime MyDepDotT = MyDep.T
 
-# expected-error @below {{'Dep[?, ?]' value has no attribute 'hello'}}
+# expected-error @below {{'Dep[_, _]' value has no attribute 'hello'}}
 comptime MyDepGetAlias0 = MyDep.hello
 
-# expected-error @below {{'Dep[Int, ?]' value has no attribute 'hello'}}
+# expected-error @below {{'Dep[Int, _]' value has no attribute 'hello'}}
 comptime MyDepGetAlias1 = MyDep[Int].hello
 
 # expected-error @below {{'Dep[Int, 2]' value has no attribute 'hello'}}

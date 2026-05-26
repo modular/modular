@@ -377,18 +377,29 @@ static BodyT printGeneratorInterface(raw_ostream &os,
   for (auto [i, type] : llvm::enumerate(inputParamTypes)) {
     ASTType reboundType = evaluator.getReboundType(type);
 
+    auto curPassingKind = paramInfo.getPassingKind(i);
+
+    // Don't print this if it is an autoparam.
     StringRef name = paramInfo.getName(i).strref();
+    if ((curPassingKind == PassingKind::Inferred && name.contains('.')) ||
+        curPassingKind == PassingKind::Implicit) {
+      // If this is an origin parameter Foo._mlir_origin, print it as "Foo".
+      // These come up in ref [x] specifications all the time.
+      if (sugarIsa<OriginType>(reboundType) && name.contains("._mlir_origin")) {
+        name = name.substr(0, name.find("._mlir_origin"));
+        evaluator.appendIndexBinding(ParamDeclRefAttr::get(name, reboundType));
+        continue;
+      }
+      // Any direct use of this should print as _ since we're not going to show
+      // the declaration.
+      evaluator.appendIndexBinding(UnboundAttr::get(reboundType));
+      continue;
+    }
+
     if (!name.empty())
       evaluator.appendIndexBinding(ParamDeclRefAttr::get(name, reboundType));
     else
       evaluator.appendIndexBinding(ParamIndexRefAttr::get(i, reboundType));
-
-    auto curPassingKind = paramInfo.getPassingKind(i);
-
-    // Don't print this if it is an autoparam.
-    if ((curPassingKind == PassingKind::Inferred && name.contains('.')) ||
-        curPassingKind == PassingKind::Implicit)
-      continue;
 
     // Handle the param separator.
     if (needComma)
@@ -1391,6 +1402,11 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  if (isa<UnboundAttr>(param)) {
+    os << "_";
+    return;
+  }
+
   // Handle other KGEN parameters that it knows about with an ugly fallback.
   // TODO: Remove this - we should cover all attrs here, anything that falls
   // back should be an error/assertion.
@@ -1560,13 +1576,25 @@ static T getSingleElementStructAttr(TypedAttr param) {
 
 static void printRef(RefType refType, raw_ostream &os,
                      SharedState *diagShared) {
-  os << "ref[";
-  ASTType::printRefOriginParam(os, refType.getOrigin(), diagShared);
-  if (!refType.isDefaultAddrSpace()) {
-    os << ", ";
-    ASTType::printParam(os, refType.getAddressSpace(), diagShared);
+  os << "ref";
+  bool printed = false;
+
+  // Just print "ref" in the presence of "ref [_]".
+  // NOTE: This makes it impossible to know what the mutability is if hard
+  // coded - print something like "ref [mut=True]"?
+  if (!isa<UnboundAttr>(refType.getOrigin())) {
+    os << '[';
+    ASTType::printRefOriginParam(os, refType.getOrigin(), diagShared);
+    printed = true;
   }
-  os << "] ";
+
+  if (!refType.isDefaultAddrSpace()) {
+    if (printed)
+      os << ", ";
+    ASTType::printParam(os, refType.getAddressSpace(), diagShared);
+    printed = true;
+  }
+  os << (printed ? "] " : " ");
 }
 
 static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
@@ -1622,6 +1650,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       convention = fnType.getVariadicConvention(idx);
       stars = "*";
     } else if (fnType.isPack(idx)) {
+      type = RefType::stripRefConvention(type, convention);
       convention = fnType.getVariadicConvention(idx);
       stars = "*";
     } else if (fnType.isKwVarArg(idx)) {
@@ -1656,7 +1685,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       os << '*';
       TypedAttr variadic = ASTType(fnType.getIfVariadicListOrPack(idx))
                                .getVariadicPackInfo()
-                               .typeList;
+                               .typeListStruct;
       ASTType::printParam(os, variadic, diagShared);
     } else {
       type = RefType::stripRefConvention(type, convention);
