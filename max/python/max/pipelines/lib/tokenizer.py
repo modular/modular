@@ -16,15 +16,12 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import io
 import json
 import logging
-import socket
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeVar
-from urllib.parse import urlsplit
 
 import numpy as np
 import numpy.typing as npt
@@ -77,138 +74,71 @@ class _HintBlock:
     """A single block descriptor from the Orchestrator's dkv_cache_hint."""
 
     hash: int
-    tier: str = "G1"
-    offset: int = 0
-    length: int = 0
-    device_id: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class _HintAgentInfo:
-    """NIXL agent info from the Orchestrator's dkv_cache_hint."""
-
-    agent_name: str
-    agent_metadata: str = ""  # base64-encoded
-    base_addr: int = 0
 
 
 @dataclass(frozen=True, slots=True)
 class _DkvCacheHint:
     """Typed representation of a dkv_cache_hint payload from the Orchestrator."""
 
-    source: str
+    instance_name: str
     blocks: list[_HintBlock]
     version: int = 1
-    block_size: int = 0
-    nixl_agent_info: _HintAgentInfo | None = None
-    source_endpoint: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class _ParsedDkvCacheHint:
+    """Parsed dkv_cache_hint, ready to attach to a TextContext.
+
+    ``external_block_metadata`` becomes ``ctx.external_block_metadata`` —
+    a set-like dict the connector iterates in lookup().
+    ``instance_name`` becomes ``ctx.dkv_hint_instance_name`` — the
+    connector compares it to its own dKV instance name to short-circuit
+    fetches when the cache source is local.
+    """
+
+    instance_name: str
+    external_block_metadata: dict[int, Any]
 
 
 def _parse_dkv_cache_hint(
     hint: dict[str, Any] | None,
-) -> dict[int, Any] | None:
-    """Convert a ``dkv_cache_hint`` JSON payload into the dict the DKVConnector expects.
+) -> _ParsedDkvCacheHint | None:
+    """Convert a ``dkv_cache_hint`` JSON payload into the form the DKVConnector reads.
 
     The Orchestrator injects a ``dkv_cache_hint`` field into the request
-    body (see SERVOPT-1143). This function normalizes it into a
-    ``dict[uint64_hash, DKVExternalBlockMetadata]`` keyed by block hash,
-    which ``DKVConnector.lookup()`` reads from
-    ``ctx.external_block_metadata``.
-
-    Returns ``None`` for hints with ``source="self"`` (blocks already in
-    GPU memory, no dKV fetch needed) or when no hint is present.
+    body (see SERVOPT-1143). Returns ``None`` when no hint is present or
+    the hint carries no blocks.
 
     Raises ``TypeError`` or ``KeyError`` if the hint is malformed.
     """
     if hint is None:
         return None
 
-    # Parse into typed dataclass; raises on missing/wrong fields.
-    agent_raw = hint.get("nixl_agent_info")
-    agent_info = _HintAgentInfo(**agent_raw) if agent_raw else None
     parsed = _DkvCacheHint(
-        source=hint["source"],
+        instance_name=hint["instance_name"],
         blocks=[_HintBlock(**b) for b in hint.get("blocks", [])],
         version=hint.get("version", 1),
-        block_size=hint.get("block_size", 0),
-        nixl_agent_info=agent_info,
-        source_endpoint=hint.get("source_endpoint", ""),
     )
 
-    if parsed.source == "self" or not parsed.blocks:
+    if not parsed.blocks:
         return None
 
-    # Remote hints require block_size so we can build transfer engine
-    # metadata. Without it, lookup() silently falls back to the
-    # connector's local auto-discovered metadata, misrouting NIXL reads.
-    if parsed.source_endpoint and not parsed.block_size:
-        raise ValueError(
-            "dkv_cache_hint with source_endpoint (remote dKV) requires"
-            f" block_size > 0, got {parsed.block_size}"
-        )
-
     # Lazy import to avoid pulling dkv deps when dKV is not configured.
-    from max._core import nixl
     from max.pipelines.kv_cache.connectors.dkv.connector import (
         DKVExternalBlockMetadata,
     )
-    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
-        KVTransferEngineMetadata,
-        TensorAgentMetadata,
-    )
 
-    # Build transfer engine metadata from the hint's nixl_agent_info.
-    # When block_size=0 (only valid without source_endpoint, i.e. local
-    # dKV), the connector discovers geometry via ExchangeMetadata at init
-    # and _default_remote_metadata handles the NIXL path.
-    transfer_engine: KVTransferEngineMetadata | None = None
-    if parsed.nixl_agent_info and parsed.block_size:
-        ai = parsed.nixl_agent_info
-        agent_metadata = (
-            base64.b64decode(ai.agent_metadata) if ai.agent_metadata else b""
-        )
-
-        # Derive total_num_pages from the highest page offset.
-        max_page_idx = max(
-            (b.offset // parsed.block_size for b in parsed.blocks),
-            default=0,
-        )
-        total_num_pages = max_page_idx + 1
-
-        # Parse hostname from source_endpoint.
-        url = urlsplit(parsed.source_endpoint)
-        host = url.hostname or ""
-        _LOCAL = ("", "localhost", "127.0.0.1", "0.0.0.0", "::1")
-        dkv_hostname = socket.gethostname() if host in _LOCAL else host
-
-        agent_meta = TensorAgentMetadata(
-            agent_name=ai.agent_name,
-            metadata=agent_metadata,
-            base_addr=ai.base_addr,
-            device_id=0,
-        )
-        transfer_engine = KVTransferEngineMetadata(
-            name=f"dkv-hint-{ai.agent_name}",
-            total_num_pages=total_num_pages,
-            bytes_per_page=parsed.block_size,
-            memory_type=nixl.MemoryType.DRAM,
-            hostname=dkv_hostname,
-            agents_meta=[[agent_meta]],
-        )
-
-    result: dict[int, DKVExternalBlockMetadata] = {}
+    external_block_metadata: dict[int, DKVExternalBlockMetadata] = {}
     for block in parsed.blocks:
         block_hash = block.hash & _UINT64_MASK
-        result[block_hash] = DKVExternalBlockMetadata(
-            seq_hash=block_hash,
-            agent_id=0,
-            device_id=block.device_id,
-            offset=block.offset,
-            length=block.length,
-            transfer_engine=transfer_engine,
+        external_block_metadata[block_hash] = DKVExternalBlockMetadata(
+            seq_hash=block_hash
         )
 
-    return result or None
+    return _ParsedDkvCacheHint(
+        instance_name=parsed.instance_name,
+        external_block_metadata=external_block_metadata,
+    )
 
 
 TokenGeneratorContext = TypeVar("TokenGeneratorContext")
@@ -656,6 +586,7 @@ class TextTokenizer(
             array=token_ids.astype(np.int64, copy=False),
         )
 
+        parsed_hint = _parse_dkv_cache_hint(request.dkv_cache_hint)
         context = TextContext(
             request_id=request.request_id,
             eos_tracker=await self.create_eos_tracker(request),
@@ -671,8 +602,11 @@ class TextTokenizer(
             sampling_params=request.sampling_params,
             model_name=request.model_name,
             target_endpoint=request.target_endpoint,
-            external_block_metadata=_parse_dkv_cache_hint(
-                request.dkv_cache_hint
+            external_block_metadata=(
+                parsed_hint.external_block_metadata if parsed_hint else None
+            ),
+            dkv_hint_instance_name=(
+                parsed_hint.instance_name if parsed_hint else ""
             ),
         )
 
@@ -1004,6 +938,7 @@ class TextAndVisionTokenizer(
             array=encoded_prompt.astype(np.int64, copy=False),
         )
 
+        parsed_hint = _parse_dkv_cache_hint(request.dkv_cache_hint)
         context = TextAndVisionContext(
             request_id=request.request_id,
             eos_tracker=await self.create_eos_tracker(request),
@@ -1016,8 +951,11 @@ class TextAndVisionTokenizer(
             grammar=grammar,
             grammar_state=grammar_state,
             sampling_params=request.sampling_params,
-            external_block_metadata=_parse_dkv_cache_hint(
-                request.dkv_cache_hint
+            external_block_metadata=(
+                parsed_hint.external_block_metadata if parsed_hint else None
+            ),
+            dkv_hint_instance_name=(
+                parsed_hint.instance_name if parsed_hint else ""
             ),
             images=[
                 ImageMetadata(

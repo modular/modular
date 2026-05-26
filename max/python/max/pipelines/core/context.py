@@ -352,6 +352,15 @@ class TextContext:
     which blocks are available in the external BlockStore system.
     """
 
+    dkv_hint_instance_name: str = field(default="")
+    """Instance name from the Orchestrator's dkv_cache_hint identifying
+    the dKV instance that owns the cached blocks. The DKVConnector
+    compares this to its own instance name (learned via
+    ExchangeMetadata) and skips the fetch when they match — those
+    blocks are owned locally and surface through MAX's own prefix
+    cache instead.
+    """
+
     cached_prefix_length: int | None = field(default=None)
     """Number of prompt tokens served from the KV prefix cache.
 
