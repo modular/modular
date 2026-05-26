@@ -10,6 +10,11 @@ package(default_visibility = [
 modular_py_test(
     name = "test_vision_encoder_cache",
     srcs = ["test_vision_encoder_cache.py"],
+    # TODO(MODELS-1494): Times out at 600s on slow macOS BuildBuddy workers.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/core",
@@ -270,6 +275,11 @@ modular_py_test(
     env = {
         "MODULAR_PATH": ".",
     },
+    # TODO(MODELS-1494): Times out at 300s (small) on slow macOS workers.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/pipelines/modeling",
     ],

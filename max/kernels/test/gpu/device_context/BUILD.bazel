@@ -75,6 +75,11 @@ mojo_test(
         "//:apple_gpu": [],
         "//:amd_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
+    }) + select({
+        # TODO(KERN-2927): Hangs >1h on macOS BuildBuddy workers then SIGSEGV's
+        # remote-exec. Likely Metal HAL driver issue. Re-enable when fixed.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
     }),
     deps = [
         "//max:internal_utils",

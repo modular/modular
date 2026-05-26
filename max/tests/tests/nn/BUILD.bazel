@@ -24,7 +24,10 @@ modular_py_test(
         "norm_test_utils.py",
     ] + glob(
         ["test_*.py"],
-        exclude = ["*_gpu.py"],
+        exclude = [
+            "*_gpu.py",
+            "test_state_dict.py",
+        ],
     ),
     per_test_tags = {
         "test_module.py": ["skip-external-ci"],
@@ -32,6 +35,22 @@ modular_py_test(
     deps = _COMMON_DEPS + [
         "//max/python/max/mlir",
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_state_dict",
+    srcs = ["test_state_dict.py"],
+    # TODO(MODELS-1494): Times out at 600s on slow macOS BuildBuddy workers.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
     ],
 )
 

@@ -241,7 +241,7 @@ modular_py_test(
     ],
 )
 
-# CPU-only graph op tests (no macOS/ASAN restrictions unlike cpu_tests)
+# CPU-only graph op tests (ASAN-only restriction unlike cpu_tests)
 modular_py_test(
     name = "cpu_graph_op_tests",
     size = "medium",
@@ -252,6 +252,12 @@ modular_py_test(
         "test_is_inf.py",
         "test_is_nan.py",
     ],
+    # TODO(GEX-3773): test_is_nan times out at 600s on slow macOS BuildBuddy
+    # workers; disable the whole group on macOS until investigated.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -443,6 +449,10 @@ modular_py_test(
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
+        # TODO(GEX-3776): Cold `from max.engine import InferenceSession`
+        # subprocesses exceed the test's internal 60s timeout on slow macOS
+        # BuildBuddy workers.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
