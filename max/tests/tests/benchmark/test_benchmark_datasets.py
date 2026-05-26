@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
+import msgspec
 import pytest
 from max.benchmark.benchmark_shared.datasets import (
     DATASET_REGISTRY,
@@ -51,6 +52,8 @@ from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
 )
 from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
     NEMOTRON_OPENCODE_REPO_ID,
+    AnthropicTool,
+    _anthropic_tool_to_openai,
 )
 from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -949,8 +952,31 @@ def test_pool_wraps_with_pass_marker_when_exhausted() -> None:
         assert abs(user.num_tokens - target_in) <= 4
 
 
+_BASH_TOOL_ANTHROPIC = AnthropicTool(
+    id="bash",
+    description="run a shell command",
+    inputSchema={
+        "jsonSchema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        }
+    },
+)
+_TODOREAD_TOOL_ANTHROPIC = AnthropicTool(
+    id="todoread",
+    description="",
+    inputSchema={"jsonSchema": {}},
+)
+
+
 def _mock_nemotron_rows() -> list[dict[str, object]]:
-    """Three synthetic rows mimicking the Nemotron-SFT-OpenCode-v1 shape."""
+    """Three synthetic rows mimicking the Nemotron-SFT-OpenCode-v1 shape.
+
+    ``tools`` is in Anthropic schema (``{id, description, inputSchema:
+    {jsonSchema}}``) to match the real dataset, which records OpenCode CLI
+    sessions whose tool definitions follow the Anthropic API.
+    """
     return [
         {
             "messages": [
@@ -964,7 +990,7 @@ def _mock_nemotron_rows() -> list[dict[str, object]]:
                 {"role": "user", "content": "next step"},
                 {"role": "assistant", "content": "done, here is the diff"},
             ],
-            "tools": [{"name": "bash", "description": "run a shell command"}],
+            "tools": [msgspec.to_builtins(_BASH_TOOL_ANTHROPIC)],
         },
         {
             # Trace with no usable assistant reply — should be skipped by
@@ -981,7 +1007,7 @@ def _mock_nemotron_rows() -> list[dict[str, object]]:
                 {"role": "user", "content": "write hello world"},
                 {"role": "assistant", "content": "print('hello world')"},
             ],
-            "tools": [{"name": "todoread"}],
+            "tools": [msgspec.to_builtins(_TODOREAD_TOOL_ANTHROPIC)],
         },
     ]
 
@@ -1011,16 +1037,18 @@ def test_nemotron_opencode_sample_requests(mock_load: Mock) -> None:
     assert len(samples.requests) == 2
     assert all(isinstance(r, SampledRequest) for r in samples.requests)
     assert all(isinstance(r.prompt_formatted, list) for r in samples.requests)
-    # Tool schemas are surfaced both on the inspection attribute and on each
-    # SampledRequest so the chat-completions driver can forward them as
-    # ``tools=[...]``.
+    # ``last_loaded_tool_schemas`` retains the raw Anthropic schemas straight
+    # from the dataset rows (for inspection / follow-up work).
     assert dataset.last_loaded_tool_schemas == [
-        [{"name": "bash", "description": "run a shell command"}],
-        [{"name": "todoread"}],
+        [_BASH_TOOL_ANTHROPIC],
+        [_TODOREAD_TOOL_ANTHROPIC],
     ]
+    # ``SampledRequest.tools`` carries the OpenAI-translated schemas so the
+    # chat-completions driver can forward them as ``tools=[...]`` against the
+    # MAX OpenAI-compatible server.
     assert [r.tools for r in samples.requests] == [
-        [{"name": "bash", "description": "run a shell command"}],
-        [{"name": "todoread"}],
+        [_anthropic_tool_to_openai(_BASH_TOOL_ANTHROPIC)],
+        [_anthropic_tool_to_openai(_TODOREAD_TOOL_ANTHROPIC)],
     ]
     # ``ignore_eos=True`` always, matching sharegpt/arxiv (decode the full
     # target length even when ``output_len`` came from the dataset).
@@ -1111,3 +1139,51 @@ def test_nemotron_opencode_rejects_dataset_path() -> None:
         ValueError, match="nemotron-opencode does not support --dataset-path"
     ):
         dataset.fetch()
+
+
+def test_anthropic_tool_to_openai_canonical() -> None:
+    """Canonical Anthropic shape maps to OpenAI ``{type, function}``."""
+    out = _anthropic_tool_to_openai(_BASH_TOOL_ANTHROPIC)
+    assert out == {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "run a shell command",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+                "required": ["command"],
+            },
+        },
+    }
+
+
+def test_anthropic_tool_to_openai_inputschema_without_jsonschema_wrapper() -> (
+    None
+):
+    """Some rows put the JSON Schema directly under ``inputSchema``."""
+    tool = AnthropicTool(
+        id="ls",
+        description="list files",
+        inputSchema={
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+        },
+    )
+    out = _anthropic_tool_to_openai(tool)
+    assert out["function"]["parameters"] == {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+    }
+
+
+def test_anthropic_tool_to_openai_missing_fields() -> None:
+    """Missing ``inputSchema`` / ``description`` collapse to safe defaults."""
+    assert _anthropic_tool_to_openai(AnthropicTool(id="noop")) == {
+        "type": "function",
+        "function": {
+            "name": "noop",
+            "description": "",
+            "parameters": {},
+        },
+    }
