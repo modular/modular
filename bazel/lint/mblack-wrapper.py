@@ -11,44 +11,53 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import codecs
 import os
-import subprocess
 import sys
+from pathlib import Path
 
+from lint_helpers import (
+    get_changed_files,
+    is_check,
+    is_fast,
+)
 from mblack import patched_main
 
-if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-    os.chdir(directory)
+
+def _filter(fname: str) -> bool:
+    return Path(fname).suffix == ".mojo"
 
 
-def get_changed_files() -> list[str]:
-    merge_base_result = subprocess.run(
-        ["git", "merge-base", "origin/main", "HEAD"],
-        capture_output=True,
-    )
-    merge_base = merge_base_result.stdout.decode().rstrip("\n")
+def _config_file_changed(changed_files: set[str]) -> bool:
+    return any(f.startswith("utils/mblack/src") for f in changed_files)
 
-    changed_files_result = subprocess.run(
-        ["git", "diff", "--diff-filter=d", "--name-only"]
-        + ([merge_base] if merge_base else []),
-        capture_output=True,
-    )
-    changed_files_out = (
-        codecs.escape_decode(changed_files_result.stdout)[0].decode().rstrip()  # type: ignore
-    )
-    changed_files = [
-        line.lstrip('"').rstrip('"') for line in changed_files_out.splitlines()
-    ]
-    return [file for file in changed_files if file.endswith(".mojo")]
+
+def main() -> None:
+    if is_fast():
+        all_files = get_changed_files()
+
+        if _config_file_changed(all_files):
+            files = ["."]
+        else:
+            files = list(filter(_filter, all_files))
+
+            if not files:
+                # mblack errors if no paths are specified, so short circuit here
+                return
+    else:
+        files = ["."]
+
+    args = ["--quiet"]
+    if is_check():
+        args.extend(["--check", "--diff"])
+    args.extend(files)
+
+    sys.argv = sys.argv + args
+
+    patched_main()
 
 
 if __name__ == "__main__":
-    if os.getenv("FAST"):
-        changed_files = get_changed_files()
-        if not changed_files:
-            # mblack errors if no paths are specified, so short circuit here
-            exit(0)
-        sys.argv = sys.argv + changed_files
+    if path := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        os.chdir(path)
 
-    patched_main()
+    main()
