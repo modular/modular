@@ -767,10 +767,18 @@ class InferenceSession:
             :class:`Model`, ready to execute.
         """
         if is_virtual_device_mode():
-            # Virtual device mode can't actually initialize the model, but users
-            # (eg. cross compilation, benchmarking) want it to not fail. Return
-            # a mock instead.
-            return mock.Mock(Model)
+            # Virtual device mode can't actually initialize the model, but
+            # users (eg. cross compilation, benchmarking) want it to not fail.
+            # Return one mock per top-level graph in the artifact so callers
+            # that key by graph name still work.
+            if not compiled._graph_names:
+                raise ValueError(
+                    "Cannot initialize a path-compiled artifact in "
+                    "virtual-device mode: graph names are unknown without "
+                    "an MLIR module to inspect. Initialize on a real device "
+                    "instead, or compile from a Graph/Module."
+                )
+            return {name: mock.Mock(Model) for name in compiled._graph_names}
 
         weights_registry_real: Mapping[str, DLPackArray] = (
             weights_registry or {}
