@@ -63,14 +63,6 @@ def name(argument-list) raises {capture-list} -> ReturnType:
     body
 ```
 
-<!--
-Removed for now:
-
-def name(argument-list) {capture-list}
-    -> ReturnType:
-    body
--->
-
 Effects (`raises`) go between the argument
 list and the capture list. The capture list appears immediately
 before the return arrow. It can be empty (`{}`) or omitted
@@ -462,9 +454,11 @@ Effects appear between the argument list and the capture list.
 
 <!-- markdownlint-disable MD013 -->
 
-| Effect              | Form                                       |
-|---------------------|--------------------------------------------|
-| `raises`            | `(args) raises {captures} -> T`            |
+| Effect     | Form                            | Type example                           |
+|------------|---------------------------------|----------------------------------------|
+| `raises`   | `(args) raises {captures} -> T` | def (String) raises -> Int             |
+| `thin`     | `(args) thin -> T`              | def (T) thin -> U                      |
+| `abi("C")` | `(args) abi("C") -> T`          | def (Float64) thin abi("C") -> Float64 |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -546,10 +540,6 @@ names an outer closure must declare the same kind of capture (`var`,
 | Unterminated capture list                                                         | Missing closing `}`                                                          |
 | Outer name not covered by capture list                                            | Body references an outer name the capture list doesn't cover                 |
 | Use after move capture                                                            | Reference to a name after `{var name^}` consumed it                          |
-
-<!-- Removed for now:
-| Mutable or reference capture of immutable register-passable value                 | `{mut name}` or `{ref name}` on an immutable register-passable outer binding |
--->
 
 <!-- markdownlint-enable MD013 -->
 

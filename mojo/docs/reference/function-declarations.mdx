@@ -13,6 +13,15 @@ description: >
      ASTDecl.cpp, ExprNode.h. Consulted: ExprNodes.h,
      ExprNodes.cpp, ParserExprs.cpp, ASTType.h, MojoDiags.h -->
 
+<!-- NOT VERIFIED:
+"Copy constructors can't raise" — likely enforced via trait/IR; no specific
+error string surfaced.
+"out arguments can't have defaults" — doc claim at line 365; no specific
+compiler error found, but plausible.
+"Copy ctor copy argument must use the default convention" — specific
+convention claim; didn't trace.
+-->
+
 A *function declaration* introduces a named, callable unit
 of code. Every function in Mojo starts with the `def`
 keyword:
@@ -76,6 +85,8 @@ languages these are both called "parameters". Mojo
 distinguishes them to avoid confusion:
 
 ```mojo
+# T must be both `Comparable` (to test with `<` and `>`) and
+# `ImplicitlyCopyable` or you won't be able to return
 def clamp[T: Comparable & ImplicitlyCopyable](
     val: T, lo: T, hi: T,
 ) -> T:
@@ -125,7 +136,7 @@ def main():
 Infer-only parameters can't be specified positionally:
 
 ```mojo
-# Error: 'inferred_type' expects 0 positional parameters,
+# Error because 'inferred_type' expects 0 positional parameters,
 # but 1 was specified
 inferred_type[Int](5)
 ```
@@ -135,7 +146,7 @@ Keyword syntax bypasses this restriction:
 ```mojo
 inferred_type[T=Int](5) # OK: Value is 5. Type is Int.
 
-# Error: value passed to 'value' cannot be converted from
+# Error because value passed to 'value' cannot be converted from
 # 'StringLiteral["Hello"]' to 'Int'
 inferred_type[T=Int]("Hello")
 ```
@@ -174,7 +185,7 @@ values by name:
 
 ```mojo
 def configure(*, verbose: Bool, retries: Int):
-    ...
+    # ...
 
 configure(verbose=True, retries=3)  # OK
 configure(True, 3)                  # Error
@@ -194,7 +205,7 @@ def sum(*values: Int, name: String) -> Int:
 def main():
     print(sum(1, 2, 3, name="total"))  # total: 6
     # print(sum(1, 2, 3, "subtotal"))
-        # Error: missing required keyword argument
+        # Error because missing required keyword argument
 ```
 
 ## Default values
@@ -217,9 +228,9 @@ def main():
 def my_function(x: Int, y: Int = 0, z: Int = 0) -> Int:
     return x + y + z
 
-# Error: required positional argument follows optional
+# Error because required positional argument follows optional
 # positional argument
-# def bad(x: Int, y: Int = 0, z: Int):
+# def wrong(x: Int, y: Int = 0, z: Int):
 #     return x + y + z
 ```
 
@@ -285,12 +296,12 @@ def main():
 They're not valid inside parameter or argument lists:
 
 ```mojo
-# Error: where clauses are not valid in parameter lists
-def bad[n: Int where n > 0]():
+# Error because where clauses are not valid in parameter lists
+def wrong[n: Int where n > 0]():
     pass
 
-# Error: where clauses are not valid in argument lists
-def bad(x: Int where x > 0):
+# Error because where clauses are not valid in argument lists
+def wrong(x: Int where x > 0):
     pass
 ```
 
@@ -312,8 +323,8 @@ def double_it(mut x: Int):
 `mut` arguments can't have default values:
 
 ```mojo
-# Error: 'mut' arguments may not have defaults
-def bad(mut x: Int = 0):
+# Error because 'mut' arguments may not have defaults
+def wrong(mut x: Int = 0):
     pass
 ```
 
@@ -334,7 +345,7 @@ def main():
     print(greeting)     # Hello
 
     consume(greeting^)  # Hello! (moved)
-    # print(greeting)   # Error: uninitialized after move
+    # print(greeting)   # Error because uninitialized after move
 ```
 
 ### `out`
@@ -354,9 +365,9 @@ def main():
 A function can't use both `out` and `-> Type`:
 
 ```mojo
-# Error: function cannot have both an 'out' argument
+# Error because function cannot have both an 'out' argument
 #        and an explicit result type
-def bad(out result: Int) -> Int:
+def wrong(out result: Int) -> Int:
     result = 0
 ```
 
@@ -391,9 +402,11 @@ def get_first[T: Copyable](
     return data[0]
 
 def main():
-    data = ["one", "two", "three"]
-    first = get_first(data)
+    var data = ["one", "two", "three"]
+    ref first = get_first(data)
     print(first)  # one
+    first = "Первый"
+    print(data)  # ['Первый', 'two', 'three']
 ```
 
 ### Default convention
@@ -409,8 +422,8 @@ def length[T: Copyable](s: List[T]) -> Int:
 ## Variadic arguments
 
 Variadic arguments accept a varying number of values ("indefinite
-arity"). This is seen in functions like `print` that can take any number of
-arguments.
+arity"). Functions like print use variadic arguments to accept any
+number of values.
 
 ### Homogeneous variadics
 
@@ -447,16 +460,15 @@ A function can have at most one `*args`. Variadic arguments
 can't have default values:
 
 ```mojo
-# Error: variadic arguments may not have defaults
-def bad(*args: Int = 0):
+# Error because variadic arguments may not have defaults
+def wrong(*args: Int = 0):
     pass
 ```
 
 `out` arguments can't be variadic:
 
 ```mojo
-# Error: 'out' convention may not be variadic
-def bad(out *results: Int):
+def wrong(out *results: Int):
     pass
 ```
 
@@ -471,10 +483,10 @@ error type can follow `raises`:
 
 ```mojo
 def parse(text: String) raises -> Int:
-    ...
+    # ...
 
 def parse_strict(text: String) raises ValueError -> Int:
-    ...
+    # ...
 ```
 
 A function can specify at most one error type after `raises`.
@@ -520,29 +532,6 @@ def main() raises:
     print(sqrt(4.0))  # 2.0
 ```
 
-### `register_passable` {#register-passable}
-
-Declares that a function value can be passed through registers rather
-than by reference. A register-passable function has no heap captures
-and no captures that require a stable memory address, making it
-suitable for high-performance contexts like parallel execution and
-GPU kernels.
-
-```mojo
-def apply[F: def(Int) register_passable -> Int](f: F, x: Int) -> Int:
-    return f(x)
-
-def double(x: Int) register_passable -> Int:
-    return x * 2
-
-def main():
-    print(apply(double, 21))  # 42
-```
-
-The type constraint
-`def(Int) register_passable -> Int` on `F` enforces that callers can only
-pass `register_passable` callables.
-
 ## Return type
 
 `->` introduces the return type. It appears after any
@@ -577,7 +566,7 @@ struct Point:
 Without `out self`, the compiler rejects the method:
 
 ```mojo
-# Error: __init__ method must return Self type
+# Error because __init__ method must return Self type
 #        with 'out' argument
 def __init__(self):
     pass
@@ -613,7 +602,7 @@ The `take` argument must use the `deinit` convention. Move
 constructors can't raise.
 
 :::note
-`@register_passable` types can't define a move constructor.
+`RegisterPassable` types can't define a move constructor.
 They're always movable by copying a register.
 :::
 

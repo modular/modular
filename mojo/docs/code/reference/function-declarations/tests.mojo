@@ -262,9 +262,11 @@ def get_first[
 
 
 def test_ref() raises:
-    data = ["one", "two", "three"]
-    first = get_first(data)
+    var data = ["one", "two", "three"]
+    ref first = get_first(data)
     assert_equal(first, "one")
+    first = "Первый"
+    assert_equal(data[0], "Первый")
 
 
 # --- Default convention ---
@@ -304,6 +306,30 @@ def print_all[*Ts: Writable](*args: *Ts):
 
 def test_variadic_packs():
     print_all("Hello", 42, 3.14)  # Hello 42 3.14
+
+
+# --- thin function effect ---
+
+
+def map_thin[
+    T: Copyable, U: Copyable
+](f: def(T) thin -> U, input: List[T]) -> List[U]:
+    var result: List[U] = []
+    for item in input:
+        result.append(f(item))
+    return result^
+
+
+def square_thin(x: Int) -> Int:
+    return x * x
+
+
+def test_thin() raises:
+    var nums: List[Int] = [1, 2, 3]
+    var squares = map_thin(square_thin, nums)
+    assert_equal(squares[0], 1)
+    assert_equal(squares[1], 4)
+    assert_equal(squares[2], 9)
 
 
 # --- Return type ---
@@ -367,6 +393,7 @@ def main() raises:
     test_default_convention()
     test_homogeneous_variadics()
     test_variadic_packs()
+    test_thin()
     test_square()
     test_nested()
     test_static_methods()
