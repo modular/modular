@@ -47,13 +47,15 @@ TOOL_CALL_END = "<|tool_call_end|>"
 TOOL_CALL_ARGUMENT_BEGIN = "<|tool_call_argument_begin|>"
 
 # Bounds on the constrained-decoding grammar quantifiers. Without these,
-# a model can spin emitting non-``<`` characters inside a tool call,
-# digits in the call index, or an unbounded number of back-to-back
-# calls, holding a GPU slot until ``max_tokens``. The limits below are
-# well above anything a sane tool call needs.
+# a model can spin emitting digits in the call index or an unbounded
+# number of back-to-back calls, holding a GPU slot until ``max_tokens``.
+# The argument body is intentionally unbounded — tool arguments can be
+# arbitrarily large (e.g. code blobs, embedded documents, search-result
+# payloads being re-emitted) and a fixed cap would silently drop them.
+# The ``max_tokens`` ceiling is the only meaningful upper bound there.
 _MAX_TOOL_CALL_INDEX_DIGITS = 8  # up to 99_999_999 tool calls per turn
-_MAX_TOOL_CALL_ARGUMENT_CHARS = 8192  # ~2K tokens of arguments per call
 _MAX_TOOL_CALLS_PER_SECTION = 16
+_MAX_TOOL_CALL_SECTIONS = 8
 
 # Regex for one ``<|tool_call_begin|>...<|tool_call_end|>`` body. The
 # function id and arguments are captured; the call markers are anchored.
@@ -172,11 +174,24 @@ class KimiToolParser(StructuralTagToolParser):
     def _build_tool_call_regex(tool_names: list[str] | None = None) -> str:
         """Builds the regex pattern for Kimi tool calls.
 
-        Each quantifier is bounded so a model cannot hold a GPU slot
-        until ``max_tokens`` by spinning inside any single field. See
-        the ``_MAX_TOOL_CALL_*`` constants for the limits and rationale.
-        Real argument validation still happens at parse time; the regex
-        only enforces structural balance and bounded length.
+        The count-style fields (call index digits, calls per section,
+        sections per response, function-name fallback length) are
+        bounded so a model cannot hold a GPU slot until ``max_tokens``
+        by spinning inside them; see the ``_MAX_TOOL_CALL_*`` constants
+        for the limits and rationale. The argument body quantifier is
+        intentionally unbounded — real tool arguments can be
+        arbitrarily large (code blobs, embedded documents, search-
+        result payloads being re-emitted), and ``max_tokens`` is the
+        only meaningful upper bound there. Real argument validation
+        still happens at parse time; the regex only enforces structural
+        framing.
+
+        The outer ``{1,_MAX_TOOL_CALL_SECTIONS}`` quantifier allows the
+        model to emit several back-to-back tool-call sections in a
+        single response (Kimi does this when it wants to think between
+        batches of calls). Without it, the matcher reaches a terminal
+        state after the first ``<|tool_calls_section_end|>`` and rejects
+        the next ``<|tool_calls_section_begin|>``.
         """
         if tool_names is not None:
             escaped_names = [re.escape(name) for name in tool_names]
@@ -186,17 +201,18 @@ class KimiToolParser(StructuralTagToolParser):
             # spinning model can't pad the identifier forever.
             func_name_pattern = r"[a-zA-Z0-9_-]{1,128}"
 
-        return (
+        single_section = (
             rf"{re.escape(TOOL_CALLS_SECTION_BEGIN)}"
             r"("
             rf"{re.escape(TOOL_CALL_BEGIN)}"
             rf"functions\.{func_name_pattern}:[0-9]{{1,{_MAX_TOOL_CALL_INDEX_DIGITS}}}"
             rf"{re.escape(TOOL_CALL_ARGUMENT_BEGIN)}"
-            rf"\{{[^<]{{0,{_MAX_TOOL_CALL_ARGUMENT_CHARS}}}\}}"
+            rf"\{{[^<]*\}}"
             rf"{re.escape(TOOL_CALL_END)}"
             rf"){{1,{_MAX_TOOL_CALLS_PER_SECTION}}}"
             rf"{re.escape(TOOL_CALLS_SECTION_END)}"
         )
+        return rf"({single_section}){{1,{_MAX_TOOL_CALL_SECTIONS}}}"
 
     @staticmethod
     def generate_tool_call_grammar(

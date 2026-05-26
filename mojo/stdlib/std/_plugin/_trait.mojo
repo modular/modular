@@ -53,6 +53,24 @@ trait PluginHooks:
         Elementwise `exp(x)` computed on the vendor backend.
     """
 
+    comptime tanh_fn[dtype: DType, width: Int]: Optional[
+        def[
+            dtype: DType, width: Int, //
+        ](SIMD[dtype, width]) thin -> SIMD[dtype, width]
+    ]
+    """Elementwise hyperbolic tangent override.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
+
+    Args:
+        x: The input SIMD vector.
+
+    Returns:
+        Elementwise `tanh(x)` computed on the vendor backend.
+    """
+
     comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
         def[
             count: Int,
@@ -177,6 +195,12 @@ struct DefaultPlugin(PluginHooks):
     """Default `PluginHooks` implementation used when no plugin is active."""
 
     comptime exp_fn: Optional[
+        def[
+            dtype: DType, width: Int, //
+        ](SIMD[dtype, width]) thin -> SIMD[dtype, width]
+    ] = None
+
+    comptime tanh_fn[dtype: DType, width: Int]: Optional[
         def[
             dtype: DType, width: Int, //
         ](SIMD[dtype, width]) thin -> SIMD[dtype, width]

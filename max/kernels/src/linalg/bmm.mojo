@@ -26,7 +26,7 @@ from std.sys.intrinsics import _type_is_eq
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
-from std.gpu import block_idx, global_idx
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import A100, is_cpu, is_valid_target
@@ -58,7 +58,7 @@ from .matmul.cpu.apple_accelerate import (
     use_apple_accelerate_lib,
 )
 from .matmul.cpu.impl import _submatmul_sequential_sync
-from .matmul.gpu import _matmul_gpu
+from .matmul.gpu import _matmul_gpu, _amdgpu_get_mma_shape
 from .matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from .matmul.gpu.amd import AMDMatmul
 from .matmul.gpu.sm100.blockwise_fp8 import (
@@ -518,6 +518,11 @@ def naive_batched_matmul_kernel[
         c_tensor[z, y, x] = val.cast[c_type]()
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(config.num_threads())
+    )
+)
 @__name(
     t"batched_matmul_kernel_gpu_{c_type}_{a_type}_{b_type}_{transpose_b}",
 )
@@ -535,9 +540,6 @@ def batched_matmul_kernel_gpu[
     c_tensor: TileTensor[c_type, CTensorType, MutAnyOrigin],  # m
     a_tensor: TileTensor[a_type, ATensorType, ImmutAnyOrigin],  # m * k
     b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
-    m: Int,
-    n: Int,
-    k: Int,
 ):
     var batch_idx = block_idx.z
     var a_ptr = a_tensor.ptr + batch_idx * Int(
@@ -549,6 +551,8 @@ def batched_matmul_kernel_gpu[
     var c_ptr = c_tensor.ptr + batch_idx * Int(
         c_tensor.layout.stride[0]().value()
     )
+
+    var m = Int(c_tensor.dim[1]())
 
     comptime k_static = a_tensor.static_shape[2]
     comptime n_static = b_tensor.static_shape[1]
@@ -630,10 +634,10 @@ def _batched_matmul_gpu[
     var a_tensor_reshaped = _reshape_tile_tensor_with_batch_to_3d(a_buf)
     var b_tensor_reshaped = _reshape_tile_tensor_with_batch_to_3d(b_buf)
 
-    var batch_size = c_tensor_reshaped.dim(0)
-    var m = Int(c_tensor_reshaped.dim(1))
-    var n = Int(c_tensor_reshaped.dim(2))
-    var k = Int(a_tensor_reshaped.dim(2))
+    var batch_size = c_tensor_reshaped.dim[0]()
+    var m = Int(c_tensor_reshaped.dim[1]())
+    var n = Int(c_tensor_reshaped.dim[2]())
+    var k = Int(a_tensor_reshaped.dim[2]())
 
     if batch_size == 0 or m == 0 or n == 0 or k == 0:
         return
@@ -786,9 +790,6 @@ def _batched_matmul_gpu[
             c_tensor_reshaped,
             a_tensor_reshaped.as_immut(),
             b_tensor_reshaped.as_immut(),
-            m,
-            n,
-            k,
             grid_dim=(grid_dim[0], grid_dim[1], batch_size),
             block_dim=kernels.ampere_128x128_4.block_dim(),
             shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
@@ -800,17 +801,12 @@ def _batched_matmul_gpu[
 
         @always_inline
         @parameter
-        def kernel_helper[
-            block_m: Int,
-            block_n: Int,
-            *,
-            num_k_partitions: Int = 1,
-            num_pipeline_stages: Int = 1,
-        ]() raises:
+        def kernel_helper[block_m: Int, block_n: Int]() raises:
             comptime block_k = 64
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
                 block_tile_shape=Index(block_m, block_n, block_k),
                 warp_tile_shape=Index(block_m // 2, block_n // 2, block_k),
+                mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                 num_pipeline_stages=1,
                 num_k_partitions=1,
             )
@@ -831,26 +827,18 @@ def _batched_matmul_gpu[
                 c_tensor_reshaped,
                 a_tensor_reshaped.as_immut(),
                 b_tensor_reshaped.as_immut(),
-                m,
-                n,
-                k,
                 grid_dim=(
                     ceildiv(n, block_n),
                     ceildiv(m, block_m),
                     batch_size,
                 ),
-                block_dim=(256, 1, 1),
+                block_dim=config.block_dim(),
             )
 
-        # DeepSeek size tuning
-        if m == 256 and n == 128 and k == 512:
-            kernel_helper[128, 64]()
-        elif m == 256 and n == 512 and k == 128:
-            kernel_helper[64, 64]()
-        elif m == 14 and n == 3072 and k == 12288:
+        if m <= 32:
             kernel_helper[32, 32]()
-        elif m == 600 and n == 18256 and k == 4096:
-            kernel_helper[128, 64]()
+        elif m <= 256:
+            kernel_helper[64, 64]()
         else:
             kernel_helper[128, 128]()
 
