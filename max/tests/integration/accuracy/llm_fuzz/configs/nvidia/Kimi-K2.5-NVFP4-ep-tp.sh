@@ -41,3 +41,4 @@ extra_pipelines_args=(
 model_profile=kimi-k2.5
 scenarios=
 k2vv_mode=full
+circuit_breaker=0
