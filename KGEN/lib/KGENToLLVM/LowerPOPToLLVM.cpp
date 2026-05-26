@@ -3371,23 +3371,26 @@ struct LowerPOPToLLVMPass
   using LowerPOPToLLVMBase::LowerPOPToLLVMBase;
 
   LowerPOPToLLVMPass()
-      : passLocalPlugin(std::make_unique<Plugin>()),
-        plugin(passLocalPlugin.get()) {}
+      : passLocalPluginManager(std::make_unique<PluginManager>()),
+        pluginMgr(passLocalPluginManager.get()) {}
 
   LowerPOPToLLVMPass(const LowerPOPToLLVMPass &other)
-      : passLocalPlugin(
-            other.passLocalPlugin
-                ? std::make_unique<Plugin>(other.passLocalPlugin->getSoPaths())
-                : nullptr),
-        plugin(other.passLocalPlugin ? passLocalPlugin.get() : other.plugin) {}
+      : passLocalPluginManager(other.pluginMgr
+                                   ? nullptr
+                                   : std::make_unique<PluginManager>(
+                                         *other.passLocalPluginManager)),
+        pluginMgr(other.pluginMgr ? other.pluginMgr
+                                  : passLocalPluginManager.get()) {}
 
   LowerPOPToLLVMPass(LowerPOPToLLVMPass &&other)
-      : passLocalPlugin(std::move(other.passLocalPlugin)),
-        plugin(other.plugin ? other.plugin : passLocalPlugin.get()) {}
+      : passLocalPluginManager(std::move(other.passLocalPluginManager)),
+        pluginMgr(other.pluginMgr ? other.pluginMgr
+                                  : passLocalPluginManager.get()) {}
 
-  LowerPOPToLLVMPass(const Plugin *plugin)
-      : passLocalPlugin(plugin ? nullptr : std::make_unique<Plugin>()),
-        plugin(plugin ? plugin : passLocalPlugin.get()) {}
+  LowerPOPToLLVMPass(const PluginManager *plugin)
+      : passLocalPluginManager(plugin ? nullptr
+                                      : std::make_unique<PluginManager>()),
+        pluginMgr(plugin ? plugin : passLocalPluginManager.get()) {}
 
   void runOnOperation() override;
 
@@ -3397,9 +3400,9 @@ struct LowerPOPToLLVMPass
 private:
   /// pass local plugin, only created if the pass is created as a
   /// standalone pass, e.g. though kgen-opt
-  std::unique_ptr<Plugin> passLocalPlugin = nullptr;
+  std::unique_ptr<PluginManager> passLocalPluginManager = nullptr;
 
-  const Plugin *plugin = nullptr;
+  const PluginManager *pluginMgr = nullptr;
 };
 } // namespace
 
@@ -3495,19 +3498,13 @@ void LowerPOPToLLVMPass::runOnOperation() {
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
-  if (plugin && plugin->isPluginForTarget(targetInfo.getTriple().str())) {
-    auto populatePatternsFn = plugin->getPopulateLowerPOPToLLVMPatternsFn();
+  if (pluginMgr->hasPluginForTarget(targetInfo.getTriple().str())) {
     // Don't fail if plugin is not loaded or doesn't provide the pattern
-    // population function, just keep continuing with the default patterns. We
-    // can make this more strict when we have better support with the plugin
-    // system and building it.
-    if (!populatePatternsFn.isError()) {
-      if (failed((*populatePatternsFn)(patterns, typeConverter, targetInfo))) {
-        mlir::emitError(
-            func->getLoc(),
-            "failed to populate plugin patterns for LowerPOPToLLVM");
-      }
-    }
+    // population function, just keep continuing with the default patterns.
+    // We can make this more strict when we have better support with the
+    // plugin system and building it.
+    (void)pluginMgr->populateLowerPOPToLLVMPatterns(patterns, typeConverter,
+                                                    targetInfo);
   }
 
   if (failed(mlir::applyPartialConversion(*func, target, std::move(patterns))))
@@ -3896,32 +3893,35 @@ struct LowerGlobalPOPToLLVMPass
   using LowerGlobalPOPToLLVMBase::LowerGlobalPOPToLLVMBase;
 
   LowerGlobalPOPToLLVMPass()
-      : passLocalPlugin(std::make_unique<Plugin>()),
-        plugin(passLocalPlugin.get()) {}
+      : passLocalPluginManager(std::make_unique<PluginManager>()),
+        pluginMgr(passLocalPluginManager.get()) {}
 
   LowerGlobalPOPToLLVMPass(const LowerGlobalPOPToLLVMPass &other)
-      : passLocalPlugin(
-            other.passLocalPlugin
-                ? std::make_unique<Plugin>(other.passLocalPlugin->getSoPaths())
+      : passLocalPluginManager(
+            other.passLocalPluginManager
+                ? std::make_unique<PluginManager>(*other.passLocalPluginManager)
                 : nullptr),
-        plugin(other.passLocalPlugin ? passLocalPlugin.get() : other.plugin) {}
+        pluginMgr(other.pluginMgr ? other.pluginMgr
+                                  : passLocalPluginManager.get()) {}
 
   LowerGlobalPOPToLLVMPass(LowerGlobalPOPToLLVMPass &&other)
-      : passLocalPlugin(std::move(other.passLocalPlugin)),
-        plugin(other.plugin ? other.plugin : passLocalPlugin.get()) {}
+      : passLocalPluginManager(std::move(other.passLocalPluginManager)),
+        pluginMgr(other.pluginMgr ? other.pluginMgr
+                                  : passLocalPluginManager.get()) {}
 
-  LowerGlobalPOPToLLVMPass(const Plugin *plugin)
-      : passLocalPlugin(plugin ? nullptr : std::make_unique<Plugin>()),
-        plugin(plugin ? plugin : passLocalPlugin.get()) {}
+  LowerGlobalPOPToLLVMPass(const PluginManager *plugin)
+      : passLocalPluginManager(plugin ? nullptr
+                                      : std::make_unique<PluginManager>()),
+        pluginMgr(plugin ? plugin : passLocalPluginManager.get()) {}
 
   void runOnOperation() override;
 
 private:
   /// pass local plugin, only created if the pass is created as a
   /// standalone pass, e.g. though kgen-opt
-  std::unique_ptr<Plugin> passLocalPlugin = nullptr;
+  std::unique_ptr<PluginManager> passLocalPluginManager = nullptr;
 
-  const Plugin *plugin = nullptr;
+  const PluginManager *pluginMgr = nullptr;
 };
 
 } // namespace
@@ -3987,22 +3987,13 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
 
-  if (plugin && plugin->isPluginForTarget(targetInfo.getTriple().str())) {
-    auto populatePatternsFn =
-        plugin->getPopulateLowerGlobalPOPToLLVMPatternsFn();
-    if (!populatePatternsFn.isError()) {
-      // Don't fail if plugin is not loaded or doesn't provide the pattern
-      // population function, just keep continuing with the default patterns.
-      // We can make this more strict when we have better support with the
-      // plugin system and building it.
-      if (failed((*populatePatternsFn)(patterns, typeConverter, symtab,
-                                       targetInfo))) {
-        mlir::emitError(
-            theModule->getLoc(),
-            "failed to load populate plugin patterns for LowerGlobalPOPToLLVM");
-        return signalPassFailure();
-      }
-    }
+  if (pluginMgr->hasPluginForTarget(targetInfo.getTriple().str())) {
+    // Don't fail if plugin is not loaded or doesn't provide the pattern
+    // population function, just keep continuing with the default patterns.
+    // We can make this more strict when we have better support with the
+    // plugin system and building it.
+    (void)pluginMgr->populateLowerGlobalPOPToLLVMPatterns(
+        patterns, typeConverter, symtab, targetInfo);
   }
 
   if (failed(
@@ -4011,10 +4002,11 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
 }
 
 std::unique_ptr<mlir::Pass>
-KGEN::createLowerGlobalPOPToLLVM(const Plugin *plugin) {
+KGEN::createLowerGlobalPOPToLLVM(const PluginManager *plugin) {
   return std::make_unique<LowerGlobalPOPToLLVMPass>(plugin);
 }
 
-std::unique_ptr<mlir::Pass> KGEN::createLowerPOPToLLVM(const Plugin *plugin) {
+std::unique_ptr<mlir::Pass>
+KGEN::createLowerPOPToLLVM(const PluginManager *plugin) {
   return std::make_unique<LowerPOPToLLVMPass>(plugin);
 }

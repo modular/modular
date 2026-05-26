@@ -215,7 +215,8 @@ std::unique_ptr<mlir::Pass> createReorderParamOps(bool disableVerifier);
 
 /// Create an instance of the LowerGlobalPOPToLLVM pass that takes
 /// a plugin.
-std::unique_ptr<mlir::Pass> createLowerGlobalPOPToLLVM(const Plugin *plugin);
+std::unique_ptr<mlir::Pass>
+createLowerGlobalPOPToLLVM(const PluginManager *plugin);
 
 //===----------------------------------------------------------------------===//
 // LowerPOPToLLVM
@@ -223,7 +224,7 @@ std::unique_ptr<mlir::Pass> createLowerGlobalPOPToLLVM(const Plugin *plugin);
 
 /// Create an instance of the LowerPOPToLLVM pass that takes
 /// a plugin.
-std::unique_ptr<mlir::Pass> createLowerPOPToLLVM(const Plugin *plugin);
+std::unique_ptr<mlir::Pass> createLowerPOPToLLVM(const PluginManager *plugin);
 
 //===----------------------------------------------------------------------===//
 // LowerToLLVMPipeline

@@ -261,12 +261,13 @@ void MojoTypeSystem::Initialize(CreateContextFn ctxFn) {
   LanguageSet languages;
   languages.Insert(lldb::eLanguageTypeMojo);
   createContextFn.store(ctxFn);
-  PluginManager::RegisterPlugin(getPluginNameStatic(), "Mojo TypeSystem",
-                                createInstance, languages, languages);
+  lldb_private::PluginManager::RegisterPlugin(getPluginNameStatic(),
+                                              "Mojo TypeSystem", createInstance,
+                                              languages, languages);
 }
 
 void MojoTypeSystem::Terminate() {
-  PluginManager::UnregisterPlugin(createInstance);
+  lldb_private::PluginManager::UnregisterPlugin(createInstance);
 }
 
 //===----------------------------------------------------------------------===//

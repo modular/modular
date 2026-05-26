@@ -23,7 +23,7 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
 
 void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                                     const LowerToLLVMOptions &options,
-                                    const Plugin *plugin) {
+                                    const PluginManager *plugin) {
   using mlir::LLVM::LLVMFuncOp;
 
   // Run all LLVM lowering passes.
