@@ -64,9 +64,7 @@ and `Equatable`."""
 # ===-----------------------------------------------------------------------===#
 
 
-struct DictKeyError[K: KeyElement & ImplicitlyDestructible](
-    ImplicitlyCopyable, Writable
-):
+struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
     """A custom error type for Dict lookups that fail.
 
     Parameters:
