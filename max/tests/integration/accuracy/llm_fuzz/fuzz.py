@@ -608,7 +608,10 @@ async def _run_body(
                             scenario.name, scenario_elapsed_ms, s_pass, s_fail
                         )
                 except Exception as e:
+                    import traceback
+
                     print(f"  {RED}SCENARIO CRASHED: {e}{RESET}")
+                    traceback.print_exc()
                     from scenarios import ScenarioResult
 
                     err_result = ScenarioResult(
