@@ -339,6 +339,7 @@ struct _Once[T: Movable](
     Iterable where conforms_to(T, Copyable),
     IterableOwned,
     Iterator,
+    Movable,
 ):
     """An iterator that yields an element exactly once."""
 
@@ -366,12 +367,11 @@ struct _Once[T: Movable](
         return next(self._inner)
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var n_remaining = Int(Bool(self._inner))
-        return Tuple(n_remaining, Optional(n_remaining))
+        return self._inner.bounds()
 
 
 @always_inline
-def once[T: Movable](var element: T) -> _Once[T]:
+def once[T: Movable, //](var element: T, /) -> _Once[T]:
     """Creates an iterator that yields an element exactly once.
 
     Parameters:

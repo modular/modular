@@ -30,7 +30,7 @@ def test_once_owned() raises:
         _ = next(it)
 
 
-def test_once_iter() raises:
+def test_once_iter_copyable() raises:
     var it = once(10)
     var it_copy = iter(it)
 
