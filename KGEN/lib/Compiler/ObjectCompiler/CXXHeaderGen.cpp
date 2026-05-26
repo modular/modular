@@ -237,7 +237,7 @@ using ssize_t = SSIZE_T;
 
   // Emit the function decls into the header.
   for (auto f : module.getOps<FuncOp>()) {
-    if (!f.isCExported())
+    if (!f.getFuncTypeGenerator().getBody().getFnEffects().isCABI())
       continue;
     // The symbol was exported, use its alias name.
     if (failed(emitSignature(os, f)))

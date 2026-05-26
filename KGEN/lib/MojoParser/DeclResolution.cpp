@@ -934,8 +934,6 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
   // std::optional<std::string> exportABI, std::optional<bool> mangle}, to
   // separate argument parsing from the semantic actions that follow.
   TypedAttr linkageName;
-  // TODO: deprecate and remove the ABI= specification here, in favor of the
-  // abi() effect on the function declaration.
   std::optional<std::string> exportABI;
   for (const Operand &operand : operands) {
     auto strNode = dyn_cast<StringLiteralNode>(operand.expr);
@@ -946,6 +944,8 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
                   "only \"C\" ABI is supported at the moment");
         return;
       }
+      shared.emitWarning(operand.getLoc())
+          << "ABI=\"C\" is deprecated; use abi(\"C\") instead";
     } else if (strNode && operand.isPositional()) {
       if (linkageName) {
         emitError(nodeLoc, spelling) << " must have at most 1 name argument";
@@ -1006,11 +1006,10 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
   if (!isExport)
     return;
 
-  bool isCExport = exportABI.has_value();
-  if (!isCExport)
-    funcOp.setExported();
-  else {
-    funcOp.setCExported();
+  funcOp.setExported();
+
+  if (exportABI.has_value()) {
+    tcSignature.argList.effects.setCABI(true);
 
     // Validate the linkage name is a valid C identifier. We don't permit
     // non-literal identifiers for these functions.

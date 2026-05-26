@@ -24,7 +24,6 @@ class CABIInfo;
 /// Applies entry-block argument coercion (register/indirect/two-register) and
 /// return-value coercion (register/sret) in place, then updates the function
 /// type signature. No-ops for external declarations and identity-ABI functions.
-/// Unlike processCExportedFunction: no wrapper is emitted, no linkage change.
 /// Mojo direct callers are already patched by ConvertKGENCall.
 void processCABIFunctionDefinition(mlir::LLVM::LLVMFuncOp func,
                                    CABIInfo &abiInfo);

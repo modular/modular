@@ -51,7 +51,7 @@ def name_then_export():
     pass
 
 
-# CHECK: lit.fn export C @"name_then_c_export()"
+# CHECK: lit.fn export @"name_then_c_export()"() cabi
 # CHECK-SAME: linkageName = #kgen.linkage_name<"my_c_export" : !kgen.string, true>
 @export(ABI="C")
 @__name("my_c_export")
@@ -70,7 +70,7 @@ def export_then_name():
     pass
 
 
-# CHECK: lit.fn export C @"c_export_then_name()"
+# CHECK: lit.fn export @"c_export_then_name()"() cabi
 # CHECK-SAME: linkageName = #kgen.linkage_name<"my_c_export2" : !kgen.string, true>
 @export(ABI="C")
 @__name("my_c_export2")

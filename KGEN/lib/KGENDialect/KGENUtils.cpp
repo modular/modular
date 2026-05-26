@@ -2014,27 +2014,16 @@ void KGEN::printOptionalInline(AsmPrinter &p, InlineLevel level) {
 
 ParseResult KGEN::parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind) {
   ExportKind value = ExportKind::NotExported;
-  if (succeeded(p.parseOptionalKeyword("export"))) {
+  if (succeeded(p.parseOptionalKeyword("export")))
     value = ExportKind::Exported;
-    if (succeeded(p.parseOptionalKeyword("C")))
-      value = ExportKind::CExported;
-  }
   exportKind = ExportKindAttr::get(p.getContext(), value);
   return success();
 }
 
 void KGEN::printSymbolExport(AsmPrinter &p, Operation *op,
                              ExportKindAttr exportKind) {
-  if (exportKind.getValue() != ExportKind::NotExported) {
+  if (exportKind.getValue() != ExportKind::NotExported)
     p << " export";
-    switch (exportKind.getValue()) {
-    case ExportKind::CExported:
-      p << " C";
-      break;
-    default:
-      break;
-    }
-  }
 }
 
 ParseResult KGEN::parseParameterValues(AsmParser &p,

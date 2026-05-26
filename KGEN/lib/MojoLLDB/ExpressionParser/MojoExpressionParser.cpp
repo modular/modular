@@ -429,9 +429,15 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // Set the environment (defines) for the module.
   extendWithModularEnvAttr(*module, nullptr);
 
-  // Ensure the expression function in the cloned module gets exported.
+  // Ensure the expression function in the cloned module gets c-exported.
   auto clonedExprFn = cast<LIT::FnOp>(mapping.lookup(&*exprFn));
-  clonedExprFn.setCExported();
+  clonedExprFn.setExported();
+  // Set the C ABI effect
+  auto sigGen = clonedExprFn.getFuncTypeGenerator();
+  auto body = sigGen.getBody();
+  auto newBody = body.getWithFnEffects(body.getFnEffects().setCABI(true));
+  clonedExprFn.setFuncTypeGenerator(LIT::FnTypeGeneratorType::get(
+      sigGen.getInputParamTypes(), newBody, sigGen.getMetadata()));
 
   // Log the pre-elaboration module.
   Log *logChannel = GetLog(LLDBLog::Expressions);

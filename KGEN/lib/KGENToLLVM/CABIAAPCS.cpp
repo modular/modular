@@ -26,6 +26,10 @@ AAPCSABIInfo::AAPCSABIInfo(mlir::MLIRContext *ctx,
 CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
                                                 mlir::Location loc,
                                                 bool isVariadicArg) const {
+  // Arrays should be passed indirectly, as per the C specification
+  if (isa<mlir::LLVM::LLVMArrayType>(type))
+    return CoercionInfo::indirectArgument(/*useByval=*/false);
+
   // Only LLVM struct types need C ABI classification
   auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type);
   if (!structType) {

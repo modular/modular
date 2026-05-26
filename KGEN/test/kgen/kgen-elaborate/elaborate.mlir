@@ -2420,8 +2420,8 @@ kgen.generator @"non_c_export::ok"() attributes {linkageName = #kgen.linkage_nam
 // COM: A C-exported generator with underscores and digits (valid C identifier)
 // COM: is accepted.
 
-// CHECK-LABEL: kgen.func export C @_leading_underscore_123()
+// CHECK-LABEL: kgen.func export @_leading_underscore_123() cabi
 // CHECK-NOT: linkageName
-kgen.generator export C @"c_export::underscores"() attributes {linkageName = #kgen.linkage_name<"_leading_underscore_123" : !kgen.string, false>} {
+kgen.generator export @"c_export::underscores"() cabi attributes {linkageName = #kgen.linkage_name<"_leading_underscore_123" : !kgen.string, false>} {
   kgen.return
 }

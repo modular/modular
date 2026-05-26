@@ -9,7 +9,7 @@
 
 
 @export("my_named_export", ABI="C")
-# CHECK: lit.fn export C @"export_me()"
+# CHECK: lit.fn export @"export_me()"{{.*}}throws|cabi
 # CHECK-SAME: linkageName = #kgen.linkage_name<"my_named_export" : !kgen.string, false>
 def export_me() raises -> None:
     ...

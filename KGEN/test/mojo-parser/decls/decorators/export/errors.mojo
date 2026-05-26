@@ -25,6 +25,7 @@ def bar() raises:
     ...
 
 
+# expected-warning @+2 {{ABI="C" is deprecated; use abi("C") instead}}
 # expected-error @+1 {{my+foo is not a valid C identifier}}
 @export("my+foo", ABI="C")
 def bad_name() raises:

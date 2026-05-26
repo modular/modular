@@ -373,7 +373,7 @@ void CABICallHelper::applyByvalAttrsToCall(CallOp call,
 
   for (size_t idx = startArgIdx; idx < argClass.size(); ++idx) {
     const auto &coercion = argClass[idx];
-    if (coercion.useIndirect) {
+    if (coercion.useIndirect && coercion.useByval) {
       // paramIdx must be in bounds: prepareArg emits exactly one call arg per
       // classification entry, so the sizes must agree.
       assert(paramIdx < numArgAttrs &&

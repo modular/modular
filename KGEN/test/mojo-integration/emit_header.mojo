@@ -8,16 +8,16 @@
 # RUN: kgen %s -emit=header | FileCheck %s
 
 
-@export("bar", ABI="C")
 # CHECK: extern float bar();
-def foo() -> Float32:
+@export("bar")
+def foo() abi("C") -> Float32:
     # OK to alias, not proper main
     return 0.0
 
 
-@export(ABI="C")
 # CHECK: extern float call_me();
-def call_me() -> Float32:
+@export
+def call_me() abi("C") -> Float32:
     return 1.0
 
 
@@ -28,14 +28,14 @@ struct RegIntPair(TrivialRegisterPassable):
 
 
 # CHECK: extern ssize_t first_reg(ssize_t, ssize_t);
-@export(ABI="C")
-def first_reg(pair: RegIntPair) -> Int:
+@export
+def first_reg(pair: RegIntPair) abi("C") -> Int:
     return pair.first
 
 
 # CHECK: extern void make_reg_pair(ssize_t, ssize_t, ssize_t *, ssize_t *);
-@export(ABI="C")
-def make_reg_pair(first: Int, second: Int) -> RegIntPair:
+@export
+def make_reg_pair(first: Int, second: Int) abi("C") -> RegIntPair:
     return RegIntPair(first, second)
 
 
@@ -50,14 +50,14 @@ struct MemIntPair:
 
 
 # CHECK: extern ssize_t first_mem(void *);
-@export(ABI="C")
-def first_mem(pair: MemIntPair) -> Int:
+@export
+def first_mem(pair: MemIntPair) abi("C") -> Int:
     return pair.first
 
 
 # CHECK: extern void make_mem_pair(ssize_t, ssize_t, void *);
-@export(ABI="C")
-def make_mem_pair(first: Int, second: Int) -> MemIntPair:
+@export
+def make_mem_pair(first: Int, second: Int) abi("C") -> MemIntPair:
     return MemIntPair(first, second)
 
 

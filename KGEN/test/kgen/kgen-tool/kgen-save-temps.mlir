@@ -3,7 +3,7 @@
 // RUN: find $(dirname %t_temps) -type f -name "*.s" -print -quit | xargs cat | FileCheck %s -check-prefix=ASM
 // RUN: find $(dirname %t_temps) -type f -name "*.pre-split.*.ll" -print -quit | xargs cat | FileCheck %s -check-prefix=PRESPLIT
 
-kgen.func export C @my_exported_kernel(%arg0: f32) -> f32 {
+kgen.func export @my_exported_kernel(%arg0: f32) cabi -> f32 {
   kgen.return %arg0 : f32
 }
 

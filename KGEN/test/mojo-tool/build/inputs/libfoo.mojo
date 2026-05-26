@@ -5,6 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@export("foo", ABI="C")
-def foo(x: Int) raises:
+@export("foo")
+def foo(x: Int) abi("C") raises:
     print("hello from foo:", x)
