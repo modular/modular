@@ -34,31 +34,36 @@ static Value createEntryAlloca(ImplicitLocOpBuilder &b, LLVMPointerType ptrType,
 /// back to the original Mojo type. Returns one reconstructed Value per
 /// original arg; the caller is responsible for replacing uses and erasing the
 /// originals.
-static SmallVector<Value>
-reconstructCABIArguments(Block *entry, ArrayRef<M::KGEN::CoercionInfo> argInfos,
-                         ArrayRef<BlockArgument> origArgs,
-                         ImplicitLocOpBuilder &b, LLVMPointerType ptrType,
-                         MLIRContext *ctx, const M::KGEN::LLVMDataLayout &dl) {
+static SmallVector<Value> reconstructCABIArguments(
+    LLVMFunctionType newFnTy, Block *entry,
+    ArrayRef<M::KGEN::CoercionInfo> argInfos, ArrayRef<BlockArgument> origArgs,
+    M::KGEN::CoercionInfo &retInfo, ImplicitLocOpBuilder &b, MLIRContext *ctx,
+    const M::KGEN::LLVMDataLayout &dl) {
   SmallVector<Value> reconstructed;
+  auto ptrType = LLVMPointerType::get(ctx);
+  unsigned paramIdx = retInfo.useSRet ? 1 : 0;
   for (auto [coercion, origArg] : llvm::zip(argInfos, origArgs)) {
+    Location loc = origArg.getLoc();
+    b.setLoc(loc);
     Type origType = origArg.getType();
-    b.setLoc(origArg.getLoc());
+    auto paramTy = newFnTy.getParamType(paramIdx++);
     if (coercion.isIdentity()) {
       // No coercion needed: add a new block arg of the same type so the
       // original can be erased uniformly below.
-      reconstructed.push_back(entry->addArgument(origType, origArg.getLoc()));
+      reconstructed.push_back(entry->addArgument(paramTy, loc));
     } else if (coercion.useIndirect) {
       // Indirect: add a pointer block arg and load the original type from it.
-      Value ptrArg = entry->addArgument(ptrType, origArg.getLoc());
+      Value ptrArg = entry->addArgument(paramTy, loc);
       reconstructed.push_back(LoadOp::create(b, origType, ptrArg));
     } else if (coercion.isTwoRegister()) {
       // Two-register: add two args, pack them into a struct, store to an
       // alloca sized for origType, then reload as origType (bitcast via mem).
-      Value arg1 = entry->addArgument(coercion.coercedType, origArg.getLoc());
-      Value arg2 =
-          entry->addArgument(coercion.coercedSecondType, origArg.getLoc());
-      Type pairTy = LLVMStructType::getLiteral(
-          ctx, {coercion.coercedType, coercion.coercedSecondType});
+      Value arg1 = entry->addArgument(paramTy, loc);
+      Value arg2 = entry->addArgument(newFnTy.getParamType(paramIdx++), loc);
+      assert(arg1.getType() == coercion.coercedType && "C ABI mismatch");
+      assert(arg2.getType() == coercion.coercedSecondType && "C ABI mismatch");
+      Type pairTy =
+          LLVMStructType::getLiteral(ctx, {arg1.getType(), arg2.getType()});
       Value alloca = createEntryAlloca(b, ptrType, origType, pairTy, dl);
       Value pair = UndefOp::create(b, pairTy);
       pair = InsertValueOp::create(b, pair, arg1, size_t{0});
@@ -68,10 +73,10 @@ reconstructCABIArguments(Block *entry, ArrayRef<M::KGEN::CoercionInfo> argInfos,
     } else {
       // Single-register coercion (SSE or Integer): bitcast via store + load.
       assert(coercion.coercedType);
-      Value coercedArg =
-          entry->addArgument(coercion.coercedType, origArg.getLoc());
+      Value coercedArg = entry->addArgument(paramTy, loc);
+      assert(coercedArg.getType() == coercion.coercedType && "C ABI mismatch");
       Value alloca =
-          createEntryAlloca(b, ptrType, origType, coercion.coercedType, dl);
+          createEntryAlloca(b, ptrType, origType, coercedArg.getType(), dl);
       StoreOp::create(b, coercedArg, alloca);
       reconstructed.push_back(LoadOp::create(b, origType, alloca));
     }
@@ -148,77 +153,75 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo) {
   if (!anyArgCoercion && retInfo.isIdentity())
     return;
 
-  // For external declarations, just update the type — no body to rewrite.
-  if (func.isExternal()) {
-    auto ptrType = LLVMPointerType::get(ctx);
-    SmallVector<Type> newParamTypes;
-    if (retInfo.useSRet)
+  auto ptrType = LLVMPointerType::get(ctx);
+  SmallVector<Type> newParamTypes;
+  SmallVector<std::pair<unsigned, Type>> byValAttrs;
+
+  if (retInfo.useSRet)
+    newParamTypes.push_back(ptrType);
+
+  for (auto [ci, origTy] : llvm::zip(argInfos, origArgTypes)) {
+    if (ci.isIdentity()) {
+      newParamTypes.push_back(origTy);
+    } else if (ci.useIndirect) {
+      if (ci.useByval)
+        byValAttrs.push_back({newParamTypes.size(), origTy});
       newParamTypes.push_back(ptrType);
-    for (auto [ci, origTy] : llvm::zip(argInfos, origArgTypes)) {
-      if (ci.isIdentity()) {
-        newParamTypes.push_back(origTy);
-      } else if (ci.useIndirect) {
-        newParamTypes.push_back(ptrType);
-      } else if (ci.isTwoRegister()) {
-        newParamTypes.push_back(ci.coercedType);
-        newParamTypes.push_back(ci.coercedSecondType);
-      } else {
-        assert(ci.coercedType);
-        newParamTypes.push_back(ci.coercedType);
-      }
-    }
-    Type newRetType;
-    if (retInfo.useSRet) {
-      newRetType = LLVMVoidType::get(ctx);
-    } else if (retInfo.isTwoRegister()) {
-      newRetType = LLVMStructType::getLiteral(
-          ctx, {retInfo.coercedType, retInfo.coercedSecondType});
-    } else if (retInfo.coercedType) {
-      newRetType = retInfo.coercedType;
+    } else if (ci.isTwoRegister()) {
+      newParamTypes.push_back(ci.coercedType);
+      newParamTypes.push_back(ci.coercedSecondType);
     } else {
-      newRetType = origRetType;
+      assert(ci.coercedType);
+      newParamTypes.push_back(ci.coercedType);
     }
-    func.setType(LLVMFunctionType::get(newRetType, newParamTypes,
-                                       func.getFunctionType().isVarArg()));
-    if (retInfo.useSRet)
-      func.setArgAttr(0, LLVMDialect::getStructRetAttrName(),
-                      mlir::TypeAttr::get(origRetType));
-    return;
   }
 
-  Block *entry = &func.getBody().front();
-  auto ptrType = LLVMPointerType::get(ctx);
-  ImplicitLocOpBuilder b(loc, entry, entry->begin());
-  const LLVMDataLayout &dl = abiInfo.getDataLayout();
+  Type newRetType;
+  if (retInfo.useSRet) {
+    newRetType = LLVMVoidType::get(ctx);
+  } else if (retInfo.isTwoRegister()) {
+    newRetType = LLVMStructType::getLiteral(
+        ctx, {retInfo.coercedType, retInfo.coercedSecondType});
+  } else if (retInfo.coercedType) {
+    newRetType = retInfo.coercedType;
+  } else {
+    newRetType = origRetType;
+  }
 
-  // Step 1: Coerce arguments — replace original block args with C ABI args
-  // and emit reconstruction code at the entry block top.
-  SmallVector<BlockArgument> origArgs = llvm::to_vector(func.getArguments());
-  auto reconstructed =
-      reconstructCABIArguments(entry, argInfos, origArgs, b, ptrType, ctx, dl);
-  for (auto [origArg, reconVal] : llvm::zip(origArgs, reconstructed))
-    origArg.replaceAllUsesWith(reconVal);
-  entry->eraseArguments(0, origArgTypes.size());
+  auto newFnTy = LLVMFunctionType::get(newRetType, newParamTypes,
+                                       func.getFunctionType().isVarArg());
 
-  // Step 2: Coerce return value — rewrite returns and compute the new type.
-  Type newRetType =
-      retInfo.isIdentity()
-          ? origRetType
-          : applyCABIReturnCoercion(func, entry, retInfo, origRetType, b,
-                                    ptrType, ctx, loc, dl);
+  if (!func.isExternal()) {
+    Block *entry = &func.getBody().front();
+    ImplicitLocOpBuilder b(loc, entry, entry->begin());
+    const LLVMDataLayout &dl = abiInfo.getDataLayout();
 
-  // Step 3: Update the function signature to reflect the coerced ABI.
-  func.setType(LLVMFunctionType::get(newRetType,
-                                     llvm::to_vector(entry->getArgumentTypes()),
-                                     func.getFunctionType().isVarArg()));
+    // Step 1: Coerce arguments — replace original block args with C ABI args
+    // and emit reconstruction code at the entry block top.
+    SmallVector<BlockArgument> origArgs = llvm::to_vector(func.getArguments());
+    auto reconstructed = reconstructCABIArguments(
+        newFnTy, entry, argInfos, origArgs, retInfo, b, ctx, dl);
+    for (auto [origArg, reconVal] : llvm::zip(origArgs, reconstructed))
+      origArg.replaceAllUsesWith(reconVal);
+    entry->eraseArguments(0, origArgTypes.size());
 
-  // On ARM64, the sret pointer must go in x8 (XR / indirect result location
-  // register), not x0. LLVM only uses x8 when llvm.sret is set on param 0.
-  // Without this, C callers put the return address in x8 but the function
-  // reads x0 → ABI mismatch and crash.
-  if (retInfo.useSRet)
+    if (!retInfo.isIdentity()) {
+      applyCABIReturnCoercion(func, entry, retInfo, origRetType, b, ptrType,
+                              ctx, loc, dl);
+    }
+  }
+
+  func.setType(newFnTy);
+
+  if (retInfo.useSRet) {
     func.setArgAttr(0, LLVMDialect::getStructRetAttrName(),
                     mlir::TypeAttr::get(origRetType));
+  }
+
+  for (auto &[argIdx, origArgTy] : byValAttrs) {
+    func.setArgAttr(argIdx, LLVMDialect::getByValAttrName(),
+                    mlir::TypeAttr::get(origArgTy));
+  }
 }
 
 } // namespace M::KGEN

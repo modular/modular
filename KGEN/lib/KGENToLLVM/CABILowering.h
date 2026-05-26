@@ -69,8 +69,10 @@ struct CoercionInfo {
   // Second register type (two-register only)
   mlir::Type coercedSecondType = nullptr;
 
-  /// For indirect passing
-  bool useIndirect = false; // If true, pass pointer to struct
+  /// For indirect passing. If true, pass pointer to struct
+  bool useIndirect = false;
+  // In conjunction with useIndirect, set 'byval' on that pointer
+  bool useByval = false;
 
   /// For return values >16 bytes (sret convention)
   bool useSRet = false; // If true, use hidden pointer parameter
@@ -81,10 +83,11 @@ struct CoercionInfo {
   /// Factory for indirect argument passing.
   /// Large structs (>16 bytes) are passed by pointer on the stack.
   /// The pointer itself is allocated and passed by the caller.
-  static CoercionInfo indirectArgument() {
+  static CoercionInfo indirectArgument(bool useByval) {
     CoercionInfo info;
     info.argClass = ABIArgClass::Memory;
     info.useIndirect = true; // Argument passed via pointer
+    info.useByval = useByval;
     info.useSRet = false;
     return info;
   }

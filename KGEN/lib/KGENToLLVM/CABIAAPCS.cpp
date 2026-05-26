@@ -57,7 +57,7 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
 
   // RULE 1: Structs >16 bytes are passed by pointer
   if (size > 16) {
-    return CoercionInfo::indirectArgument();
+    return CoercionInfo::indirectArgument(/*useByval=*/false);
   }
 
   // ARM64 AAPCS: Non-HFA structs are always passed in GPRs (integer

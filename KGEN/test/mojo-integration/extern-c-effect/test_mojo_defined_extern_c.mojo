@@ -6,8 +6,14 @@
 # Tests that a Mojo function declared with the abi("C") effect is compiled
 # with C ABI at its definition site.
 #
-# FloatPair ({float, float}, 8 bytes) is classified as SSE on x86-64 SysV and
-# returned packed in XMM0.  The test verifies three scenarios:
+# Two struct types exercise different ABI classification classes:
+#
+#   FloatPair  {float×2}  8 B   x86-64 SysV: SSE, returned packed in XMM0
+#                              ARM64 AAPCS: HFA-2, V0/V1
+#   BigStruct  {int64×3} 24 B   x86-64 SysV: Memory -> byval arg + sret return
+#                              ARM64 AAPCS: indirect arg + sret return
+#
+# The test verifies three scenarios for each struct:
 #
 #   1. Direct Mojo call: ConvertKGENCall applies C ABI coercion at the call
 #      site; processCABIFunctionDefinition applies it at the definition entry
@@ -20,6 +26,13 @@
 #   3. C invokes Mojo callback: the function pointer is passed to C land via
 #      external_call; C calls through it using C ABI, which must match the
 #      Mojo-defined function's compiled ABI.
+#
+# BigStruct's "C invokes Mojo callback" case (test_c_calls_mojo_big) is the
+# regression test for MOCO-3939: the non-external branch of
+# processCABIFunctionDefinition was missing the llvm.byval argument attribute
+# (and matching sret on the return) that the external branch already set,
+# so C callers passed a byval pointer that the Mojo callee interpreted as a
+# direct value, corrupting the call.
 #
 # C reference: c_reference.c
 # RUN: mkdir -p %t.dir
@@ -75,7 +88,66 @@ def test_c_calls_mojo():
 # CHECK: 6.0 7.0
 
 
+# ============================================================================
+# BigStruct: {int64_t, int64_t, int64_t} (24 bytes, Memory class).
+# x86-64 SysV: arg passed indirectly with llvm.byval, return via sret pointer.
+# ARM64 AAPCS: arg passed indirectly, return via sret pointer.
+# ============================================================================
+
+
+@fieldwise_init
+struct BigStruct(TrivialRegisterPassable):
+    var a: Int64
+    var b: Int64
+    var c: Int64
+
+
+def mojo_big_add_one(p: BigStruct) abi("C") -> BigStruct:
+    return BigStruct(p.a + 1, p.b + 1, p.c + 1)
+
+
+def test_direct_big():
+    # Direct Mojo-to-Mojo call through a abi("C") function definition whose
+    # arg and return are Memory-class.  Both the call site and the definition
+    # must coerce to byval/sret consistently.
+    var r = mojo_big_add_one(BigStruct(1, 2, 3))
+    print(r.a, r.b, r.c)
+
+
+# CHECK: 2 3 4
+
+
+def test_through_pointer_big():
+    # Taking the address of a abi("C") function gives the C-ABI function's
+    # address; calling through the pointer goes through the call_indirect
+    # coercion path with byval/sret.
+    var fp: def(BigStruct) thin abi("C") -> BigStruct = mojo_big_add_one
+    var r = fp(BigStruct(10, 20, 30))
+    print(r.a, r.b, r.c)
+
+
+# CHECK: 11 21 31
+
+
+def test_c_calls_mojo_big():
+    # Regression test for MOCO-3939.  Pass the Mojo-defined abi("C") function
+    # to C as a callback; C invokes it with a 24-byte struct that must travel
+    # via llvm.byval pointer (caller writes, callee reloads).  Before the fix,
+    # processCABIFunctionDefinition's non-external branch did not set byval on
+    # the block argument, so the callee read garbage instead of the struct.
+    var r = external_call["c_apply_big_struct_fn", BigStruct](
+        mojo_big_add_one, BigStruct(100, 200, 300)
+    )
+    print(r.a, r.b, r.c)
+
+
+# CHECK: 101 201 301
+
+
 def main():
     test_direct()
     test_through_pointer()
     test_c_calls_mojo()
+    test_direct_big()
+    test_through_pointer_big()
+    test_c_calls_mojo_big()
