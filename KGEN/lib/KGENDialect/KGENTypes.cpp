@@ -511,9 +511,54 @@ FuncType FuncType::getWithMetadata(FnMetadataAttrInterface metadata,
                        metadata, argListAttrs);
 }
 
+FuncType FuncType::get(FunctionType values, FnMetadataAttrInterface metadata,
+                       PogListAttr argListAttrs) {
+  return FuncType::get(values, {}, {}, metadata, argListAttrs);
+}
+
 size_t FuncType::getNumAsyncReturnSlots() {
   return isAsync() ? (hasMemoryOnlyResult() + isThrows()) : 0;
 }
+
+StringAttr FuncType::getArgName(size_t idx) {
+  return getArgListAttrs().getName(idx);
+}
+
+bool FuncType::isAnyVarArg(size_t index) {
+  return getArgListAttrs().isAnyVarArg(index);
+}
+
+bool FuncType::isPosVarArg(size_t index) {
+  return getArgListAttrs().isPosVarArg(index);
+}
+
+/// For a PosVarArg, return the declared ArgConvention of the elements. For
+/// example: def x(mut *args: Int) is declared 'mut'.
+ArgConvention FuncType::getVariadicConvention(size_t index) {
+  PogListAttr pogs = getArgListAttrs();
+  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg ||
+      pogs.getVariadicKind(index) == VariadicKind::PackVarArg)
+    return pogs.getOrigVariadicConvention();
+  return ArgConvention::ByRefError;
+}
+
+bool FuncType::isKwVarArg(size_t index) {
+  return getArgListAttrs().isKwVarArg(index);
+}
+
+bool FuncType::isPack(size_t index) { return getArgListAttrs().isPack(index); }
+
+std::optional<size_t> FuncType::findPackVarArgIndex() {
+  size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult();
+  if (numUserArgs == 0)
+    return std::nullopt;
+  size_t lastUserArgIndex = numUserArgs - 1;
+  if (isPack(lastUserArgIndex))
+    return std::make_optional(lastUserArgIndex);
+  return std::nullopt;
+}
+
+bool FuncType::hasKwVarArgs() { return getArgListAttrs().hasKwVarArg(); }
 
 std::optional<int64_t> FuncType::getTypeSize(TargetInfoAttr target) const {
   // Non-capturing closures are function pointers. Capturing closures contain

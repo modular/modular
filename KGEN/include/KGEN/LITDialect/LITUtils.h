@@ -43,7 +43,6 @@ enum class PassingKind : uint32_t;
 enum class VariadicKind : uint32_t;
 
 namespace LIT {
-class FnType;
 
 /// Returns whether the given type is a LIT meta type.
 bool isMetaType(Type type);
@@ -93,7 +92,7 @@ void printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes);
 /// Return true if the origin set parameter is an empty set.
 bool isEmptyOriginSet(TypedAttr attr);
 
-void printFnType(AsmPrinter &p, FnType signature);
+void printFnType(AsmPrinter &p, FuncType signature);
 
 //===----------------------------------------------------------------------===//
 // MangledSymbol

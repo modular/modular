@@ -272,7 +272,7 @@ parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
     if (!calleeLITTypeGen)
       return p.emitError(p.getCurrentLocation(),
                          "expected a FnTypeGeneratorType");
-    FnType calleeLITType = calleeLITTypeGen.getBody();
+    FuncType calleeLITType = calleeLITTypeGen.getBody();
     if (calleeLITType.getNumImplicitOriginDecls() != implicitOrigins.size())
       return p.emitError(p.getNameLoc())
              << implicitOrigins.size()
@@ -363,8 +363,8 @@ static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
 }
 
 template <typename OpT>
-static LogicalResult verifyOriginParams(OpT op, FnType sig) {
-  size_t numImplicit = sig.getMetadata().getNumImplicitOriginDecls();
+static LogicalResult verifyOriginParams(OpT op, FuncType sig) {
+  size_t numImplicit = sig.getNumImplicitOriginDecls();
   size_t numParams = op.getImplicitOrigins().size();
   if (numParams == numImplicit)
     return success();
@@ -376,7 +376,7 @@ static LogicalResult verifyOriginParams(OpT op, FnType sig) {
 }
 
 template <typename OpT>
-static LogicalResult verifyCallOp(OpT op, FnType sig, ValueRange operands,
+static LogicalResult verifyCallOp(OpT op, FuncType sig, ValueRange operands,
                                   std::optional<TypeRange> results) {
   FunctionType values = sig.substituteImplicitOriginsIntoValues(
       op.getImplicitOrigins(), [&] { return op.emitOpError(); });

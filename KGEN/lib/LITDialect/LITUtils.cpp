@@ -217,8 +217,8 @@ bool LIT::isEmptyOriginSet(TypedAttr attr) {
   return false;
 }
 
-void LIT::printFnType(AsmPrinter &p, FnType signature) {
-  FnMetadataAttr metadata = signature.getMetadata();
+void LIT::printFnType(AsmPrinter &p, FuncType signature) {
+  FnMetadataAttr metadata = ::cast<FnMetadataAttr>(signature.getMetadata());
   if (unsigned numOriginDecls = metadata.getNumImplicitOriginDecls())
     p << '[' << numOriginDecls << ']';
   if (!isEmptyOriginSet(metadata.getCaptureOrigins())) {

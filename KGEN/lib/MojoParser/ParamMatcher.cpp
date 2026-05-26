@@ -224,9 +224,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     return error(MatchFailure::Unclassified{});
 
   auto actualFnTp =
-      cast<FnType>(actualEvaluator.getReboundType(actual.getBody()));
+      cast<FuncType>(actualEvaluator.getReboundType(actual.getBody()));
   auto expectedFnTp =
-      cast<FnType>(expectedEvaluator.getReboundType(expected.getBody()));
+      cast<FuncType>(expectedEvaluator.getReboundType(expected.getBody()));
 
   // Past this point we don't want to look at actual/expected anymore. They
   // don't have the parameters bound right. Clear them to avoid errors in the
@@ -597,7 +597,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
     if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType))
       return matchFunctionTypes(actual, expected);
 
-  // Allowing match a FnLiteralType To a FnType, but not vice versa.
+  // Allowing match a FnLiteralType To a FuncType, but not vice versa.
   if (auto actual = dyn_cast<FnLiteralTypeGeneratorType>(actualType))
     if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType))
       return matchFunctionTypes(actual.getSymbolConstantAttr().getType(),
@@ -609,10 +609,11 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
       // See paramIndexRefDepth's comments for what this increment is for.
       llvm::SaveAndRestore depth(paramIndexRefDepth, paramIndexRefDepth + 1);
 
-      if (isa<FnType>(actual.getBody()) || isa<FnType>(expected.getBody())) {
+      if (isa<FuncType>(actual.getBody()) ||
+          isa<FuncType>(expected.getBody())) {
         // success()ing two FnTypeGeneratorType should have been handled above
-        assert(!isa<FnType>(actual.getBody()) ||
-               !isa<FnType>(expected.getBody()));
+        assert(!isa<FuncType>(actual.getBody()) ||
+               !isa<FuncType>(expected.getBody()));
         return error(MatchFailure::Unclassified{});
       }
       // This a simple type generator, match the input parameter types and body

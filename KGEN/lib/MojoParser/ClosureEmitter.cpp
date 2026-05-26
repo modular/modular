@@ -763,7 +763,7 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
     os << ']';
   }
 
-  FnType body = sig.getBody();
+  FuncType body = sig.getBody();
   os << '(';
   auto args = llvm::enumerate(body.getArguments(), body.getArgConventions());
   llvm::interleaveComma(
