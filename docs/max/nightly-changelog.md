@@ -123,8 +123,10 @@ This version is still a work in progress.
   compile-and-load pipeline at the type level:
 
   - `CompiledModels` represents the compile artifact returned by
-    `InferenceSession.compile_from_path` / `compile_from_object`. It holds
-    the MEF bytes and one or more sub-models; it is not directly executable.
+    `compile_from_path` / `compile_from_object` on the
+    `max._core.engine.InferenceSession` binding (these methods don't exist on
+    the public `max.engine.InferenceSession` class). It holds the MEF bytes
+    and one or more sub-models; it is not directly executable.
   - `ModelMetadata` exposes per-sub-model metadata (`name`,
     `input_metadata`, `output_metadata`) and is yielded by iterating a
     `CompiledModels` or indexing it with `[i]`.
