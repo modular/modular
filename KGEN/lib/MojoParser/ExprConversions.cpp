@@ -506,13 +506,14 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     return {};
   }
 
-  if (auto fnLiteralType =
+  if (auto funcLiteralType =
           sugarDynCast<FuncLiteralTypeGeneratorType>(callee.getType())) {
     // Simply convert the literal itself, call the top-most conversion API,
     // because this could be a zero cost conversion without needing to generate
     // a thunk.
     return emitter.emitImplicitConversionToType(
-        {PValue(fnLiteralType.getSymbolConstantAttr()), expr}, expected, dest);
+        {PValue(funcLiteralType.getSymbolConstantAttr()), expr}, expected,
+        dest);
   }
 
   // Strip all sugar so we don't bind parameters wrong.
