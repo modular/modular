@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .buffer import Buffer
 from .queue import Queue
 from .stream import Stream
 
@@ -46,6 +47,16 @@ class Context:
 
     def create_stream(self) -> Stream:
         return Stream._wrap(self._inner.create_stream())
+
+    def alloc_sync(self, byte_size: int) -> Buffer:
+        return Buffer._wrap(self._inner.alloc_sync(byte_size))
+
+    def alloc_host_pinned(self, byte_size: int) -> Buffer:
+        return Buffer._wrap(self._inner.alloc_host_pinned(byte_size))
+
+    def memory_get_address(self, buf: Buffer) -> int:
+        """Return the (device-side) address of ``buf`` as an integer."""
+        return self._inner.memory_get_address(buf._inner)
 
     def __repr__(self) -> str:
         return "Context()"

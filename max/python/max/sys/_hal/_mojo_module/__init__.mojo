@@ -10,32 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MAX HAL — Python projection of the Mojo HAL.
-
-Mirrors the Mojo-side ``std.sys._hal`` namespace: ``Driver`` is the
-entry point (configured via ``MODULAR_DRIVER_PLUGINS``), and downstream
-types are obtained through the lifecycle chain
-``Driver -> Device -> Context -> Queue / Stream -> Event``.
-"""
-
-from __future__ import annotations
-
-import mojo.importer
+"""Mojo-side type definitions for the ``max.sys._hal`` Python module."""
 
 from .buffer import Buffer
 from .context import Context
 from .device import Device
-from .driver import Driver
+from .driver import Driver, load_driver
 from .event import Event
 from .queue import Queue
 from .stream import Stream
-
-__all__ = [
-    "Buffer",
-    "Context",
-    "Device",
-    "Driver",
-    "Event",
-    "Queue",
-    "Stream",
-]
