@@ -178,7 +178,11 @@ def configure_telemetry(color: str | None = None) -> None:
 
 
 def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
-    @click.option("--port", type=int, help="Port to run the server on.")
+    @click.option(
+        "--port",
+        type=int,
+        help="Port for the HTTP API. Defaults to ``8000``.",
+    )
     @click.option(
         "--headless",
         is_flag=True,
