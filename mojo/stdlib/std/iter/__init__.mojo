@@ -286,8 +286,8 @@ def next[
 
 @fieldwise_init
 struct _Empty[T: Movable](
-    Copyable where conforms_to(T, Copyable),
-    Iterable where conforms_to(T, Copyable),
+    ImplicitlyCopyable,
+    Iterable,
     IterableOwned,
     Iterator,
 ):
@@ -305,11 +305,7 @@ struct _Empty[T: Movable](
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
-    def __iter__(
-        ref self,
-    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
-        Self.Element, Copyable
-    ):
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
     def __next__(mut self) raises StopIteration -> Self.Element:

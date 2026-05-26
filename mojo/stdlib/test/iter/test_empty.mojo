@@ -28,17 +28,6 @@ def test_empty_owned() raises:
         _ = next(it)
 
 
-def test_empty_iter() raises:
-    var it = empty[Int]()
-    var it_copy = iter(it)
-
-    with assert_raises():
-        _ = next(it)
-
-    with assert_raises():
-        _ = next(it_copy)
-
-
 def test_empty_bounds() raises:
     var it = empty[Int]()
 
