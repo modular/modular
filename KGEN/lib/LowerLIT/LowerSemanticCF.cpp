@@ -440,7 +440,7 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
 ///
 /// This returns the operation if nothing was added or returns the 'if' that is
 /// left after the call if something was.
-static Operation *addErrorRegions(Operation &op, LIT::FnType sig,
+static Operation *addErrorRegions(Operation &op, FuncType sig,
                                   ValueRange operands) {
   // If the function throws Never, ignore the throwability entirely.
   if (sugarIsa<NeverType>(sig.getUserThrownType()))

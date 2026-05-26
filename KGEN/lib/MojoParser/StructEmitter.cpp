@@ -245,7 +245,7 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
          "ASTDecls");
 
   // Extract signature components from the high-level types
-  FnType fnType = wrapperSignature.getBody();
+  FuncType fnType = wrapperSignature.getBody();
   ArrayRef<Type> inputTypes = fnType.getArguments();
 
   PogListAttr traitArgListAttrs =

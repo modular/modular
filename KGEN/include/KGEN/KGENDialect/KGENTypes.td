@@ -341,6 +341,11 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     FuncType getWithMetadata(FnMetadataAttrInterface metadata,
                              PogListAttr argListAttrs);
 
+    /// Build a func type with empty conventions and effects and the given
+    /// metadata and argument pog list.
+    static FuncType get(FunctionType values, FnMetadataAttrInterface metadata,
+                        PogListAttr argListAttrs);
+
     /// Return the number of arguments.
     size_t getNumArguments() { return getArguments().size(); }
     /// Return the number of results.
@@ -350,6 +355,64 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     /// `byref_result` arguments. If this is an async function, return the
     /// number of result slots it has. Otherwise, return 0.
     size_t getNumAsyncReturnSlots();
+
+    /// Return the name for the argument at the specified index.
+    StringAttr getArgName(size_t idx);
+
+    /// Get the origin set of the capture lifetimes.
+    TypedAttr getCaptureOrigins();
+
+    /// Get whether nested lifetimes are excluded from exclusivity checking.
+    bool getIsNestedOriginExclusivityCheckingDisabled();
+
+    /// Get the number of implicit origin decls this function type carries.
+    size_t getNumImplicitOriginDecls();
+
+    /// Return the single MLIR result type for this signature.
+    Type getResultType() { return getResults().front(); }
+
+    /// Get the user-visible result type of the signature.
+    Type getUserResultType();
+
+    /// Get the user-visible thrown type for a raising function.
+    Type getUserThrownType();
+
+    /// Returns true if the argument at this index is any vararg or a pack.
+    bool isAnyVarArg(size_t index);
+
+    /// Returns true if the argument at this index is a positional vararg.
+    bool isPosVarArg(size_t index);
+
+    /// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
+    /// elements. For example: def x(mut *args: Int) is declared 'mut'.
+    ArgConvention getVariadicConvention(size_t index);
+
+    /// Returns true if the argument at this index is a keyword vararg.
+    bool isKwVarArg(size_t index);
+
+    /// Returns true if the argument at this index is a pack vararg.
+    bool isPack(size_t index);
+
+    /// If the specified argument is a variadic list/pack, return the
+    /// VariadicList/VariadicPack, stripping RefType, otherwise return null.
+    Type getIfVariadicListOrPack(size_t index);
+
+    /// Returns the index of the pack variadic arg, or std::nullopt if none.
+    std::optional<size_t> findPackVarArgIndex();
+
+    /// Returns true if the signature has keyword variadic arguments.
+    bool hasKwVarArgs();
+
+    /// Substitute the specified implicit origin references into the value
+    /// signature, replacing them with `values` if they are at depth 0, or
+    /// decrementing their depth if not. Returns the resultant FunctionType on
+    /// success; invokes `emitError` and returns null on error.
+    FunctionType substituteImplicitOriginsIntoValues(
+        ArrayRef<TypedAttr> values,
+        function_ref<InFlightDiagnostic()> emitError);
+
+    /// Return this signature with the specified capture lifetimes.
+    FuncType getWithCaptureOrigins(TypedAttr lifetimes);
   }];
 
   let genVerifyDecl = 1;

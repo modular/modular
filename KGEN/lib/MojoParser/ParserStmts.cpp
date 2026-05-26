@@ -3363,11 +3363,18 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   // invariants (that functions always have a single result).
   MLIRContext *ctx = builder.getContext();
   auto errorType = builder.getType<TypeCheckErrorType>();
+  auto valueTypes = FunctionType::get(ctx, ArrayRef<Type>(), {errorType});
+  size_t numInputs = valueTypes.getNumInputs();
+  SmallVector<PogMetadataAttr> argPogs(
+      numInputs,
+      PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
+  auto pogList = PogListAttr::get(ctx, argPogs);
+  auto metadata = FnMetadataAttr::get(ctx, /*numImplicitOriginDecls=*/0,
+                                      OriginSetAttr::get(ctx, {}),
+                                      /*nestedOriginFlag=*/false);
+  auto funcSig = FuncType::get(valueTypes, metadata, pogList);
   FnTypeGeneratorType signatureType = GeneratorType::get(
-      /*inputParamTypes=*/{},
-      FnType::get(ctx, ArrayRef<Type>(), {errorType},
-                  /*numImplicitOriginDecls=*/0),
-      PogListAttr::get(ctx));
+      /*inputParamTypes=*/{}, funcSig, PogListAttr::get(ctx));
 
   // Chain to the 'build' method below.
   auto emptyStr = StringAttr::get(ctx, "");

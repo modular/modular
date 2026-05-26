@@ -247,7 +247,7 @@ static void getCallOpEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
     SmallVectorImpl<ResultEffect> &results, SmallVectorImpl<TypedAttr> &origins,
     CachedOriginFinder &originFinder) {
-  FnType signature;
+  FuncType signature;
   PogListAttr pogs;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;

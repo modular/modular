@@ -32,95 +32,18 @@ class RefPackType;
 namespace M::KGEN::LIT {
 
 //===----------------------------------------------------------------------===//
-// FnType
-//===----------------------------------------------------------------------===//
-
-class FnType : public FuncType {
-public:
-  using FuncType::FuncType;
-  FnType(FuncType sig);
-
-  /// Get the signature metadata.
-  FnMetadataAttr getMetadata();
-
-  /// Return the name for the argument at the specified index.
-  StringAttr getArgName(size_t idx);
-
-  /// Get the origin set of the capture lifetimes.
-  TypedAttr getCaptureOrigins();
-
-  /// Get whether nested lifetimes are excluded from exclusivity checking.
-  bool getIsNestedOriginExclusivityCheckingDisabled();
-
-  /// Get the number of implicit origin decls this function type carries.
-  size_t getNumImplicitOriginDecls();
-
-  /// LIT-level signatures always have one result type.
-  Type getResultType() { return getResults().front(); }
-
-  /// Get the user result type of the signature.
-  Type getUserResultType();
-
-  /// Get the user thrown type for a raising function.
-  Type getUserThrownType();
-
-  /// Returns true if the argument at this index is any vararg or a pack.
-  bool isAnyVarArg(size_t index);
-
-  /// Returns true if the argument at this index is a positional vararg.
-  bool isPosVarArg(size_t index);
-
-  /// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
-  /// elements. For example: def x(mut *args: Int) is declared 'mut'.
-  ArgConvention getVariadicConvention(size_t index);
-
-  /// Returns true if the argument at this index is a keyword vararg.
-  bool isKwVarArg(size_t index);
-
-  /// Returns true if the argument at this index is a pack vararg.
-  bool isPack(size_t index);
-
-  /// If the specified argument is a variadic list/pack, return the
-  /// VariadicList/VariadicPack, stripping RefType, otherwise return null.
-  Type getIfVariadicListOrPack(size_t index);
-
-  /// Returns the index of the pack variadic arg, or std::nullopt if none.
-  std::optional<size_t> findPackVarArgIndex();
-
-  /// Returns true if the signature has keyword variadic arguments.
-  bool hasKwVarArgs();
-
-  /// Substitute the specified implicit origin references into the specified
-  /// type, replacing them with `values` if they are at depth 0, or decrementing
-  /// their depth if not.  This returns the resultant FunctionType on success,
-  /// and invokes 'emitError'+returns null on error.
-  FunctionType substituteImplicitOriginsIntoValues(
-      ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError);
-
-  /// Return this signature with the specified capture lifetimes.
-  FnType getWithCaptureOrigins(TypedAttr lifetimes);
-
-  /// A `FuncType` is a LIT signature if it contains function metadata.
-  static bool classof(FuncType type);
-  static bool classof(Type type);
-
-  static FnType get(MLIRContext *ctx, TypeRange inputs, TypeRange results,
-                    size_t numImplicitOriginDecls);
-};
-
-//===----------------------------------------------------------------------===//
 // FnTypeWrapperGeneratorType
 //===----------------------------------------------------------------------===//
 
 // A CRTP base class for FnTypeGeneratorType and FnLiteralTypeGeneratorType that
-// wraps a FnType.
+// wraps a FuncType body and forwards signature queries to it.
 template <typename SubClass, typename BaseClass>
 class FnTypeWrapperGeneratorType : public BaseClass {
 public:
   using BaseT = BaseClass;
   using BaseClass::BaseClass;
 
-  FnType getBodyFnType() {
+  FuncType getBodyFnType() {
     return static_cast<SubClass *>(this)->getBodyFnType();
   }
   PogListAttr getMetadata() {
@@ -135,7 +58,7 @@ public:
   StringAttr getParamName(size_t idx) { return getMetadata().getName(idx); }
 
   //===--------------------------------------------------------------------===//
-  // Acting as a FnType
+  // Acting as a FuncType
   //===--------------------------------------------------------------------===//
 
   FunctionType getValues() { return getBodyFnType().getValues(); }
@@ -170,7 +93,9 @@ public:
   }
 
   /// Get the signature metadata.
-  FnMetadataAttr getFnMetadata() { return getBodyFnType().getMetadata(); }
+  FnMetadataAttr getFnMetadata() {
+    return cast<FnMetadataAttr>(getBodyFnType().getMetadata());
+  }
 
   /// Get the argument list metadata.
   PogListAttr getArgListAttrs() { return getBodyFnType().getArgListAttrs(); }
@@ -191,8 +116,7 @@ public:
     return getBodyFnType().getNumImplicitOriginDecls();
   }
 
-  /// LIT-level signatures always have one result type.
-  Type getResultType() { return getBodyFnType().getResults().front(); }
+  Type getResultType() { return getBodyFnType().getResultType(); }
 
   /// Get the user result type of the signature.
   Type getUserResultType() { return getBodyFnType().getUserResultType(); }
@@ -231,6 +155,13 @@ public:
 
   /// Returns true if the signature has keyword variadic arguments.
   bool hasKwVarArgs() { return getBodyFnType().hasKwVarArgs(); }
+
+  FunctionType substituteImplicitOriginsIntoValues(
+      ArrayRef<TypedAttr> values,
+      function_ref<InFlightDiagnostic()> emitError) {
+    return getBodyFnType().substituteImplicitOriginsIntoValues(values,
+                                                               emitError);
+  }
 };
 
 //===----------------------------------------------------------------------===//
@@ -245,10 +176,10 @@ public:
   FnTypeGeneratorType(FuncTypeGeneratorType gen);
 
   // CRTP for FnTypeWrapperGeneratorType
-  FnType getBodyFnType() { return getBody(); }
+  FuncType getBodyFnType() { return getBody(); }
   PogListAttr getMetadata();
 
-  FnType getBody();
+  FuncType getBody();
 
   /// Reconstruct the generator using a list of named input parameters; these
   /// are prepended to the current signature and references are remapped to
@@ -263,13 +194,6 @@ public:
                 ArrayRef<TypedAttr> paramDefaults = {},
                 ArrayRef<SmallVector<ConstraintAttr>> paramConstraints = {},
                 ArrayRef<ConstraintAttr> bodyConstraints = {});
-
-  /// Substitute the specified implicit origin references into the specified
-  /// type, replacing them with `values` if they are at depth 0, or decrementing
-  /// their depth if not.  This returns the resultant FunctionType on success,
-  /// and invokes 'emitError'+returns null on error.
-  FunctionType substituteImplicitOriginsIntoValues(
-      ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError);
 
   /// Return this signature with the specified capture lifetimes.
   FnTypeGeneratorType getWithCaptureOrigins(TypedAttr lifetimes);
@@ -303,7 +227,7 @@ public:
   FnLiteralTypeGeneratorType(FuncLiteralTypeGeneratorType gen);
 
   // CRTP for FnTypeWrapperGeneratorType
-  FnType getBodyFnType() { return cast<FnType>(getBody().getFuncType()); }
+  FuncType getBodyFnType() { return getBody().getFuncType(); }
   PogListAttr getMetadata();
 
   FuncLiteralType getBody();
@@ -359,7 +283,7 @@ public:
   }
 
   // CRTP for FnTypeWrapperGeneratorType
-  FnType getBodyFnType() {
+  FuncType getBodyFnType() {
     if (auto fnGen = getIfFnTypeGenerator())
       return fnGen.getBodyFnType();
     return getIfFnLiteralTypeGenerator().getBodyFnType();

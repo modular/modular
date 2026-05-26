@@ -1608,7 +1608,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
               fnLiteralGen.getSymbolConstantAttr().getSymbol());
   }
 
-  FnType fnType = type.getBodyFnType();
+  FuncType fnType = type.getBodyFnType();
   auto paramTypes =
       sugarCast<GeneratorType>(type.getAsType()).getInputParamTypes();
   if (!paramTypes.empty()) {

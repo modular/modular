@@ -139,8 +139,7 @@ FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr origins) {
 void FnMetadataAttr::printFuncTypeBody(AsmPrinter &p, FuncType sig) const {
 
   p << '<';
-  auto signature = ::cast<FnType>(sig);
-  printFnType(p, signature);
+  printFnType(p, sig);
   p << '>';
 }
 
@@ -150,7 +149,7 @@ void FnMetadataAttr::printFuncType(AsmPrinter &p, FuncType sig) const {
 }
 
 void FnMetadataAttr::printFuncTypeInline(AsmPrinter &p, FuncType sig) const {
-  printFnType(p, ::cast<FnType>(sig));
+  printFnType(p, sig);
 }
 
 bool FnMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {

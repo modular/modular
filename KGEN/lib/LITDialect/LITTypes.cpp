@@ -1431,44 +1431,30 @@ void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
 }
 
 //===----------------------------------------------------------------------===//
-// FnType
+// FuncType (LIT-dependent helpers)
 //===----------------------------------------------------------------------===//
 
-FnType::FnType(FuncType sig) : FuncType(sig) {
-  assert((!sig || ::isa_and_nonnull<FnMetadataAttr>(sig.getMetadata())) &&
-         "expected LIT function metadata");
+TypedAttr FuncType::getCaptureOrigins() {
+  return ::cast<FnMetadataAttr>(getMetadata()).getCaptureOrigins();
 }
 
-FnMetadataAttr FnType::getMetadata() {
-  return ::cast<FnMetadataAttr>(FuncType::getMetadata());
+bool FuncType::getIsNestedOriginExclusivityCheckingDisabled() {
+  return ::cast<FnMetadataAttr>(getMetadata())
+      .getIsNestedOriginExclusivityCheckingDisabled();
 }
 
-StringAttr FnType::getArgName(size_t idx) {
-  return getArgListAttrs().getName(idx);
+size_t FuncType::getNumImplicitOriginDecls() {
+  return ::cast<FnMetadataAttr>(getMetadata()).getNumImplicitOriginDecls();
 }
 
-TypedAttr FnType::getCaptureOrigins() {
-  return getMetadata().getCaptureOrigins();
-}
-
-bool FnType::getIsNestedOriginExclusivityCheckingDisabled() {
-  return getMetadata().getIsNestedOriginExclusivityCheckingDisabled();
-}
-
-/// Get the number of implicit origin decls this function type carries.
-size_t FnType::getNumImplicitOriginDecls() {
-  return getMetadata().getNumImplicitOriginDecls();
-}
-
-Type FnType::getUserResultType() {
+Type FuncType::getUserResultType() {
   // If this function has a byref_result, return the reference element type.
   if (hasMemoryOnlyResult())
     return ::cast<RefType>(getArguments().back()).getElementType();
   return getResultType();
 }
 
-/// Get the user result type of the signature.
-Type FnType::getUserThrownType() {
+Type FuncType::getUserThrownType() {
   if (!isThrows())
     return {};
   auto numArgs = getArgConventions().size();
@@ -1477,11 +1463,7 @@ Type FnType::getUserThrownType() {
   return ::cast<RefType>(getArguments()[numArgs - 2]).getElementType();
 }
 
-/// Substitute the specified implicit origin references into the specified
-/// type, replacing them with `values` if they are at depth 0, or decrementing
-/// their depth if not.  This returns the resultant FunctionType on success,
-/// and invokes 'emitError'+returns null on error.
-FunctionType FnType::substituteImplicitOriginsIntoValues(
+FunctionType FuncType::substituteImplicitOriginsIntoValues(
     ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError) {
   assert(values.size() == getNumImplicitOriginDecls() &&
          "Incorrect # implicit origins specified");
@@ -1516,83 +1498,20 @@ FunctionType FnType::substituteImplicitOriginsIntoValues(
   return substitutor.hadError ? FunctionType() : result;
 }
 
-FnType FnType::getWithCaptureOrigins(TypedAttr origins) {
+FuncType FuncType::getWithCaptureOrigins(TypedAttr origins) {
   return getWithMetadata(
       FnMetadataAttr::get(getContext(), getNumImplicitOriginDecls(), origins,
                           getIsNestedOriginExclusivityCheckingDisabled()),
       getArgListAttrs());
 }
 
-bool FnType::isAnyVarArg(size_t index) {
-  return getArgListAttrs().isAnyVarArg(index);
-}
-
-bool FnType::isPosVarArg(size_t index) {
-  return getArgListAttrs().isPosVarArg(index);
-}
-
-/// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: def x(mut *args: Int) is declared 'mut'.
-ArgConvention FnType::getVariadicConvention(size_t index) {
-  PogListAttr pogs = getArgListAttrs();
-  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg ||
-      pogs.getVariadicKind(index) == VariadicKind::PackVarArg)
-    return pogs.getOrigVariadicConvention();
-  return ArgConvention::ByRefError;
-}
-
-bool FnType::isKwVarArg(size_t index) {
-  return getArgListAttrs().isKwVarArg(index);
-}
-
-bool FnType::isPack(size_t index) { return getArgListAttrs().isPack(index); }
-
-/// If the specified argument is a variadic pack, return the VariadicPack.
-Type FnType::getIfVariadicListOrPack(size_t index) {
+Type FuncType::getIfVariadicListOrPack(size_t index) {
   if (!isPack(index) && !isPosVarArg(index))
     return {};
 
   // Look through references to the VariadicList/VariadicPack type.
   return RefType::stripRefConvention(getArgument(index),
                                      getArgConvention(index));
-}
-
-std::optional<size_t> FnType::findPackVarArgIndex() {
-  size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult();
-  if (numUserArgs == 0)
-    return std::nullopt;
-  size_t lastUserArgIndex = numUserArgs - 1;
-  if (isPack(lastUserArgIndex))
-    return std::make_optional(lastUserArgIndex);
-  return std::nullopt;
-}
-
-bool FnType::hasKwVarArgs() { return getArgListAttrs().hasKwVarArg(); }
-
-bool FnType::classof(FuncType type) {
-  return ::isa_and_nonnull<FnMetadataAttr>(type.getMetadata());
-}
-
-bool FnType::classof(Type type) {
-  if (auto sig = ::dyn_cast<FuncType>(type))
-    return classof(sig);
-  return false;
-}
-
-FnType FnType::get(MLIRContext *ctx, TypeRange inputs, TypeRange results,
-                   size_t numImplicitOriginDecls) {
-  auto funcType = FunctionType::get(ctx, inputs, results);
-
-  size_t numInputs = funcType.getNumInputs();
-  SmallVector<PogMetadataAttr> argPogs(
-      numInputs,
-      PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
-  auto pogList = PogListAttr::get(ctx, argPogs);
-  auto metadata = FnMetadataAttr::get(ctx, numImplicitOriginDecls,
-                                      OriginSetAttr::get(ctx, {}),
-                                      /*nestedOriginFlag=*/false);
-  return FuncType::get(funcType,
-                       /*convs=*/{}, /*effects=*/{}, metadata, pogList);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1636,31 +1555,22 @@ bool FnLiteralTypeGeneratorType::classof(Type type) {
 
 FnTypeGeneratorType::FnTypeGeneratorType(GeneratorType gen)
     : FnTypeWrapperGeneratorType(gen) {
-  assert((!gen || ::isa<FnType>(gen.getBody())) &&
-         "expected LIT generator wrapping LIT FnType");
+  assert((!gen || ::isa<FuncType>(gen.getBody())) &&
+         "expected generator of func type");
 }
 
 FnTypeGeneratorType::FnTypeGeneratorType(FuncTypeGeneratorType gen)
     : FnTypeWrapperGeneratorType(gen) {
-  assert((!gen || ::isa<FnType>(gen.getBody())) &&
-         "expected LIT generator wrapping LIT FnType");
+  assert((!gen || ::isa<FuncType>(gen.getBody())) &&
+         "expected generator of func type");
 }
 
-FnType FnTypeGeneratorType::getBody() {
-  return ::cast<FnType>(GeneratorType::getBody());
+FuncType FnTypeGeneratorType::getBody() {
+  return ::cast<FuncType>(GeneratorType::getBody());
 }
 
 PogListAttr FnTypeGeneratorType::getMetadata() {
   return ::cast<PogListAttr>(GeneratorType::getMetadata());
-}
-
-/// Substitute the specified implicit origin references into the specified
-/// type, replacing them with `values` if they are at depth 0, or decrementing
-/// their depth if not.  This returns the resultant FunctionType on success,
-/// and invokes 'emitError'+returns null on error.
-FunctionType FnTypeGeneratorType::substituteImplicitOriginsIntoValues(
-    ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError) {
-  return getBody().substituteImplicitOriginsIntoValues(values, emitError);
 }
 
 FnTypeGeneratorType
@@ -1747,7 +1657,7 @@ FnTypeGeneratorType FnTypeGeneratorType::prependParams(
   for (Type type : sigGen.getInputParamTypes())
     inputParamTypes.push_back(remapper.replace(type));
 
-  FnType sig = sigGen.getBody();
+  FuncType sig = sigGen.getBody();
   FnMetadataAttrInterface fnMetadata = remapper.replace(sig.getMetadata());
 
   SmallVector<StringAttr> names;
@@ -1794,7 +1704,7 @@ FnTypeGeneratorType FnTypeGeneratorType::prependParams(
 }
 
 bool FnTypeGeneratorType::classof(FuncTypeGeneratorType type) {
-  return ::isa<FnType>(type.getBody());
+  return ::isa<FuncType>(type.getBody());
 }
 
 bool FnTypeGeneratorType::classof(Type type) {

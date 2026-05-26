@@ -159,7 +159,7 @@ static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
 
 // Strip out irrelevant details of a function that can be rebound away to make
 // convertibility checking easier.
-static FnType getReducedFnType(FnType sig) {
+static FuncType getReducedFnType(FuncType sig) {
   MLIRContext *ctx = sig.getContext();
 
   auto origPogListAttr = sig.getArgListAttrs();
@@ -194,7 +194,7 @@ static FnType getReducedFnType(FnType sig) {
 static GeneratorType getReducedGeneratorType(GeneratorType gen) {
   // If the body is a function, we can further reduce it.
   Type bodyType = gen.getBody();
-  if (auto fnType = sugarDynCast<FnType>(bodyType))
+  if (auto fnType = sugarDynCast<FuncType>(bodyType))
     bodyType = getReducedFnType(fnType);
 
   ArrayRef<ConstraintAttr> bodyConstraints;
