@@ -73,6 +73,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
+        chat_template: str | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -83,6 +84,9 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             trust_remote_code=trust_remote_code,
             model_max_length=max_length,
         )
+
+        if chat_template is not None:
+            self.delegate.chat_template = chat_template
         self.max_length = max_length or self.delegate.model_max_length
 
         config = pipeline_config.model.huggingface_config
