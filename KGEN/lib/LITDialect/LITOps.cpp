@@ -586,11 +586,10 @@ static void printImplicitOriginMutability(AsmPrinter &p, OriginType type) {
 // These FuncOp attributes are disallowed while parsing since they can
 // be inferred. Likewise while printing we ignore them.
 static StringRef disallowedAttrNames[] = {
-    "sym_name",       "exportKind",        "isCExported",  "constraints",
-    "implements",     "funcTypeGenerator", "functionType", "sym_name",
-    "argNames",       "paramNames",        "evaluator",    "defaultImpl",
-    "inlineLevel",    "paramDecl",         "params",       "decorators",
-    "argPassingKinds"};
+    "sym_name",          "exportKind",   "constraints", "implements",
+    "funcTypeGenerator", "functionType", "sym_name",    "argNames",
+    "paramNames",        "evaluator",    "defaultImpl", "inlineLevel",
+    "paramDecl",         "params",       "decorators",  "argPassingKinds"};
 
 static ParseResult parseLITFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,

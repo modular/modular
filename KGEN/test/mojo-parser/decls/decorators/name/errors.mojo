@@ -33,6 +33,7 @@ def export_name_conflict():
     ...
 
 
+# expected-warning @+2 {{ABI="C" is deprecated; use abi("C") instead}}
 # expected-error @+1 {{function has conflicting linkage name from a previous @__name or @export decorator}}
 @export("one_name", ABI="C")
 @__name("different_name")

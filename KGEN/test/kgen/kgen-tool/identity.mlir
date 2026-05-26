@@ -1,6 +1,6 @@
 // RUN: kgen %s -emit=header | FileCheck %s
 
-kgen.func export C @identity(%arg0: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
+kgen.func export @identity(%arg0: !kgen.simd<4, f32>) cabi -> !kgen.simd<4, f32> {
   kgen.return %arg0 : !kgen.simd<4, f32>
 }
 

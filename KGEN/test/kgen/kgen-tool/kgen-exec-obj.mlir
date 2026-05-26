@@ -5,7 +5,7 @@
 // COM: Check the header file.
 // RUN: kgen %s -emit=header | FileCheck %s -check-prefix=HDR
 
-kgen.func export C @my_exported_kernel(%arg0: f32) -> f32 {
+kgen.func export @my_exported_kernel(%arg0: f32) cabi -> f32 {
   kgen.return %arg0 : f32
 }
 

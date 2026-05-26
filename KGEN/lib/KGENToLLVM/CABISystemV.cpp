@@ -32,6 +32,10 @@ CoercionInfo SystemVABIInfo::classifyArgumentType(mlir::Type type,
   // (isVariadicArg is used by ARM64 AAPCS but not needed here.)
   (void)isVariadicArg;
 
+  // Arrays should be passed indirectly, as per the C specification
+  if (isa<mlir::LLVM::LLVMArrayType>(type))
+    return CoercionInfo::indirectArgument(/*useByval=*/false);
+
   return classifyStructType(type, loc, /*useSRet=*/false);
 }
 

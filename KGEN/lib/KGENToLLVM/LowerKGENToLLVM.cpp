@@ -44,7 +44,6 @@ static LLVM::Linkage getLinkageKind(ExportKind exportKind) {
   case ExportKind::NotExported:
     return LLVM::Linkage::Internal;
   case ExportKind::Exported:
-  case ExportKind::CExported:
     return LLVM::Linkage::External;
   }
   llvm_unreachable("invalid export kind");
@@ -1292,236 +1291,6 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
 }
 
 //===----------------------------------------------------------------------===//
-// Emit C API Wrappers
-//===----------------------------------------------------------------------===//
-
-/// Convert the calling convention of the argument type.
-static Value convertArgCallingConvention(ImplicitLocOpBuilder &b, Type type,
-                                         Block *body) {
-  // Recursively flatten a struct type into the function argument list. Pack
-  // the struct from the flat arguments and return it.
-  auto flattenArgumentStruct = [&](LLVM::LLVMStructType structTy) {
-    Value result = LLVM::UndefOp::create(b, structTy);
-    for (auto [index, type] : llvm::enumerate(structTy.getBody())) {
-      Value value = convertArgCallingConvention(b, type, body);
-      result = LLVM::InsertValueOp::create(b, result, value, index);
-    }
-    return result;
-  };
-
-  if (auto structTy = dyn_cast<LLVM::LLVMStructType>(type))
-    return flattenArgumentStruct(structTy);
-  if (auto arrayTy = dyn_cast<LLVM::LLVMArrayType>(type)) {
-    // Change the array to be pass-by-reference.
-    Value arrPtr = body->addArgument(LLVM::LLVMPointerType::get(b.getContext()),
-                                     b.getLoc());
-    return LLVM::LoadOp::create(b, arrayTy, arrPtr);
-  }
-  return body->addArgument(type, b.getLoc());
-}
-
-/// Recursively flatten a result struct type into the argument list.
-static unsigned flattenResultStruct(Location loc, LLVM::LLVMStructType structTy,
-                                    Block *body) {
-  unsigned numAdded = 0;
-  for (Type type : structTy.getBody()) {
-    if (auto nestedStruct = dyn_cast<LLVM::LLVMStructType>(type)) {
-      numAdded += flattenResultStruct(loc, nestedStruct, body);
-    } else {
-      body->addArgument(LLVM::LLVMPointerType::get(type.getContext()), loc);
-      ++numAdded;
-    }
-  }
-  return numAdded;
-}
-
-/// Recursively unpack the struct and store the nested values into pointer
-/// arguments.
-static void flattenResultStruct(ImplicitLocOpBuilder &b,
-                                LLVM::LLVMStructType structTy, Value result,
-                                ArrayRef<BlockArgument> results,
-                                unsigned &idx) {
-  for (auto [index, type] : llvm::enumerate(structTy.getBody())) {
-    Value value = LLVM::ExtractValueOp::create(b, result, index);
-    if (auto nestedStruct = dyn_cast<LLVM::LLVMStructType>(type))
-      flattenResultStruct(b, nestedStruct, value, results, idx);
-    else
-      LLVM::StoreOp::create(b, value, results[idx++]);
-  }
-}
-
-/// Rewrite the given arguments to be compatible with C calling conventions.
-/// Break up the structs in the given arguments and result type and rewrite
-/// arrays to be pass-by-reference. Append new arguments to `body` and populate
-/// `newArgs` with the packed structs created at the top of the body.
-static void convertArgCallingConvention(Location loc, Block *body,
-                                        ArrayRef<BlockArgument> args,
-                                        SmallVectorImpl<Value> &newArgs) {
-  // Flatten structs in the argument list.
-  ImplicitLocOpBuilder b(loc, loc.getContext());
-  b.setInsertionPointToStart(body);
-  for (Value arg : args) {
-    b.setLoc(arg.getLoc());
-    newArgs.push_back(convertArgCallingConvention(b, arg.getType(), body));
-  }
-}
-
-/// Rewrite the given result type to be compatible with C calling conventions.
-/// Break up the structs in the given result type. Append new arguments to
-/// `body`, and return the slice of arguments that represent the result
-/// arguments.
-static ArrayRef<BlockArgument>
-convertResultCallingConvention(Location loc, Block *body, Type resultTy) {
-  // Flatten the results if necessary at all the return points.
-  ArrayRef<BlockArgument> results;
-  if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultTy)) {
-    unsigned numAdded = flattenResultStruct(loc, structTy, body);
-    results = body->getArguments().take_back(numAdded);
-  }
-  return results;
-}
-
-/// Emit a wrapper for a function with the calling convention converted to C
-/// calling convention. The wrapper constructs the necessary structs and
-/// forwards them to the actual function.
-static void emitCWrapper(LLVM::LLVMFuncOp func,
-                         mlir::SymbolUserMap &symbolUsers, SymbolTable &symtab,
-                         TargetInfoAttr target) {
-  // The function has internal users. Update its symbol name so the wrapper can
-  // take its name.
-  StringAttr origName = func.getSymNameAttr();
-  auto newName = StringAttr::get(
-      func.getContext(),
-      getUniqueSymbolName((origName.getValue() + "_c_wrapped").str(), symtab));
-  symbolUsers.replaceAllUsesWith(func, newName);
-
-  // SymbolUserMap only tracks SymbolRefAttr-based uses. Ops such as
-  // kgen.create_closure store their callee as SymbolConstantAttr (which embeds
-  // a FlatSymbolRefAttr internally), so replaceAllUsesWith above misses them.
-  // Walk the whole module and update any FlatSymbolRefAttr that still names
-  // the old symbol so those callees point at the Mojo-ABI function.
-  ModuleOp theModule = func->getParentOfType<ModuleOp>();
-  mlir::AttrTypeReplacer symReplacer;
-  symReplacer.addReplacement(
-      [&](FlatSymbolRefAttr symRef) -> FlatSymbolRefAttr {
-        if (symRef.getAttr() == origName)
-          return FlatSymbolRefAttr::get(newName);
-        return symRef;
-      });
-  for (Operation &op : theModule.getOps())
-    symReplacer.recursivelyReplaceElementsIn(&op, /*replaceAttrs=*/true,
-                                             /*replaceLocs=*/false,
-                                             /*replaceTypes=*/false);
-
-  symtab.remove(func);
-  func.setSymNameAttr(newName);
-  func.setLinkage(LLVM::Linkage::Internal);
-  symtab.insert(func);
-
-  // Update the subprogram scope of the wrapped function if it has one, but save
-  // the location before it gets changed.
-  Location loc = func.getLoc();
-  DebugInfo::updateSubprogram(func, newName);
-
-  // Create the wrapper body. Ownership of the block is handed to the function.
-  auto *body = new Block;
-
-  // Convert the calling convention.
-  SmallVector<Value> newArgs;
-  convertArgCallingConvention(loc, body, func.getArguments(), newArgs);
-  Type resultType = func.getFunctionType().getReturnType();
-  ArrayRef<BlockArgument> results =
-      convertResultCallingConvention(loc, body, resultType);
-
-  ImplicitLocOpBuilder b(loc, loc.getContext());
-  b.setInsertionPointToEnd(body);
-  LLVM::CallOp call = createLLVMCall(b, b.getLoc(), func, newArgs);
-
-  // If the result type is a struct, flatten it into the arguments.
-  if (auto structTy = dyn_cast<LLVM::LLVMStructType>(resultType)) {
-    resultType = LLVM::LLVMVoidType::get(func.getContext());
-    unsigned idx = 0;
-    flattenResultStruct(b, structTy, call.getResult(), results, idx);
-    LLVM::ReturnOp::create(b, ValueRange());
-  } else {
-    LLVM::ReturnOp::create(b, call.getResults());
-  }
-
-  b.setInsertionPointAfter(func);
-  auto wrapper = createLLVMFunc(
-      b, target, b.getLoc(), origName,
-      LLVM::LLVMFunctionType::get(resultType,
-                                  llvm::to_vector(body->getArgumentTypes())));
-  wrapper.getBody().push_back(body);
-}
-
-/// Process the given function which is exported to C. If possible this will try
-/// to update the function in place, otherwise a wrapper is emitted that
-/// internally invokes the provided function.
-static void processCExportedFunction(LLVM::LLVMFuncOp func,
-                                     mlir::SymbolUserMap &symbolUsers,
-                                     SymbolTable &symtab,
-                                     TargetInfoAttr target) {
-  // Check if we need to update the function arguments or results to be
-  // C-compatible.
-  ArrayRef<Type> currentFunctionTypes = func.getArgumentTypes();
-  Type resultType = func.getFunctionType().getReturnType();
-  bool needUpdatedArgTypes = llvm::any_of(currentFunctionTypes, [](Type type) {
-    return isa<LLVM::LLVMArrayType, LLVM::LLVMStructType>(type);
-  });
-  bool needUpdatedResultType = isa<LLVM::LLVMStructType>(resultType);
-
-  // If we need to update the calling convention and we have internal users,
-  // emit a wrapper function as the structure of the function will have to
-  // change.
-  bool hasInternalUsers = !symbolUsers.getUsers(func).empty();
-  if ((needUpdatedArgTypes || needUpdatedResultType) && hasInternalUsers)
-    return emitCWrapper(func, symbolUsers, symtab, target);
-
-  // Otherwise, we can update the function in place.
-  func.setLinkage(LLVM::Linkage::External);
-
-  // If we don't need to update the calling convention, we're done.
-  if (!needUpdatedArgTypes && !needUpdatedResultType)
-    return;
-  Block *entryBlock = &func.getBody().front();
-
-  // Check to see if we need to update any of the function arguments.
-  if (needUpdatedArgTypes) {
-    SmallVector<Value> newArgs;
-    convertArgCallingConvention(func.getLoc(), entryBlock,
-                                llvm::to_vector(func.getArguments()), newArgs);
-
-    // Replace the original arguments with the new ones.
-    for (unsigned i = 0, e = newArgs.size(); i != e; ++i)
-      func.getArgument(i).replaceAllUsesWith(newArgs[i]);
-    entryBlock->eraseArguments(0, currentFunctionTypes.size());
-  }
-
-  // Check if the result type needs updating.
-  if (needUpdatedResultType) {
-    ArrayRef<BlockArgument> results =
-        convertResultCallingConvention(func.getLoc(), entryBlock, resultType);
-
-    // Replace the original results with the new ones.
-    auto structTy = cast<LLVM::LLVMStructType>(resultType);
-    resultType = LLVM::LLVMVoidType::get(func.getContext());
-
-    // Update all of the returns within the function.
-    func.walk([&](LLVM::ReturnOp returnOp) {
-      unsigned idx = 0;
-      ImplicitLocOpBuilder b(returnOp.getLoc(), returnOp);
-      flattenResultStruct(b, structTy, returnOp.getArg(), results, idx);
-      returnOp->setOperands(ValueRange());
-    });
-  }
-
-  // Update the function type.
-  func.setType(LLVM::LLVMFunctionType::get(
-      resultType, llvm::to_vector(entryBlock->getArgumentTypes())));
-}
-
-//===----------------------------------------------------------------------===//
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
@@ -1568,15 +1337,6 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalOp<KGEN::CreateClosureOp>();
   target.addLegalOp<KGEN::StructInstanceOp>();
 
-  // Collect C exported symbols. The calling convention will have to be
-  // rewritten after the lowering.
-  SmallVector<StringAttr> exportCFuncs;
-  for (auto symbol : theModule.getOps<ExportInterface>())
-    if (symbol.isCExported()) {
-      assert(symbol.getLinkageName() && "Unresolved linkage name");
-      exportCFuncs.push_back(symbol.getLinkageName());
-    }
-
   // Configure the type converter.
   TargetInfoAttr targetInfo = lookupTargetInfo(theModule);
   if (!targetInfo) {
@@ -1618,25 +1378,17 @@ void LowerKGENToLLVMPass::runOnOperation() {
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
 
-  // Process updates to any exported functions.
-  mlir::SymbolUserMap symbolUsers(symtabAnalysis.getSymbolTables(), theModule);
-  for (StringAttr sym : exportCFuncs)
-    if (auto func = symtab.lookup<LLVM::LLVMFuncOp>(sym))
-      processCExportedFunction(func, symbolUsers, symtab, targetInfo);
-
   // Apply C ABI to abi("C") function definitions. This rewrites the function
   // entry (C ABI args → Mojo types) and exits (Mojo return → C ABI), making
   // the function directly callable from C. Call sites were already patched
-  // during conversion by ConvertKGENCall. Skip functions already handled by
-  // processCExportedFunction to avoid double-processing.
+  // during conversion by ConvertKGENCall.
   {
     auto abiHandler =
         createCABIInfo(typeConverter.getTarget().getTriple(), &getContext(),
                        static_cast<const LLVMDataLayout &>(typeConverter));
     for (auto func : theModule.getOps<LLVM::LLVMFuncOp>())
       if (func->hasAttr(kCABIFuncAttr))
-        if (!llvm::is_contained(exportCFuncs, func.getNameAttr()))
-          processCABIFunctionDefinition(func, *abiHandler);
+        processCABIFunctionDefinition(func, *abiHandler);
   }
 
   // Convert the debug info within the IR.

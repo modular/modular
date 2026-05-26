@@ -1590,8 +1590,14 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   shimMainFn.setSymNameAttr(mainAttr);
   shimMainFn.setLinkageNameAttr(
       LinkageNameAttr::get(shimMainFn->getContext(), "main"));
-  shimMainFn.setCExported();
+  shimMainFn.setExported();
   shimMainFn.getBody()->clear();
+  // Set the C ABI effect
+  auto sigGen = shimMainFn.getFuncTypeGenerator();
+  auto body = sigGen.getBody();
+  auto newBody = body.getWithFnEffects(body.getFnEffects().setCABI(true));
+  shimMainFn.setFuncTypeGenerator(FnTypeGeneratorType::get(
+      sigGen.getInputParamTypes(), newBody, sigGen.getMetadata()));
 
   // Populate the body of the shim. For this we designate the internal
   // implementation to one of the wrapper helpers in the Startup module,
