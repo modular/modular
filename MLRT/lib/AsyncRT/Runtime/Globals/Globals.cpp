@@ -48,6 +48,15 @@ MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t alignment,
   return TCMallocInternalMemalign(alignment, size);
 #endif
 }
+MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t alignment, size_t size,
+                                                 size_t numaPartition) {
+#if defined(__APPLE__)
+  // gperftools has no NUMA partition support; fall back to unpartitioned alloc.
+  return ::tc_memalign(alignment, size);
+#else
+  return TCMallocInternalMemalignNumaPartition(alignment, size, numaPartition);
+#endif
+}
 MODULAR_CXX_EXPORT void TCMallocGlobals::tc_delete(void *ptr) {
 #if defined(__APPLE__)
   return ::tc_free(ptr);
