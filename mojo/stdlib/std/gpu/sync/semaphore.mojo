@@ -22,15 +22,15 @@ Examples:
     ```mojo
     from std.gpu import Semaphore
 
-    var lock = UnsafePointer[Int32, MutAnyOrigin](unsafe_from_address=0)
-    var thread_id = 0
-    var sem = Semaphore(lock, thread_id)
+    def semaphore(lock: UnsafePointer[mut=True, Int32, ...]):
+        var thread_id = 0
+        var sem = Semaphore(lock, thread_id)
 
-    # Wait for a specific state
-    sem.wait(0)
+        # Wait for a specific state
+        sem.wait(0)
 
-    # Release the semaphore
-    sem.release(1)
+        # Release the semaphore
+        sem.release(1)
     ```
 """
 

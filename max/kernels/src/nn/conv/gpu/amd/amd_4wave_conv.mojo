@@ -205,13 +205,13 @@ def amd_4wave_conv[
     c: TileTensor[mut=True, c_type, ...],
     ctx: DeviceContext,
     # Residual args. Only used when `has_residual=True`. The defaults
-    # (null pointer, 0 stride, 0.0 beta) are picked up by the kernel
-    # only when has_residual=False — the args are then dead-code-
-    # eliminated by the compiler (still in the launch packet, 16 bytes
-    # overhead per launch).
+    # (dangling placeholder pointer, 0 stride, 0.0 beta) are picked up
+    # by the kernel only when has_residual=False — the args are then
+    # dead-code-eliminated by the compiler (still in the launch packet,
+    # 16 bytes overhead per launch).
     source_ptr: UnsafePointer[Scalar[c_type], ImmutAnyOrigin] = UnsafePointer[
         Scalar[c_type], ImmutAnyOrigin
-    ](unsafe_from_address=0),
+    ].unsafe_dangling(),
     source_row_stride: Int = 0,
     beta: Float32 = 0.0,
 ) raises:

@@ -157,9 +157,7 @@ def _launch_amd_4wave_conv2d_runtime[
     ctx: DeviceContext,
     source_ptr: UnsafePointer[
         Scalar[output_type], ImmutAnyOrigin
-    ] = UnsafePointer[Scalar[output_type], ImmutAnyOrigin](
-        unsafe_from_address=0
-    ),
+    ] = UnsafePointer[Scalar[output_type], ImmutAnyOrigin].unsafe_dangling(),
     beta: Float32 = 0.0,
 ) raises -> Bool:
     """Runtime-HW launch for the 4-wave conv dispatcher.
@@ -393,12 +391,14 @@ def dispatch_amd_4wave_conv2d[
         comptime _filter_frsc_layout = row_major[_C_out, _K_padded]()
         var filter_frsc_tt = TileTensor(filter_frsc_ptr, _filter_frsc_layout)
 
-        # Residual sentinel: when has_residual=False, source_ptr may be
-        # None or unused. We materialize a null pointer for the kernel
-        # arg (which only reads it when has_residual=True at comptime).
-        var _src_ptr_immut = UnsafePointer[Scalar[output_type], ImmutAnyOrigin](
-            unsafe_from_address=0
-        )
+        # Residual placeholder: when has_residual=False, source_ptr may
+        # be None or unused. We materialize a dangling placeholder for
+        # the kernel arg (which only reads it when has_residual=True at
+        # comptime, so the value is never dereferenced in the
+        # has_residual=False path).
+        var _src_ptr_immut = UnsafePointer[
+            Scalar[output_type], ImmutAnyOrigin
+        ].unsafe_dangling()
 
         @parameter
         @always_inline

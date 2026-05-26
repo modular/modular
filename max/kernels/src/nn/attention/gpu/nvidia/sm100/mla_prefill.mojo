@@ -125,7 +125,7 @@ def mla_sm100_prefill_sparse[
     topk_lengths: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    attn_sink_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     scale: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -164,7 +164,7 @@ def mla_sm100_prefill_sparse[
             sentinels are masked out by the kernel's k-valid producer).
         topk_lengths: Per-query effective top-k count (``[total_q_tokens]``).
         attn_sink_ptr: Optional attention sink (one ``Float32`` per query head).
-            Pass a null pointer to skip the sink term in the softmax epilogue.
+            Pass `None` to skip the sink term in the softmax epilogue.
         scale: Softmax scale (``1 / sqrt(qk_nope_head_dim + qk_rope_head_dim) *
             mscale^2``; for DSv3.2 with mscale=1, ``1 / sqrt(192)``).
         ctx: GPU device context.

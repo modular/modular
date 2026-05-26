@@ -524,11 +524,7 @@ struct MLAPrefillSparse[
         indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         scale: Float32,
-        # Per-head attention sink (fp32). Pass a null pointer (default) to
-        # skip the sink term entirely; pass a real buffer of size
-        # `num_q_heads` to add `exp2(sink_h - mi)` to the softmax normalizer
-        # per head.
-        attn_sink_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+        attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
         indices_stride: Int32,
         # Raw gmem output pointer. Used for the per-thread output store in
         # the WG0 epilogue. RaggedTMA3DTile's box-along-dim-2 stride is
@@ -873,19 +869,20 @@ struct MLAPrefillSparse[
             sv_p1_done_ptr[last_buf].wait(last_phase)
             tcgen05_fence_after()
 
-            # Per-head attention sink. A null pointer is treated as -inf
-            # (same as phase1.cuh:315); the sink contributes one extra term
-            # exp2(sink_h - mi) in log2 domain to the softmax normalizer.
+            # Per-head attention sink. A missing `attn_sink_ptr` (Optional
+            # is None) is treated as -inf (same as phase1.cuh:315); when
+            # set, the sink contributes one extra term `exp2(sink_h - mi)`
+            # in log2 domain to the softmax normalizer.
             var output_scale: Float32
-            if Int(attn_sink_ptr) == 0:
+            if not attn_sink_ptr:
                 output_scale = 1.0 / li
             else:
                 var sink_head_idx = cta_id * UInt32(
                     Self.NUM_Q_HEADS_PER_CTA
                 ) + (idx_in_wg % UInt32(64))
-                var attn_sink_val = attn_sink_ptr[Int(sink_head_idx)] * Float32(
-                    log2e
-                )
+                var attn_sink_val = attn_sink_ptr.unsafe_value()[
+                    Int(sink_head_idx)
+                ] * Float32(log2e)
                 output_scale = 1.0 / (li + exp2(attn_sink_val - mi))
 
             # Guard against deadlocks if some lanes' li==0 (entirely
@@ -1834,7 +1831,11 @@ def mla_prefill_sparse[
     topk_lengths: TileTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    attn_sink_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    # Optional per-head attention sink. Pass `None` to skip the sink term
+    # entirely; pass `Some(ptr)` with a buffer of `num_q_heads` fp32
+    # values to add `exp2(sink_h - mi)` to the softmax normalizer per
+    # head.
+    attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     scale: Float32,
     indices_stride: Int32,
     ctx: DeviceContext,

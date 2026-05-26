@@ -546,13 +546,9 @@ def run_test_prefill_sparse[
         group=num_heads,
     )
 
-    # PR2: no attention sink. A null pointer triggers the runtime
-    # `if Int(attn_sink_ptr) == 0` branch in the kernel epilogue, which
-    # skips the exp2(sink - mi) term entirely.
-    var attn_sink_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
-        unsafe_from_address=0
-    )
-
+    # PR2: no attention sink. Passing `None` makes the wrapper set the
+    # kernel's `has_attn_sink=False` flag, which skips the
+    # `exp2(sink - mi)` term in the softmax epilogue.
     mla_prefill_sparse[
         config=config,
         group=group,
@@ -563,7 +559,7 @@ def run_test_prefill_sparse[
         kv_cache,
         indices_tt,
         topk_lengths_tt,
-        attn_sink_ptr,
+        Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None),
         scale,
         Int32(topk),
         ctx,
