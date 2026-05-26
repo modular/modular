@@ -607,7 +607,7 @@ struct InlineArray[ElementType: Movable, size: Int](
 
     @always_inline
     def __getitem_param__[
-        idx: Some[Indexer]
+        idx: Some[Indexer & ImplicitlyDestructible]
     ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.

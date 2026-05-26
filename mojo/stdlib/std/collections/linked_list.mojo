@@ -416,7 +416,9 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
         return node^._into_value()
 
     @always_inline
-    def pop[I: Indexer, //](mut self, var i: I) raises -> Self.ElementType:
+    def pop[
+        I: Indexer & ImplicitlyDestructible, //
+    ](mut self, var i: I) raises -> Self.ElementType:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
 
@@ -480,7 +482,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
 
     @always_inline
     def maybe_pop[
-        I: Indexer, //
+        I: Indexer & ImplicitlyDestructible, //
     ](mut self, var i: I) -> Optional[Self.ElementType]:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.

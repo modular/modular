@@ -293,6 +293,11 @@ This version is still a work in progress.
       print(x)  # 2, 3, 4
   ```
 
+- The `Indexer` trait no longer inherits from `ImplicitlyDestructible`.
+  Generic code that relied on receiving the destructor bound transitively
+  through this trait must now spell it out explicitly, for example
+  `T: Indexer & ImplicitlyDestructible`.
+
 ## Tooling changes
 
 - The `mojo` compiler will now print the filename and line number in diagnostics
