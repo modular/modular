@@ -30,7 +30,7 @@ from .dict import (
 )
 
 
-struct Set[T: KeyElement, H: Hasher = default_hasher](
+struct Set[T: KeyElement & ImplicitlyDestructible, H: Hasher = default_hasher](
     Boolable,
     Comparable where conforms_to(T, Equatable),
     Copyable where conforms_to(T, Copyable),

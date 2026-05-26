@@ -205,7 +205,9 @@ struct Group(Copyable, Movable):
 
 @fieldwise_init
 struct SwissTableEntry[
-    K: KeyElement, V: Copyable & ImplicitlyDestructible, H: Hasher
+    K: KeyElement & ImplicitlyDestructible,
+    V: Copyable & ImplicitlyDestructible,
+    H: Hasher,
 ](Copyable):
     """Store a key-value pair entry inside a Swiss Table-based collection.
 
@@ -256,7 +258,7 @@ struct SwissTableEntry[
 
 
 struct SwissTable[
-    K: KeyElement,
+    K: KeyElement & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher = default_hasher,
 ](Copyable, Movable):

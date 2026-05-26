@@ -300,7 +300,7 @@ trait Test:
     comptime KeyElement = Copyable & ImplicitlyDestructible & Writable
 
 @fieldwise_init
-struct SampleStruct[T: KeyElement](Test):
+struct SampleStruct[T: KeyElement & ImplicitlyDestructible](Test):
     comptime Element = Int64
     var x: Self.T
 

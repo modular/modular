@@ -169,7 +169,7 @@ trait Test:
 
 
 @fieldwise_init
-struct SampleStruct_4[T: KeyElement](Test):
+struct SampleStruct_4[T: KeyElement & ImplicitlyDestructible](Test):
     comptime Element = Int64
     var x: Self.T
 

@@ -64,7 +64,9 @@ and `Equatable`."""
 # ===-----------------------------------------------------------------------===#
 
 
-struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
+struct DictKeyError[K: KeyElement & ImplicitlyDestructible](
+    ImplicitlyCopyable, Writable
+):
     """A custom error type for Dict lookups that fail.
 
     Parameters:
@@ -136,7 +138,7 @@ This is a comptime alias for `SwissTableEntry` for backwards compatibility.
 struct _DictEntryIter[
     mut: Bool,
     //,
-    K: KeyElement,
+    K: KeyElement & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: Origin[mut=mut],
@@ -212,7 +214,7 @@ struct _DictEntryIter[
 
 @fieldwise_init
 struct _TakeDictEntryIter[
-    K: KeyElement,
+    K: KeyElement & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: MutOrigin,
@@ -267,7 +269,7 @@ struct _TakeDictEntryIter[
 
 @fieldwise_init
 struct _DictEntryIterOwned[
-    K: KeyElement,
+    K: KeyElement & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
 ](IterableOwned, Iterator, Movable):
@@ -319,7 +321,7 @@ struct _DictEntryIterOwned[
 
 @fieldwise_init
 struct _DictKeyIterOwned[
-    K: KeyElement,
+    K: KeyElement & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
 ](IterableOwned, Iterator, Movable):
@@ -353,7 +355,7 @@ struct _DictKeyIterOwned[
 struct _DictKeyIter[
     mut: Bool,
     //,
-    K: KeyElement,
+    K: KeyElement & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: Origin[mut=mut],
@@ -399,7 +401,7 @@ struct _DictKeyIter[
 struct _DictValueIter[
     mut: Bool,
     //,
-    K: KeyElement,
+    K: KeyElement & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: Origin[mut=mut],
@@ -457,7 +459,7 @@ struct _DictValueIter[
 
 
 struct Dict[
-    K: KeyElement,
+    K: KeyElement & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher = default_hasher,
 ](
