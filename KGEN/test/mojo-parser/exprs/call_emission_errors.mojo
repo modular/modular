@@ -521,15 +521,33 @@ def takeWith4(a: StructWithFlexParam[4]):
 
 
 def test_print_apply_expressions():
-    # expected-note @below {{.T of left type is '__MLIRType[None]' but the right type is 'Int'}}
+    # expected-note @below {{.T of the first type is '__MLIRType[None]' but the second type is 'Int'}}
     # expected-error @below {{from 'StructWithFlexParam[vararg_example(0, 1, 2, 3, 4, other=5)]' to}}
     takeWith4(StructWithFlexParam[vararg_example(0, 1, 2, 3, 4, other=5)]())
-    # expected-note @below {{.T of left type is '__MLIRType[None]' but the right type is 'Int'}}
+    # expected-note @below {{.T of the first type is '__MLIRType[None]' but the second type is 'Int'}}
     # expected-error @below {{from 'StructWithFlexParam[pack_example[Int, String](0, String("foo"), other=5)]' to}}
     takeWith4(StructWithFlexParam[pack_example(0, "foo", other=5)]())
-    # expected-note @below {{.T of left type is '__MLIRType[None]' but the right type is 'Int'}}
+    # expected-note @below {{.T of the first type is '__MLIRType[None]' but the second type is 'Int'}}
     # expected-error @below {{from 'StructWithFlexParam[generic_example(0)]' to}}
     takeWith4(StructWithFlexParam[generic_example(0)]())
-    # expected-note @below {{.T of left type is '__MLIRType[None]' but the right type is 'Int'}}
+    # expected-note @below {{.T of the first type is '__MLIRType[None]' but the second type is 'Int'}}
     # expected-error @below {{from 'StructWithFlexParam[vararg_example(other=5)]' to}}
     takeWith4(StructWithFlexParam[vararg_example(other=5)]())
+
+struct DifferExample[shape: Int, addr: Int]:
+    pass
+
+def differ_take[ # expected-note {{function declared here}}
+    tile_impl: def[input_addr: Int,output_shape: Int, output_addr: Int](
+        DifferExample[output_shape, output_addr],
+    ) thin -> None,
+]():
+    pass
+
+def differ_wrong[
+     input_addr: Int, output_shape: Int, output_addr: Int](
+    output: DifferExample[output_shape, input_addr],
+):
+    # expected-error @below {{has 'def[input_addr: Int, output_shape: Int, output_addr: Int](DifferExample[output_shape, output_addr]) -> None' type, but value has type 'def differ_wrong[input_addr: Int, output_shape: Int, output_addr: Int](output: DifferExample[output_shape, input_addr]) -> None'}}
+    # expected-note @below {{.output.addr of the first value is 'output_addr' but the second value is 'input_addr'}}
+    differ_take[differ_wrong]()

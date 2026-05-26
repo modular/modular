@@ -35,7 +35,7 @@ def all_int[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
 
 def foo():
     # @expected-error @below{{invalid call to 'all_copyable': value passed to 't' cannot be converted from 'SomeVA[SomeCopyable, SomeNonCopyable]' to 'SomeVA[*elt_type.values]'}}
-    # @expected-note @below{{.elt_types.values` of left value is 'SomeCopyable, SomeNonCopyable' but the right value is 'elt_type.values'}}
+    # @expected-note @below{{.elt_types.values` of the first value is 'SomeCopyable, SomeNonCopyable' but the second value is 'elt_type.values'}}
     all_copyable(SomeVA[SomeCopyable, SomeNonCopyable]())
 
     # @expected-error @below{{invalid call to 'all_int': value passed to 't' cannot be converted from 'SomeVA[Int, SomeNonCopyable]' to 'SomeVA[*elt_type.values]'}}
