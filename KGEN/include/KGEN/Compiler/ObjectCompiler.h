@@ -112,7 +112,7 @@ private:
   ObjectCompiler(
       RCRef<Cache::BlobCacheBackend> transformCache, CompilationOptions options,
       bool isJIT, MLIRContext &context, const std::string &linker,
-      std::unique_ptr<Plugin> plugin,
+      std::unique_ptr<PluginManager> plugin,
       PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
@@ -178,7 +178,7 @@ private:
   /// Each pair contains: (used_flag, library_attribute).
   SmallVector<std::pair<bool, Attribute>> bitcodeLibs;
 
-  std::unique_ptr<Plugin> plugin;
+  std::unique_ptr<PluginManager> pluginMgr;
 };
 
 /// Setup the machine properties from the provided target.

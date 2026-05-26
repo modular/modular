@@ -26,7 +26,7 @@ void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
 
 void buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                               const LowerToLLVMOptions &options,
-                              const Plugin *plugin);
+                              const PluginManager *plugin);
 
 } // namespace KGEN
 } // namespace M

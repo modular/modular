@@ -70,11 +70,11 @@ void MojoConfig::getParserImportPaths(SmallVectorImpl<StringRef> &paths) {
 // Plugin Configurations
 //===----------------------------------------------------------------------===//
 
-SmallVector<StringRef> MojoConfig::getPluginPaths() {
+SmallVector<std::string> MojoConfig::getPluginPaths() {
   SmallVector<StringRef> paths;
   StringRef pluginPaths = getValue(STRINGIFY_MOJO_CONFIG(".mojo_plugin_paths"));
   pluginPaths.split(paths, ';', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-  return paths;
+  return SmallVector<std::string>(paths.begin(), paths.end());
 }
 
 //===----------------------------------------------------------------------===//

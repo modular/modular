@@ -30,7 +30,7 @@ TEST(MojoConfigTest, GetPluginPathsSingle) {
   ctx->set(std::move(config));
   MojoConfig cfg = MojoConfig::fromContext(ctx);
 
-  auto paths = cfg.getPluginPaths();
+  SmallVector<std::string> paths = cfg.getPluginPaths();
   ASSERT_EQ(paths.size(), 1u);
   EXPECT_EQ(paths[0], "/usr/lib/mojo/plugin.so");
 }
@@ -43,7 +43,7 @@ TEST(MojoConfigTest, GetPluginPathsMultiple) {
   ctx->set(std::move(config));
   MojoConfig cfg = MojoConfig::fromContext(ctx);
 
-  auto paths = cfg.getPluginPaths();
+  SmallVector<std::string> paths = cfg.getPluginPaths();
   ASSERT_EQ(paths.size(), 2u);
   EXPECT_EQ(paths[0], "/usr/lib/plugin_a.so");
   EXPECT_EQ(paths[1], "/usr/lib/plugin_b.so");
@@ -57,7 +57,7 @@ TEST(MojoConfigTest, GetPluginPathsSkipsEmptyEntries) {
   ctx->set(std::move(config));
   MojoConfig cfg = MojoConfig::fromContext(ctx);
 
-  auto paths = cfg.getPluginPaths();
+  SmallVector<std::string> paths = cfg.getPluginPaths();
   ASSERT_EQ(paths.size(), 2u);
   EXPECT_EQ(paths[0], "/usr/lib/plugin_a.so");
   EXPECT_EQ(paths[1], "/usr/lib/plugin_b.so");

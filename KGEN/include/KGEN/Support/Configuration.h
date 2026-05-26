@@ -50,7 +50,7 @@ public:
 
   /// Return the list of plugin file paths to load, parsed from a
   /// semicolon-separated config value.
-  SmallVector<StringRef> getPluginPaths();
+  SmallVector<std::string> getPluginPaths();
 
   //===--------------------------------------------------------------------===//
   // LLDB Configurations
