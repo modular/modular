@@ -180,36 +180,112 @@ struct ParamDiffer {
         return diff(lhsMeta.getType(), rhsMeta.getType());
     }
 
-    // TODO: We should diff function types. They can also get very long.
+    // Look through two generator types with the same parameter lists.
+    if (auto lhsGen = dyn_cast<GeneratorType>(lhs)) {
+      if (auto rhsGen = dyn_cast<GeneratorType>(rhs))
+        // NOTE: We could complain about different pogs, but unclear how to
+        // identify the right problem.
+        if (lhsGen.getMetadata() == rhsGen.getMetadata()) {
+          // We know the parameter lists have the same names and kinds, check
+          // that their types line up.
+          for (auto [idx, lhsParam, rhsParam] : llvm::enumerate(
+                   lhsGen.getInputParamTypes(), rhsGen.getInputParamTypes())) {
+            if (isEqualCanon(lhsParam, rhsParam))
+              continue;
+
+            accessPath += "." + lhsGen.getMetadata().getName(idx).str();
+            return diff(lhsParam, rhsParam);
+          }
+          // If the parameter lists match, check that the bodies match.
+          return diff(lhsGen.getBody(), rhsGen.getBody());
+        }
+    }
+
+    // If we have a func_literal and a func type, ignore the symbol and compare
+    // the func types.
+    if (auto lhsFn = dyn_cast<FuncLiteralType>(lhs))
+      if (auto rhsFn = dyn_cast<FuncType>(rhs))
+        if (!isEqualCanon(lhsFn.getFuncLiteral().getType(), rhsFn))
+          return diff(lhsFn.getFuncLiteral().getType(), rhsFn);
+    if (auto lhsFn = dyn_cast<FuncType>(lhs))
+      if (auto rhsFn = dyn_cast<FuncLiteralType>(rhs))
+        if (!isEqualCanon(lhsFn, rhsFn.getFuncLiteral().getType()))
+          return diff(lhsFn, rhsFn.getFuncLiteral().getType());
+
+    // If we have two function types, try to diff them.
+    if (auto lhsFn = dyn_cast<FuncType>(lhs))
+      if (auto rhsFn = dyn_cast<FuncType>(rhs)) {
+        // If the argument list pogs are the same, diff the arg types.
+        auto lhsPogs = lhsFn.getArgListAttrs();
+        auto rhsPogs = rhsFn.getArgListAttrs();
+        if (lhsPogs.size() == rhsPogs.size()) {
+          for (auto [idx, lhsArg, rhsArg] :
+               llvm::enumerate(lhsFn.getArguments(), rhsFn.getArguments())) {
+            // Don't diff if the argument disagrees on arg convention, this
+            // can cause us to compare return types to arguments etc.  We don't
+            // require name matches though.
+            auto conv = lhsFn.getArgConvention(idx);
+            if (isEqualCanon(lhsArg, rhsArg) ||
+                conv != rhsFn.getArgConvention(idx) ||
+                lhsPogs.getVariadicKind(idx) != rhsPogs.getVariadicKind(idx))
+              continue;
+
+            if (conv == ArgConvention::ByRefResult)
+              accessPath += "result type";
+            else if (conv == ArgConvention::ByRefError)
+              accessPath += "error type";
+            else if (!lhsPogs.getName(idx).empty())
+              accessPath += "." + lhsPogs.getName(idx).str();
+            else if (!rhsPogs.getName(idx).empty())
+              accessPath += "." + rhsPogs.getName(idx).str();
+            else
+              accessPath += ".arg" + std::to_string(idx);
+            return diff(lhsArg, rhsArg);
+          }
+        }
+        // TODO: Handle other kinds of errors.
+      }
+
+    // Handle references, which commonly come up in function args.
+    if (auto lhsRef = dyn_cast<RefType>(lhs))
+      if (auto rhsRef = dyn_cast<RefType>(rhs)) {
+        if (!isEqualCanon(lhsRef.getAddressSpace(), rhsRef.getAddressSpace())) {
+          accessPath += ".address_space";
+          return diff(lhsRef.getAddressSpace(), rhsRef.getAddressSpace());
+        }
+        if (!isEqualCanon(lhsRef.getOrigin(), rhsRef.getOrigin())) {
+          accessPath += ".origin";
+          return diff(lhsRef.getOrigin(), rhsRef.getOrigin());
+        }
+        return diff(lhsRef.getElementType(), rhsRef.getElementType());
+      }
 
     // Check to see if these are two structs or struct meta types with differing
     // parameters values.  If so, diagnose that difference.
+    auto lhsDecl = lhs.getDecl(shared);
+    if (lhsDecl && lhsDecl == rhs.getDecl(shared)) {
+      assert(lhs.getParamBindings().size() == rhs.getParamBindings().size() &&
+             "Type with the same decl should have consistent number of params");
+
+      for (auto [idx, lhsParam, rhsParam] :
+           llvm::enumerate(lhs.getParamBindings(), rhs.getParamBindings())) {
+        if (isEqualCanon(lhsParam, rhsParam))
+          continue;
+
+        // Ok, we found a difference, recursively diff the two parameters.
+        auto structDecl = cast<LIT::StructDeclOp>(lhsDecl->getIfOperation());
+        accessPath += "." + structDecl.getParams()[idx].getName().str();
+        return diff(lhsParam, rhsParam);
+      }
+      // It's possible that the parameters exactly match but one is a StructType
+      // and the other is StructMetaType.  Just diagnose as different types.
+    }
 
     // Must have the same declarations to compare, we just say that Int vs
     // String are different, we don't "diff" them.
-    auto lhsDecl = lhs.getDecl(shared);
-    if (!lhsDecl || lhsDecl != rhs.getDecl(shared)) {
-      leftNested = PValue(lhs);
-      rightNested = PValue(rhs);
-      return;
-    }
 
-    assert(lhs.getParamBindings().size() == rhs.getParamBindings().size() &&
-           "Type with the same decl should have consistent number of params");
-
-    for (auto [idx, lhsParam, rhsParam] :
-         llvm::enumerate(lhs.getParamBindings(), rhs.getParamBindings())) {
-      if (isEqualCanon(lhsParam, rhsParam))
-        continue;
-
-      // Ok, we found a difference, recursively diff the two parameters.
-      auto structDecl = cast<LIT::StructDeclOp>(lhsDecl->getIfOperation());
-      accessPath += "." + structDecl.getParams()[idx].getName().str();
-      return diff(lhsParam, rhsParam);
-    }
-
-    // Couldn't determine the failure.
-    llvm_unreachable("params matched but type didn't?");
+    leftNested = PValue(lhs);
+    rightNested = PValue(rhs);
   }
 };
 } // end anonymous namespace
@@ -232,47 +308,48 @@ MojoInflightDiag::~MojoInflightDiag() {
   // programming.  In this case, we should dig into the type to understand what
   // is going on and explain it in a way that doesn't require too much squinting
   // at long type names.
-  if (emittedParams.size() > 1 &&
-      !isEqualCanon(emittedParams[0].value, emittedParams[1].value)) {
+  for (size_t i = 0; i + 1 < emittedParams.size(); ++i) {
+    auto lhs = emittedParams[i];
+    auto rhs = emittedParams[i + 1];
+    if (isEqualCanon(lhs.value, rhs.value))
+      continue; // Ignore exact dupes, nothing to diff.
+
     ParamDiffer differ{*shared, "", {}, {}};
-    differ.diff(emittedParams[0].value, emittedParams[1].value);
-    if (!differ.accessPath.empty()) {
-      assert(differ.leftNested && differ.rightNested && "differ broken");
+    differ.diff(lhs.value, rhs.value);
+    if (differ.accessPath.empty())
+      continue; // Didn't look similar.
 
-      // Only do this for very long type names. Don't clutter things up for
-      // SIMD types that disagree obviously.
-      auto first = ASTType::getParamAsString(emittedParams[0].value, shared);
-      if (first.size() > 30) {
-        const char *kind =
-            LIT::isTypeExpr(differ.leftNested) ? "type" : "value";
-        attachNote(emittedParams[0].loc)
-            << differ.accessPath << " of left " << kind << " is ";
-        {
-          DeclResolver::DiagnosticDeclContextChanger x(
-              emittedParams[0].ctxDecl);
-          *this << differ.leftNested;
-        }
-        {
-          DeclResolver::DiagnosticDeclContextChanger x(
-              emittedParams[1].ctxDecl);
-          *this << " but the right " << kind << " is " << differ.rightNested;
-        }
+    assert(differ.leftNested && differ.rightNested && "differ broken");
+
+    // Only do this for very long type names. Don't clutter things up for
+    // SIMD types that disagree obviously.
+    auto first = ASTType::getParamAsString(lhs.value, shared);
+    if (first.size() > 30) {
+      const char *kind = LIT::isTypeExpr(differ.leftNested) ? "type" : "value";
+      attachNote(rhs.loc) << differ.accessPath << " of the first " << kind
+                          << " is '";
+      {
+        DeclResolver::DiagnosticDeclContextChanger x(lhs.ctxDecl);
+        *this << ASTType::getParamAsString(differ.leftNested, shared);
       }
-
-      // Keep track of these as printed so we can unpack sugar if needed.
-      emitted.push_back(
-          {emittedParams[0].loc, differ.leftNested, emittedParams[0].ctxDecl});
-      emitted.push_back(
-          {emittedParams[1].loc, differ.rightNested, emittedParams[1].ctxDecl});
-
-      // If the nested values differ as the result of a parameter operator, emit
-      // a note suggesting a rebind.  It is plausible we cannot prove equality.
-      if (sugarIsa<ParamOperatorAttr>(differ.leftNested) ||
-          sugarIsa<ParamOperatorAttr>(differ.rightNested)) {
-        attachNote(getPrimaryLoc()) << "types parameters include unfolded "
-                                       "expression at parser time; try "
-                                       "rebinding to a consistent type?";
+      {
+        DeclResolver::DiagnosticDeclContextChanger x(rhs.ctxDecl);
+        *this << "' but the second " << kind << " is '";
+        *this << ASTType::getParamAsString(differ.rightNested, shared) << "'";
       }
+    }
+
+    // Keep track of these as printed so we can unpack sugar if needed.
+    emitted.push_back({lhs.loc, differ.leftNested, lhs.ctxDecl});
+    emitted.push_back({rhs.loc, differ.rightNested, rhs.ctxDecl});
+
+    // If the nested values differ as the result of a parameter operator, emit
+    // a note suggesting a rebind.  It is plausible we cannot prove equality.
+    if (sugarIsa<ParamOperatorAttr>(differ.leftNested) ||
+        sugarIsa<ParamOperatorAttr>(differ.rightNested)) {
+      attachNote(getPrimaryLoc()) << "types parameters include unfolded "
+                                     "expression at parser time; try "
+                                     "rebinding to a consistent type?";
     }
   }
 

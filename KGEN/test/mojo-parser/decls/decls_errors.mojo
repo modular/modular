@@ -1071,14 +1071,15 @@ struct InheritsTwice(Father, Father):
 
 # https://github.com/modular/mojo/issues/1399
 # Parser crash when trait implementation parameters don't match the definition
-# expected-note @below {{trait 'TraitWithIntParamOnMethod' declared here}}
-trait TraitWithIntParamOnMethod:
-  # expected-note @below {{no 'f' candidates have type 'def[n: Int](self: UseTraitWithIntParamOnMethod) -> None'}}
+# expected-note @below {{trait 'TraitWithIntParamOnMethodReallyLongName' declared here}}
+trait TraitWithIntParamOnMethodReallyLongName:
+  # expected-note @below {{no 'f' candidates have type 'def[n: Int](self: UseTraitWithIntParamOnMethodReallyLongName) -> None'}}
   def f[n: Int](self):
     ...
-# expected-error @below {{'UseTraitWithIntParamOnMethod' does not implement all requirements for 'TraitWithIntParamOnMethod'}}
-struct UseTraitWithIntParamOnMethod(TraitWithIntParamOnMethod):
-  # expected-note @below {{candidate declared here with type 'def[n: Bool](self: UseTraitWithIntParamOnMethod) -> None'}}
+# expected-error @below {{'UseTraitWithIntParamOnMethodReallyLongName' does not implement all requirements for 'TraitWithIntParamOnMethodReallyLongName'}}
+struct UseTraitWithIntParamOnMethodReallyLongName(TraitWithIntParamOnMethodReallyLongName):
+  # expected-note @below {{candidate declared here with type 'def[n: Bool](self: UseTraitWithIntParamOnMethodReallyLongName) -> None'}}
+  # expected-note @below {{.n of the first type is 'Int' but the second type is 'Bool'}}
   def f[n: Bool](self):
     pass
 

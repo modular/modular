@@ -235,6 +235,7 @@ def test_func_type():
     # expected-error @below {{unnamed parameter must be positional-only}}
     comptime f8 = def [Int, b: Int] capturing -> Int
     # expected-error @below {{'def throws_int() raises Int -> None' value to 'def() raises String -> None'}}
+    # expected-note @below {{error type of the first type is 'Int' but the second type is 'String'}}
     comptime f9: def () thin raises String = throws_int
 
     def has_foo_kw(*, foo: Int): pass
@@ -1059,7 +1060,7 @@ def sugar_test1(x: type_of(HasIntParam[1])): pass
 
 def sugar_test():
     # expected-error @below {{cannot be converted from 'AnyStruct[HasIntParam[int_fn(0)]]' to 'AnyStruct[HasIntParam[1]]'}}
-    # expected-note @below {{.p of left value is 'int_fn(0)' but the right value is '1'}}
+    # expected-note @below {{.p of the first value is 'int_fn(0)' but the second value is '1'}}
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     sugar_test1(HasIntParam[int_fn(0)])
 
@@ -1073,7 +1074,7 @@ def sugar_test():
     var c = a.join(a) # c has twice the width.
 
     # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, (2 * ideal_width)]' value to 'SIMD[DType.int32, 4]'}}
-    # expected-note @below {{.size of left value is '(2 * ideal_width)' but the right value is '4'}}
+    # expected-note @below {{.size of the first value is '(2 * ideal_width)' but the second value is '4'}}
     b = c
 
     # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, 4]'}}
