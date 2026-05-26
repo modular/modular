@@ -62,7 +62,7 @@ CoercionInfo SystemVABIInfo::classifyStructType(mlir::Type type,
   // Structs >16 bytes use MEMORY class (pointer for args, sret for returns)
   if (size > 16) {
     return useSRet ? CoercionInfo::sretReturn()
-                   : CoercionInfo::indirectArgument();
+                   : CoercionInfo::indirectArgument(/*useByval=*/true);
   }
 
   // 1-8 byte structs: all-float → SSE registers, otherwise → integer registers
@@ -116,7 +116,7 @@ CoercionInfo SystemVABIInfo::classifyTwoEightbyteStruct(
   // If either eightbyte is Memory, the whole struct uses memory
   if (class1 == EightbyteClass::Memory || class2 == EightbyteClass::Memory) {
     return useSRet ? CoercionInfo::sretReturn()
-                   : CoercionInfo::indirectArgument();
+                   : CoercionInfo::indirectArgument(/*useByval=*/true);
   }
 
   CoercionInfo info;

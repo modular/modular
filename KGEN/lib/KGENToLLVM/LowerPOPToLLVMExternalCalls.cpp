@@ -59,7 +59,7 @@ private:
     unsigned paramIdx = usesSRet ? 1 : 0;
     for (size_t idx = 0; idx < numParams; ++idx) {
       const auto &coercion = argClassifications[idx];
-      if (coercion.useIndirect) {
+      if (coercion.useIndirect && coercion.useByval) {
         Type llvmArgType =
             getTypeConverter()->convertType(op.getOperandTypes()[idx]);
         paramAttrs[paramIdx].set(LLVM::LLVMDialect::getByValAttrName(),
@@ -131,7 +131,6 @@ private:
                                     ArrayRef<CoercionInfo> argClassifications,
                                     ExternalCallOp op, size_t numFixedArgs,
                                     bool usesSRet, bool isVariadic,
-                                    bool addByval,
                                     ConversionPatternRewriter &rewriter) const {
     size_t numArgsForSig =
         isVariadic ? numFixedArgs : argClassifications.size();
@@ -149,10 +148,8 @@ private:
                         mlir::TypeAttr::get(llvmRetType));
     }
 
-    if (addByval) {
-      overlayByvalAttrs(paramAttrs, argClassifications, op, numFixedArgs,
-                        usesSRet, isVariadic);
-    }
+    overlayByvalAttrs(paramAttrs, argClassifications, op, numFixedArgs,
+                      usesSRet, isVariadic);
 
     bool anySet = llvm::any_of(paramAttrs, [](const mlir::NamedAttrList &nal) {
       return !nal.empty();
@@ -271,11 +268,10 @@ public:
     mlir::ArrayAttr argAttrs = op.getArgAttrsAttr();
     mlir::DictionaryAttr resAttrs = op.getResAttrsAttr();
     auto memory = dyn_cast_or_null<LLVM::MemoryEffectsAttr>(op.getMemoryAttr());
-    // byval is an x86-64 concern only; ARM64 doesn't use it.
-    bool addByval = triple.isX86();
+
     mlir::ArrayAttr expectedArgAttrs =
         buildLLVMArgAttrs(argAttrs, argClassifications, op, numFixedArgs,
-                          usesSRet, isVariadic, addByval, rewriter);
+                          usesSRet, isVariadic, rewriter);
     // resAttrs are dropped when sret is active (no LLVM-level return value).
     mlir::ArrayAttr expectedResAttrs;
     if (resAttrs && !usesSRet)

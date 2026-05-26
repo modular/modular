@@ -341,19 +341,14 @@ void CABICallHelper::applyByvalAttrsToCall(CallOp call,
                                            TypeRange origArgTypes,
                                            bool usesSRet, OpBuilder &builder,
                                            size_t startArgIdx) const {
-  // byval is an x86-64 SysV requirement.  ARM64 AAPCS64 passes large structs
-  // via an implicit reference without byval, so no attribute is needed there.
-  if (!tc->getTarget().getTriple().isX86())
-    return;
-
   // Fast path: nothing to do when no argument in range needs indirect passing.
-  bool hasIndirect = false;
+  bool hasIndirectByval = false;
   for (size_t i = startArgIdx; i < argClass.size(); ++i)
-    if (argClass[i].useIndirect) {
-      hasIndirect = true;
+    if (argClass[i].useIndirect && argClass[i].useByval) {
+      hasIndirectByval = true;
       break;
     }
-  if (!hasIndirect)
+  if (!hasIndirectByval)
     return;
 
   // Retrieve or create the per-argument attribute array.

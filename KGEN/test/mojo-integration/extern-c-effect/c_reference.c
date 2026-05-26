@@ -64,3 +64,10 @@ struct BigStruct c_big_struct_add_one(struct BigStruct p) {
 }
 
 BigStructFn c_get_big_struct_add_one(void) { return c_big_struct_add_one; }
+
+// C calls a Mojo-defined abi("C") callback that takes a >16 B struct by-value.
+// Exercises the callee side of the C ABI byval / sret lowering — the path
+// missed by MOCO-3939 prior to its fix.
+struct BigStruct c_apply_big_struct_fn(BigStructFn fp, struct BigStruct p) {
+  return fp(p);
+}
