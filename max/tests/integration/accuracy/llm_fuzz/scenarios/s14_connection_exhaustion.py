@@ -21,9 +21,7 @@ Unlike payload-level attacks, these target the transport layer.
 from __future__ import annotations
 
 import asyncio
-import http.client
 import json
-import socket
 import time
 from typing import TYPE_CHECKING
 
@@ -148,9 +146,7 @@ class ConnectionExhaustion(BaseScenario):
 
             def _connect_disconnect() -> bool:
                 try:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    s.settimeout(2)
-                    s.connect((client._host, client._port))
+                    s = client._make_socket(2)
                     s.close()
                     return True
                 except Exception:
@@ -304,19 +300,18 @@ class ConnectionExhaustion(BaseScenario):
 
             def _hold() -> int | str:
                 try:
-                    conn = http.client.HTTPConnection(
-                        client._host, client._port
-                    )
+                    conn = client._make_conn(timeout=config.timeout)
                     body = (
                         b'{"model": "'
                         + model.encode()
                         + b'", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}'
                     )
-                    headers = {
-                        "Content-Type": "application/json",
-                        "Content-Length": str(len(body)),
-                        "Connection": "keep-alive",
-                    }
+                    headers = client._base_headers(
+                        {
+                            "Content-Length": str(len(body)),
+                            "Connection": "keep-alive",
+                        }
+                    )
                     conn.request(
                         "POST", client._chat_path, body=body, headers=headers
                     )
