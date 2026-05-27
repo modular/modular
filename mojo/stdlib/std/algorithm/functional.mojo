@@ -301,10 +301,19 @@ def _elementwise_impl[
                 func, shape, context
             )
         elif is_cpu[target]():
+
+            @always_inline
+            def func_wrap_cpu[
+                width: Int, alignment: Int = 1
+            ](coords: Coord) {read}:
+                func[width, rank, alignment](
+                    rebind[IndexList[rank]](coord_to_index_list(coords))
+                )
+
             _elementwise_impl_cpu[
                 simd_width=simd_width,
                 trace_description=trace_description,
-            ](func, shape=shape, ctx=Optional(context))
+            ](func_wrap_cpu, shape=Coord(shape), ctx=Optional(context))
         elif is_gpu[target]():
             var shape_coord = Coord(shape)
 
