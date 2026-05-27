@@ -643,6 +643,22 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.4e-01
     kl_div_threshold: 1.1e0
 
+  # Qwen3-4B in text-encoder mode
+  # This simulates the text-encoder ComponentModel in FLUX-Klein models.
+  # The main difference from a prefill run in text-gen mode is that in the
+  # encoder case all prompts are padded to 512 tokens.
+  Qwen/Qwen3-4B-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_1x]
+    pipeline: "Qwen/Qwen3-4B-text-encoder"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/Qwen_Qwen3-4B-text-encoder_golden/1/f5721c1ef348e25a39e3355e3750b188d4a19a568ddba4eb2e476e5929c8f80b/Qwen_Qwen3-4B-text-encoder_golden.tar.gz"
+      json_file: "torch_Qwen_Qwen3-4B-text-encoder_bfloat16_golden.json"
+    tags: [nvidia-only]
+    cos_dist_threshold: .6 # FIXME: Reduce to ~.0015 after MODELS-1490 is closed
+
   # TODO(MODELS-1099): Re-enable once upstream tokenizer is fixed.
   allenai/OLMo-2-1124-7B-float32:
     pre_submit_agents: []

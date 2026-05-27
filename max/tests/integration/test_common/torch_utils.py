@@ -130,6 +130,97 @@ def run_text_generation(  # noqa: ANN201
     )
 
 
+def run_text_encode(
+    model: PreTrainedModel,
+    data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
+    device: torch.device,
+    textgen_requests: Iterable[MockTextGenerationRequest],
+    pad_to_length: int | None = None,
+) -> list[dict[str, Any]]:
+    """Run a text-encoder forward pass and return the pre-norm hidden state.
+
+    Bypasses ``model.generate()`` entirely. Registers a pre-hook on
+    ``model.model.norm`` so the captured tensor is the post-stack,
+    pre-final-norm hidden state — matching what MAX's ComponentModel text
+    encoders return.
+
+    When ``pad_to_length`` is provided, each prompt is run through
+    ``apply_chat_template`` + tokenization padded to that length. When it is
+    ``None``, the prompt is tokenized at its natural length with an all-ones
+    attention mask.
+    """
+    if pad_to_length is not None:
+        if getattr(data_processor, "pad_token", None) is None:
+            data_processor.pad_token = data_processor.eos_token
+        data_processor.padding_side = "right"
+
+    norm_module = getattr(getattr(model, "model", None), "norm", None)
+    if norm_module is None:
+        raise RuntimeError(
+            "Text-encoder verification expected model.model.norm to exist on "
+            "the Torch model so we can capture pre-norm hidden states. "
+            f"Got: {type(model).__name__}"
+        )
+
+    captured: list[torch.Tensor] = []
+
+    def _capture_pre_norm(
+        module: torch.nn.Module,
+        args: tuple[torch.Tensor, ...],
+    ) -> None:
+        captured.append(args[0].detach())
+
+    hook = norm_module.register_forward_pre_hook(_capture_pre_norm)
+    try:
+        results: list[dict[str, Any]] = []
+        for request in textgen_requests:
+            # Apply the chat template (matches diffusers + MAX Klein production).
+            chat_text = data_processor.apply_chat_template(
+                [{"role": "user", "content": request.prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            if pad_to_length is not None:
+                encoded = data_processor(
+                    chat_text,
+                    padding="max_length",
+                    max_length=pad_to_length,
+                    truncation=True,
+                    return_tensors="pt",
+                ).to(device)
+            else:
+                encoded = data_processor(chat_text, return_tensors="pt").to(
+                    device
+                )
+            input_ids = encoded["input_ids"]
+            attention_mask = encoded["attention_mask"]
+
+            captured.clear()
+            with torch.no_grad():
+                model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    use_cache=False,
+                )
+            if not captured:
+                raise RuntimeError(
+                    "Final-norm pre-hook did not fire during text-encoder "
+                    "verification forward pass."
+                )
+            pre_norm = captured[-1]
+            hidden_np = pre_norm[0].float().cpu().numpy()
+            results.append(
+                {
+                    "prompt": request.prompt,
+                    "embeddings": hidden_np,
+                }
+            )
+    finally:
+        hook.remove()
+    return results
+
+
 def run_text_generation_with_custom_image_processing(  # noqa: ANN201
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,

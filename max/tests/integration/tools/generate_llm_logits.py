@@ -35,7 +35,11 @@ if not hasattr(_tui, "is_torch_fx_available"):
 
 import click
 import torch
-from create_pipelines import PIPELINE_ORACLES, GenericOracle
+from create_pipelines import (
+    PIPELINE_ORACLES,
+    ComponentModelOracle,
+    GenericOracle,
+)
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
@@ -273,7 +277,27 @@ def generate_llm_logits(
 
     title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name or 'Default Encoding'}"
     with github_log_group(title):
-        if framework_name == "max":
+        if framework_name == "max" and isinstance(
+            pipeline_oracle, ComponentModelOracle
+        ):
+            from max.driver import load_devices
+            from test_common.text_encoder_evaluate import run_max_text_encoder
+
+            devices = load_devices(device_specs)
+            prompts = [req.prompt for req in inputs]
+            print(
+                f"Running {pipeline_name} text encoder on MAX "
+                f"(padded_length={pipeline_oracle.padded_length})"
+            )
+            results = run_max_text_encoder(
+                model_path=pipeline_oracle.model_path,
+                component_model_class=pipeline_oracle.component_model_class,
+                devices=devices,
+                prompts=prompts,
+                padded_length=pipeline_oracle.padded_length,
+                print_outputs=print_output,
+            )
+        elif framework_name == "max":
             if encoding_name is None:
                 max_encoding_name = get_max_default_encoding(
                     pipeline_oracle, pipeline_name, device_specs
@@ -298,6 +322,32 @@ def generate_llm_logits(
                 evaluation_batch_size=evaluation_batch_size,
                 reference=reference,
                 generate_logprobs=generate_logprobs,
+            )
+        elif framework_name == "torch" and isinstance(
+            pipeline_oracle, ComponentModelOracle
+        ):
+            from test_common.torch_utils import run_text_encode
+
+            torch_device = get_torch_device(device_specs)
+
+            with maybe_log_hf_downloads(log_hf_downloads):
+                torch_pipeline_and_tokenizer = (
+                    pipeline_oracle.create_torch_pipeline(
+                        encoding=encoding_name,
+                        device=torch_device,
+                    )
+                )
+
+            print(
+                f"Running {pipeline_name} text encoder on Torch "
+                f"(pad_to_length={pipeline_oracle.padded_length})"
+            )
+            results = run_text_encode(
+                model=torch_pipeline_and_tokenizer.model,
+                data_processor=torch_pipeline_and_tokenizer.data_processor,
+                device=torch_device,
+                textgen_requests=inputs,
+                pad_to_length=pipeline_oracle.padded_length,
             )
         elif framework_name == "torch":
             torch_device = get_torch_device(device_specs)

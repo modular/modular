@@ -103,6 +103,23 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "text_encoder_evaluate",
+    testonly = True,
+    srcs = ["text_encoder_evaluate.py"],
+    imports = [".."],
+    deps = [
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+    ],
+)
+
+modular_py_library(
     name = "github_utils",
     testonly = True,
     srcs = ["github_utils.py"],

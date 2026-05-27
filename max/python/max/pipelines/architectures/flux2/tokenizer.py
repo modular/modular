@@ -36,6 +36,69 @@ from .system_messages import SYSTEM_MESSAGE, format_input, format_input_klein
 logger = logging.getLogger("max.pipelines")
 
 
+def tokenize_klein_text(
+    delegate: Any,
+    prompt: str,
+    max_length: int | None,
+    add_special_tokens: bool = True,
+) -> Any:
+    """Apply the FLUX.2-Klein tokenization recipe to a single prompt.
+
+    Wraps the prompt as a user-only message via ``format_input_klein``,
+    applies the Qwen3 chat template with ``add_generation_prompt=True``
+    and ``enable_thinking=False`` when supported, then encodes. When
+    ``max_length`` is set the result is padded/truncated to that length;
+    otherwise the result has the prompt's natural length.
+
+    Raises ``ValueError`` if the natural-length tokenization exceeds
+    ``max_length`` (rather than silently truncating).
+
+    Shared by ``Flux2Tokenizer.encode`` (production) and the
+    ``run_max_text_encoder`` verification harness so both paths tokenize
+    identically.
+    """
+    messages_batch = format_input_klein(prompts=[prompt], images=None)
+    kwargs = dict(
+        add_generation_prompt=True,
+        tokenize=False,
+    )
+    try:
+        prompt_text = delegate.apply_chat_template(
+            messages_batch[0],
+            enable_thinking=False,
+            **kwargs,
+        )
+    except TypeError:
+        prompt_text = delegate.apply_chat_template(
+            messages_batch[0],
+            **kwargs,
+        )
+    raw_ids = delegate.encode(
+        prompt_text, add_special_tokens=add_special_tokens
+    )
+    if max_length and len(raw_ids) > max_length:
+        raise ValueError(
+            "Prompt is too long for this model's text encoder: "
+            f"{len(raw_ids)} tokens exceeds the maximum of {max_length}"
+            " tokens. Please shorten your prompt."
+        )
+
+    if max_length is None:
+        return delegate(
+            prompt_text,
+            add_special_tokens=add_special_tokens,
+            return_attention_mask=True,
+        )
+    return delegate(
+        prompt_text,
+        padding="max_length",
+        max_length=max_length,
+        truncation=True,
+        add_special_tokens=add_special_tokens,
+        return_attention_mask=True,
+    )
+
+
 class Flux2Tokenizer(PixelGenerationTokenizer):
     """FLUX.2-family tokenizer for Flux2Pipeline and Flux2KleinPipeline."""
 
@@ -167,44 +230,11 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
                     return_overflowing_tokens=False,
                 )
             elif self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
-                messages_batch = format_input_klein(
-                    prompts=[prompt_str],
-                    images=None,
-                )
-                kwargs = dict(
-                    add_generation_prompt=True,
-                    tokenize=False,
-                )
-                try:
-                    prompt_text = delegate.apply_chat_template(
-                        messages_batch[0],
-                        enable_thinking=False,
-                        **kwargs,
-                    )
-                except TypeError:
-                    prompt_text = delegate.apply_chat_template(
-                        messages_batch[0],
-                        **kwargs,
-                    )
-                raw_ids = delegate.encode(
-                    prompt_text,
-                    add_special_tokens=add_special_tokens,
-                )
-                if max_sequence_length and len(raw_ids) > max_sequence_length:
-                    raise ValueError(
-                        f"Prompt is too long for this model's text"
-                        f" encoder: {len(raw_ids)} tokens exceeds"
-                        f" the maximum of {max_sequence_length}"
-                        " tokens. Please shorten your prompt."
-                    )
-
-                return delegate(
-                    prompt_text,
-                    padding="max_length",
+                return tokenize_klein_text(
+                    delegate,
+                    prompt_str,
                     max_length=max_sequence_length,
-                    truncation=True,
                     add_special_tokens=add_special_tokens,
-                    return_attention_mask=True,
                 )
             else:
                 raise ValueError(
