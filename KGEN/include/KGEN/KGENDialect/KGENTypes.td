@@ -136,8 +136,8 @@ def KGEN_NonStructTypeType : KGENType<"NonStructType", "non_struct_type", [
     comptime mlir_i1 = __mlir_type.i1
     # type_of(mlir_i1) == !kgen.non_struct_type
 
-    comptime fn_type = fn()->Int
-    # type_of(fn_type) == !kgen.non_struct_type
+    comptime def_type = def()->Int
+    # type_of(def_type) == !kgen.non_struct_type
 
     # Notably:
     # type_of(type_of(mlir_i1)) == !kgen.type

@@ -878,7 +878,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     ASTDeclInterface, DeclareOpInterfaceMethods<ParamOpInterface>,
     StabilityDecoratorInterface
   ]>, OneParamDecl {
-  let summary = "`alias x: T = value` or `alias x: T` declaration";
+  let summary = "`comptime x: T = value` or `comptime x: T` declaration";
   let description = [{
     This op represents an alias decl bound with the given initializer (unless
     it's in a trait, whose aliases don't need initializers).

@@ -411,10 +411,10 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
     The latter would appear in something like this:
 
     ```
-    alias bar: fn[
+    comptime bar: def[
       D: DType,
       N: Int,
-      f: fn[Y: AnyType](Y, SIMD[N, D])->None
+      f: def[Y: AnyType](Y, SIMD[N, D])->None
     ](...) = ...
     ```
 
@@ -425,7 +425,7 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
 
     ```
     def foo[X: AnyType](x: X):
-        alias zork: def[...(
+        comptime zork: def[...(
           # Cannot have: #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
         )->None = ...
     ```

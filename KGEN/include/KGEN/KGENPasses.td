@@ -567,8 +567,7 @@ def EliminateDuplicateFunctions : Pass<"eliminate-duplicate-functions",
     Example:
     ```mojo
     def foo[n: Int]():
-      @parameter
-      if n < 10:
+      comptime if n < 10:
         ...
       else:
         ...

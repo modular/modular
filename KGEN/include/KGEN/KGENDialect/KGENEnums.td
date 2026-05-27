@@ -221,7 +221,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// KGEN::PointerType.
   I32EnumAttrCase<"DeinitMem", 4, "deinit_mem">,
 
-  /// This is used for mut arguments like `fn x(mut a: Int)`.
+  /// This is used for mut arguments like `def x(mut a: Int)`.
   ///
   /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
   /// type can be anything.  The value is initialized before entry to the
@@ -229,7 +229,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   I32EnumAttrCase<"Mut", 5, "mut">,
 
   /// This is used for ref arguments like:
-  ///   `fn x[origin: X](ref [origin, addrspace] T)`
+  ///   `def x[origin: X](ref [origin, addrspace] T)`
   ///
   /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
   /// type can be anything.  The value is initialized before entry to the

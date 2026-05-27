@@ -67,13 +67,13 @@ def ParameterScopeTypeInterface : TypeInterface<"ParameterScopeTypeInterface"> {
 
     ```mojo
     def foo[T: AnyType]():
-      alias bork: def[
+      comptime bork: def[
         T: AnyType,
         inner_f: def[Y: AnyType](t: T, y: Y) -> None
       ] -> None = ...
     ```
 
-    The `fn` after `bork:` is a `kgen.generator` which is a
+    The `def` after `bork:` is a `kgen.generator` which is a
     `ParameterScopeTypeInterface`.
 
     `ParameterScopeTypeInterface` also causes the `depth` fields of
