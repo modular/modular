@@ -503,7 +503,7 @@ async def benchmark(
 
     if session.benchmark_task == "text-generation":
         spec_decode_metrics_before = fetch_spec_decode_metrics(
-            backend, session.base_url
+            backend, session.base_url, metrics_urls=args.metrics_urls
         )
     else:
         spec_decode_metrics_before = None
@@ -692,7 +692,7 @@ async def benchmark(
 
     if session.benchmark_task == "text-generation":
         spec_decode_metrics_after = fetch_spec_decode_metrics(
-            backend, session.base_url
+            backend, session.base_url, metrics_urls=args.metrics_urls
         )
     else:
         spec_decode_metrics_after = None

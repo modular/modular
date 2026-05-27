@@ -1011,6 +1011,22 @@ class SpecDecodeMetrics:
     avg_acceptance_length_sum: float = 0.0
     avg_acceptance_length_count: float = 0.0
 
+    def __iadd__(self, other: SpecDecodeMetrics) -> SpecDecodeMetrics:
+        self.num_drafts += other.num_drafts
+        self.num_draft_tokens += other.num_draft_tokens
+        self.num_accepted_tokens += other.num_accepted_tokens
+        for pos, n in other.accepted_per_pos.items():
+            self.accepted_per_pos[pos] = self.accepted_per_pos.get(pos, 0) + n
+        for pos, s in other.per_pos_rate_sum.items():
+            self.per_pos_rate_sum[pos] = self.per_pos_rate_sum.get(pos, 0.0) + s
+        for pos, c in other.per_pos_rate_count.items():
+            self.per_pos_rate_count[pos] = (
+                self.per_pos_rate_count.get(pos, 0) + c
+            )
+        self.avg_acceptance_length_sum += other.avg_acceptance_length_sum
+        self.avg_acceptance_length_count += other.avg_acceptance_length_count
+        return self
+
 
 @dataclass
 class SpecDecodeStats:
