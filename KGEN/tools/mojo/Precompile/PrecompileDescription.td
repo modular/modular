@@ -7,13 +7,17 @@
 include "DescriptionBase.td"
 
 def PrecompileDescription : MojoCommandDescription<
-  "package", "Compiles a Mojo package.",
-  "Compiles a directory of Mojo source files into a binary package suitable "
-  "to share and import into other Mojo programs and modules. A Mojo package "
-  "is portable across different systems because it includes only "
-  "non-elaborated code (it's not an arch-specific package). "
-  "The code becomes an arch-specific executable only after it's imported into "
-  "a Mojo program that's then compiled with `mojo build`.\n"
+  "precompile", "Precompiles a Mojo package.",
+  "Precompiles a directory of Mojo source files into a binary package suitable "
+  "to share and import into other Mojo programs and modules. A precompiled Mojo"
+  " package is faster to build with compared to building it from source. It is "
+  " not intended as a distributable format as it is tied to the version of the "
+  " compiler that produced it. Loading a precompiled package using a compiler "
+  "of a different version will error. Despite this, it is technically portable "
+  " across different systems because it is not an architecture-specific format "
+  "(it includes only non-elaborated code). The code becomes an architecture-"
+  "specific executable only after it's imported into a Mojo program that is "
+  "then compiled with `mojo build`.\n"
   "\n"
   "To create a Mojo package, first add an `__init__.mojo` file to your "
   "package directory. Then pass that directory name to this "
