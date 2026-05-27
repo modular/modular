@@ -38,20 +38,24 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-namespace {
+//===----------------------------------------------------------------------===//
+// Public entry points
+//===----------------------------------------------------------------------===//
 
-/// Strip the "(...)" mangle suffix from a function source name, leaving just
-/// the bare identifier.
-StringRef stripFunctionMangle(StringRef name) { return name.split('(').first; }
+void M::KGEN::printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
+                                     llvm::raw_string_ostream &os,
+                                     const LIT::ASTDecl *contextDecl,
+                                     const SignatureOffsets &offsets) {
+  // The DeclResolver context-changer only records the decl; it does not
+  // mutate it. Const-cast lets us thread it through from `const`-qualified
+  // doc-tooling callers.
+  DeclResolver::DiagnosticDeclContextChanger scope(
+      const_cast<LIT::ASTDecl *>(contextDecl));
 
-void printFunctionSignatureImpl(FnOp fnOp, FnTypeGeneratorType signature,
-                                ArrayRef<Type> userArgTypes,
-                                Type userResultType, SharedState &shared,
-                                llvm::raw_string_ostream &os,
-                                const SignatureOffsets &offsets) {
   bool isStatic = fnOp.getIsStatic();
   bool isMethod = !isStatic && isa<StructDeclOp>(fnOp->getParentOp());
   bool isInit = fnOp.getSpecialFunctionInfo().isInitializer();
+  FnTypeGeneratorType signature = fnOp.getFuncTypeGenerator();
 
   // Self-type substitution for `Self` keyword rendering. `Self` can be uttered
   // by static methods too (e.g. in a return type), so the substitution is
@@ -72,7 +76,7 @@ void printFunctionSignatureImpl(FnOp fnOp, FnTypeGeneratorType signature,
 
   SmallVector<ArgumentInfo, 2> args;
   populateArgumentInfos(
-      shared, signature, userArgTypes, selfType, evaluator,
+      shared, signature, fnOp.getArgumentTypes(), selfType, evaluator,
       [&] { return fnOp.getSpecialFunctionInfo().hasSelfResult(); }, args);
 
   // Pre-render the return type for the shared printer; suppressed entirely
@@ -89,36 +93,23 @@ void printFunctionSignatureImpl(FnOp fnOp, FnTypeGeneratorType signature,
           "ref" + getRefPrefixAsString(shared, cast<RefType>(resultType),
                                        signature, /*isRefResult=*/true);
     }
-    Type reboundUserResultType = evaluator.getReboundType(userResultType);
+    Type reboundUserResultType =
+        evaluator.getReboundType(fnOp.getUserResultType());
     returnTypeStr +=
         generateTypeString(shared, reboundUserResultType, VariadicKind::None,
                            selfType, convention);
   }
 
+  // Strip the "(...)" mangle suffix from a function source name, leaving just
+  // the bare identifier.
+  auto stripFunctionMangle = [](StringRef name) {
+    return name.split('(').first;
+  };
+
   printFunctionSignatureFromInfos(
       stripFunctionMangle(fnOp.getSourceName().value_or(StringRef())), args,
       params, returnTypeStr, fnConstraints, isInit, isMethod, shared, os,
       offsets);
-}
-
-} // namespace
-
-//===----------------------------------------------------------------------===//
-// Public entry points
-//===----------------------------------------------------------------------===//
-
-void M::KGEN::printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
-                                     llvm::raw_string_ostream &os,
-                                     const LIT::ASTDecl *contextDecl,
-                                     const SignatureOffsets &offsets) {
-  // The DeclResolver context-changer only records the decl; it does not
-  // mutate it. Const-cast lets us thread it through from `const`-qualified
-  // doc-tooling callers.
-  DeclResolver::DiagnosticDeclContextChanger scope(
-      const_cast<LIT::ASTDecl *>(contextDecl));
-  printFunctionSignatureImpl(fnOp, fnOp.getFuncTypeGenerator(),
-                             fnOp.getArgumentTypes(), fnOp.getUserResultType(),
-                             shared, os, offsets);
 }
 
 void M::KGEN::printStructSignature(LIT::StructDeclOp structOp,
