@@ -328,6 +328,27 @@ This version is still a work in progress.
   max/kernels/src/layout/layout_tensor.mojo:2090: note: function declared here
   ```
 
+- The `mojo` compiler now provides more useful diagnostics in the case that
+  source information is unavailable by synthesizing a declaration and
+  pretty-printing it.
+
+  For example, instead of the following, with no contextual information after
+  the 'here':
+
+  ```text
+  /path/to/file.mojo:2092: note: function declared here:
+  ```
+
+  The user will now see:
+
+  ```text
+  /path/to/file.mojo:2092: note: function declared here:
+  __setitem__[*Tys: Indexer](self, *args: *Tys.values, *, val: SIMD[dtype, Self.element_size]) where mut
+  ```
+
+  The coverage and quality of diagnostics in such cases will continue to improve
+  in subsequent releases.
+
 - The `mojo package` command has renamed to `mojo precompile`. Similarly, the
   `.mojopkg` file extension has been deprecated; favor the `.mojoc` file
   extension instead.
