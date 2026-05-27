@@ -24,6 +24,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import Module as GraphModule
 from max.nn.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.model_manifest import ModelManifest
@@ -78,15 +79,21 @@ class CfgCombineComponent(CompiledComponent):
         session: InferenceSession,
         dtype: DType,
         device: DeviceRef,
+        *,
+        graphs_module: GraphModule | None = None,
     ) -> None:
-        super().__init__(manifest, session)
+        super().__init__(manifest, session, graphs_module=graphs_module)
 
         module = CfgCombineModule(dtype=dtype, device=device)
-        with Graph("cfg_combine", input_types=module.input_types()) as graph:
+        with Graph(
+            "cfg_combine",
+            input_types=module.input_types(),
+            module=self._graphs_module,
+        ) as graph:
             outputs = module(*(v.tensor for v in graph.inputs))
             graph.output(outputs)
 
-        self._model = self._load_graph(graph)
+        self._load_graph(graph)
 
     @traced(message="CfgCombineComponent.__call__")
     def __call__(

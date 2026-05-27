@@ -22,6 +22,7 @@ from max.driver import Buffer, Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
+from max.graph import Module as GraphModule
 from max.graph.weights import Weights, load_weights
 from max.nn.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
@@ -62,14 +63,17 @@ class PreprocessAndEncode(Module):
         self._device = device
         self._dtype = dtype
 
-        self.bn_mean = Weight(
-            name="bn_mean",
+        # Named with an ``encoder_`` prefix so the FQN doesn't collide with
+        # ``PostprocessAndDecode``'s ``decoder_bn_*`` when both components
+        # are compiled together via ``session.load_all`` (MODELS-1440).
+        self.encoder_bn_mean = Weight(
+            name="encoder_bn_mean",
             dtype=dtype,
             shape=[num_channels],
             device=DeviceRef.CPU(),
         )
-        self.bn_var = Weight(
-            name="bn_var",
+        self.encoder_bn_var = Weight(
+            name="encoder_bn_var",
             dtype=dtype,
             shape=[num_channels],
             device=DeviceRef.CPU(),
@@ -107,8 +111,8 @@ class PreprocessAndEncode(Module):
         latents = ops.reshape(latents, (batch, c * 4, h2, w2))
 
         # BN normalize: (latents - mean) / sqrt(var + eps)
-        bn_mean = self.bn_mean.to(self._device)
-        bn_var = self.bn_var.to(self._device)
+        bn_mean = self.encoder_bn_mean.to(self._device)
+        bn_var = self.encoder_bn_var.to(self._device)
         bn_mean_r = ops.reshape(bn_mean, (1, self._num_channels, 1, 1))
         bn_var_r = ops.reshape(bn_var, (1, self._num_channels, 1, 1))
         bn_std = ops.sqrt(
@@ -162,8 +166,10 @@ class ImageEncoder(CompiledComponent):
         self,
         manifest: ModelManifest,
         session: InferenceSession,
+        *,
+        graphs_module: GraphModule | None = None,
     ) -> None:
-        super().__init__(manifest, session)
+        super().__init__(manifest, session, graphs_module=graphs_module)
 
         config = manifest["vae"]
         config_dict = config.huggingface_config.to_dict()
@@ -213,13 +219,15 @@ class ImageEncoder(CompiledComponent):
         fused.load_state_dict(state_dict, weight_alignment=1)
 
         # Build and compile graph.
-        with Graph("image_encode", input_types=fused.input_types()) as graph:
+        with Graph(
+            "image_encode",
+            input_types=fused.input_types(),
+            module=self._graphs_module,
+        ) as graph:
             outputs = fused(*(v.tensor for v in graph.inputs))
             graph.output(outputs)
 
-        self._model = self._load_graph(
-            graph, weights_registry=fused.state_dict()
-        )
+        self._load_graph(graph, weights_registry=fused.state_dict())
 
     @traced(message="ImageEncoder.__call__")
     def __call__(self, input_image: Buffer) -> tuple[Buffer, Buffer]:
@@ -292,8 +300,8 @@ class ImageEncoder(CompiledComponent):
         Key mapping:
         - ``encoder.*`` -> ``encoder.*``
         - ``quant_conv.*`` -> ``encoder.quant_conv.*``
-        - ``bn.running_mean`` -> ``bn_mean``
-        - ``bn.running_var`` -> ``bn_var``
+        - ``bn.running_mean`` -> ``encoder_bn_mean``
+        - ``bn.running_var`` -> ``encoder_bn_var``
 
         Casts each weight to the dtype expected by the corresponding
         Weight in the module's raw_state_dict (e.g. GroupNorm affine
@@ -310,9 +318,9 @@ class ImageEncoder(CompiledComponent):
             elif key.startswith("quant_conv."):
                 module_key = f"encoder.{key}"
             elif key == "bn.running_mean":
-                module_key = "bn_mean"
+                module_key = "encoder_bn_mean"
             elif key == "bn.running_var":
-                module_key = "bn_var"
+                module_key = "encoder_bn_var"
             else:
                 continue
 

@@ -20,6 +20,7 @@ from typing import Any
 from max.driver import Buffer, load_devices
 from max.engine import InferenceSession, Model
 from max.graph import Graph
+from max.graph import Module as GraphModule
 from max.graph.weights import Weights, load_weights
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.model_manifest import ModelManifest
@@ -50,8 +51,10 @@ class TextEncoder(CompiledComponent):
         self,
         manifest: ModelManifest,
         session: InferenceSession,
+        *,
+        graphs_module: GraphModule | None = None,
     ) -> None:
-        super().__init__(manifest, session)
+        super().__init__(manifest, session, graphs_module=graphs_module)
 
         config = manifest["text_encoder"]
         config_dict = config.huggingface_config.to_dict()
@@ -71,13 +74,15 @@ class TextEncoder(CompiledComponent):
         module = Mistral3TextEncoderTransformer(mistral_config)
         module.load_state_dict(state_dict, weight_alignment=1, strict=True)
 
-        with Graph("text_encode", input_types=module.input_types()) as graph:
+        with Graph(
+            "text_encode",
+            input_types=module.input_types(),
+            module=self._graphs_module,
+        ) as graph:
             outputs = module(*(v.tensor for v in graph.inputs))
             graph.output(outputs)
 
-        self._model = self._load_graph(
-            graph, weights_registry=module.state_dict()
-        )
+        self._load_graph(graph, weights_registry=module.state_dict())
 
     @traced(message="TextEncoder.__call__")
     def __call__(self, tokens: Buffer) -> Buffer:
