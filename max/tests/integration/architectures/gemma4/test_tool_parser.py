@@ -1929,3 +1929,553 @@ def test_null_type_standalone_accepts_null(
     tokens = minimal_tokenizer(wire_str)
     accepted = matcher.validate_tokens(tokens)
     assert accepted < len(tokens), "string should be rejected for type 'null'"
+
+
+# ---------------------------------------------------------------------------
+# additionalProperties enforcement
+# ---------------------------------------------------------------------------
+
+
+def test_additional_properties_true_top_level_accepts_extra(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """additionalProperties: true at top level accepts undeclared properties."""
+    tool_schemas = {
+        "flexible": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+            },
+            "required": ["name"],
+            "additionalProperties": True,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    wire = (
+        f"<|tool_call>call:flexible"
+        f"{{name:{sd}Alice{sd},age:30,email:{sd}alice@example.com{sd}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "additionalProperties:true should accept extra properties"
+    )
+
+
+def test_additional_properties_false_top_level_rejects_extra(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """additionalProperties: false at top level rejects undeclared properties."""
+    tool_schemas = {
+        "strict": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string"},
+                "country": {"type": "string"},
+            },
+            "required": ["city", "country"],
+            "additionalProperties": False,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    bad = (
+        f"<|tool_call>call:strict"
+        f"{{city:{sd}Tokyo{sd},country:{sd}Japan{sd},population:14000000}}"
+        f"<tool_call|>"
+    )
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), (
+        "additionalProperties:false should reject extra properties"
+    )
+
+
+def test_additional_properties_true_nested_accepts_extra(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """additionalProperties: true on a nested object accepts extra properties."""
+    tool_schemas = {
+        "send": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "object",
+                    "properties": {
+                        "city": {"type": "string"},
+                    },
+                    "required": ["city"],
+                    "additionalProperties": True,
+                },
+            },
+            "required": ["address"],
+            "additionalProperties": False,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    wire = (
+        f"<|tool_call>call:send"
+        f"{{address:{{city:{sd}NYC{sd},zip:10001,state:{sd}NY{sd}}}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "additionalProperties:true on nested object should accept extra props"
+    )
+
+
+def test_additional_properties_false_nested_rejects_extra(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """additionalProperties: false on a nested object rejects extra properties."""
+    tool_schemas = {
+        "send": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "object",
+                    "properties": {
+                        "city": {"type": "string"},
+                    },
+                    "required": ["city"],
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["address"],
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    bad = (
+        f"<|tool_call>call:send"
+        f"{{address:{{city:{sd}NYC{sd},zip:10001}}}}"
+        f"<tool_call|>"
+    )
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), (
+        "additionalProperties:false on nested object should reject extra props"
+    )
+
+
+def test_additional_properties_mixed_levels(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """Top-level false + nested true: extras rejected at top, accepted in nested."""
+    tool_schemas = {
+        "update": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "metadata": {
+                    "type": "object",
+                    "properties": {
+                        "source": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                },
+            },
+            "required": ["id", "metadata"],
+            "additionalProperties": False,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    sd = '<|"|>'
+
+    # Extra props inside metadata: accepted
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    good = (
+        f"<|tool_call>call:update"
+        f"{{id:42,metadata:{{source:{sd}api{sd},version:3}}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(good)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "Extra props inside nested object with additionalProperties:true should be accepted"
+    )
+
+    # Extra props at top level: rejected
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    bad = (
+        f"<|tool_call>call:update"
+        f"{{id:42,metadata:{{source:{sd}api{sd}}},extra:{sd}nope{sd}}}"
+        f"<tool_call|>"
+    )
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), (
+        "Extra props at top level with additionalProperties:false should be rejected"
+    )
+
+
+def test_additional_properties_true_only_extra(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """With additionalProperties:true and all-optional declared props, only extra props work."""
+    tool_schemas = {
+        "flex": {
+            "type": "object",
+            "properties": {
+                "tag": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    # Skip the declared optional prop, provide only additional ones
+    wire = (
+        f"<|tool_call>call:flex"
+        f"{{custom:{sd}hello{sd},count:5}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "Should accept only-additional properties when declared props are optional"
+    )
+
+
+def test_additional_properties_true_no_extra_still_works(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """additionalProperties:true does not break normal schema-only usage."""
+    tool_schemas = {
+        "get_weather": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string"},
+                "unit": {"type": "string"},
+            },
+            "required": ["location"],
+            "additionalProperties": True,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    wire = (
+        f"<|tool_call>call:get_weather"
+        f"{{location:{sd}Tokyo{sd},unit:{sd}celsius{sd}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "additionalProperties:true should not break normal usage"
+    )
+
+
+def test_additional_properties_schema_object(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """additionalProperties as a schema object constrains extra-property types."""
+    tool_schemas = {
+        "terminate_eval": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                },
+                "summary": {"type": "string"},
+                "next_steps": {"type": "string"},
+            },
+            "required": ["status", "details", "summary", "next_steps"],
+            "additionalProperties": False,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    good = (
+        f"<|tool_call>call:terminate_eval"
+        f"{{status:{sd}failed{sd},"
+        f"details:[{{validator:[{sd}TypeError{sd},{sd}ValueError{sd}]}},"
+        f"{{scheduler:[{sd}TimeoutError{sd}]}}],"
+        f"summary:{sd}3 errors in 2 modules{sd},"
+        f"next_steps:{sd}Fix type errors and scheduler timeout{sd}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(good)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "Schema-object additionalProperties should accept typed extras"
+    )
+
+    bad = (
+        f"<|tool_call>call:terminate_eval"
+        f"{{status:{sd}failed{sd},"
+        f"details:[{{validator:{sd}not_an_array{sd}}}],"
+        f"summary:{sd}err{sd},"
+        f"next_steps:{sd}fix{sd}}}"
+        f"<tool_call|>"
+    )
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), (
+        "Schema-object additionalProperties should reject wrong value type"
+    )
+
+
+def test_additional_properties_schema_object_top_level(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """additionalProperties as a schema object at top level constrains extra-property types."""
+    tool_schemas = {
+        "record": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+            },
+            "required": ["name"],
+            "additionalProperties": {"type": "integer"},
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    good = (
+        f"<|tool_call>call:record"
+        f"{{name:{sd}Alice{sd},age:30,score:100}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(good)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "Top-level schema-object additionalProperties should accept typed extras"
+    )
+
+    bad = (
+        f"<|tool_call>call:record"
+        f"{{name:{sd}Alice{sd},age:{sd}not_an_integer{sd}}}"
+        f"<tool_call|>"
+    )
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), (
+        "Top-level schema-object additionalProperties should reject wrong value type"
+    )
+
+
+def test_additional_properties_schema_object_no_properties(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """Object with no declared properties, only schema-object additionalProperties."""
+    tool_schemas = {
+        "bag": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    good = (
+        f"<|tool_call>call:bag"
+        f"{{tags:[{sd}a{sd},{sd}b{sd}],names:[{sd}Alice{sd}]}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(good)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "Properties-less object with schema-object AP should accept typed extras"
+    )
+
+    bad = f"<|tool_call>call:bag{{tags:{sd}not_an_array{sd}}}<tool_call|>"
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), (
+        "Properties-less object with schema-object AP should reject wrong value type"
+    )
+
+
+def test_additional_properties_default_rejects_extra(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """Omitting additionalProperties defaults to false — rejects extras."""
+    tool_schemas = {
+        "lookup": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+            },
+            "required": ["id"],
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+
+    bad = "<|tool_call>call:lookup{id:42,extra:99}<tool_call|>"
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), (
+        "Omitted additionalProperties should default to false"
+    )
+
+
+def test_additional_properties_schema_object_nested_no_properties(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """Nested object property with no declared properties, only schema-object AP."""
+    tool_schemas = {
+        "report": {
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+            },
+            "required": ["metadata"],
+            "additionalProperties": False,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    good = (
+        f"<|tool_call>call:report"
+        f"{{metadata:{{errors:[{sd}TypeError{sd}],warnings:[{sd}deprecation{sd}]}}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(good)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "Nested properties-less object with schema-object AP should accept typed extras"
+    )
+
+    bad = (
+        f"<|tool_call>call:report"
+        f"{{metadata:{{errors:{sd}not_an_array{sd}}}}}"
+        f"<tool_call|>"
+    )
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), (
+        "Nested properties-less object with schema-object AP should reject wrong type"
+    )
+
+
+def test_additional_properties_true_no_properties_top_level(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """Top-level object with additionalProperties:true and no declared properties."""
+    tool_schemas = {
+        "freeform": {
+            "type": "object",
+            "additionalProperties": True,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    wire = (
+        f"<|tool_call>call:freeform"
+        f"{{name:{sd}Alice{sd},age:30,active:true}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), (
+        "additionalProperties:true with no properties should accept any extras"
+    )

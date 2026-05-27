@@ -51,6 +51,14 @@ def _tool_call_rule(
     return f'{tcs_ref} "call:" {func_ref} "{{" {body} "}}" {tce_ref}'
 
 
+def _has_schema_constraints(schema: dict[str, Any]) -> bool:
+    """Return True if *schema* declares properties or additionalProperties."""
+    return (
+        bool(schema.get("properties"))
+        or schema.get("additionalProperties", False) is not False
+    )
+
+
 def _extract_tool_schemas(
     tools: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]] | None:
@@ -344,6 +352,7 @@ def _generate_ordered_args_rule(
     required: set[str],
     prop_names: list[str],
     rules_parts: list[str],
+    ap_value_rule: str | None = None,
 ) -> str:
     """Generate Lark suffix rules enforcing fixed property order.
 
@@ -352,6 +361,18 @@ def _generate_ordered_args_rule(
     impossible by construction since each property has exactly one slot.
     """
     n = len(prop_rule_names)
+
+    if ap_value_rule is not None:
+        n += 1
+        ap_rule_name = f"ap_{prefix}"
+        ap_arg_name = f"ap_{prefix}_arg"
+        rules_parts.append(f'{ap_arg_name}: KEY ":" {ap_value_rule}')
+        rules_parts.append(
+            f'{ap_rule_name}: {ap_arg_name} ("," {ap_arg_name})*'
+        )
+        prop_names.append(ap_rule_name)
+        prop_rule_names.append(ap_rule_name)
+
     if n == 0:
         return ""
 
@@ -473,6 +494,24 @@ class Gemma4ToolParser(StructuralTagToolParser):
         return r"[a-zA-Z0-9_\-\.]+"
 
     @staticmethod
+    def _resolve_ap_value_rule(
+        schema: dict[str, Any],
+        rule_prefix: str,
+        sd_ref: str,
+        rules_parts: list[str],
+        depth: int = 0,
+    ) -> str | None:
+        """Resolve ``additionalProperties`` to a Lark value rule name."""
+        ap = schema.get("additionalProperties", False)
+        if ap is False:
+            return None
+        if ap is True:
+            return "value"
+        return Gemma4ToolParser._generate_property_value_rule(
+            ap, f"{rule_prefix}_ap_val", sd_ref, rules_parts, depth
+        )
+
+    @staticmethod
     def _generate_property_value_rule(
         prop_schema: dict[str, Any],
         rule_prefix: str,
@@ -503,8 +542,8 @@ class Gemma4ToolParser(StructuralTagToolParser):
             rules_parts.append(f"{union_rule}: " + " | ".join(alternatives))
             return union_rule
 
-        if json_type == "object" and prop_schema.get("properties"):
-            nested_props = prop_schema["properties"]
+        if json_type == "object" and _has_schema_constraints(prop_schema):
+            nested_props = prop_schema.get("properties", {})
             nested_required = set(prop_schema.get("required", []))
             nested_prop_rules: list[str] = []
             nested_prop_names: list[str] = []
@@ -532,6 +571,9 @@ class Gemma4ToolParser(StructuralTagToolParser):
                 nested_required,
                 nested_prop_names,
                 rules_parts,
+                Gemma4ToolParser._resolve_ap_value_rule(
+                    prop_schema, rule_prefix, sd_ref, rules_parts, depth + 1
+                ),
             )
             rules_parts.append(f'{obj_rule}: "{{" {args_rule} "}}"')
             return obj_rule
@@ -569,7 +611,7 @@ class Gemma4ToolParser(StructuralTagToolParser):
             schema = tool_schemas.get(name, {})
             properties = schema.get("properties", {})
 
-            if not properties:
+            if not _has_schema_constraints(schema):
                 tool_call_alternatives.append(
                     _tool_call_rule(
                         f'"{escape_for_lark_string(name)}"',
@@ -580,13 +622,12 @@ class Gemma4ToolParser(StructuralTagToolParser):
                 )
                 continue
 
+            prefix = f"tc_{safe}"
             required = set(schema.get("required", []))
             prop_rule_names: list[str] = []
             prop_names: list[str] = []
             for prop_name, prop_schema in properties.items():
-                rule_name = (
-                    f"tc_{safe}_{canonicalize_lark_rule_name(prop_name)}"
-                )
+                rule_name = f"{prefix}_{canonicalize_lark_rule_name(prop_name)}"
                 value_rule = Gemma4ToolParser._generate_property_value_rule(
                     prop_schema, rule_name, sd_ref, rules_parts
                 )
@@ -597,11 +638,14 @@ class Gemma4ToolParser(StructuralTagToolParser):
                 prop_names.append(prop_name)
 
             args_rule = _generate_ordered_args_rule(
-                f"tc_{safe}",
+                prefix,
                 prop_rule_names,
                 required,
                 prop_names,
                 rules_parts,
+                Gemma4ToolParser._resolve_ap_value_rule(
+                    schema, prefix, sd_ref, rules_parts
+                ),
             )
             tool_call_alternatives.append(
                 _tool_call_rule(
@@ -670,7 +714,8 @@ class Gemma4ToolParser(StructuralTagToolParser):
             tool_schemas is not None
             and tool_names is not None
             and any(
-                tool_schemas.get(n, {}).get("properties") for n in tool_names
+                _has_schema_constraints(tool_schemas.get(n, {}))
+                for n in tool_names
             )
         )
 
