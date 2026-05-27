@@ -999,7 +999,7 @@ def test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExamp
     return a if x else b
 
 
-struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable]:
+struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & ImplicitlyDestructible]:
     var a: Self.T
     var b: Self.T
 
@@ -1353,7 +1353,7 @@ def origin_of_def_arg(a: String) raises:
 
 # MOCO-1542: Need to rebind field type when checking size.
 @fieldwise_init
-struct MyParameterizedField[T: ImplicitlyCopyable](ImplicitlyCopyable):
+struct MyParameterizedField[T: ImplicitlyCopyable & ImplicitlyDestructible](ImplicitlyCopyable, ImplicitlyDestructible):
   var a: Self.T
   var b: Self.T
 
@@ -1394,7 +1394,7 @@ struct SomeStruct:
     def __init__(out self) raises:
         self.test_agent = SomeValue(123)
 
-struct SomeValue[T: ImplicitlyCopyable]:
+struct SomeValue[T: ImplicitlyCopyable & ImplicitlyDestructible]:
     var value: Self.T
     var name: String
     var tmp: Int
