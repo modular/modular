@@ -310,6 +310,15 @@ __extension Attention:
                 if tile_status == TileMaskStatus.FULL_MASK:
                     self.kv_start_row += UInt32(Self.BN)
                     self.mask_advance()
+                    # When `shared_kv`, V DMA is deferred to mid-tile (inside
+                    # the non-skipped branch below) and `prefetch_next` only
+                    # advances K's iterator.  Skipped FULL_MASK tiles must
+                    # still advance V's iterator manually, or the first
+                    # PARTIAL_MASK tile (e.g.  SlidingWindow visible window
+                    # after many FULL_MASK tiles) would load V from the
+                    # original start row instead of the current row.
+                    comptime if shared_kv and not Self.mla_kv_alias:
+                        v_dma_buffer.kv_cache_iter.increment()
                     comptime if has_next:
                         prefetch_next[slot]()
                     return
