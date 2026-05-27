@@ -31,7 +31,7 @@ from extensibility import (
 )
 from extensibility import FusedOutput
 from extensibility import StaticTensorSpec
-from builtin_kernels import Range
+from common_kernels import Range
 
 from std.utils.numerics import get_accum_type
 

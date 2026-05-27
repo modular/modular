@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "gather_scatter_kernels",
+    srcs = glob(["**/*.mojo"]),
+    docs_base_path = "kernels",
+    validate_missing_docs = False,
+    deps = [
+        "//max:builtin_primitives",
+        "//max:common_kernels",
+        "//max:extensibility",
+        "//max:layout",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)

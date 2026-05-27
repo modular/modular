@@ -296,7 +296,7 @@ struct NanCheckCountOp:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        from .nan_check import nan_check_count
+        from nan_check_kernels import nan_check_count
 
         nan_check_count[dtype, rank, target](
             nan_count_out, inf_count_out, input, ctx
@@ -321,7 +321,7 @@ struct NanCheckRaiseOp:
         inf_count: InputTensor[dtype=DType.int32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        from .nan_check import nan_check_raise
+        from nan_check_kernels import nan_check_raise
 
         nan_check_raise[label, type_str](nan_count, inf_count)
 

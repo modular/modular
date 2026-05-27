@@ -93,8 +93,8 @@ comptime logger = Logger()
 from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
-from .kernels import (
+from common_kernels import *
+from common_kernels import (
     _execute_mha_ragged_paged_scalar_args,
     _unmarshal_mha_decode_dispatch_metadata,
     _unsafe_str_to_coord,

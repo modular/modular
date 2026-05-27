@@ -27,7 +27,7 @@ from std.algorithm.functional import elementwise, IndexList
 from std.reflection import reflect
 
 from extensibility import ElementwiseBinaryComparisonOp
-from builtin_kernels import (
+from elementwise_kernels import (
     Equal,
     Greater,
     GreaterEqual,

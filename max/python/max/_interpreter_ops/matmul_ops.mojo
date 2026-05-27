@@ -27,7 +27,7 @@ from extensibility import (
 )
 from extensibility import Input, _FusedComputeOutput
 from extensibility import StaticTensorSpec
-from builtin_kernels import BatchMatmul as BatchMatmulKernel
+from linalg_kernels import BatchMatmul as BatchMatmulKernel
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 

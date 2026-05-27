@@ -29,7 +29,7 @@ from extensibility import ManagedTensorSlice
 from extensibility import Input, MutableInput, Output
 from extensibility import StaticTensorSpec
 from layout import IntTuple, create_unknown_int_tuple
-from builtin_kernels import (
+from gather_scatter_kernels import (
     MutableStoreSlice,
     Slice,
     StaticBroadcastTo,

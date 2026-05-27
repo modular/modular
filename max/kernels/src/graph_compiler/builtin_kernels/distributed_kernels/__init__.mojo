@@ -55,8 +55,8 @@ comptime logger = Logger()
 from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
-from .kernels import (
+from common_kernels import *
+from common_kernels import (
     _check_signal_buffer_size,
     _launch_device_collective,
     _partitioned_scratch_requirement,

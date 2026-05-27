@@ -49,8 +49,8 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
-from .kernels import (
+from common_kernels import *
+from common_kernels import (
     _layout_transform_conv_filter_from_fcrs,
 )
 
