@@ -291,7 +291,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 self.huggingface_config.num_attention_heads,
                 self.huggingface_config.num_key_value_heads,
                 self.huggingface_config.head_dim,
-                pipeline_config.runtime.zmq_endpoint_base,
             )
             if pipeline_config.lora
             else None

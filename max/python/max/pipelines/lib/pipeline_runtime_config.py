@@ -20,7 +20,6 @@ import os
 from max.config import ConfigFileModel
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.modeling.config_enums import PipelineRole
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, PrivateAttr
 
 # Default max batch input tokens for chunked prefill and memory estimation.
@@ -175,16 +174,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "or an ``IMPORT_PATH:MODULE_NAME`` colon-form. Each module must "
             "expose a top-level ``ARCHITECTURES`` list of "
             "``SupportedArchitecture`` instances."
-        ),
-    )
-
-    zmq_endpoint_base: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description=(
-            "Prefix for ZMQ endpoints used for IPC. This ensures unique "
-            "endpoints across MAX Serve instances on the same host. Example: "
-            "``lora_request_zmq_endpoint = "
-            'f"{zmq_endpoint_base}-lora_request"``.'
         ),
     )
 

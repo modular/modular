@@ -26,6 +26,7 @@ from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 
 logger = logging.getLogger("max.entrypoints")
 
@@ -100,6 +101,7 @@ def start_workers(
                 METRICS.configure(client=metric_client)
 
                 # Start Model Worker
+                zmq_endpoint_base = generate_zmq_ipc_path()
                 _ = await exit_stack.enter_async_context(
                     start_model_worker(
                         pipeline_factory,
@@ -112,6 +114,7 @@ def start_workers(
                                 pipeline_config
                             ),
                         ),
+                        zmq_endpoint_base=zmq_endpoint_base,
                     )
                 )
 

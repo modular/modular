@@ -76,11 +76,7 @@ class MockLoRARequestProcessor:
 
 @pytest.fixture
 def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
-    """Create a LoRAManager instance with mocked ZMQ handler and locks disabled."""
-    monkeypatch.setattr(
-        "max.pipelines.lib.lora.LoRARequestProcessor", MockLoRARequestProcessor
-    )
-
+    """Create a LoRAManager instance with mocked load_weights and locks disabled."""
     mock_load_weights = MagicMock()
     monkeypatch.setattr(
         "max.pipelines.lib.lora.load_weights", mock_load_weights
@@ -97,7 +93,6 @@ def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
-        zmq_endpoint_base="fake",
     )
 
     manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore
@@ -174,7 +169,7 @@ def test_zmq_handler_direct(
 ) -> None:
     """Test the ZMQ handler functionality directly."""
 
-    handler = lora_manager._request_processor
+    handler = MockLoRARequestProcessor(lora_manager, "fake")
 
     load_request = LoRARequest(
         operation=LoRAOperation.LOAD,
@@ -317,10 +312,6 @@ def test_lru_cache_manual_activation(
 def test_lora_bias_config_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that LoRA adapters with bias configuration are rejected."""
 
-    monkeypatch.setattr(
-        "max.pipelines.lib.lora.LoRARequestProcessor", MockLoRARequestProcessor
-    )
-
     bias_configs_to_test = ["all", "lora_only"]
 
     for bias_config in bias_configs_to_test:
@@ -365,7 +356,6 @@ def test_lora_bias_config_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
                 n_heads=32,
                 n_kv_heads=8,
                 head_dim=128,
-                zmq_endpoint_base="fake",
             )
 
             manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore
@@ -378,14 +368,6 @@ def test_lora_bias_config_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_lora_bias_none_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that LoRA adapters with bias='none' are accepted."""
-    import numpy as np
-    from safetensors.numpy import save_file
-
-    # Mock the LoRARequestProcessor to avoid ZMQ setup
-    monkeypatch.setattr(
-        "max.pipelines.lib.lora.LoRARequestProcessor", MockLoRARequestProcessor
-    )
-
     mock_lora_model = MagicMock()
     monkeypatch.setattr("max.pipelines.lib.lora.LoRAModel", mock_lora_model)
 
@@ -428,7 +410,6 @@ def test_lora_bias_none_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
             n_heads=32,
             n_kv_heads=8,
             head_dim=128,
-            zmq_endpoint_base="fake",
         )
 
         # Mock path validation to pass initial checks
@@ -462,11 +443,6 @@ def test_lora_allocation_respects_protected_tg_loras(
         can_allocate_lora_request,
     )
 
-    # Mock the LoRARequestProcessor to avoid ZMQ setup
-    monkeypatch.setattr(
-        "max.pipelines.lib.lora.LoRARequestProcessor", MockLoRARequestProcessor
-    )
-
     mock_load_weights = MagicMock()
     monkeypatch.setattr(
         "max.pipelines.lib.lora.load_weights", mock_load_weights
@@ -487,7 +463,6 @@ def test_lora_allocation_respects_protected_tg_loras(
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
-        zmq_endpoint_base="fake",
     )
 
     manager._validate_lora_path = lambda _: LoRAStatus.SUCCESS  # type: ignore

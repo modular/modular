@@ -40,6 +40,7 @@ from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -239,9 +240,10 @@ async def _async_worker(
     pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
         pipeline_config.models.main_architecture_name,
     )
+    zmq_endpoint_base = generate_zmq_ipc_path()
     lora_queue: LoRAQueue | None = (
         LoRAQueue(
-            pipeline_config.runtime.zmq_endpoint_base,
+            zmq_endpoint_base,
             pipeline_config.lora.lora_paths,
         )
         if pipeline_config.lora
@@ -262,6 +264,7 @@ async def _async_worker(
             settings=settings,
             metric_client=metric_client,
             model_worker_interface=model_worker_interface,
+            zmq_endpoint_base=zmq_endpoint_base,
         ) as model_worker,
     ):
         pipeline = TokenGeneratorPipeline(
