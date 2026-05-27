@@ -35,10 +35,9 @@ bool LIT::isMetaType(Type type) {
     return isMetaType(genType.getBody());
   if (auto param = dyn_cast<ParamType>(type))
     return sugarIsa<StructMetaType, AnyTraitType>(param.getParam().getType());
-  if (isa<NonStructTypeType, StructMetaType, StructMetaMetaType, TraitType,
-          AnyTraitType, TypeType, FnLiteralTypeGeneratorMetaType>(type))
-    return true;
-  return false;
+  return isa<NonStructTypeType, StructMetaType, StructMetaMetaType, TraitType,
+             AnyTraitType, TypeType, FnLiteralTypeGeneratorMetaType,
+             FnLiteralTypeGeneratorMetaMetaType>(type);
 }
 bool LIT::isVariadicOfMetaType(Type type) {
   auto va = sugarDynCast<ParamListType>(type);
@@ -47,9 +46,11 @@ bool LIT::isVariadicOfMetaType(Type type) {
 
 bool LIT::isFirstLevelTypeExpr(TypedAttr typeExpr) {
   auto type = SugarAttr::strip(typeExpr.getType());
-  if (auto param = dyn_cast<ParamType>(type))
-    return sugarIsa<StructMetaMetaType, AnyTraitType>(
+  if (auto param = dyn_cast<ParamType>(type)) {
+    return sugarIsa<StructMetaMetaType, AnyTraitType,
+                    FnLiteralTypeGeneratorMetaMetaType>(
         param.getParam().getType());
+  }
   if (isa<StructMetaType, TraitType, NonStructTypeType,
           FnLiteralTypeGeneratorMetaType>(type))
     return true;

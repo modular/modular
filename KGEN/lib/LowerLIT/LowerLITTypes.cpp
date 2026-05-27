@@ -296,6 +296,8 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](FnLiteralTypeGeneratorMetaType) { return typeType; });
   replacer.addInferredDomainNonRecursiveReplacement(
+      [=](FnLiteralTypeGeneratorMetaMetaType) { return typeType; });
+  replacer.addInferredDomainNonRecursiveReplacement(
       [=](NonStructTypeType) { return typeType; });
 
   // #lit.ref.pack => #kgen.struct

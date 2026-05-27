@@ -809,8 +809,8 @@ isValidUpCastToTypeType(SharedState &shared, ASTType fromType, ASTType toType) {
   if (sugarIsa<TypeType>(toType)) {
     // Allowing casting from any metatype to type of all types.
     return sugarIsa<StructMetaType, StructMetaMetaType, TraitType, AnyTraitType,
-                    TypeType, NonStructTypeType,
-                    FnLiteralTypeGeneratorMetaType>(fromType);
+                    TypeType, NonStructTypeType, FnLiteralTypeGeneratorMetaType,
+                    FnLiteralTypeGeneratorMetaMetaType>(fromType);
   }
 
   // Not applicable.
@@ -1407,6 +1407,20 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
   if (succeeded(upCastable))
     return upCastable;
 
+  auto canFnLiteralUpCastToTrait = [&](TypedAttr fnPValue,
+                                       AnyTraitType anyTrait) {
+    TraitType closureTrait = anyTrait.getTraitType();
+    if (auto traitDecl = getClosureTraitDecl(shared, closureTrait)) {
+      Type concreteWrapperType =
+          shared.getClosureEmitter().getConcreteClosureWrapperTypeForFnSymbol(
+              *declScope, loc, fnPValue);
+      return succeeded(shared.getClosureEmitter().isCompatibleWith(
+          concreteWrapperType, traitDecl));
+    }
+    // Maintain convertibility as a MLIR type ...
+    return checkMLIRTypeConformance(shared, loc, closureTrait);
+  };
+
   // Values of known {struct/trait/mlir} type can convert to any trait type
   // they implement.
   if (auto anyTrait = sugarDynCast<AnyTraitType>(toType.extractMetaType())) {
@@ -1446,17 +1460,8 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
     } else if (auto fnGen =
                    sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(
                        fromType)) {
-      TraitType closureTrait = anyTrait.getTraitType();
-      if (auto traitDecl = getClosureTraitDecl(shared, closureTrait)) {
-        TypedAttr fnPValue = fnGen.getType().getSymbolConstantAttr();
-        Type concreteWrapperType =
-            shared.getClosureEmitter().getConcreteClosureWrapperTypeForFnSymbol(
-                *declScope, loc, fnPValue);
-        return succeeded(shared.getClosureEmitter().isCompatibleWith(
-            concreteWrapperType, traitDecl));
-      }
-      // Maintain convertibility as a MLIR type ...
-      return checkMLIRTypeConformance(shared, loc, closureTrait);
+      return canFnLiteralUpCastToTrait(fnGen.getType().getSymbolConstantAttr(),
+                                       anyTrait);
     } else {
       // This isn't relevant, e.g. in function pointer to closure case.
       return failure();
@@ -1465,6 +1470,16 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
   }
 
   if (auto anyTrait = sugarDynCast<AnyTraitType>(toType)) {
+    // Upcasts to a closure trait by inflating the function literal to its
+    // closure-wrapper struct, then checking that the wrapper conforms. This
+    // mirrors the corresponding FnLiteralTypeGeneratorMetaType branch above but
+    // one metatype level up.
+    if (auto fnGen = sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaMetaType>(
+            fromType)) {
+      return canFnLiteralUpCastToTrait(
+          fnGen.getType().getType().getSymbolConstantAttr(), anyTrait);
+    }
+
     ASTType concreteType;
     // 2 cases, e.g,:
     // 1st, AnyTraitType[Copyable] to AnyTraitType[AnyType].
@@ -1681,6 +1696,21 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   auto emitTypeValueUpCastToTrait =
       [this](ASTExprAnd<CValue> valueExpr, ASTType fromType,
              ASTType toType) -> FailureOr<PValue> {
+    auto emitFnLiteralUpCastToTrait = [&](TypedAttr fnPValue,
+                                          AnyTraitType anyTrait) {
+      TraitType closureTrait = anyTrait.getTraitType();
+      if (auto traitDecl = getClosureTraitDecl(shared, closureTrait)) {
+        ASTType structWrapper =
+            shared.getClosureEmitter().getConcreteClosureWrapperTypeForFnSymbol(
+                declScope, valueExpr.expr->getLoc(), fnPValue);
+        (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
+            structWrapper, traitDecl);
+        return emitMetaTypeToTraitConversion(
+            {PValue(structWrapper), valueExpr.expr}, closureTrait);
+      }
+      // FnTypeGeneratorType is still a non-struct type...
+      return bindNonStructTypeToTrait(valueExpr, anyTrait.getTraitType());
+    };
     // Emit metatype conversions to trait types if the metatype implements
     // the specified trait.
     if (auto anyTrait = sugarDynCast<AnyTraitType>(toType.extractMetaType())) {
@@ -1709,20 +1739,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
 
       if (auto fnGen =
               sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(fromType)) {
-        if (auto traitDecl = getClosureTraitDecl(shared, trait)) {
-          TypedAttr fnPValue = fnGen.getType().getSymbolConstantAttr();
-          ASTType structWrapper =
-              shared.getClosureEmitter()
-                  .getConcreteClosureWrapperTypeForFnSymbol(
-                      declScope, valueExpr.expr->getLoc(), fnPValue);
-          (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
-              structWrapper, traitDecl);
-          return emitMetaTypeToTraitConversion(
-              {PValue(structWrapper), valueExpr.expr}, trait);
-        }
-
-        // FnTypeGeneratorType is still a non-struct type...
-        return bindNonStructTypeToTrait(valueExpr, trait);
+        return emitFnLiteralUpCastToTrait(
+            fnGen.getType().getSymbolConstantAttr(), anyTrait);
       }
     }
 
@@ -1730,6 +1748,14 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     // This is a conversion of things like "the Movable type" (which has
     // type "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
     if (auto anyTrait = sugarDynCast<AnyTraitType>(toType)) {
+      if (auto fnGen =
+              sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaMetaType>(
+                  fromType)) {
+        auto closureMetaType = emitFnLiteralUpCastToTrait(
+            fnGen.getType().getType().getSymbolConstantAttr(), anyTrait);
+        return PValue(TypeParamAttr::get(closureMetaType.getType(), anyTrait));
+      }
+
       PValue typePValue = valueExpr.ir.getIfPValue();
       if (!typePValue) {
         emitError(valueExpr.expr->getLoc(),

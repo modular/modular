@@ -389,6 +389,19 @@ public:
   FnLiteralTypeGeneratorMetaType(Base base) : Base(base) {}
 };
 
+class FnLiteralTypeGeneratorMetaMetaType
+    : public MetaTypeOf<FnLiteralTypeGeneratorMetaType> {
+private:
+  using Base = MetaTypeOf<FnLiteralTypeGeneratorMetaType>;
+
+public:
+  using Base::classof;
+  using Base::get;
+  using Base::MetaTypeOf;
+
+  FnLiteralTypeGeneratorMetaMetaType(Base base) : Base(base) {}
+};
+
 //===----------------------------------------------------------------------===//
 // Type Utilities
 //===----------------------------------------------------------------------===//
