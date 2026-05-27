@@ -83,7 +83,7 @@ def run_rms_norm_gpu[
     @__copy_capture(data_buf)
     @parameter
     def identity_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(Coord(coords))
         data_buf.raw_store[width=width, alignment=alignment](idx, val)

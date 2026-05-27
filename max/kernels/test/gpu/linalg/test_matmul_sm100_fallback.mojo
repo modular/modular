@@ -119,7 +119,7 @@ def test_matmul_sm100_fallback[
     @__copy_capture(c_tensor_lt)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:

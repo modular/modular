@@ -599,7 +599,7 @@ def matmul[
         @parameter
         @always_inline
         def cast_epilogue[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](coord: IndexList[2], val: SIMD[dtype, width]):
             var cast_val = val.cast[c.dtype]()
             comptime if elementwise_lambda_fn:

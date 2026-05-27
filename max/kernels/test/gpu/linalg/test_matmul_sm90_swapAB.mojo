@@ -361,7 +361,7 @@ def main() raises:
         @always_inline
         def coord_lambda[
             _dtype: DType,
-            width: Int,
+            width: SIMDSize,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[

@@ -307,7 +307,7 @@ def _warp_reduce_launch_helper[
     @parameter
     def reduce_add[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
@@ -502,7 +502,7 @@ def _lane_group_reduce_launch_helper[
     @parameter
     def reduce_add[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 

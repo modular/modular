@@ -395,7 +395,7 @@ def _launch_plain_conv[
     @__copy_capture(output, H_out, W_out, HW_out)
     def composed_epilogue[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:

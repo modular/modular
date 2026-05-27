@@ -218,7 +218,7 @@ def run_matvec_with_epilogue_fn(
     @always_inline
     @__copy_capture(c_device_nd, const_val)
     def epilogue_fn[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
             Coord(idx),

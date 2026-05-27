@@ -795,7 +795,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def raw_store[
-        width: Int = 1,
+        width: SIMDSize = 1,
         alignment: Int = align_of[Self.dtype](),
         non_temporal: Bool = False,
     ](

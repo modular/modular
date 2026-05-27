@@ -141,7 +141,7 @@ def run_rms_norm_fused_residual_gpu[
     @always_inline
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_tensor.store[width=width](coords, val)
 
@@ -149,7 +149,7 @@ def run_rms_norm_fused_residual_gpu[
     @always_inline
     @parameter
     def residual_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         residual_output_tensor.store[width=width](coords, val)
 

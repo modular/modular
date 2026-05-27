@@ -191,7 +191,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     @__copy_capture(c_tensor, M, N)
     def epilogue_fn[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         rank: Int,
         *,
         alignment: Int = 1,

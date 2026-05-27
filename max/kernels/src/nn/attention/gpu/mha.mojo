@@ -1777,7 +1777,7 @@ def get_waves_per_eu(depth: Int) -> Int:
 # `IntervalMap.h "Overlapping insert"` variant covered by
 # `test_mha_gemma4_sink_repro.mojo`). Harmless on NVIDIA — the attribute is
 # AMDGPU-specific and ignored elsewhere.
-@__llvm_metadata(`rocdl.no_agpr`=Int(1))
+@__llvm_metadata(`rocdl.no_agpr`=SIMDSize(1))
 @__name(
     t"mha_depth{config.depth}_{q_type}_{output_type}_{ragged}_{is_shared_kv}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
 )

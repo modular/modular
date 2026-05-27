@@ -82,7 +82,7 @@ def run_layer_norm_block[
     @always_inline
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(row, col))
         data_buf.raw_store[width=width, alignment=alignment](
@@ -199,7 +199,7 @@ def run_layer_norm_gpu[
     @always_inline
     @parameter
     def output_fn[
-        width: Int, rank_: Int, alignment: Int
+        width: SIMDSize, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(coords))
         data_buf.raw_store[width=width, alignment=alignment](
@@ -289,7 +289,7 @@ def run_layer_norm_warp_tiling[
     @always_inline
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(row, col))
         data_buf.raw_store[width=width, alignment=alignment](

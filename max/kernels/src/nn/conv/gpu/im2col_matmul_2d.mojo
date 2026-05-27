@@ -328,7 +328,7 @@ def dispatch_im2col_matmul_conv2d[
             @__copy_capture(HW_out, W_out, m_offset)
             def _gemm_epilogue[
                 _dtype: DType,
-                _width: Int,
+                _width: SIMDSize,
                 *,
                 alignment: Int = 1,
             ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):

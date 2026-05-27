@@ -65,7 +65,7 @@ def partial_simd_load[
 
 @always_inline
 def partial_simd_store[
-    dtype: DType, //, width: Int
+    dtype: DType, //, width: SIMDSize
 ](
     storage: UnsafePointer[mut=True, Scalar[dtype], ...],
     lbound: Int,

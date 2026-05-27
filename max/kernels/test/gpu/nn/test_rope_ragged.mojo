@@ -178,7 +178,7 @@ def _test_rope_ragged_gpu_impl[
     @always_inline
     @__copy_capture(q_out_device_tensor)
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
         q_out_device_tensor.store[width=width](Coord(idx), val)
 

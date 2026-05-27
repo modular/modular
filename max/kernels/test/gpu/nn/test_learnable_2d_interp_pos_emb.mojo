@@ -69,8 +69,10 @@ def test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
     var half = dim // 2
     for t in range(num_frames):
         for d in range(half):
-            var omega = 1.0 / (10000.0 ** (Float32(2 * d) / Float32(dim)))
-            var angle = Float32(t) * omega
+            var omega = 1.0 / (
+                Float32(10000.0) ** (Float32(2 * d) / Float32(dim))
+            )
+            var angle = Float32(t) * Float32(omega)
             tw_tt[t, d] = sin(angle)
             tw_tt[t, half + d] = cos(angle)
 
@@ -152,8 +154,10 @@ def test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
     var half = dim // 2
     for t in range(num_frames):
         for d in range(half):
-            var omega = 1.0 / (10000.0 ** (Float32(2 * d) / Float32(dim)))
-            var angle = Float32(t) * omega
+            var omega = 1.0 / (
+                Float32(10000.0) ** (Float32(2 * d) / Float32(dim))
+            )
+            var angle = Float32(t) * Float32(omega)
             tw_tt[t, d] = sin(angle)
             tw_tt[t, half + d] = cos(angle)
 
@@ -242,8 +246,10 @@ def test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
     var half = dim // 2
     for t in range(num_frames):
         for d in range(half):
-            var omega = 1.0 / (10000.0 ** (Float32(2 * d) / Float32(dim)))
-            var angle = Float32(t) * omega
+            var omega = 1.0 / (
+                Float32(10000.0) ** (Float32(2 * d) / Float32(dim))
+            )
+            var angle = Float32(t) * Float32(omega)
             tw_tt[t, d] = sin(angle)
             tw_tt[t, half + d] = cos(angle)
 
@@ -345,8 +351,10 @@ def test_multi_video[dtype: DType](ctx: DeviceContext) raises:
     var half = dim // 2
     for t in range(num_frames):
         for d in range(half):
-            var omega = 1.0 / (10000.0 ** (Float32(2 * d) / Float32(dim)))
-            var angle = Float32(t) * omega
+            var omega = 1.0 / (
+                Float32(10000.0) ** (Float32(2 * d) / Float32(dim))
+            )
+            var angle = Float32(t) * Float32(omega)
             tw_tt[t, d] = sin(angle)
             tw_tt[t, half + d] = cos(angle)
 
@@ -447,8 +455,10 @@ def test_sincos_embed(ctx: DeviceContext) raises:
     var half = dim // 2
     for t in range(num_frames):
         for d in range(half):
-            var omega = 1.0 / (10000.0 ** (Float32(2 * d) / Float32(dim)))
-            var angle = Float32(t) * omega
+            var omega = 1.0 / (
+                Float32(10000.0) ** (Float32(2 * d) / Float32(dim))
+            )
+            var angle = Float32(t) * Float32(omega)
             tw_tt[t, d] = sin(angle)
             tw_tt[t, half + d] = cos(angle)
 

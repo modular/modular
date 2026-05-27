@@ -168,7 +168,7 @@ def bench_stencil_avg_pool[
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -178,7 +178,7 @@ def bench_stencil_avg_pool[
 
     @always_inline
     def avg_pool_compute_finalize_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
@@ -242,7 +242,7 @@ def bench_stencil_avg_pool[
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -252,7 +252,7 @@ def bench_stencil_avg_pool[
 
     @always_inline
     def avg_pool_compute_finalize_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
@@ -451,7 +451,7 @@ def bench_stencil_max_pool[
         return min_or_neg_inf[dtype]()
 
     def max_pool_compute_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -461,7 +461,7 @@ def bench_stencil_max_pool[
 
     @always_inline
     def max_pool_compute_finalize_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
@@ -524,7 +524,7 @@ def bench_stencil_max_pool[
         return min_or_neg_inf[dtype]()
 
     def max_pool_compute_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -534,7 +534,7 @@ def bench_stencil_max_pool[
 
     @always_inline
     def max_pool_compute_finalize_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
@@ -723,7 +723,7 @@ def bench_stencil_avg_pool_padded[
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -733,7 +733,7 @@ def bench_stencil_avg_pool_padded[
 
     @always_inline
     def avg_pool_compute_finalize_gpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
@@ -799,7 +799,7 @@ def bench_stencil_avg_pool_padded[
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -809,7 +809,7 @@ def bench_stencil_avg_pool_padded[
 
     @always_inline
     def avg_pool_compute_finalize_cpu[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:

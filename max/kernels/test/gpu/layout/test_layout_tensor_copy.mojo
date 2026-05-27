@@ -41,7 +41,7 @@ from std.utils import IndexList
 
 @always_inline
 def add_op[
-    dtype: DType, width: Int
+    dtype: DType, width: SIMDSize
 ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return lhs + rhs
 

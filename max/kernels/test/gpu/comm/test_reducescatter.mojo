@@ -243,7 +243,7 @@ def reducescatter_test[
     def outputs_lambda[
         input_index: Int,
         _dtype: DType,
-        _width: Int,
+        _width: SIMDSize,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
