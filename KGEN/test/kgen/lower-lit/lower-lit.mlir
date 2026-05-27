@@ -255,7 +255,7 @@ lit.fn @empty_fn<t: !lit.struct<@EmptyStruct>>(%arg0: index) {
 
 // CHECK-LABEL: kgen.generator @removeGenMetadata
 lit.fn @removeGenMetadata() {
-  // CHECK-NEXT: <index, index>index = <#kgen.gen<add(*(0,0), *(0,1))>>
+  // CHECK-NEXT: <index, index>index = <#kgen.gen<to_builtin(:scalar<index> add(from_builtin(*(0,0)), from_builtin(*(0,1))))>>
   kgen.param.declare test: !lit.generator<<"a": index, "b": index> index> = <#kgen.gen<add(*(0,0), *(0,1))>>
   // CHECK-NEXT: struct<() memoryOnly> = <{  }>
   kgen.param.declare test2: !lit.generator<<"t": !lit.struct<@EmptyStruct>> !lit.struct<@EmptyStruct>> = <#kgen.gen<*(0,0)>>

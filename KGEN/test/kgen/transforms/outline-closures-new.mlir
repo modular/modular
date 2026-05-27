@@ -278,7 +278,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
 // CHECK-SAME: <C, A>(%arg0: !kgen.pointer<struct<(index) memoryOnly>> read_mem) -> index
 // CHECK-NEXT: kgen.struct.gep
 // CHECK-NEXT: pop.load
-// CHECK-NEXT: <mul(A, C)>
+// CHECK-NEXT: kgen.param.constant = <to_builtin(:scalar<index> mul(from_builtin(A), from_builtin(C)))
 
 kgen.generator @foo<C>(%arg0 : index) {
   %3 = kgen.closure.init(%arg0)<A>() -> index {
@@ -319,7 +319,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
 // CHECK-SAME: <C, A>(%arg0: !kgen.pointer<struct<(index) memoryOnly>> read_mem) -> index
 // CHECK-NEXT: kgen.struct.gep
 // CHECK-NEXT: pop.load
-// CHECK-NEXT: <mul(A, C)>
+// CHECK-NEXT: kgen.param.constant = <to_builtin(:scalar<index> mul(from_builtin(A), from_builtin(C)))
 
 kgen.generator @foo<C>(%arg0 : index) {
   %3 = kgen.closure.init(%arg0)<A>() -> index {

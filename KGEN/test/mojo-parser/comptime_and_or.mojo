@@ -25,9 +25,9 @@ struct MyBoolableB:
 # CHECK-LABEL: lit.fn @"test_and_or{{.*}}"<a: !MyBoolableA, b: !MyBoolableB, c: !Bool>
 def test_and_or[a: MyBoolableA, b: MyBoolableB, c: Bool]():
     # Simple boolean conditions
-    # CHECK: lit.alias.decl{{.*}}!Bool = <cond(#kgen.cast_from_builtin<#lit.struct.extract<:!Bool c, "_mlir_value"> : i1>, {:i1 1}, c)>
+    # CHECK: lit.alias.decl{{.*}}!Bool = <cond(from_builtin(:i1 #lit.struct.extract<:!Bool c, "_mlir_value">), {:i1 1}, c)>
     comptime same_bool_and = c and True
-    # CHECK: lit.alias.decl{{.*}}!Bool = <cond(#kgen.cast_from_builtin<#lit.struct.extract<:!Bool c, "_mlir_value"> : i1>, c, {:i1 1})>
+    # CHECK: lit.alias.decl{{.*}}!Bool = <cond(from_builtin(:i1 #lit.struct.extract<:!Bool c, "_mlir_value">), c, {:i1 1})>
     comptime same_bool_or = c or True
 
     # Same type: result type is the operand type, no Bool fallback.

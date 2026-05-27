@@ -633,34 +633,47 @@ def test_linear_type() raises:
 
     tok2^.consume()
 
-def test_linear_no_return_complex_lifetime(a: LinearType, mut b: LinearType, mut c: LinearType):
+
+def test_linear_no_return_complex_lifetime(
+    a: LinearType, mut b: LinearType, mut c: LinearType
+):
     _ = a
     b^.consume()
-    abort()   # Doesn't require 'a' or 'c' to be destroyed.
+    abort()  # Doesn't require 'a' or 'c' to be destroyed.
+
 
 # Hard case for conditional lifetime analysis on abort.  This should compile.
 @explicit_destroy
 struct ReducedVariant:
     var _storage: ReducedStorage
+
     def take[T: Movable](deinit self, cond: Bool) -> T:
         if cond:
             abort()
         return self._storage^.take[T]()
+
+
 @explicit_destroy
 struct ReducedStorage:
     def take[U: Movable](deinit self) -> U:
         abort()
 
+
 @explicit_destroy("This needs explicit destruction when T isn't linear")
 struct ConditionallyLinearType[T: AnyType](
     ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible)
 ):
-    #var data: Self.T
+    # var data: Self.T
 
-    def __init__(out self): pass
-    def use(self): pass
+    def __init__(out self):
+        pass
+
+    def use(self):
+        pass
+
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDestructible):
-        pass #self.data^.__del__()
+        pass  # self.data^.__del__()
+
 
 def testConditionallyLinearType():
     var c = ConditionallyLinearType[String]()
@@ -674,6 +687,7 @@ def testConditionallyLinearType():
 # ===----------------------------------------------------------------------=== #
 # Trait-bound fields
 # ===----------------------------------------------------------------------=== #
+
 
 struct Pair[T: Movable & ImplicitlyDestructible](Movable):
     var first: Self.T

@@ -21,21 +21,20 @@ comptime emptyParams[]: Int = 89
 # CHECK: lit.alias.decl *"idInt{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<*(0,0)>>
 comptime idInt[x: Int]: Int = x
 
-# CHECK: lit.alias.decl *"myIntAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)})>>
+# CHECK: lit.alias.decl *"myIntAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">))){{.*}}>>
 comptime myIntAdd[x: Int, y: Int] = x + y
 
-# CHECK: lit.alias.decl *"myDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = {1}>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)})>>
+# CHECK: lit.alias.decl *"myDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = {1}>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">))){{.*}}>>
 comptime myDefaultAdd[x: Int, y: Int = 1] = x + y
 
-# CHECK: lit.alias.decl *"myDependentDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = *(0,0)>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)})>>
+# CHECK: lit.alias.decl *"myDependentDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = *(0,0)>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">))){{.*}}>>
 comptime myDependentDefaultAdd[x: Int, y: Int = x] = x + y
 
-# CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<
-# CHECK-SAME: add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), #lit.struct.extract<:!Int *(0,2), "_mlir_value">)
+# CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">)), from_builtin(#lit.struct.extract<:!Int *(0,2), "_mlir_value">))){{.*}})>>
 comptime myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
 # CHECK: lit.alias.decl *"myTypeSelector`0x7": !lit.generator<<"cond": !Bool, "t_type": !AnyType, "f_type": !AnyType>!AnyType> = <#kgen.gen<
-# CHECK-SAME: cond(#kgen.cast_from_builtin<#lit.struct.extract<:!Bool *(0,0), "_mlir_value"> : i1>, *(0,1), *(0,2))>>
+# CHECK-SAME: cond(from_builtin(:i1 #lit.struct.extract<:!Bool *(0,0), "_mlir_value">), *(0,1), *(0,2))>>
 comptime myTypeSelector[
     cond: Bool, t_type: AnyType, f_type: AnyType
 ] = t_type if cond else f_type
@@ -52,7 +51,7 @@ comptime PS_xy3[x: Int, y: Int] = PS[x, y, 3]
 # CHECK: lit.alias.decl *"PS_21x{{.*}}": !lit.generator<<"x": !Int>meta<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int *(0,0)>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int *(0,0)>>>
 comptime PS_21x[x: Int] = PS[2, 1, x]
 
-# CHECK: lit.alias.decl *"PS_21xy{{.*}}": !lit.generator<<"x": !Int, "y": !Int>meta<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int sugar_builtin(apply({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)})>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int sugar_builtin(apply({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)})>>>
+# CHECK: lit.alias.decl *"PS_21xy{{.*}}": !lit.generator<<"x": !Int, "y": !Int>meta<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int sugar_builtin(apply({{.*}}to_builtin(:scalar<index> mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">))){{.*}}>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int sugar_builtin(apply({{.*}}to_builtin(:scalar<index> mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">))){{.*}})>>>
 comptime PS_21xy[x: Int, y: Int] = PS[2, 1, x * y]
 
 
@@ -79,7 +78,7 @@ comptime __SomeImpl[Trait: TrivialRegisterPassable, T: Trait] = T
 # CHECK: lit.alias.decl *"Some{{.*}}": !lit.generator<<"Trait": !TrivialRegisterPassable>!lit.generator<<"T": !kgen.param<:!TrivialRegisterPassable *(1,0)>>!kgen.param<:!TrivialRegisterPassable *(1,0)>>> = <#kgen.gen<#kgen.gen<*(0,0)>>>
 comptime Some[Trait: TrivialRegisterPassable] = __SomeImpl[Trait, ...]
 
-# CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2)})>>
+# CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), 2)){{.*}})>>
 comptime myDouble[x: Int] = myDependentDefaultAdd[x]
 
 
@@ -135,9 +134,9 @@ def test_type_inference():
 
 # CHECK-LABEL: fn @"partial_binding()"
 def partial_binding():
-    # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">), 3)})>>
+    # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(0,1), "_mlir_value">)), 3)){{.*}})>>
     comptime myIntMulPlus3 = myIntFMA[z=3, ...]
-    # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2), 3)})>>
+    # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}to_builtin(:scalar<index> add(mul(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), 2), 3)){{.*}})>>
     comptime myIntMul2Plus3 = myIntMulPlus3[y=2, ...]
     # CHECK: lit.alias.decl *"myEleven{{.*}}": !Int = <{11}>
     comptime myEleven = myIntMul2Plus3[x=4]
@@ -145,13 +144,13 @@ def partial_binding():
 
 # CHECK-LABEL: fn @"nested_generators()"
 def nested_generators():
-    # CHECK-NEXT: lit.alias.decl *"myCurriedIntAdd{{.*}}": !lit.generator<<"x": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">)})>>
+    # CHECK-NEXT: lit.alias.decl *"myCurriedIntAdd{{.*}}": !lit.generator<<"x": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<sugar_builtin(apply(:!lit.generator<("lhs": !Int, "rhs": !Int) -> !Int> @std::@builtin::@stubs::@Int::@"__add__(::Int,::Int)", *(1,0), *(0,0)), {_mlir_value = to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(1,0), "_mlir_value">)))})>>>
     comptime myCurriedIntAdd[x: Int] = myIntAdd[x, _]
 
-    # CHECK-NEXT: lit.alias.decl *"myRenamedCurriedIntAdd{{.*}}": !lit.generator<<"a": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">)})>>
+    # CHECK-NEXT: lit.alias.decl *"myRenamedCurriedIntAdd{{.*}}": !lit.generator<<"a": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<sugar_builtin(apply({{.*}}_mlir_value = to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), from_builtin(#lit.struct.extract<:!Int *(1,0), "_mlir_value">))){{.*}}>>
     comptime myRenamedCurriedIntAdd[a: Int] = myCurriedIntAdd[a]
 
-    # CHECK-NEXT: lit.alias.decl *"myAdd2{{.*}}": !lit.generator<<"y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2)})>>
+    # CHECK-NEXT: lit.alias.decl *"myAdd2{{.*}}": !lit.generator<<"y": !Int>!Int> = <#kgen.gen<sugar_builtin(apply({{.*}}_mlir_value = to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int *(0,0), "_mlir_value">), 2)){{.*}}>>
     comptime myAdd2 = myRenamedCurriedIntAdd[2]
 
     # CHECK-NEXT: lit.alias.decl *"myFive{{.*}}": !Int = <{5}>
@@ -161,7 +160,7 @@ def nested_generators():
     comptime mySix = myRenamedCurriedIntAdd[2][4]
 
 
-# CHECK: lit.fn @"dependent_function_type[::Bool]()"<cond: !Bool>[mut *"__result__`"](?, %__result__: !lit.ref<:!AnyType cond(#kgen.cast_from_builtin<#lit.struct.extract<:!Bool cond, "_mlir_value"> : i1>, !Int, !FloatDyn), mut *"__result__`"> byref_result)
+# CHECK: lit.fn @"dependent_function_type[::Bool]()"<cond: !Bool>[mut *"__result__`"](?, %__result__: !lit.ref<:!AnyType cond(from_builtin(:i1 #lit.struct.extract<:!Bool cond, "_mlir_value">), !Int, !FloatDyn), mut *"__result__`"> byref_result)
 def dependent_function_type[
     cond: Bool
 ]() -> myTypeSelector[cond, Int, FloatDyn]:

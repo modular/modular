@@ -2218,11 +2218,11 @@ kgen.generator @bind_one_index<f: !kgen.generator<<index> index>>() -> index {
   kgen.return %0 : index
 }
 
-// CHECK-LABEL:kgen.func @"bind_two_index,f=#kgen.gen<add(*(0,0), *(0,1))>"
+// CHECK-LABEL: kgen.func @"bind_two_index,f=#kgen.gen<to_builtin(:scalar<index> add(from_builtin(*(0,0)), from_builtin(*(0,1))))>"
 // CHECK-NEXT:   kgen.param.constant = <20>
 // CHECK-NEXT:   kgen.param.constant = <6>
 
-// CHECK-LABEL: kgen.func @"bind_two_index,f=#kgen.gen<div(*(0,0), *(0,1))>"
+// CHECK-LABEL: kgen.func @"bind_two_index,f=#kgen.gen<to_builtin(:scalar<index> div(from_builtin(*(0,0)), from_builtin(*(0,1))))>"
 // CHECK-NEXT:   kgen.param.constant = <4>
 // CHECK-NEXT:   kgen.param.constant = <2>
 
@@ -2240,10 +2240,10 @@ kgen.generator @bind_two_index<f: !kgen.generator<<index, index> index>>() {
 // CHECK-LABEL: kgen.func export @entry
 kgen.generator export @entry() {
   kgen.param.declare myAdd: !kgen.generator<<index, index> index> = <#kgen.gen<add(*(0,0), *(0,1))>>
-  // CHECK-NEXT: kgen.call @"bind_two_index,f=#kgen.gen<add(*(0,0), *(0,1))>"
+  // CHECK-NEXT: kgen.call @"bind_two_index,f=#kgen.gen<to_builtin(:scalar<index> add(from_builtin(*(0,0)), from_builtin(*(0,1))))>"()
   kgen.call @bind_two_index<:!kgen.generator<<index, index> index> myAdd>() : () -> ()
   kgen.param.declare myDiv: !kgen.generator<<index, index> index> = <#kgen.gen<div(*(0,0), *(0,1))>>
-  // CHECK-NEXT: kgen.call @"bind_two_index,f=#kgen.gen<div(*(0,0), *(0,1))>"
+  // CHECK-NEXT: kgen.call @"bind_two_index,f=#kgen.gen<to_builtin(:scalar<index> div(from_builtin(*(0,0)), from_builtin(*(0,1))))>"()
   kgen.call @bind_two_index<:!kgen.generator<<index, index> index> myDiv>() : () -> ()
   kgen.return
 }

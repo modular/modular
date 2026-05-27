@@ -579,7 +579,7 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
     // conditionally) linear type.
     auto whereClause = conformance.getConstraint().getProposition();
     whereClause = evaluator.getReboundAttribute(whereClause);
-    auto whereCst = dyn_cast<SIMDAttr>(whereClause);
+    auto whereCst = sugarDynCast<SIMDAttr>(whereClause);
     if (!whereCst || !isAllIntLikeOne(whereCst)) {
       // If the type is linear, then ignore an explicitly declared
       // destructor for the purposes of destructor insertion.

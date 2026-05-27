@@ -36,7 +36,7 @@ struct MultiParam[T: __mlir_type.`!kgen.type`, align_val: Int]:
 
 # Test parametric alignment with an expression (n * 2)
 # CHECK-LABEL: lit.struct.decl @AlignedExpr
-# CHECK-SAME: minAlignment = #kgen.param.expr<mul, #lit.struct.extract<:!Int n, "_mlir_value"> : index, 2 : index> : index
+# CHECK-SAME: minAlignment = #kgen.cast_to_builtin<#kgen.param.expr<mul, #kgen.cast_from_builtin<#lit.struct.extract<:!Int n, "_mlir_value"> : index> : !kgen.scalar<index>, #kgen<simd 2> : !kgen.scalar<index>> : !kgen.scalar<index>> : index
 @align(n * 2)
 struct AlignedExpr[n: Int]:
     var data: Int

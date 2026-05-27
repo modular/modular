@@ -59,7 +59,7 @@ kgen.generator @wrap_source_loc_param<depth: index>() -> !kgen.none always_inlin
 // CHECK-LABEL: kgen.generator @call_wrapped_source_loc_param
 kgen.generator @call_wrapped_source_loc_param() -> !kgen.none always_inline_no_debug {
   // CHECK: kgen.param.declare depth = <1>
-  // CHECK: kgen.source_loc[add(depth, -1)]
+  // CHECK: kgen.source_loc[to_builtin(:scalar<index> add(from_builtin(depth), -1))]
   // CHECK-NOT: kgen.call
   %0 = kgen.call @wrap_source_loc_param<1>() : () -> !kgen.none
   kgen.return %0 : !kgen.none
@@ -68,11 +68,11 @@ kgen.generator @call_wrapped_source_loc_param() -> !kgen.none always_inline_no_d
 // CHECK-LABEL: kgen.generator @test_wrap_source_loc_param
 kgen.generator @test_wrap_source_loc_param() -> !kgen.none always_inline_no_debug {
   // CHECK: kgen.param.declare [[DEPTH:.+]] = <1>
-  // CHECK: kgen.source_loc[add([[DEPTH]], -2)]
+  // CHECK: kgen.source_loc[to_builtin(:scalar<index> add(from_builtin(depth), -2))]
   // CHECK-NOT: kgen.call
   %0 = kgen.call @call_wrapped_source_loc_param() : () -> !kgen.none loc("some_file.mojo":4:6)
   // CHECK: kgen.param.declare [[DEPTH:.+]] = <1>
-  // CHECK: kgen.source_loc[add([[DEPTH]], -3)]
+  // CHECK: kgen.source_loc[to_builtin(:scalar<index> add(from_builtin(depth0), -3))]
   // CHECK-NOT: kgen.call
   %1 = kgen.call @call_wrapped_source_loc_param() : () -> !kgen.none loc(callsite("some_file.mojo":4:6 at "some_other_file.mojo":5:7))
   kgen.return %0 : !kgen.none

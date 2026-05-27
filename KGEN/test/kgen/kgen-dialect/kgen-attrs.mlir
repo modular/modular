@@ -240,21 +240,22 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
 } : () -> ()
 
 "some.op"() {
-  a = 5 : index,
-  // CHECK-DAG: gen0 = #kgen.gen<{{.*}}add{{.*}}a{{.*}}3{{.*}}> : !kgen.generator<<>index>
-  gen0 = #kgen.gen<add(a, 3)> : !kgen.generator<<>index>,
-  // CHECK-DAG: gen1 = #kgen.gen<add([[G1:[*]]](0,0), 1)> : !kgen.generator<<index>index>
-  gen1 = #kgen.gen<add(*(0,0), 1)> : !kgen.generator<<index> index>,
-  // CHECK-DAG: gen2 = #kgen.gen<add([[G2:[*]]](0,0), [[G2]](0,1))> : !kgen.generator<<index, index>index>
-  gen2 = #kgen.gen<add(*(0,0), *(0,1))> : !kgen.generator<<index, index> index>
+  // CHECK-DAG: a =
+  a = #kgen.simd<5> : !kgen.scalar<index>,
+  // CHECK-DAG: gen0 = #kgen.gen<add(a, 3)> : !kgen.generator<<>scalar<index>>
+  gen0 = #kgen.gen<add(a, 3)> : !kgen.generator<<> scalar<index>>,
+  // CHECK-DAG: gen1 = #kgen.gen<add([[G1:[*]]](0,0), 1)> : !kgen.generator<<scalar<index>>scalar<index>>
+  gen1 = #kgen.gen<add(*(0,0), 1)> : !kgen.generator<<scalar<index>> scalar<index>>,
+  // CHECK-DAG: gen2 = #kgen.gen<add([[G2:[*]]](0,0), [[G2]](0,1))> : !kgen.generator<<scalar<index>, scalar<index>>scalar<index>>
+  gen2 = #kgen.gen<add(*(0,0), *(0,1))> : !kgen.generator<<scalar<index>, scalar<index>> scalar<index>>
 } : () -> ()
 
 "some.op"() {
-  a = 5 : index,
+  a = #kgen.simd<5> : !kgen.scalar<index>,
   // CHECK: constraint1 = #kgen.constraint<true, #[[LOC_C1]]>
   constraint1 = #kgen.constraint<true, loc("test.mojo":10:5)>,
-  // CHECK-SAME: constraint2 = #kgen.constraint<ge({{.*}}#kgen.param.decl.ref<"a">{{.*}}4{{.*}}, #[[LOC_C2]]>
-  constraint2 = #kgen.constraint<#kgen.param.expr<xor, #kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"a"> : index, 4 : index> : i1> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>, loc("test.mojo":15:10)>,
+  // CHECK-SAME: constraint2 = #kgen.constraint<ge(:scalar<index> a, 4), #[[LOC_C2]]>
+  constraint2 = #kgen.constraint<ge(:scalar<index> a, 4), loc("test.mojo":15:10)>,
   // CHECK-SAME: #kgen.constraint<conforms_to(:type array<1, i1>, [@trait_1, @trait_2]), #[[LOC_C3]]>
   constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, [@trait_1, @trait_2]), loc("test.mojo":20:15)>
 } : () -> ()

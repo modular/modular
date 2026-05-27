@@ -15,7 +15,7 @@ kgen.generator @pointer_type<dt: dtype>
 kgen.generator @simd_type<dt: dtype, size>
   // CHECK-SAME: %{{.*}}: !kgen.simd<4, dt>,
   (%arg0 : !kgen.simd<4,dt>,
-  // CHECK-SAME: %{{.*}}: !kgen.simd<mul(size, size), ui8>) {
+  // CHECK-SAME: %{{.*}}: !kgen.simd<to_builtin(:scalar<index> mul(from_builtin(size), from_builtin(size))), ui8>) {
    %arg1: !kgen.simd<mul(size,size), ui8>) {
 
   kgen.return
@@ -798,7 +798,7 @@ kgen.generator @struct_extract_parametric_index<I: index>(
   %1 = kgen.struct.extract %s[1] : !kgen.struct<(i32, f32)>
   // CHECK: kgen.struct.extract %[[S]][I] : <(i32, f32)>
   %2 = kgen.struct.extract %s[I] : !kgen.struct<(i32, f32)>
-  // CHECK: kgen.struct.extract %[[S]][add(I, 1)] : <(i32, f32)>
+  // CHECK: kgen.struct.extract %[[S]][to_builtin(:scalar<index> add(from_builtin(I), 1))] : <(i32, f32)>
   %3 = kgen.struct.extract %s[add(I, 1)] : !kgen.struct<(i32, f32)>
   kgen.return
 }

@@ -76,7 +76,7 @@ def param_if[a: __mlir_type.i1, b: Bool]():
 
 # CHECK-LABEL: lit.fn @"param_if_andor_i1{{.*}}"<a: i1, b: i1>()
 def param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
-    # CHECK: kgen.param.if <cond(#kgen.cast_from_builtin<#kgen.param.decl.ref<"a"> : i1>, b, a)>
+    # CHECK: kgen.param.if <cond(from_builtin(:i1 a), b, a)>
     # expected-warning @+1 {{'@parameter if' is deprecated; use 'comptime if'}}
     @parameter
     if a and b:
@@ -84,7 +84,7 @@ def param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
         var v: Int
     # CHECK:   kgen.param.yield
     # CHECK: } else {
-    # CHECK: kgen.param.if <cond(#kgen.cast_from_builtin<#kgen.param.decl.ref<"a"> : i1>, a, b)>
+    # CHECK: kgen.param.if <cond(from_builtin(:i1 a), a, b)>
     elif a or b:
         # CHECK:   lit.var.decl "w" var
         var w: Int
@@ -92,7 +92,7 @@ def param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
 
 # CHECK-LABEL: lit.fn @"param_if_and{{.*}}"<a: !Bool, b: !Bool>()
 def param_if_and[a: Bool, b: Bool]():
-    # CHECK: kgen.param.if <#lit.struct.extract<:!Bool cond(#kgen.cast_from_builtin<#lit.struct.extract<:!Bool a, "_mlir_value"> : i1>, b, a), "_mlir_value">>
+    # CHECK: kgen.param.if <#lit.struct.extract<:!Bool cond(from_builtin(:i1 #lit.struct.extract<:!Bool a, "_mlir_value">), b, a), "_mlir_value">> {
     # expected-warning @+1 {{'@parameter if' is deprecated; use 'comptime if'}}
     @parameter
     if a and b:
