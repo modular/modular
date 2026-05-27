@@ -7,13 +7,17 @@
 #ifndef KGEN_MOJOPARSER_DECLSIGNATUREPRINTER_H
 #define KGEN_MOJOPARSER_DECLSIGNATUREPRINTER_H
 
+#include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
+
+#include <string>
 #include <utility>
 
 namespace M {
 namespace KGEN {
 namespace LIT {
+class MojoInflightDiag;
 class AliasDeclOp;
 class ASTDecl;
 class FnOp;
@@ -67,6 +71,57 @@ void printAliasSignature(LIT::AliasDeclOp aliasOp, LIT::SharedState &shared,
                          llvm::raw_string_ostream &os,
                          const LIT::ASTDecl *contextDecl = nullptr,
                          const SignatureOffsets &offsets = {});
+
+//===----------------------------------------------------------------------===//
+// Diagnostic-oriented helpers
+//===----------------------------------------------------------------------===//
+
+/// Output a synthesized Mojo-syntax signature to the in-flight diagnostic if
+/// the diagnostic's last location is not contained within the source manager.
+/// If the location is readable, this does nothing and returns the diagnostic
+/// back unchanged.
+///
+/// This function is intended for a diagnostic whose last location points
+/// somewhere within a Mojo source file, with the idea that the diagnostic
+/// handler will point a caret at the place of interest. If this isn't an
+/// option - because the loc is unreadable - this function will optionally
+/// synthesize a declaration to make up for the lack of accurate source
+/// information.
+LIT::MojoInflightDiag &
+synthesizeToDiagIfLocUnreadable(LIT::MojoInflightDiag &diag, Operation *op,
+                                StringRef preamble = "",
+                                const LIT::ASTDecl *contextDecl = nullptr);
+
+/// Output a Mojo-syntax attribute to the in-flight diagnostic if the
+/// diagnostic's last location is not contained within the source manager. If
+/// the location is readable, this does nothing and returns the diagnostic back
+/// unchanged.
+LIT::MojoInflightDiag &
+synthesizeToDiagIfLocUnreadable(LIT::MojoInflightDiag &diag, TypedAttr attr,
+                                StringRef preamble = "");
+
+/// Synthesize a Mojo-source-syntax signature for the given decl op. Dispatches
+/// to `printFunctionSignature` / `printStructSignature` / `printAliasSignature`
+/// based on the op kind. Returns an empty string if `op` is null or isn't one
+/// of the supported decl ops.
+///
+/// Intended for diagnostics that need to identify a decl when a source-locator
+/// won't reach the user (see `hasReadableSourceLocation`). Inexpensive enough
+/// to call unconditionally; callers can fall back to other phrasings on an
+/// empty return.
+std::string synthesizeDeclSignature(Operation *op, LIT::SharedState &shared,
+                                    const LIT::ASTDecl *contextDecl = nullptr);
+
+/// True when `loc` resolves to a `FileLineColLoc` whose file is readable from
+/// `sourceMgr`. False for `UnknownLoc`, locations with only `NameLoc`
+/// metadata, or `FileLineColLoc`s referring to files the manager doesn't have
+/// (e.g. decls loaded from a bytecode package). Walks `FusedLoc`/`NameLoc`/
+/// `CallSiteLoc` chains.
+///
+/// Diagnostic emitters can use this to choose between attaching a normal
+/// source-pointer note and synthesizing a self-describing note via
+/// `synthesizeDeclSignature`.
+bool hasReadableSourceLocation(Location loc, LIT::SharedState &shared);
 
 } // namespace KGEN
 } // namespace M
