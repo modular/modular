@@ -425,6 +425,7 @@ modular_py_binary(
     deps = [
         requirement("openai"),
         requirement("jsonschema"),
+        requirement("pydantic"),
     ],
 )
 

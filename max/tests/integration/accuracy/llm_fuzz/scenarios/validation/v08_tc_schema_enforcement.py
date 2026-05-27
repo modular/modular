@@ -28,6 +28,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from helpers import budget_exhausted, make_tool
+from pydantic import BaseModel
 
 from scenarios import BaseScenario, ScenarioResult, Verdict, register_scenario
 
@@ -177,6 +178,7 @@ class TCSchemaEnforcement(BaseScenario):
         results.extend(await self._type_list_array_with_items(v, loop))
         results.extend(await self._properties_without_type_object(v, loop))
         results.extend(await self._enum_dict_literal_exact(v, loop))
+        results.extend(await self._additional_properties_typed_values(v, loop))
 
         return results
 
@@ -209,6 +211,9 @@ class TCSchemaEnforcement(BaseScenario):
         tool_desc: str,
         user_message: str,
         validate: Callable[[dict[str, Any]], tuple[Verdict, str]] | None = None,
+        tool_choice: str | dict[str, Any] = "required",
+        max_tokens: int = 1024,
+        tools: list[dict[str, Any]] | None = None,
     ) -> list[ScenarioResult]:
         """Run a single tool-call test with standard boilerplate.
 
@@ -217,33 +222,34 @@ class TCSchemaEnforcement(BaseScenario):
         must return ``(verdict, detail)``.  Otherwise falls back to
         ``_validate_args`` against the schema.
         """
-        results: list[ScenarioResult] = []
-        tool = make_tool(tool_name, schema, tool_desc)
+        if tools is None:
+            tools = [make_tool(tool_name, schema, tool_desc)]
         try:
-            resp = await self._tc(
-                v,
-                loop,
-                [{"role": "user", "content": user_message}],
-                [tool],
+            resp = await loop.run_in_executor(
+                None,
+                lambda: v.tc_chat(
+                    [{"role": "user", "content": user_message}],
+                    tools,
+                    tool_choice=tool_choice,
+                    max_tokens=max_tokens,
+                ),
             )
             if budget_exhausted(resp):
-                results.append(
+                return [
                     self.make_result(
                         self.name,
                         test_name,
                         Verdict.INTERESTING,
                         detail="Budget exhausted",
                     )
-                )
-                return results
+                ]
             args, err = _extract_tc_args(resp)
             if err:
-                results.append(
+                return [
                     self.make_result(
                         self.name, test_name, Verdict.FAIL, detail=err
                     )
-                )
-                return results
+                ]
             assert args is not None
             if validate is not None:
                 verdict, detail = validate(args)
@@ -251,16 +257,15 @@ class TCSchemaEnforcement(BaseScenario):
                 errors = _validate_args(args, schema)
                 verdict = Verdict.PASS if not errors else Verdict.FAIL
                 detail = "; ".join(errors) or f"OK: {json.dumps(args)}"
-            results.append(
+            return [
                 self.make_result(self.name, test_name, verdict, detail=detail)
-            )
+            ]
         except Exception as e:
-            results.append(
+            return [
                 self.make_result(
                     self.name, test_name, Verdict.ERROR, error=str(e)
                 )
-            )
-        return results
+            ]
 
     # ------------------------------------------------------------------
     # 1. Required fields always present
@@ -2113,3 +2118,173 @@ class TCSchemaEnforcement(BaseScenario):
             user_message=("Apply the fast preset (mode='fast', threads=4)."),
             validate=validate,
         )
+
+    # ------------------------------------------------------------------
+    # 33. additionalProperties with typed values
+    #     Tests that constrained decoding enforces value types when
+    #     objects use additionalProperties: {type: ...} instead of
+    #     explicit properties. Uses forced tool_choice + decoy tool.
+    # ------------------------------------------------------------------
+
+    async def _additional_properties_typed_values(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        results: list[ScenarioResult] = []
+
+        decoy_tool: dict[str, Any] = {
+            "type": "function",
+            "function": {
+                "name": "__decoy_noop",
+                "description": "No-op decoy tool",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+        def _validate_typed_dict(
+            obj: object,
+            label: str,
+            check_value: Callable[[object], bool],
+            expected_type_name: str,
+        ) -> list[str]:
+            errors: list[str] = []
+            if not isinstance(obj, dict):
+                return [f"{label}: expected dict, got {type(obj).__name__}"]
+            for k, val in obj.items():
+                if not check_value(val):
+                    errors.append(
+                        f"{label}[{k!r}]: expected {expected_type_name}, "
+                        f"got {type(val).__name__}"
+                    )
+            return errors
+
+        def _is_list_of_strings(val: object) -> bool:
+            return isinstance(val, list) and all(
+                isinstance(x, str) for x in val
+            )
+
+        # ── 33a. list[dict[str, list[str]]] — hand-written ──
+
+        def validate_33a(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            for f in ("status", "summary", "next_steps"):
+                if not isinstance(args.get(f), str):
+                    errors.append(
+                        f"{f}: expected str, got {type(args.get(f)).__name__}"
+                    )
+            details = args.get("details")
+            if not isinstance(details, list):
+                errors.append(
+                    f"details: expected list, got {type(details).__name__}"
+                )
+            else:
+                for i, item in enumerate(details):
+                    errors.extend(
+                        _validate_typed_dict(
+                            item,
+                            f"details[{i}]",
+                            _is_list_of_strings,
+                            "list[str]",
+                        )
+                    )
+            if errors:
+                return (
+                    Verdict.FAIL,
+                    "; ".join(errors) + f" | got: {json.dumps(args)}",
+                )
+            return Verdict.PASS, f"OK: {json.dumps(args)}"
+
+        tool_choice_forced: dict[str, Any] = {
+            "type": "function",
+            "function": {"name": "terminate_eval"},
+        }
+        tool_desc = "Terminate evaluation and report structured results."
+        user_message = (
+            "The evaluation completed. "
+            "Issues found: 'TypeError' and 'ValueError' in "
+            "'validator', 'TimeoutError' in 'scheduler'. "
+            "Terminate with status 'failed', provide the error "
+            "mapping, a summary, and next steps."
+        )
+
+        # ── 33a. list[dict[str, list[str]]] — hand-written ──
+
+        hand_written_schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                },
+                "summary": {"type": "string"},
+                "next_steps": {"type": "string"},
+            },
+            "required": [
+                "status",
+                "details",
+                "summary",
+                "next_steps",
+            ],
+            "additionalProperties": False,
+        }
+
+        results.extend(
+            await self._run_tc_test(
+                v,
+                loop,
+                test_name="ap_typed_list_dict_str_list_str",
+                schema=hand_written_schema,
+                tool_name="terminate_eval",
+                tool_desc=tool_desc,
+                user_message=user_message,
+                validate=validate_33a,
+                tool_choice=tool_choice_forced,
+                max_tokens=4096,
+                tools=[
+                    make_tool("terminate_eval", hand_written_schema, tool_desc),
+                    decoy_tool,
+                ],
+            )
+        )
+
+        # ── 33a-pydantic. Same shape as 33a via pydantic ──
+
+        class TerminationResult(BaseModel):
+            status: str
+            details: list[dict[str, list[str]]]
+            summary: str
+            next_steps: str
+
+        pydantic_schema = TerminationResult.model_json_schema()
+
+        results.extend(
+            await self._run_tc_test(
+                v,
+                loop,
+                test_name="ap_typed_pydantic_terminate_eval",
+                schema=pydantic_schema,
+                tool_name="terminate_eval",
+                tool_desc=tool_desc,
+                user_message=user_message,
+                validate=validate_33a,
+                tool_choice=tool_choice_forced,
+                max_tokens=4096,
+                tools=[
+                    make_tool("terminate_eval", pydantic_schema, tool_desc),
+                    decoy_tool,
+                ],
+            )
+        )
+
+        return results
