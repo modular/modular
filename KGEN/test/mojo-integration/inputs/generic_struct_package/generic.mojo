@@ -7,7 +7,7 @@
 # Generic struct for testing extensions on parametric types
 
 
-struct Container[T: ImplicitlyCopyable]:
+struct Container[T: ImplicitlyCopyable & ImplicitlyDestructible]:
     var value: Self.T
 
     def __init__(out self, value: Self.T):

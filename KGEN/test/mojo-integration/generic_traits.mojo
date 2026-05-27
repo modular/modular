@@ -106,7 +106,7 @@ struct SomeType(ImplicitlyCopyable, RegisterPassable):
 
 
 # CHECK-LABEL: kgen.func {{.*}}drop_copy
-def drop_copy[T: ImplicitlyCopyable](value: T):
+def drop_copy[T: ImplicitlyCopyable & ImplicitlyDestructible](value: T):
     # CHECK: [[V0:%.*]] = kgen.param.constant: struct<()> = <{ }>
     # CHECK: kgen.call {{.*}}SomeType::__del__{{.*}}([[V0]])
     var _unused = value

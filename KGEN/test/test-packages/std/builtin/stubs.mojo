@@ -933,7 +933,7 @@ trait Copyable(Movable):
     comptime __copy_ctor_is_trivial: Bool
 
 
-trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
+trait ImplicitlyCopyable(Copyable):
     pass
 
 
