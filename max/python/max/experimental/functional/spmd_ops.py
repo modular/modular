@@ -96,6 +96,7 @@ from ..sharding.rules.shape import (
     transpose_rule,
     unsqueeze_rule,
 )
+from ._signatures import install_tensor_signature
 from .collective_ops import transfer_to
 from .creation_ops import full_like
 from .utils import (
@@ -234,13 +235,13 @@ def functional(
     graph_op: Callable[..., Any] | None = None,
     rule: Callable[..., RuleSignature] | None = None,
 ) -> Callable[..., Any]:
-    """Wraps a :obj:`max.graph.ops` op for use with :class:`~max.experimental.tensor.Tensor` inputs.
+    """Wraps a :mod:`max.graph.ops` op for use with :class:`~max.experimental.tensor.Tensor` inputs.
 
     When a sharding ``rule`` is provided, the wrapper also dispatches
     per-shard for tensors that are sharded across devices.
 
     Args:
-        graph_op: The :obj:`max.graph.ops` op to wrap.
+        graph_op: The :mod:`max.graph.ops` op to wrap.
         rule: Optional sharding rule for distributed inputs.
 
     Returns:
@@ -277,6 +278,10 @@ def functional(
         with ensure_context():
             result = graph_op(*args, **kwargs)
             return to_tensors(result)
+
+    # Rewrite annotations so inspect.signature / Sphinx show ``Tensor``
+    # instead of the graph-op's ``TensorValueLike`` parameter types.
+    install_tensor_signature(wrapped)
 
     return wrapped
 
@@ -316,6 +321,15 @@ def _binary_with_scalar_promotion(
         assert isinstance(result, Tensor)
         return result
 
+    # Propagate name/qualname/module from the wrapped op so
+    # ``F.add.__name__`` is ``"add"`` rather than ``"wrapper"``. Set
+    # these directly instead of via ``functools.update_wrapper`` so we
+    # don't set ``__wrapped__`` — that would route ``inspect.signature``
+    # through ``inner`` and lose ``wrapper``'s ``Tensor | int | float``
+    # scalar-promotion annotations.
+    wrapper.__module__ = getattr(inner, "__module__", wrapper.__module__)
+    wrapper.__name__ = getattr(inner, "__name__", wrapper.__name__)
+    wrapper.__qualname__ = getattr(inner, "__qualname__", wrapper.__qualname__)
     return wrapper
 
 

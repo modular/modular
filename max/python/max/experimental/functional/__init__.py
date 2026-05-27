@@ -16,6 +16,12 @@
 Functional ops accept and return :class:`~max.experimental.tensor.Tensor`
 objects and dispatch transparently per-shard when their inputs are
 distributed across devices.
+
+.. note::
+
+   Most functions on this page wrap a corresponding op in :mod:`max.graph.ops`.
+   When this is true, the **source** link on the function takes you to the graph
+   op's source where the actual implementation lives.
 """
 
 from __future__ import annotations
