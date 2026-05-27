@@ -46,7 +46,16 @@ NUM_GROUPS = 2
 
 @dataclass
 class EPConfig:
-    """Configuration for Expert Parallelism (EP) communication."""
+    """Configuration for Expert Parallelism (EP) communication.
+
+    .. note::
+
+       The EP kernel requires ``n_gpus_per_node * n_nodes >= 2``.
+       Single-GPU MoE configs pass Python construction but fail at
+       Mojo kernel compile (``constraint failed``) after 2-3 minutes.
+       For single-GPU MoE, instantiate the MoE block without an EP
+       manager and use ``ShardingStrategy.tensor_parallel(1)``.
+    """
 
     dispatch_dtype: DType
     """Data type used for dispatching tokens to experts."""
