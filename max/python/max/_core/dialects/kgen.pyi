@@ -312,15 +312,15 @@ class IndexRefAttrInterface(Protocol):
     For example, these two aliases have equal types:
 
     ```mojo
-    alias A: fn[T: AnyType](x: T)->None = ...
-    alias B: fn[Y: AnyType](x: Y)->None = ...
+    comptime A: def[T: AnyType](x: T)->None = ...
+    comptime B: def[Y: AnyType](x: Y)->None = ...
     ```
 
     ...if those param-refs use indexes instead of names like:
 
     ```mojo
-    alias A: fn[_: AnyType](x: *(0,0))->None = ...
-    alias B: fn[_: AnyType](x: *(0,0))->None = ...
+    comptime A: def[_: AnyType](x: *(0,0))->None = ...
+    comptime B: def[_: AnyType](x: *(0,0))->None = ...
     ```
 
     All types in Mojo use `IndexRefAttrInterface` instead of parameter names.
@@ -1419,10 +1419,10 @@ class ParamIndexRefAttr(max._core.Attribute):
     The latter would appear in something like this:
 
     ```
-    alias bar: fn[
+    comptime bar: def[
       D: DType,
       N: Int,
-      f: fn[Y: AnyType](Y, SIMD[N, D])->None
+      f: def[Y: AnyType](Y, SIMD[N, D])->None
     ](...) = ...
     ```
 
@@ -1433,7 +1433,7 @@ class ParamIndexRefAttr(max._core.Attribute):
 
     ```
     def foo[X: AnyType](x: X):
-        alias zork: def[...(
+        comptime zork: def[...(
           # Cannot have: #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
         )->None = ...
     ```
@@ -4551,13 +4551,13 @@ class ParameterScopeTypeInterface(Protocol):
 
     ```mojo
     def foo[T: AnyType]():
-      alias bork: def[
+      comptime bork: def[
         T: AnyType,
         inner_f: def[Y: AnyType](t: T, y: Y) -> None
       ] -> None = ...
     ```
 
-    The `fn` after `bork:` is a `kgen.generator` which is a
+    The `def` after `bork:` is a `kgen.generator` which is a
     `ParameterScopeTypeInterface`.
 
     `ParameterScopeTypeInterface` also causes the `depth` fields of
@@ -4789,8 +4789,8 @@ class NonStructTypeType(max._core.Type):
     comptime mlir_i1 = __mlir_type.i1
     # type_of(mlir_i1) == !kgen.non_struct_type
 
-    comptime fn_type = fn()->Int
-    # type_of(fn_type) == !kgen.non_struct_type
+    comptime def_type = def()->Int
+    # type_of(def_type) == !kgen.non_struct_type
 
     # Notably:
     # type_of(type_of(mlir_i1)) == !kgen.type
