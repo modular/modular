@@ -18,3 +18,40 @@ trait TraitWithAlias:
     # CHECK-DAG: "summary": "This is the alias."
     comptime N: Int
     """This is the alias."""
+
+
+def _is_positive(x: Int) -> Bool:
+    return x > 0
+
+
+trait IsEven:
+    pass
+
+
+trait TraitWithParametricAlias:
+    """A trait carrying parametric associated aliases with trailing where clauses.
+    """
+
+    # Trailing where clause with a non-trait-conformance predicate is preserved
+    # verbatim in the signature.
+    # CHECK-DAG: "name": "AssocAliasWithWhere",
+    # CHECK-DAG: "signature": "comptime AssocAliasWithWhere[N: Int] where _is_positive(N)"
+    comptime AssocAliasWithWhere[N: Int]: Int where _is_positive(N)
+    """An associated parametric alias with a non-mergeable trailing where clause.
+
+    Parameters:
+        N: A positive integer parameter.
+    """
+
+    # Trailing trait-conformance constraint merges into the parameter's type
+    # bounds, so it does not appear as a separate `where` clause.
+    # CHECK-DAG: "name": "AssocAliasWithTraitConformance",
+    # CHECK-DAG: "signature": "comptime AssocAliasWithTraitConformance[T: AnyType & IsEven]"
+    comptime AssocAliasWithTraitConformance[
+        T: AnyType
+    ]: AnyType where conforms_to(T, IsEven)
+    """An associated parametric alias whose trailing trait-conformance constraint merges into the parameter bound.
+
+    Parameters:
+        T: A type that must conform to IsEven.
+    """

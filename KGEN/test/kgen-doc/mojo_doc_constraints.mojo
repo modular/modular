@@ -30,11 +30,87 @@ def complex_pred(a: Int, b: Int) -> Bool:
 
 
 ##===----------------------------------------------------------------------===##
+# Alias-level trailing where clauses
+# Top-level aliases appear in the JSON's "aliases" array, which comes before
+# "functions" and "structs" alphabetically; we group these checks under an
+# explicit CHECK-LABEL so they match the right region of the output.
+##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: "aliases":
+
+
+# CHECK: "name": "alias_with_single_trailing_where",
+# CHECK: "signature": "comptime alias_with_single_trailing_where[N: Int] where is_positive(N)"
+comptime alias_with_single_trailing_where[N: Int] where is_positive(N) = N
+"""Parametric alias with a single trailing where clause.
+
+Parameters:
+    N: A positive integer parameter.
+"""
+
+
+# CHECK: "name": "alias_with_typed_trailing_where",
+# CHECK: "signature": "comptime alias_with_typed_trailing_where[N: Int] where is_positive(N)"
+# CHECK: "type": "Int"
+comptime alias_with_typed_trailing_where[N: Int]: Int where is_positive(N) = N
+"""Parametric typed alias with a trailing where clause.
+
+Parameters:
+    N: A positive integer parameter.
+"""
+
+
+# CHECK: "name": "alias_with_compound_trailing_where",
+# CHECK: "signature": "comptime alias_with_compound_trailing_where[N: Int, M: Int] where is_positive(N) and is_even(M)"
+comptime alias_with_compound_trailing_where[N: Int, M: Int] where is_positive(
+    N
+) and is_even(M) = N + M
+"""Parametric alias with a compound trailing where clause.
+
+Parameters:
+    N: A positive integer parameter.
+    M: An even integer parameter.
+"""
+
+
+# Multiple `where` clauses on the same alias are preserved separately in the
+# signature (one `where` keyword per constraint), mirroring the user syntax.
+# CHECK: "name": "alias_with_chained_trailing_where",
+# CHECK: "signature": "comptime alias_with_chained_trailing_where[N: Int, M: Int] where is_positive(N) where is_even(M)"
+comptime alias_with_chained_trailing_where[N: Int, M: Int] where is_positive(
+    N
+) where is_even(M) = N + M
+"""Parametric alias with multiple chained trailing where clauses.
+
+Parameters:
+    N: A positive integer parameter.
+    M: An even integer parameter.
+"""
+
+
+# Trait-conformance constraints in the trailing where clause merge into the
+# parameter's type bounds (same as struct/function), so no `where` clause
+# remains in the signature.
+# CHECK: "name": "alias_with_trailing_trait_conformance",
+# CHECK: "signature": "comptime alias_with_trailing_trait_conformance[T: Serializable & Printable]"
+comptime alias_with_trailing_trait_conformance[
+    T: Serializable
+] where conforms_to(T, Printable) = T
+"""Parametric alias whose trailing trait-conformance constraint merges into the parameter bound.
+
+Parameters:
+    T: A type that must conform to both Serializable and Printable.
+"""
+
+
+##===----------------------------------------------------------------------===##
 # Function-level where clauses
 ##===----------------------------------------------------------------------===##
 
+# CHECK-LABEL: "functions":
 
-# CHECK-LABEL: "name": "fn_with_single_where_clause",
+
+# CHECK: "name": "fn_with_single_where_clause",
 # CHECK: "signature": "fn_with_single_where_clause[N: Int]() where is_positive(N)"
 def fn_with_single_where_clause[N: Int]() where is_positive(N):
     """Function with a single where clause constraint.

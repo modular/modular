@@ -176,6 +176,7 @@ void printStructSignatureFromInfos(StringRef name,
 
 void printAliasSignatureFromInfos(StringRef name, StringRef type,
                                   ArrayRef<ParameterInfo> params,
+                                  StringRef bodyConstraints,
                                   LIT::SharedState &shared,
                                   llvm::raw_string_ostream &os,
                                   const SignatureOffsets &offsets);

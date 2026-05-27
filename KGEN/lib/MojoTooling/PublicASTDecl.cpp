@@ -697,7 +697,7 @@ std::string PublicAliasDecl::getDeclarationSnippet(
 
   SignatureOffsets so;
   so.parameters = parameterOffsets;
-  printAliasSignatureFromInfos(getName(), type, paramInfos,
+  printAliasSignatureFromInfos(getName(), type, paramInfos, aliasConstraints,
                                ctx.getSharedState(), os, so);
   if (!value.empty())
     os << " = " << value;
@@ -789,7 +789,7 @@ std::string PublicAliasDecl::getSignature(
   SignatureOffsets so;
   so.parameters = parameterOffsets;
   printAliasSignatureFromInfos(getName(), /*type=*/"", paramInfos,
-                               ctx.getSharedState(), os, so);
+                               aliasConstraints, ctx.getSharedState(), os, so);
   return output;
 }
 
@@ -802,23 +802,27 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
 
   auto &shared = *declRef.getShared();
 
+  // For parametric aliases the alias's declared type is wrapped in a
+  // GeneratorType. Extract parameters and trailing 'where' constraints.
+  ParameterEvaluator evaluator;
+  if (auto generatorType = dyn_cast<GeneratorType>(aliasOp.getType())) {
+    evaluator = populatePublicParameterDecls(
+        shared, generatorType.getInputParamTypes(),
+        generatorType.getParamListAttrs(), parameters,
+        /*selfType=*/std::nullopt,
+        generatorType.getParamListAttrs().getBodyConstraints(),
+        &aliasConstraints, &declRef);
+    type = generateTypeString(shared,
+                              evaluator.getReboundType(generatorType.getBody()),
+                              VariadicKind::None);
+  }
+
   if (auto maybeValue = aliasOp.getValue()) {
-    // If the value is a GeneratorAttr, we need to split it into a parameter
-    // list and a body value for the alias representation.
-    if (auto generator = dyn_cast<GeneratorAttr>(*maybeValue)) {
-      if (auto generatorType = dyn_cast<GeneratorType>(generator.getType())) {
-        ParameterEvaluator evaluator = populatePublicParameterDecls(
-            shared, generatorType.getInputParamTypes(),
-            generatorType.getParamListAttrs(), parameters);
-        maybeValue = evaluator.getReboundAttribute(generator.getBody());
-      }
-
-      // Try to extract result type from the generator's body
-      if (auto valueType = maybeValue->getType()) {
-        type = generateTypeString(shared, valueType, VariadicKind::None);
-      }
-    }
-
+    // For parametric aliases the value is a GeneratorAttr; replace it with
+    // its (rebound) body so the printed `value` shows the underlying
+    // expression rather than the generator wrapper.
+    if (auto generator = dyn_cast<GeneratorAttr>(*maybeValue))
+      maybeValue = evaluator.getReboundAttribute(generator.getBody());
     value = generatePValueString(shared, maybeValue.value());
   }
 

@@ -152,11 +152,19 @@ void M::KGEN::printAliasSignature(LIT::AliasDeclOp aliasOp,
     return;
 
   SmallVector<ParameterInfo, 2> params;
-  populateParameterInfos(shared, generatorType.getInputParamTypes(),
-                         generatorType.getParamListAttrs(), params);
+  ParameterEvaluator evaluator =
+      populateParameterInfos(shared, generatorType.getInputParamTypes(),
+                             generatorType.getParamListAttrs(), params);
+
+  // Decl-level constraints (the trailing "where ...").
+  std::string constraints;
+  if (auto cs = generatorType.getParamListAttrs().getBodyConstraints();
+      !cs.empty())
+    constraints = mergeConformsToConstraints(cs, &evaluator, shared, params);
 
   auto name = demangleParameterName(aliasOp.getName(), /*forUser=*/true);
-  printAliasSignatureFromInfos(name, /*type=*/"", params, shared, os, offsets);
+  printAliasSignatureFromInfos(name, /*type=*/"", params, constraints, shared,
+                               os, offsets);
 }
 
 //===----------------------------------------------------------------------===//

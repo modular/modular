@@ -383,8 +383,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
         kind == ArgListKind::kFnTypeParamList) {
       auto diag = p.emitWarning(
           whereLoc, "'where' clauses inside parameter lists are deprecated");
-      // FIXME(MOCO-3855): Broaden this note to struct and comptime
-      // parameter lists once they support trailing 'where' clauses.
+      // FIXME(MOCO-3855): Remove this note now that all parameterized decls
+      // support trailing 'where' clauses.
       if (inlineWhereNote == InlineWhereNote::kTrailingWhere) {
         diag.attachNote(whereLoc)
             << "use a trailing 'where' clause after the signature instead";

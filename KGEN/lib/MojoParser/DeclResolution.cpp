@@ -2401,8 +2401,14 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
 //===----------------------------------------------------------------------===//
 
 /// alias_decl_stmt ::=
-///   | "alias" identifier [param_signature] ":" expression ["=" expression]
-///   | "alias" identifier [param_signature] "=" expression
+///   | "alias" identifier [param_signature] ":" expression
+///                                          ("where" expression)*
+///                                          ["=" expression]
+///   | "alias" identifier [param_signature] ("where" expression)* "="
+///   expression
+///
+/// Trailing "where" clauses are only allowed when the alias is parameterized
+/// (has a non-empty `[...]` parameter list).
 ///
 LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
@@ -2433,14 +2439,38 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
 
   // Parse the param signature if present.
   ParsedParamList parsedParams;
-  if (parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList))
+  if (parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList,
+                                            InlineWhereNote::kTrailingWhere))
     return failure();
 
-  // The alias signature is a self-contained scope where the input parameters of
-  // the alias are visible by all types.  We must use a temporary declaration
-  // here (with an empty name) because we don't want references to the alias
-  // itself to resolve to a fully-resolved decl, but we need a fully-resolved
-  // decl for incremental lookups within the scope to work out.
+  // Parse the alias type as a raw expression (no IR emission yet). Deferring
+  // emission lets us parse and emit any trailing 'where' clauses first, so
+  // the type's emission sees the body constraints in scope.
+  ExprNode *typeExpr = nullptr;
+  if (p.consumeIf(Token::colon)) {
+    if (p.parseExpression(typeExpr, decl.getIndentation()))
+      return failure();
+  }
+
+  // Parse trailing 'where' clauses if present. These are only allowed when
+  // the alias is parameterized; emitting and type-checking them later
+  // requires referencing the parameter declarations.
+  if (!parsedParams.params.empty()) {
+    if (parsedParams.parseTrailingConstraintsIfPresent(p))
+      return failure();
+  } else if (p.getToken().isIdentifier() &&
+             p.getToken().getSpelling() == "where") {
+    p.emitError(p.getToken().getLoc(),
+                "trailing 'where' clauses on non-parameterized "
+                "aliases support TBD");
+    return failure();
+  }
+
+  // The alias signature is a self-contained scope where the input parameters
+  // of the alias are visible by all types.  We must use a temporary
+  // declaration here (with an empty name) because we don't want references to
+  // the alias itself to resolve to a fully-resolved decl, but we need a
+  // fully-resolved decl for incremental lookups within the scope to work out.
   ASTDecl &sigDecl =
       addFullyResolvedDecl(aliasDeclOp.getOperation(), StringAttr(),
                            decl.getLoc(), decl.getParentDecl());
@@ -2451,10 +2481,17 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     return failure();
   TypeCheckedParamList &paramSignature = *paramSignatureOrError;
 
+  // Emit the trailing body constraints. This seeds `sigDecl`'s known
+  // assumptions with them so any subsequent emission (including the alias
+  // type below) can rely on them.
+  paramSignature.emitBodyConstraints();
+
+  // Now emit the alias type (if any).
   ASTType type;
-  if (p.consumeIf(Token::colon)) {
-    if (parseType(p, type, sigDecl, decl.getIndentation(),
-                  /*allowUnbound=*/true))
+  if (typeExpr) {
+    IREmitter emitter(sigDecl, EC_Type);
+    type = emitter.emitExprType(typeExpr, /*allowUnbound=*/true);
+    if (!type)
       return failure();
   }
 

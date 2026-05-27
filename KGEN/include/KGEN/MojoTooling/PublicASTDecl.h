@@ -556,6 +556,7 @@ private:
   /// op-driven signature printer in MojoParser.
   MojoASTDeclRef decl;
   SmallVector<PublicParameterDecl, kTypicalParameterCount> parameters;
+  std::string aliasConstraints;
   std::string value;
   std::string type;
   std::string docPath;
