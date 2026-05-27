@@ -23,8 +23,14 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/MojoDiags.h"
 #include "KGEN/MojoParser/SignatureModel.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/Operation.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace mlir;
@@ -160,4 +166,71 @@ void M::KGEN::printAliasSignature(LIT::AliasDeclOp aliasOp,
 
   auto name = demangleParameterName(aliasOp.getName(), /*forUser=*/true);
   printAliasSignatureFromInfos(name, /*type=*/"", params, shared, os, offsets);
+}
+
+//===----------------------------------------------------------------------===//
+// Diagnostic-oriented helpers
+//===----------------------------------------------------------------------===//
+
+std::string M::KGEN::synthesizeDeclSignature(Operation *op, SharedState &shared,
+                                             const ASTDecl *contextDecl) {
+  if (!op)
+    return {};
+  std::string out;
+  llvm::raw_string_ostream os(out);
+  llvm::TypeSwitch<Operation *>(op)
+      .Case<FnOp>([&](FnOp fnOp) {
+        printFunctionSignature(fnOp, shared, os, contextDecl);
+      })
+      .Case<StructDeclOp>([&](StructDeclOp structOp) {
+        printStructSignature(structOp, shared, os, contextDecl);
+      })
+      .Case<AliasDeclOp>([&](AliasDeclOp aliasOp) {
+        printAliasSignature(aliasOp, shared, os, contextDecl);
+      })
+      .Default([](Operation *) {});
+  return out;
+}
+
+bool M::KGEN::hasReadableSourceLocation(Location loc, SharedState &shared) {
+  auto &diags = shared.diags;
+  auto &sourceMgr = diags.sourceMgr;
+  return sourceMgr.FindBufferContainingLoc(diags.convertLocToSMLoc(loc)) != 0;
+}
+
+MojoInflightDiag &
+M::KGEN::synthesizeToDiagIfLocUnreadable(MojoInflightDiag &diag, Operation *op,
+                                         StringRef preamble,
+                                         const LIT::ASTDecl *contextDecl) {
+  auto *shared = diag.getSharedIfActive();
+  if (!shared)
+    return diag;
+  if (hasReadableSourceLocation(diag.getLastLoc(), *shared))
+    return diag;
+
+  std::string sig = synthesizeDeclSignature(op, *shared, contextDecl);
+
+  if (!sig.empty())
+    diag << preamble << sig;
+
+  return diag;
+}
+
+MojoInflightDiag &
+M::KGEN::synthesizeToDiagIfLocUnreadable(MojoInflightDiag &diag, TypedAttr attr,
+                                         StringRef preamble) {
+  auto *shared = diag.getSharedIfActive();
+  if (!shared)
+    return diag;
+  if (hasReadableSourceLocation(diag.getLastLoc(), *shared))
+    return diag;
+
+  std::string out;
+  llvm::raw_string_ostream os(out);
+  ASTType::printParam(os, attr, /*forDiag=*/shared);
+
+  if (!out.empty())
+    diag << preamble << "'" << out << "'";
+
+  return diag;
 }

@@ -23,6 +23,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/DeclSignaturePrinter.h"
 #include "KGEN/POPDialect/POPOps.h"
 
 #include "Support/Compiler/OperationUtils.h"
@@ -765,6 +766,8 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       auto fnDecl = cast<FnOp>(fnDecls[0]->getIfOperation());
       diag << ": " << evaluations[0].second.takeDiag();
       diag.attachNote(fnDecl.getLoc()) << "function declared here";
+      synthesizeToDiagIfLocUnreadable(diag, fnDecl, /*preamble=*/":\n  ",
+                                      fnDecls[0]);
       return {};
     }
 

@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/DeclSignaturePrinter.h"
 #include "llvm/ADT/STLExtras.h"
 
 using namespace M;
@@ -128,10 +129,9 @@ ConstraintResult LIT::checkConstraints(
         prop = origConstraints[idx].getProposition();
       else
         prop = constraint.getProposition();
-
-      diag.attachNote(constraint.getLoc())
-          << "constraint declared here evaluated to False, expected "
-          << remapper.replace(prop);
+      diag.attachNote(constraint.getLoc()) << "constraint declared here";
+      synthesizeToDiagIfLocUnreadable(diag, prop, " as ")
+          << " evaluated to False, expected " << remapper.replace(prop);
     }
 
     return ConstraintResult::Violated;
