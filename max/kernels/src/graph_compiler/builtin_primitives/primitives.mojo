@@ -1468,6 +1468,65 @@ def foreach[
     ](tensor.shape(), ctx)
 
 
+@register_internal("mogg.elemwise_for_each")
+@no_inline
+def foreach[
+    dtype: DType,
+    rank: Int,
+    //,
+    FuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, element_alignment: Int](IndexList[rank]) -> SIMD[
+        dtype, width
+    ],
+    *,
+    target: StaticString = "cpu",
+    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    _trace_name: StaticString = "mogg.for_each",
+](
+    var func: FuncType,
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
+    ctx: DeviceContext,
+) raises:
+    """Apply a `RegisterPassable` body to each element of the tensor slice.
+
+    Value-arg twin of the primary `foreach`: the body is a runtime
+    `RegisterPassable` closure passed by value rather than a comptime
+    parameter. The wrapper captures both `func` and `tensor` and routes
+    the store through `tensor._fused_store`, which preserves the fused
+    store path required by `FusedOutputTensor`.
+
+    Parameters:
+        dtype: The data type of the elements in the tensor slice.
+        rank: The rank of the tensor slice.
+        FuncType: The type of the per-element body closure.
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
+        simd_width: The SIMD width for the target.
+        _trace_name: Name of the executed operation displayed in the trace.
+
+    Args:
+        func: The body to apply per element.
+        tensor: The output tensor slice which receives the return values.
+        ctx: The call context (forward this from the custom operation).
+    """
+
+    # The wrapper captures `func` (passed by value) and `tensor` so the
+    # store can route through `_fused_store` when output-store fusion is
+    # present.
+    def wrapper[
+        width: Int, _rank: Int, alignment: Int = 1
+    ](index: IndexList[_rank]) {var func^, var tensor}:
+        var idx = rebind[IndexList[rank]](index)
+        var val = func[width, alignment](idx)
+        tensor._fused_store[element_alignment=alignment](idx, val)
+
+    std.algorithm.functional.elementwise[
+        simd_width=simd_width,
+        target=target,
+        _trace_description=_trace_name,
+    ](wrapper, tensor.shape(), ctx)
+
+
 @register_internal("mogg.call.foreach")
 @no_inline
 def foreach_fusion[
