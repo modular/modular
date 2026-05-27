@@ -236,7 +236,9 @@ def test_insert_infra_rows_calls_insert() -> None:
     assert row["model"] == "google/gemma-3-1b-it"
     assert row["status"] == "infra"
     assert row["run_id"] == "12345"
+    assert row["github_run_id"] == "12345"
     assert row["framework"] == "max-ci"
+    assert row["gpu"] == "NVIDIA B200"
     mock_job.result.assert_called_once()
 
 

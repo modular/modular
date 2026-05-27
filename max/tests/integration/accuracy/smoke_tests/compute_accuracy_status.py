@@ -66,7 +66,15 @@ from smoke_tests.smoke_test_github_matrix import (
 _WINDOWS: dict[str, AccuracyWindow] = {
     k.lower(): v for k, v in ACCURACY_WINDOWS.items()
 }
-_RUNNER_TO_GPU: dict[str, str] = {v: k for k, v in RUNNERS.items()}
+_RUNNER_TO_GPU: dict[str, str] = {
+    "modrunner-b200": "NVIDIA B200",
+    "modrunner-mi355": "AMD Instinct MI355X",
+    "modrunner-b200-2x": "NVIDIA B200",
+    "modrunner-mi355-2x": "AMD Instinct MI355X",
+    "modrunner-mi355-4x": "AMD Instinct MI355X",
+    "modrunner-b200-8x": "NVIDIA B200",
+    "modrunner-prod-2-b200-8x": "NVIDIA B200",
+}
 
 
 def _load_current_rows(
@@ -221,6 +229,7 @@ def _insert_infra_rows(
             "runner_label": runner_label,
             "status": "infra",
             "git_revision": git_revision,
+            "github_run_id": run_id,
         }
         for model, runner_label in sorted(infra_pairs)
     ]
