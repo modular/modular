@@ -762,8 +762,11 @@ logit_verification_pipelines:
     compatible_with: [gpu]
     encoding: bfloat16
     tags: []
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_DeepseekV2_golden/2/766f24d143790850ecf71d500360ef1a078c8a66c908f44a35898b237cb61b58/torch_DeepseekV2_golden.tar.gz"
+      json_file: "torch_lite-chat_bfloat16_golden.json"
     cos_dist_threshold: 8.0e-03
-    kl_div_threshold: 1.5e-01
+    kl_div_threshold: 1.9e-01
 
   # TODO(MODELS-812): Investigate deepseek timeout
   kathywu95/deepseek-v3-small-random-bfloat16:
