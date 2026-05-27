@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, DeviceGraphNode
+from std.gpu.host import DeviceContext, DeviceGraphNode, DeviceGraphBuilder
 from std.testing import assert_equal
 
 
@@ -398,6 +398,81 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
             assert_equal(host_b[i], UInt32(0xBBBBBBBB))
 
 
+def test_collect_dependencies(ctx: DeviceContext) raises:
+    print(
+        "Test collect_dependencies joins scope nodes into a single"
+        " empty node usable as a downstream node's sole dependency."
+    )
+    comptime length = 64
+
+    var buf_a = ctx.enqueue_create_buffer[DType.uint8](length)
+    var buf_b = ctx.enqueue_create_buffer[DType.uint8](length)
+    var buf_c = ctx.enqueue_create_buffer[DType.uint8](length)
+
+    var builder = ctx.create_graph_builder()
+
+    # Pre-existing root node added before the scope. It must NOT be a
+    # predecessor of the join node returned by the scope.
+    var pre_scope = builder.add_memset(buf_a, UInt8(0x01), dependencies=[])
+
+    # Two producer nodes added inside the scope. The work is a named
+    # capturing def, passed as a comptime parameter to the scope method
+    # because Mojo does not yet support capturing closures as runtime args.
+    def add_producers(b: DeviceGraphBuilder) raises {read}:
+        _ = b.add_memset(buf_a, UInt8(0xAA), dependencies=[pre_scope])
+        _ = b.add_memset(buf_b, UInt8(0xBB), dependencies=[])
+
+    var producers_join = builder.collect_dependencies(add_producers)
+
+    # Use the join node as the sole dependency of a memset on buf_c. The
+    # final state of buf_c being 0xCC confirms that consumer ran; the
+    # transitive order through the empty node enforces that the producers
+    # have completed by then.
+    _ = builder.add_memset(buf_c, UInt8(0xCC), dependencies=[producers_join])
+
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    with buf_a.map_to_host() as host_a:
+        for i in range(length):
+            assert_equal(host_a[i], UInt8(0xAA))
+    with buf_b.map_to_host() as host_b:
+        for i in range(length):
+            assert_equal(host_b[i], UInt8(0xBB))
+    with buf_c.map_to_host() as host_c:
+        for i in range(length):
+            assert_equal(host_c[i], UInt8(0xCC))
+
+
+def test_collect_dependencies_empty(ctx: DeviceContext) raises:
+    print(
+        "Test collect_dependencies still returns a usable join node"
+        " when the scope adds no nodes (empty node becomes a graph root)."
+    )
+    comptime length = 64
+    var buf = ctx.enqueue_create_buffer[DType.uint8](length)
+
+    var builder = ctx.create_graph_builder()
+
+    def add_nothing(b: DeviceGraphBuilder) raises {read}:
+        return
+
+    var join = builder.collect_dependencies(add_nothing)
+
+    # Hang a memset off the (rootless) empty node and verify the graph
+    # still instantiates and replays successfully.
+    _ = builder.add_memset(buf, UInt8(0xEE), dependencies=[join])
+
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], UInt8(0xEE))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_vec_add_kernel_node(ctx)
@@ -409,3 +484,5 @@ def main() raises:
         test_add_function_with_dependencies(ctx)
         test_add_memset_with_dependencies(ctx)
         test_add_copy_with_dependencies(ctx)
+        test_collect_dependencies(ctx)
+        test_collect_dependencies_empty(ctx)
