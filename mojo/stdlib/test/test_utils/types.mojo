@@ -199,10 +199,13 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 
 
 struct CopyCounter[
-    T: ImplicitlyCopyable & Writable & Defaultable = NoneType,
+    T: ImplicitlyCopyable
+    & ImplicitlyDestructible
+    & Writable
+    & Defaultable = NoneType,
     *,
     trivial_copy: Bool = False,
-](ImplicitlyCopyable, Writable):
+](ImplicitlyCopyable, ImplicitlyDestructible, Writable):
     """Counts the number of copies performed on a value.
 
     Parameters:

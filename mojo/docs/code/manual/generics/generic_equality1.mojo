@@ -34,7 +34,7 @@ struct NotEquatable(Copyable):
         return self.value == other.value
 
 
-comptime CanCompare = Equatable & ImplicitlyCopyable
+comptime CanCompare = Equatable & ImplicitlyCopyable & ImplicitlyDestructible
 
 
 @fieldwise_init
@@ -45,7 +45,7 @@ struct CanBeEquatable[T: CanCompare](CanCompare):
         return self.value == other.value
 
 
-comptime ComparableValue = Equatable & ImplicitlyCopyable
+comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDestructible
 
 
 @fieldwise_init

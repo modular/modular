@@ -13,8 +13,12 @@
 
 
 def process[T: AnyType](value: T):
-    comptime if conforms_to(T, Writable & ImplicitlyCopyable):
-        var w = trait_downcast[Writable & ImplicitlyCopyable](value)
+    comptime if conforms_to(
+        T, Writable & ImplicitlyCopyable & ImplicitlyDestructible
+    ):
+        var w = trait_downcast[
+            Writable & ImplicitlyCopyable & ImplicitlyDestructible
+        ](value)
         print(w)
     else:
         print("<not writable>")

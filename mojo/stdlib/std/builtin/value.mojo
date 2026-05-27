@@ -134,7 +134,7 @@ trait Copyable(Movable):
     """
 
 
-trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
+trait ImplicitlyCopyable(Copyable):
     """A marker trait to permit compiler to insert implicit calls to the copy
     constructor in order to make a copy of the object when needed.
 

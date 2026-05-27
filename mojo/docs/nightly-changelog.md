@@ -72,6 +72,15 @@ This version is still a work in progress.
 
 ## Library changes
 
+- The `ImplicitlyCopyable`, `Intable`, and `Equatable` traits no longer
+  inherit from `ImplicitlyDestructible`. Generic code that relied on
+  receiving the destructor bound transitively through these traits (or
+  through `Comparable`, which inherits from `Equatable`) must now spell it
+  out explicitly, for example
+  `T: ImplicitlyCopyable & ImplicitlyDestructible`. In practice, most
+  generic code should prefer `T: Copyable` instead, per the guidance in
+  `ImplicitlyCopyable`'s docstring.
+
 - Changed `Idx` to a `comptime` alias for `ComptimeInt`. Use `Idx[value]`
   instead of `Idx[value]()` for compile-time coordinates.
 
@@ -261,17 +270,6 @@ This version is still a work in progress.
   def hi_python(a: PythonObject) raises:
       print(t"Hi, {a}!")
   ```
-
-- The `Intable` trait no longer inherits from `ImplicitlyDestructible`.
-  Generic code that relied on receiving the destructor bound transitively
-  through this trait must now spell it out explicitly, for example
-  `T: Intable & ImplicitlyDestructible`.
-
-- The `Equatable` trait no longer inherits from `ImplicitlyDestructible`.
-  Generic code that relied on receiving the destructor bound transitively
-  through this trait (or through `Comparable`, which inherits from
-  `Equatable`) must now spell it out explicitly, for example
-  `T: Equatable & ImplicitlyDestructible`.
 
 - The CPython FFI bindings now carry the `abi("C")` effect. User-written Python
   extension callbacks passed to `def_py_c_function`, `def_py_c_method`, or
