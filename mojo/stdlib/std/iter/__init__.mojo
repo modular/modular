@@ -280,6 +280,55 @@ def next[
 
 
 # ===-----------------------------------------------------------------------===#
+# empty
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _Empty[T: Movable](
+    ImplicitlyCopyable,
+    Iterable,
+    IterableOwned,
+    Iterator,
+):
+
+    """Iterator that yields nothing."""
+
+    comptime Element = Self.T
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    comptime IteratorOwnedType: Iterator = Self
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        raise StopIteration()
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        return Tuple(0, Optional(0))
+
+
+@always_inline
+def empty[T: Movable]() -> _Empty[T]:
+    """Creates an iterator that yields nothing.
+
+    Parameters:
+        T: Type of the iterator's notional elements.
+
+    Returns:
+        An iterator that yields nothing.
+    """
+    return _Empty[T]()
+
+
+# ===-----------------------------------------------------------------------===#
 # enumerate
 # ===-----------------------------------------------------------------------===#
 
