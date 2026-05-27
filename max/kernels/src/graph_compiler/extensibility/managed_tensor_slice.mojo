@@ -263,7 +263,7 @@ def get_row_major_tensor_spec_static[
         rank: The tensor rank (must match `len(shape_dims)`).
         shape_dims: Compile-time integer dimensions of the tensor shape.
     """
-    return {align_of[dtype](), AddressSpace.GENERIC, False}
+    return {align_of[dtype](), AddressSpace.GENERIC}
 
 
 def _get_unknown_tensor_spec[
@@ -273,11 +273,7 @@ def _get_unknown_tensor_spec[
     Returns a StaticTensorSpec with the specified type and rank with all
     fields dynamic or defaulted.
     """
-    return {
-        1,
-        AddressSpace.GENERIC,
-        True,
-    }
+    return {1, AddressSpace.GENERIC}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -405,13 +401,11 @@ struct StaticTensorSpec[
 
     var alignment: Int
     var address_space: AddressSpace
-    var exclusive: Bool
 
     def __init__(
         out self,
         alignment: Int,
         address_space: AddressSpace,
-        exclusive: Bool,
     ):
         comptime assert Self.rank == Self.static_layout.rank, "rank mismatch"
         comptime _has_in = not _type_is_eq[Self.InFusion, _NoFusionIn]()
@@ -424,7 +418,6 @@ struct StaticTensorSpec[
         ), "StaticTensorSpec can have at most one fusion type"
         self.alignment = alignment
         self.address_space = address_space
-        self.exclusive = exclusive
 
     def __init__(
         out self, internals: StaticTensorSpecInternal[Self.dtype, Self.rank]
@@ -442,7 +435,6 @@ struct StaticTensorSpec[
         ), "StaticTensorSpec can have at most one fusion type"
         self.alignment = internals.alignment
         self.address_space = internals.address_space
-        self.exclusive = internals.exclusive
 
     @always_inline
     def to_unfused(
@@ -458,7 +450,6 @@ struct StaticTensorSpec[
         return {
             self.alignment,
             self.address_space,
-            self.exclusive,
         }
 
     # This indirect approach to providing get_unknown is necessary because the
@@ -480,7 +471,6 @@ struct StaticTensorSpec[
         return {
             self.alignment,
             self.address_space,
-            self.exclusive,
         }
 
     @always_inline
@@ -498,7 +488,6 @@ struct StaticTensorSpec[
         return {
             self.alignment,
             self.address_space,
-            self.exclusive,
         }
 
     @always_inline
@@ -512,7 +501,6 @@ struct StaticTensorSpec[
         return {
             new_alignment,
             self.address_space,
-            self.exclusive,
         }
 
     @always_inline
@@ -528,7 +516,6 @@ struct StaticTensorSpec[
         return {
             new_alignment,
             self.address_space,
-            self.exclusive,
         }
 
     @always_inline
@@ -546,7 +533,6 @@ struct StaticTensorSpec[
         return {
             self.alignment,
             self.address_space,
-            self.exclusive,
         }
 
     @always_inline
@@ -562,7 +548,6 @@ struct StaticTensorSpec[
         return {
             new_alignment,
             self.address_space,
-            self.exclusive,
         }
 
     @always_inline
@@ -578,7 +563,6 @@ struct StaticTensorSpec[
         return {
             self.alignment,
             self.address_space,
-            self.exclusive,
         }
 
     @always_inline
@@ -595,7 +579,6 @@ struct StaticTensorSpec[
         return {
             self.alignment,
             self.address_space,
-            self.exclusive,
         }
 
     @always_inline
@@ -612,7 +595,6 @@ struct StaticTensorSpec[
         return {
             self.alignment,
             self.address_space,
-            self.exclusive,
         }
 
     @always_inline
@@ -629,7 +611,6 @@ struct StaticTensorSpec[
         return {
             self.alignment,
             self.address_space,
-            self.exclusive,
         }
 
     @always_inline
@@ -651,7 +632,6 @@ struct StaticTensorSpec[
         return {
             self.alignment,
             self.address_space,
-            self.exclusive,
         }
 
 
@@ -659,7 +639,6 @@ struct StaticTensorSpec[
 struct StaticTensorSpecInternal[dtype: DType, rank: Int](ImplicitlyCopyable):
     var alignment: Int
     var address_space: AddressSpace
-    var exclusive: Bool
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1006,7 +985,6 @@ struct ManagedTensorSlice[
 
     comptime address_space = Self.static_spec.address_space
     comptime alignment = Self.static_spec.alignment
-    comptime exclusive = Self.static_spec.exclusive
     # IntTuple aliases for static shape/strides.
     comptime _static_shape_tuple = Self.static_spec.shape_tuple
     comptime _static_strides_tuple = Self.static_spec.strides_tuple

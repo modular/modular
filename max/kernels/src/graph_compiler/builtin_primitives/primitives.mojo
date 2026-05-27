@@ -1109,7 +1109,6 @@ def mogg_tensor_init[
     input: IO,
     static_layout: TensorLayout,
     alignment: Int,
-    exclusive: Bool,
 ](
     ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
 ) -> ManagedTensorSlice[
@@ -1118,11 +1117,7 @@ def mogg_tensor_init[
         dtype,
         rank,
         static_layout=static_layout,
-    ](
-        alignment,
-        AddressSpace.GENERIC,
-        exclusive,
-    ),
+    ](alignment, AddressSpace.GENERIC),
 ]:
     """
     Helper for constructing a ManagedTensorSlice.
@@ -1232,11 +1227,7 @@ def reshape_contiguous_buffer[
         buffer.dtype,
         new_rank,
         static_layout=static_layout,
-    ](
-        1,
-        AddressSpace.GENERIC,
-        True,
-    ),
+    ](1, AddressSpace.GENERIC),
 ]:
     """
     Constructs a new ManagedTensorSlice with a new shape and static spec.
