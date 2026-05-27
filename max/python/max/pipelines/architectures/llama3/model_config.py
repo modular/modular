@@ -267,6 +267,15 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         rope_scaling = getattr(huggingface_config, "rope_scaling", None)
 
         if rope_scaling is not None:
+            # Only the *flat* HuggingFace rope_scaling shape is supported
+            # here, with either "type" or "rope_type" as the discriminator
+            # (e.g. {"rope_type": "llama3", "factor": 8.0, ...}). The
+            # nested per-layer-type shape used by some modern HF configs —
+            # where `rope_parameters` is keyed by layer type such as
+            # "full_attention" or "sliding_attention" — is not handled
+            # here. Architectures using that shape need a config subclass
+            # that pre-flattens the dominant layer-type's parameters
+            # before delegating to this method.
             # Since "rope_type" huggingface config is not standardized, we need
             # to check for both "type" and "rope_type" keys.
             # TODO: A better solution would be for those family of models to
