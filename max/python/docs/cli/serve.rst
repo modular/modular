@@ -104,6 +104,18 @@ Common errors
     avoid the warning, set ``MAX_SERVE_METRICS_ENDPOINT_PORT`` to a
     free port on the second process.
 
+``ValidationError: 1 validation error for PipelineConfig — Value error, Failed to import custom model from: …``
+    The pydantic validator wraps the underlying import failure, so
+    the real cause (a relative import inside the slug's
+    ``__init__.py``, a missing top-level ``ARCHITECTURES`` list, a
+    syntax error in the slug, or a dataclass field mismatch) is not
+    shown in the message. Reproduce the import manually to see the
+    real error:
+
+    .. code-block:: bash
+
+        python -c "import sys; sys.path.append('PATH_TO_PARENT'); import MODULE_NAME"
+
 You can extend MAX with your own model implementations by loading custom
 architectures through the ``--custom-architectures`` flag. Each value takes
 the form ``path/to/module:module_name``:
