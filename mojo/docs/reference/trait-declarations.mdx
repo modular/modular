@@ -25,7 +25,7 @@ ASTDecl.h (traitConformanceLineage, doesNominalTypeConformTo),
 TokenKinds.def, ExprNode.h, MojoDiags.h, ParserBase.h
 -->
 
-A *trait* defines requirements that a conforming type must satisfy
+A *trait* defines requirements that a conforming type must satisfy,
 including methods, associated types, and constants. Traits are similar to
 *protocols* in Swift, *interfaces* in Java, and *traits* in Rust. When a
 type conforms to a trait, the compiler checks every requirement and rejects
@@ -62,7 +62,6 @@ requirements:
 
 ```mojo
 trait AnyType:
-
     pass
 ```
 
@@ -101,8 +100,9 @@ describe a capability: `Writable`, `Hashable`, `Copyable`.
 
 :::caution
 When defining traits, avoid private member names with single or double
-underscore prefixes. Required members may be hidden from trait users.
-For similar reasons, don't use `@doc_hidden` to hide trait members.
+underscore prefixes. It may cause required members to be hidden in
+generated documentation from trait users. For similar reasons, don't use
+`@doc_hidden` to hide trait members.
 
 The standard library has a small number of exceptions for required trait
 elements known to the compiler.
@@ -182,8 +182,8 @@ trait Describable:
 
 Provided behavior can't use implementation details from any specific
 conforming type, as a trait has no knowledge of a type's capabilities
-beyond those declared in the trait and refinement list. It must work
-across all of them.
+beyond those declared in the trait and refinement list. The behavior
+must work across all conforming types.
 
 ### `pass` vs `...`
 
@@ -200,11 +200,11 @@ the compiler will encourage you to replace it with `...`:
 trait Unsupported:
     def __compute__(self) -> Int:
         pass
-    # Error: trait method has results but default
-    # implementation returns no value; did you mean '...'?
+    # Error because trait method with a return type must not use 'pass'.
+    # Use '...' to declare the method as required.
 ```
 
-## Comptime members - associated types
+## Comptime members: associated types
 
 An associated type is a `comptime` member that declares a related
 subordinate type that conforming types must specify. For example, an
@@ -280,7 +280,7 @@ struct Unsupported:
     # without an initializer
 ```
 
-## Comptime members - constants and required values
+## Comptime members: constants and required values
 
 A trait can declare `comptime` constants (shared value) and required
 assignments (conforming types must provide a value).
@@ -319,7 +319,7 @@ Don't use traits to define general-purpose constants like `PI` or
 or as a public member of a related struct for broader use.
 :::
 
-## Comptime members: required values
+### Comptime members: required values
 
 A required value is a `comptime` member without an initializer. Conforming
 types must provide a value for it. This is useful when the trait needs a
@@ -365,7 +365,7 @@ validation for `DegreesCentigrade` and fail for `Pascals`.
 
 ## Trait refinement
 
-When a trait refines another, its constraint implies the parent's constraint:
+When a trait refines another, its constraint includes the parent's constraint:
 
 ```mojo
 trait Printable:
@@ -440,7 +440,7 @@ Traits don't support `where` clauses on methods:
 
 ```mojo
 trait Unsupported:
-    def maybe(self) -> Int where Self: Sized:
+    def maybe(self) -> Int where conforms_to(Self, Sized):
         ...
     # Error: 'where' clauses on trait methods are not supported
 ```

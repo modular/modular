@@ -17,6 +17,13 @@
 #        without initializer errors, missing method errors, missing
 #        required member errors, type mismatch errors, default
 #        method conflict errors, non-conforming argument errors.
+# Print-only tests: test_required_methods, test_provided_methods,
+#        test_able_to_say_hello, test_parameter_level_bounds, and
+#        test_fieldwise_bounds use print() rather than assertions
+#        because asserting on string representations is fragile
+#        (reflection-based output format can change). These tests
+#        still verify compilation, trait constraint satisfaction, and
+#        dispatch — successful execution without raising is the signal.
 from std.testing import assert_equal
 
 
