@@ -24,5 +24,5 @@ def PrecompileDescription : MojoCommandDescription<
   "command, and specify the output path and filename with `-o`.\n"
   "\n"
   "For more information, see [Mojo modules and "
-  "packages](https://docs.modular.com/mojo/manual/packages)." ,
+  "packages](https://mojolang.org/docs/manual/packages/)." ,
   [UsageInfo<"options", "path", /*variadicInput=*/false>]>, Index<5>;
