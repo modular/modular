@@ -4269,6 +4269,48 @@ struct DeviceGraphBuilder(Movable):
         )
         return self._last_node()
 
+    @always_inline
+    def add_empty(
+        self,
+        *,
+        var dependencies: List[DeviceGraphNode],
+    ) raises -> DeviceGraphNode:
+        """Adds an empty (no-op) node to the graph.
+
+        Empty nodes perform no work at execution time. They are used purely
+        for transitive ordering: a single empty node fanned in from `m`
+        predecessors and out to `n` successors expresses an `m`-to-`n`
+        barrier using `m + n` edges instead of `m * n`, and serves as a
+        stable handle for "the completion of this phase" when the producer
+        set is not visible to the consumer.
+
+        Args:
+            dependencies: Explicit list of predecessor node handles. An
+                empty list makes the new node a graph root with no
+                predecessors; a non-empty list uses those exact handles
+                as predecessors.
+
+        Returns:
+            A handle to the newly added empty node.
+
+        Raises:
+            If adding the node fails.
+        """
+        var dep_args = _pack_dep_args(dependencies)
+        # const char *AsyncRT_DeviceGraphBuilder_addEmpty(
+        #     DeviceGraphBuilder *builder, const int32_t *depIds,
+        #     int64_t numDeps)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_addEmpty",
+                _CString[],
+                _DeviceGraphBuilderPtr[mut=True],
+                UnsafePointer[Int32, ImmutAnyOrigin],
+                Int64,
+            ](self._handle, dep_args.ids, dep_args.count)
+        )
+        return self._last_node()
+
     def instantiate(var self) raises -> DeviceGraph:
         """Instantiates the constructed graph into an executable device graph.
 
