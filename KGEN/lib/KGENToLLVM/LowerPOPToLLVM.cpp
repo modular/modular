@@ -3463,6 +3463,11 @@ void LowerPOPToLLVMPass::runOnOperation() {
     return signalPassFailure();
   }
 
+  // See parallel comment in LowerGlobalPOPToLLVMPass: when this pass owns
+  // a default-constructed PluginManager, select the target plugin now.
+  if (passLocalPluginManager)
+    passLocalPluginManager->selectPluginForTarget(targetInfo.getTriple().str());
+
   // In contrast to GlobalPOPToLLVM, we do not want to lower AIR intrinsic
   // here, because this could lead to data race to a symtab.
   target.addDynamicallyLegalOp<CallLLVMIntrinsicOp>([](CallLLVMIntrinsicOp op) {
@@ -3943,6 +3948,13 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
                     "could not find an enclosing target specification");
     return signalPassFailure();
   }
+
+  // Needs this when pass is running for unit test with kgen-opt as a pass alone
+  // instead of being part of the pipeline where the pipeline setup would take
+  // care of setting currPlugin. Pick it now so plugin pattern-population
+  // forwarders find an active plugin.
+  if (passLocalPluginManager)
+    passLocalPluginManager->selectPluginForTarget(targetInfo.getTriple().str());
 
   POPToLLVMTypeConverter typeConverter(targetInfo);
   InterpreterMemoryConverter imc(symtab, typeConverter);
