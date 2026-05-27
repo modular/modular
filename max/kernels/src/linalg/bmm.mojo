@@ -1206,15 +1206,13 @@ def bmm_sm100_blockwise_scaled_fp8[
     # The K-direction scale granularity is fixed at BK
     # (k_scale_granularity == BK). The N-direction granularity may be
     # finer and is independent of BK_kernel — encoded in b_scales.dim(1)
-    # = N // n_scale_granularity.
-    if (
-        a_scales_dim0 != b_scales_dim1
-        or K % a_scales_dim0 != 0
-        or (K // a_scales_dim0) != BK
-    ):
+    # = N // n_scale_granularity. K need not be a multiple of BK: the
+    # last K-tile is covered by TMA OOB zero-padding and the matching
+    # ceildiv scale row, contributing zero to the accumulator.
+    if a_scales_dim0 != b_scales_dim1 or a_scales_dim0 != ceildiv(K, BK):
         raise Error(
-            "a_scales.dim(1) must equal b_scales.dim(2), K must be divisible"
-            " by a_scales.dim(1), and (K // a_scales.dim(1)) must equal BK."
+            "a_scales.dim(1) must equal b_scales.dim(2) and equal"
+            " ceildiv(K, BK)."
         )
 
     if N % b_scales_dim0 != 0 or (N // b_scales_dim0) not in (64, 128):
@@ -1401,7 +1399,7 @@ def batched_matmul_dynamic_scaled_fp8_naive[
         ](
             a_scales.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[a_scales_layout_2d](
-                Index(K // BLOCK_SCALE_K, M_a_scales),
+                Index(ceildiv(K, BLOCK_SCALE_K), M_a_scales),
                 Index(a_scales.stride(1), a_scales.stride(2)),
             ),
         )
@@ -1412,7 +1410,7 @@ def batched_matmul_dynamic_scaled_fp8_naive[
         ](
             b_scales.ptr_at_offset(Index(batch, 0, 0)),
             RuntimeLayout[b_scales_layout_2d](
-                Index(N // BLOCK_SCALE_K, K // BLOCK_SCALE_K),
+                Index(ceildiv(N, BLOCK_SCALE_K), ceildiv(K, BLOCK_SCALE_K)),
                 Index(b_scales.stride(1), b_scales.stride(2)),
             ),
         )

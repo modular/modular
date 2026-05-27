@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
+from std.math import ceildiv
 from std.sys import size_of
 
 from std.gpu.host import DeviceContext
@@ -102,7 +103,11 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         transpose_b,
     )
 
-    assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
+    # K and N do not have to be multiples of BLOCK_SCALE_K — the scale grid
+    # is sized with ceildiv, and the kernel covers the partial last tile via
+    # TMA OOB zero-padding.
+    comptime K_SCALES = ceildiv(KType.static_value, BLOCK_SCALE_K)
+    comptime N_SCALES = ceildiv(NType.static_value, BLOCK_SCALE_K)
 
     var a_shape = row_major(Coord(batch_size, m, k))
     var b_shape = row_major(
@@ -113,15 +118,9 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         )
     )
     var c_shape = row_major(Coord(batch_size, m, n))
-    var a_scales_shape = row_major(
-        Coord(batch_size, Idx[KType.static_value // BLOCK_SCALE_K], m)
-    )
+    var a_scales_shape = row_major(Coord(batch_size, Idx[K_SCALES], m))
     var b_scales_shape = row_major(
-        Coord(
-            batch_size,
-            Idx[NType.static_value // BLOCK_SCALE_K],
-            Idx[KType.static_value // BLOCK_SCALE_K],
-        )
+        Coord(batch_size, Idx[N_SCALES], Idx[K_SCALES])
     )
 
     var a_shape_2D = row_major(Coord(m, k))
@@ -132,21 +131,14 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         )
     )
     var c_shape_2D = row_major(Coord(m, n))
-    var a_scales_shape_2D = row_major(
-        Coord(Idx[KType.static_value // BLOCK_SCALE_K], m)
-    )
-    var b_scales_shape_2d = row_major(
-        Coord(
-            Idx[NType.static_value // BLOCK_SCALE_K],
-            Idx[KType.static_value // BLOCK_SCALE_K],
-        )
-    )
+    var a_scales_shape_2D = row_major(Coord(Idx[K_SCALES], m))
+    var b_scales_shape_2d = row_major(Coord(Idx[N_SCALES], Idx[K_SCALES]))
 
     var a_size = bs * M * K
     var b_size = bs * N * K if transpose_b else bs * K * N
     var c_size = bs * M * N
-    var a_scales_size = bs * (K // BLOCK_SCALE_K) * M
-    var b_scales_size = bs * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
+    var a_scales_size = bs * K_SCALES * M
+    var b_scales_size = bs * N_SCALES * K_SCALES
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -604,6 +596,35 @@ def main() raises:
             Idx[128],
             Idx[512],
             Int(128),
+        )
+
+        test_batched_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape=Index(64, 128, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            Int(120),
+            Idx[8192],
+            Idx[192],
+            Int(3),
+        )
+        test_batched_matmul_sm100_blockwise_scaled_fp8[
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            umma_shape=Index(64, 128, 32),
+            swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](
+            ctx,
+            Int(1000),
+            Idx[3072],
+            Idx[576],
+            Int(3),
         )
 
         # test non-row-major layout for C only
