@@ -606,22 +606,22 @@ def ImplicitOriginRefAttr
     The latter would appear in something like this:
 
     ```
-    alias bar: fn[
+    comptime bar: def[
       X: AnyType,
-      f: fn[Y: AnyType](X, Y)->None
+      f: def[Y: AnyType](X, Y)->None
     ] = ...
     ```
 
-    That `fn[Y: AnyType](X, Y)->None`'s mention of `X` is actually a lit.ref
+    That `def[Y: AnyType](X, Y)->None`'s mention of `X` is actually a lit.ref
     whose origin is a #lit.implicit.origin.ref<1, 0> to refer to an implicit origin on
-    the outermost `fn`.
+    the outermost `def`.
 
     But, per DCRTODS, it can NOT be used inside a generator's body to refer to
     one of the generator's origin parameters, like this:
 
     ```
     def foo[X: AnyType](x: X):
-        alias zork: def[...(
+        comptime zork: def[...(
           # Cannot have: #lit.implicit.origin.ref<1, 0>
         )->None = ...
     ```

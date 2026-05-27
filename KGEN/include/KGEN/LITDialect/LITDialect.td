@@ -16,9 +16,9 @@ include "mlir/IR/DialectBase.td"
 def LITDialect : Dialect {
   let name = "lit";
 
-  let summary = "The 'lit' dialect for Lightning";
+  let summary = "The 'lit' dialect for Mojo🔥";
   let description = [{
-    This dialect defines the `lit` dialect, a set of language-level
+    This dialect defines the `lit` (🔥) dialect, a set of language-level
     abstractions that lower to the `kgen` dialect.
   }];
 
