@@ -127,7 +127,7 @@ establishes a concrete type at compile time:
 
 ```mojo
 struct Unsound:
-    var item: Writable  # Error: dynamic traits not supported
+    var item: Writable  # Error because dynamic traits not supported
 
 @fieldwise_init
 struct Sound[T: Writable & Copyable & ImplicitlyDestructible]:
@@ -181,7 +181,7 @@ stores another instance of itself, even when nested within an Optional:
 ```mojo
 struct Node:
     var value: String
-    var next: Optional[Node]  # ERROR: Recursive reference
+    var next: Optional[Node]  # Error because this is a recursive reference
 ```
 
 To build recursive data structures such as linked lists and trees, you must
@@ -302,9 +302,20 @@ When two traits provide conflicting defaults for the same method, the
 struct must implement it manually:
 
 ```mojo
-# Error: trait method requirement some_method has
-# conflicting default implementations in TraitA and
-# TraitB; you must implement it manually
+trait A:
+    def foo(self) -> Int:
+        return 42
+
+trait B:
+    def foo(self) -> Int:
+        return 1024
+
+@fieldwise_init
+struct S(A & B):
+    pass
+
+# Error: trait method requirement 'foo' has conflicting default
+# implementations in TraitA and TraitB; you must implement it manually
 ```
 
 ### Conditional conformance
@@ -351,15 +362,15 @@ struct Box[T: Copyable](
 
 Conditional conformance can depend only on information known at compile
 time. While it often uses traits to constrain conformance, conditional
-conformance is not limited to traits. A condition can use any compile-time
+conformance isn't limited to traits. A condition can use any compile-time
 value that can be evaluated in a clear and consistent way.
 
-For example, a type might conform to a trait only on a specific platform,
+For example, a type might conform to a trait only on a specific platform
 (such as NVIDIA GPUs or Apple Silicon with Metal) or when a compile-time
 constant has a given value. If the condition can be fully resolved at
-compile time, it can gate conformance.
+compile time, it can restrict conformance.
 
-That said, conformance cannot depend on a computed compile-time member.
+That said, conformance can't depend on a computed compile-time member.
 Trait conformance is part of the type's signature, and the signature is
 needed to resolve members. Depending on a computed member would create a
 circular dependency.
@@ -389,7 +400,7 @@ struct Pair[T: Copyable & ImplicitlyDestructible]:
     var second: Self.T
 ```
 
-If `T` is not `Writable`, the struct can still declare `Writable`
+If `T` isn't `Writable`, the struct can still declare `Writable`
 conformance by providing its own implementation of `Writable`'s
 required methods. This is impractical without an API surface that describes
 `T` instances.
@@ -434,7 +445,19 @@ struct Pair[T: Copyable & ImplicitlyDestructible](
     Writable where conforms_to(T, Writable),
     Copyable
 ):
-    # ...
+    var first: Self.T
+    var second: Self.T
+
+def main():
+    var pair1 = Pair(first=1, second=2)
+    var pair2 = Pair(first=1, second=2)
+    var pair3 = Pair(first=3, second=4)
+
+    print(pair1 == pair2)  # True
+    print(pair1 == pair3)  # False
+
+    var pair4 = pair1.copy() # OK: Copyable conformance doesn't depend on T
+    _ = pair4
 ```
 
 ## Methods
@@ -442,11 +465,11 @@ struct Pair[T: Copyable & ImplicitlyDestructible](
 Instance methods take `self` as the first argument. The convention on
 `self` determines access:
 
-- Bare `self` -- immutable reference.
-- `mut self` -- allows modification.
-- `out`, `deinit` -- used by lifecycle methods.
-- `out` -- also used to specify a named result slot.
-- `ref` -- used to declare an argument with parametric mutability, and which
+- Bare `self`: immutable reference.
+- `mut self`: allows modification.
+- `out`, `deinit`: used by lifecycle methods.
+- `out`: also used to specify a named result slot.
+- `ref`: used to declare an argument with parametric mutability, and which
   must be passed in memory regardless of its type.
 
 A method without `self` is an error unless it's marked `@staticmethod`:
@@ -467,11 +490,11 @@ struct OK:
 
 It can access type parameters and comptime members, can call other static
 methods, has no `self`, and has no access to instance fields and instance
-methods
+methods.
 
 Use static methods for utility functions related to the
 struct's mission that don't need an instance to work, such as factory
-methods and general purpose helpers.
+methods and general-purpose helpers.
 
 ### Dunder methods
 
@@ -509,8 +532,8 @@ struct Unsound:
     # 'out' argument
 ```
 
-`__init__()` is implicitly static. Adding `@staticmethod` is an error.
-Structs can define multiple `__init__()` overloads.
+`__init__()` is implicitly static. Structs can define multiple `__init__()`
+overloads.
 
 ## Instance tear-down with destructors
 
@@ -545,6 +568,9 @@ struct Test[dtype: DType]:
     comptime default_size = 1024
     comptime DefaultMatrixType = Matrix2D[Self.dtype, Self.default_size, Self.default_size]
     comptime SquareMatrixType[size: Int] = Matrix2D[Self.dtype, size, size]
+
+def main():
+    print(Test[DType.int32].default_size) # 1024
 ```
 
 Access these constants on the instance or the type. For example,
