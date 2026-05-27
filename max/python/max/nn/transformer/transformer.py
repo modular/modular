@@ -95,6 +95,17 @@ def forward_sequential_layers(
             subgraph. If `None` or empty, all layers are called directly
             without subgraphs. Layers not listed in any group also fall through
             to direct call.
+
+            .. note::
+
+               All layers in a group must share the same operand types.
+               The subgraph signature is fixed at the first layer in
+               the group; other layers calling it with different shapes
+               fail with an MLIR
+               ``Subgraph ... has wrong type for argument`` error.
+               Architectures with per-layer-variable shapes (variable
+               head count, mixed dense and sparse MLP) must group
+               layers by signature.
         name_for_subgraph: A callable that takes the group index and returns
             the subgraph name.
         weight_prefix_for_layer: A callable that takes the layer index and
