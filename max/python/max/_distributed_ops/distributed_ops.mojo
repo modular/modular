@@ -14,13 +14,15 @@
 from std.collections import InlineArray
 from std.memory import OpaquePointer, UnsafePointer
 from std.os import abort
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceContext, DeviceContextList
 from std.python import Python, PythonObject
+from std.python._cpython import GILReleased
 from std.python.bindings import PythonModuleBuilder
 
 
 from comm import MAX_GPUS, Signal
 from comm.broadcast import broadcast
+from comm.device_collective import _launch_device_collective
 from layout import Idx, TileTensor, row_major
 
 
@@ -100,21 +102,37 @@ def _do_broadcast[
     )
     var in_tile = TileTensor(in_ptr, row_major(n)).as_immut()
 
+    var out_ptrs = InlineArray[
+        UnsafePointer[Scalar[DType.uint8], MutAnyOrigin], ngpus
+    ](uninitialized=True)
+    var ctx_array = InlineArray[DeviceContext, ngpus](uninitialized=True)
     for i in range(ngpus):
         var out_addr = Int(py=output_data_ptrs[i])
         var ctx_addr = Int(py=device_context_ptrs[i])
-        var ctx = DeviceContext(
-            OpaquePointer[MutExternalOrigin](unsafe_from_address=ctx_addr)
-        )
-        var out_ptr = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
+        out_ptrs[i] = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
             unsafe_from_address=out_addr
         )
-        var out_tile = TileTensor(out_ptr, row_major(n))
-
-        # Matches the graph-side ``mo.distributed.broadcast`` which also runs
-        # without multimem. Enabling the multimem (multicast-store) path needs
-        # an SM90+ build target for the shared library, which would require
-        # per-arch ``.so`` variants.
-        broadcast[ngpus, use_multimem=False](
-            in_tile, out_tile, rank_sigs, ctx, root_v
+        ctx_array[i] = DeviceContext(
+            OpaquePointer[MutExternalOrigin](unsafe_from_address=ctx_addr)
         )
+    var dev_ctxs = DeviceContextList[ngpus](ctx_array^)
+
+    @always_inline
+    def launch_broadcast[
+        index: Int
+    ]() raises {
+        read in_tile,
+        read rank_sigs,
+        read out_ptrs,
+        read dev_ctxs,
+        read n,
+        read root_v,
+    }:
+        var out_tile = TileTensor(out_ptrs[index], row_major(n))
+        broadcast[ngpus, use_multimem=False](
+            in_tile, out_tile, rank_sigs, dev_ctxs[index], root_v
+        )
+
+    # Worker callbacks may need to acquire the GIL while we wait.
+    with GILReleased(Python()):
+        _launch_device_collective[ngpus](launch_broadcast, dev_ctxs)

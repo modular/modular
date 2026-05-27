@@ -130,4 +130,47 @@ def distributed_broadcast(
     )
 
 
-__all__ = ["distributed_broadcast"]
+def distributed_broadcast_raw(
+    input_data_ptr: int,
+    output_data_ptrs: Sequence[int],
+    signal_data_ptrs: Sequence[int],
+    device_context_ptrs: Sequence[int],
+    num_bytes: int,
+    root: int,
+) -> None:
+    """Like :func:`distributed_broadcast`, but takes already-resolved pointers.
+
+    All pointer-bearing arguments are raw integers. The caller is responsible
+    for keeping the underlying buffers and device contexts alive across the
+    call, and for matching pointers to the right devices in canonical order.
+
+    Use this on hot paths where the surrounding loop has already cached the
+    signal/device pointers and can compute output pointers cheaply (e.g.
+    base + page * page_bytes). It skips the Buffer/Device validation that
+    :func:`distributed_broadcast` does on every call.
+
+    Args:
+        input_data_ptr: Raw pointer to the source buffer on device ``root``.
+        output_data_ptrs: One raw pointer per device, in canonical order.
+        signal_data_ptrs: One raw pointer per device to a signal buffer.
+        device_context_ptrs: One raw device-context pointer per device.
+        num_bytes: Number of bytes to broadcast.
+        root: Index into ``device_context_ptrs`` of the source rank.
+    """
+    if _broadcast_kernel is None:
+        raise RuntimeError(
+            "distributed_broadcast is unavailable: the mojo extension could "
+            "not be loaded. This typically means the host has no GPU toolchain."
+        )
+    _broadcast_kernel(
+        input_data_ptr,
+        list(output_data_ptrs),
+        list(signal_data_ptrs),
+        list(device_context_ptrs),
+        int(num_bytes),
+        len(device_context_ptrs),
+        int(root),
+    )
+
+
+__all__ = ["distributed_broadcast", "distributed_broadcast_raw"]
