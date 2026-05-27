@@ -34,6 +34,12 @@ code examples for package management and virtual environments.
 [install the Mojo extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 in VS Code or Cursor.
 
+4. Optionally, install the
+   [`ty` extension](https://marketplace.visualstudio.com/items?itemName=astral-sh.ty)
+   (`astral-sh.ty`) in VS Code for Python IntelliSense (go-to-definition,
+   autocomplete). The source path is already configured in `pyproject.toml`
+   under `[tool.ty.environment]`.
+
 That's it.
 
 The build system uses [Bazel](https://bazel.build/), and if you don't have it,
