@@ -3862,10 +3862,10 @@ struct DeviceGraphBuilder(Movable):
         a `Some` result and unwrap via `.value()`.
         """
 
-        def to_device_node(id: Int32) -> Optional[DeviceGraphNode]:
+        def to_device_node(id: Int32) -> DeviceGraphNode:
             return DeviceGraphNode(id)
 
-        return self._last_node_id().and_then[To=DeviceGraphNode](to_device_node)
+        return self._last_node_id().map[To=DeviceGraphNode](to_device_node)
 
     @parameter
     @always_inline
