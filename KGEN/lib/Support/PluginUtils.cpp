@@ -89,7 +89,12 @@ PluginManager::PluginManager() {
 }
 
 PluginManager::PluginManager(StringRef targetTriple) : PluginManager() {
+  selectPluginForTarget(targetTriple);
+}
+
+void PluginManager::selectPluginForTarget(StringRef targetTriple) {
   llvm::SmallVector<std::string> paths;
+  currPlugin = nullptr;
   for (auto &plugin : plugins) {
     if (plugin->isPluginForTarget(targetTriple)) {
       currPlugin = plugin.get();

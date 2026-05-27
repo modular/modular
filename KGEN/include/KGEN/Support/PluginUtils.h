@@ -147,6 +147,15 @@ public:
   bool hasPluginForTarget(StringRef targetTriple) const;
   bool hasPluginForTarget(const llvm::Triple &targetTriple) const;
 
+  /// Pick the active plugin for `targetTriple` from the already-loaded
+  /// plugins. Needed because the default ctor loads plugins without a
+  /// triple, leaving `currPlugin` null. Default ctor should only be invoked
+  /// when this pass is run alone for unit tests through ken-opt instead of
+  /// being part of the pipeline. Plugin mutation needs to be careful with
+  /// concurrency since the same pass can be run in parallel for multiple
+  /// functions.
+  void selectPluginForTarget(StringRef targetTriple);
+
   /// Plugin API for creating a shared object file.
   REGISTER_CALL_KGEN_PLUGIN_FN(CreateSharedObject, createSharedObject,
                                M::ErrorOr<M::BufferRef>, M::BufferRef,
