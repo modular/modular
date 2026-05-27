@@ -591,7 +591,7 @@ def test_if_cond(var cond: Bool, memCond: MemBoolish):
 
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 def test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#kgen.cast_from_builtin<#lit.struct.extract<:!Bool cond, "_mlir_value"> : i1>, {2}, {3})>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(from_builtin(:i1 #lit.struct.extract<:!Bool cond, "_mlir_value">), {2}, {3})>
   comptime i = 2 if cond else 3
 
   # CHECK-NEXT: lit.alias.decl *"j{{.*}} = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">
@@ -639,9 +639,9 @@ def callInParam[callable: def[x: Int](Int) thin -> Int]() -> Int:
 def parameterExprs[a: Int, a2: Int]():
   # CHECK: lit.alias.decl *"b{{.*}}": !Int = <{0}>
   comptime b = a-a
-  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{{.*}}add(#lit.struct.extract<:!Int a, "_mlir_value">, 42)
+  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{{.*}}to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int a, "_mlir_value">), 42)){{.*}}>
   comptime c = a+42
-  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{{.*}}mul(#lit.struct.extract<:!Int a, "_mlir_value">, #lit.struct.extract<:!Int a2, "_mlir_value">)
+  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{{.*}}to_builtin(:scalar<index> mul(from_builtin(#lit.struct.extract<:!Int a, "_mlir_value">), from_builtin(#lit.struct.extract<:!Int a2, "_mlir_value">))){{.*}}>
   comptime d = a*a2
 
 ##===----------------------------------------------------------------------===##

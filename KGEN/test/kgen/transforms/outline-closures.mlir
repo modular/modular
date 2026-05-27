@@ -31,7 +31,7 @@ kgen.generator @call_region_2_args<fn: <index>(index, index) capturing ->index>(
 // CHECK-SAME:            sourceName = "my_nested_func"
 // CHECK-NEXT:   [[ARG0:%.*]] = pop.compiler.global_load "raiseClosure_context_var_0" : index
 // CHECK-NEXT:   [[ARG1:%.*]] = pop.compiler.global_load "raiseClosure_context_var_1" : index
-// CHECK-NEXT:   [[CST:%.*]] = kgen.param.constant = <add(mul(B, Jefffffffffff, -1), mul(A, Jefffffffffff), mul(C, Jefffffffffff))>
+// CHECK-NEXT:   [[CST:%.*]] = kgen.param.constant = <to_builtin(:scalar<index> add(mul(from_builtin(B), from_builtin(Jefffffffffff), -1), mul(from_builtin(A), from_builtin(Jefffffffffff)), mul(from_builtin(C), from_builtin(Jefffffffffff))))>
 // CHECK-NEXT:   [[RESULT:%.*]] = index.add [[ARG0]], [[ARG1]]
 // CHECK-NEXT:   kgen.return [[RESULT]]
 
@@ -62,7 +62,7 @@ kgen.generator @raiseClosure<Jefffffffffff>(%arg0: index) -> index {
 
 // CHECK-LABEL: kgen.generator @raise2Closures_Fn<C, A>() capturing -> index
 // CHECK-NEXT:    %[[ARG0:.*]] = pop.compiler.global_load "raise2Closures_context_var_0" : index
-// CHECK-NEXT:    %[[V0:.*]] = kgen.param.constant = <add(A, C)>
+// CHECK-NEXT:    %[[V0:.*]] = kgen.param.constant = <to_builtin(:scalar<index> add(from_builtin(A), from_builtin(C)))>
 // CHECK-NEXT:    kgen.return %[[ARG0]] : index
 
 

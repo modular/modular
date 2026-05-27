@@ -3762,14 +3762,6 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
         return CastFromBuiltinAttr::get(operand);
       });
 
-#if 1
-  // FIXME: this won't be needed after fully migrated, right now, it is possible
-  // for GC to emit exprs like `eq si64, si64 -> scalar<bool>`. In those case,
-  // we don't need to convert the result back to builtin type (yet we still need
-  // to canonicalize operands to simd form above).
-  needSIMDConv = needSIMDConv && !sugarIsa<SIMDType>(origResultType);
-#endif
-
   SIMDType resultSIMDType = getEquivalentSIMDType(origResultType);
   if (!resultSIMDType)
     resultSIMDType = cast<SIMDType>(origResultType);
@@ -3850,52 +3842,16 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
     }
   }
 
-#if 1
-  // TODO: We should just do a simple cast on the result, for now, convert the
-  // expression back to the original form such that GC can handle the folded
-  // version.
-  //
-  // NOTE: we need to be careful here: we convert the operands of the expression
-  // back to builtin type instead of cast the top expression directly, otherwise
-  // cast_to_builtin sink will recurse.
-  TypedAttr ret = llvm::cast_if_present<TypedAttr>(result);
-  if (ret && !sugarIsa<SIMDType>(origResultType)) {
-    if (auto expr = sugarDynCast<ParamOperatorAttr>(ret);
-        expr && llvm::is_contained(migratedPOCs, expr.getOpcode())) {
-      // instead of a concrete result, we might fold the expression to a canon
-      // form. We need to convert the expression back to non-SIMD form as well.
-      operands.assign(expr.getOperands().begin(), expr.getOperands().end());
-      opcode = expr.getOpcode();
-      // Unset the result.
-      ret = nullptr;
-    } else {
-      return CastToBuiltinAttr::get(ret, origResultType);
-    }
-  }
-
-  if (!ret) {
-    if (needSIMDConv) {
-      for (TypedAttr &operand : operands) {
-        operand = CastToBuiltinAttr::get(operand);
-        assert(operand);
-      }
-    }
-    ret = ParamOperatorAttr::Base::get(ctx, opcode, operands, origResultType);
-  }
-
-  return ret;
-#else
-  // Re-enable after fixing GC, then delete after builtin/SIMD unification.
-  TypedAttr ret =
-      result ? cast<TypedAttr>(result)
-             : ParamOperatorAttr::Base::get(ctx, opcode, operands, resultType);
+  // Delete after builtin/SIMD unification.
+  TypedAttr ret = result ? cast<TypedAttr>(result)
+                         : ParamOperatorAttr::Base::get(ctx, opcode, operands,
+                                                        resultSIMDType);
 
   // Cast back to the original type if needed.
-  if (resultType != origResultType)
+  if (ret.getType() != origResultType)
     ret = CastToBuiltinAttr::get(ctx, ret, origResultType);
 
   return ret;
-#endif
 }
 
 /// Construct a parameter operator attribute, folding it if possible.
@@ -4358,15 +4314,6 @@ static bool shouldSinkCast(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // We know all migrated POC have operands of the same type.
   Type operandType = operandsIn.front().getType();
 
-#if 1
-  if (auto simdType = sugarDynCast<SIMDType>(operandType)) {
-    // cast to builtin, dtype must be resolved in order to sink (for LE, EQ,
-    // LT, otherwise we can not infer the builtin type to be casted to).
-    //
-    // FIXME: cast to sink should not be needed after fixing GC.
-    return simdType.getResolvedDType().has_value();
-  }
-#endif
   // FIXME: this is because EQ/IN can be used to test type equality, yet we
   // can not have a simd of type values.
   return getEquivalentSIMDType(operandType) != nullptr;
@@ -4374,9 +4321,15 @@ static bool shouldSinkCast(POC opcode, ArrayRef<TypedAttr> operandsIn) {
 
 TypedAttr CastFromBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
                                    SIMDType out_type) {
-  if (auto fold = KGEN::foldCastFromBuiltin(arg, out_type))
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
+  if (auto fold = KGEN::foldCastFromBuiltin(arg, out_type)) {
+    auto ret = cast<TypedAttr>(cast<Attribute>(fold));
+    // Retain sugar if the arg pre-folded is a sugar.
+    if (auto argSugar = dyn_cast<SugarAttr>(arg)) {
+      ret = SugarAttr::getPreserved(
+          Base::get(ctx, argSugar.getSugared(), out_type), ret);
+    }
+    return ret;
+  }
 
   // Else, try sink the cast_from_builtin to the leaf of the expression,
   // s.t.,
@@ -4439,19 +4392,6 @@ TypedAttr CastToBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
   if (auto fold = KGEN::foldCastToBuiltin(arg, out_type))
     if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
       return ret;
-#if 1
-  // FIXME: We should not sink the cast_to_builtin to the leaf of the
-  // expression, ideally, ParamOperatorAttr should only take SIMD types: We have
-  // to do it now because GC use a scalar `si64` for DimType, which need to be
-  // migrated first.
-  if (auto expr = dyn_cast<ParamOperatorAttr>(arg);
-      expr && shouldSinkCast(expr.getOpcode(), expr.getOperands())) {
-    auto operands = llvm::map_to_vector(expr.getOperands(), [&](auto operand) {
-      return CastToBuiltinAttr::get(operand);
-    });
-    return ParamOperatorAttr::get(expr.getOpcode(), operands);
-  }
-#endif
   return Base::get(ctx, arg, out_type);
 }
 

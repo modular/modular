@@ -1051,6 +1051,22 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
       return success();
     }
 
+    if (keyword == "from_builtin") {
+      TypedAttr arg;
+      if (parseColonTypeParamValue(p, arg) || p.parseRParen())
+        return failure();
+      value = CastFromBuiltinAttr::get(arg);
+      return success();
+    }
+
+    if (keyword == "to_builtin") {
+      TypedAttr arg;
+      if (parseColonTypeParamValue(p, arg) || p.parseRParen())
+        return failure();
+      value = CastToBuiltinAttr::get(arg);
+      return success();
+    }
+
     // Otherwise it's a function expression.  If this has an explicit operand
     // type, parse it.
     Type operandType;
@@ -1401,6 +1417,20 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
       p << stringRep;
       return;
     }
+  }
+
+  if (auto from = dyn_cast<CastFromBuiltinAttr>(value)) {
+    p << "from_builtin(";
+    printColonTypeParamValue(p, from.getArg());
+    p << ')';
+    return;
+  }
+
+  if (auto to = dyn_cast<CastToBuiltinAttr>(value)) {
+    p << "to_builtin(";
+    printColonTypeParamValue(p, to.getArg());
+    p << ')';
+    return;
   }
 
   // Handle expressions.

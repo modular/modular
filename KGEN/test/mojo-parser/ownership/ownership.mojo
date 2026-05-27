@@ -1314,7 +1314,7 @@ def testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
   consume(t2^)
 
 # CHECK-LABEL: lit.fn @"my_min1
-# CHECK-SAME: !lit.ref<!Int, mut=and(*"x_is_mut`", *"y_is_mut`2"), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
+# CHECK-SAME: !lit.ref<!Int, mut=to_builtin(:scalar<bool> and(from_builtin(:i1 *"x_is_mut`"), from_builtin(:i1 *"y_is_mut`2"))), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
 def my_min1(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [x, y] Int:
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %x

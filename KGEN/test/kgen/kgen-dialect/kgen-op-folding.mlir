@@ -335,7 +335,7 @@ kgen.func @cast_to_builtin_sugar_identity() -> f32 {
 // CHECK-LABEL: @cast_from_builtin_sugar_identity
 kgen.generator @cast_from_builtin_sugar_identity<simd_param: !kgen.scalar<si32>>() -> !kgen.scalar<si32> {
   %r = kgen.param.constant: !kgen.scalar<si32> = <#kgen.cast_from_builtin<#kgen<sugar alias, si32, *?, #kgen.cast_to_builtin< #kgen.param.decl.ref<"simd_param"> : !kgen.scalar<si32> >>>>
-  // CHECK: kgen.param.constant: scalar<si32> = <simd_param>
+  // CHECK: kgen.param.constant: scalar<si32> = <sugar_preserved(from_builtin(:si32 *?), simd_param)> loc(#loc55)
   kgen.return %r : !kgen.scalar<si32>
 }
 

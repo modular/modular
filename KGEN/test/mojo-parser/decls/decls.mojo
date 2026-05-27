@@ -366,7 +366,7 @@ def callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.fn @"defaultArgumentReferencesParameter
-# CHECK-SAME: (%a: !Int = sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int p, "_mlir_value">, 87)}))
+# CHECK: to_builtin(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int p, "_mlir_value">), 87))
 def defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 
@@ -1519,7 +1519,7 @@ def need_positive_int[x: Int]() where x > 0:
     pass
 
 # CHECK-LABEL: lit.struct.decl @ConstraintStruct
-# CHECK-SAME: <a: !Int,{{.*}}ge(#lit.struct.extract<:!Int a, "_mlir_value">, 1)
+# CHECK-SAME: <a: !Int,{{.*}}<sugar_preserved({{.*}}ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int a, "_mlir_value">), 1)), #loc{{.*}}>
 struct ConstraintStruct[a: Int] where a > 0:
     comptime b = Self.a + 1
 
@@ -1531,19 +1531,17 @@ struct ConstraintStruct[a: Int] where a > 0:
         need_positive_int[Self.a]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <x: !Int,{{.*}}ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
+# CHECK-SAME: <x: !Int,{{.*}}<sugar_preserved({{.*}}ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), 1)), #loc{{.*}}>
 def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]() where x > 0:
     need_positive_int[x]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int,{{.*}}ge(#lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)
+# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">, <{<sugar_preserved(from_builtin(:i1 #lit.struct.extract<:!Bool apply(:!lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool> @std::@builtin::@stubs::@Int::@"__gt__(::Int,::Int)", *"cs.a`", {0}), "_mlir_value">), ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int *"cs.a`", "_mlir_value">), 1)), #loc236>}>>>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
 def use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
     pass
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct_in_constraint
-# CHECK-SAME: <x: !Int,
-# CHECK-SAME: ge(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
-# CHECK-SAME: ge(add(#lit.struct.extract<:!Int x, "_mlir_value">, 1), 2)
+# CHECK-SAME: <x: !Int, {<sugar_preserved({{.*}}ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), 1)){{.*}}>, <sugar_preserved({{.*}}ge(:scalar<index> add(from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), 1), 2)){{.*}}>}
 def use_constraint_struct_in_constraint[x: Int]()
     where x > 0
     where ConstraintStruct[x].b > 1:
