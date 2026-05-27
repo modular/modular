@@ -31,74 +31,41 @@ def while_loop(
     predicate: Callable[..., TensorValue],
     body: Callable[..., Value[Any] | Iterable[Value[Any]]],
 ) -> list[TensorValue]:
-    """Execute a loop until the predicate evaluates to false.
+    """Repeatedly executes a body function while a predicate holds.
 
-    Both the predicate and body functions must take in as arguments the same
-    number and types of values as specified in the init_args. The predication
-    function must return only a boolean scalar tensor of type :attr:`~max.dtype.DType.bool`.
-    The body function must return a list of values matching the types of init_args,
-    (or may return a value directly if there is only one).
-
-    The following example demonstrates a basic while loop with a single argument:
+    Both the predicate and body take the same number and types of
+    arguments as the initial values. The predicate must return a single
+    boolean scalar tensor of type :attr:`~max.dtype.DType.bool` that controls
+    loop continuation. The body must return updated values matching the types
+    of the initial value(s).
 
     .. code-block:: python
 
-        from max.graph import Graph, ops
-        from max.dtype import DType
+        def predicate(x):
+            return x < 10
 
-        with Graph("while_loop_example") as g:
-            x = ops.constant(0, dtype=DType.int32, device=DeviceRef.CPU())
+        def body(x):
+            return x + 1
 
-            def pred(x):
-                return x < 10
-
-            def body(x):
-                return x + 1
-
-            result = ops.while_loop(x, pred, body)
-            print(result)
-
-    The following example shows a while loop with multiple arguments:
-
-    .. code-block:: python
-
-        from max.graph import Graph, ops
-        from max.dtype import DType
-
-        with Graph("while_loop_example") as g:
-            x = ops.constant(0, dtype=DType.int32, device=DeviceRef.CPU())
-            y = ops.constant(5, dtype=DType.int32, device=DeviceRef.CPU())
-
-            def pred(x, y):
-                return ops.logical_and(x < 10, y < 15)
-
-            def body(x, y):
-                return [x + 1, y + 1]
-
-            results = ops.while_loop((x, y), pred, body)
-            print(results)
+        x = ops.constant(0, DType.int32, device=device)
+        result = ops.while_loop(x, predicate, body)
 
     Args:
-        initial_values:
-            Initial values for loop arguments. Must be non-empty.
-
-        predicate:
-            Callable that takes loop arguments and returns a boolean scalar tensor
-            of type :attr:`~max.dtype.DType.bool` determining loop continuation.
-
-        body:
-            Callable that takes loop arguments and returns updated values matching
-            the types of init_args.
+        initial_values: The initial values for the loop arguments. Must be
+            non-empty.
+        predicate: A callable that takes the loop arguments and returns a
+            boolean scalar tensor of type :attr:`~max.dtype.DType.bool`
+            determining loop continuation.
+        body: A callable that takes the loop arguments and returns updated
+            values matching the types of ``initial_values``.
 
     Returns:
-        List of output values from the final loop iteration.
+        The output values from the final loop iteration.
 
     Raises:
-        ValueError: If init_args is empty.
-        NotImplementedError: If any init_arg is a :class:`~max.graph.BufferValue`.
-
-    Note:
-        Buffer operations are currently not supported.
+        ValueError: If ``initial_values`` is empty.
+        NotImplementedError: If any initial value is a buffer rather than a
+            tensor. Buffer operations are not currently supported.
     """
     initial_values = (
         list(initial_values)

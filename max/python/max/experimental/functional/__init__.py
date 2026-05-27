@@ -11,27 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Distributed functional API — PyTree-centric rule-based SPMD dispatch.
+"""Tensor-based operations with built-in SPMD sharding support.
 
-Explicit per-op SPMD dispatch via ``spmd_dispatch``.
-Creation and random ops are standalone (no tensor inputs).
-
-Usage::
-
-    from max.experimental import functional as F
-
-    y = F.matmul(a, b)
-    z = F.add(x, y)
-    w = F.transfer_to(z, new_mapping)
-
-All logic lives in submodules:
-    ``utils.py``          — shared helpers
-    ``collective_ops.py`` — collectives + transfer_to
-    ``spmd_ops.py``       — spmd_dispatch engine + explicit op functions
-    ``creation_ops.py``   — full/ones/zeros/uniform/gaussian
-
-Custom ops (``custom``, ``inplace_custom``) are defined here because
-they combine graph ops with extension loading and don't fit a submodule.
+Functional ops accept and return :class:`~max.experimental.tensor.Tensor`
+objects and dispatch transparently per-shard when their inputs are
+distributed across devices.
 """
 
 from __future__ import annotations
@@ -262,7 +246,21 @@ def custom(
     parameters: Mapping[str, bool | int | str | DType] | None = None,
     custom_extensions: str | Path | Sequence[str | Path] | None = None,
 ) -> list[Tensor]:
-    """Apply a custom op with optional custom extension loading."""
+    """Calls a custom op, optionally loading custom Mojo extensions first.
+
+    Args:
+        name: The registered name of the custom op.
+        device: The device on which to execute the op.
+        values: The input values passed to the op.
+        out_types: The expected output types.
+        parameters: Optional compile-time parameters for the op.
+        custom_extensions: Optional path or sequence of paths to custom
+            Mojo extensions (``.mojoc`` or ``.mojo`` sources) to load
+            before invoking the op.
+
+    Returns:
+        A list of tensors produced by the custom op.
+    """
     with ensure_context():
         _load_custom_extensions(custom_extensions)
         return [
@@ -285,7 +283,25 @@ def inplace_custom(
     parameters: dict[str, bool | int | str | DType] | None = None,
     custom_extensions: str | Path | Sequence[str | Path] | None = None,
 ) -> list[Tensor]:
-    """Apply an in-place custom op with optional custom extension loading."""
+    """Calls an in-place custom op that mutates one or more of its inputs.
+
+    Like :func:`custom`, but for ops that mutate buffer values rather
+    than returning new tensors.
+
+    Args:
+        name: The registered name of the custom op.
+        device: The device on which to execute the op.
+        values: The input values; one or more are mutated in place.
+        out_types: Optional expected output types. Most in-place ops
+            return no outputs and can leave this as :obj:`None`.
+        parameters: Optional compile-time parameters for the op.
+        custom_extensions: Optional path or sequence of paths to custom
+            Mojo extensions to load before invoking the op.
+
+    Returns:
+        A list of tensors produced by the custom op, or an empty list
+        when the op produces no outputs.
+    """
     with ensure_context():
         _load_custom_extensions(custom_extensions)
         result = ops.inplace_custom(

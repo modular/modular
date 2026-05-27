@@ -296,9 +296,17 @@ _single_device_reshape = functional(ops.reshape)
 
 
 def reshape(x: Tensor, shape: ShapeLike) -> Tensor:
-    """Reshape a tensor.
+    """Reshapes a tensor to a new shape.
 
-    See :func:`max.graph.ops.reshape` for op semantics.
+    The total number of elements must be preserved. A single dimension may
+    be ``-1`` to infer its size from the remaining dimensions.
+
+    Args:
+        x: The input tensor.
+        shape: The target shape.
+
+    Returns:
+        A tensor with the same data as ``x`` reshaped to ``shape``.
     """
     if not x.is_distributed:
         return _single_device_reshape(x, shape)
@@ -371,9 +379,28 @@ def broadcast_to(
     shape: TensorValue | ShapeLike,
     out_dims: Iterable[DimLike] | None = None,
 ) -> Tensor:
-    """Broadcast a tensor to a new shape.
+    """Broadcasts a tensor to a target shape.
 
-    See :func:`max.graph.ops.broadcast_to` for op semantics.
+    Each dimension of ``x`` must either equal the corresponding target
+    dimension or be ``1`` (which is then stretched).
+
+    Args:
+        x: The input tensor. Must not contain any dynamic dimensions.
+        shape: The target shape. Either a static shape (no dynamic
+            dimensions) or a :class:`~max.graph.TensorValue` giving the
+            shape at runtime.
+        out_dims: The explicit output dimensions. Required when ``shape``
+            is a :class:`~max.graph.TensorValue` (used to declare the
+            symbolic output type); ignored otherwise.
+
+    Returns:
+        A tensor with the target shape and the same elements as ``x``.
+
+    Raises:
+        ValueError: If ``shape`` is a :class:`~max.graph.TensorValue`
+            and ``out_dims`` is :obj:`None`, or if ``x`` is distributed
+            with non-replicated placements while ``shape`` is a
+            :class:`~max.graph.TensorValue`.
     """
     if not x.is_distributed:
         return _naive_broadcast_to(x, shape, out_dims)

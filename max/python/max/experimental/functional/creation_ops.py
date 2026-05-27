@@ -92,7 +92,26 @@ def full(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Create a tensor filled with *value*, optionally distributed across devices."""
+    """Creates a tensor filled with a single value.
+
+    When ``device`` is a
+    :class:`~max.experimental.sharding.DeviceMapping`, the result is
+    distributed across that mesh according to its placements.
+
+    Args:
+        shape: The shape of the resulting tensor.
+        value: The fill value.
+        dtype: The data type of the tensor. Defaults to ``float32`` on
+            CPU or ``bfloat16`` on accelerators.
+        device: A single device or a
+            :class:`~max.experimental.sharding.DeviceMapping` for
+            distributed placement. Defaults to the current realization
+            context's device.
+
+    Returns:
+        A tensor of the requested shape, dtype, and placement with
+        every element set to ``value``.
+    """
     mapping = _normalized_device(device)
     mesh = mapping.mesh
     resolved_dtype, _ = defaults(dtype, mesh.devices[0])
@@ -124,7 +143,20 @@ def ones(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Create an all-ones tensor, optionally distributed across devices."""
+    """Creates a tensor filled with ones.
+
+    Args:
+        shape: The shape of the resulting tensor.
+        dtype: The data type. Defaults to ``float32`` on CPU or
+            ``bfloat16`` on accelerators.
+        device: A single device or a
+            :class:`~max.experimental.sharding.DeviceMapping` for
+            distributed placement.
+
+    Returns:
+        A tensor of the requested shape, dtype, and placement with every
+        element set to ``1``.
+    """
     return full(shape, 1.0, dtype=dtype, device=device)
 
 
@@ -134,28 +166,69 @@ def zeros(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Create an all-zeros tensor, optionally distributed across devices."""
+    """Creates a tensor filled with zeros.
+
+    Args:
+        shape: The shape of the resulting tensor.
+        dtype: The data type. Defaults to ``float32`` on CPU or
+            ``bfloat16`` on accelerators.
+        device: A single device or a
+            :class:`~max.experimental.sharding.DeviceMapping` for
+            distributed placement.
+
+    Returns:
+        A tensor of the requested shape, dtype, and placement with every
+        element set to ``0``.
+    """
     return full(shape, 0.0, dtype=dtype, device=device)
 
 
 def full_like(
     like: Tensor | TensorType | DistributedTensorType, value: Number
 ) -> Tensor:
-    """Create a tensor filled with *value*, matching the shape and dtype of *like*."""
+    """Creates a tensor filled with a single value, matching another tensor's shape and dtype.
+
+    Args:
+        like: The template tensor whose shape, dtype, and placement are
+            copied.
+        value: The fill value.
+
+    Returns:
+        A tensor matching the shape, dtype, and placement of ``like``,
+        with every element set to ``value``.
+    """
     return full(
         like.shape, value, dtype=like.dtype, device=_device_from_like(like)
     )
 
 
 def ones_like(like: Tensor | TensorType | DistributedTensorType) -> Tensor:
-    """Create an all-ones tensor matching the shape and dtype of *like*."""
+    """Creates a tensor filled with ones, matching another tensor's shape and dtype.
+
+    Args:
+        like: The template tensor whose shape, dtype, and placement are
+            copied.
+
+    Returns:
+        A tensor matching the shape, dtype, and placement of ``like``,
+        with every element set to ``1``.
+    """
     return full(
         like.shape, 1.0, dtype=like.dtype, device=_device_from_like(like)
     )
 
 
 def zeros_like(like: Tensor | TensorType | DistributedTensorType) -> Tensor:
-    """Create an all-zeros tensor matching the shape and dtype of *like*."""
+    """Creates a tensor filled with zeros, matching another tensor's shape and dtype.
+
+    Args:
+        like: The template tensor whose shape, dtype, and placement are
+            copied.
+
+    Returns:
+        A tensor matching the shape, dtype, and placement of ``like``,
+        with every element set to ``0``.
+    """
     return full(
         like.shape, 0.0, dtype=like.dtype, device=_device_from_like(like)
     )
@@ -225,7 +298,26 @@ def uniform(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Sample from a uniform distribution over [range[0], range[1])."""
+    """Samples values from a uniform distribution.
+
+    When ``device`` is a
+    :class:`~max.experimental.sharding.DeviceMapping`, each Sharded
+    axis draws an independent stream while shards on Replicated axes
+    draw identical values.
+
+    Args:
+        shape: The shape of the resulting tensor.
+        range: A ``(low, high)`` pair giving the half-open interval to
+            sample from. Defaults to ``(0, 1)``.
+        dtype: The data type of the tensor.
+        device: A single device or a
+            :class:`~max.experimental.sharding.DeviceMapping` for
+            distributed placement.
+
+    Returns:
+        A tensor of the requested shape, dtype, and placement with
+        values sampled uniformly from ``[range[0], range[1])``.
+    """
     mapping = _normalized_device(device)
     resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
 
@@ -261,7 +353,27 @@ def gaussian(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Sample from a Gaussian (normal) distribution with given *mean* and *std*."""
+    """Samples values from a Gaussian (normal) distribution.
+
+    When ``device`` is a
+    :class:`~max.experimental.sharding.DeviceMapping`, each Sharded
+    axis draws an independent stream while shards on Replicated axes
+    draw identical values.
+
+    Args:
+        shape: The shape of the resulting tensor.
+        mean: The mean of the distribution. Defaults to ``0.0``.
+        std: The standard deviation of the distribution. Defaults to
+            ``1.0``.
+        dtype: The data type of the tensor.
+        device: A single device or a
+            :class:`~max.experimental.sharding.DeviceMapping` for
+            distributed placement.
+
+    Returns:
+        A tensor of the requested shape, dtype, and placement with
+        values sampled from ``Normal(mean, std**2)``.
+    """
     mapping = _normalized_device(device)
     resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
 
@@ -298,7 +410,18 @@ def uniform_like(
     like: Tensor | TensorType | DistributedTensorType,
     range: tuple[float, float] = (0, 1),
 ) -> Tensor:
-    """Sample uniform values matching the shape and dtype of *like*."""
+    """Samples uniform values matching another tensor's shape and dtype.
+
+    Args:
+        like: The template tensor whose shape, dtype, and placement are
+            copied.
+        range: A ``(low, high)`` pair giving the half-open interval to
+            sample from. Defaults to ``(0, 1)``.
+
+    Returns:
+        A tensor matching the shape, dtype, and placement of ``like``,
+        with values sampled uniformly from ``[range[0], range[1])``.
+    """
     return uniform(
         like.shape,
         range=range,
@@ -312,7 +435,19 @@ def gaussian_like(
     mean: float = 0.0,
     std: float = 1.0,
 ) -> Tensor:
-    """Sample Gaussian values matching the shape and dtype of *like*."""
+    """Samples Gaussian values matching another tensor's shape and dtype.
+
+    Args:
+        like: The template tensor whose shape, dtype, and placement are
+            copied.
+        mean: The mean of the distribution. Defaults to ``0.0``.
+        std: The standard deviation of the distribution. Defaults to
+            ``1.0``.
+
+    Returns:
+        A tensor matching the shape, dtype, and placement of ``like``,
+        with values sampled from ``Normal(mean, std**2)``.
+    """
     return gaussian(
         like.shape,
         mean=mean,
@@ -352,7 +487,22 @@ def hann_window(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Create a Hann window of the given *window_length*."""
+    """Creates a Hann window of the given length.
+
+    Args:
+        window_length: The length of the window.
+        periodic: When ``True``, returns a window suitable for use as a
+            periodic function (matches NumPy's ``hann`` convention).
+            When ``False``, returns a symmetric window.
+        dtype: The data type of the resulting window.
+        device: A single device or a
+            :class:`~max.experimental.sharding.DeviceMapping`. Sharded
+            placement is not supported.
+
+    Returns:
+        A 1-D tensor of length ``window_length`` containing the Hann
+        window samples.
+    """
     mapping = _validated_creation_mapping(device, "hann_window")
     mesh = mapping.mesh
     resolved_dtype, _ = defaults(dtype, mesh.devices[0])
@@ -378,7 +528,24 @@ def range(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Create a 1-D tensor with values from *start* to *stop* (exclusive) by *step*."""
+    """Creates a 1-D tensor with values from a start, stop, and step.
+
+    Args:
+        start: The first value (inclusive).
+        stop: The end value (exclusive).
+        step: The increment between consecutive values. Defaults to ``1``.
+        out_dim: The symbolic dimension for the output. Required when
+            ``start`` / ``stop`` / ``step`` are dynamic and the output
+            size cannot be inferred at graph build time.
+        dtype: The data type of the resulting tensor.
+        device: A single device or a
+            :class:`~max.experimental.sharding.DeviceMapping`. Sharded
+            placement is not supported.
+
+    Returns:
+        A 1-D tensor of values ``[start, start+step, start+2*step, ...]``
+        up to but excluding ``stop``.
+    """
     mapping = _validated_creation_mapping(device, "range")
     mesh = mapping.mesh
     resolved_dtype, _ = defaults(dtype, mesh.devices[0])
@@ -411,14 +578,25 @@ def constant(
     dtype: DType | None = None,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Create a constant tensor from a scalar, nested list, or DLPack array.
+    """Creates a constant tensor from a Python value, nested list, or DLPack array.
 
-    For DLPack arrays, the array's own dtype is preserved when ``dtype`` is
-    ``None`` (matching ``ops.constant`` semantics).  For Python scalars and
-    nested lists, ``dtype`` defaults to float32 on CPU / bfloat16 on
+    For DLPack arrays, the array's own dtype is preserved when
+    ``dtype`` is :obj:`None`. For Python scalars and nested lists,
+    ``dtype`` defaults to ``float32`` on CPU or ``bfloat16`` on
     accelerators.
 
-    Inside a realization context, emits ``ops.constant`` per device.
+    Args:
+        value: The constant value. Accepts a Python scalar, a nested
+            list of numbers, or a DLPack-compatible array (NumPy,
+            PyTorch, etc.).
+        dtype: The data type of the resulting tensor. Defaults vary by
+            input type as described above.
+        device: A single device or a
+            :class:`~max.experimental.sharding.DeviceMapping` for
+            distributed placement.
+
+    Returns:
+        A tensor on the requested placement initialized from ``value``.
     """
     mapping = _normalized_device(device)
     mesh = mapping.mesh
@@ -443,10 +621,23 @@ def constant_external(
     type: TensorType,
     device: Device | DeviceMapping | DeviceRef | None = None,
 ) -> Tensor:
-    """Create a constant tensor from external (weight) data.
+    """Creates a constant tensor from external (weight) data.
 
-    External constants are loaded at graph compile time. Supports
-    distributed placement via DeviceMapping.
+    External constants are loaded at compile time from the named
+    weight rather than being inlined into the graph.
+
+    Args:
+        name: The external symbol name to load (typically a weight
+            identifier).
+        type: The :class:`~max.graph.TensorType` describing the
+            constant's shape and dtype.
+        device: A single device or a
+            :class:`~max.experimental.sharding.DeviceMapping` for
+            distributed placement.
+
+    Returns:
+        A tensor on the requested placement initialized from the
+        external data.
     """
     mapping = _normalized_device(device) if device is not None else None
     with ensure_context():

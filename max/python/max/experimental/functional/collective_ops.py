@@ -11,20 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Collective ops and the universal ``transfer_to`` operation.
+"""Collective operations for distributed :class:`~max.experimental.tensor.Tensor` inputs.
 
-Structure (top to bottom):
-
-1. **Group-loop engine** — ``_apply_per_group`` runs a collective per
-   device-group along one mesh axis.
-2. **Primitive collectives** — ``allreduce_sum``, ``allgather``,
-   ``reduce_scatter``, ``_local_split``.  Each operates on a single
-   mesh axis with explicit ``mesh_axis`` / ``tensor_axis`` parameters.
-3. **Scatter** — ``_scatter`` distributes a non-distributed tensor onto
-   a mesh by splitting and transferring.
-4. **transfer_to** — the ONE public entry point.  Handles any source →
-   target placement transition: same-mesh, cross-mesh, distributed or
-   non-distributed input, ``Device`` or ``DeviceMapping`` target.
+Each collective acts along a single mesh axis and is intended for use on
+tensors that are sharded across a multi-device mesh. :func:`transfer_to`
+is the universal entry point for moving a tensor between devices or
+placements.
 """
 
 from __future__ import annotations
@@ -109,7 +101,21 @@ def _apply_per_group(
 
 
 def allreduce_sum(t: Tensor, mesh_axis: int = 0) -> Tensor:
-    """All-reduce sum: Partial → Replicated along *mesh_axis*."""
+    """All-reduces a tensor by summing its shards across a mesh axis.
+
+    Transitions the tensor's placement on ``mesh_axis`` from
+    :class:`~max.experimental.sharding.Partial` to
+    :class:`~max.experimental.sharding.Replicated`. Every device on
+    ``mesh_axis`` ends up holding the sum of all inputs along that axis.
+
+    Args:
+        t: The input distributed tensor.
+        mesh_axis: The mesh axis along which to reduce.
+
+    Returns:
+        A tensor with the same per-device values everywhere along
+        ``mesh_axis``.
+    """
     return _apply_per_group(
         t,
         mesh_axis,
@@ -120,7 +126,22 @@ def allreduce_sum(t: Tensor, mesh_axis: int = 0) -> Tensor:
 
 
 def allgather(t: Tensor, tensor_axis: int = 0, mesh_axis: int = 0) -> Tensor:
-    """All-gather: Sharded → Replicated along *mesh_axis*."""
+    """All-gathers a tensor's shards along a mesh axis.
+
+    Transitions the tensor's placement on ``mesh_axis`` from
+    :class:`~max.experimental.sharding.Sharded` to
+    :class:`~max.experimental.sharding.Replicated`. Each device gathers
+    the shards from its peers and concatenates them along ``tensor_axis``.
+
+    Args:
+        t: The input distributed tensor.
+        tensor_axis: The tensor axis along which the shards are concatenated.
+        mesh_axis: The mesh axis whose placement changes from Sharded to
+            Replicated.
+
+    Returns:
+        A tensor with the full data replicated across ``mesh_axis``.
+    """
     return _apply_per_group(
         t,
         mesh_axis,
@@ -135,11 +156,23 @@ def allgather(t: Tensor, tensor_axis: int = 0, mesh_axis: int = 0) -> Tensor:
 def reduce_scatter(
     t: Tensor, scatter_axis: int = 0, mesh_axis: int = 0
 ) -> Tensor:
-    """Reduce-scatter: Partial → Sharded along *mesh_axis*.
+    """Reduces a tensor across a mesh axis and scatters the result.
 
-    Decomposed into allreduce + local split until native reduce-scatter
-    supports sub-group calls in the same graph.  A native
-    ``ops.reducescatter.sum`` would move half the bytes.
+    Transitions the tensor's placement on ``mesh_axis`` from
+    :class:`~max.experimental.sharding.Partial` to
+    :class:`~max.experimental.sharding.Sharded`. Each device contributes
+    to the sum and ends up with one shard of the reduced tensor along
+    ``scatter_axis``.
+
+    Args:
+        t: The input distributed tensor.
+        scatter_axis: The tensor axis along which the reduced result is
+            sharded.
+        mesh_axis: The mesh axis whose placement changes from Partial to
+            Sharded.
+
+    Returns:
+        A tensor with the reduced and re-sharded result.
     """
     t = allreduce_sum(t, mesh_axis=mesh_axis)
     return _local_split(t, mesh_axis=mesh_axis, tensor_axis=scatter_axis)
@@ -252,25 +285,21 @@ def _broadcast_replicated(
 def transfer_to(
     t: Tensor, target: Device | DeviceMapping | DeviceRef
 ) -> Tensor:
-    """Move or transfer_to a tensor to a target device or mapping.
+    """Moves a tensor to a target device or device mapping.
 
-    This is the single entry point for ALL placement transitions:
-
-    - **Non-distributed → distributed**: scatters across the target mesh.
-    - **Same mesh**: uses collectives (allreduce, allgather,
-      reduce-scatter, local split) to transition between placements.
-    - **Cross mesh**: gathers to Replicated, transfers to target mesh,
-      then scatters.
-    - **Any → single device**: pass a :class:`~max.driver.Device`.
+    Handles every kind of placement transition: single-device transfers,
+    scattering an unsharded tensor onto a mesh, redistributing across
+    placements on the same mesh, and gathering then re-distributing
+    across different meshes.
 
     Args:
-        t: Source tensor (distributed or non-distributed).
-        target: A :class:`~max.driver.Device` (single-device target) or
-            :class:`~max.experimental.sharding.DeviceMapping` describing
-            the target mesh and placements.
+        t: The source tensor, distributed or single-device.
+        target: A :class:`~max.driver.Device` to move to a single device,
+            or a :class:`~max.experimental.sharding.DeviceMapping`
+            describing the target mesh and placement.
 
     Returns:
-        A tensor with the requested placement on the target mesh.
+        A tensor with the requested placement on the target device or mesh.
     """
     if isinstance(target, DeviceRef):
         target = target.to_device()

@@ -43,7 +43,7 @@ from max.graph.dim import StaticDim
 
 
 def in_graph_context() -> bool:
-    """Return True when executing inside a ``Graph.current`` context."""
+    """Return ``True`` when executing inside a ``Graph.current`` context."""
     try:
         _ = Graph.current
     except LookupError:
@@ -54,21 +54,26 @@ def in_graph_context() -> bool:
 
 @contextlib.contextmanager
 def ensure_context() -> Generator[None]:
-    """Ensure a realization context exists for Tensor <-> TensorValue conversion.
+    """Ensures a realization context is active for the duration of the block.
 
-    Three execution contexts are supported:
+    A realization context controls how operations on
+    :class:`~max.experimental.tensor.Tensor` lower to
+    :class:`~max.graph.TensorValue` graph ops and whether the resulting
+    graph is executed. Three execution contexts are supported:
 
-    * **Eager** (``EagerRealizationContext``) — created automatically when no
-      context is active and we are *not* inside a ``Graph``.  On exit,
-      ``realize_all()`` is called so that all symbolic graph ops executed
-      within the block are compiled and realized into concrete tensors.
-    * **Lazy** (``LazyRealizationContext``) — set externally via
-      ``with lazy():``.  When already active this function re-uses it;
+    * ``EagerRealizationContext``: created automatically when
+      no context is active and execution is not inside a
+      :class:`~max.graph.Graph`. On exit, ``realize_all()`` is called so
+      that every symbolic graph op executed within the block is compiled
+      and realized into a concrete tensor.
+    * ``LazyRealizationContext``: set externally via
+      ``with lazy():``. When already active this function reuses it;
       tensors remain unrealized until explicitly awaited.
-    * **Graph** (``GraphRealizationContext``) — created automatically when
-      we are inside a ``Graph.current`` context.  Tensors stay symbolic.
+    * ``GraphRealizationContext``: created automatically
+      when execution is inside a :class:`~max.graph.Graph` context.
+      Tensors stay symbolic.
 
-    If a context of *any* kind already exists, it is re-used as-is.
+    If a context of any kind is already active, it is reused as-is.
     """
     if tensor.current_realization_context(None) is not None:
         yield
@@ -282,15 +287,16 @@ def is_sharded_on(t: Tensor, tensor_axis: int, exclude_mesh_axis: int) -> bool:
 
 @contextlib.contextmanager
 def lazy() -> Generator[None]:
-    """Context manager for lazy (deferred) tensor evaluation.
+    """Defers tensor realization for the duration of the ``with`` block.
 
-    Within this context, tensor operations are recorded but not executed.
-    Tensors remain unrealized until explicitly awaited via
+    Tensor operations executed within this context are recorded but not
+    run. Tensors remain unrealized until explicitly awaited via
     ``await tensor.realize`` or until their values are needed.
 
-    Example::
+    .. code-block:: python
 
         from max.experimental import functional as F
+
         with F.lazy():
             a = Tensor.zeros([5, 5])
             b = a + 1

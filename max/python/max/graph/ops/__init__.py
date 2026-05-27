@@ -32,7 +32,14 @@ Plainly, the promotion rule for two values ``x`` and ``y`` is:
 
 If any input can't be safely represented in the chosen type, MAX raises an
 error. For example, MAX fails to promote ``uint8`` and ``int8`` to ``int8``,
-since ``int8`` can't represent all ``uint8`` values."""
+since ``int8`` can't represent all ``uint8`` values.
+
+When inputs have different shapes, MAX broadcasts them to a common shape.
+Shapes are aligned from the trailing dimension, and each pair of dimensions
+must either match exactly, be ``1``, or be absent. Size-1 dimensions (and
+any missing leading dimensions) are stretched to match the corresponding
+dimension of the other input. If the shapes can't be reconciled under
+these rules, MAX raises an error."""
 
 from __future__ import annotations
 

@@ -61,29 +61,23 @@ def mean(x: TensorValueLike, axis: int = -1) -> TensorValue:
 
 
 def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
-    """Reduces a symbolic tensor using a min operation.
+    """Computes the minimum value along a specified axis.
 
-    Computes the minimum value along a specified axis. This operation is useful
-    for finding the smallest values in data, implementing certain loss functions,
-    or analyzing numerical ranges in tensors.
+    This operation is useful for finding the smallest values in data,
+    implementing certain loss functions, or analyzing numerical ranges in
+    tensors.
 
     .. code-block:: python
 
-        import max.experimental.functional as F
-        from max.experimental.tensor import Tensor
-
-        # Create a 2x4 matrix
-        x = Tensor.constant([[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]])
-
-        # Find minimum along last axis (within each row)
-        row_min = F.min(x, axis=-1)
-        print(f"Min per row: {row_min}")
-        # Output: Min per row: [[0.8], [1.9]]
-
-        # Find minimum along first axis (within each column)
-        col_min = F.min(x, axis=0)
-        print(f"Min per column: {col_min}")
-        # Output: Min per column: [[1.2, 1.9, 2.1, 0.8]]
+        x = ops.constant(
+            [[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]],
+            DType.float32,
+            device=device,
+        )
+        row_min = ops.min(x, axis=-1)
+        # row_min has shape (2, 1): [[0.8], [1.9]]
+        col_min = ops.min(x, axis=0)
+        # col_min has shape (1, 4): [[1.2, 1.9, 2.1, 0.8]]
 
     Args:
         x: The input tensor for the operation.
@@ -92,8 +86,7 @@ def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
             compute the reduction along the last dimension.
 
     Returns:
-        A symbolic tensor representing the result of the min operation.
-        The tensor will have the same rank as the input tensor, and the same
+        A symbolic tensor that has the same rank as the input tensor and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
     return _reduce(rmo.MoReduceMinOp, x, axis=axis)
