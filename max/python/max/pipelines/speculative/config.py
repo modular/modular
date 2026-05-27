@@ -19,13 +19,16 @@ strategy used to verify drafts.
 
 from __future__ import annotations
 
-import logging
 from typing import Literal
 
 from max.config import ConfigFileModel
 from pydantic import Field, field_validator
 
-logger = logging.getLogger("max.pipelines")
+__all__ = [
+    "RejectionSamplingStrategy",
+    "SpeculativeConfig",
+    "SpeculativeMethod",
+]
 
 SpeculativeMethod = Literal["standalone", "eagle", "mtp", "dflash"]
 """The supported methods for speculative decoding."""

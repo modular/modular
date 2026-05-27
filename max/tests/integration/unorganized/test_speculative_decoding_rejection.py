@@ -21,16 +21,8 @@ from max.driver import Buffer, DeviceSpec
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
-from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.speculative_decoding import (
-    StandaloneSpeculativeDecodingPipeline,
-)
-from max.pipelines.lib.speculative_decoding.utils import (
-    ModelInputsWithTokensAndOffsets,
-    update_contexts_and_compute_metrics_standalone,
-)
 from max.pipelines.modeling.kv_cache_config import KVCacheConfig
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
@@ -39,13 +31,21 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
     TokenBuffer,
 )
+from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.speculative.standalone import (
+    _StandaloneSpeculativeDecodingPipeline,
+)
+from max.pipelines.speculative.utils import (
+    _ModelInputsWithTokensAndOffsets,
+    _update_contexts_and_compute_metrics_standalone,
+)
 
 
 @dataclass
 class SpeculativeDecodingSetup:
     model_name: str
     tokenizer: PipelineTokenizer  # type: ignore[type-arg]
-    pipeline: StandaloneSpeculativeDecodingPipeline
+    pipeline: _StandaloneSpeculativeDecodingPipeline
     context1: TextContext
     context2: TextContext
     req_id1: RequestID
@@ -87,7 +87,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     )
 
     tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
-    assert isinstance(pipeline, StandaloneSpeculativeDecodingPipeline)
+    assert isinstance(pipeline, _StandaloneSpeculativeDecodingPipeline)
 
     # Create contexts for two test prompts
     req_id1 = RequestID()
@@ -202,7 +202,7 @@ def test_speculative_decoding_no_rejection(
     assert np.all(first_rejected_tokens.to_numpy() == num_steps)
 
     _, _, accepted_per_position = (
-        update_contexts_and_compute_metrics_standalone(
+        _update_contexts_and_compute_metrics_standalone(
             context_batch=context_batch,
             first_rejected_tokens=first_rejected_tokens.to_numpy(),
             recovered_tokens=recovered_tokens.to_numpy(),
@@ -256,7 +256,7 @@ def test_speculative_decoding_partial_rejection(
     )
 
     # Merge draft tokens with target tokens
-    assert isinstance(model_inputs, ModelInputsWithTokensAndOffsets)
+    assert isinstance(model_inputs, _ModelInputsWithTokensAndOffsets)
     merged_tokens, merged_offsets = pipeline._ragged_token_merger.run(
         model_inputs.tokens,
         model_inputs.input_row_offsets,
@@ -308,7 +308,7 @@ def test_speculative_decoding_partial_rejection(
     draft_tokens_host = draft_tokens.to_numpy()
 
     _, _, accepted_per_position = (
-        update_contexts_and_compute_metrics_standalone(
+        _update_contexts_and_compute_metrics_standalone(
             context_batch=context_batch,
             first_rejected_tokens=first_rejected_tokens_host,
             recovered_tokens=recovered_tokens.to_numpy(),

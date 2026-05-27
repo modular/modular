@@ -13,6 +13,8 @@
 
 """Implements ragged token merging for speculative decoding workflows."""
 
+__all__ = ["RaggedTokenMerger", "ragged_token_merger"]
+
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -21,13 +23,13 @@ from max.nn.kernels import merge_ragged_tensors
 from max.nn.layer import Module
 
 
-def shape_to_scalar(
+def _shape_to_scalar(
     x: Dim, device: DeviceRef, dtype: DType = DType.int64
 ) -> TensorValue:
     """An especially cursed way to turn a shape into a scalar on the GPU.
 
     Usage:
-    >>> my_scalar = shape_to_scalar(tensor.shape[3], DeviceRef.GPU())
+    >>> my_scalar = _shape_to_scalar(tensor.shape[3], DeviceRef.GPU())
 
     We previously did `ops.shape_to_tensor([x]).to(DeviceRef.GPU())` but this
     issues a h2d copy that is incompatible with CUDA Graphs.
@@ -101,7 +103,7 @@ class RaggedTokenMerger(Module):
                 - The merged offsets of shape [B+1].
         """
         device = prompt_tokens.device
-        K = shape_to_scalar(draft_tokens.shape[1], device, dtype=DType.uint32)
+        K = _shape_to_scalar(draft_tokens.shape[1], device, dtype=DType.uint32)
         draft_tokens_flattened = ops.reshape(draft_tokens, shape=(-1,))
 
         # Compute draft_offsets as [0, K, 2K, ..., N*K] where K=num_steps.
@@ -123,7 +125,7 @@ class RaggedTokenMerger(Module):
         return merged_tensor, merged_offsets
 
 
-class RaggedTokenMergerRunner:
+class _RaggedTokenMergerRunner:
     """Runner for the ragged token merger."""
 
     def __init__(

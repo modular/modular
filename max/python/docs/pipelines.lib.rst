@@ -35,7 +35,6 @@ Pipelines
 
    EmbeddingsPipelineType
    OverlapTextGenerationPipeline
-   StandaloneSpeculativeDecodingPipeline
 
 Model interface
 ---------------

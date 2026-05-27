@@ -117,6 +117,7 @@ Modules
    pipelines.lib
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
+   pipelines.speculative
    profiler
    profiler.cpu
    profiler.gpu

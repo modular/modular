@@ -51,6 +51,9 @@ from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
 from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.speculative.standalone import (
+    _StandaloneSpeculativeDecodingPipeline,
+)
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
 from .embeddings_pipeline import EmbeddingsPipeline
@@ -60,7 +63,6 @@ from .pipeline_variants.overlap_text_generation import (
 )
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .reasoning import get_parser_cls
-from .speculative_decoding import StandaloneSpeculativeDecodingPipeline
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
 
@@ -80,7 +82,7 @@ def get_pipeline_for_task(
     | type[EmbeddingsPipeline]
     | type[AudioGeneratorPipeline]
     | type[PixelGenerationPipeline[Any]]
-    | type[StandaloneSpeculativeDecodingPipeline]
+    | type[_StandaloneSpeculativeDecodingPipeline]
     | type[SpeechTokenGenerationPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
 ):
@@ -99,7 +101,7 @@ def get_pipeline_for_task(
     ):
         spec_method = pipeline_config.speculative.speculative_method
         if pipeline_config.speculative.is_standalone():
-            return StandaloneSpeculativeDecodingPipeline
+            return _StandaloneSpeculativeDecodingPipeline
         elif (
             pipeline_config.speculative.is_eagle()
             or pipeline_config.speculative.is_mtp()

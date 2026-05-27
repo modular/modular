@@ -37,8 +37,14 @@ from max.pipelines.kv_cache import (
     PagedKVCacheManager,
 )
 from max.pipelines.kv_cache.registry import load_multi_kv_managers
+from max.pipelines.lib.interfaces import PipelineModel, PipelineModelWithKVCache
+from max.pipelines.lib.pipeline_variants.text_generation import (
+    TextGenerationPipelineInterface,
+    get_eos_tokens,
+)
 from max.pipelines.lib.sampling import (
     RejectionRunner,
+    SamplingConfig,
     SyntheticRunner,
     rejection_runner_registry,
 )
@@ -51,22 +57,20 @@ from max.pipelines.modeling.types import (
 from max.profiler import traced
 from transformers import AutoConfig
 
-from ..interfaces import PipelineModel, PipelineModelWithKVCache
-from ..pipeline_variants.text_generation import (
-    TextGenerationPipelineInterface,
-    get_eos_tokens,
-)
-from ..sampling import SamplingConfig
-from .ragged_token_merger import RaggedTokenMergerRunner
-from .utils import SpeculativeDecodingMetrics
+from .ragged_token_merger import _RaggedTokenMergerRunner
+from .utils import _SpeculativeDecodingMetrics
 
 if TYPE_CHECKING:
-    from ..config import MAXModelConfig, PipelineConfig, SpeculativeConfig
+    from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 
-logger = logging.getLogger("max.pipelines")
+    from .config import SpeculativeConfig
+
+__all__: list[str] = []
+
+_logger = logging.getLogger("max.pipelines")
 
 
-def hidden_states_return_config(
+def _hidden_states_return_config(
     pipeline_config: PipelineConfig, is_draft: bool = False
 ) -> ReturnHiddenStates:
     """Return the hidden states return config for the speculative config.
@@ -89,7 +93,7 @@ def hidden_states_return_config(
         return ReturnHiddenStates.NONE
 
 
-def get_vocab_size(huggingface_config: AutoConfig) -> int:
+def _get_vocab_size(huggingface_config: AutoConfig) -> int:
     """Get the vocab size from the HuggingFace config."""
     if hasattr(huggingface_config, "vocab_size"):
         return huggingface_config.vocab_size
@@ -103,7 +107,7 @@ def get_vocab_size(huggingface_config: AutoConfig) -> int:
         )
 
 
-class SpeculativeDecodingPipelineBase(
+class _SpeculativeDecodingPipelineBase(
     TextGenerationPipelineInterface[TextContext],
     ABC,
 ):
@@ -144,7 +148,7 @@ class SpeculativeDecodingPipelineBase(
         assert draft_hf_config is not None
 
         self._eos_token_id = get_eos_tokens(target_hf_config, eos_token_id)
-        self.vocab_size = get_vocab_size(target_hf_config)
+        self.vocab_size = _get_vocab_size(target_hf_config)
         if not self.pipeline_config.speculative:
             raise ValueError(
                 "Speculative config must be provided for speculative decoding"
@@ -194,7 +198,7 @@ class SpeculativeDecodingPipelineBase(
             weights=load_weights(weight_paths),
             adapter=weight_adapters.get(weights_format(weight_paths)),
             return_logits=ReturnLogits.VARIABLE,
-            return_hidden_states=hidden_states_return_config(
+            return_hidden_states=_hidden_states_return_config(
                 self.pipeline_config, is_draft=False
             ),
         )
@@ -218,7 +222,7 @@ class SpeculativeDecodingPipelineBase(
                 weights_format(draft_weight_paths)
             ),
             return_logits=ReturnLogits.LAST_TOKEN,
-            return_hidden_states=hidden_states_return_config(
+            return_hidden_states=_hidden_states_return_config(
                 self.pipeline_config, is_draft=True
             ),
             **draft_kwargs,
@@ -252,7 +256,7 @@ class SpeculativeDecodingPipelineBase(
             )
         self._rejection_runner: RejectionRunner
         if self._speculative_config.synthetic_acceptance_rate is not None:
-            logger.info(
+            _logger.info(
                 "Synthetic acceptance rate is enabled (rate=%.2f). "
                 "Overriding '%s' rejection sampling strategy. "
                 "Results are for benchmarking only.",
@@ -266,7 +270,7 @@ class SpeculativeDecodingPipelineBase(
                 num_speculative_tokens=self._speculative_config.num_speculative_tokens,
             )
         else:
-            logger.info(f"Using '{strategy}' rejection sampling strategy")
+            _logger.info(f"Using '{strategy}' rejection sampling strategy")
             rejection_runner_type = rejection_runner_registry(strategy)
             self._rejection_runner = rejection_runner_type(
                 self._session, device_refs[0]
@@ -289,14 +293,14 @@ class SpeculativeDecodingPipelineBase(
             )
         self._max_seq_len = target_seq_len
 
-        self._ragged_token_merger = RaggedTokenMergerRunner(
+        self._ragged_token_merger = _RaggedTokenMergerRunner(
             session=self._session, device_ref=device_refs[0]
         )
 
         self._num_draft_steps = self._speculative_config.num_speculative_tokens
 
         # Initialize metrics tracker
-        self._metrics = SpeculativeDecodingMetrics.empty(
+        self._metrics = _SpeculativeDecodingMetrics.empty(
             num_speculative_tokens=self._num_draft_steps
         )
 

@@ -56,6 +56,7 @@ from max.pipelines.modeling.kv_cache_config import (
 )
 from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.modeling.weights.hf_utils import is_diffusion_pipeline
+from max.pipelines.speculative.config import SpeculativeConfig
 from pydantic import (
     ConfigDict,
     Field,
@@ -70,7 +71,6 @@ from typing_extensions import Self, override
 from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig, _format_config_entries
 from .profiling_config import ProfilingConfig
-from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
 

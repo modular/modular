@@ -34,6 +34,10 @@ from max.pipelines.modeling.kv_cache_config import (
     KVCacheConfig,
     KVConnectorConfig,
 )
+from max.pipelines.speculative.config import (
+    SpeculativeConfig,
+    SpeculativeMethod,
+)
 
 from .config import (
     AudioGenerationConfig,
@@ -48,7 +52,6 @@ from .model_config import (
     _format_config_entries,
 )
 from .profiling_config import ProfilingConfig
-from .speculative_config import SpeculativeConfig, SpeculativeMethod
 
 __all__ = [
     "DEFAULT_MAX_BATCH_INPUT_TOKENS",

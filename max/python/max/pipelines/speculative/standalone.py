@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import final
 
 import numpy as np
@@ -22,6 +21,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.pipelines.core import TextContext
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
+from max.pipelines.lib.pipeline_variants.utils import build_response
+from max.pipelines.lib.sampling import SamplerInputs, apply_logits_processors
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
@@ -29,20 +30,18 @@ from max.pipelines.modeling.types import (
 )
 from max.profiler import traced
 
-from ..pipeline_variants.utils import build_response
-from ..sampling import SamplerInputs, apply_logits_processors
-from .base import SpeculativeDecodingMetrics, SpeculativeDecodingPipelineBase
+from .base import _SpeculativeDecodingMetrics, _SpeculativeDecodingPipelineBase
 from .utils import (
-    ModelInputsWithTokensAndOffsets,
-    compute_max_num_draft_steps,
-    update_contexts_and_compute_metrics_standalone,
+    _compute_max_num_draft_steps,
+    _ModelInputsWithTokensAndOffsets,
+    _update_contexts_and_compute_metrics_standalone,
 )
 
-logger = logging.getLogger("max.pipelines")
+__all__: list[str] = []
 
 
 @final
-class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
+class _StandaloneSpeculativeDecodingPipeline(_SpeculativeDecodingPipelineBase):
     """Standalone speculative decoding where draft model runs independently.
 
     In this approach, the draft model generates tokens without any information
@@ -65,7 +64,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         kv_manager = self._target_kv_manager
 
         if is_draft:
-            num_steps = compute_max_num_draft_steps(
+            num_steps = _compute_max_num_draft_steps(
                 replica_batches,
                 desired_num_draft_steps=self._num_draft_steps,
                 max_seq_len=self._max_seq_len,
@@ -282,7 +281,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
 
         # Merge draft tokens with target tokens
-        assert isinstance(model_inputs, ModelInputsWithTokensAndOffsets)
+        assert isinstance(model_inputs, _ModelInputsWithTokensAndOffsets)
         merged_tokens, merged_offsets = self._ragged_token_merger.run(
             tokens=model_inputs.tokens,
             input_row_offsets=model_inputs.input_row_offsets,
@@ -307,7 +306,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
 
         _, _, accepted_per_position = (
-            update_contexts_and_compute_metrics_standalone(
+            _update_contexts_and_compute_metrics_standalone(
                 context_batch=context_batch,
                 first_rejected_tokens=first_rejected_tokens.to_numpy(),
                 recovered_tokens=recovered_tokens.to_numpy(),
@@ -320,7 +319,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 num_draft_tokens_generated=num_draft_tokens_generated,
             )
         )
-        metrics = SpeculativeDecodingMetrics(
+        metrics = _SpeculativeDecodingMetrics(
             num_speculative_tokens=self._num_draft_steps,
             accepted_per_position=accepted_per_position,
             # Only count verifications when there are draft tokens to verify.
@@ -340,6 +339,6 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         return res
 
-    def spec_decode_metrics(self) -> SpeculativeDecodingMetrics:
+    def spec_decode_metrics(self) -> _SpeculativeDecodingMetrics:
         """Returns the draft token acceptance metrics for speculative decoding."""
         return self._metrics

@@ -48,10 +48,10 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
-from max.pipelines.lib.config import SpeculativeConfig
-from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
+from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
-    shape_to_scalar,
+    _shape_to_scalar,
 )
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
@@ -320,7 +320,9 @@ class Eagle3DeepseekV3Unified(Module):
         hidden_dim = self.draft.config.hidden_size
 
         last_idx = merged_offsets[1:] - 1
-        num_draft_sentinel_gpu = shape_to_scalar(draft_tokens.shape[1], device0)
+        num_draft_sentinel_gpu = _shape_to_scalar(
+            draft_tokens.shape[1], device0
+        )
         last_accepted_idx = (
             ops.rebind(last_idx, ["batch_size"])
             - num_draft_sentinel_gpu.broadcast_to(["batch_size"])

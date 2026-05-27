@@ -42,9 +42,9 @@ from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
     _reshape_target_logits,
 )
-from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
+from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
-    shape_to_scalar,
+    _shape_to_scalar,
 )
 
 from ..eagle_llama3.eagle_llama3 import EagleLlama3
@@ -395,7 +395,7 @@ class UnifiedEagleLlama3(Module):
             batch_dims=1,
         )
 
-        num_draft_sentinel_gpu = shape_to_scalar(draft_tokens.shape[1], device)
+        num_draft_sentinel_gpu = _shape_to_scalar(draft_tokens.shape[1], device)
 
         # Build corrected merged tokens: replace draft tokens with target
         # argmax (recovered). For accepted positions draft == target argmax,

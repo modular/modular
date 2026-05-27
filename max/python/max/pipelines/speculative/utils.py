@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -23,17 +22,18 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
 from max.pipelines.core import TextContext
+from max.pipelines.lib.pipeline_variants.text_generation import (
+    calculate_num_steps,
+)
 from max.pipelines.modeling.types import (
     TextGenerationContextType,
 )
 
-from ..pipeline_variants.text_generation import calculate_num_steps
-
-logger = logging.getLogger("max.pipelines")
+__all__: list[str] = []
 
 
 @runtime_checkable
-class ModelInputsWithTokensAndOffsets(Protocol):
+class _ModelInputsWithTokensAndOffsets(Protocol):
     """Protocol for model inputs with tokens and offsets."""
 
     tokens: Buffer
@@ -41,7 +41,7 @@ class ModelInputsWithTokensAndOffsets(Protocol):
 
 
 @dataclass
-class SpeculativeDecodingMetrics:
+class _SpeculativeDecodingMetrics:
     """Metrics for speculative decoding."""
 
     num_speculative_tokens: int
@@ -66,15 +66,15 @@ class SpeculativeDecodingMetrics:
             self.accepted_per_position = [0] * self.num_speculative_tokens
 
     @classmethod
-    def empty(cls, num_speculative_tokens: int) -> SpeculativeDecodingMetrics:
+    def empty(cls, num_speculative_tokens: int) -> _SpeculativeDecodingMetrics:
         """Create an empty metrics object."""
-        return SpeculativeDecodingMetrics(
+        return _SpeculativeDecodingMetrics(
             num_speculative_tokens=num_speculative_tokens,
             accepted_per_position=[0] * num_speculative_tokens,
             num_verifications=0,
         )
 
-    def update(self, metrics: SpeculativeDecodingMetrics) -> None:
+    def update(self, metrics: _SpeculativeDecodingMetrics) -> None:
         """Update metrics with results from a batch."""
         assert metrics.num_speculative_tokens == self.num_speculative_tokens
         self.num_verifications += metrics.num_verifications
@@ -132,7 +132,7 @@ class SpeculativeDecodingMetrics:
 
 
 # TODO: delete this method!
-def update_contexts_and_compute_metrics_standalone(
+def _update_contexts_and_compute_metrics_standalone(
     context_batch: list[TextContext],
     first_rejected_tokens: npt.NDArray[np.integer[Any]],
     recovered_tokens: npt.NDArray[np.integer[Any]],
@@ -196,7 +196,7 @@ def update_contexts_and_compute_metrics_standalone(
     return total_draft_accepted, total_draft_generated, accepted_per_position
 
 
-def compute_max_num_draft_steps(
+def _compute_max_num_draft_steps(
     replica_batches: list[list[TextGenerationContextType]],
     desired_num_draft_steps: int,
     max_seq_len: int,

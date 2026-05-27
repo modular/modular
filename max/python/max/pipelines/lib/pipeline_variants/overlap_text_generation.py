@@ -114,9 +114,6 @@ from max.pipelines.kv_cache import PagedKVCacheManager, load_multi_kv_managers
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     _contiguous_prefix_2d,
 )
-from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
-    shape_to_scalar,
-)
 from max.pipelines.modeling.types import (
     BatchType,
     EOSTracker,
@@ -130,10 +127,13 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
 )
 from max.pipelines.modeling.types.tokens import TokenBuffer
+from max.pipelines.speculative.base import _SpeculativeDecodingMetrics
+from max.pipelines.speculative.ragged_token_merger import (
+    _shape_to_scalar,
+)
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
 
-from ..speculative_decoding.base import SpeculativeDecodingMetrics
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
@@ -283,7 +283,7 @@ class SpecDecodeState:
     draft_kv_blocks: list[Buffer]
     """The KVCache blocks for the draft model."""
 
-    metrics: SpeculativeDecodingMetrics
+    metrics: _SpeculativeDecodingMetrics
     """The metrics for speculative decoding."""
 
     persistent_draft_tokens: Buffer
@@ -444,7 +444,7 @@ class SpecDecodeState:
         num_speculative_tokens = (
             pipeline_config.speculative.num_speculative_tokens
         )
-        spec_decoding_metrics = SpeculativeDecodingMetrics.empty(
+        spec_decoding_metrics = _SpeculativeDecodingMetrics.empty(
             num_speculative_tokens=num_speculative_tokens
         )
 
@@ -571,7 +571,7 @@ class _SupportsModelCapture(Protocol):
 @dataclass
 class _AsyncBatchOutput:
     output_dict: PipelineOutputsDict[TextGenerationOutput]
-    spec_decode_metrics: SpeculativeDecodingMetrics | None = None
+    spec_decode_metrics: _SpeculativeDecodingMetrics | None = None
 
 
 @dataclass
@@ -813,7 +813,7 @@ class AsyncBatch(Generic[TextGenerationContextType]):
             if num_draft_tokens_to_verify > 0:
                 num_verifications = batch_size - sum(is_dummy_draft_tokens)
 
-            metrics = SpeculativeDecodingMetrics(
+            metrics = _SpeculativeDecodingMetrics(
                 num_speculative_tokens=num_speculative_tokens,
                 accepted_per_position=accepted_per_position,
                 num_verifications=num_verifications,
@@ -1053,7 +1053,7 @@ def build_realize_future_token_graph(
             num_draft_tokens_dim = (
                 spec_decode.prev_generated_draft_tokens.shape[1]
             )
-            num_draft_tokens = shape_to_scalar(
+            num_draft_tokens = _shape_to_scalar(
                 num_draft_tokens_dim, device0, dtype=DType.uint32
             )
 
@@ -1101,7 +1101,7 @@ def build_realize_future_token_graph(
             # ``num_speculative_tokens``, not the realize graph's draft-column count:
             # when the current batch passes ``draft_tokens`` with shape ``(B, 0)`` we
             # still must subtract the full K used for optimistic cache extension.
-            prev_num_draft_tokens = shape_to_scalar(
+            prev_num_draft_tokens = _shape_to_scalar(
                 spec_decode.prev_draft_tokens.shape[1],
                 device0,
                 dtype=DType.int64,
@@ -3286,7 +3286,7 @@ class OverlapTextGenerationPipeline(
             return None
         return self._spec_decode_state.draft_kv_blocks
 
-    def spec_decode_metrics(self) -> SpeculativeDecodingMetrics | None:
+    def spec_decode_metrics(self) -> _SpeculativeDecodingMetrics | None:
         """Returns the draft token acceptance metrics for speculative decoding."""
         if self._spec_decode_state is None:
             return None

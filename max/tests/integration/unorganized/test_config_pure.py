@@ -33,10 +33,10 @@ from max.pipelines.lib import (
     SamplingConfig,
 )
 from max.pipelines.lib.config import AudioGenerationConfig
-from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
+from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_resolve,
