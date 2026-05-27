@@ -18,8 +18,18 @@ comptime wrongType[x: Int]: String = x
 
 comptime myIntAdd[x: Int, y: Int] = x + y
 
-# expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+# expected-warning @+2 {{'where' clauses inside parameter lists are deprecated}}
+# expected-note @+1 {{use a trailing 'where' clause after the signature instead}}
 comptime deprecatedInlineWhere[x: Int where x > 0] = x
+
+# Trailing 'where' clauses are only allowed when the alias is parameterized.
+# expected-error @+1 {{trailing 'where' clauses on non-parameterized aliases support TBD}}
+comptime typedNonparametricWhere: Int where True = 1
+
+# An empty `[]` parameter list still declares zero parameters, so trailing
+# 'where' is rejected just like in the un-bracketed case.
+# expected-error @+1 {{trailing 'where' clauses on non-parameterized aliases support TBD}}
+comptime emptyParamWhere[] where True = 1
 
 comptime myCurriedIntAdd[x: Int] = myIntAdd[x, ...]
 

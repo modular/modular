@@ -357,15 +357,17 @@ void printStructSignatureFromInfos(StringRef name,
 
 void printAliasSignatureFromInfos(StringRef name, StringRef type,
                                   ArrayRef<ParameterInfo> params,
+                                  StringRef bodyConstraints,
                                   LIT::SharedState &shared,
                                   llvm::raw_string_ostream &os,
                                   const SignatureOffsets &offsets) {
-  if (type.empty())
-    os << name;
-  else
-    dumpIdentifierWithType(os, name, type);
+  os << name;
   if (!params.empty())
     printParameterList(params, shared, os, offsets.parameters);
+  if (!type.empty())
+    os << ": " << type;
+  if (!bodyConstraints.empty())
+    os << bodyConstraints;
 }
 
 /// Helper function to determine if a parameter should be excluded from docs.

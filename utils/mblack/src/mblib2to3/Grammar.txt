@@ -144,7 +144,13 @@ old_comptime_assert_stmt: '__comptime_assert' test [',' test]
 var_stmt: (VAR|REF) top_expr_stmt
 alias_target: NAME | '(' alias_target_list ')'
 alias_target_list: alias_target (',' alias_target)*
-alias_stmt_body: alias_target_list [metaparams] (annassign | ('=' (yield_expr|testlist_star_expr)))
+# Trailing 'where' clauses may follow the alias type (if any) and precede the
+# '=' initializer (if any). They are only meaningful on parameterized aliases;
+# the surrounding parser enforces that restriction.
+alias_stmt_body: alias_target_list [metaparams] (
+    ':' test (where_clause)* ['=' (yield_expr|testlist_star_expr)] |
+    (where_clause)* '=' (yield_expr|testlist_star_expr)
+)
 alias_stmt: ALIAS alias_stmt_body
 comptime_assert_stmt_body: 'assert' test [',' test]
 comptime_stmt: COMPTIME (comptime_assert_stmt_body NEWLINE | alias_stmt_body NEWLINE | if_stmt | for_stmt)

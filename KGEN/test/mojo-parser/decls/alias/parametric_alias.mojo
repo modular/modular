@@ -70,6 +70,32 @@ struct MyStruct[a: Int, b: Int](MyTrait):
 
 
 ##===----------------------------------------------------------------------===##
+# trailing 'where' clauses
+##===----------------------------------------------------------------------===##
+# Trailing `where` clauses on a parameterized comptime alias attach body
+# constraints to the alias's generator type, just like for structs and
+# functions.
+
+# CHECK: lit.alias.decl *"trailingWhereId{{.*}}": !lit.generator<<"T": !AnyType, {<conforms_to(:!AnyType *(0,0), [{{[^]]*}}@AnyType]),
+comptime trailingWhereId[T: AnyType] where conforms_to(T, AnyType) = T
+
+# CHECK: lit.alias.decl *"trailingWhereTyped{{.*}}": !lit.generator<<"T": !AnyType, {<conforms_to(:!AnyType *(0,0), [{{[^]]*}}@AnyType]),
+comptime trailingWhereTyped[T: AnyType]: AnyType where conforms_to(T, AnyType) = T
+
+# CHECK: lit.alias.decl *"trailingWhereMulti{{.*}}": !lit.generator<<"T": !AnyType, "U": !AnyType, {<conforms_to(:!AnyType *(0,0), [{{[^]]*}}@AnyType]),
+# CHECK-SAME: <conforms_to(:!AnyType *(0,1), [{{[^]]*}}@AnyType]),
+comptime trailingWhereMulti[T: AnyType, U: AnyType] where conforms_to(
+    T, AnyType
+) where conforms_to(U, AnyType) = T
+
+
+# CHECK: lit.trait.decl @TraitWithTrailingWhereAlias
+trait TraitWithTrailingWhereAlias:
+    # CHECK-NEXT: lit.alias.decl *"AssocWhere{{.*}}": !lit.generator<<"T": !AnyType, {<conforms_to(:!AnyType *(0,0), [{{[^]]*}}@AnyType]),
+    comptime AssocWhere[T: AnyType]: AnyType where conforms_to(T, AnyType)
+
+
+##===----------------------------------------------------------------------===##
 # usages
 ##===----------------------------------------------------------------------===##
 
