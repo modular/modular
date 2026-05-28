@@ -100,6 +100,7 @@ from nn.attention.mha_mask import (
     CausalMask,
     MaterializedMask,
     MHAMask,
+    NullMask,
     TileMaskStatus,
 )
 from nn.attention.mha_operand import (
@@ -729,11 +730,36 @@ def flash_attention_dispatch[
                     # Long-context perf threshold. Below this HK doesn't
                     # fill the GPU at BM=256 and FA2 (BM=128) wins.
                     # Partial-Q-tile masking inside HK now handles
-                    # `seq_len % 256 != 0` correctly, so the alignment
-                    # guard is gone; per-block early-return + writeback
-                    # skip together handle mixed-length multi-sequence
-                    # ragged.
-                    if max_prompt_len >= 4096:
+                    # `seq_len % 256 != 0` correctly for the Q-side
+                    # writeback skip, so the alignment guard is gone;
+                    # per-block early-return + writeback skip together
+                    # handle mixed-length multi-sequence ragged.
+                    #
+                    # NullMask + partial-K-tile carve-out:
+                    # `num_keys % KV_BLOCK != 0` leaves the last K tile
+                    # partially valid (e.g., FLUX.2-dev i2i runs at
+                    # seq_len=8623 → last K tile has 47/64 valid keys).
+                    # Attempted kernel fix in this branch
+                    # (`_apply_oob_k_mask_fast` in
+                    # `_full_softmax_unconditional`) correctly masks
+                    # `att_block` OOB columns to -inf before softmax,
+                    # but `math_exp2(-3.4e38)` on AMD saturates at
+                    # ~1.18e-38 (not 0); combined with V SMEM OOB rows
+                    # that the DMA SRD doesn't cleanly bound at
+                    # `num_keys` (probe at PR-time showed V_OOB
+                    # containing real ±12-magnitude values from past
+                    # the V buffer's end), PV[N-1] sees small but
+                    # nonzero leakage that compounds over FLUX's 5600
+                    # HK calls per image. A literal-0 BF16 mask on the
+                    # post-cast P-cache would close the leak but the
+                    # PV-A operand uses a different lane/element
+                    # layout than the FP32 ACC, so the lane→K-position
+                    # table needs to be rederived. Until that lands,
+                    # route NullMask + partial-K to FA2.
+                    comptime _is_null_mask = _type_is_eq[mask_t, NullMask]()
+                    if max_prompt_len >= 4096 and not (
+                        _is_null_mask and max_cache_valid_length % 64 != 0
+                    ):
                         comptime hk_config = HKMhaConfig(
                             q_block_size=32,
                             kv_block=64,
