@@ -446,28 +446,6 @@ class KVCacheParams(KVCacheParamInterface):
         return shape_per_block
 
     @property
-    def shape_per_staging_block(self) -> list[int]:
-        """Returns the shape of the bf16 staging block for fp8-KV dequant.
-
-        The staging buffer holds exactly ONE layer's worth of bf16 KV data
-        (``num_layers=1``) so that the MOGG op does not allocate 50x more
-        memory than needed for Gemma4-31B (50 layers).  The MOGG op always
-        writes to layer slot 0 regardless of the real layer being processed.
-
-        Returns:
-            ``[kv_dim, 1, page_size, n_kv_heads_per_device, head_dim]`` —
-            note ``num_layers=1`` in position 1.
-        """
-        kv_dim = 2 if not self.is_mla else 1
-        return [
-            kv_dim,
-            1,  # num_layers == 1: single-layer scratch
-            self.page_size,
-            self.n_kv_heads_per_device,
-            self.head_dim,
-        ]
-
-    @property
     def bytes_per_block(self) -> int:
         """Returns the number of bytes per cache block.
 
@@ -605,13 +583,6 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 if self.quantized_kv_cache
                 else None,
-                kv_staging=BufferType(
-                    DType.bfloat16,
-                    shape=["total_num_pages", *self.shape_per_staging_block],
-                    device=device,
-                )
-                if self.quantized_kv_cache
-                else None,
                 attention_dispatch_metadata=TensorType(
                     DType.int64,
                     shape=[3] if self.is_mla else [4],
@@ -680,10 +651,8 @@ class KVCacheParams(KVCacheParamInterface):
                 values.append(value)
 
             scales: list[Buffer] | None = None
-            staging: list[Buffer] | None = None
             if self.quantized_kv_cache:
                 scales = []
-                staging = []
                 assert self.kvcache_quant_config is not None
                 scale_dtype = self.kvcache_quant_config.scale_dtype
                 for device in devices:
@@ -693,20 +662,10 @@ class KVCacheParams(KVCacheParamInterface):
                         device=device,
                     )
                     scales.append(scale)
-                    stg = Buffer.zeros(
-                        shape=[
-                            total_num_pages,
-                            *self.shape_per_staging_block,
-                        ],
-                        dtype=DType.bfloat16,
-                        device=device,
-                    )
-                    staging.append(stg)
 
             kv_cache_buffer = KVCacheBuffer(
                 values=values,
                 scales=scales,
-                staging=staging,
                 total_num_pages=total_num_pages,
             )
             kv_cache_buffers.append(kv_cache_buffer)

@@ -393,7 +393,7 @@ def generate_max_outputs(
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     # Under fp8 KV the kv_params.get_symbolic_inputs() expands with
-    # `kv_scales` and `kv_staging` buffer inputs.  Mirror that on the
+    # `kv_scales` buffer inputs.  Mirror that on the
     # runtime side by including them in the execute call when present.
     execute_args: list[Any] = [
         Buffer.from_dlpack(input_tensor[0]).to(device),
@@ -407,8 +407,6 @@ def generate_max_outputs(
     ]
     if kv_runtime_inputs.kv_scales is not None:
         execute_args.append(kv_runtime_inputs.kv_scales)
-    if kv_runtime_inputs.kv_staging is not None:
-        execute_args.append(kv_runtime_inputs.kv_staging)
     execute_args.append(kv_runtime_inputs.attention_dispatch_metadata)
     output = compiled.execute(*execute_args)[0]
 

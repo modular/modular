@@ -2221,22 +2221,9 @@ def flash_attention_ragged(
     op_name = "mo.mha.ragged.paged"
 
     if _fp8_kv_pairing:
-        # fp8-KV path: dequantize fp8 KV to a bf16 staging buffer inside the
-        # kernel, then run standard bf16 flash attention.  The op signature
-        # includes kv_scales and kv_staging before layer_idx, and uses
-        # quantization_granularity as an additional compile-time parameter.
-        # kv_staging is a pre-allocated bf16 scratch buffer (one layer only,
-        # shape [num_blocks, 2, 1, page_size, num_heads, head_dim]) that avoids
-        # dynamic cudaMalloc inside the CUDA graph capture region.
         if kv_params.kvcache_quant_config is None:
             raise ValueError(
                 "kvcache_quant_config is required for fp8_kv flash attention"
-            )
-        if kv_collection.kv_staging is None:
-            raise ValueError(
-                "kv_staging is required for fp8_kv flash attention: "
-                "the KV cache manager must allocate a bf16 staging buffer "
-                "when quantized_kv_cache is enabled"
             )
         fp8_kv_parameters = {
             **parameters,
@@ -2246,12 +2233,6 @@ def flash_attention_ragged(
             input,
             input_row_offsets,
             *kv_collection.flatten_without_attention_dispatch_metadata(),
-            # kv_staging is NOT included by flatten_without_attention_dispatch_metadata
-            # (which only covers kv_blocks, cache_lengths, lookup_table,
-            # max_lengths, kv_scales).  Insert it here explicitly so that only
-            # the mo.mha.ragged.paged.fp8_kv op sees it — all other callers of
-            # flatten_without_attention_dispatch_metadata are unaffected.
-            kv_collection.kv_staging,
             layer_idx,
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
             dispatch_metadata.tensor,

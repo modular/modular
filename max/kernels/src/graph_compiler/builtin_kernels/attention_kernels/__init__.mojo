@@ -1461,9 +1461,6 @@ struct Struct_mha_ragged_paged_fp8_kv:
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
         kv_scales: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
-        # Pre-allocated bf16 staging scratch:
-        # [num_blocks, 2, 1, page_size, num_heads, head_dim].
-        kv_staging: MutableInputTensor[dtype=DType.bfloat16, rank=6, ...],
         layer_idx: UInt32,
         scale: Float32,
         mha_decode_dispatch_metadata: InputTensor[
@@ -1495,6 +1492,9 @@ struct Struct_mha_ragged_paged_fp8_kv:
         var compact_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
         var compact_count = ctx.enqueue_create_buffer[DType.uint32](1)
         comptime DEQUANT_GRID_Z_CAP = 128
+        var kv_staging = ctx.enqueue_create_buffer[DType.bfloat16](
+            num_blocks * 2 * 1 * page_size * num_heads * head_dim
+        )
 
         var fp32_scales_ptr = rebind[
             UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
@@ -1509,7 +1509,7 @@ struct Struct_mha_ragged_paged_fp8_kv:
         ](
             kv_blocks.to_layout_tensor().ptr,
             fp32_scales_ptr,
-            kv_staging.to_layout_tensor().ptr,
+            kv_staging.unsafe_ptr(),
             num_blocks,
             num_layers,
             Int(layer_idx),
@@ -1525,13 +1525,18 @@ struct Struct_mha_ragged_paged_fp8_kv:
             dequant_grid_z_cap=DEQUANT_GRID_Z_CAP,
         )
 
-        var staging_shape = (
-            kv_staging.to_layout_tensor().runtime_layout.shape.value
+        var staging_shape = IndexList[6](
+            num_blocks,
+            2,
+            1,
+            page_size,
+            num_heads,
+            head_dim,
         )
         var staging_lt = LayoutTensor[
             DType.bfloat16, Layout.row_major[6](), MutAnyOrigin
         ](
-            kv_staging.to_layout_tensor().ptr,
+            kv_staging.unsafe_ptr(),
             RuntimeLayout[Layout.row_major[6]()].row_major(staging_shape),
         )
         var kv_collection = generic_get_paged_cache[

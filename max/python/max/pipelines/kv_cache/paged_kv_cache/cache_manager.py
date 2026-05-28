@@ -691,18 +691,6 @@ class PagedKVCacheManager:
                             if device_buffer.scales is not None
                             else None
                         ),
-                        # Pre-allocated bf16 scratch buffer used as the
-                        # destination for the fp8-KV dequant pass before
-                        # attention.  Lives on the cache manager (not
-                        # inside the MOGG op) because the op runs inside
-                        # the captured CUDA graph, which cannot allocate.
-                        # `None` on the bf16-KV path — only fp8 quantized
-                        # caches populate `device_buffer.staging`.
-                        kv_staging=(
-                            device_buffer.staging[tp_shard]
-                            if device_buffer.staging is not None
-                            else None
-                        ),
                         attention_dispatch_metadata=metadata,
                         draft_attention_dispatch_metadata=draft_metadata,
                     )
