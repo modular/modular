@@ -25,6 +25,7 @@ from .datasets import DatasetMode, DistributionParameter
 from .utils import int_or_none, parse_comma_separated
 
 BaseBackend = Literal[
+    "mcloud",
     "modular",
     "sglang",
     "trtllm",
@@ -32,6 +33,7 @@ BaseBackend = Literal[
 ]
 
 Backend = Literal[
+    "mcloud",
     "modular",
     "modular-chat",
     "sglang",

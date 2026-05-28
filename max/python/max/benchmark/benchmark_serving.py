@@ -1369,7 +1369,10 @@ def main_with_parsed_args(
         return
 
     wait_for_server_ready(
-        args.host, args.port, timeout_s=args.server_ready_timeout_s
+        args.host,
+        args.port,
+        timeout_s=args.server_ready_timeout_s,
+        backend=args.backend,
     )
 
     yield from _run_benchmark_sweep(args, session, use_dynamic_num_prompts)
