@@ -197,39 +197,64 @@ bool M::KGEN::hasReadableSourceLocation(Location loc, SharedState &shared) {
   return sourceMgr.FindBufferContainingLoc(diags.convertLocToSMLoc(loc)) != 0;
 }
 
-MojoInflightDiag &
-M::KGEN::synthesizeToDiagIfLocUnreadable(MojoInflightDiag &diag, Operation *op,
-                                         StringRef preamble,
-                                         const LIT::ASTDecl *contextDecl) {
-  auto *shared = diag.getSharedIfActive();
+MojoInflightDiag &MojoInflightDiag::attachNote(const ASTDecl &ctxDecl) & {
+  auto *shared = getSharedIfActive();
   if (!shared)
-    return diag;
-  if (hasReadableSourceLocation(diag.getLastLoc(), *shared))
-    return diag;
+    return *this;
 
-  std::string sig = synthesizeDeclSignature(op, *shared, contextDecl);
+  Operation *op = ctxDecl.getIfOperation();
+  // Prefer the operation's location if available; it is often more correct in
+  // the case of synthetic functions.
+  Location loc =
+      op ? op->getLoc() : getDiags()->translateLocation(ctxDecl.getLoc());
 
-  if (!sig.empty())
-    diag << preamble << sig;
+  auto &note = attachNote(loc);
 
-  return diag;
+  // Print synthetic functions differently, mentioning that they're generated
+  // functions. If we can, prefer to print with a synthesized decl signature.
+  // If we can't, print out the ASTType directly.
+  if (auto fnOp = dyn_cast_if_present<FnOp>(op); fnOp && fnOp.isSynthetic()) {
+    if (shared) {
+      note.addCustomLineText(synthesizeDeclSignature(fnOp, *shared, &ctxDecl));
+    } else {
+      std::string out;
+      llvm::raw_string_ostream os(out);
+      os << ASTType(fnOp.getFullSignature());
+      note.addCustomLineText(out);
+    }
+    note.addCustomLineText("    # note - generated function");
+    return note;
+  }
+
+  // If the location is readable, just defer to adding a regular note
+  if (hasReadableSourceLocation(loc, *shared))
+    return note;
+
+  // Else synthetize a signature for this op and print that
+  if (auto sig = synthesizeDeclSignature(op, *shared, &ctxDecl); !sig.empty()) {
+    note.addCustomLineText(sig);
+    note.addCustomLineText("    # note - synthetic signature");
+  }
+
+  return note;
 }
 
-MojoInflightDiag &
-M::KGEN::synthesizeToDiagIfLocUnreadable(MojoInflightDiag &diag, TypedAttr attr,
-                                         StringRef preamble) {
-  auto *shared = diag.getSharedIfActive();
+MojoInflightDiag &MojoInflightDiag::attachNote(Location loc, TypedAttr attr) & {
+  auto *shared = getSharedIfActive();
   if (!shared)
-    return diag;
-  if (hasReadableSourceLocation(diag.getLastLoc(), *shared))
-    return diag;
+    return *this;
+
+  auto &note = attachNote(loc);
+
+  if (hasReadableSourceLocation(loc, *shared))
+    return note;
 
   std::string out;
   llvm::raw_string_ostream os(out);
   ASTType::printParam(os, attr, /*forDiag=*/shared);
 
   if (!out.empty())
-    diag << preamble << "'" << out << "'";
+    note.addCustomLineText(out);
 
-  return diag;
+  return note;
 }

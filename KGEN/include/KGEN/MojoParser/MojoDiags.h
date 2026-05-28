@@ -64,6 +64,26 @@ public:
     return std::move(*this);
   }
 
+  /// Attach the ASTDecl to this diagnostic as a note. This function always
+  /// attaches a new note, as long as the diagnostic is active.
+  ///
+  /// 1. If the declaration is a synthetic (compiler-generated) function,
+  ///  pretty-print it as custom line contents at its location. The line
+  ///  contains a disclaimer that the function is compiler-generated.
+  /// 2. Else, if the declaration has a readable source location, return a note
+  ///  at that location.
+  /// 3. Else, synthesize a pretty-printed signature for the (function, struct,
+  ///  alias) decl as custom line contents. The line contains a disclaimer that
+  ///  the signature is synthetic.
+  MojoInflightDiag &attachNote(const ASTDecl &ctxDecl) &;
+
+  /// Attach the attribute to this diagnostic as a note. This function always
+  /// attaches a new note, as long as the diagnostic is active.
+
+  /// If the declaration has a readable source location, return a note
+  /// at that location. Else pretty-print the attribute as custom line contents.
+  MojoInflightDiag &attachNote(Location loc, TypedAttr attr) &;
+
   void addEmittedParam(TypedAttr param, std::optional<Location> loc,
                        ASTDecl *ctxDecl);
 

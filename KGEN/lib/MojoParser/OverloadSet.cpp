@@ -773,24 +773,15 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     // If there is a single callee, emit a specific error about the call.
     if (fnDecls.size() == 1) {
-      auto fnDecl = cast<FnOp>(fnDecls[0]->getIfOperation());
       diag << ": " << evaluations[0].second.takeDiag();
-      diag.attachNote(fnDecl.getLoc()) << "function declared here";
-      synthesizeToDiagIfLocUnreadable(diag, fnDecl, /*preamble=*/":\n  ",
-                                      fnDecls[0]);
+      diag.attachNote(*fnDecls[0]) << "function declared here";
       return {};
     }
 
     // Add a note for what is wrong with each candidate.
     for (auto &[candidate, eval] : evaluations) {
-      diag.attachNote(candidate->getLoc())
+      diag.attachNote(*candidate)
           << "candidate not viable: " << eval.takeDiag();
-      auto func = cast<FnOp>(candidate->getIfOperation());
-      if (func.getSynthetic()) {
-        diag.attachNote(candidate->getLoc())
-            << "generated function with type "
-            << ASTType(func.getFullSignature());
-      }
     }
 
     return {};

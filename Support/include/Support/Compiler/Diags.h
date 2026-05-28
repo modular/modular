@@ -290,6 +290,7 @@ public:
   /// These methods can be used by addToDiagnostic impls to add things to the
   /// diagnostic.
   void addText(const Twine &text);
+  void addCustomLineText(const Twine &text);
   void addSourceRange(SourceRange range);
   void addFixIt(FixIt fixIt);
   void addDiag(InflightDiag &&otherDiag);
@@ -311,7 +312,8 @@ private:
   /// `message.text`.
   llvm::SMDiagnostic getAsSMDiagnostic(const Message &message,
                                        const std::string &text,
-                                       SourceMgr::DiagKind kind);
+                                       SourceMgr::DiagKind kind,
+                                       const std::string &customLineStr = "");
 
   // We store the primary diagnostic and any notes in this vector.  The primary
   // diagnostic is always first, and always present.  This uses a std::vector
