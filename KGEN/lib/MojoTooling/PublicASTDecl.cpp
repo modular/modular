@@ -907,7 +907,6 @@ std::string PublicFunctionDecl::getDeclarationSnippet(
   std::string signature =
       getSignature(ctx, parameterOffsets, argumentOffsets, &returnOffset);
   StringRef resultLessSignature(signature.data(), returnOffset);
-  os << "def ";
 
   // Adjust the signature offsets.
   size_t signatureStart = os.str().size();
@@ -1381,7 +1380,6 @@ std::string PublicStructDecl::getDeclarationSnippet(
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
-  os << "struct ";
 
   SmallVector<ParameterInfo, kTypicalParameterCount> paramInfos;
   paramInfos.reserve(parameters.size());
@@ -1422,7 +1420,6 @@ std::string PublicStructDecl::getSignature(
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
   std::string output;
   llvm::raw_string_ostream os(output);
-  os << "struct ";
 
   SmallVector<ParameterInfo, kTypicalParameterCount> paramInfos;
   paramInfos.reserve(parameters.size());

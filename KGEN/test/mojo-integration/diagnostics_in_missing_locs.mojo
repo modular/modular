@@ -29,5 +29,5 @@ def main():
     # FIXME: Improve the pretty-printing of this constraint
     # CHECK: note: constraint declared here as '($0 > 0)' evaluated to False, expected '(n > 0)'
     # CHECK: note: function declared here:
-    # CHECK-NEXT: fn_missing_constraint[n: Int]() where (n > 0)
+    # CHECK-NEXT: def fn_missing_constraint[n: Int]() where (n > 0)
     diags_package.fn_missing_constraint[0]()
