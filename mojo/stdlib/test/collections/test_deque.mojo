@@ -1037,6 +1037,18 @@ def test_rotate() raises:
     assert_equal(q[3], 3)
 
 
+def test_rotate_empty_deque() raises:
+    # Rotating an empty deque must be a no-op; without the guard it reads
+    # from uninitialized memory (undefined behaviour).
+    q = Deque[Int]()
+    q.rotate(1)
+    assert_equal(len(q), 0)
+    q.rotate(-1)
+    assert_equal(len(q), 0)
+    q.rotate(0)
+    assert_equal(len(q), 0)
+
+
 def test_iter() raises:
     q = Deque(1, 2, 3)
 
