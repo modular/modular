@@ -149,6 +149,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedDflashLlama3ForCausalLM",
+    "UnifiedDflashKimiK25ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",
     "Eagle3DeepseekV3ForCausalLM",
@@ -1091,7 +1092,10 @@ class PipelineConfig(ConfigFileModel):
                     if self.draft_model is not None
                     else None
                 )
-                if draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                if self.speculative.is_dflash():
+                    # MLA target + DFlash MHA draft.
+                    target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
+                elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
                     # MLA target + MHA (Llama-style) Eagle3 draft.
                     target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
                 else:

@@ -109,7 +109,8 @@ def create_kv_cache(
         host_kvcache_swap_space_gb=999,
         data_parallel_degree=dp,
         devices=device_refs,
-        num_eagle_speculative_tokens=num_speculative_tokens,
+        speculative_method="eagle" if num_speculative_tokens > 0 else None,
+        num_draft_tokens=num_speculative_tokens,
         is_mla=is_mla,
         # num_q_heads must be divisible by the per-replica device count
         # (TP shards) when MLA is enabled.
