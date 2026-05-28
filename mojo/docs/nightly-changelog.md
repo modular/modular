@@ -341,7 +341,7 @@ This version is still a work in progress.
 
   ```text
   /path/to/file.mojo:2092: note: function declared here:
-  __setitem__[*Tys: Indexer](self, *args: *Tys.values, *, val: SIMD[dtype, Self.element_size]) where mut
+  def __setitem__[*Tys: Indexer](self, *args: *Tys.values, *, val: SIMD[dtype, Self.element_size]) where mut
   ```
 
   The coverage and quality of diagnostics in such cases will continue to improve
