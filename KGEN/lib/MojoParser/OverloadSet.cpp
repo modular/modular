@@ -40,6 +40,10 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+// Sizes come from stdlib and kernels precompile overload-resolution samples.
+static constexpr unsigned kOverloadEvaluationsInlineSize = 17;
+static constexpr unsigned kBestOverloadCandidatesInlineSize = 1;
+
 //===----------------------------------------------------------------------===//
 // OverloadSet Implementation
 //===----------------------------------------------------------------------===//
@@ -76,9 +80,9 @@ static SMLoc getAttributeNameLoc(const ExprNode *expr) {
 }
 
 /// Resolve the callee into a single PValue callee.
-static PValue getCallee(
-    ASTDecl *fnDecl, const ParamBindings &paramBindings, CallSyntax syntax,
-    std::optional<ParameterExprArrayAttr> verifiedBindings = std::nullopt) {
+static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings,
+                        CallSyntax syntax,
+                        const VerifiedParamBindings &verifiedBindings = {}) {
   // Check deprecation and stability warnings for the resolved function.
   // For method calls (instance or static via attribute access), compute the
   // fixit location as the method identifier, not the full expression.
@@ -91,9 +95,9 @@ static PValue getCallee(
 
   // Take the fast path to avoid verify binding again if a verified binding has
   // been provided.
-  if (verifiedBindings.has_value())
+  if (verifiedBindings)
     return getBoundConstAttrForFn(*fnDecl, paramBindings.shared,
-                                  *verifiedBindings);
+                                  verifiedBindings);
   return getBoundConstAttrForFn(*fnDecl, paramBindings);
 }
 
@@ -123,7 +127,9 @@ static bool isValidOrFnInconclusive(OverloadFitness &eval) {
 /// out before calling this function).
 static bool filterForBestCandidates(
     SmallVectorImpl<std::pair<ASTDecl *, OverloadFitness>> &allCandidates) {
-  SmallVector<std::pair<ASTDecl *, OverloadFitness>> bestCandidates;
+  SmallVector<std::pair<ASTDecl *, OverloadFitness>,
+              kBestOverloadCandidatesInlineSize>
+      bestCandidates;
   bool areTheBestCandidatesStatic = true;
   bool areTheBestCandidatesImplicit = true;
   bool hasInconclusiveCandidate = false;
@@ -357,7 +363,9 @@ static void emitInconclusiveCandidatesError(
 /// diagnostic and return null.
 PValue OverloadSet::filterOverloadSetForParamBindings(
     DeferredTypingContext *deferredTypingContext) const {
-  SmallVector<std::pair<ASTDecl *, OverloadFitness>> evaluations;
+  SmallVector<std::pair<ASTDecl *, OverloadFitness>,
+              kOverloadEvaluationsInlineSize>
+      evaluations;
   bool allInvalid = true;
   bool anyParamConstraintInconclusive = false;
   for (ASTDecl *candidate : fnDecls) {
@@ -627,7 +635,9 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   std::optional<OperandValue> savedSelfOperand;
 
   // Evaluate the fitness of each candidate in our overload set.
-  SmallVector<std::pair<ASTDecl *, OverloadFitness>> evaluations;
+  SmallVector<std::pair<ASTDecl *, OverloadFitness>,
+              kOverloadEvaluationsInlineSize>
+      evaluations;
   bool allInvalid = true;
   bool anyParamConstraintInconclusive = false;
   for (ASTDecl *candidate : fnDecls) {
@@ -953,7 +963,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
   // TODO: We could also support generating a lambda for fancy implicit
   // conversions and subtyping some day.
   auto getBindingsAndBoundCandidateType = [&](GeneratorType candidateType)
-      -> std::pair<ParameterExprArrayAttr, GeneratorType> {
+      -> std::pair<VerifiedParamBindings, GeneratorType> {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.  We only do this if there are some
     // bindings present, because (unlike normal function calls) the result type
@@ -964,18 +974,17 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
                        /*allowImplicitConversions=*/true,
                        /*declIfDirect=*/nullptr,
                        /*discardError=*/true);
-    ParameterExprArrayAttr newBindings = inference.inferForStruct();
+    VerifiedParamBindings newBindings = inference.inferForStruct();
     if (!newBindings)
-      return {nullptr, nullptr}; // If there is an error, return the problem.
+      return {{}, nullptr}; // If there is an error, return the problem.
 
     // If anything was bound, apply it to the signature so the expected
     // argument types are updated.
-    candidateType = candidateType.getSpecializedGenerator(
-        newBindings, &declScope.getShared().getEvaluationContext());
-    return {newBindings, candidateType};
+    candidateType = newBindings.specializeGeneratorType(candidateType);
+    return {std::move(newBindings), candidateType};
   };
   auto getBindingsIfValidCandidate =
-      [&](GeneratorType candidateType) -> ParameterExprArrayAttr {
+      [&](GeneratorType candidateType) -> VerifiedParamBindings {
     auto [newBindings, boundCandidateType] =
         getBindingsAndBoundCandidateType(candidateType);
     if (!boundCandidateType)
@@ -991,7 +1000,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<ASTDecl *> validCandidates;
-  SmallVector<ParameterExprArrayAttr> candidateBindings;
+  SmallVector<VerifiedParamBindings> candidateBindings;
   for (ASTDecl *candidate : fnDecls) {
     // Skip functions explicitly marked as 'disabled'.
     if (candidate->isDisabled())
@@ -1001,10 +1010,10 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
         cast<FnOp>(candidate->getIfOperation())
             .getFuncLiteralGenerator(getShared().getEvaluationContext())
             .getType();
-    if (ParameterExprArrayAttr bindings = getBindingsIfValidCandidate(
+    if (VerifiedParamBindings bindings = getBindingsIfValidCandidate(
             sugarCast<GeneratorType>(candidateType))) {
       validCandidates.push_back(candidate);
-      candidateBindings.push_back(bindings);
+      candidateBindings.push_back(std::move(bindings));
     }
   }
 
@@ -1076,8 +1085,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {
   if (fnDecls.size() == 1)
-    return getCallee(fnDecls[0], paramBindings, syntax,
-                     /*verifiedBindings=*/std::nullopt);
+    return getCallee(fnDecls[0], paramBindings, syntax);
 
   // If we have multiple candidates, emit an ambiguity error.
   assert(!fnDecls.empty() && "DirectCallable malformed");
@@ -1491,7 +1499,9 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
   if (fitness.getValidity() != OverloadFitness::Validity::kValid) {
     // If not, diagnose it with an error.
     if (fitness.isInconclusive()) {
-      SmallVector<std::pair<ASTDecl *, OverloadFitness>> bestCandidates;
+      SmallVector<std::pair<ASTDecl *, OverloadFitness>,
+                  kBestOverloadCandidatesInlineSize>
+          bestCandidates;
       bestCandidates.emplace_back(nullptr, std::move(fitness));
       emitInconclusiveCandidatesError(
           shared, callExpr, {}, /*isCall=*/true,
@@ -1519,9 +1529,8 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
       operands.dest.resetForError(*this);
       return {};
     }
-    boundCalleeRV = PValue(
-        BindParamsAttr::get(calleePVal, fitness.getParamBindings().getValue(),
-                            &shared.getEvaluationContext()));
+    boundCalleeRV =
+        PValue(fitness.getParamBindings().specializeGenerator(calleePVal));
   }
 
   // If the selected candidate needs some register operands emitted to memory,

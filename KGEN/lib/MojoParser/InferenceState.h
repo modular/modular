@@ -19,11 +19,72 @@
 
 #include <cstddef>
 
+namespace M::KGEN {
+class GeneratorType;
+} // namespace M::KGEN
+
 namespace M::KGEN::LIT {
 
 class ASTDecl;
+class CallParamInf;
+class ParamInf;
 class ParamMatcher;
 class SharedState;
+class StructDeclOp;
+
+//===----------------------------------------------------------------------===//
+// VerifiedParamBindings
+//===----------------------------------------------------------------------===//
+
+/// A set of parameter bindings that have been verified against a particular
+/// Pog list signature by parameter inference. The verified-against-signature
+/// invariant is what differentiates this from a raw `ParameterExprArrayAttr`,
+/// and is what makes the specialization helpers below well-defined.
+///
+/// A default-constructed (or null) value represents failed inference; users
+/// should check the truthiness of the value before invoking any specialization
+/// method.
+class VerifiedParamBindings {
+public:
+  VerifiedParamBindings() = default;
+
+  /// Truthiness reflects whether inference succeeded (i.e. the underlying
+  /// `ParameterExprArrayAttr` is non-null). Note that a successful inference
+  /// can still produce zero bindings (for non-parametric callables); use
+  /// `empty()` / `size()` to distinguish "no bindings to apply".
+  explicit operator bool() const { return bool(bindings); }
+  bool empty() const { return getValues().empty(); }
+  size_t size() const { return getValues().size(); }
+
+  /// Raw access for legacy interop with APIs that take a
+  /// `ParameterExprArrayAttr` or `ArrayRef<TypedAttr>` (e.g.
+  /// `BindParamsAttr::get`, `getCallee`, etc.).
+  ParameterExprArrayAttr asAttr() const { return bindings; }
+  ArrayRef<TypedAttr> getValues() const {
+    return bindings ? bindings.getValue() : ArrayRef<TypedAttr>{};
+  }
+  /// Specialize a struct declaration with the verified bindings.
+  TypedAttr specializeStructType(StructDeclOp structOp) const;
+
+  /// Specialize a generator value (handles `StructMetaType` specially as the
+  /// previous `InferenceState::getSpecializedGenerator` did).
+  TypedAttr specializeGenerator(TypedAttr generator) const;
+
+  /// Specialize a generator type via the type-level
+  /// `GeneratorType::getSpecializedGenerator` API.
+  GeneratorType specializeGeneratorType(GeneratorType genType) const;
+
+private:
+  VerifiedParamBindings(ParameterExprArrayAttr bindings,
+                        ParameterEvaluationContext *evaluationContext)
+      : bindings(bindings), evaluationContext(evaluationContext) {}
+
+  ParameterExprArrayAttr bindings;
+  ParameterEvaluationContext *evaluationContext = nullptr;
+
+  friend class CallParamInf;
+  friend class ParamInf;
+};
 
 /// Holds an optional in-flight diagnostic that can be discarded (e.g. for
 /// try-style inference). InferenceState uses this as its diagnostic sink.
@@ -98,10 +159,13 @@ public:
 
   /// Unprovable constraints from per-parameter constraints. These are
   /// considered "hard" errors that by default will make inference fail.
+  /// Filled in by `setInferredValue`.
   SmallVector<ConstraintAttr> unprovableConstraints;
+
   /// Unprovable constraints from body constraints. These are considered "soft"
   /// errors that won't fail inference by default. Users of InferenceState can
   /// choose to surface these errors at the appropriate time.
+  /// Filled in by `checkBodyConstraints`.
   SmallVector<ConstraintAttr> bodyUnprovableConstraints;
 
   /// When non-null, body-constraint inconclusiveness at single-candidate

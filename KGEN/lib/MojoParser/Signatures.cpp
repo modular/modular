@@ -1045,11 +1045,11 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, listDecl,
                      /*discardError=*/false);
-  ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
+  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
 
-  if (!bindingValuesAttr)
+  if (!verifiedBindings)
     return emitter.shared.getTypeCheckErrorType();
-  ASTType result = structDeclOp.bindReference(bindingValuesAttr.getValue());
+  ASTType result = verifiedBindings.specializeStructType(structDeclOp);
 
   // Add the !kgen.param_list parameter to the parameter list.  It is possible
   // the element type is a non-inferred parameter, so "append" this.
@@ -1748,10 +1748,10 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, packDecl,
                      /*discardError=*/false);
-  ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
-  if (!bindingValuesAttr)
+  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
+  if (!verifiedBindings)
     return {};
-  return packStruct.bindReference(bindingValuesAttr.getValue());
+  return verifiedBindings.specializeStructType(packStruct);
 }
 
 // If this argument is a homogenous vararg like "*args: SomeType" then the
@@ -1812,11 +1812,11 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, listDecl,
                      /*discardError=*/false);
-  ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
+  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
 
-  if (!bindingValuesAttr)
+  if (!verifiedBindings)
     return {};
-  return structDeclOp.bindReference(bindingValuesAttr.getValue());
+  return verifiedBindings.specializeStructType(structDeclOp);
 }
 
 /// Type check each argument in turn, resolving their type and default

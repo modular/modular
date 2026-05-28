@@ -170,7 +170,7 @@ LogicalResult InferenceState::checkBodyConstraints() {
     return success();
 
   // Filter to only the body constraints that are fully concrete under the
-  // current bindings. Remaining constraints are expected to be checked later.
+  // current bindings.
   ConcretenessChecker concreteness(evaluator.getIndexBindings());
   SmallVector<ConstraintAttr> concreteConstraints;
   concreteConstraints.reserve(bodyConstraints.size());
@@ -189,6 +189,36 @@ LogicalResult InferenceState::checkBodyConstraints() {
                             /*origConstraints=*/{}, diag.getDiag(),
                             &bodyUnprovableConstraints, &evaluator);
   return success(result != ConstraintResult::Violated);
+}
+
+TypedAttr
+VerifiedParamBindings::specializeStructType(StructDeclOp structOp) const {
+  assert(*this && "specializing with failed inference bindings");
+  return PValue(structOp.bindReference(getValues()));
+}
+
+TypedAttr
+VerifiedParamBindings::specializeGenerator(TypedAttr generator) const {
+  assert(*this && "specializing with failed inference bindings");
+  // Special case for structs types: If the generator is a struct meta type,
+  // bind the corresponding struct type directly.
+  if (auto structMetaType = sugarDynCast<StructMetaType>(generator.getType())) {
+    LIT::StructType boundType =
+        structMetaType.getType().bindUnbound(getValues());
+    return TypeParamAttr::get(boundType, StructMetaType::get(boundType));
+  }
+
+  // Otherwise, the type of the generator must be a GeneratorType.
+  assert(sugarIsa<GeneratorType>(generator.getType()) &&
+         "generator type expected");
+  return BindParamsAttr::get(generator, getValues(), evaluationContext);
+}
+
+GeneratorType
+VerifiedParamBindings::specializeGeneratorType(GeneratorType genType) const {
+  assert(*this && "specializing with failed inference bindings");
+  return genType.getSpecializedGenerator(getValues(), evaluationContext,
+                                         /*emitErrorFn=*/{});
 }
 
 void InferenceState::dump() const {

@@ -85,11 +85,11 @@ ASTType LIT::getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
                      structSig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, decl,
                      /*discardError=*/false);
-  ParameterExprArrayAttr bindings = inference.inferForStruct();
-
+  VerifiedParamBindings bindings = inference.inferForStruct();
   if (!bindings)
     return {};
-  return structOp.bindReference(bindings);
+
+  return bindings.specializeStructType(structOp);
 }
 
 TypedAttr LIT::computeArgumentsOrigin(AsyncCallOp call,
