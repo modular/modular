@@ -402,7 +402,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
       // TODO: This always overwrites any user-specified features
       if (clOptions.targetFeatures.empty())
-        clOptions.targetFeatures = encodeFeatures(*featuresOr);
+        clOptions.targetFeatures =
+            encodeFeatures(TargetInfo({}, {}, std::move(*featuresOr)));
 
       // Use the full triple, specific CPU, and manually specified features to
       // get the target info.

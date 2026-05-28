@@ -41,7 +41,8 @@ getFeaturesFromClang(std::shared_ptr<clang::TargetOptions> opts, StringRef cpu);
 /// Returns a TargetInfo describing the host.
 ErrorOr<TargetInfo> getHostTargetInfo();
 
-/// Returns the features for the host in "+feature1,+feature2" form.
+/// Returns the features for the host as a signed string (e.g.
+/// "+avx2,+bmi1,-avx512f") ready to pass to LLVM.
 std::string getHostCPUFeatures();
 
 /// Returns a TargetInfo describing the consequences of the given `-march`,

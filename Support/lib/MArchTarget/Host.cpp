@@ -307,10 +307,10 @@ static M::ErrorOr<HostMachineInfo> getHostMachineInfoImpl() {
   if (!osVersion.isError())
     machineInfo.osVersion = osVersion.takeValue();
 
-  auto hostFeaturesOr = decodeFeatures(getHostCPUFeatures());
-  if (hostFeaturesOr.isError())
-    return hostFeaturesOr.takeError();
-  machineInfo.cpuFeatures = hostFeaturesOr.takeValue();
+  auto hostTargetInfoOr = getHostTargetInfo();
+  if (hostTargetInfoOr.isError())
+    return hostTargetInfoOr.takeError();
+  machineInfo.cpuFeatures = hostTargetInfoOr->features;
 
   machineInfo.simdBitWidth = simdWidthFromFeatures(machineInfo.cpuFeatures);
 

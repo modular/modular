@@ -1150,16 +1150,12 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
 }
 
 ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
-  TargetInfo result;
-  result.triple = targetInfoAttr.getTriple();
-  result.arch = targetInfoAttr.getArch();
-
   auto errOr = decodeFeatures(targetInfoAttr.getFeatures());
   if (errOr)
     return errOr.takeError();
-  result.features = std::move(*errOr);
-
-  return result;
+  return TargetInfo(targetInfoAttr.getTriple(),
+                    std::string(targetInfoAttr.getArch()),
+                    std::move(errOr->enabled), std::move(errOr->disabled));
 }
 
 /// Returns attribute representing runtime target info.
@@ -1167,7 +1163,7 @@ TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
                                         const TargetInfo &runtimeTargetInfo) {
   return TargetInfoAttr::get(
       ctx, runtimeTargetInfo.triple, runtimeTargetInfo.arch,
-      encodeFeatures(runtimeTargetInfo.features),
+      encodeFeatures(runtimeTargetInfo),
       /*data_layout=*/{}, /*relocation_model=*/llvm::Reloc::Static,
       /*simd_bit_width=*/0, /*index_width=*/std::nullopt,
       /*tune_cpu=*/{}, /*accelerator_arch=*/{});
