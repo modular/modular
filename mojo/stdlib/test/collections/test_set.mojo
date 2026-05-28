@@ -14,7 +14,7 @@
 from std.collections import Set
 from std.hashlib import hash
 
-from test_utils import check_write_to
+from test_utils import MoveOnly, check_write_to
 from std.testing import (
     assert_false,
     assert_equal,
@@ -560,6 +560,13 @@ def test_set_conditional_conformances() raises:
     assert_true(conforms_to(Set[Int], Hashable))
     assert_true(conforms_to(Set[Int], Writable))
 
+    # Move-only element type drops the copy-requiring conformances.
+    assert_false(conforms_to(Set[MoveOnly[Int]], Copyable))
+    assert_false(conforms_to(Set[MoveOnly[Int]], Equatable))
+    assert_false(conforms_to(Set[MoveOnly[Int]], Comparable))
+    assert_false(conforms_to(Set[MoveOnly[Int]], Hashable))
+    assert_false(conforms_to(Set[MoveOnly[Int]], Writable))
+
 
 def test_set_iter_owned() raises:
     var s = Set[Int](1, 2, 3)
@@ -583,6 +590,47 @@ def test_set_iter_owned_bounds() raises:
     assert_equal(it.bounds()[0], 1)
     _ = it.__next__()
     assert_equal(it.bounds()[0], 0)
+
+
+def test_set_move_only_element() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `Set[T: KeyElement & ImplicitlyDestructible, H]`
+    # where the element type is move-only. Copy-requiring ops (`union`,
+    # `intersection`, iteration, ...) are unavailable for this `T`, but the
+    # add / remove / contains / pop / discard / clear core remains usable.
+    assert_false(conforms_to(Set[MoveOnly[Int]], Copyable))
+
+    var s = Set[MoveOnly[Int]]()
+    s.add(MoveOnly[Int](1))
+    s.add(MoveOnly[Int](2))
+    s.add(MoveOnly[Int](3))
+    assert_equal(len(s), 3)
+    assert_true(MoveOnly[Int](1) in s)
+    assert_true(MoveOnly[Int](2) in s)
+    assert_true(MoveOnly[Int](3) in s)
+    assert_false(MoveOnly[Int](99) in s)
+
+    # Adding a duplicate is a no-op on membership.
+    s.add(MoveOnly[Int](1))
+    assert_equal(len(s), 3)
+
+    # `remove` removes by key without copying the key.
+    s.remove(MoveOnly[Int](2))
+    assert_equal(len(s), 2)
+    assert_false(MoveOnly[Int](2) in s)
+
+    # `discard` on a missing element is a no-op.
+    s.discard(MoveOnly[Int](99))
+    assert_equal(len(s), 2)
+
+    # `pop` moves an element out.
+    var popped = s.pop()
+    assert_equal(len(s), 1)
+    assert_false(popped in s)
+
+    s.clear()
+    assert_equal(len(s), 0)
+    assert_false(s.__bool__())
 
 
 def main() raises:

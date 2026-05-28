@@ -27,9 +27,10 @@ It uses a Swiss Table implementation with SIMD group probing for fast lookups:
   Python dictionaries from Mojo, see
   [Python types in Mojo](/docs/manual/python/types/#python-types-in-mojo).
 
-Key elements must implement the `KeyElement` trait composition, which includes
-`Hashable`, `Equatable`, and `Copyable`. The `Copyable`
-requirement on the key will eventually be removed.
+Key elements only need to be `Movable & Hashable & Equatable`. Methods that
+fundamentally need to copy keys (`copy`, `update`, `__or__`, `fromkeys`,
+iteration, ...) are conditionally available via
+`where conforms_to(K, Copyable)` clauses.
 
 Value elements only need to be `Movable & ImplicitlyDestructible`. Methods that
 fundamentally need to copy values (`copy`, `find`, `get`, `update`, `__or__`,
@@ -56,10 +57,12 @@ from ._swisstable import (
     is_occupied,
 )
 
-comptime KeyElement = Copyable & Hashable & Equatable
+comptime KeyElement = Movable & Hashable & Equatable
 """A trait composition for types which implement all requirements of
-dictionary keys. Dict keys must minimally be `Copyable`, `Hashable`,
-and `Equatable`."""
+dictionary keys. Dict keys must minimally be `Movable`, `Hashable`,
+and `Equatable`. Methods that copy keys (e.g. `update`, `fromkeys`,
+iteration) are conditionally available when the key type also
+conforms to `Copyable`."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -139,7 +142,7 @@ This is a comptime alias for `SwissTableEntry` for backwards compatibility.
 struct _DictEntryIter[
     mut: Bool,
     //,
-    K: KeyElement & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: Origin[mut=mut],
@@ -215,7 +218,7 @@ struct _DictEntryIter[
 
 @fieldwise_init
 struct _TakeDictEntryIter[
-    K: KeyElement & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: MutOrigin,
@@ -270,7 +273,7 @@ struct _TakeDictEntryIter[
 
 @fieldwise_init
 struct _DictEntryIterOwned[
-    K: KeyElement & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
 ](IterableOwned, Iterator, Movable):
@@ -322,7 +325,7 @@ struct _DictEntryIterOwned[
 
 @fieldwise_init
 struct _DictKeyIterOwned[
-    K: KeyElement & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
 ](IterableOwned, Iterator, Movable):
@@ -356,7 +359,7 @@ struct _DictKeyIterOwned[
 struct _DictKeyIter[
     mut: Bool,
     //,
-    K: KeyElement & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: Origin[mut=mut],
@@ -402,7 +405,7 @@ struct _DictKeyIter[
 struct _DictValueIter[
     mut: Bool,
     //,
-    K: KeyElement & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     origin: Origin[mut=mut],
@@ -465,15 +468,19 @@ struct Dict[
     H: Hasher = default_hasher,
 ](
     Boolable,
-    Copyable where conforms_to(V, Copyable),
+    Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
     Defaultable,
-    Equatable where conforms_to(V, Equatable),
-    Hashable where conforms_to(V, Hashable),
+    Equatable where conforms_to(K, Copyable) and conforms_to(V, Equatable),
+    Hashable where conforms_to(K, Copyable) and conforms_to(V, Hashable),
     Iterable,
     IterableOwned,
     Movable,
     Sized,
-    Writable where conforms_to(K, Writable) and conforms_to(V, Writable),
+    Writable where (
+        conforms_to(K, Copyable)
+        and conforms_to(K, Writable)
+        and conforms_to(V, Writable)
+    ),
 ):
     """A container that stores key-value pairs.
 
@@ -664,7 +671,7 @@ struct Dict[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
-        Self.K,
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
         downcast[Self.V, Copyable & ImplicitlyDestructible],
         Self.H,
         iterable_origin,
@@ -677,7 +684,9 @@ struct Dict[
     """
 
     comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
-        Self.K, downcast[Self.V, Copyable & ImplicitlyDestructible], Self.H
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
+        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        Self.H,
     ]
     """The owned iterator type for this dictionary."""
 
@@ -730,7 +739,7 @@ struct Dict[
         var keys: List[Self.K],
         var values: List[Self.V],
         __dict_literal__: NoneType,
-    ) where conforms_to(Self.V, Copyable):
+    ) where conforms_to(Self.K, Copyable) and conforms_to(Self.V, Copyable):
         """Constructs a dictionary from the given keys and values.
 
         Args:
@@ -757,7 +766,9 @@ struct Dict[
     @staticmethod
     def fromkeys(
         keys: List[Self.K], value: Self.V
-    ) -> Self where conforms_to(Self.V, Copyable):
+    ) -> Self where conforms_to(Self.K, Copyable) and conforms_to(
+        Self.V, Copyable
+    ):
         """Create a new dictionary with keys from list and values set to value.
 
         Args:
@@ -780,7 +791,9 @@ struct Dict[
             my_dict[key.copy()] = value.copy()
         return my_dict^
 
-    def __init__(out self, *, copy: Self) where conforms_to(Self.V, Copyable):
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.K, Copyable) and conforms_to(Self.V, Copyable):
         """Copy an existing dictionary.
 
         Args:
@@ -842,15 +855,18 @@ struct Dict[
         Returns:
             An iterator that owns the dictionary's keys.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
+        # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
+        comptime assert conforms_to(Self.K, Copyable) and conforms_to(
             Self.V, Copyable
-        ), "Dict iteration requires the value type to be `Copyable`."
+        ), "Dict iteration requires the key and value types to be `Copyable`."
         return {
             _DictEntryIterOwned(
                 rebind_var[
                     Dict[
-                        Self.K,
+                        downcast[
+                            Self.K,
+                            KeyElement & Copyable & ImplicitlyDestructible,
+                        ],
                         downcast[Self.V, Copyable & ImplicitlyDestructible],
                         Self.H,
                     ]
@@ -865,12 +881,12 @@ struct Dict[
         Returns:
             An iterator of immutable references to the dictionary keys.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
+        # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
+        comptime assert conforms_to(Self.K, Copyable) and conforms_to(
             Self.V, Copyable
-        ), "Dict iteration requires the value type to be `Copyable`."
+        ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            Self.K,
+            downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
             downcast[Self.V, Copyable & ImplicitlyDestructible],
             Self.H,
         ]
@@ -887,7 +903,7 @@ struct Dict[
     def __reversed__(
         ref self,
     ) -> _DictKeyIter[
-        Self.K,
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
         downcast[Self.V, Copyable & ImplicitlyDestructible],
         Self.H,
         origin_of(self),
@@ -898,12 +914,12 @@ struct Dict[
         Returns:
             A reversed iterator of immutable references to the dict keys.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
+        # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
+        comptime assert conforms_to(Self.K, Copyable) and conforms_to(
             Self.V, Copyable
-        ), "Dict iteration requires the value type to be `Copyable`."
+        ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            Self.K,
+            downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
             downcast[Self.V, Copyable & ImplicitlyDestructible],
             Self.H,
         ]
@@ -917,7 +933,11 @@ struct Dict[
             )
         )
 
-    def __or__(self, other: Self) -> Self where conforms_to(Self.V, Copyable):
+    def __or__(
+        self, other: Self
+    ) -> Self where conforms_to(Self.K, Copyable) and conforms_to(
+        Self.V, Copyable
+    ):
         """Merge self with other and return the result as a new dict.
 
         Args:
@@ -930,7 +950,9 @@ struct Dict[
         result.update(other)
         return result^
 
-    def __ior__(mut self, other: Self) where conforms_to(Self.V, Copyable):
+    def __ior__(
+        mut self, other: Self
+    ) where conforms_to(Self.K, Copyable) and conforms_to(Self.V, Copyable):
         """Merge self with other in place.
 
         Args:
@@ -959,7 +981,11 @@ struct Dict[
         """
         return len(self).__bool__()
 
-    def __eq__(self, other: Self) -> Bool where conforms_to(Self.V, Equatable):
+    def __eq__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.K, Copyable) and conforms_to(
+        Self.V, Equatable
+    ):
         """Checks if two dictionaries are equal.
 
         Two dictionaries are equal if they contain the same keys and the
@@ -986,7 +1012,9 @@ struct Dict[
 
     def __hash__[
         H2: Hasher
-    ](self, mut hasher: H2) where conforms_to(Self.V, Hashable):
+    ](self, mut hasher: H2) where conforms_to(Self.K, Copyable) and conforms_to(
+        Self.V, Hashable
+    ):
         """Hashes the dictionary using the given hasher.
 
         The hash is order-independent: two dictionaries with the same key-value
@@ -1014,9 +1042,11 @@ struct Dict[
     def _write_dict_body[
         f_key: def(Self.K, mut Some[Writer]) thin,
         f_val: def(Self.V, mut Some[Writer]) thin,
-    ](self, mut writer: Some[Writer]) where conforms_to(
-        Self.K, Writable
-    ) and conforms_to(Self.V, Writable):
+    ](self, mut writer: Some[Writer]) where (
+        conforms_to(Self.K, Copyable)
+        and conforms_to(Self.K, Writable)
+        and conforms_to(Self.V, Writable)
+    ):
         writer.write_string("{")
 
         var i = 0
@@ -1034,7 +1064,11 @@ struct Dict[
     @no_inline
     def write_to(
         self, mut writer: Some[Writer]
-    ) where conforms_to(Self.K, Writable) and conforms_to(Self.V, Writable):
+    ) where (
+        conforms_to(Self.K, Copyable)
+        and conforms_to(Self.K, Writable)
+        and conforms_to(Self.V, Writable)
+    ):
         """Write this `Dict` to the writer.
 
         Args:
@@ -1048,7 +1082,11 @@ struct Dict[
     @no_inline
     def write_repr_to(
         self, mut writer: Some[Writer]
-    ) where conforms_to(Self.K, Writable) and conforms_to(Self.V, Writable):
+    ) where (
+        conforms_to(Self.K, Copyable)
+        and conforms_to(Self.K, Writable)
+        and conforms_to(Self.V, Writable)
+    ):
         """Write this `Dict`'s representation to the writer.
 
         Args:
@@ -1306,7 +1344,7 @@ struct Dict[
     def keys(
         ref self,
     ) -> _DictKeyIter[
-        Self.K,
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
         downcast[Self.V, Copyable & ImplicitlyDestructible],
         Self.H,
         origin_of(self),
@@ -1332,7 +1370,7 @@ struct Dict[
     def values(
         ref self,
     ) -> _DictValueIter[
-        Self.K,
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
         downcast[Self.V, Copyable & ImplicitlyDestructible],
         Self.H,
         origin_of(self),
@@ -1353,12 +1391,12 @@ struct Dict[
             # All values will be printed, but order is not guaranteed
         ```
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
+        # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
+        comptime assert conforms_to(Self.K, Copyable) and conforms_to(
             Self.V, Copyable
-        ), "Dict iteration requires the value type to be `Copyable`."
+        ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            Self.K,
+            downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
             downcast[Self.V, Copyable & ImplicitlyDestructible],
             Self.H,
         ]
@@ -1375,7 +1413,7 @@ struct Dict[
     def items(
         ref self,
     ) -> _DictEntryIter[
-        Self.K,
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
         downcast[Self.V, Copyable & ImplicitlyDestructible],
         Self.H,
         origin_of(self),
@@ -1401,12 +1439,12 @@ struct Dict[
             These can't yet be unpacked like Python dict items, but you can
             access the key and value as attributes.
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
+        # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
+        comptime assert conforms_to(Self.K, Copyable) and conforms_to(
             Self.V, Copyable
-        ), "Dict iteration requires the value type to be `Copyable`."
+        ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            Self.K,
+            downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
             downcast[Self.V, Copyable & ImplicitlyDestructible],
             Self.H,
         ]
@@ -1419,7 +1457,7 @@ struct Dict[
     def take_items(
         mut self,
     ) -> _TakeDictEntryIter[
-        Self.K,
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
         downcast[Self.V, Copyable & ImplicitlyDestructible],
         Self.H,
         origin_of(self),
@@ -1446,12 +1484,12 @@ struct Dict[
         # prints 0
         ```
         """
-        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
-        comptime assert conforms_to(
+        # TODO(MSTDL-2390): Remove `Copyable` constraints once we have better iter traits.
+        comptime assert conforms_to(Self.K, Copyable) and conforms_to(
             Self.V, Copyable
-        ), "Dict iteration requires the value type to be `Copyable`."
+        ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            Self.K,
+            downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
             downcast[Self.V, Copyable & ImplicitlyDestructible],
             Self.H,
         ]
@@ -1459,7 +1497,9 @@ struct Dict[
             rebind[Pointer[DictCopyable, origin_of(self)]](Pointer(to=self))[]
         )
 
-    def update(mut self, other: Self, /) where conforms_to(Self.V, Copyable):
+    def update(
+        mut self, other: Self, /
+    ) where conforms_to(Self.K, Copyable) and conforms_to(Self.V, Copyable):
         """Update the dictionary with the key/value pairs from other,
         overwriting existing keys.
 
@@ -1503,7 +1543,7 @@ struct Dict[
         self._order.clear()
 
     def setdefault(
-        mut self, key: Self.K, var default: Self.V
+        mut self, var key: Self.K, var default: Self.V
     ) -> ref[self] Self.V:
         """Get a value from the dictionary by key, or set it to a default if it
         doesn't exist.
@@ -1534,7 +1574,7 @@ struct Dict[
         var h = hash[Self.H](key)
         var found, slot_idx = self._table.find_slot(h, key)
         if not found:
-            var entry = DictEntry[H=Self.H](key.copy(), default^)
+            var entry = DictEntry[Self.K, Self.V, Self.H](key^, default^)
             self._table.set_ctrl(slot_idx, h2(h))
             (self._table._slots + slot_idx).init_pointee_move(entry^)
             self._order.append(Int32(slot_idx))

@@ -141,7 +141,7 @@ def reversed[
 
 
 def reversed[
-    K: KeyElement & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
 ](ref value: Dict[K, V, H],) -> _DictKeyIter[K, V, H, origin_of(value), False]:
@@ -166,7 +166,7 @@ def reversed[
 def reversed[
     dict_mutability: Bool,
     //,
-    K: KeyElement & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     dict_origin: Origin[mut=dict_mutability],
@@ -196,7 +196,7 @@ def reversed[
 def reversed[
     dict_mutability: Bool,
     //,
-    K: KeyElement & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDestructible,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
     dict_origin: Origin[mut=dict_mutability],
