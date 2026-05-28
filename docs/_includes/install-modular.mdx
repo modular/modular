@@ -108,7 +108,7 @@ export default function InstallModular({ folder = "example-project", extraLibrar
               <li>
                 Install <code>modular</code> ({tooltipNightly}){extraLibsDescription}:
                 <CodeBlock language="sh">
-                  {`uv pip install modular${extraLibsString} \\
+                  {`uv add modular${extraLibsString} \\
     --index https://whl.modular.com/nightly/simple/ \\
     --prerelease allow`}
                 </CodeBlock>
@@ -118,7 +118,7 @@ export default function InstallModular({ folder = "example-project", extraLibrar
               <li>
                 Install <code>modular</code> ({tooltipStable}){extraLibsDescription}:
                 <CodeBlock language="sh">
-                  {`uv pip install modular${extraLibsString} \\
+                  {`uv add modular${extraLibsString} \\
     --extra-index-url https://modular.gateway.scarf.sh/simple/`}
                 </CodeBlock>
               </li>
