@@ -60,7 +60,7 @@ PINS = {
     "fire": "fire@0.7.0",
     "flash-attn-4": "flash-attn-4@4.0.0b4",
     "flashinfer-cubin": "flashinfer-cubin@0.6.8.post1",
-    "flashinfer-python": "flashinfer-python@0.6.8.post1",
+    "flashinfer-python": "flashinfer-python@0.6.3",
     "flask": "flask@3.0.3",
     "gguf": "gguf@0.17.1",
     "google-auth": "google-auth@2.48.0",
@@ -1880,50 +1880,6 @@ def targets():
         testonly = "cuda-python" in _TESTONLY_DEPS,
     )
 
-    _cuda_tile_1_3_0_deps = [
-    ] + select({
-        ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":typing-extensions@4.15.0",
-        ],
-        "//conditions:default": [],
-    })
-
-    native.alias(
-        name = "_wheel_cuda-tile@1.3.0",
-        actual = select({
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_cuda_tile_1.3.0_cp310_cp310_manylinux2014_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_cuda_tile_1.3.0_cp310_cp310_manylinux2014_x86_64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_cuda_tile_1.3.0_cp311_cp311_manylinux2014_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_cuda_tile_1.3.0_cp311_cp311_manylinux2014_x86_64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_cuda_tile_1.3.0_cp312_cp312_manylinux2014_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_cuda_tile_1.3.0_cp312_cp312_manylinux2014_x86_64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_cuda_tile_1.3.0_cp313_cp313_manylinux2014_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_cuda_tile_1.3.0_cp313_cp313_manylinux2014_x86_64//file",
-        }),
-    )
-
-    pycross_wheel_library(
-        name = "cuda-tile@1.3.0",
-        deps = _cuda_tile_1_3_0_deps,
-        wheel = ":_wheel_cuda-tile@1.3.0",
-        testonly = "cuda-tile" in _TESTONLY_DEPS,
-    )
-
     _cuda_toolkit_12_8_1_deps = [
     ] + select({
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
@@ -2725,14 +2681,13 @@ def targets():
         testonly = "flashinfer-cubin" in _TESTONLY_DEPS,
     )
 
-    _flashinfer_python_0_6_8_post1_deps = [
+    _flashinfer_python_0_6_3_deps = [
         ":numpy@multiple",
         ":torch@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":click@8.1.7",
-            ":cuda-tile@1.3.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
             ":nvidia-cudnn-frontend@1.16.0",
@@ -2746,7 +2701,6 @@ def targets():
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":click@8.1.7",
-            ":cuda-tile@1.3.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
             ":nvidia-cudnn-frontend@1.16.0",
@@ -2760,7 +2714,6 @@ def targets():
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":click@8.1.7",
-            ":cuda-tile@1.3.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
             ":nvidia-cudnn-frontend@1.16.0",
@@ -2774,7 +2727,6 @@ def targets():
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":click@8.1.7",
-            ":cuda-tile@1.3.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
             ":nvidia-cudnn-frontend@1.16.0",
@@ -2788,7 +2740,6 @@ def targets():
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":click@8.1.7",
-            ":cuda-tile@1.3.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
             ":nvidia-cudnn-frontend@1.16.0",
@@ -2802,7 +2753,6 @@ def targets():
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":apache-tvm-ffi@0.1.9",
             ":click@8.1.7",
-            ":cuda-tile@1.3.0",
             ":einops@0.8.0",
             ":ninja@1.13.0",
             ":nvidia-cudnn-frontend@1.16.0",
@@ -2817,14 +2767,14 @@ def targets():
     })
 
     native.alias(
-        name = "_wheel_flashinfer-python@0.6.8.post1",
-        actual = "@pycross_lock_file_wheel_flashinfer_python_0.6.8.post1_py3_none_any//file",
+        name = "_wheel_flashinfer-python@0.6.3",
+        actual = "@pycross_lock_file_wheel_flashinfer_python_0.6.3_py3_none_any//file",
     )
 
     pycross_wheel_library(
-        name = "flashinfer-python@0.6.8.post1",
-        deps = _flashinfer_python_0_6_8_post1_deps,
-        wheel = ":_wheel_flashinfer-python@0.6.8.post1",
+        name = "flashinfer-python@0.6.3",
+        deps = _flashinfer_python_0_6_3_deps,
+        wheel = ":_wheel_flashinfer-python@0.6.3",
         testonly = "flashinfer-python" in _TESTONLY_DEPS,
     )
 
@@ -9589,7 +9539,7 @@ def targets():
             ":fastapi@0.124.4",
             ":flash-attn-4@4.0.0b4",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":interegular@0.3.3",
             ":ipython@8.18.1",
@@ -9644,7 +9594,7 @@ def targets():
             ":fastapi@0.124.4",
             ":flash-attn-4@4.0.0b4",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":interegular@0.3.3",
             ":ipython@8.18.1",
@@ -9699,7 +9649,7 @@ def targets():
             ":fastapi@0.124.4",
             ":flash-attn-4@4.0.0b4",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":interegular@0.3.3",
             ":ipython@8.18.1",
@@ -9754,7 +9704,7 @@ def targets():
             ":fastapi@0.124.4",
             ":flash-attn-4@4.0.0b4",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":interegular@0.3.3",
             ":ipython@8.18.1",
@@ -9809,7 +9759,7 @@ def targets():
             ":fastapi@0.124.4",
             ":flash-attn-4@4.0.0b4",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":interegular@0.3.3",
             ":ipython@8.18.1",
@@ -9864,7 +9814,7 @@ def targets():
             ":fastapi@0.124.4",
             ":flash-attn-4@4.0.0b4",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":interegular@0.3.3",
             ":ipython@8.18.1",
@@ -13488,7 +13438,7 @@ def targets():
             ":fastsafetensors@0.3.1",
             ":filelock@3.16.1",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":ijson@3.4.0.post0",
             ":lark@1.2.2",
@@ -13547,7 +13497,7 @@ def targets():
             ":fastsafetensors@0.3.1",
             ":filelock@3.16.1",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":ijson@3.4.0.post0",
             ":lark@1.2.2",
@@ -13608,7 +13558,7 @@ def targets():
             ":fastsafetensors@0.3.1",
             ":filelock@3.16.1",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":ijson@3.4.0.post0",
             ":lark@1.2.2",
@@ -13669,7 +13619,7 @@ def targets():
             ":fastsafetensors@0.3.1",
             ":filelock@3.16.1",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":ijson@3.4.0.post0",
             ":lark@1.2.2",
@@ -13730,7 +13680,7 @@ def targets():
             ":fastsafetensors@0.3.1",
             ":filelock@3.16.1",
             ":flashinfer-cubin@0.6.8.post1",
-            ":flashinfer-python@0.6.8.post1",
+            ":flashinfer-python@0.6.3",
             ":gguf@0.17.1",
             ":ijson@3.4.0.post0",
             ":lark@1.2.2",
@@ -16943,86 +16893,6 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_cuda_tile_1.3.0_cp310_cp310_manylinux2014_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/46/c8/1687a83d0739151ca410a5716b5f1dfb6f8feb6381c7c695d72264f17e1c/cuda_tile-1.3.0-cp310-cp310-manylinux2014_aarch64.whl",
-        ],
-        sha256 = "c55616c648f06f84808648a521c67f2d7c790574d6b53ddf8c3bfbc995d36d45",
-        downloaded_file_path = "cuda_tile-1.3.0-cp310-cp310-manylinux2014_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_cuda_tile_1.3.0_cp310_cp310_manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/ab/d0/0e4790cc7a536a685a961d2e04f26be54f86f0974e1eaea71c1b64ec4032/cuda_tile-1.3.0-cp310-cp310-manylinux2014_x86_64.whl",
-        ],
-        sha256 = "8c71c2fd9b96c054c126a218f9927c8c8dde72441a532464551b865b416d452a",
-        downloaded_file_path = "cuda_tile-1.3.0-cp310-cp310-manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_cuda_tile_1.3.0_cp311_cp311_manylinux2014_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/f4/d6/753aecb3e8fcee80d20f9d32b4504276691c2f77fc10abbbd8e82197e24c/cuda_tile-1.3.0-cp311-cp311-manylinux2014_aarch64.whl",
-        ],
-        sha256 = "59d9843fa723ceb4d680ec246e12e3ded857266e4c2bf5c5d21e530d6d765060",
-        downloaded_file_path = "cuda_tile-1.3.0-cp311-cp311-manylinux2014_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_cuda_tile_1.3.0_cp311_cp311_manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/c5/2d/8b416239413bf11d17d42ccee43258f3787da13bcea7b2e42e8bbf04b3da/cuda_tile-1.3.0-cp311-cp311-manylinux2014_x86_64.whl",
-        ],
-        sha256 = "2888d6b89fae053a53ca7bb703c508a5cf90671d266934573c5b6c25978022c4",
-        downloaded_file_path = "cuda_tile-1.3.0-cp311-cp311-manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_cuda_tile_1.3.0_cp312_cp312_manylinux2014_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/f3/49/4592bc94ca05a07c7947ea114fd12734c8497f2daffee9faa79a03e39fb5/cuda_tile-1.3.0-cp312-cp312-manylinux2014_aarch64.whl",
-        ],
-        sha256 = "375316b64c51ee7cfadb2f170a30c1547bc41eb39f1e233a6556713857d2e81f",
-        downloaded_file_path = "cuda_tile-1.3.0-cp312-cp312-manylinux2014_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_cuda_tile_1.3.0_cp312_cp312_manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/40/76/84cb68be463c827bf79da9fa0aa5140838de6455ef6f438bbe0ffa75d378/cuda_tile-1.3.0-cp312-cp312-manylinux2014_x86_64.whl",
-        ],
-        sha256 = "e4865acbff1172aaee304bf9c550586088d8b4545a384423597a590899386709",
-        downloaded_file_path = "cuda_tile-1.3.0-cp312-cp312-manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_cuda_tile_1.3.0_cp313_cp313_manylinux2014_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/9d/7d/ee943554f83d6a143d9e0a5cf27cd7f5f8f6ef447c7e8366d9ad6a5d1bf2/cuda_tile-1.3.0-cp313-cp313-manylinux2014_aarch64.whl",
-        ],
-        sha256 = "8a9bd4dae193cddf438f55d617b6f25b4b0b0fcf4ac4acde7d2695898e396c30",
-        downloaded_file_path = "cuda_tile-1.3.0-cp313-cp313-manylinux2014_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_cuda_tile_1.3.0_cp313_cp313_manylinux2014_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/35/20/e1daea2dc4e094290ba727750f8342095ae857ff3ba4f81c489f48688613/cuda_tile-1.3.0-cp313-cp313-manylinux2014_x86_64.whl",
-        ],
-        sha256 = "a44a81e255fdb7bf8e1f7511fe3a019e6045024574509ea8548e0f71f25f8473",
-        downloaded_file_path = "cuda_tile-1.3.0-cp313-cp313-manylinux2014_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_cuda_toolkit_12.8.1_py2.py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/d4/c8/7dce3a0b15b42a3b58e7d96eb22a687d3bf2c44e01d149a6874629cd9938/cuda_toolkit-12.8.1-py2.py3-none-any.whl",
@@ -17793,12 +17663,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_flashinfer_python_0.6.8.post1_py3_none_any",
+        name = "pycross_lock_file_wheel_flashinfer_python_0.6.3_py3_none_any",
         urls = [
-            "https://files.pythonhosted.org/packages/73/6d/1e8a8533913e33a50a486332ce0673f4fdb860f6eb9ed450327c5c1762cb/flashinfer_python-0.6.8.post1-py3-none-any.whl",
+            "https://files.pythonhosted.org/packages/33/13/2d95248101d8cb978db9000a4dceafb5b122484a694b53e84df1ac2a7b3d/flashinfer_python-0.6.3-py3-none-any.whl",
         ],
-        sha256 = "818f9b8cc2fe66c42a1f6264be4841ac8821ada703685a02cfccb2b5124a710b",
-        downloaded_file_path = "flashinfer_python-0.6.8.post1-py3-none-any.whl",
+        sha256 = "0fe2de934a4b3690c543dafb03f38d7bb4a762431abe8ae4f7292d6fef10c65d",
+        downloaded_file_path = "flashinfer_python-0.6.3-py3-none-any.whl",
     )
 
     maybe(
