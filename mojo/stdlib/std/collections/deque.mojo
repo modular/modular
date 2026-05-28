@@ -897,6 +897,8 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
             n: Number of steps to rotate the deque
                 (defaults to 1).
         """
+        if n == 0 or len(self) == 0:
+            return
         if n < 0:
             for _ in range(-n):
                 (self._data + self._tail).init_pointee_move_from(
