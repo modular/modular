@@ -34,11 +34,18 @@ namespace M {
 // Helpers
 //===----------------------------------------------------------------------===//
 
-/// Returns the given features in "+feature1,+feature2" form.
-std::string encodeFeatures(ArrayRef<std::string> features);
+/// Result of decoding a signed LLVM feature string.
+struct DecodedFeatures {
+  std::vector<std::string> enabled;  ///< Plain names of enabled features.
+  std::vector<std::string> disabled; ///< Plain names of disabled features.
+};
 
-/// Decodes the result of encodeFeatures.
-ErrorOr<std::vector<std::string>> decodeFeatures(StringRef encodedFeatures);
+/// Decodes a signed LLVM feature string (e.g. "+avx2,+bmi1,-avx512f") into
+/// separate enabled and disabled plain-name lists. Unsigned names (no prefix)
+/// are treated as enabled for backward compat with older serialized data.
+/// Returns an error if any entry is empty or a sign prefix has no name after
+/// it.
+ErrorOr<DecodedFeatures> decodeFeatures(StringRef encodedFeatures);
 
 //===----------------------------------------------------------------------===//
 // TargetInfo
@@ -51,12 +58,21 @@ ErrorOr<std::vector<std::string>> decodeFeatures(StringRef encodedFeatures);
 struct TargetInfo {
   llvm::Triple triple;
   std::string arch;
+
+  /// Enabled CPU features, as plain unsigned names (e.g. "avx2").
   std::vector<std::string> features;
 
+  /// CPU features that are explicitly disabled (e.g. "avx512f"). These are
+  /// present in the CPU model's defaults but unavailable at runtime.
+  /// See getHostTargetInfo() for why this field exists.
+  std::vector<std::string> disabledFeatures;
+
   TargetInfo(llvm::Triple triple = llvm::Triple(""), std::string arch = {},
-             std::vector<std::string> features = {})
+             std::vector<std::string> features = {},
+             std::vector<std::string> disabledFeatures = {})
       : triple(std::move(triple)), arch(std::move(arch)),
-        features(std::move(features)) {}
+        features(std::move(features)),
+        disabledFeatures(std::move(disabledFeatures)) {}
 
   /// Serializes this target info to JSON.
   void serializeToJSON(llvm::json::OStream &json) const;
@@ -70,6 +86,10 @@ struct TargetInfo {
   /// in required.
   ErrorOrSuccess checkSatisfiesRequirements(const TargetInfo &required) const;
 };
+
+/// Encodes a TargetInfo's features into the signed string form expected by
+/// LLVM (e.g. "+avx2,+bmi1,-avx512f").
+std::string encodeFeatures(const TargetInfo &targetInfo);
 
 //===----------------------------------------------------------------------===//
 // DeviceRef

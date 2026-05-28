@@ -496,13 +496,14 @@ ErrorOrSuccess M::parseTargetOptions(
       ErrorOr<TargetInfo> hostInfoOr = M::getHostTargetInfo();
       if (hostInfoOr)
         return hostInfoOr.takeError();
-      compilationOptions.targetFeatures = encodeFeatures(hostInfoOr->features);
+      compilationOptions.targetFeatures = encodeFeatures(*hostInfoOr);
     } else {
       ErrorOr<std::vector<std::string>> featuresOr = M::getFeatures(
           compilationOptions.targetTriple, compilationOptions.targetCpu);
       if (featuresOr)
         return featuresOr.takeError();
-      compilationOptions.targetFeatures = encodeFeatures(*featuresOr);
+      compilationOptions.targetFeatures =
+          encodeFeatures(TargetInfo({}, {}, std::move(*featuresOr)));
     }
   }
   if (!targetAccelerator.empty()) {

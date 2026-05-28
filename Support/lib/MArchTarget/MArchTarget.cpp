@@ -55,8 +55,7 @@ M::getMArchFeatures(MLIRContext *ctx, StringRef targetTriple, StringRef march,
   if (runtimeTargetInfoOr)
     return runtimeTargetInfoOr.takeError();
 
-  return getTargetInfoFor(ctx, runtimeTargetInfoOr->triple.str(),
-                          runtimeTargetInfoOr->arch,
-                          encodeFeatures(runtimeTargetInfoOr->features), mtune,
-                          acceleratorArch, relocModel);
+  return getTargetInfoFor(
+      ctx, runtimeTargetInfoOr->triple.str(), runtimeTargetInfoOr->arch,
+      encodeFeatures(*runtimeTargetInfoOr), mtune, acceleratorArch, relocModel);
 }

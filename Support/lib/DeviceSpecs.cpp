@@ -65,27 +65,45 @@ struct VersionedName {
 
 } // namespace
 
-std::string M::encodeFeatures(ArrayRef<std::string> features) {
-  std::string featureStr;
-  llvm::raw_string_ostream os(featureStr);
-  llvm::interleave(features, os, [&](auto &f) { os << '+' << f; }, ",");
-  return featureStr;
+std::string M::encodeFeatures(const TargetInfo &ti) {
+  std::string result;
+  for (const std::string &f : ti.features) {
+    if (!result.empty())
+      result += ',';
+    result += '+';
+    result += f;
+  }
+  for (const std::string &f : ti.disabledFeatures) {
+    if (!result.empty())
+      result += ',';
+    result += '-';
+    result += f;
+  }
+  return result;
 }
 
-ErrorOr<std::vector<std::string>> M::decodeFeatures(StringRef encodedFeatures) {
-  std::vector<std::string> features;
-  SmallVector<StringRef> plusFeatureCommas;
-  encodedFeatures.split(plusFeatureCommas, ',', /*MaxSplit=*/-1,
+ErrorOr<DecodedFeatures> M::decodeFeatures(StringRef encodedFeatures) {
+  DecodedFeatures result;
+  SmallVector<StringRef> featureCommas;
+  encodedFeatures.split(featureCommas, ',', /*MaxSplit=*/-1,
                         /*KeepEmpty=*/false);
-  for (StringRef plusFeatureComma : plusFeatureCommas) {
-    if (plusFeatureComma.empty() || plusFeatureComma.front() != '+')
+  for (StringRef featureComma : featureCommas) {
+    if (featureComma.empty())
       return Error(Twine("ill-formed features: '") + encodedFeatures + "'");
-    StringRef feature = plusFeatureComma.trim("+,");
-    if (feature.empty())
-      return Error("ill-formed features: " + encodedFeatures + "'");
-    features.emplace_back(feature);
+    char sign = featureComma.front();
+    if (sign == '+' || sign == '-') {
+      if (featureComma.size() < 2)
+        return Error(Twine("ill-formed features: '") + encodedFeatures + "'");
+      if (sign == '-')
+        result.disabled.emplace_back(featureComma.drop_front(1));
+      else
+        result.enabled.emplace_back(featureComma.drop_front(1));
+    } else {
+      // Unsigned names treated as enabled for backward compat.
+      result.enabled.emplace_back(featureComma.str());
+    }
   }
-  return features;
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -97,6 +115,7 @@ void TargetInfo::serializeToJSON(llvm::json::OStream &json) const {
   json.attribute("triple", triple.str());
   json.attribute("arch", arch);
   json.attribute("features", features);
+  json.attribute("disabledFeatures", disabledFeatures);
   json.objectEnd();
 }
 
@@ -129,6 +148,18 @@ TargetInfo::deserializeFromJSON(const llvm::json::Value *json) {
       return Error(
           "ill-formed serialized TargetInfo: expecting string feature");
     result.features.emplace_back(*optFeature);
+  }
+  // Read disabledFeatures if present; absent in older serialized data means
+  // empty.
+  if (const llvm::json::Array *disabled =
+          object->getArray("disabledFeatures")) {
+    for (const llvm::json::Value &v : *disabled) {
+      std::optional<StringRef> optFeature = v.getAsString();
+      if (!optFeature)
+        return Error("ill-formed serialized TargetInfo: expecting string "
+                     "disabledFeature");
+      result.disabledFeatures.emplace_back(*optFeature);
+    }
   }
   return result;
 }
@@ -226,22 +257,30 @@ parseFeatures(const std::vector<std::string> &features) {
   return map;
 }
 
-/// Returns success if provided features are a superset of required
-/// features.
+/// Returns success if provided features are a superset of required features,
+/// and that no required feature is explicitly disabled.
 static ErrorOrSuccess
 satisfiesFeatures(const std::vector<std::string> &provided,
+                  const std::vector<std::string> &providedDisabled,
                   const std::vector<std::string> &required) {
   if (required.empty())
-    // No constraint (following code would also return success).
     return success();
 
   llvm::StringMap<VersionedName> providedMap = parseFeatures(provided);
+  llvm::StringMap<VersionedName> disabledMap = parseFeatures(providedDisabled);
   llvm::StringMap<VersionedName> requiredMap = parseFeatures(required);
   std::string str;
   llvm::raw_string_ostream os(str);
   os << "The following features are required but not provided: ";
   bool anyMissing = false;
   for (const auto &[requiredBase, requiredVersioned] : requiredMap) {
+    if (disabledMap.count(requiredBase)) {
+      if (anyMissing)
+        os << ", ";
+      os << requiredVersioned.fullName << " (explicitly disabled)";
+      anyMissing = true;
+      continue;
+    }
     auto providedItr = providedMap.find(requiredBase);
     if (providedItr == providedMap.end()) {
       if (anyMissing)
@@ -271,7 +310,8 @@ TargetInfo::checkSatisfiesRequirements(const TargetInfo &required) const {
     return errOr.takeError();
   if (auto errOr = satisfiesArch(arch, required.arch))
     return errOr.takeError();
-  if (auto errOr = satisfiesFeatures(features, required.features))
+  if (auto errOr =
+          satisfiesFeatures(features, disabledFeatures, required.features))
     return errOr.takeError();
   return success();
 }
@@ -464,23 +504,31 @@ const DeviceSpec &DeviceSpecCollection::getHostDeviceSpec() const {
 // SIMD Width
 //===----------------------------------------------------------------------===//
 
-size_t M::simdWidthFromFeatures(StringRef feature) {
-  if (feature.contains("avx512"))
-    return 512;
-  if (feature.contains("avx2"))
-    return 256;
-  // The fallback is going to be 128.
-  return 128;
+size_t M::simdWidthFromFeatures(StringRef featureStr) {
+  // featureStr may be a comma-separated LLVM signed string (e.g.
+  // "+avx2,-avx512f") or a single plain feature name. Split on comma and
+  // skip disabled ('-X') tokens.
+  size_t maxWidth = 128;
+  SmallVector<StringRef> tokens;
+  featureStr.split(tokens, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  for (StringRef token : tokens) {
+    if (!token.empty() && token[0] == '-')
+      continue;
+    StringRef name = token.ltrim('+');
+    if (name.contains("avx512"))
+      return 512;
+    if (name.contains("avx2"))
+      maxWidth = 256;
+  }
+  return maxWidth;
 }
 
 size_t M::simdWidthFromFeatures(ArrayRef<std::string> features) {
   size_t maxWidth = 128;
   for (StringRef feature : features) {
     maxWidth = std::max(maxWidth, simdWidthFromFeatures(feature));
-    if (maxWidth == 512) {
-      // We can return now. It can't get bigger than this.
+    if (maxWidth == 512)
       return maxWidth;
-    }
   }
   return maxWidth;
 }
