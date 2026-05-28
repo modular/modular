@@ -322,7 +322,7 @@ void printFunctionSignatureFromInfos(
     args[0].passingKind = passingKind;
   }
 
-  os << name;
+  os << "def " << name;
   if (!params.empty())
     printParameterList(params, shared, os, offsets.parameters);
   printArgumentList(args, shared, os, /*suppressSlashAfterSelf=*/isMethod,
@@ -346,7 +346,7 @@ void printStructSignatureFromInfos(StringRef name,
                                    LIT::SharedState &shared,
                                    llvm::raw_string_ostream &os,
                                    const SignatureOffsets &offsets) {
-  os << name;
+  os << "struct " << name;
 
   if (!params.empty())
     printParameterList(params, shared, os, offsets.parameters);

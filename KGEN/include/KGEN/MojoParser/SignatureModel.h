@@ -144,7 +144,7 @@ struct SignatureOffsets;
 /// Render the full text of a Mojo function signature from already-populated
 /// inputs:
 ///
-///     name[params](args) -> returnType <fnConstraints>
+///     def name[params](args) -> returnType <fnConstraints>
 ///
 /// Handles the `__init__`-style permutation of the trailing out-arg to the
 /// front of the argument list (when `isInit` is set and `args.back().convention
@@ -166,7 +166,7 @@ void printFunctionSignatureFromInfos(StringRef name,
 /// Render the full text of a Mojo struct signature from already-populated
 /// inputs:
 ///
-///     name[params] <bodyConstraints>
+///     struct name[params] <bodyConstraints>
 void printStructSignatureFromInfos(StringRef name,
                                    ArrayRef<ParameterInfo> params,
                                    StringRef bodyConstraints,

@@ -88,7 +88,7 @@ comptime parametric_ref_origin_alias = parametric_ref_origin[2]
 # CHECK:  "name": "empty_fn",
 # CHECK:  "overloads": [
 # CHECK:      "description": "The is some kind of description."
-# CHECK:      "signature": "empty_fn()"
+# CHECK:      "signature": "def empty_fn()"
 # CHECK:      "summary": "This is a function summary."
 # CHECK:  ]
 def empty_fn():
@@ -149,7 +149,7 @@ comptime __double_underscore_private_member = ""
 # CHECK:        "path": "/std/builtin/int/Int",
 # CHECK:        "type": "Int"
 # CHECK:      },
-# CHECK:      "signature": "fn_that_async() -> Int"
+# CHECK:      "signature": "def fn_that_async() -> Int"
 # CHECK:      "summary": "This is a function summary."
 
 
@@ -174,7 +174,7 @@ async def fn_that_async() -> Int:
 # CHECK:        "path": "/std/builtin/int/Int",
 # CHECK:        "type": "Int"
 # CHECK:      },
-# CHECK:      "signature": "fn_that_raises() -> Int"
+# CHECK:      "signature": "def fn_that_raises() -> Int"
 # CHECK:      "summary": "This is a function summary."
 
 
@@ -215,7 +215,7 @@ def fn_that_raises() raises -> Int:
 # CHECK:          "name": "borrowedArg"
 # CHECK:          "path": "/std/builtin/int/Int"
 # CHECK:          "type": "Int"
-# CHECK:      "signature": "fn_with_args(arg: Int, mut inoutArg: Int, var ownedArg: Int, borrowedArg: Int)",
+# CHECK:      "signature": "def fn_with_args(arg: Int, mut inoutArg: Int, var ownedArg: Int, borrowedArg: Int)",
 # CHECK:      "summary": "This is a function summary."
 
 
@@ -240,8 +240,8 @@ def fn_with_args(
 
 # CHECK-LABEL:  "name": "fn_with_overload",
 # CHECK:  "overloads": [
-# CHECK:      "signature": "fn_with_overload()",
-# CHECK:      "signature": "fn_with_overload(arg: Int)",
+# CHECK:      "signature": "def fn_with_overload()",
+# CHECK:      "signature": "def fn_with_overload(arg: Int)",
 
 
 def fn_with_overload():
@@ -266,7 +266,7 @@ def fn_with_overload(arg: Int):
 # CHECK: "kind": "function",
 # CHECK: "name": "fn_with_parameter_references",
 # CHECK: "overloads":
-# CHECK:     "signature": "fn_with_parameter_references[arg1_type: TrivialRegisterPassable, arg2_type: TrivialRegisterPassable](func: {{.*}}, arg1: arg1_type, arg2: arg2_type)"
+# CHECK:     "signature": "def fn_with_parameter_references[arg1_type: TrivialRegisterPassable, arg2_type: TrivialRegisterPassable](func: {{.*}}, arg1: arg1_type, arg2: arg2_type)"
 
 
 def fn_with_parameter_references[
@@ -292,7 +292,7 @@ def fn_with_parameter_references[
 # CHECK:          "name": "param2"
 # CHECK:          "passingKind": "kw",
 # CHECK:          "type": "__mlir_type.`!kgen.dtype`"
-# CHECK:      "signature": "fn_with_params[param: __mlir_type.`!kgen.dtype`, /, *, param2: __mlir_type.`!kgen.dtype`]()"
+# CHECK:      "signature": "def fn_with_params[param: __mlir_type.`!kgen.dtype`, /, *, param2: __mlir_type.`!kgen.dtype`]()"
 
 
 def fn_with_params[
@@ -322,7 +322,7 @@ def fn_with_params[
 # CHECK:       "path": "/std/builtin/int/Int",
 # CHECK:       "type": "Int"
 # CHECK:     },
-# CHECK:     "signature": "fn_with_params_and_return(arg: Int) -> Int"
+# CHECK:     "signature": "def fn_with_params_and_return(arg: Int) -> Int"
 
 
 def fn_with_params_and_return(arg: Int) -> Int:
@@ -358,7 +358,7 @@ def fn_with_params_and_return(arg: Int) -> Int:
 # CHECK:     "returns": {
 # CHECK:       "type": "S"
 # CHECK:     },
-# CHECK:     "signature": "fn_with_fn_param_and_arg[T: AnyType, param_fn: def(T, T) capturing -> Bool, S: AnyType = T](arg_fn: def(S, S) capturing -> Bool) -> S"
+# CHECK:     "signature": "def fn_with_fn_param_and_arg[T: AnyType, param_fn: def(T, T) capturing -> Bool, S: AnyType = T](arg_fn: def(S, S) capturing -> Bool) -> S"
 
 
 def fn_with_fn_param_and_arg[
@@ -395,7 +395,7 @@ def logsoftmax[
 
 # COM: Verify that closure parameter types render with their full signature,
 # COM: not just the bare keyword.
-# CHECK: "signature": "vectorize_unified[func: def[width: Int](idx: Int) -> None](closure: func)",
+# CHECK: "signature": "def vectorize_unified[func: def[width: Int](idx: Int) -> None](closure: func)",
 
 
 def vectorize_unified[func: def[width: Int](idx: Int) -> None](closure: func):
@@ -403,7 +403,7 @@ def vectorize_unified[func: def[width: Int](idx: Int) -> None](closure: func):
 
 
 # FIXME(MOCO-3730): sugar regression.
-# CHECK: "signature": "tile_and_unswitch[workgroup_function: def[width: Int, sw: Bool](Int, Int) capturing -> None, *tile_size_list: Int](offset: Int, upperbound: Int)",
+# CHECK: "signature": "def tile_and_unswitch[workgroup_function: def[width: Int, sw: Bool](Int, Int) capturing -> None, *tile_size_list: Int](offset: Int, upperbound: Int)",
 
 
 def tile_and_unswitch[
@@ -438,7 +438,7 @@ struct MyStruct[x: Int]:
 # CHECK:     "path": "/std/builtin/int/Int",
 # CHECK:     "type": "Int"
 # CHECK: }
-# CHECK: "signature": "fn_with_implicit_params[p: Int](arg: MyStruct)"
+# CHECK: "signature": "def fn_with_implicit_params[p: Int](arg: MyStruct)"
 
 
 def fn_with_implicit_params[p: Int](arg: MyStruct):
@@ -466,7 +466,7 @@ def fn_with_implicit_params[p: Int](arg: MyStruct):
 # CHECK:          "passingKind": "pos_or_kw",
 # CHECK:          "path": "/std/collections/string/string/String"
 # CHECK:          "type": "String"
-# CHECK:      "signature": "pos_only_print(x: String, /, sep: String)",
+# CHECK:      "signature": "def pos_only_print(x: String, /, sep: String)",
 
 
 def pos_only_print(x: String, /, sep: String):
@@ -493,7 +493,7 @@ def pos_only_print(x: String, /, sep: String):
 # CHECK:          "name": "offset"
 # CHECK:          "passingKind": "kw",
 # CHECK:          "path": "/std/builtin/int/Int"
-# CHECK:      "signature": "keyword_only_prod(a: Int, b: Int, /, *, offset: Int)",
+# CHECK:      "signature": "def keyword_only_prod(a: Int, b: Int, /, *, offset: Int)",
 
 
 def keyword_only_prod(a: Int, b: Int, /, *, offset: Int):
@@ -522,7 +522,7 @@ def keyword_only_prod(a: Int, b: Int, /, *, offset: Int):
 # CHECK:          "default": "1",
 # CHECK:          "name": "a"
 # CHECK:          "path": "/std/builtin/int/Int"
-# CHECK:      "signature": "default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3)",
+# CHECK:      "signature": "def default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3)",
 
 
 def default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3):
@@ -551,7 +551,7 @@ def default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3):
 # CHECK:         "path": "/std/builtin/anytype/AnyType",
 # CHECK:         "type": "AnyType"
 
-# CHECK:     "signature": "variadic_pack[*Ts: AnyType](*vals: *Ts.values)",
+# CHECK:     "signature": "def variadic_pack[*Ts: AnyType](*vals: *Ts.values)",
 
 
 def variadic_pack[*Ts: AnyType](*vals: *Ts):
@@ -584,7 +584,7 @@ def variadic_pack[*Ts: AnyType](*vals: *Ts):
 # CHECK:         "passingKind": "pos_or_kw",
 # CHECK:         "type": "Int"
 
-# CHECK:     "signature": "variadic_params_args[*nums: Int](*vals: Int, *, var **kwargs: String)",
+# CHECK:     "signature": "def variadic_params_args[*nums: Int](*vals: Int, *, var **kwargs: String)",
 
 
 def variadic_params_args[*nums: Int](*vals: Int, **kwargs: String):
@@ -611,7 +611,7 @@ def variadic_params_args[*nums: Int](*vals: Int, **kwargs: String):
 # CHECK:         "name": "type",
 # CHECK:         "path": "/std/builtin/anytype/AnyType",
 
-# CHECK:     "signature": "parameter_with_escaped_mlir_name[type: AnyType](value: type)",
+# CHECK:     "signature": "def parameter_with_escaped_mlir_name[type: AnyType](value: type)",
 
 
 def parameter_with_escaped_mlir_name[type: AnyType](value: type):
@@ -630,7 +630,7 @@ def parameter_with_escaped_mlir_name[type: AnyType](value: type):
 # CHECK-NEXT:       "convention": "ref",
 
 
-# CHECK:     "signature": "fn_with_anon_refs(ref ref_arg1: TrivialRegisterPassable) -> ref[ref_arg1] TrivialRegisterPassable"
+# CHECK:     "signature": "def fn_with_anon_refs(ref ref_arg1: TrivialRegisterPassable) -> ref[ref_arg1] TrivialRegisterPassable"
 def fn_with_anon_refs(
     ref ref_arg1: TrivialRegisterPassable,
 ) -> ref[ref_arg1] TrivialRegisterPassable:
@@ -638,7 +638,7 @@ def fn_with_anon_refs(
 
 
 # CHECK-LABEL: "name": "fn_with_named_refs",
-# CHECK:     "signature": "fn_with_named_refs[life: MutOrigin](ref[life] ref_arg1: TrivialRegisterPassable) -> ref[life] TrivialRegisterPassable",
+# CHECK:     "signature": "def fn_with_named_refs[life: MutOrigin](ref[life] ref_arg1: TrivialRegisterPassable) -> ref[life] TrivialRegisterPassable",
 def fn_with_named_refs[
     life: MutOrigin
 ](ref[life] ref_arg1: TrivialRegisterPassable) -> ref[
@@ -649,7 +649,7 @@ def fn_with_named_refs[
 
 # MOTO-870: Improve doc gen of struct Origin parameters
 # CHECK-LABEL: "name": "fn_with_origins",
-# CHECK:     "signature": "fn_with_origins[o1: Origin[mut=o1.mut], o2: MutOrigin](ref[o1] arg1: Int, ref[o2] arg2: Int) -> ref[o1] Int",
+# CHECK:     "signature": "def fn_with_origins[o1: Origin[mut=o1.mut], o2: MutOrigin](ref[o1] arg1: Int, ref[o2] arg2: Int) -> ref[o1] Int",
 def fn_with_origins[
     o1: Origin, o2: Origin[mut=True]
 ](ref[o1] arg1: Int, ref[o2] arg2: Int) -> ref[arg1] Int:
@@ -658,7 +658,7 @@ def fn_with_origins[
 
 # MOTO-870: Improve doc gen of struct Origin parameters
 # CHECK-LABEL: "name": "fn_with_mult_result_origins",
-# CHECK:     "signature": "fn_with_mult_result_origins(ref arg1: Int, ref arg2: Int) -> ref[arg1, arg2] Int",
+# CHECK:     "signature": "def fn_with_mult_result_origins(ref arg1: Int, ref arg2: Int) -> ref[arg1, arg2] Int",
 def fn_with_mult_result_origins(
     ref arg1: Int, ref arg2: Int
 ) -> ref[arg1, arg2] Int:
@@ -666,7 +666,7 @@ def fn_with_mult_result_origins(
 
 
 # CHECK-LABEL: "name": "fn_with_named_result",
-# CHECK:     "signature": "fn_with_named_result(a: Int, out res: String)",
+# CHECK:     "signature": "def fn_with_named_result(a: Int, out res: String)",
 def fn_with_named_result(a: Int, out res: String):
     res = ""
 
@@ -693,7 +693,7 @@ def deprecated_function():
 # CHECK: "returns": {
 # CHECK:   "type": "ref[value] UsesParameter[K]"
 # CHECK: },
-# CHECK: "signature": "dep_type[K: AnyType](ref value: UsesParameter[K]) -> ref[value] UsesParameter[K]",
+# CHECK: "signature": "def dep_type[K: AnyType](ref value: UsesParameter[K]) -> ref[value] UsesParameter[K]",
 struct UsesParameter[A: AnyType]:
     pass
 
@@ -709,31 +709,31 @@ from std.collections.optional import Optional
 
 
 # CHECK-LABEL: "name": "optional_default_arg_none"
-# CHECK: "signature": "optional_default_arg_none(input: Optional[Int64] = None)"
+# CHECK: "signature": "def optional_default_arg_none(input: Optional[Int64] = None)"
 def optional_default_arg_none(input: Optional[Int64] = None):
     pass
 
 
 # CHECK-LABEL: "name": "optional_default_arg_none2"
-# CHECK: "signature": "optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None)"
+# CHECK: "signature": "def optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None)"
 def optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None):
     pass
 
 
 # CHECK-LABEL: "name": "optional_default_arg_13"
-# CHECK: "signature": "optional_default_arg_13(input: Optional[Int64] = Int64(13))"
+# CHECK: "signature": "def optional_default_arg_13(input: Optional[Int64] = Int64(13))"
 def optional_default_arg_13(input: Optional[Int64] = Int64(13)):
     pass
 
 
 # CHECK-LABEL: "name": "simd_scalar_alias"
-# CHECK: "signature": "simd_scalar_alias[dt: DType](input: Scalar[dt])"
+# CHECK: "signature": "def simd_scalar_alias[dt: DType](input: Scalar[dt])"
 def simd_scalar_alias[dt: DType](input: Scalar[dt]):
     pass
 
 
 # CHECK-LABEL: "name": "simd_scalar_sugar"
-# CHECK: "signature": "simd_scalar_sugar(b: UInt, c: Int8, d: UInt8, e: BFloat16, f: Float64, g: Float4_e2m1fn, h: Float8_e4m3fn)"
+# CHECK: "signature": "def simd_scalar_sugar(b: UInt, c: Int8, d: UInt8, e: BFloat16, f: Float64, g: Float4_e2m1fn, h: Float8_e4m3fn)"
 # Int & Bool are not SIMD scalars (yet). Once they are, they'll be added here.
 def simd_scalar_sugar(
     b: UInt,
@@ -748,7 +748,7 @@ def simd_scalar_sugar(
 
 
 # CHECK-LABEL: "name": "parametric_ref_origin",
-# CHECK: "signature": "parametric_ref_origin[b: Int](ref c: Int)",
+# CHECK: "signature": "def parametric_ref_origin[b: Int](ref c: Int)",
 def parametric_ref_origin[b: Int](ref c: Int):
     pass
 
@@ -769,13 +769,13 @@ struct HMyUnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](TrivialRegisterPassable):
-    # CHECK: "signature": "__getitem__(self) -> ref[MutAnyOrigin, address_space] T",
+    # CHECK: "signature": "def __getitem__(self) -> ref[MutAnyOrigin, address_space] T",
     def __getitem__(
         self,
     ) -> ref[MutAnyOrigin, Self.address_space] Self.T:
         pass
 
-    # CHECK: "signature": "address_of(ref[address_space] arg: T) -> Self",
+    # CHECK: "signature": "def address_of(ref[address_space] arg: T) -> Self",
     @staticmethod
     def address_of(ref[Self.address_space] arg: Self.T) -> Self:
         pass
@@ -786,7 +786,7 @@ struct HMyUnsafePointer[
 
 struct HList[T: ImplicitlyCopyable]:
     # FIXME: self_is_mut is wrong.
-    # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref[self_is_mut] T",
+    # CHECK: "signature": "def __getitem__(ref self, idx: Int) -> ref[self_is_mut] T",
     def __getitem__(ref self, idx: Int) -> ref[self] Self.T:
         pass
 
@@ -803,13 +803,13 @@ struct HList[T: ImplicitlyCopyable]:
 # prioritization (i.e. not just name based).
 # CHECK:  "kind": "function",
 # CHECK:  "name": "__init__",
-# CHECK:     "signature": "__init__(out self)",
-# CHECK:  "signature": "__init__(out self, *, copy: Self)",
+# CHECK:     "signature": "def __init__(out self)",
+# CHECK:  "signature": "def __init__(out self, *, copy: Self)",
 # CHECK:  "name": "__del__",
 
 # CHECK: "name": "__add__",
 # CHECK: "overloads":
-# CHECK:      "signature": "__add__(self, other: Self) -> Self"
+# CHECK:      "signature": "def __add__(self, other: Self) -> Self"
 
 # CHECK:  "name": "__len__",
 
@@ -829,7 +829,7 @@ struct HList[T: ImplicitlyCopyable]:
 # CHECK:        "doc": "This is a by-ref return value.",
 # CHECK:        "type": "Self"
 # CHECK:      },
-# CHECK:      "signature": "fn_with_by_conventions(mut self, mut arg: Self, mut *args: Self) -> Self",
+# CHECK:      "signature": "def fn_with_by_conventions(mut self, mut arg: Self, mut *args: Self) -> Self",
 # CHECK:      "summary": "This is a function summary."
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "InMemoryStruct",
@@ -904,7 +904,7 @@ struct InMemoryStruct(ImplicitlyCopyable, Sized):
 # CHECK:              "description": "This is a Self parameter."
 # CHECK:              "name": "param"
 # CHECK:              "type": "Self"
-# CHECK:          "signature": "fn_with_self_param[param: Self](self)"
+# CHECK:          "signature": "def fn_with_self_param[param: Self](self)"
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "ParameterClass",
 # CHECK:  "parameters": [
