@@ -118,8 +118,8 @@ def tma_umma_kernel_ss[
 ):
     comptime assert num_threads == 128 or num_threads == 256
     comptime assert (
-        a_type == b_type and a_type == DType.bfloat16
-    ), "a_type and b_type must be the same and bfloat16 type"
+        a_type == b_type and a_type == DType.float8_e4m3fn
+    ), "a_type and b_type must be the same and float8_e4m3fn type"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -257,7 +257,7 @@ def tma_umma_kernel_ss[
     adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
     bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    idesc = UMMAInsDescriptor[UMMAKind.KIND_F8F6F4].create[
         accum_type,
         a_type,
         b_type,
@@ -365,7 +365,7 @@ def tma_umma_kernel_ss[
 
 
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-def tma_umma_kernel_ts[
+def tma_umma_kernel_ts_fp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -399,8 +399,8 @@ def tma_umma_kernel_ts[
         num_m_mmas == 1 and num_n_mmas == 1
     ), "num_m_mmas and num_n_mmas must be 1"
     comptime assert (
-        a_type == b_type and a_type == DType.bfloat16
-    ), "a_type and b_type must be the same and bfloat16 type"
+        a_type == b_type and a_type == DType.float8_e4m3fn
+    ), "a_type and b_type must be the same and float8_e4m3fn type"
     comptime b_smem_layout = tile_layout_k_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]() if transpose_b else tile_layout_mn_major[
@@ -489,7 +489,7 @@ def tma_umma_kernel_ts[
 
     bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    idesc = UMMAInsDescriptor[UMMAKind.KIND_F8F6F4].create[
         accum_type,
         a_type,
         b_type,
@@ -509,14 +509,16 @@ def tma_umma_kernel_ts[
         uninitialized=True
     )
 
+    # FP8 elements are 1 byte each; load 8 elements per vector so each
+    # SIMD vec is 8 bytes (== 2 uint32) and the split-into-uint32 pattern
+    # used below stays identical to the BF16 ts kernel.
+    comptime simd_size_a = 8
+
     for i in range(num_iters):
         # Load A from global memory to registers.
-        # Each thread loads 32 values
         a_gmem_tile = a.tile[BM, BK](block_idx.y, i)
         a_gmem_warp_tile = a_gmem_tile.tile[BM // num_warps, BK](warp_id, 0)
-        # Vectorize by 4 for 16x256 load, each thread loads multiple vector
-        # of size 2x4B=4xBF16
-        a_gmem_frag = a_gmem_warp_tile.vectorize[1, 4]().distribute[
+        a_gmem_frag = a_gmem_warp_tile.vectorize[1, simd_size_a]().distribute[
             Layout.row_major(8, 4)
         ](lane_id())
         comptime num_vecs_m = a_gmem_frag.layout.shape[0].value()
@@ -559,7 +561,9 @@ def tma_umma_kernel_ts[
         tma_phase ^= 1
 
         if elect_one_thread:
-            comptime atmem_kstride = mma_shape[2] // 2  # * size_of[a_type]()
+            # MMA_K elements of A occupy MMA_K * size_of[a_type]() bytes per
+            # row, i.e. that many bytes / 4 columns of 32-bit tmem.
+            comptime atmem_kstride = mma_shape[2] * size_of[a_type]() // 4
             if i == 0:
                 mma[c_scale=0](a_tmem, bdesc, c_tmem, idesc)
 
@@ -705,6 +709,7 @@ def test_tma_umma[
         N, K
     ) if transpose_b else Layout.row_major(K, N)
     var b = ManagedLayoutTensor[b_type, b_layout](ctx)
+    var b_col_major = ManagedLayoutTensor[b_type, Layout.row_major(N, K)](ctx)
 
     var b_extreme: Float32 = sqrt(
         sqrt(max_finite[b_type]().cast[DType.float32]())
@@ -773,7 +778,7 @@ def test_tma_umma[
 
     else:
         comptime smem_use = BN * size_of[b_type]() * BK + 24
-        comptime kernel = tma_umma_kernel_ts[
+        comptime kernel = tma_umma_kernel_ts_fp8[
             a_type,
             b_type,
             c_type,
@@ -802,7 +807,24 @@ def test_tma_umma[
             ),
         )
 
-    comptime if M >= 64 and N >= 64 and K >= 64:
+    comptime if not transpose_b:
+        # NOTE: Matrix B should always be in col-major layout for cublasLt to work
+        var b_host_col_major = b_col_major.tensor()
+        var b_tensor = b.tensor()
+        for i in range(N):
+            for j in range(K):
+                b_host_col_major[i, j] = b_tensor[j, i]
+
+        vendor_blas.matmul(
+            ctx,
+            c_ref.device_tensor[update=False](),
+            a.device_tensor[update=False](),
+            b_col_major.device_tensor[update=True](),
+            c_row_major=True,
+            transpose_b=True,
+        )
+
+    elif M >= 64 and N >= 64 and K >= 64:
         vendor_blas.matmul(
             ctx,
             c_ref.device_tensor[update=False](),
@@ -827,8 +849,8 @@ def test_tma_umma[
 
     for m in range(M):
         for n in range(N):
-            # Increased tolerance for bfloat16 accumulation errors
-            # bf16 matrix multiplication can have larger numerical errors
+            # Increased tolerance for FP8/bfloat16 accumulation errors
+            # FP8/bf16 matrix multiplication can have larger numerical errors
             # due to reduced precision in intermediate accumulations
             assert_almost_equal(
                 c_host[m, n],
@@ -841,13 +863,14 @@ def test_tma_umma[
 
     _ = a^
     _ = b^
+    _ = b_col_major^
     _ = c^
     _ = c_ref^
 
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime dtype = DType.bfloat16
+        comptime dtype = DType.float8_e4m3fn
         comptime for swizzle in [
             TensorMapSwizzle.SWIZZLE_32B,
             TensorMapSwizzle.SWIZZLE_64B,
@@ -860,7 +883,7 @@ def main() raises:
 
                 comptime for mma_size_scale in range(0, 2):
                     comptime MMA_M = 64 * (1 + mma_size_scale)
-                    comptime MMA_K = 16
+                    comptime MMA_K = 32
 
                     comptime for size_scale in range(1, 3):
                         comptime for transpose_b in range(0, 2):
@@ -900,64 +923,34 @@ def main() raises:
                                 dtype,
                                 dtype,
                                 DType.bfloat16,
-                                Index(
-                                    MMA_M * size_scale,
-                                    128 * size_scale,
-                                    BK * size_scale,
-                                ),
-                                Index(MMA_M, 128, BK),
-                                Index(MMA_M, 128, MMA_K),
-                                a_swizzle=swizzle,
-                                b_swizzle=swizzle,
-                                transpose_a=True,
+                                Index(64, 128, 128),
+                                Index(64, 128, 128),
+                                Index(64, 128, 32),
+                                b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                                 transpose_b=Bool(transpose_b),
+                                a_smem=False,
                             ](ctx)
 
                             test_tma_umma[
                                 dtype,
                                 dtype,
                                 DType.bfloat16,
-                                Index(
-                                    MMA_M * size_scale,
-                                    128 * size_scale,
-                                    BK * size_scale,
-                                ),
-                                Index(MMA_M, 128, BK),
-                                Index(MMA_M, 128, MMA_K),
-                                a_swizzle=swizzle,
-                                b_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
-                                transpose_a=True,
+                                Index(64, 128, 512),
+                                Index(64, 128, 128),
+                                Index(64, 128, 32),
+                                b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                                 transpose_b=Bool(transpose_b),
+                                a_smem=False,
                             ](ctx)
+
                             test_tma_umma[
                                 dtype,
                                 dtype,
                                 DType.bfloat16,
-                                Index(
-                                    MMA_M * size_scale,
-                                    128 * size_scale,
-                                    BK * size_scale,
-                                ),
-                                Index(MMA_M, 128, BK),
-                                Index(MMA_M, 128, MMA_K),
-                                a_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
-                                b_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
-                                transpose_a=True,
+                                Index(64, 128, 64),
+                                Index(64, 128, 64),
+                                Index(64, 128, 32),
+                                b_swizzle=TensorMapSwizzle.SWIZZLE_64B,
                                 transpose_b=Bool(transpose_b),
+                                a_smem=False,
                             ](ctx)
-
-        comptime for size_scale in range(1, 3):
-            comptime for transpose_a in range(0, 2):
-                comptime for transpose_b in range(0, 2):
-                    test_tma_umma[
-                        DType.bfloat16,
-                        DType.bfloat16,
-                        DType.bfloat16,
-                        Index(size_scale * 64, 8, 16),
-                        Index(size_scale * 64, 8, 16),
-                        Index(size_scale * 64, 8, 16),
-                        a_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
-                        b_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
-                        transpose_a=Bool(transpose_a),
-                        transpose_b=Bool(transpose_b),
-                    ](ctx)
