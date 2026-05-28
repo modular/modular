@@ -42,6 +42,10 @@ comptime _UNINIT_CHECK_ENABLED = (
 #   write a single 4-bit lane, so the C++ side skips the fill.
 # - `float8_e3m4`, `float8_e8m0fnu`: `max_finite` is not defined for these
 #   scale-only / no-mantissa formats, so the C++ side skips the fill too.
+# - All other fp8 formats: the `max_finite` poison sentinel is the same
+#   bit pattern produced by legitimate saturate-to-max in narrow fp8, so
+#   the check yields pervasive false positives. The C++ side skips these
+#   too.
 @always_inline
 def _is_poison_checked_dtype[dtype: DType]() -> Bool:
     return (
@@ -49,10 +53,6 @@ def _is_poison_checked_dtype[dtype: DType]() -> Bool:
         or dtype == DType.bfloat16
         or dtype == DType.float32
         or dtype == DType.float64
-        or dtype == DType.float8_e4m3fn
-        or dtype == DType.float8_e4m3fnuz
-        or dtype == DType.float8_e5m2
-        or dtype == DType.float8_e5m2fnuz
     )
 
 

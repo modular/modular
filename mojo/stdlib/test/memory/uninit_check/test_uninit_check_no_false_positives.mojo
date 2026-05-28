@@ -109,6 +109,21 @@ def test_normal_bfloat16():
     _ = UnsafePointer(to=value).load()
 
 
+def test_fp8_e4m3fn_poison_pattern_not_flagged():
+    """The poison check excludes `float8_e4m3fn` because its `max_finite`
+    sentinel (0x7E = 448.0) collides with legitimate saturate-to-max values
+    in narrow-fp8 quantization. Constructing a value with the would-be-
+    poison bit pattern must not abort."""
+    _ = Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x7E))
+
+
+def test_fp8_e5m2_poison_pattern_not_flagged():
+    """The poison check excludes `float8_e5m2` for the same reason as
+    `float8_e4m3fn`. Constructing a value with the would-be-poison bit
+    pattern (0x7B = 57344.0) must not abort."""
+    _ = Scalar[DType.float8_e5m2](from_bits=UInt8(0x7B))
+
+
 def main() raises:
     test_normal_float32()
     test_qnan_not_flagged()
@@ -120,3 +135,5 @@ def main() raises:
     test_normal_float64()
     test_normal_float16()
     test_normal_bfloat16()
+    test_fp8_e4m3fn_poison_pattern_not_flagged()
+    test_fp8_e5m2_poison_pattern_not_flagged()
