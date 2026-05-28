@@ -76,30 +76,6 @@ void printAliasSignature(LIT::AliasDeclOp aliasOp, LIT::SharedState &shared,
 // Diagnostic-oriented helpers
 //===----------------------------------------------------------------------===//
 
-/// Output a synthesized Mojo-syntax signature to the in-flight diagnostic if
-/// the diagnostic's last location is not contained within the source manager.
-/// If the location is readable, this does nothing and returns the diagnostic
-/// back unchanged.
-///
-/// This function is intended for a diagnostic whose last location points
-/// somewhere within a Mojo source file, with the idea that the diagnostic
-/// handler will point a caret at the place of interest. If this isn't an
-/// option - because the loc is unreadable - this function will optionally
-/// synthesize a declaration to make up for the lack of accurate source
-/// information.
-LIT::MojoInflightDiag &
-synthesizeToDiagIfLocUnreadable(LIT::MojoInflightDiag &diag, Operation *op,
-                                StringRef preamble = "",
-                                const LIT::ASTDecl *contextDecl = nullptr);
-
-/// Output a Mojo-syntax attribute to the in-flight diagnostic if the
-/// diagnostic's last location is not contained within the source manager. If
-/// the location is readable, this does nothing and returns the diagnostic back
-/// unchanged.
-LIT::MojoInflightDiag &
-synthesizeToDiagIfLocUnreadable(LIT::MojoInflightDiag &diag, TypedAttr attr,
-                                StringRef preamble = "");
-
 /// Synthesize a Mojo-source-syntax signature for the given decl op. Dispatches
 /// to `printFunctionSignature` / `printStructSignature` / `printAliasSignature`
 /// based on the op kind. Returns an empty string if `op` is null or isn't one

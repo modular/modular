@@ -493,12 +493,15 @@ void Diags::diagHandler(const llvm::SMDiagnostic &diag) {
 //===----------------------------------------------------------------------===//
 
 /// Each message in a diagnostic must have a location and text, and may
-/// have any number of highlighted ranges and fixit hints.
+/// have any number of highlighted ranges, fixit hints, and line contents.
 struct InflightDiag::Message {
   Location loc;
   std::string text;
   std::vector<SMRange> ranges;
   std::vector<SMFixIt> fixIts;
+  // If non-empty, overrides the line contents automatically filled out by the
+  // diagnostic manager.
+  std::string customLineContents;
 };
 
 InflightDiag::InflightDiag(InflightDiag &&other)
@@ -520,7 +523,8 @@ InflightDiag &InflightDiag::operator=(InflightDiag &&other) {
 
 InflightDiag::InflightDiag(Location loc, Diags &diags, bool isWarning)
     : diags(&diags), isWarning(isWarning) {
-  messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
+  messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{},
+                      /*customLineContents=*/{}});
 }
 
 InflightDiag::~InflightDiag() {
@@ -556,8 +560,15 @@ void InflightDiag::emitMLIRDiagnostic() {
   InFlightDiagnostic mlirDiag =
       isWarning ? mlir::emitWarning(loc) : mlir::emitError(loc);
   mlirDiag << messages.front().text;
-  for (auto &note : llvm::drop_begin(messages))
+  // MLIR diagnostics can't print custom line text; just output it as yet
+  // another note.
+  if (!messages.front().customLineContents.empty())
+    mlirDiag.attachNote(loc) << messages.front().customLineContents;
+  for (auto &note : llvm::drop_begin(messages)) {
     mlirDiag.attachNote(note.loc) << note.text;
+    if (!note.customLineContents.empty())
+      mlirDiag.attachNote(note.loc) << note.customLineContents;
+  }
 }
 
 void InflightDiag::emitAutoFixItDiagnostic() {
@@ -579,13 +590,15 @@ void InflightDiag::emitAutoFixItDiagnostic() {
   emitSourceMgrDiagnostic();
 }
 
-llvm::SMDiagnostic
-InflightDiag::getAsSMDiagnostic(const InflightDiag::Message &message,
-                                const std::string &text,
-                                SourceMgr::DiagKind kind) {
+llvm::SMDiagnostic InflightDiag::getAsSMDiagnostic(
+    const InflightDiag::Message &message, const std::string &text,
+    SourceMgr::DiagKind kind, const std::string &customLineContents) {
   auto loc = diags->convertLocToSMLoc(message.loc);
 
-  if (loc.isValid()) {
+  // GetMessage will automatically set the line contents of the diagnostic with
+  // location information. We can't do this if the location isn't valid, or if
+  // we have custom line contents we want to print.
+  if (loc.isValid() && customLineContents.empty()) {
     // If we've got a valid location, get a fully fledged diagnostic with
     // location information, line text, etc.
     return diags->sourceMgr.GetMessage(loc, kind, text, message.ranges,
@@ -596,52 +609,65 @@ InflightDiag::getAsSMDiagnostic(const InflightDiag::Message &message,
   // to construct something helpful for users.
   unsigned lineNo = -1, colNo = -1;
   SmallVector<std::pair<unsigned, unsigned>, 4> colRanges;
-  StringRef lineStr;
   StringRef bufferID = "<unknown>";
 
-  // Walk the location structure and return the first FileLineColLoc we see.
-  std::function<std::optional<FileLineColLoc>(Location)> visit =
-      [&](Location l) -> std::optional<FileLineColLoc> {
-    if (auto fileLoc = mlir::dyn_cast<FileLineColLoc>(l))
-      return fileLoc;
+  if (loc.isValid()) {
+    std::tie(lineNo, colNo) = diags->sourceMgr.getLineAndColumn(loc);
+    unsigned curBuf = diags->sourceMgr.FindBufferContainingLoc(loc);
+    assert(curBuf && "Invalid or unspecified location!");
 
-    if (auto fused = dyn_cast<mlir::FusedLoc>(l)) {
-      for (Location nested : fused.getLocations()) {
-        if (auto fileLoc = visit(nested))
-          return fileLoc;
-      }
-    }
-
-    if (auto named = mlir::dyn_cast<mlir::NameLoc>(l))
-      return visit(named.getChildLoc());
-
-    if (auto call = mlir::dyn_cast<mlir::CallSiteLoc>(l)) {
-      // Prefer the callee location
-      if (auto fileLoc = visit(call.getCallee()))
+    const llvm::MemoryBuffer *curMB = diags->sourceMgr.getMemoryBuffer(curBuf);
+    bufferID = curMB->getBufferIdentifier();
+  } else {
+    // Walk the location structure and return the first FileLineColLoc we see.
+    std::function<std::optional<FileLineColLoc>(Location)> visit =
+        [&](Location l) -> std::optional<FileLineColLoc> {
+      if (auto fileLoc = mlir::dyn_cast<FileLineColLoc>(l))
         return fileLoc;
-      return visit(call.getCaller());
-    }
 
-    return std::nullopt;
-  };
+      if (auto fused = dyn_cast<mlir::FusedLoc>(l)) {
+        for (Location nested : fused.getLocations()) {
+          if (auto fileLoc = visit(nested))
+            return fileLoc;
+        }
+      }
 
-  if (std::optional<FileLineColLoc> fileLoc = visit(message.loc)) {
-    if (auto name = fileLoc->getFilename().getValue(); !name.empty()) {
-      bufferID = name;
-      lineNo = fileLoc->getLine();
-      // Note: we do have a column number but here we leave it as -1.
-      // Otherwise, if both line and column are not -1, the SMDiagnostic
-      // prints a caret "into the file" which is likely unhelpful since it's
-      // probably not on disk. With this tradeoff, we lose a valid column
-      // number but get a normal-looking filename and line number without
-      // the added noise of a caret into a path the user can't access
-      // anyway:
-      //   path/to/filename.mojo:100: note: foo
+      if (auto named = mlir::dyn_cast<mlir::NameLoc>(l))
+        return visit(named.getChildLoc());
+
+      if (auto call = mlir::dyn_cast<mlir::CallSiteLoc>(l)) {
+        // Prefer the callee location
+        if (auto fileLoc = visit(call.getCallee()))
+          return fileLoc;
+        return visit(call.getCaller());
+      }
+
+      return std::nullopt;
+    };
+    if (std::optional<FileLineColLoc> fileLoc = visit(message.loc)) {
+      if (auto name = fileLoc->getFilename().getValue(); !name.empty()) {
+        bufferID = name;
+        lineNo = fileLoc->getLine();
+        // Note: we may have a column number but here we leave it as -1.
+        // Otherwise, if both line and column are not -1, the SMDiagnostic
+        // prints a caret "into the file" which is likely unhelpful since it's
+        // probably not on disk. With this tradeoff, we lose a valid column
+        // number but get a normal-looking filename and line number without
+        // the added noise of a caret into a path the user can't access
+        // anyway:
+        //   path/to/filename.mojo:100: note: foo
+      }
     }
   }
 
+  // If we've custom line text, we can't stop the diagnostic manager printing a
+  // caret. Set the column for it back to 0 so it doesn't point somewhere odd.
+  if (!customLineContents.empty())
+    colNo = 0;
+
   return llvm::SMDiagnostic(diags->sourceMgr, loc, bufferID, lineNo, colNo,
-                            kind, text, lineStr, colRanges, message.fixIts);
+                            kind, text, customLineContents, colRanges,
+                            message.fixIts);
 }
 
 /// Print the diagnostic + each note through SourceMgr.
@@ -660,7 +686,8 @@ void InflightDiag::emitSourceMgrDiagnostic() {
     if (nMessagesPrinted > diags->maxNotesPerDiagnostic && nOmitted > 0)
       text << " (" << nOmitted << " more notes omitted.)";
 
-    llvm::SMDiagnostic diag = getAsSMDiagnostic(message, text.str(), kind);
+    llvm::SMDiagnostic diag = getAsSMDiagnostic(message, text.str(), kind,
+                                                message.customLineContents);
 
     sourceMgr.PrintMessage(llvm::errs(), diag);
 
@@ -675,11 +702,13 @@ void InflightDiag::emitSourceMgrDiagnostic() {
 /// Add a note to this diagnostic at the specified location, and change the
 /// emission point to start filling it in.
 InflightDiag InflightDiag::attachNote(Location loc) && {
-  messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
+  messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{},
+                      /*customLineContents=*/{}});
   return std::move(*this);
 }
 InflightDiag &InflightDiag::attachNote(Location loc) & {
-  messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{}});
+  messages.push_back({loc, /*message=*/"", /*ranges=*/{}, /*fixIts=*/{},
+                      /*customLineContents=*/{}});
   return *this;
 }
 
@@ -704,6 +733,7 @@ void InflightDiag::addDiag(InflightDiag &&otherDiag) {
   Message &otherPrimary = otherMessages[0];
   Message &lastMsg = messages.back();
   lastMsg.text += otherPrimary.text;
+  lastMsg.customLineContents += otherPrimary.customLineContents;
   llvm::append_range(lastMsg.ranges, std::move(otherPrimary.ranges));
   llvm::append_range(lastMsg.fixIts, std::move(otherPrimary.fixIts));
   llvm::append_range(messages, llvm::drop_begin(std::move(otherMessages)));
@@ -712,6 +742,10 @@ void InflightDiag::addDiag(InflightDiag &&otherDiag) {
 
 void InflightDiag::addText(const Twine &text) {
   messages.back().text += text.str();
+}
+
+void InflightDiag::addCustomLineText(const Twine &text) {
+  messages.back().customLineContents += text.str();
 }
 
 static SMRange translateToSMRange(SourceRange range, Diags *diags) {

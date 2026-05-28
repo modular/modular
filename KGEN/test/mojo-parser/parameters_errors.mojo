@@ -355,7 +355,8 @@ def test_struct_kw_params3():
 
 
 
-# expected-note @+2 {{declared here}}
+# expected-note @+3 {{declared here}}
+# expected-note @+2 {{def __init__(out self)    # note - generated function}}
 @fieldwise_init
 struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]:
     pass
@@ -538,9 +539,9 @@ def unused_init_self_param():
     var slice = UnusedInitSelfParam()
 
 # expected-note @below {{candidate not viable: missing 1 required keyword-only argument: 'take'}}
-# expected-note @below {{generated function with type 'def[arg1: Int, size: Int, //](*, deinit take: SimpleSIMD[arg1, size]) -> SimpleSIMD[arg1, size]'}}
+# expected-note @below {{def __init__(out self, *, deinit take: Self)    # note - generated function}}
 # expected-note @below {{candidate not viable: missing 1 required keyword-only argument: 'copy'}}
-# expected-note @below {{generated function with type 'def[arg1: Int, size: Int, //](*, copy: SimpleSIMD[arg1, size]) -> SimpleSIMD[arg1, size]'}}
+# expected-note @below {{def __init__(out self, *, copy: Self)    # note - generated function}}
 struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):
     # expected-note @below {{candidate not viable: return type 'SimpleSIMD[50, 1]' parameter 'size' value '1' doesn't match expected value '4'}}
     def __init__[T: AnyType](out self: SimpleSIMD[Self.arg1, 1], value: T): pass
