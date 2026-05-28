@@ -561,6 +561,18 @@ def main() raises:
             DType.float32,
             136,
         ](ctx, Int(128), Int(1024), Idx[544])
+        test_batched_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.float32,
+            DType.float32,
+            128,
+        ](ctx, Int(128), Int(1024), Idx[192])
+        test_batched_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.float32,
+            DType.float32,
+            128,
+        ](ctx, Int(7), Int(1000), Idx[576])
 
         # DType.float8_e8m0fnu is only supported on NVIDIA GPUs
         comptime if has_nvidia_gpu_accelerator():
