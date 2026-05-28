@@ -910,6 +910,116 @@ def test_grammar_accepts_unbounded_argument_body(
     assert consumed == len(tokens)
 
 
+def test_grammar_accepts_less_than_inside_json_strings(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Grammar accepts ``<`` inside JSON string values.
+
+    Tool arguments often contain code snippets with comparisons like
+    ``if (x < y)``, HTML/XML markup, JSX templates, or git diffs with
+    conflict markers (``<<<<<<< HEAD``). The body regex must allow
+    ``<`` inside quoted strings while still rejecting it outside strings
+    where it signals the start of a structural tag like
+    ``<|tool_call_end|>``.
+
+    Tests several realistic payloads containing ``<`` in string values:
+    code comparisons, HTML content, and git diff markers.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("write_file")
+    )
+
+    # Test cases with < in various contexts inside JSON strings
+    test_payloads = [
+        # Code with comparison operators
+        '{"content": "if (x < y) { return x; }"}',
+        # HTML/XML content
+        '{"content": "<html><body><p>Hello</p></body></html>"}',
+        # JSX template
+        '{"content": "const App = () => <div><span>Hi</span></div>;"}',
+        # Git diff conflict markers
+        '{"content": "<<<<<<< HEAD\\nold code\\n=======\\nnew code\\n>>>>>>> branch"}',
+        # Multiple < in different string fields
+        '{"code": "a < b", "html": "<p>text</p>", "note": "x<y<z"}',
+        # Escaped quotes with <
+        '{"content": "She said \\"x < y\\" loudly"}',
+        # Nested objects with < in values
+        '{"outer": {"inner": "a < b"}, "list": ["<item>", "<other>"]}',
+    ]
+
+    for payload in test_payloads:
+        matcher = LLMatcher(ll_tokenizer, grammar)
+        tool_call = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.write_file:0"
+            "<|tool_call_argument_begin|>"
+            f"{payload}"
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+
+        tokens = _MinimalTokenizer()(tool_call)
+        consumed = matcher.try_consume_tokens(tokens)
+
+        assert consumed == len(tokens), (
+            f"matcher rejected payload at offset {consumed} of {len(tokens)}; "
+            f"payload={payload!r}; "
+            f"context around rejection={tool_call[max(0, consumed - 20) : consumed + 20]!r}"
+        )
+
+
+def test_grammar_rejects_less_than_outside_json_strings(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Grammar rejects ``<`` outside JSON string values.
+
+    The ``<`` character outside of quoted strings signals the start of a
+    structural tag like ``<|tool_call_end|>``. The grammar must reject
+    such payloads to ensure proper tag detection. This is the "bad case"
+    that the JSON-string-aware pattern is designed to catch.
+
+    Tests several malformed payloads where ``<`` appears outside strings:
+    bare ``<`` in JSON structure, ``<`` as object key prefix, etc.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("write_file")
+    )
+
+    # Test cases with < OUTSIDE of JSON strings — these should be rejected
+    # because < outside strings signals a structural tag.
+    # Each payload is syntactically structured to have < appear in a
+    # position where it's NOT inside a quoted string value.
+    bad_payloads = [
+        # Bare < where a value should be
+        '{"value": <}',
+        # < between number tokens (not in a string)
+        '{"a": 1, <"b": 2}',
+        # < as the start of what looks like a tag outside any string
+        '{"done": true}<',
+    ]
+
+    for payload in bad_payloads:
+        matcher = LLMatcher(ll_tokenizer, grammar)
+        tool_call = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.write_file:0"
+            "<|tool_call_argument_begin|>"
+            f"{payload}"
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+
+        tokens = _MinimalTokenizer()(tool_call)
+        consumed = matcher.try_consume_tokens(tokens)
+
+        # The matcher should NOT consume all tokens — it should reject
+        # somewhere before or at the problematic <
+        assert consumed < len(tokens), (
+            f"matcher should have rejected payload with < outside string "
+            f"but accepted all {len(tokens)} tokens; payload={payload!r}"
+        )
+
+
 def test_parser_handles_json_content_when_no_tool_calls() -> None:
     """Test that parser returns content as-is when no tool call markers present."""
     parser = KimiToolParser()
