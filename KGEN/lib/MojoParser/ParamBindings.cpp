@@ -224,19 +224,20 @@ void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
 /// for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
-                                      ParameterExprArrayAttr verified) {
+                                      const VerifiedParamBindings &verified) {
   auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
   // If this is a global function or struct reference, bind it directly.
   auto parentTrait = dyn_cast<TraitDeclOp>(funcOp->getParentOp());
   if (!parentTrait) {
     return funcOp.getFuncLiteralGenerator(shared.getEvaluationContext(),
-                                          verified);
+                                          verified.asAttr());
   }
 
+  ArrayRef<TypedAttr> verifiedValues = verified.getValues();
   // Must at least have one `_Self` parameter.
-  assert(!verified.getValue().empty());
+  assert(!verifiedValues.empty());
 
-  TypedAttr selfExpr = verified.getValue()[0];
+  TypedAttr selfExpr = verifiedValues[0];
   ASTDecl *traitDecl = ASTType(selfExpr.getType()).getDecl(shared);
   FnTypeGeneratorType signature = funcOp.getFullSignature();
 
@@ -261,13 +262,13 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
   TypedAttr fnRef = shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
       selfExpr, traitName, funcOp.getSymNameAttr(), signature);
 
-  return BindParamsAttr::get(fnRef, verified.getValue().drop_front(),
+  return BindParamsAttr::get(fnRef, verifiedValues.drop_front(),
                              &shared.getEvaluationContext());
 }
 
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,
                                       const ParamBindings &unverified) {
-  ParameterExprArrayAttr verifiedBindings = nullptr;
+  VerifiedParamBindings verifiedBindings;
   if (!unverified.empty()) {
     auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
     FnTypeGeneratorType signature = funcOp.getFullSignature();

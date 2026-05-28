@@ -34,14 +34,16 @@ public:
            DeferredTypingContext *deferredTypingContext = nullptr);
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
-  // parameter binding.
+  // parameter binding. On success, returns the verified bindings (which can be
+  // used to specialize a struct type or generator); on failure, returns a null
+  // `VerifiedParamBindings`.
   //
   // Body-constraint inconclusiveness is routed according to the
   // `deferredTypingContext` passed at construction time: when non-null,
   // unprovable body constraints are appended to the context and the inference
   // succeeds; otherwise they are raised as a hard error. Per-parameter
   // constraint inconclusiveness is always a hard error.
-  ParameterExprArrayAttr inferForStruct();
+  VerifiedParamBindings inferForStruct();
 
   /// After inferring parameter values, this allows access to the results.
   TypedAttr getInferredValue(size_t idx) const {
@@ -160,10 +162,10 @@ public:
                OperandsNeedingOriginsList &operandsNeedingOrigins);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
-  /// the specified signature, try to infer the value of the next 'decl'
-  /// parameter. This should always return failure /without/ an error if it
-  /// cannot be inferred, and return success if a value was determined.
-  LogicalResult inferForCall();
+  /// the specified signature, try to infer the verified parameter bindings. On
+  /// failure, returns a null `VerifiedParamBindings` and records the reason in
+  /// the diagnostic/unprovable-constraint side channels.
+  VerifiedParamBindings inferForCall();
 
   /// For each mismatch in "preferred" argument convention, penalize the
   /// overload. This is to resolve ambiguities that can arise from synthesized

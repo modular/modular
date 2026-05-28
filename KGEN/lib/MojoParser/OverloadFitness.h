@@ -11,6 +11,7 @@
 #ifndef KGEN_MOJOPARSER_OVERLOADFITNESS_H
 #define KGEN_MOJOPARSER_OVERLOADFITNESS_H
 
+#include "InferenceState.h"
 #include "KGEN/MojoParser/CallOperands.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -39,7 +40,7 @@ public:
   }
 
   /// Return the parameter bindings if the candidate is valid.
-  ParameterExprArrayAttr getParamBindings() const {
+  const VerifiedParamBindings &getParamBindings() const {
     assert(getValidity() >= Validity::kFunctionConstraintInconclusive);
     return paramBindings;
   }
@@ -113,7 +114,7 @@ public:
 
 private:
   /// For valid candidates, this defines the parameter bindings to use.
-  ParameterExprArrayAttr paramBindings;
+  VerifiedParamBindings paramBindings;
   /// The diagnostic for invalid candidates, or null for valid ones.
   std::optional<MojoInflightDiag> diag = std::nullopt;
   /// Any unprovable constraints.
@@ -148,9 +149,9 @@ private:
   /// Constructor for valid candidates (kValid).
   /// To create a kFunctionConstraintInconclusive fitness, just insert the
   /// constraints into `unprovableConstraints`.
-  OverloadFitness(ParameterExprArrayAttr paramBindings,
+  OverloadFitness(VerifiedParamBindings paramBindings,
                   OperandsNeedingOriginsList &&operandsNeedingOrigins)
-      : paramBindings(paramBindings),
+      : paramBindings(std::move(paramBindings)),
         operandsNeedingOrigins(std::move(operandsNeedingOrigins)) {}
 };
 

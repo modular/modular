@@ -1451,11 +1451,6 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
   if (tupleType.isTypeCheckErrorType())
     return {};
   ASTDecl *typeDecl = ASTType(tupleType).getDecl(shared);
-  auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl->getIfOperation());
-  if (!structOp) {
-    emitError(loc, "internal error: Tuple type not found or not a struct");
-    return {};
-  }
 
   SyntheticNode tmpExpr(loc);
   ParamBindings bindings(getDeclScope(), &tmpExpr);
@@ -1469,12 +1464,12 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
                      /*allowImplicitConversions=*/true, typeDecl,
                      /*discardError=*/false,
                      /*deferredTypingContext=*/deferredTypingContext);
-  ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
-  if (!bindingValuesAttr)
+  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
+  if (!verifiedBindings)
     return {};
 
   // Ok, we succeeded at reparameterizing the type.
-  return metaType.getType().bindAll(bindingValuesAttr.getValue());
+  return verifiedBindings.specializeGenerator(PValue(tupleType));
 }
 
 //===----------------------------------------------------------------------===//

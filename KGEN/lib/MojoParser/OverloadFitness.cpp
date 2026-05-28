@@ -387,7 +387,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                      /*discardError=*/true);
   // Don't yield constraint failure for a single overload failure: we want a
   // better error message diagnosed for the entire set.
-  ParameterExprArrayAttr bindings = inference.inferForStruct();
+  VerifiedParamBindings bindings = inference.inferForStruct();
 
   if (!bindings) {
     // If no diagnostics were emitted, this must be an inconclusive fitness.
@@ -400,7 +400,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   }
 
   OverloadFitness fitness(
-      bindings,
+      std::move(bindings),
       /*noArgsNeedingOrigins*/ OperandsNeedingOriginsList());
   fitness.unprovableConstraints =
       std::move(inference.bodyUnprovableConstraints);
@@ -603,7 +603,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     }
   }
 
-  if (failed(inference.inferForCall())) {
+  VerifiedParamBindings verifiedBindings = inference.inferForCall();
+  if (!verifiedBindings) {
     if (inference.diag.hasErrorEmitted())
       return std::move(*inference.diag.takeMojoDiag());
     // Then there must be unprovable per-parameter constraints. Report
@@ -615,18 +616,19 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     // part of the fitness result later.
   }
 
-  ParameterExprArrayAttr newBindings = inference.getInferredValues();
   assert(inference.unprovableConstraints.empty() &&
          "expect no unprovable constraints on a successful inference.");
-  assert(newBindings && "expected new bindings when no diagnostic was emitted");
 
   // If anything was bound, apply it to the signature so the expected argument
-  // types are updated.
-  std::tie(signature, newBindings) = getUnboundSpecializedSignature(
-      signature, newBindings, &shared.getEvaluationContext());
+  // types are updated. The bindings produced by inference have already been
+  // rebound by `setInferredValue` against `signature.getInputParamTypes()`, so
+  // there is no need for the additional `getUnboundSpecializedSignature`
+  // rebinding loop here.
+  signature = verifiedBindings.specializeGeneratorType(signature);
 
   // This is the result we will return if we succeed.
-  OverloadFitness result(newBindings, std::move(operandsNeedingOrigins));
+  OverloadFitness result(std::move(verifiedBindings),
+                         std::move(operandsNeedingOrigins));
   result.unprovableConstraints = std::move(inference.bodyUnprovableConstraints);
 
   // Get the overload ranking metrics.
@@ -647,12 +649,12 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   //     var b = A[4]()  # Ok!
   if (callable.syntax == CallSyntax::kTypeCall) {
     // Check to see if any of the parameter bound to the result type disagree
-    // with the 'Self' parameters, which are bound into newBindings.
+    // with the 'Self' parameters, which are bound into the verified bindings.
     auto resultType = ASTType(signature.getUserResultType());
     auto numBindings = resultType.getParamBindings().size();
-    for (auto [paramIdx, actual, expected] :
-         llvm::enumerate(resultType.getParamBindings(),
-                         newBindings.getValue().take_front(numBindings))) {
+    for (auto [paramIdx, actual, expected] : llvm::enumerate(
+             resultType.getParamBindings(),
+             result.getParamBindings().getValues().take_front(numBindings))) {
       if (!isEqualCanon(actual, expected)) {
         DeclResolver::DiagnosticDeclContextChanger x(funcIfDirect);
         assert(resultType.getDecl(shared) &&

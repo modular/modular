@@ -25,6 +25,7 @@ class PValue;
 class StructDeclOp;
 class TypeSignatureType;
 class ParamInf;
+class VerifiedParamBindings;
 
 //===----------------------------------------------------------------------===//
 // ParamBindings
@@ -144,7 +145,7 @@ void emitUnprovableConstraintsFromFitness(
 TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl,
                                  const ParamBindings &unverifiedBindings);
 TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
-                                 ParameterExprArrayAttr verifiedBindings);
+                                 const VerifiedParamBindings &verifiedBindings);
 
 FnTypeGeneratorType substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl &traitDecl, FnOp candidateFunc,

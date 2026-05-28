@@ -833,7 +833,7 @@ LogicalResult ParamInf::inferFromParamList() {
   return success();
 }
 
-ParameterExprArrayAttr ParamInf::inferForStruct() {
+VerifiedParamBindings ParamInf::inferForStruct() {
   CrashReporter handler(paramBindings.getExprLoc(), "ParamInf::inferForStruct",
                         getShared());
 
@@ -882,20 +882,22 @@ ParameterExprArrayAttr ParamInf::inferForStruct() {
   isInferForStruct = true;
 
   if (failed(inferFromParamList()))
-    return nullptr;
+    return {};
 
   if (paramBindings.bindingKind != ParamBindings::kWithEllipsis &&
       failed(inferFromDefaults())) {
-    return nullptr;
+    return {};
   }
 
   if (failed(finalizeWithUnbound()))
-    return nullptr;
+    return {};
 
   if (failed(checkBodyConstraints()))
-    return nullptr;
+    return {};
 
-  return getInferredValues();
+  ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(
+      getShared().getContext(), evaluator.getIndexBindings());
+  return VerifiedParamBindings(rawBindings, evaluator.getEvaluationContext());
 }
 
 // Infer any missing parameter from defaulted value (this is supposed to be
@@ -1658,7 +1660,7 @@ LogicalResult CallParamInf::inferCTADParams() {
                          selfType, selfConvention);
 }
 
-LogicalResult CallParamInf::inferForCall() {
+VerifiedParamBindings CallParamInf::inferForCall() {
   isInferForStruct = false;
 
   CrashReporter handler(paramBindings.getExprLoc(),
@@ -1666,7 +1668,7 @@ LogicalResult CallParamInf::inferForCall() {
 
   // First try to infer parameters from the already provided bindings.
   if (failed(inferFromParamList()))
-    return failure();
+    return {};
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
@@ -1691,7 +1693,7 @@ LogicalResult CallParamInf::inferForCall() {
       if (expectedConvention == ArgConvention::ByRefResult)
         if (failed(inferResultSlot(expectedRef, expectedArgIdx,
                                    callOperands.dest)))
-          return failure();
+          return {};
       continue;
     }
 
@@ -1714,7 +1716,7 @@ LogicalResult CallParamInf::inferForCall() {
         if (failed(inferOneOperand(operand, /*operandIdx unknown*/ ~0ULL,
                                    expectedArgIdx, refValType,
                                    ArgConvention::OwnedMem)))
-          return failure();
+          return {};
       }
       // This is always last in the operand list.
       posOperandIdx = numOperands;
@@ -1805,7 +1807,7 @@ LogicalResult CallParamInf::inferForCall() {
         if (failed(inferOneOperand(callOperands[posOperandIdx], posOperandIdx,
                                    expectedArgIdx, expectedType,
                                    expectedConvention)))
-          return failure();
+          return {};
         ++posOperandIdx;
         continue;
       }
@@ -1834,12 +1836,12 @@ LogicalResult CallParamInf::inferForCall() {
         if (operand.isUnpackedPositional()) {
           getMojoDiag(operand.expr->getLoc())
               << "cannot unpack a value into a variadic argument";
-          return failure();
+          return {};
         }
 
         if (failed(inferOneOperand(operand, posOperandIdx - 1, expectedArgIdx,
                                    varArgsEltType, argConvention)))
-          return failure();
+          return {};
 
         // Keep track of all the arg origins so we can infer from them later.
         argOrigins.push_back(getArgOrigin(
@@ -1853,7 +1855,7 @@ LogicalResult CallParamInf::inferForCall() {
       ParamMatcher matcher(getGivenBindings().callExpr, *this,
                            /*noImplicitConversions=*/false);
       if (failed(matcher.matchParams(commonOrigin, variadicListInfo.origin)))
-        return failure();
+        return {};
 
       continue;
     }
@@ -1886,7 +1888,7 @@ LogicalResult CallParamInf::inferForCall() {
           auto &diag = getMojoDiag(callOperands[posOperandIdx].expr->getLoc());
           diag << "cannot unpack value of type " << actualPackType
                << " into a variadic pack argument; expected a VariadicPack";
-          return failure();
+          return {};
         }
 
         ASTType::VariadicPackInfo actualInfo =
@@ -1896,7 +1898,7 @@ LogicalResult CallParamInf::inferForCall() {
           diag << "cannot unpack a variadic pack into a call that requires a "
                   "different ownership. Expected "
                << expectedInfo.isOwned << ", got " << actualInfo.isOwned;
-          return failure();
+          return {};
         }
 
         // Skip matching the origin, since the expected origin is an implicit
@@ -1917,7 +1919,7 @@ LogicalResult CallParamInf::inferForCall() {
           diag << "cannot unpack a variadic pack into a call that requires a "
                   "stricter mutability. Expected "
                << expectedMutable << ", got " << actualMutable;
-          return failure();
+          return {};
         }
 
         ParamMatcher matcher(callOperands[posOperandIdx].expr, *this,
@@ -1942,7 +1944,7 @@ LogicalResult CallParamInf::inferForCall() {
                                        expectedRefPackType.getOrigin()))) {
           auto &diag = emitPackMismatchDiag();
           matcher.failureReason->addExplanation(diag);
-          return failure();
+          return {};
         }
 
         // Now that we bound the elements of the TypeList, we can infer the
@@ -1984,7 +1986,7 @@ LogicalResult CallParamInf::inferForCall() {
         if (operand.isUnpackedPositional()) {
           getMojoDiag(operand.expr->getLoc())
               << "concatenating unpacked positional arguments is not supported";
-          return failure();
+          return {};
         }
 
         // Remember the first argument expression for the pack.
@@ -2017,7 +2019,7 @@ LogicalResult CallParamInf::inferForCall() {
                 << "could not infer type of parameter pack "
                 << argPogs.getName(expectedArgIdx)
                 << " given value with unresolved type";
-            return failure();
+            return {};
           }
 
           // Infer nonmaterializable types as their materialization target.
@@ -2036,7 +2038,7 @@ LogicalResult CallParamInf::inferForCall() {
                 << "could not convert element of "
                 << argPogs.getName(expectedArgIdx) << " with type " << toPush
                 << " to expected type " << elementType;
-            return failure();
+            return {};
           }
 
           // Perform a conversion (e.g. from a concrete to trait type) as
@@ -2061,7 +2063,7 @@ LogicalResult CallParamInf::inferForCall() {
             calleeSignature.getVariadicConvention(expectedArgIdx);
         if (failed(inferOneOperand(operand, posOperandIdx - 1, expectedArgIdx,
                                    refType, packEltConvention))) {
-          return failure();
+          return {};
         }
 
         // Keep track of all the arg origins so we can infer from them later.
@@ -2077,7 +2079,7 @@ LogicalResult CallParamInf::inferForCall() {
       // arguments.
       auto commonOrigin = OriginUnionAttr::get(argOrigins, expectedOriginType);
       if (failed(matcher.matchParams(commonOrigin, packType.getOrigin())))
-        return failure();
+        return {};
 
       // Infer the value of type list from the types we have.
       auto variadicType =
@@ -2107,7 +2109,7 @@ LogicalResult CallParamInf::inferForCall() {
       if (!posNumBoundOr) {
         diag << "assigning " << numOperands << " operand" << plural(numOperands)
              << " to an unresolvable variadic pack argument";
-        return failure();
+        return {};
       }
 
       auto [minPosOperands, maxPosOperands] = *posNumBoundOr;
@@ -2116,7 +2118,7 @@ LogicalResult CallParamInf::inferForCall() {
         diag << "callee with non-empty variadic pack argument";
         emitWrongArgOrParamCount(diag, minPosOperands, maxPosOperands,
                                  numOperands, "positional operand");
-        return failure();
+        return {};
       }
       llvm_unreachable("unhandled variadic pack failure?");
     }
@@ -2133,11 +2135,11 @@ LogicalResult CallParamInf::inferForCall() {
                 "variadic pack (e.g. `def shim[Ts: TypeList[Trait=AnyType, "
                 "...], //, callee: def(*args: *Ts) thin](...): "
                 "callee(*pack)`)";
-        return failure();
+        return {};
       }
       if (failed(inferOneOperand(operand, posOperandIdx, expectedArgIdx,
                                  expectedType, expectedConvention)))
-        return failure();
+        return {};
       ++posOperandIdx;
       continue;
     }
@@ -2149,7 +2151,7 @@ LogicalResult CallParamInf::inferForCall() {
       size_t operandIdx = kwOperandOr - callOperands.values.begin();
       if (failed(inferOneOperand(*kwOperandOr, operandIdx, expectedArgIdx,
                                  expectedType, expectedConvention)))
-        return failure();
+        return {};
       continue;
     }
 
@@ -2160,18 +2162,18 @@ LogicalResult CallParamInf::inferForCall() {
       if (failed(inferOneOperand({defaultVal, getGivenBindings().getExpr()},
                                  /*FIXME*/ ~0ULL, expectedArgIdx, expectedType,
                                  expectedConvention)))
-        return failure();
+        return {};
       continue;
     }
 
     // Otherwise we have an argument count mismatch, just fail.
-    return failure();
+    return {};
   }
 
   // If we have left over operands, then this signature cannot match.
   if (posOperandIdx != numOperands &&
       !calleeSignature.getMetadata().hasAnyVarArg())
-    return failure();
+    return {};
 
   // If this is a result in a returnsSelf function like an __init__, infer
   // self parameters (which could be specialized and shadowed).
@@ -2184,7 +2186,7 @@ LogicalResult CallParamInf::inferForCall() {
                          .getSpecialFunctionInfo()
                          .hasSelfResult()) {
     if (failed(inferSelfFromInitResult()))
-      return failure();
+      return {};
   }
 
   // Check to see if this is a CTAD parameter - a parameter on the struct
@@ -2207,7 +2209,7 @@ LogicalResult CallParamInf::inferForCall() {
     auto fnOp = cast<FnOp>(declIfKnown->getIfOperation());
     if (!fnOp.getIsStatic() && isa<StructDeclOp>(fnOp->getParentOp())) {
       if (failed(inferCTADParams()))
-        return failure();
+        return {};
     }
   }
 
@@ -2215,22 +2217,23 @@ LogicalResult CallParamInf::inferForCall() {
   // for their type (variadic attr always have a default empty value if not
   // inferable).
   if (failed(inferFromDefaults()))
-    return failure();
+    return {};
 
   if (hasDeferredGivenParam) {
     // Simply try it again now that more parameter has been inferred.
     if (failed(inferFromParamList()))
-      return failure();
+      return {};
   }
 
   // See if we still have any unbound attr, if so, report error. (This must be a
   // full binding context).
   if (failed(finalizeWithUnbound()))
-    return failure();
+    return {};
 
   if (failed(checkBodyConstraints()))
-    return failure();
+    return {};
 
-  // We succeed iff we inferred a value for this parameter.
-  return success();
+  ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(
+      getShared().getContext(), evaluator.getIndexBindings());
+  return VerifiedParamBindings(rawBindings, evaluator.getEvaluationContext());
 }

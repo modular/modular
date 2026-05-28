@@ -1711,14 +1711,12 @@ static PValue substituteParametersIntoUserDefinedType(
                      /*discardError=*/false,
                      /*deferredTypingContext=*/emitter.deferredTypingContext);
 
-  ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
-  if (!bindingValuesAttr)
+  VerifiedParamBindings bindings = inference.inferForStruct();
+  if (!bindings)
     return {};
 
   // Ok, we succeeded at reparameterizing the type.
-  LIT::StructType boundType =
-      metaType.getType().bindUnbound(bindingValuesAttr.getValue());
-  return TypeParamAttr::get(boundType, StructMetaType::get(boundType));
+  return bindings.specializeGenerator(typeValue);
 }
 
 /// Bind parameter operands to a callable parameter.
@@ -1740,12 +1738,11 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
                      /*allowImplicitConversions=*/true, nullptr,
                      /*discardError=*/false,
                      /*deferredTypingContext=*/emitter.deferredTypingContext);
-  ParameterExprArrayAttr newBindings = inference.inferForStruct();
+  VerifiedParamBindings newBindings = inference.inferForStruct();
   if (!newBindings)
     return {};
 
-  return BindParamsAttr::get(callable.get(), newBindings,
-                             &emitter.shared.getEvaluationContext());
+  return newBindings.specializeGenerator(callable);
 }
 
 /// Given a base value, emit access to a base value element using either a
