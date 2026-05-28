@@ -200,6 +200,56 @@ async def test_openai_user_message_with_null_content() -> None:
     assert messages[0].content == ""
 
 
+async def test_openai_parse_normalizes_developer_role_to_system() -> None:
+    """``role: "developer"`` must be accepted and normalized to ``"system"``.
+
+    OpenAI's model chat-completion spec uses ``developer`` as the
+    system-equivalent role. The internal ``TextGenerationRequestMessage``
+    ``_MessageRole`` literal only enumerates the five spec-supported roles
+    (``system``, ``user``, ``assistant``, ``tool``, ``function``), so the
+    request was previously rejected with a 422. Normalize at the
+    OpenAI-compat seam so requests from OpenAI model spec compliant clients are accepted.
+    """
+    request_data = {
+        "model": "test",
+        "messages": [
+            {"role": "developer", "content": "You are a coding assistant."},
+            {"role": "user", "content": "hi"},
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    settings = Settings()
+
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, wrap_content=False, settings=settings
+    )
+
+    assert len(messages) == 2
+    assert messages[0].role == "system"
+    assert messages[0].content == "You are a coding assistant."
+    assert messages[1].role == "user"
+
+
+async def test_openai_parse_rejects_unknown_role() -> None:
+    """Roles outside the spec-supported set still surface as a validation error.
+
+    The ``developer`` normalization must not become a permissive sink:
+    arbitrary role strings remain rejected by the internal type so genuine
+    malformed requests still produce a 4xx.
+    """
+    request_data = {
+        "model": "test",
+        "messages": [{"role": "wizard", "content": "abracadabra"}],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    settings = Settings()
+
+    with pytest.raises(Exception):
+        await openai_parse_chat_completion_request(
+            request, wrap_content=False, settings=settings
+        )
+
+
 def test_openai_chat_completion_accepts_prompt_tokens() -> None:
     """Schema must accept ``prompt_tokens`` (orchestrator pre-tokenized input).
 

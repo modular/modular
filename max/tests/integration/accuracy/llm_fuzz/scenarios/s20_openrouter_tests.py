@@ -1753,7 +1753,8 @@ class ProviderBaseline(BaseScenario):
             **self._exchange_verbose(pl_large, resp),
         )
 
-        # OR: DeveloperRole — status_ok (200 or 400 accepted)
+        # OR: DeveloperRole — must be accepted (normalized to system at the
+        # OpenAI-compat route layer per OpenAI model spec compatibility).
         pl_dev = self._req(
             model,
             None,
@@ -1766,15 +1767,18 @@ class ProviderBaseline(BaseScenario):
             ],
         )
         resp = await client.post_json(pl_dev)
-        if resp.status in (200, 400):
+        if resp.status == 200:
             v, d = (
                 Verdict.PASS,
-                f"Status {resp.status} (developer role accepted or gracefully rejected)",
+                "Status 200 (developer role normalized to system)",
             )
         elif resp.status >= 500:
             v, d = Verdict.FAIL, f"Server error {resp.status}"
         else:
-            v, d = Verdict.INTERESTING, f"Status {resp.status}"
+            v, d = (
+                Verdict.FAIL,
+                f"Status {resp.status} (developer role should be accepted)",
+            )
         result(
             "developer-role",
             v,

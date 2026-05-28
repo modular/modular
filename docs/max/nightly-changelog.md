@@ -17,6 +17,12 @@ This version is still a work in progress.
 
 ### Inference server
 
+- MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
+  normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
+  o1/o3 chat-completion spec uses `developer` in place of `system`, and
+  recent OpenAI SDKs emit it by default. The previous behavior rejected
+  the request with a 422 (`literal_error` on the message role).
+
 - Fixed `CreateChatCompletionRequest` rejecting explicit `null` values for
   optional fields such as `tool_choice`, `tools`, and `response_format`.
   OpenAI-compatible clients (LangChain, JS SDKs, anything that serializes

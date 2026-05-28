@@ -841,6 +841,14 @@ class OpenAISpeechResponseGenerator:
         return response
 
 
+def _normalize_openai_role(role: str) -> Any:
+    # The ``role`` options in OpenAI model spec include "developer" as a replacement for "system".
+    # No MAX-supported chat template branches on developer
+    # vs system, so collapse to ``system`` before constructing the internal
+    # ``TextGenerationRequestMessage``.
+    return "system" if role == "developer" else role
+
+
 async def openai_parse_chat_completion_request(
     completion_request: CreateChatCompletionRequest,
     wrap_content: bool,
@@ -913,7 +921,7 @@ async def openai_parse_chat_completion_request(
                         message_content.append(dict(content_part))
             messages.append(
                 TextGenerationRequestMessage(
-                    role=m["role"],
+                    role=_normalize_openai_role(m["role"]),
                     content=cast(list[MessageContent], message_content),
                     tool_calls=tool_calls,
                     tool_call_id=tool_call_id,
@@ -923,7 +931,7 @@ async def openai_parse_chat_completion_request(
         else:
             messages.append(
                 TextGenerationRequestMessage(
-                    role=m["role"],
+                    role=_normalize_openai_role(m["role"]),
                     content=content if content else "",
                     tool_calls=tool_calls,
                     tool_call_id=tool_call_id,
