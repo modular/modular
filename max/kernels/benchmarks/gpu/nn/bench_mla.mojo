@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.math import ceildiv, sqrt
+from std.memory import UnsafePointer, alloc
+from std.random import randn
 from std.sys import get_defined_dtype, get_defined_int, get_defined_bool
 
 from std.benchmark import (
@@ -22,22 +25,32 @@ from std.benchmark import (
 )
 from std.gpu import *
 from std.gpu.host import DeviceContext
+from std.gpu.host.info import _is_sm10x_gpu
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import (
     Coord,
     Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
     TileTensor,
+    UNKNOWN_VALUE,
     row_major,
 )
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_prefill
 from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import (
+    MLASparseConfig,
+    mla_prefill_sparse,
+)
 from nn.attention.mha_mask import CausalMask
 
-from std.utils.index import Index
+from std.utils.index import Index, IndexList
 
 
 def bench_decode[
@@ -377,6 +390,211 @@ def bench_prefill[
     _ = cb_o
 
 
+def bench_prefill_sparse[
+    qkv_type: DType,
+    output_type: DType,
+    num_heads: Int,
+    qk_depth: Int,
+    v_depth: Int,
+    topk: Int,
+    b_topk: Int = 128,
+    num_mbars: Int = 2,
+    q_smem_depth: Int = 192,
+    q_tmem_depth: Int = 384,
+    page_size: Int = 128,
+    cache_busting: Bool = True,
+](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext,) raises:
+    var scale = Float32(1.0) / sqrt(Float32(192.0))
+    comptime kv_num_heads = 1
+    comptime num_layers = 1
+    comptime batch_size = 1
+
+    var num_pages = ceildiv(num_kv_tokens, page_size)
+
+    var q_elems = s_q * num_heads * qk_depth
+    var out_elems = s_q * num_heads * v_depth
+    var block_elems = (
+        num_pages * num_layers * page_size * kv_num_heads * qk_depth
+    )
+    var total_indices = s_q * topk
+
+    comptime simd_size = 4
+    var cb_q = CacheBustingBuffer[qkv_type](
+        q_elems, simd_size, ctx, cache_busting
+    )
+    var cb_o = CacheBustingBuffer[output_type](
+        out_elems, simd_size, ctx, cache_busting
+    )
+    cb_q.init_on_device(InitializationType.uniform_distribution, ctx)
+
+    # KV blocks: host-init with random data, copy to device.
+    var kv_host = alloc[Scalar[qkv_type]](block_elems)
+    randn[qkv_type](
+        kv_host, block_elems, mean=Float64(0.0), standard_deviation=Float64(0.5)
+    )
+    var blocks_device = ctx.enqueue_create_buffer[qkv_type](block_elems)
+    ctx.enqueue_copy(blocks_device, kv_host)
+
+    # Sequential LUT: page i → physical block i (batch_size=1).
+    var lut_host = alloc[UInt32](num_pages)
+    for i in range(num_pages):
+        lut_host[i] = UInt32(i)
+    var lut_device = ctx.enqueue_create_buffer[DType.uint32](num_pages)
+    ctx.enqueue_copy(lut_device, lut_host)
+
+    var cache_lengths_host = alloc[UInt32](batch_size)
+    cache_lengths_host[0] = UInt32(num_kv_tokens)
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
+
+    # Physical indices: cycle through all valid (page, offset) pairs.
+    var indices_host = alloc[UInt32](total_indices)
+    for i in range(total_indices):
+        var page_id = i % num_pages
+        var tok_in_page = i % page_size
+        indices_host[i] = UInt32(page_id * page_size + tok_in_page)
+    var indices_device = ctx.enqueue_create_buffer[DType.uint32](total_indices)
+    ctx.enqueue_copy(indices_device, indices_host)
+
+    var topk_lengths_host = alloc[UInt32](s_q)
+    for i in range(s_q):
+        topk_lengths_host[i] = UInt32(topk)
+    var topk_lengths_device = ctx.enqueue_create_buffer[DType.uint32](s_q)
+    ctx.enqueue_copy(topk_lengths_device, topk_lengths_host)
+
+    ctx.synchronize()
+
+    kv_host.free()
+    lut_host.free()
+    cache_lengths_host.free()
+    indices_host.free()
+    topk_lengths_host.free()
+
+    # Build PagedKVCacheCollection from device buffers.
+    comptime kv_params = KVCacheStaticParams(
+        num_heads=kv_num_heads, head_size=qk_depth, is_mla=True
+    )
+    comptime kv_block_layout = Layout.row_major[6]()
+    comptime cl_layout = Layout(UNKNOWN_VALUE)
+    comptime lut_layout = Layout.row_major[2]()
+
+    var kv_block_lt = LayoutTensor[qkv_type, kv_block_layout, MutAnyOrigin](
+        blocks_device.unsafe_ptr(),
+        RuntimeLayout[kv_block_layout].row_major(
+            IndexList[6](
+                num_pages, 1, num_layers, page_size, kv_num_heads, qk_depth
+            )
+        ),
+    )
+    var cache_lengths_lt = LayoutTensor[
+        DType.uint32, cl_layout, ImmutAnyOrigin
+    ](
+        cache_lengths_device.unsafe_ptr(),
+        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    )
+    var lut_lt = LayoutTensor[DType.uint32, lut_layout, ImmutAnyOrigin](
+        lut_device.unsafe_ptr(),
+        RuntimeLayout[lut_layout].row_major(
+            IndexList[2](batch_size, num_pages)
+        ),
+    )
+
+    var kv_collection = PagedKVCacheCollection[qkv_type, kv_params, page_size](
+        kv_block_lt,
+        cache_lengths_lt,
+        lut_lt,
+        UInt32(s_q),
+        UInt32(num_kv_tokens),
+    )
+    var kv_cache = kv_collection.get_key_cache(0)
+
+    var indices_tt = TileTensor(
+        indices_device.unsafe_ptr(), row_major(total_indices)
+    )
+    var topk_lengths_tt = TileTensor(
+        topk_lengths_device.unsafe_ptr(), row_major(s_q)
+    )
+
+    comptime config = MLASparseConfig[
+        qkv_type, b_topk, num_mbars, q_smem_depth, q_tmem_depth
+    ](
+        num_q_heads=num_heads,
+        num_kv_heads=1,
+        qk_depth=qk_depth,
+        v_depth=v_depth,
+        indices_stride=topk,
+        group=num_heads,
+    )
+
+    @parameter
+    @always_inline
+    @__copy_capture(cb_q, cb_o, kv_cache, indices_tt, topk_lengths_tt, scale)
+    def bench_func(mut b: Bencher):
+        @parameter
+        @always_inline
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            var q_tt = TileTensor(
+                cb_q.offset_ptr(iteration),
+                row_major((s_q, Idx[num_heads], Idx[qk_depth])),
+            )
+            var out_tt = TileTensor(
+                cb_o.offset_ptr(iteration),
+                row_major((s_q, Idx[num_heads], Idx[v_depth])),
+            )
+            mla_prefill_sparse[
+                config=config,
+                group=num_heads,
+                q_depth=qk_depth,
+            ](
+                out_tt,
+                q_tt,
+                kv_cache,
+                indices_tt,
+                topk_lengths_tt,
+                Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None),
+                scale,
+                Int32(topk),
+                ctx,
+            )
+
+        b.iter_custom[_kernel_launch](ctx)
+
+    def compute_flops() {read} -> Int:
+        return 2 * s_q * topk * num_heads * (qk_depth + v_depth)
+
+    m.bench_function[bench_func](
+        BenchId(
+            "mla_prefill_sparse",
+            # fmt: off
+            input_id=String(
+                "qkv_type=", qkv_type,
+                "/num_heads=", num_heads,
+                "/s_q=", s_q,
+                "/num_kv_tokens=", num_kv_tokens,
+                "/topk=", topk,
+                "/b_topk=", b_topk,
+                "/num_mbars=", num_mbars,
+                "/q_smem_depth=", q_smem_depth,
+                "/cache_busting=", cache_busting,
+            ),
+            # fmt: on
+        ),
+        [ThroughputMeasure(BenchMetric.flops, compute_flops())],
+    )
+
+    ctx.synchronize()
+
+    _ = blocks_device
+    _ = lut_device
+    _ = cache_lengths_device
+    _ = indices_device
+    _ = topk_lengths_device
+    _ = cb_q
+    _ = cb_o
+
+
 @fieldwise_init
 struct MLA_cfg(ImplicitlyCopyable, Writable):
     # params
@@ -391,6 +609,12 @@ struct MLA_cfg(ImplicitlyCopyable, Writable):
     var kv_depth: Int
     var cache_depth: Int
     var cache_num_heads: Int
+    # sparse prefill tuning params
+    var sparse_topk: Int
+    var sparse_b_topk: Int
+    var sparse_num_mbars: Int
+    var sparse_q_smem_depth: Int
+    var sparse_q_tmem_depth: Int
 
 
 def main() raises:
@@ -407,6 +631,11 @@ def main() raises:
     comptime kv_depth = get_defined_int["kv_depth", 128]()
     comptime cache_depth = get_defined_int["cache_depth", 576]()
     comptime cache_num_heads = get_defined_int["cache_num_heads", 1]()
+    comptime sparse_topk = get_defined_int["sparse_topk", 2048]()
+    comptime sparse_b_topk = get_defined_int["sparse_b_topk", 128]()
+    comptime sparse_num_mbars = get_defined_int["sparse_num_mbars", 2]()
+    comptime sparse_q_smem_depth = get_defined_int["sparse_q_smem_depth", 192]()
+    comptime sparse_q_tmem_depth = get_defined_int["sparse_q_tmem_depth", 384]()
 
     var seq_len = Int(arg_parse("seq_len", 64))
     var num_keys = Int(arg_parse("num_keys", 64))
@@ -426,37 +655,58 @@ def main() raises:
         kv_depth=kv_depth,
         cache_depth=cache_depth,
         cache_num_heads=cache_num_heads,
+        sparse_topk=sparse_topk,
+        sparse_b_topk=sparse_b_topk,
+        sparse_num_mbars=sparse_num_mbars,
+        sparse_q_smem_depth=sparse_q_smem_depth,
+        sparse_q_tmem_depth=sparse_q_tmem_depth,
     )
 
     var m = Bench()
     with DeviceContext() as ctx:
-        bench_decode[
-            cfg.qkv_type,
-            cfg.output_type,
-            cfg.depth,
-            cfg.num_heads,
-            cfg.group,
-            cfg.decoding_warp_split_k,
-            cfg.cache_busting,
-        ](
-            m,
-            seq_len,
-            num_keys,
-            batch_size,
-            num_partitions,
-            mode,
-            ctx,
-        )
+        if mode != "sparse_prefill":
+            bench_decode[
+                cfg.qkv_type,
+                cfg.output_type,
+                cfg.depth,
+                cfg.num_heads,
+                cfg.group,
+                cfg.decoding_warp_split_k,
+                cfg.cache_busting,
+            ](
+                m,
+                seq_len,
+                num_keys,
+                batch_size,
+                num_partitions,
+                mode,
+                ctx,
+            )
 
-        bench_prefill[
-            cfg.qkv_type,
-            cfg.output_type,
-            cfg.prefill_depth,
-            cfg.num_heads,
-            cfg.kv_depth,
-            cfg.cache_depth,
-            cfg.cache_num_heads,
-            cache_busting=cfg.cache_busting,
-        ](m, seq_len, num_keys, batch_size, ctx)
+            bench_prefill[
+                cfg.qkv_type,
+                cfg.output_type,
+                cfg.prefill_depth,
+                cfg.num_heads,
+                cfg.kv_depth,
+                cfg.cache_depth,
+                cfg.cache_num_heads,
+                cache_busting=cfg.cache_busting,
+            ](m, seq_len, num_keys, batch_size, ctx)
+
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
+            bench_prefill_sparse[
+                cfg.qkv_type,
+                cfg.output_type,
+                num_heads=cfg.num_heads,
+                qk_depth=cfg.depth,
+                v_depth=cfg.depth - 64,
+                topk=cfg.sparse_topk,
+                b_topk=cfg.sparse_b_topk,
+                num_mbars=cfg.sparse_num_mbars,
+                q_smem_depth=cfg.sparse_q_smem_depth,
+                q_tmem_depth=cfg.sparse_q_tmem_depth,
+                cache_busting=cfg.cache_busting,
+            ](m, seq_len, num_keys, ctx)
 
     m.dump_report()
