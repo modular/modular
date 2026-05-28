@@ -495,11 +495,13 @@ def test_iter() raises:
     var data = [1, 2, 3, 4, 5]
     var span = Span(data)
     var it = iter(span)
+    assert_equal(len(it), len(span))
     assert_equal(next(it), 1)
     assert_equal(next(it), 2)
     assert_equal(next(it), 3)
     assert_equal(next(it), 4)
     assert_equal(next(it), 5)
+    assert_equal(len(it), 0)
     with assert_raises():
         _ = it.__next__()  # raises StopIteration
 

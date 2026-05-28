@@ -156,5 +156,65 @@ def test_string_slice_codepoint_slices_reversed() raises:
     assert_equal(concat, "")
 
 
+def test_bytes_iter_empty() raises:
+    var s = StringSlice("")
+    var bytes = s.bytes()
+
+    assert_equal(len(bytes), 0)
+    with assert_raises():
+        _ = next(bytes)
+
+
+def test_bytes_iter_ascii() raises:
+    var s = StringSlice("abc")
+    var collected = List[Byte](s.bytes())
+    assert_equal(len(collected), 3)
+    assert_equal(collected[0], s.as_bytes()[0])
+    assert_equal(collected[1], s.as_bytes()[1])
+    assert_equal(collected[2], s.as_bytes()[2])
+
+    var bytes = s.bytes()
+    assert_equal(next(bytes), s.as_bytes()[0])
+    assert_equal(next(bytes), s.as_bytes()[1])
+    assert_equal(next(bytes), s.as_bytes()[2])
+    with assert_raises():
+        _ = next(bytes)
+
+    for i, byte in enumerate(s.bytes()):
+        assert_equal(byte, s.as_bytes()[i])
+
+
+def test_bytes_iter_utf8() raises:
+    var s = StringSlice("é")
+    assert_equal(s.byte_length(), 2)
+
+    var bytes = s.bytes()
+    assert_equal(next(bytes), Byte(0xC3))
+    assert_equal(next(bytes), Byte(0xA9))
+    with assert_raises():
+        _ = next(bytes)
+
+
+def test_bytes_iter_len() raises:
+    var s = EVERY_CODEPOINT_LENGTH_STR
+    assert_equal(s.byte_length(), 13)
+
+    var bytes = s.bytes()
+    assert_equal(len(bytes), s.byte_length())
+    for i in range(len(bytes)):
+        assert_equal(len(bytes), s.byte_length() - i)
+        _ = next(bytes)
+
+
+def test_bytes_iter_bounds() raises:
+    var s = StringSlice("ab")
+    var it = s.bytes()
+    assert_equal(it.bounds(), (2, Optional(2)))
+    _ = next(it)
+    assert_equal(it.bounds(), (1, Optional(1)))
+    _ = next(it)
+    assert_equal(it.bounds(), (0, Optional(0)))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

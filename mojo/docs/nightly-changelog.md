@@ -237,6 +237,17 @@ This version is still a work in progress.
   var missing = iter(l).nth(10)   # None (Optional)
   ```
 
+- `String` and `StringSlice` now expose a `bytes()` method that returns a new
+  `BytesIter`, an iterator over the raw UTF-8 bytes of the string. This
+  complements the existing `codepoints()` and `graphemes()` iterators by
+  operating at the byte level without interpreting multi-byte UTF-8 sequences.
+
+  ```mojo
+  var s = StringSlice("é")  # Encoded in UTF-8 as 0xC3 0xA9.
+  for b in s.bytes():
+      print(b)  # 195, 169
+  ```
+
 - `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
   that indexes by unicode codepoint offsets.
 

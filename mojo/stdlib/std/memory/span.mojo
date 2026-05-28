@@ -75,7 +75,7 @@ struct _SpanIter[
     T: Copyable,
     origin: Origin[mut=mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, IterableOwned, Iterator):
+](ImplicitlyCopyable, Iterable, IterableOwned, Iterator, Sized):
     """Iterator for Span.
 
     Parameters:
@@ -127,6 +127,29 @@ struct _SpanIter[
                 raise StopIteration()
             self.index -= 1
             return self.src._data[self.index]
+
+    @always_inline
+    def __len__(self) -> Int:
+        """Returns the number of elements remaining in this iterator.
+
+        Returns:
+            The number of elements remaining in this iterator.
+        """
+        comptime if Self.forward:
+            return len(self.src) - self.index
+        else:
+            return self.index
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        """Returns bounds `[lower, upper]` for the remaining iterator length.
+
+        Returns:
+            The lower and upper bound of this iterator. For `_SpanIter` both
+            bounds are exact and equal to `len(self)`.
+        """
+        var n = len(self)
+        return (n, {n})
 
 
 struct Span[
