@@ -99,7 +99,13 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.utils.numerics import min_or_neg_inf
 
 
-struct MLASparseConfig[qkv_dtype: DType]:
+struct MLASparseConfig[
+    qkv_dtype: DType,
+    b_topk_: Int = 128,
+    num_mbars_: Int = 2,
+    q_smem_depth_: Int = 192,
+    q_tmem_depth_: Int = 384,
+]:
     var num_q_heads: Int
     var num_kv_heads: Int
     var qk_depth: Int
@@ -112,9 +118,10 @@ struct MLASparseConfig[qkv_dtype: DType]:
     # for the leftmost qk_depth mma, we do ss_mma,
     # for the rightmost qk_depth mma, we do ts_mma,
     comptime cta_group = 2
-    comptime q_smem_depth = 192
-    comptime q_tmem_depth = 384
-    comptime B_TOPK = 128
+    comptime q_smem_depth = Self.q_smem_depth_
+    comptime q_tmem_depth = Self.q_tmem_depth_
+    comptime B_TOPK = Self.b_topk_
+    comptime num_mbars = Self.num_mbars_
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
     comptime num_threads: Int = 512
     comptime sm100_tmem_cols = 512
@@ -146,7 +153,7 @@ struct MLASparseSharedMemory[config: MLASparseConfig]:
     comptime num_q_heads = Self.config.num_q_heads
     comptime qkv_dtype = Self.config.qkv_dtype
     comptime qk_depth = Self.config.qk_depth
-    comptime num_mbars = 2
+    comptime num_mbars = Self.config.num_mbars
 
     # per cta dimension
     comptime BH = Self.num_q_heads // Self.config.cta_group
@@ -539,7 +546,9 @@ struct MLAPrefillSparse[
         var lane_idx = thread_idx.x % WARP_SIZE
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
         var top_k_length = topk_lengths[seq_idx]
-        var num_k_blocks = max(ceildiv(top_k_length, Self.config.B_TOPK), 1)
+        var num_k_blocks = max(
+            ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
+        )
         var num_kv_rows = kv_lut.num_kv_rows()
         # Per-query base offset into the indices buffer; each query row owns
         # `indices_stride` indices.
@@ -679,8 +688,8 @@ struct MLAPrefillSparse[
             )
 
             for k in range(num_k_blocks):
-                var cur_buf = k % Self.SMemType.num_mbars
-                var cur_phase = (k / Self.SMemType.num_mbars) & 1
+                var cur_buf = k % UInt32(Self.SMemType.num_mbars)
+                var cur_phase = (k / UInt32(Self.SMemType.num_mbars)) & 1
 
                 # Wait for P = QK^T (TS MMA done).
                 qk_ts_done_ptr[cur_buf].wait(cur_phase)
@@ -786,8 +795,10 @@ struct MLAPrefillSparse[
                 # second half of the prev S@V completed, which is the last
                 # use of the prev scores tile.)
                 if k > 0:
-                    var prev_buf = (k - 1) % Self.SMemType.num_mbars
-                    var prev_phase = ((k - 1) / Self.SMemType.num_mbars) & 1
+                    var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
+                    var prev_phase = (
+                        (k - 1) / UInt32(Self.SMemType.num_mbars)
+                    ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
                 # Write S to scores smem as 8 bf16 per uint128, stride 64
@@ -864,8 +875,10 @@ struct MLAPrefillSparse[
             li = add_ftz(li, rowwise_sum_ptr[idx_in_wg ^ UInt32(64)])
 
             # Wait for the final SV MMA to retire before reading O.
-            var last_buf = (num_k_blocks - 1) % Self.SMemType.num_mbars
-            var last_phase = ((num_k_blocks - 1) / Self.SMemType.num_mbars) & 1
+            var last_buf = (num_k_blocks - 1) % UInt32(Self.SMemType.num_mbars)
+            var last_phase = (
+                (num_k_blocks - 1) / UInt32(Self.SMemType.num_mbars)
+            ) & 1
             sv_p1_done_ptr[last_buf].wait(last_phase)
             tcgen05_fence_after()
 
@@ -1049,7 +1062,9 @@ struct MLAPrefillSparse[
                 prologue_q_ptr[].wait()
                 tcgen05_fence_after()
 
-                Self.cp_q_from_smem_to_tmem(q_tmem_desc, Self.Q_TMEM_ADDR)
+                Self.cp_q_from_smem_to_tmem(
+                    q_tmem_desc, UInt32(Self.Q_TMEM_ADDR)
+                )
                 mma_arrive_multicast[cta_group=Self.config.cta_group](
                     prologue_q_cp_ptr,
                     0b11,  # arrive at both ctas in the pair
@@ -1148,10 +1163,10 @@ struct MLAPrefillSparse[
         if k < num_k_blocks:
             # QK^T MMA
             # wait for k load p0
-            cur_buf = k % Self.SMemType.num_mbars
-            cur_phase = k / Self.SMemType.num_mbars & 1
-            prev_buf = (k - 1) % Self.SMemType.num_mbars
-            prev_phase = (k - 1) / Self.SMemType.num_mbars & 1
+            cur_buf = k % UInt32(Self.SMemType.num_mbars)
+            cur_phase = k / UInt32(Self.SMemType.num_mbars) & 1
+            prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
+            prev_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
 
             k_p0_ready[cur_buf].expect_bytes(
                 Int32(
@@ -1208,7 +1223,7 @@ struct MLAPrefillSparse[
             # SS's P), stages 1+ force c_scale=1 internally.
             comptime for stage_idx in range(Self.QKMMAOpType.NUM_TS_STAGES):
                 Self.QKMMAOpType.TSMMAType.mma[stage_idx=stage_idx](
-                    Self.Q_TMEM_ADDR,
+                    UInt32(Self.Q_TMEM_ADDR),
                     k_p1_smem_desc,
                     Self.P_TMEM_ADDR,
                     c_scale=1,
@@ -1220,8 +1235,8 @@ struct MLAPrefillSparse[
             )
         if k > 0:
             # O += S(i-1)V(i-1)
-            curr_buf = (k - 1) % Self.SMemType.num_mbars
-            cur_phase = (k - 1) / Self.SMemType.num_mbars & 1
+            curr_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
+            cur_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
 
             # SV descriptors for the 2 atoms × 2 key-halves = 4 sub-MMAs.
             # Atom1 reads V smem cols 0..127 (cluster depths 0..255), atom2
@@ -1469,7 +1484,7 @@ struct MLAPrefillSparse[
             var token_idx_v4 = indices.load[width=4](
                 Coord(
                     indices_base
-                    + k * Self.config.B_TOPK
+                    + k * UInt32(Self.config.B_TOPK)
                     + (UInt32(local_row) * UInt32(num_warps) + warp_idx)
                     * UInt32(4)
                 )
@@ -1643,8 +1658,8 @@ struct MLAPrefillSparse[
             # warps' chunks are 4 ints apart, not 1.
             var indices_offset = (
                 indices_base
-                + k * Self.config.B_TOPK
-                + cta_id * (Self.config.B_TOPK // Self.config.cta_group)
+                + k * UInt32(Self.config.B_TOPK)
+                + cta_id * UInt32(Self.config.B_TOPK // Self.config.cta_group)
                 + (UInt32(local_row) * num_warps + warp_idx) * UInt32(4)
             )
             local_indices[local_row] = indices.load[width=4](
@@ -1658,11 +1673,11 @@ struct MLAPrefillSparse[
         # pipeline buffers have been filled at least once; otherwise an
         # initial all-invalid block could leave the K buffer in an
         # uninitialized (NaN-poisoned) state for a later valid block.
-        var skip_tma = all_inval and k >= Self.SMemType.num_mbars
+        var skip_tma = all_inval and k >= UInt32(Self.SMemType.num_mbars)
 
-        var curr_buf = k % Self.SMemType.num_mbars
-        var prev_buf = (k - 1) % Self.SMemType.num_mbars
-        var prev_phase = (k - 1) / Self.SMemType.num_mbars & 1
+        var curr_buf = k % UInt32(Self.SMemType.num_mbars)
+        var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
+        var prev_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
 
         if k > 0:
             qk_ss_done[prev_buf].wait(prev_phase)
@@ -1754,9 +1769,9 @@ struct MLAPrefillSparse[
         cta_id: UInt32,
         indices_base: UInt32,
     ):
-        var curr_buf = k % Self.SMemType.num_mbars
-        var prev_buf = (k - 1) % Self.SMemType.num_mbars
-        var prev_phase = (k - 1) / Self.SMemType.num_mbars & 1
+        var curr_buf = k % UInt32(Self.SMemType.num_mbars)
+        var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
+        var prev_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
         comptime num_warps = 4
 
         # Per-batch tensor descriptors: each K-half writes into its own
