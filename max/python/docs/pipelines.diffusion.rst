@@ -11,6 +11,14 @@ max.pipelines.diffusion
 
 .. currentmodule:: max.pipelines.diffusion
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   pipelines.diffusion.schedulers
+
 Pipelines
 ---------
 
@@ -58,3 +66,4 @@ Denoising cache
    fbcache_conditional_execution
    max_compile
    run_denoising_step
+

@@ -11,6 +11,27 @@ max.pipelines
 
 .. currentmodule:: max.pipelines
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   pipelines.architectures
+   pipelines.core
+   pipelines.diffusion
+   pipelines.kv_cache
+   pipelines.lib
+   pipelines.lib.interfaces
+   pipelines.lib.log_probabilities
+   pipelines.lib.registry
+   pipelines.modeling.base
+   pipelines.modeling.dataprocessing
+   pipelines.modeling.kv_cache_config
+   pipelines.modeling.types
+   pipelines.modeling.weights
+   pipelines.request
+   pipelines.speculative
 
 Configuration
 -------------
@@ -127,16 +148,3 @@ Utilities
 
    ADAPTER_CONFIG_FILE
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   pipelines.architectures
-   pipelines.core
-   pipelines.kv_cache
-   pipelines.lib
-   pipelines.lib.interfaces
-   pipelines.lib.log_probabilities
-   pipelines.lib.registry

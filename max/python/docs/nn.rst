@@ -11,6 +11,16 @@ max.nn
 
 .. currentmodule:: max.nn
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   nn.attention
+   nn.kernels
+   nn.kv_cache
+
 Base classes
 ------------
 
@@ -179,12 +189,3 @@ Functions
    split_batch
    split_batch_replicated
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   nn.attention
-   nn.kernels
-   nn.kv_cache

@@ -1,4 +1,5 @@
 :title: max.nn.kernels
+:sidebar_label: kernels
 :type: module
 :lang: python
 

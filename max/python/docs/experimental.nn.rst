@@ -11,6 +11,15 @@ max.experimental.nn
 
 .. currentmodule:: max.experimental.nn
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   experimental.nn.norm
+   experimental.nn.rope
+
 Base classes
 ------------
 
@@ -47,11 +56,3 @@ Functions
 
    module_dataclass
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   experimental.nn.norm
-   experimental.nn.rope

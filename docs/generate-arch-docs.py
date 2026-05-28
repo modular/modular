@@ -16,8 +16,8 @@
 Scans the pipeline architecture registry, extracts metadata from each
 arch.py, and generates:
   - One RST page per registered architecture
-  - The architectures index RST (pipelines.architectures.rst)
-  - Toctree entries in index.rst
+  - The architectures index RST (pipelines.architectures.rst), which carries
+    a hidden toctree so the per-architecture pages are discoverable
   - Sidebar items under max.pipelines.architectures in sidebars.json
 
 Usage:
@@ -38,7 +38,6 @@ REPO_ROOT = Path(
 )
 ARCH_BASE = REPO_ROOT / "max" / "python" / "max" / "pipelines" / "architectures"
 DOCS_DIR = REPO_ROOT / "max" / "python" / "docs"
-INDEX_RST = DOCS_DIR / "index.rst"
 SIDEBARS_JSON = REPO_ROOT / "oss" / "modular" / "docs" / "sidebars.json"
 
 # Maps PipelineTask enum values to human-readable category headings.
@@ -202,43 +201,19 @@ def sync_file(path: Path, expected: str, check: bool, stale: list[str]) -> None:
         print(f"  wrote {path.name}")
 
 
-def _replace_between(
-    text: str, before: str, after: str, new_content: str
-) -> str:
-    """Replace text between *before* marker (inclusive end) and *after* marker (exclusive start)."""
-    bi = text.find(before)
-    ai = text.find(after)
-    if bi == -1 or ai == -1:
-        raise RuntimeError(f"Markers not found: {before!r} / {after!r}")
-    return text[: bi + len(before)] + new_content + text[ai:]
-
-
-def sync_index_rst(dir_names: list[str], check: bool, stale: list[str]) -> None:
-    """Keep architecture entries in index.rst in sync."""
-    entries = "".join(
-        f"   pipelines.architectures.{d}\n" for d in sorted(dir_names)
-    )
-    text = INDEX_RST.read_text()
-    expected = _replace_between(
-        text, "   pipelines.architectures\n", "   pipelines.core", entries
-    )
-    if text == expected:
-        return
-    if check:
-        stale.append("index.rst")
-    else:
-        INDEX_RST.write_text(expected)
-        print("  updated index.rst")
-
-
 def sync_sidebars_json(
     dir_names: list[str], check: bool, stale: list[str]
 ) -> None:
     """Keep architecture doc IDs in sidebars.json (Python reference sidebar).
 
-    Expects a category object with label \"max.pipelines.architectures\" under
-    the \"Python\" category in maxReferenceSidebar. Inserts that category
-    before \"max.profiler\" if it is missing.
+    Looks for the architectures category in two locations, preferring nesting:
+
+    1. Inside the ``max.pipelines`` category, as a child with label
+       ``"architectures"``. This is the preferred location.
+    2. As a top-level sibling under ``"Python"`` with label
+       ``"max.pipelines.architectures"`` (legacy placement).
+
+    If neither exists, inserts a nested child under ``max.pipelines``.
     """
     path = SIDEBARS_JSON
     original_text = path.read_text(encoding="utf-8")
@@ -275,30 +250,58 @@ def sync_sidebars_json(
     ]
 
     arch_cat: dict[str, object] | None = None
+
+    # Preferred: nested as a child of max.pipelines with short label.
+    pipelines_items: list[object] | None = None
     for entry in py_items:
-        if (
-            isinstance(entry, dict)
-            and entry.get("label") == "max.pipelines.architectures"
-        ):
-            arch_cat = entry
+        if isinstance(entry, dict) and entry.get("label") == "max.pipelines":
+            candidate = entry.get("items")
+            if isinstance(candidate, list):
+                pipelines_items = candidate
             break
+    if pipelines_items is not None:
+        for entry in pipelines_items:
+            if (
+                isinstance(entry, dict)
+                and entry.get("label") == "architectures"
+            ):
+                arch_cat = entry
+                break
+
+    # Fallback: legacy top-level sibling.
+    if arch_cat is None:
+        for entry in py_items:
+            if (
+                isinstance(entry, dict)
+                and entry.get("label") == "max.pipelines.architectures"
+            ):
+                arch_cat = entry
+                break
 
     if arch_cat is None:
-        insert_at = len(py_items)
-        for i, entry in enumerate(py_items):
-            if isinstance(entry, dict) and entry.get("label") == "max.profiler":
-                insert_at = i
-                break
-        arch_cat = {
+        # Neither location exists. Prefer nested insertion under max.pipelines.
+        new_cat: dict[str, object] = {
             "type": "category",
-            "label": "max.pipelines.architectures",
+            "label": "architectures",
             "link": {
                 "type": "doc",
                 "id": "max/api/python/pipelines.architectures",
             },
             "items": new_doc_ids,
         }
-        py_items.insert(insert_at, arch_cat)
+        if pipelines_items is not None:
+            pipelines_items.insert(0, new_cat)
+        else:
+            insert_at = len(py_items)
+            for i, entry in enumerate(py_items):
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("label") == "max.profiler"
+                ):
+                    insert_at = i
+                    break
+            new_cat["label"] = "max.pipelines.architectures"
+            py_items.insert(insert_at, new_cat)
     elif arch_cat.get("items") == new_doc_ids:
         return
     else:
@@ -335,14 +338,13 @@ def main() -> None:
         rst_path = DOCS_DIR / f"pipelines.architectures.{d}.rst"
         sync_file(rst_path, generate_rst(d), args.check, stale)
 
-    # Index RST, index.rst toctree, sidebars.json
+    # Architectures index RST and sidebars.json
     sync_file(
         DOCS_DIR / "pipelines.architectures.rst",
         generate_index_rst(dir_names, categories),
         args.check,
         stale,
     )
-    sync_index_rst(dir_names, args.check, stale)
     sync_sidebars_json(dir_names, args.check, stale)
 
     if args.check:
