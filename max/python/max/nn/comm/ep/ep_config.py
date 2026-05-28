@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.nn.quant_config import QuantConfig
+from max.support.math import ceildiv
 
 # We always use two groups of SHMEM shared memory buffers to avoid race
 # conditions between the dispatch and combine phases of Expert Parallelism
@@ -282,4 +283,10 @@ def calculate_ep_max_tokens_per_rank(
     if use_allreduce:
         return max_batch_input_tokens
     tp_size = ep_size // data_parallel_degree
-    return max_batch_input_tokens // tp_size
+    # Match the ceiling-biased ragged binning in ops.reducescatter.sum: when
+    # max_batch_input_tokens is not divisible by tp_size, the first
+    # (max_batch_input_tokens % tp_size) ranks receive
+    # ceil(max_batch_input_tokens / tp_size) tokens, so the EP per-rank cap
+    # must be ceil, not floor — otherwise the dispatch kernel rejects the
+    # largest shard (see ep.mojo dispatch assertion).
+    return ceildiv(max_batch_input_tokens, tp_size)

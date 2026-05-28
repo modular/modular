@@ -257,6 +257,15 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed an expert-parallelism dispatch assertion (`Cannot dispatch EP
+  kernel with N input tokens when the maximum tokens per rank is N-1`)
+  that fired whenever `--max-batch-input-tokens` was not evenly
+  divisible by the tensor-parallel degree. The EP per-rank cap now uses
+  ceiling division to match the ragged binning of `reducescatter` in
+  TP-attention + EP-MoE mode, so the largest shard fits in the
+  dispatch buffer. Affects DeepSeek-V3, Kimi-K2.5, MiniMax-M2, Qwen3,
+  and Step3.5 deployments configured with non-divisible batch sizes.
+
 - `MODULAR_DEBUG=ir-output-dir=<dir>` (and the equivalent
   `[max-debug] ir-output-dir = <dir>` config-file entry and
   `InferenceSession.debug.ir_output_dir = <dir>` Python setter) now
