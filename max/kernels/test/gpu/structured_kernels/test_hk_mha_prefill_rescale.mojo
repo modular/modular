@@ -26,17 +26,20 @@ This test makes the per-tile max GROW so the rescaling path fires:
     -> tile 0 scores = DEPTH = 128
     -> tile 1 scores = 2 * DEPTH = 256
 
-The strict online-softmax ground truth would be `mean(V[KV..2*KV-1, m])`
-because exp2(scale*(max_prev - max_new)) ≈ 0 zeroes out tile 0.
+After the eager-rescale fix in `_pv_strip_with_partial_softmax`,
+HKMhaPrefill matches the strict online-softmax ground truth:
+exp2(scale*(max_prev - max_new)) zeroes out tile 0's contribution, and
+tiles 1..N-1 all carry the same max (=256), so each contributes
+weight 1/((N-1)*KV) to the normalized output. The expected per-lane
+value is mean(V[KV..N*KV-1, m]).
 
-HK's C2/C6 cluster interleaves PV strip 0 with the lazy rescale of
-o_reg, then runs strips 1..3 AFTER the rescale while att_bf16 is
-still at the OLD max scale. Tile 0's strips 1..3 thus survive the
-rescale at their old scale, contributing a bounded artifact
-`mean(V[KV/4..KV-1, m])` to the output. HKMhaPrefill reproduces this
-approximation faithfully. At RESCALE_THRESHOLD=8 the magnitude is
-bounded; in this extreme test (∆max ≈ 128) the artifact is large but
-consistent.
+Prior to the fix (PR #86745 widened the gate to expose this for FLUX),
+HK's C2/C6 cluster interleaved PV strip 0 with the lazy rescale of
+o_reg, then ran strips 1..3 AFTER the rescale while att_bf16 was
+still at the OLD max scale — leaving tile 0's strips 1..3 surviving
+the rescale at their old scale and contributing a bounded artifact
+`mean(V[KV/4..KV-1, m])` to the output. The eager-rescale ordering
+removes that artifact entirely.
 """
 
 from std.gpu.host import DeviceContext
@@ -183,46 +186,34 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
         ctx,
     )
 
-    # Expected per-lane (HK approximation + epilogue norm dynamics).
+    # Expected per-lane (strict online-softmax ground truth, eager-rescale).
     #
-    # Numerator (o_reg before div_col): tile 0's PV strips 1..3 survive
-    # the rescale-mid-PV at the OLD max scale = V[KV/4..KV-1].
-    # Tiles 1..NUM_TILES-1 add at the new max scale = V[KV..NUM_TILES*KV-1].
+    # Numerator (o_reg before div_col): tile 0's contribution is
+    # zeroed by the rescale (∆max ≈ 128 ≫ RESCALE_THRESHOLD=8, so
+    # scale_vec = exp2(-128) ≈ 0 multiplies o_reg before any tile-1
+    # strip lands). Tiles 1..NUM_TILES-1 carry the same max=256 and
+    # all contribute V[KV..NUM_TILES*KV-1].
     #
-    # Denominator (norm_vec): after the iter j=3 C2 lazy rescale fires
+    # Denominator (norm_vec): after the iter j=3 C2 rescale fires
     # (tile 1's max jumps from 128 → 256), `scale_vec` is reset to 1
     # by `_pv_strip_with_partial_softmax`'s else-branch on every
-    # subsequent no-growth iter. The epilogue's unconditional
-    # `norm_vec *= scale_vec` then becomes identity, so tiles 1..N-1
-    # all contribute their full `sum(P)=KV_BLOCK` to the denominator
-    # — total denominator = (NUM_TILES - 1) * KV_BLOCK. Tile 0's
-    # contribution was correctly zeroed by C4's `norm_vec *= 0` when
-    # the rescale fired (pending_scale=True).
-    #
-    # NOTE: prior to the `scale_vec=1` reset in
-    # `_pv_strip_with_partial_softmax`'s else-branch (PR #86745), the
-    # stale tiny `scale_vec` from iter j=3 was re-applied at every
-    # epilogue tail cluster, flushing the accumulated norm down to
-    # only the final 4 tiles' worth — denominator was effectively
-    # `4 * KV_BLOCK`. That was a latent correctness bug that this
-    # test calibrated against; the corrected denominator below is the
-    # mathematically faithful one.
-    var sum_strips_1_3: Float32 = 0
-    for r in range(KV_BLOCK // 4, KV_BLOCK):
-        sum_strips_1_3 += Float32(r) / Float32(32)
+    # subsequent no-growth iter, so the epilogue's unconditional
+    # `norm_vec *= scale_vec` is identity. Tiles 1..N-1 each
+    # contribute `sum(P)=KV_BLOCK` to the denominator → total
+    # `(NUM_TILES - 1) * KV_BLOCK`. Tile 0's denominator was zeroed
+    # by C4's `norm_vec *= 0` when pending_scale=True fired.
     var sum_tiles_1_n: Float32 = 0
     for r in range(KV_BLOCK, NUM_TILES * KV_BLOCK):
         sum_tiles_1_n += Float32(r) / Float32(32)
-    var expected: Float32 = (sum_strips_1_3 + sum_tiles_1_n) / Float32(
-        (NUM_TILES - 1) * KV_BLOCK
-    )
-    print("  expected per-lane (HK approx) =", expected)
+    var expected: Float32 = sum_tiles_1_n / Float32((NUM_TILES - 1) * KV_BLOCK)
+    print("  expected per-lane =", expected)
 
     var mismatches = 0
     var max_diff: Float32 = 0
-    # Tolerance: BF16 noise + bounded HK rescale-mid-PV approximation
-    # noise. Scaled to ~3% of expected magnitude.
-    var TOL: Float32 = 0.15
+    # Tolerance: BF16 cast slack. Eager rescale removes the prior
+    # `mean(V[KV/4..KV-1])` artifact entirely, so the only residual is
+    # the BF16 store/round at ~1e-2 of value magnitude.
+    var TOL: Float32 = 0.02
     with dev_out.map_to_host() as host_out:
         for q in range(BM):
             for d in range(depth):

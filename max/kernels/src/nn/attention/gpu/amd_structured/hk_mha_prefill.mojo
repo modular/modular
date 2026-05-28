@@ -675,7 +675,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         sched_group: Int,
     ](
         v_reg: RegTile[DType.bfloat16, Self._V_LAYOUT_T, MutExternalOrigin],
-        att_bf16_full: RegTile[
+        mut att_bf16_full: RegTile[
             DType.bfloat16, Self._ATT_BF16_FULL_LAYOUT_T, MutExternalOrigin
         ],
         mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutExternalOrigin],
@@ -696,10 +696,26 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         `v_reg`) + partial softmax of the next tile. Returns whether a
         rescale of `norm_vec` is pending for the next QK tail.
 
-        APPROXIMATION: when the lazy rescale fires, `o_reg` is rescaled
-        BETWEEN PV strip 0 and strips 1..3; strips 1..3 then add to
-        already-rescaled `o_reg` at the OLD scale. Bounded by
-        `RESCALE_THRESHOLD` and skipped on the `rv_all_below` path.
+        RESCALE CONSISTENCY: when the rescale fires we multiply BOTH
+        `o_reg` AND `att_bf16_full` by `scale_vec = exp2(max_prev -
+        max_new)`. `o_reg` carries previous tiles' P@V at the OLD max
+        scale → needs downscaling to the NEW max. `att_bf16_full`
+        carries the *current* tile's `exp2(qk - max_prev)` BF16 cast,
+        which strips 0..3 are about to consume — the strips need the
+        same scale flip as `o_reg` so the addition stays consistent.
+        Without rescaling `att_bf16_full`, strips' contributions land
+        in `o_reg` at the OLD scale into a NEW-scale accumulator,
+        producing a bounded artifact (`mean(V[KV/4..KV-1, m])` per
+        firing) that's negligible at QK-norm-tame LLM activations but
+        corrupted callers with wider attention dynamic range
+        (FLUX.2's NullMask + no-QK-norm prefill).
+
+        BF16 precision on the att rescale: `scale_vec ≤ 1` (since
+        `max_prev < max_new`) so this is a downscale → no overflow.
+        Mantissa loss is bounded by `log2(1/scale_vec) ≤
+        RESCALE_THRESHOLD = 8` bits worst case in the threshold-just-
+        exceeded regime; at large Δmax the BF16 product is correctly
+        near-zero (the entire tile's contribution should vanish).
 
         SCALE_VEC INVARIANT: on the if-branch (rescale fires)
         `scale_vec` is set to `exp2(prev - new)`. On the else-branch
@@ -718,7 +734,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         var att_sub_0 = att_bf16_full.tile[1, 1, 8](0, 0, 0)
         Self._MmaOp.mma_PV(o_reg, v_sub_0, att_sub_0)
 
-        # col_max + lazy rescale decision.
+        # col_max + rescale decision.
         col_max_acc(max_vec, att_block_qk, max_vec_prev)
         # IGLP: 4×(1 MFMA + 5 VALU) interleaves the next 4 PV MFMAs with
         # the col_max + rescale VALU work.
@@ -728,6 +744,12 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         if unlikely(not all_ok):
             scale_vec[0, 0] = math_exp2(max_vec_prev[0, 0] - max_vec[0, 0])
             mul_col_inplace(o_reg, scale_vec)
+            # Rescale `att_bf16_full` to match — strips 1..3 below (and
+            # strip 0's MFMA already in flight) consume it at the post-
+            # rescale scale. Without this, strips 1..3 over-contribute
+            # at the old scale, producing the bounded artifact this
+            # path used to leave in `o_reg`.
+            mul_col_inplace(att_bf16_full, scale_vec)
             max_vec_prev.copy_from(max_vec)
             pending_scale = True
         else:

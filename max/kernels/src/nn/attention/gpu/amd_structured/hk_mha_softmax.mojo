@@ -225,13 +225,14 @@ def sub_col_inplace(
 
 
 @always_inline
-def mul_col_inplace(
-    mut dst: RegTile[DType.float32, ...],
-    vec: RegTile[DType.float32, ...],
-):
-    """`dst[gr, gc] *= vec[gc]` in place — lazy-rescale step of online
+def mul_col_inplace[
+    dtype: DType
+](mut dst: RegTile[dtype, ...], vec: RegTile[DType.float32, ...],):
+    """`dst[gr, gc] *= vec[gc]` in place — rescale step of online
     softmax (`o_reg *= exp2(max_prev - max_new)` when the running max
-    grows)."""
+    grows). `dst` may be FP32 (the `o_reg` accumulator) or BF16 (the
+    pre-cast `att_bf16_full` consumed by the PV MFMA strips that need
+    the same scale flip as `o_reg`)."""
     comptime src_height = dst.static_shape[0]
     comptime src_width = dst.static_shape[1]
     comptime base_tile_elts = dst.static_shape[2]
