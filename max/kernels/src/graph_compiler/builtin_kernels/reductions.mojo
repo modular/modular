@@ -59,7 +59,7 @@ comptime logger = Logger()
 from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
-from common_kernels import *
+from .kernels import *
 
 
 @compiler.register("mo.reduce.arg_max")

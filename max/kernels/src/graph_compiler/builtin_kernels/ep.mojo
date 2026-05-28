@@ -46,7 +46,7 @@ from extensibility import (
     _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
 )
 
-from common_kernels import _launch_device_collective
+from .kernels import _launch_device_collective
 
 from shmem import (
     shmem_init_thread_mpi,

@@ -27,7 +27,7 @@ from std.algorithm.functional import elementwise, IndexList
 from std.reflection import reflect
 
 from extensibility import ElementwiseBinaryOp
-from elementwise_kernels import (
+from builtin_kernels import (
     Add,
     Sub,
     Mul,

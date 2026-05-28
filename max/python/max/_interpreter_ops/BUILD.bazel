@@ -18,24 +18,24 @@ OPS = [file.removesuffix(".mojo") for file in glob(["*_ops.mojo"])]
 EXTRA_DEPS = {
     "data_movement_ops": [
         "//max:extensibility",
-        "//max:gather_scatter_kernels",
         "//max:layout",
+        "//max:builtin_kernels",
     ],
     "elementwise_binary_ops": [
-        "//max:elementwise_kernels",
+        "//max:builtin_kernels",
         "//max:extensibility",
     ],
     "elementwise_cast_ops": [
-        "//max:elementwise_kernels",
+        "//max:builtin_kernels",
         "//max:extensibility",
     ],
     "elementwise_comparison_ops": [
-        "//max:elementwise_kernels",
+        "//max:builtin_kernels",
         "//max:extensibility",
     ],
     "elementwise_unary_ops": [
-        "//max:elementwise_kernels",
         "//max:extensibility",
+        "//max:builtin_kernels",
     ],
     "group_norm_ops": [
         "//max:extensibility",
@@ -47,12 +47,12 @@ EXTRA_DEPS = {
     ],
     "matmul_ops": [
         "//max:extensibility",
-        "//max:layout",
         "//max:linalg",
-        "//max:linalg_kernels",
+        "//max:builtin_kernels",
+        "//max:layout",
     ],
     "misc_ops": [
-        "//max:common_kernels",
+        "//max:builtin_kernels",
         "//max:extensibility",
     ],
     "resize_ops": [

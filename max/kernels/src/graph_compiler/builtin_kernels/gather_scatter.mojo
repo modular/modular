@@ -96,8 +96,8 @@ comptime logger = Logger()
 from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
-from common_kernels import *
-from common_kernels import (
+from .kernels import *
+from .kernels import (
     _SliceStrideTypes,
     _TransposeStrideTypes,
 )

@@ -76,6 +76,7 @@ comptime logger = Logger()
 from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
+from .kernels import *
 
 
 @compiler.register("mo.matmul_fused_partial_rms_norm")

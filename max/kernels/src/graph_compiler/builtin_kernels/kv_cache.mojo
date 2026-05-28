@@ -60,7 +60,7 @@ comptime logger = Logger()
 from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
-from common_kernels import *
+from .kernels import *
 
 
 @compiler.register("mo.kv_cache.store.paged.ragged")

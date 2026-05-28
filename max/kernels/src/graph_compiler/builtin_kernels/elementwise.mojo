@@ -52,6 +52,9 @@ comptime logger = Logger()
 
 from std.utils.numerics import isinf, isnan
 
+# ===-----------------------------------------------------------------------===#
+from .kernels import *
+
 
 @compiler.register("mo.add")
 struct Add(ElementwiseBinaryOp):
