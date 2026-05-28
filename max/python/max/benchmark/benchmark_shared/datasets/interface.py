@@ -32,16 +32,6 @@ class BenchmarkDataset(ABC):
     from local files. It handles automatic dataset fetching, validation, and
     provides a standardized interface for sampling requests.
 
-    Attributes:
-        dataset_name (str | None): Name of the dataset to fetch from HuggingFace Hub.
-            If provided without dataset_path, the dataset will be automatically
-            downloaded during initialization.
-        dataset_path (str | None): Local path to the dataset file. Takes precedence
-            over dataset_name if both are provided. This allows for local datasets
-            to be used for benchmarking without having to query / download from HuggingFace Hub.
-        has_multiturn_chat_support (bool): Whether this dataset supports multiturn
-            chat scenarios.
-
     Usage:
         Subclasses must implement fetch() to specify how to download
         and sample their specific datasets. Subclasses must also implement sample_requests()
@@ -91,9 +81,9 @@ class BenchmarkDataset(ABC):
         the need for callers to know which specific subclass to instantiate.
 
         Args:
-            dataset_name (str | None): Name of the dataset. Used to determine
+            dataset_name: Name of the dataset. Used to determine
                 which subclass to instantiate. If None, dataset_path must be provided.
-            dataset_path (str | None): Local path to the dataset file. If provided,
+            dataset_path: Local path to the dataset file. If provided,
                 takes precedence over automatic fetching.
 
         Returns:

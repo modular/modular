@@ -401,19 +401,17 @@ class StructuredOutputHelper:
     Constrained decoding is used when:
     1. Feature enabled via feature flag (--enable-structured-output)
     2. Tool calling enforced via grammar (tool_choice=required, named function, or auto (conditional enforcement))
-
-    Attributes:
-        enabled: Whether constrained decoding is available (tokenizer info initialized).
-        enable_response_format_schema: Whether user-provided json_schema is allowed.
-        vocab_size: Vocabulary size from the tokenizer, or None if disabled.
-        tool_call_region_delimiters: Token sequences for tool call boundaries (conditional enforcement).
     """
 
     enabled: bool = False
+    """Whether constrained decoding is available (tokenizer info initialized)."""
     enable_response_format_schema: bool = False
+    """Whether user-provided json_schema is allowed."""
     vocab_size: int | None = None
+    """Vocabulary size from the tokenizer, or None if disabled."""
     _tokenizer_info: Any = field(default=None, repr=False)
     tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = None
+    """Token sequences for tool call boundaries (conditional enforcement)."""
     # Serialises access to per-context ``ctx.matcher`` between the async
     # FSM-advance host callback and the synchronous spec-decode bitmask
     # path; concurrent calls into llguidance's ``LLInterpreter`` trip a

@@ -257,12 +257,12 @@ class QKVLinearLoRA(Module, SupportsLoRA):
         """Computes fused query, key, and value LoRAs with ragged input.
 
         Args:
-            x (TensorValue): The input tensor of shape [total_tokens, hidden_dim].
-            qkv_loras (list[LinearLoRA]): List of 3 LinearLoRA modules for Q, K, and V projections.
-            input_row_offsets (TensorValue): 1D tensor indicating the start index of each sequence in `x`.
-            kv_collection (PagedCacheValues):
+            x: The input tensor of shape [total_tokens, hidden_dim].
+            qkv_loras: List of 3 LinearLoRA modules for Q, K, and V projections.
+            input_row_offsets: 1D tensor indicating the start index of each sequence in `x`.
+            kv_collection:
                 The key/value cache collection structure.
-            layer_idx (TensorValue): Index of the current transformer layer (used for caching).
+            layer_idx: Index of the current transformer layer (used for caching).
 
         Returns:
             TensorValue: The query projections.

@@ -52,14 +52,10 @@ _CompileDecorator: TypeAlias = Callable[[_CompileTarget], "CompileWrapper"]
 
 @dataclass
 class DiffusionPipelineOutput:
-    """Output of a diffusion pipeline.
-
-    Attributes:
-        images: NHWC uint8 NumPy array of shape (B, H, W, C) with values
-            in [0, 255].
-    """
+    """Output of a diffusion pipeline."""
 
     images: npt.NDArray[np.uint8]
+    """NHWC uint8 NumPy array of shape (B, H, W, C) with values in [0, 255]."""
 
 
 class DiffusionPipeline(ABC):

@@ -87,24 +87,17 @@ class QuantizationEncoding(enum.Enum):
         )
 
     MAX supports several quantization formats optimized for different use cases.
-
-    Attributes:
-        Q4_0
-            Basic 4-bit quantization with 32 elements per block.
-        Q4_K
-            4-bit K-quantization with 256 elements per block.
-        Q5_K
-            5-bit K-quantization with 256 elements per block.
-        Q6_K
-            6-bit K-quantization with 256 elements per block.
-        GPTQ
-            Group-wise Post-Training Quantization for large language models.
     """
 
+    #: Basic 4-bit quantization with 32 elements per block.
     Q4_0 = "Q4_0"
+    #: 4-bit K-quantization with 256 elements per block.
     Q4_K = "Q4_K"
+    #: 5-bit K-quantization with 256 elements per block.
     Q5_K = "Q5_K"
+    #: 6-bit K-quantization with 256 elements per block.
     Q6_K = "Q6_K"
+    #: Group-wise Post-Training Quantization for large language models.
     GPTQ = "GPTQ"
 
     @property

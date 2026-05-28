@@ -64,33 +64,6 @@ class StructuredOutputOverlapState:
 
     The class is intentionally decoupled from :class:`SpecDecodeState`
     and the architecture graph builders.
-
-    Attributes:
-        device: The accelerator the model graph runs on.
-        cpu: The host CPU device whose AsyncRT worker pool will
-            execute callbacks dispatched via
-            :meth:`enqueue_async_callback`.
-        bitmask_flag: The 64-bit device-mapped pinned flag the
-            callback signals. Single process-lifetime flag.
-        wait_payload: A CPU-resident ``int64[2]`` buffer holding
-            ``[bitmask_flag._unsafe_ptr, 1]``. This is the payload
-            consumed by the in-graph ``mo.wait_host_value_with_dep``
-            op. Allocated once; contents written once at construction.
-        pinned_bitmask: Single persistent ``bool[max_batch_size,
-            num_positions, vocab_size]`` pinned buffer. The AsyncRT
-            worker writes into this buffer's pinned host backing
-            store and the in-graph wait gates the captured H2D on the
-            worker's release-store of the flag, so writer and reader
-            cannot race even though they share storage.
-        device_bitmask_scratch: A device-resident bool buffer with
-            the same shape as :attr:`pinned_bitmask`. Destination of
-            the in-graph H2D; consumed by the acceptance sampler. A
-            single scratch is safe because the model stream is FIFO:
-            sampler reads serialise with the next-iter H2D write.
-        max_batch_size: Configured batch capacity.
-        num_positions: Per-batch positions written per iteration
-            (typically ``num_speculative_tokens + 1`` for spec-decode).
-        vocab_size: Tokenizer vocabulary width.
     """
 
     def __init__(
@@ -126,12 +99,18 @@ class StructuredOutputOverlapState:
             )
 
         self.device: Device = device
+        """The accelerator the model graph runs on."""
         self.cpu: CPU = cpu
+        """The host CPU device whose AsyncRT worker pool will execute callbacks dispatched via :meth:`enqueue_async_callback`."""
         self.max_batch_size: int = max_batch_size
+        """Configured batch capacity."""
         self.num_positions: int = num_positions
+        """Per-batch positions written per iteration (typically ``num_speculative_tokens + 1`` for spec-decode)."""
         self.vocab_size: int = vocab_size
+        """Tokenizer vocabulary width."""
 
         self.bitmask_flag: CompletionFlag = CompletionFlag(device)
+        """The 64-bit device-mapped pinned flag the callback signals. Single process-lifetime flag."""
 
         # Payload consumed by the in-graph `mo.wait_host_value_with_dep`
         # op. Contract: CPU int64[2] = [flag._unsafe_ptr,
@@ -145,6 +124,7 @@ class StructuredOutputOverlapState:
             shape=(2,),
             device=device,
         )
+        """A CPU-resident ``int64[2]`` buffer holding ``[bitmask_flag._unsafe_ptr, 1]``. This is the payload consumed by the in-graph ``mo.wait_host_value_with_dep`` op. Allocated once; contents written once at construction."""
         payload_np = self.wait_payload.to_numpy()
         payload_np[0] = self.bitmask_flag._unsafe_ptr
         payload_np[1] = 1
@@ -155,11 +135,13 @@ class StructuredOutputOverlapState:
             shape=shape,
             device=device,
         )
+        """Single persistent ``bool[max_batch_size, num_positions, vocab_size]`` pinned buffer. The AsyncRT worker writes into this buffer's pinned host backing store and the in-graph wait gates the captured H2D on the worker's release-store of the flag, so writer and reader cannot race even though they share storage."""
         self.device_bitmask_scratch: Buffer = Buffer(
             dtype=DType.bool,
             shape=shape,
             device=device,
         )
+        """A device-resident bool buffer with the same shape as :attr:`pinned_bitmask`. Destination of the in-graph H2D; consumed by the acceptance sampler. A single scratch is safe because the model stream is FIFO: sampler reads serialise with the next-iter H2D write."""
 
         # Cache of (batch_size, num_positions) -> view of pinned_bitmask
         # / device_bitmask_scratch. Populated lazily by

@@ -582,9 +582,9 @@ def merge_specs(
     Merges a list of Spec objects into a single pandas DataFrame, join on specified pivot columns.
 
     Args:
-        spec_list (list[Spec]): List of Spec objects to merge.
-        pivots (list[str] | None, optional): List of column names to use as pivots for merging. If None, uses the intersection of all columns in the DataFrames.
-        sort_pivots (list[str] | None, optional): List of column names to sort the merged DataFrame by. If None, uses the pivots.
+        spec_list: List of Spec objects to merge.
+        pivots: List of column names to use as pivots for merging. If None, uses the intersection of all columns in the DataFrames.
+        sort_pivots: List of column names to sort the merged DataFrame by. If None, uses the pivots.
 
     Returns:
         pd.DataFrame: Merged DataFrame containing the specified pivots and a 'spec' column with the corresponding Spec objects.

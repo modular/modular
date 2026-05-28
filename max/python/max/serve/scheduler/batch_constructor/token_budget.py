@@ -34,21 +34,14 @@ class RequestType(str, Enum):
 
 
 class BudgetStatus(str, Enum):
-    """Enumeration describing the result of applying a token budget to a context.
-
-    Attributes:
-        BUDGET_AVAILABLE: The context fits within the budget and there is still
-            remaining capacity for additional contexts.
-        BUDGET_EXHAUSTED: The context cannot be added to the budget, even with
-            chunking. This occurs when the budget is already full or when a hard
-            or soft limit prevents accepting the context.
-        BUDGET_REACHED: The context fits within the budget (possibly after
-            chunking) and the budget is now at or near capacity.
-    """
+    """Enumeration describing the result of applying a token budget to a context."""
 
     BUDGET_AVAILABLE = "budget_available"
+    """Context fits within budget with remaining capacity for more contexts."""
     BUDGET_EXHAUSTED = "budget_exhausted"
+    """Context cannot be added, even with chunking (budget full or limit reached)."""
     BUDGET_REACHED = "budget_reached"
+    """Context fits (possibly after chunking) and budget is now at/near capacity."""
 
 
 class TokenBudget(ABC):
@@ -77,13 +70,6 @@ class TokenBudget(ABC):
     * :meth:`add_to_budget` is only called after a non-``BUDGET_EXHAUSTED``
       status and is responsible for incrementing :attr:`used` by the same
       effective token cost that was evaluated in :meth:`status_after_context`.
-
-    Attributes:
-        capacity: Maximum number of tokens allowed for this budget.
-        allow_chunking: Whether this budget may shrink the context via
-            ``context.chunk`` in order to fit within the remaining
-            capacity.
-        used: Number of tokens currently consumed from this budget.
     """
 
     def __init__(
@@ -105,10 +91,13 @@ class TokenBudget(ABC):
                 is effectively a no-op for that context.
         """
         self.capacity = capacity
+        """Maximum number of tokens allowed for this budget."""
         self.allow_chunking = allow_chunking
+        """Whether this budget may shrink the context via ``context.chunk`` in order to fit within the remaining capacity."""
         self.applicable_types = applicable_types
 
         self.used = 0
+        """Number of tokens currently consumed from this budget."""
         self.active_request_type = RequestType.UNKNOWN
 
     @property

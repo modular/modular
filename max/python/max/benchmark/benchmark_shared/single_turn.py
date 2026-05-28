@@ -174,7 +174,7 @@ async def get_request(
             A list of input requests, each represented as a SampledRequest.
         request_rate:
             The rate at which requests are generated (requests/s).
-        burstiness (optional):
+        burstiness:
             The burstiness factor of the request generation.
             Only takes effect when request_rate is not inf.
             Default value is 1, which follows a Poisson process.

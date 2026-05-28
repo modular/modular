@@ -610,7 +610,7 @@ class Spec:
         Loads the spec from a YAML file
 
         Args:
-            file (Path): the yaml file Path
+            file: the yaml file Path
 
         Returns:
             Spec: the spec
@@ -641,7 +641,7 @@ class Spec:
         - `PARAM_NAME:[PARAM_VALUE0, PARAM_VALUE1]` (Pythonic list of values)
 
         Args:
-            param_list (List): a list of param-value's as strings/
+            param_list: a list of param-value's as strings/
 
         Returns:
             Spec: Dictionary of with extra param names as keys and param values.
@@ -736,7 +736,7 @@ class Spec:
         Deserializes a Spec object from the given yaml string.
 
         Args:
-            yaml_str (str): the yaml string representation of the model manifest
+            yaml_str: the yaml string representation of the model manifest
 
         Returns:
             Spec: a Spec loaded from the given yaml string

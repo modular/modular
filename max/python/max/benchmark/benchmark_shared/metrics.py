@@ -1034,24 +1034,23 @@ class SpecDecodeStats:
 
     Fields are ``None`` when the underlying metric was not exposed by the
     backend in the scraped Prometheus output.
-
-    Attributes:
-        num_drafts: Number of draft sequences generated.
-        draft_tokens: Total number of draft tokens generated.
-        accepted_tokens: Total number of draft tokens accepted.
-        acceptance_rate: Percentage of draft tokens accepted.
-        acceptance_length: Average number of tokens accepted per draft
-            (including the verified token).
-        per_position_acceptance_rates: Acceptance rate at each draft position
-            as a fraction (0-1). Empty when no per-position data was exposed.
     """
 
     num_drafts: int | None = None
+    """Number of draft sequences generated."""
     draft_tokens: int | None = None
+    """Total number of draft tokens generated."""
     accepted_tokens: int | None = None
+    """Total number of draft tokens accepted."""
     acceptance_rate: float | None = None
+    """Percentage of draft tokens accepted."""
     acceptance_length: float | None = None
+    """Average number of tokens accepted per draft (including verified token)."""
     per_position_acceptance_rates: list[float] = field(default_factory=list)
+    """Acceptance rate at each draft position as a fraction (0-1).
+
+    Empty when no per-position data was exposed.
+    """
 
     def to_result_dict(self) -> dict[str, object]:
         """Return a flat dict of spec-decode keys for the benchmark result.

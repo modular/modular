@@ -126,6 +126,18 @@ modular_py_binary(
 ]
 
 modular_py_binary(
+    name = "lint_docstrings",
+    srcs = ["lint_docstrings.py"],
+    deps = [":lint_helpers"],
+)
+
+command(
+    name = "lint-docstrings.check",
+    command = ":lint_docstrings",
+    run_from_workspace_root = True,
+)
+
+modular_py_binary(
     name = "action-versions-pinned",
     srcs = ["action-versions-pinned.py"],
     deps = [requirement("pyyaml")],

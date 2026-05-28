@@ -49,10 +49,10 @@ def act_quant_kernel(
     Quantizes the input tensor `x_ptr` and stores the result in `y_ptr` and the scaling factor in `s_ptr`.
 
     Args:
-        x_ptr (triton.Pointer): Pointer to the input tensor.
-        y_ptr (triton.Pointer): Pointer to the output tensor where quantized values will be stored.
-        s_ptr (triton.Pointer): Pointer to the output tensor where scaling factors will be stored.
-        BLOCK_SIZE (tl.constexpr): The size of the block to be processed by each program instance.
+        x_ptr: Pointer to the input tensor.
+        y_ptr: Pointer to the output tensor where quantized values will be stored.
+        s_ptr: Pointer to the output tensor where scaling factors will be stored.
+        BLOCK_SIZE: The size of the block to be processed by each program instance.
 
     Returns:
         None
@@ -75,8 +75,8 @@ def act_quant(
     Quantizes the input tensor `x` using block-wise quantization.
 
     Args:
-        x (torch.Tensor): The input tensor to be quantized. Must be contiguous and its last dimension size must be divisible by `block_size`.
-        block_size (int, optional): The size of the blocks to be used for quantization. Default is 128.
+        x: The input tensor to be quantized. Must be contiguous and its last dimension size must be divisible by `block_size`.
+        block_size: The size of the blocks to be used for quantization. Default is 128.
 
     Returns:
         Tuple[torch.Tensor, torch.Tensor]: A tuple containing:
@@ -118,17 +118,17 @@ def fp8_gemm_kernel(
     Performs a matrix multiplication operation on FP8 matrices with scaling factors.
 
     Args:
-        a_ptr (tl.tensor): Pointer to the first input matrix A.
-        b_ptr (tl.tensor): Pointer to the second input matrix B.
-        c_ptr (tl.tensor): Pointer to the output matrix C.
-        a_s_ptr (tl.tensor): Pointer to the scaling factors for matrix A.
-        b_s_ptr (tl.tensor): Pointer to the scaling factors for matrix B.
-        M (int): Number of rows in matrix A and C.
-        N (tl.constexpr): Number of columns in matrix B and C.
-        K (tl.constexpr): Number of columns in matrix A and rows in matrix B.
-        BLOCK_SIZE_M (tl.constexpr): Block size for the M dimension.
-        BLOCK_SIZE_N (tl.constexpr): Block size for the N dimension.
-        BLOCK_SIZE_K (tl.constexpr): Block size for the K dimension.
+        a_ptr: Pointer to the first input matrix A.
+        b_ptr: Pointer to the second input matrix B.
+        c_ptr: Pointer to the output matrix C.
+        a_s_ptr: Pointer to the scaling factors for matrix A.
+        b_s_ptr: Pointer to the scaling factors for matrix B.
+        M: Number of rows in matrix A and C.
+        N: Number of columns in matrix B and C.
+        K: Number of columns in matrix A and rows in matrix B.
+        BLOCK_SIZE_M: Block size for the M dimension.
+        BLOCK_SIZE_N: Block size for the N dimension.
+        BLOCK_SIZE_K: Block size for the K dimension.
 
     Returns:
         None
@@ -176,10 +176,10 @@ def fp8_gemm(  # noqa: ANN201
     Perform a matrix multiplication using FP8 precision.
 
     Args:
-        a (torch.Tensor): The first input matrix, must be contiguous.
-        a_s (torch.Tensor): The scaling factor for the first input matrix, must be contiguous.
-        b (torch.Tensor): The second input matrix, must be contiguous.
-        b_s (torch.Tensor): The scaling factor for the second input matrix, must be contiguous.
+        a: The first input matrix, must be contiguous.
+        a_s: The scaling factor for the first input matrix, must be contiguous.
+        b: The second input matrix, must be contiguous.
+        b_s: The scaling factor for the second input matrix, must be contiguous.
 
     Returns:
         torch.Tensor: The result of the matrix multiplication.

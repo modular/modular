@@ -46,17 +46,14 @@ except Exception:
 
 @dataclass
 class HistogramData:
-    """Histogram data with buckets, sum and count.
+    """Histogram data with buckets, sum and count."""
 
-    Attributes:
-        buckets: List of (upper_bound, cumulative_count) tuples representing histogram buckets
-        sum: Total sum of all observed values
-        count: Total number of observations
-    """
-
-    buckets: list[tuple[str, float]]  # List of (upper_bound, cumulative_count)
+    buckets: list[tuple[str, float]]
+    """List of (upper_bound, cumulative_count) tuples representing histogram buckets."""
     sum: float
+    """Total sum of all observed values."""
     count: float
+    """Total number of observations."""
 
     def __bool__(self) -> bool:
         """Check if histogram has any observations.
@@ -83,12 +80,6 @@ class HistogramData:
 class ParsedMetrics:
     """Structured metrics data parsed from Prometheus endpoint.
 
-    Attributes:
-        counters: Dictionary of counter metrics (monotonically increasing values)
-        gauges: Dictionary of gauge metrics (can increase or decrease)
-        histograms: Dictionary of histogram metrics with bucket distributions
-        raw_text: Raw Prometheus text format for debugging
-
     Note:
         Metrics with labels are stored with keys in the format:
         "metric_name{label1="value1",label2="value2"}"
@@ -97,9 +88,13 @@ class ParsedMetrics:
     """
 
     counters: dict[str, float]
+    """Dictionary of counter metrics (monotonically increasing values)."""
     gauges: dict[str, float]
+    """Dictionary of gauge metrics (can increase or decrease)."""
     histograms: dict[str, HistogramData]
-    raw_text: str  # Keep raw Prometheus text for debugging
+    """Dictionary of histogram metrics with bucket distributions."""
+    raw_text: str
+    """Raw Prometheus text format for debugging."""
 
     def get_histogram(
         self, metric_name: str, labels: dict[str, str] | None = None
