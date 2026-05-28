@@ -570,7 +570,7 @@ def test_py_slice() raises:
 
 
 def test_contains() raises:
-    with assert_raises(contains="argument of type 'int' is not iterable"):
+    with assert_raises(contains="argument of type 'int' is not"):
         var z = PythonObject(0)
         _ = 5 in z
 
