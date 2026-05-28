@@ -62,6 +62,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import logging
+import threading
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -373,6 +374,13 @@ class SpecDecodeState:
     overlap. ``None`` when structured output is globally off (no vocab
     size). Owned for the lifetime of :class:`SpecDecodeState`.
     """
+
+    last_callback_done_event: threading.Event | None = None
+    """Set by the most recent async bitmask callback's worker after it
+    writes pinned. ``_assign_bitmask_inputs`` waits on it before
+    ``sync_prime`` so the worker can't overwrite ``prime()``'s pinned
+    writes. Lives on the process-lifetime state because ``_prev_batch``
+    is cleared between requests."""
 
     @classmethod
     def load(
@@ -2501,6 +2509,27 @@ class OverlapTextGenerationPipeline(
             spec_state.has_precomputed_bitmask = False
 
         if needs_sync_prime:
+            # Wait for the prior iter's async callback worker to finish
+            # writing pinned before ``prime()`` overwrites it; otherwise
+            # the worker can stomp ``prime()``'s rows after the in-graph
+            # wait passes, and the captured H2D DMAs stale rows into the
+            # sampler's device scratch. CPU<->CPU on a ``threading.Event``
+            # (not a CUDA event), so no ``device.synchronize()``.
+            prev_evt = spec_state.last_callback_done_event
+            if prev_evt is not None and not prev_evt.is_set():
+                # Bounded so a worker that died before reaching the
+                # ``finally`` (dispatch failure, AsyncRT shutdown) degrades
+                # to a noisy bitmask race instead of a silent hang.
+                if not prev_evt.wait(timeout=5.0):
+                    logger.error(
+                        "Async bitmask callback's done_event was not set "
+                        "within 5s; proceeding with sync_prime — pinned "
+                        "bitmask may have been stomped by the worker."
+                    )
+            # Cleared here so the next sync_prime doesn't re-wait on this
+            # already-consumed event after a callback-less iter (e.g.
+            # another CE prefill).
+            spec_state.last_callback_done_event = None
             bitmask_np = self._structured_output.compute_speculative_bitmasks(
                 context_batch=context_batch,
                 draft_tokens=draft_tokens_np,
@@ -2601,6 +2630,7 @@ class OverlapTextGenerationPipeline(
         next_draft_tokens_np: npt.NDArray[np.int64],
         bitmask_pinned_np: npt.NDArray[np.int32],
         overlap_bool_pinned_np: npt.NDArray[np.bool_],
+        done_event: threading.Event,
     ) -> Callable[[], None]:
         """Build a callback closure that advances FSM then computes bitmasks.
 
@@ -2627,6 +2657,10 @@ class OverlapTextGenerationPipeline(
                 callback writes the unpacked rows here in iter-N's row
                 order; the next iter's in-graph H2D reads them after the
                 ``mo.wait_host_value_with_dep`` op passes.
+            done_event: Set by the callback in a ``finally`` block after
+                ``overlap_bool_pinned_np`` is fully written, so the next
+                iter's ``_assign_bitmask_inputs`` can ``wait()`` on it
+                before ``sync_prime`` to avoid stomping pinned mid-write.
 
         Returns:
             A zero-argument callable for use with
@@ -2672,6 +2706,10 @@ class OverlapTextGenerationPipeline(
                     overlap_bool_pinned_np[:] = True
                 except Exception:
                     pass
+            finally:
+                # Signal completion so a downstream ``sync_prime`` waiting
+                # on this event can proceed without racing the pinned write.
+                done_event.set()
 
         return callback
 
@@ -2713,8 +2751,10 @@ class OverlapTextGenerationPipeline(
                 mode). When False (prefill), the callback is not enqueued.
 
         Returns:
-            True if the callback was enqueued (FSM will be advanced asynchronously),
-            False otherwise.
+            True if the callback was enqueued. The worker's completion
+            event is stashed on ``spec_state.last_callback_done_event``
+            for the next iter's ``_assign_bitmask_inputs`` to wait on
+            before ``sync_prime``.
         """
         if not self._pipeline_config.needs_bitmask_constraints:
             return False
@@ -2762,6 +2802,7 @@ class OverlapTextGenerationPipeline(
             :batch_size, :num_positions, :
         ]
 
+        done_event = threading.Event()
         with Tracer("build_bitmask_callback"):
             callback = self._build_bitmask_callback(
                 context_batch=context_batch,
@@ -2771,6 +2812,7 @@ class OverlapTextGenerationPipeline(
                 next_draft_tokens_np=callback_inputs.next_draft_tokens_np,
                 bitmask_pinned_np=callback_inputs.bitmask_pinned_np,
                 overlap_bool_pinned_np=overlap_bool_pinned_np,
+                done_event=done_event,
             )
 
         # Trampoline + worker dispatch goes on the device's default
@@ -2815,6 +2857,7 @@ class OverlapTextGenerationPipeline(
             ctx.request_id for ctx in context_batch
         ]
         spec_state.has_precomputed_bitmask = True
+        spec_state.last_callback_done_event = done_event
         return True
 
     def _d2h_spec_decode_outputs(
