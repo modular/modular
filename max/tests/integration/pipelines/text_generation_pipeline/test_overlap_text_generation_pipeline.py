@@ -707,6 +707,9 @@ class TestEnqueueAsyncBitmaskCallback:
         mock_so = MagicMock()
         mock_so.enabled = structured_output_enabled
         pipeline._structured_output = mock_so
+        mock_config = MagicMock()
+        mock_config.needs_bitmask_constraints = structured_output_enabled
+        pipeline._pipeline_config = mock_config
         return pipeline
 
     def test_returns_false_when_structured_output_disabled(self) -> None:
