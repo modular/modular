@@ -34,6 +34,7 @@ family.
    pipelines.architectures.gemma3multimodal
    pipelines.architectures.gemma3multimodal_modulev3
    pipelines.architectures.gemma4
+   pipelines.architectures.glm5_1
    pipelines.architectures.gpt_oss
    pipelines.architectures.gpt_oss_modulev3
    pipelines.architectures.granite
@@ -96,6 +97,7 @@ Text generation
    ~max.pipelines.architectures.gemma3multimodal
    ~max.pipelines.architectures.gemma3multimodal_modulev3
    ~max.pipelines.architectures.gemma4
+   ~max.pipelines.architectures.glm5_1
    ~max.pipelines.architectures.gpt_oss
    ~max.pipelines.architectures.gpt_oss_modulev3
    ~max.pipelines.architectures.granite

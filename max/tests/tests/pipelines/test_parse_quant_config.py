@@ -799,6 +799,42 @@ def test_parse_float4_from_standalone_hf_quant_config(
     assert quant_config.format == QuantFormat.NVFP4
 
 
+@pytest.fixture
+def hf_config_glm_5_1_nvfp4() -> AutoConfig:
+    """Modelopt NVFP4 config with selective ``ignore`` (GLM-5.1-style)."""
+    config_path = TEST_DATA_PATH / "lukealonso_glm_5_1_nvfp4_quant.json"
+    return AutoConfig.from_pretrained(str(config_path), trust_remote_code=True)
+
+
+def test_parse_modelopt_nvfp4_respects_ignore_patterns(
+    hf_config_glm_5_1_nvfp4: AutoConfig,
+) -> None:
+    """Parses modelopt ``ignore`` globs like lukealonso/GLM-5.1-NVFP4.
+
+    Dense layers 0-2 skip MLP; layer 3+ MoE is NVFP4. All listed layers keep
+    BF16 attention (``self_attn*`` ignored). ``*shared_experts*`` does not
+    remove a layer from ``mlp_quantized_layers``.
+    """
+    state_dict = {
+        "embed_tokens.weight": WeightData(
+            name="embed_tokens.weight",
+            shape=Shape((1, 1)),
+            dtype=DType.bfloat16,
+            data=torch.zeros((1, 1), dtype=max_dtype_to_torch(DType.bfloat16)),
+        ),
+    }
+    quant_config = parse_quant_config(
+        hf_config_glm_5_1_nvfp4, state_dict, DType.uint8
+    )
+
+    assert quant_config is not None
+    assert quant_config.format == QuantFormat.NVFP4
+    assert quant_config.mlp_quantized_layers == {3}
+    assert quant_config.attn_quantized_layers == set()
+    assert quant_config.embedding_output_dtype == DType.bfloat16
+    assert quant_config.shared_experts_weight_dtype == DType.bfloat16
+
+
 def test_parse_float4_skips_gptq_quant_method(
     hf_config_instruct_fbgemm: AutoConfig,
 ) -> None:

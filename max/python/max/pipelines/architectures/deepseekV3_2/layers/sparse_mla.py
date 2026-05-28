@@ -96,7 +96,8 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             index_topk=index_topk,
             q_lora_rank=q_lora_rank,
             devices=self.devices,
-            quant_config=self.quant_config,
+            activation_quant_config=self.quant_config,
+            weight_quant_config=self.quant_config,
         )
 
     @LatentAttentionWithRopeFp8.sharding_strategy.setter  # type: ignore[attr-defined]
@@ -355,6 +356,9 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 v_head_dim=self.v_head_dim,
                 buffer_size=self.BUFFER_TOK_SIZE,
                 norm_dtype=self.norm_dtype,
+                index_n_heads=self.indexer.n_heads,
+                index_head_dim=self.indexer.head_dim,
+                index_topk=self.indexer.index_topk,
             )
 
             replica.q_a_proj = q_a_proj_shards[shard_idx]

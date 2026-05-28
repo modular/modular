@@ -624,6 +624,7 @@
             "max/api/python/pipelines.architectures.gemma3multimodal",
             "max/api/python/pipelines.architectures.gemma3multimodal_modulev3",
             "max/api/python/pipelines.architectures.gemma4",
+            "max/api/python/pipelines.architectures.glm5_1",
             "max/api/python/pipelines.architectures.gpt_oss",
             "max/api/python/pipelines.architectures.gpt_oss_modulev3",
             "max/api/python/pipelines.architectures.granite",

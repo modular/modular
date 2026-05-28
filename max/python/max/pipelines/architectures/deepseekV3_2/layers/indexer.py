@@ -78,7 +78,8 @@ class Indexer(Module):
         index_topk: int,
         q_lora_rank: int,
         devices: Sequence[DeviceRef],
-        quant_config: QuantConfig,
+        activation_quant_config: QuantConfig,
+        weight_quant_config: QuantConfig | None = None,
     ):
         super().__init__()
         self.dim: int = dim
@@ -89,24 +90,34 @@ class Indexer(Module):
         self.index_topk: int = index_topk
         self.q_lora_rank: int = q_lora_rank
         self.softmax_scale = self.head_dim**-0.5
-        self.quant_config = quant_config
+        self.quant_config = activation_quant_config
+
+        weight_dtype = (
+            DType.float8_e4m3fn
+            if weight_quant_config is not None
+            else DType.bfloat16
+        )
 
         self.wq_b = Linear(
             in_dim=self.q_lora_rank,
             out_dim=self.n_heads * self.head_dim,
-            dtype=DType.float8_e4m3fn,
+            dtype=weight_dtype,
             device=devices[0],
-            quant_config=quant_config,
+            quant_config=weight_quant_config,
         )  # lora up projection
         self.wk = Linear(
             in_dim=self.dim,
             out_dim=self.head_dim,
-            dtype=DType.float8_e4m3fn,
+            dtype=weight_dtype,
             device=devices[0],
-            quant_config=quant_config,
+            quant_config=weight_quant_config,
+        )
+        # Checkpoint bf16 when indexer weights are not quantized (modelopt ignore).
+        k_norm_dtype = (
+            DType.bfloat16 if weight_quant_config is None else DType.float32
         )
         self.k_norm = LayerNorm(
-            dims=self.head_dim, dtype=DType.float32, devices=devices
+            dims=self.head_dim, dtype=k_norm_dtype, devices=devices
         )
         self.weights_proj = Linear(
             in_dim=self.dim,
