@@ -40,6 +40,10 @@ modular_py_test(
         "test.resources:gpu-memory": "16",
     },
     gpu_constraints = ["//:has_gpu"],
+    # test_attention.py: 4 tests, 4 shards = one test per shard, compiles run in parallel
+    per_test_shard_count = {
+        "test_attention.py": 4,
+    },
     tags = ["gpu"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],

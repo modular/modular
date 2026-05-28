@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared helpers for the Gemma4 attention test files.
+"""Shared helpers for the Gemma4 attention tests.
 
 The actual pytest fixtures (`text_config`, `input_tensor`,
 `attention_weights_*`, `session`, `device`) live in `conftest.py` so
@@ -20,12 +20,11 @@ plain-Python helpers that the test files reference directly:
 `generate_torch_outputs`, the `CompiledAttention` bundle, and
 dtype constants.
 
-Splitting `test_attention.py` into a bf16 file and per-layer fp8 files
-lets each bazel target run as its own process (in parallel on CI) — the
-fp8 path's expensive double-compile no longer serializes against the
-bf16 cases. The module-scoped fixtures in `conftest.py` keep each
-process's compile cost paid once per `(layer_idx, cache_dtype, weight
-set)` combo.
+`test_attention.py` uses Bazel test sharding (`per_test_shard_count = 4`)
+to parallelize 4 tests across 4 CI workers via round-robin distribution.
+Each shard runs as its own pytest process, so each test compiles its
+graphs in parallel with the others.  Module-scoped fixtures ensure each
+unique graph compiles once per shard.
 """
 
 import copy
