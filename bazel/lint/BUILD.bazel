@@ -11,6 +11,7 @@ _BUILDIFIER_IGNORES = [
     "./CloudInfra/go/pkg/*",
     "./third-party/llvm-project/*",
     "./oss/max-llm-book/.pixi/*",
+    "./oss/skills/port-an-llm-to-max/.pixi/*",
 ]
 
 modular_py_library(
