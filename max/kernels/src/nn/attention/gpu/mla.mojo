@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OptionalReg
+from std.collections import InlineArray, OptionalReg
 from std.math import align_up, ceildiv, recip
 from std.math.uutils import umod, ufloordiv, udivmod
 from nn.attention.mha_utils import DynamicInt
@@ -813,27 +813,37 @@ def flare_mla_decoding_dispatch[
                 # AMD softmax always uses exp2; CUDA non-FA3 path uses exp.
                 comptime reduce_use_exp2 = has_amd_gpu_accelerator()
                 comptime if has_amd_gpu_accelerator():
-                    # Defaults tuned for MLA depth=512 on MI355; overridable
-                    # via -D for tuning sweeps.
+                    # W per kernel: target parts_per_warp = MAX_PARTITIONS/W
+                    # = 8, the sweet spot for step-2 software pipelining
+                    # (~HBM_latency / FMA_throughput loads in flight). So
+                    # the 64-kernel uses W=8 and the 128-kernel uses W=16.
+                    # D_TILES picks per num_heads: tiny grids
+                    # (num_heads<=16, e.g. Kimi-K2.5 TP=4) need D=8 to
+                    # spread CTAs; large grids (num_heads>=64) already
+                    # saturate CUs at D=4, so going higher just adds
+                    # launch overhead.
+                    comptime D_TILES_DEFAULT = 8 if num_heads <= 16 else 4
                     comptime D_TILES = get_defined_int[
-                        "MODULAR_MLA_REDUCE_DTILES", 4
+                        "MODULAR_MLA_REDUCE_DTILES", D_TILES_DEFAULT
                     ]()
-                    comptime W_PARTS = get_defined_int[
-                        "MODULAR_MLA_REDUCE_WPARTS", 8
+                    comptime W_PARTS_64 = get_defined_int[
+                        "MODULAR_MLA_REDUCE_WPARTS_64", 8
                     ]()
-                    # Two specializations: the 64-partition reducer is the
-                    # default and matches the high-occupancy heuristic cap.
-                    # The 128-partition reducer is only dispatched when the
-                    # heuristic returns >64 (low-occupancy shapes like bs=1
-                    # long-context), so the reducer's O(MAX_PARTITIONS) cost
-                    # does not slow the common case.
+                    comptime W_PARTS_128 = get_defined_int[
+                        "MODULAR_MLA_REDUCE_WPARTS_128", 16
+                    ]()
+                    # Two specializations: 64-kernel covers np <= 64
+                    # (short context); 128-kernel covers np > 64 (long
+                    # context). Picking per dispatch keeps O(MAX_PARTITIONS)
+                    # per-CTA work proportional to the actual partition
+                    # count bucket.
                     comptime kernel_reduce_64 = mla_splitk_reduce[
                         intermediate_dtype,
                         output.dtype,
                         depth=depth_v,
                         num_heads=num_heads,
                         D_TILES=D_TILES,
-                        W_PARTS=W_PARTS,
+                        W_PARTS=W_PARTS_64,
                         MAX_PARTITIONS=64,
                         use_exp2=reduce_use_exp2,
                     ]
@@ -843,7 +853,7 @@ def flare_mla_decoding_dispatch[
                         depth=depth_v,
                         num_heads=num_heads,
                         D_TILES=D_TILES,
-                        W_PARTS=W_PARTS,
+                        W_PARTS=W_PARTS_128,
                         MAX_PARTITIONS=128,
                         use_exp2=reduce_use_exp2,
                     ]
@@ -856,7 +866,7 @@ def flare_mla_decoding_dispatch[
                             batch_size,
                             num_partitions_value,
                             grid_dim=(D_TILES, num_heads, batch_size),
-                            block_dim=(W_PARTS * WARP_SIZE, 1, 1),
+                            block_dim=(W_PARTS_64 * WARP_SIZE, 1, 1),
                         )
                     else:
                         ctx.enqueue_function[kernel_reduce_128](
@@ -867,7 +877,7 @@ def flare_mla_decoding_dispatch[
                             batch_size,
                             num_partitions_value,
                             grid_dim=(D_TILES, num_heads, batch_size),
-                            block_dim=(W_PARTS * WARP_SIZE, 1, 1),
+                            block_dim=(W_PARTS_128 * WARP_SIZE, 1, 1),
                         )
                 else:
                     comptime kernel_reduce = mha_splitk_reduce[
@@ -986,6 +996,14 @@ def mla_splitk_reduce[
         W_PARTS >= 1 and D_TILES >= 1
     ), "W_PARTS and D_TILES must be positive"
 
+    # Runtime invariant: the partition heuristic always returns >= 1, but
+    # the clamps in step 1/step 2 compute `num_partitions - 1` so a zero
+    # would silently OOB. Catch it in debug builds.
+    debug_assert(
+        num_partitions > 0,
+        "mla_splitk_reduce requires num_partitions > 0",
+    )
+
     comptime accum_type = get_accum_type[output_type]()
     comptime depth_per_cta = depth // D_TILES
     comptime elems_per_lane = depth_per_cta // WARP_SIZE
@@ -1039,17 +1057,24 @@ def mla_splitk_reduce[
     # to a single iteration when MAX_PARTITIONS == WARP_SIZE).
     if warp_idx == 0:
         comptime exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
+        var np_last = num_partitions - 1
         var lse_lane = SIMD[accum_type, parts_per_lane](
             min_or_neg_inf[accum_type]()
         )
         var local_max: Scalar[accum_type] = min_or_neg_inf[accum_type]()
+        # Clamp the partition index so the load stays in-bounds for lanes
+        # whose partition_idx >= num_partitions; ternary-select to -inf
+        # for OOB lanes so neither lse_lane nor local_max are polluted.
         comptime for k in range(parts_per_lane):
             var partition_idx = Int(lane_idx) + k * WARP_SIZE
-            if partition_idx < num_partitions:
-                var v = qk_max_tt[partition_idx, batch_idx, head_idx]
-                lse_lane[k] = v
-                if v > local_max:
-                    local_max = v
+            var pi_safe = min(partition_idx, np_last)
+            var v_raw = qk_max_tt[pi_safe, batch_idx, head_idx]
+            var v = (
+                v_raw if partition_idx
+                < num_partitions else min_or_neg_inf[accum_type]()
+            )
+            lse_lane[k] = v
+            local_max = max(local_max, v)
 
         var qk_max_global = warp.max(local_max)
         # exp_sum == 0 only if every partition had qk_max == -inf;
@@ -1059,48 +1084,78 @@ def mla_splitk_reduce[
 
         var rescaled_lane = SIMD[accum_type, parts_per_lane](0)
         var local_sum: Scalar[accum_type] = 0
+        # No predicate needed: for OOB lanes lse_lane[k] is -inf so
+        # exp_fn(-inf - qk_max_global) == 0, making r == 0 regardless of
+        # the (clamped) exp_sum value loaded.
         comptime for k in range(parts_per_lane):
             var partition_idx = Int(lane_idx) + k * WARP_SIZE
-            if partition_idx < num_partitions:
-                var r = exp_sum_tt[partition_idx, batch_idx, head_idx] * exp_fn(
-                    lse_lane[k] - qk_max_global
-                )
-                rescaled_lane[k] = r
-                local_sum += r
+            var pi_safe = min(partition_idx, np_last)
+            var r = exp_sum_tt[pi_safe, batch_idx, head_idx] * exp_fn(
+                lse_lane[k] - qk_max_global
+            )
+            rescaled_lane[k] = r
+            local_sum += r
 
         var exp_sum = warp.sum(local_sum)
         var inv_global_exp_sum: Scalar[accum_type] = 0
         if exp_sum > 0:
-            inv_global_exp_sum = Scalar[accum_type](1) / exp_sum
+            inv_global_exp_sum = recip(exp_sum)
 
+        # partition_idx is in [0, MAX_PARTITIONS) by construction, so no
+        # bounds check is needed.
         comptime for k in range(parts_per_lane):
             var partition_idx = Int(lane_idx) + k * WARP_SIZE
-            if partition_idx < MAX_PARTITIONS:
-                scales_tt[partition_idx] = rescaled_lane[k] * inv_global_exp_sum
+            scales_tt[partition_idx] = rescaled_lane[k] * inv_global_exp_sum
 
     barrier()
 
     # Step 2: per-warp partition accumulation.
+    #
+    # Warp-level bail: when `part_start_warp >= num_partitions` the entire
+    # warp has no real work, so it just leaves `acc = 0` and jumps to the
+    # step-3 barrier. This matches the old per-iter-predicated code's
+    # behavior for fully-OOB warps (critical for small-np / large-grid
+    # shapes like num_heads=128 bs=8 where np=16 → most warps would
+    # otherwise issue clamped loads + zero-FMAs for nothing).
+    #
+    # Warps that pass the bail issue all `parts_per_warp` partitions
+    # together (no per-iter predicate) so the compiler can
+    # software-pipeline the HBM loads with a single `vmcnt` drain. For
+    # the boundary warp (some real partitions, some OOB):
+    #   - The HBM index is clamped to `num_partitions - 1` so the load
+    #     stays in-bounds. The clamped data is irrelevant because:
+    #   - `scales_tt[p]` is 0 (step 1 writes 0 for slots whose lse stayed
+    #     at -inf, i.e. partitions outside [0, num_partitions)), and
+    #   - the `scale > 0` mask zeros out the contribution.
     var part_start_warp = warp_idx * parts_per_warp
     var acc = SIMD[accum_type, elems_per_lane](0)
 
-    comptime for k in range(parts_per_warp):
-        var p = part_start_warp + k
-        if p < num_partitions:
-            var scale = scales_tt[p]
-            var x = intermediate_tt.load[width=elems_per_lane](
+    if part_start_warp < num_partitions:
+        var np_last_s2 = num_partitions - 1
+        var xs = InlineArray[SIMD[accum_type, elems_per_lane], parts_per_warp](
+            fill=SIMD[accum_type, elems_per_lane](0)
+        )
+        var scales_local = InlineArray[Scalar[accum_type], parts_per_warp](
+            fill=Scalar[accum_type](0)
+        )
+        comptime for k in range(parts_per_warp):
+            var p = part_start_warp + k
+            var p_safe = min(p, np_last_s2)
+            scales_local[k] = scales_tt[p]
+            xs[k] = intermediate_tt.load[width=elems_per_lane](
                 Coord(
-                    p,
+                    p_safe,
                     batch_idx,
                     head_idx,
                     depth_global,
                 )
             ).cast[accum_type]()
-            # Mask out empty partitions (scale == 0): the producer kernel
-            # leaves their intermediate values undefined.
-            var mask = SIMD[DType.bool, elems_per_lane](fill=scale > 0)
-            var safe = mask.select(x, type_of(x)(0))
-            acc += safe * type_of(safe)(scale)
+        comptime for k in range(parts_per_warp):
+            var scale_k = scales_local[k]
+            var safe = SIMD[DType.bool, elems_per_lane](
+                fill=scale_k > 0
+            ).select(xs[k], type_of(xs[k])(0))
+            acc += safe * type_of(safe)(scale_k)
 
     # Step 3: cross-warp reduction and output store.
     comptime if W_PARTS == 1:
