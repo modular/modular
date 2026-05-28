@@ -569,8 +569,8 @@ def test_py_slice() raises:
         _ = with_2d[0:1][4]
 
 
-def test_contains_dunder() raises:
-    with assert_raises(contains="not iterable"):
+def test_contains() raises:
+    with assert_raises(contains="argument of type 'int' is not iterable"):
         var z = PythonObject(0)
         _ = 5 in z
 
@@ -590,7 +590,7 @@ def test_contains_dunder() raises:
     assert_false("C" in y)
     assert_true("B" in y)
 
-    comptime CONTAINS_SOURCE = """
+    var CONTAINS_SOURCE = """
 class ContainsOnly:
   def __contains__(self, value):
     return value == 'hit'
