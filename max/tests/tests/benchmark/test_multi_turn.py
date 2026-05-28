@@ -334,6 +334,7 @@ def test_prerun_warmup_turns_one_request_per_session_with_prefix() -> None:
             api_url="http://localhost:8000/v1/chat/completions",
             max_chat_len=4096,
             sampling=SamplingConfig(),
+            max_concurrency=128,
         )
 
     asyncio.run(run())
@@ -358,6 +359,7 @@ def test_prerun_warmup_turns_request_prompt_is_last_turn_prefix() -> None:
             api_url="http://localhost:8000/v1/chat/completions",
             max_chat_len=4096,
             sampling=SamplingConfig(),
+            max_concurrency=128,
         )
 
     asyncio.run(run())
@@ -416,6 +418,7 @@ def test_prerun_warmup_turns_cross_session_parallelism() -> None:
             api_url="http://localhost:8000/v1/chat/completions",
             max_chat_len=4096,
             sampling=SamplingConfig(),
+            max_concurrency=128,
         )
 
     asyncio.run(run())
@@ -436,6 +439,7 @@ def test_prerun_warmup_turns_noop_without_prefix_sessions() -> None:
             api_url="http://localhost:8000/v1/chat/completions",
             max_chat_len=4096,
             sampling=SamplingConfig(),
+            max_concurrency=128,
         )
 
     asyncio.run(run())
@@ -457,6 +461,7 @@ def test_prerun_warmup_turns_respects_chat_length_budget() -> None:
             api_url="http://localhost:8000/v1/chat/completions",
             max_chat_len=15,
             sampling=SamplingConfig(),
+            max_concurrency=128,
         )
 
     asyncio.run(run())

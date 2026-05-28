@@ -409,6 +409,7 @@ async def benchmark(
             sampling=args.sampling,
             run_prefix=run_prefix,
             run_prefix_len=run_prefix_len,
+            max_concurrency=args.warmup_concurrency,
         )
 
     if not args.skip_test_prompt:
@@ -487,6 +488,7 @@ async def benchmark(
             max_chat_len=session.tokenizer.model_max_length,
             sampling=args.sampling,
             disable_tqdm=args.disable_tqdm,
+            max_concurrency=args.warmup_concurrency,
         )
 
     # Capture baseline server metrics after priming so priming requests

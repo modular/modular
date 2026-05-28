@@ -314,6 +314,7 @@ async def prime_shared_contexts(
     samples: Samples,
     request_driver: RequestDriver,
     sampling: SamplingConfig,
+    max_concurrency: int,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
 ) -> None:
@@ -372,8 +373,11 @@ async def prime_shared_contexts(
         warmup_inputs
     )
 
+    semaphore = asyncio.Semaphore(max_concurrency)
+
     async def _run_warmup_index(idx: int, inp: RequestFuncInput) -> None:
-        warmup_results[idx] = await request_driver.request(inp)
+        async with semaphore:
+            warmup_results[idx] = await request_driver.request(inp)
 
     warmup_start = time.perf_counter()
     async with TaskGroup() as tg:
