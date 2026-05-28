@@ -400,9 +400,12 @@ static SpecialMemberInfo getSpecialMemberForType(
   // parameters as well, substitute them in.
   if (valueType.getParamValues().empty() || !fnInfo.getMember())
     return fnInfo;
-  TypedAttr result =
-      BindParamsAttr::get(fnInfo.getMember(), valueType.getParamValues(),
-                          typeDecls->getEvaluationContext());
+  TypedAttr member = fnInfo.getMember();
+  Type resultType = BindParamsAttr::inferResultType(
+      member, valueType.getParamValues(), typeDecls->getEvaluationContext());
+  TypedAttr result = BindParamsAttr::get(member.getContext(), member,
+                                         valueType.getParamValues(), resultType,
+                                         typeDecls->getEvaluationContext());
   return SpecialMemberInfo::available(result);
 }
 

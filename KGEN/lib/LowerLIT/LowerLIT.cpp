@@ -1027,13 +1027,16 @@ static LogicalResult lowerAttributesAndTypes(
                     replacer.replace(declType)))
               newOperands.push_back(cast<TypedAttr>(replacer.replace(param)));
           }
-          if (newOperands.size() != bindParams.getParamValues().size())
+          if (newOperands.size() != bindParams.getParamValues().size()) {
+            TypedAttr generator =
+                cast<TypedAttr>(replacer.replace(bindParams.getGenerator()));
+            Type resultType = replacer.replace(bindParams.getType());
             return std::make_pair(
-                BindParamsAttr::get(cast<TypedAttr>(replacer.replace(
-                                        bindParams.getGenerator())),
-                                    newOperands,
+                BindParamsAttr::get(generator.getContext(), generator,
+                                    newOperands, resultType,
                                     /*evaluationContext=*/nullptr),
                 WalkResult::skip());
+          }
         }
 
         return std::nullopt;

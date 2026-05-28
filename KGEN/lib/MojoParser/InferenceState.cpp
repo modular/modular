@@ -211,7 +211,10 @@ VerifiedParamBindings::specializeGenerator(TypedAttr generator) const {
   // Otherwise, the type of the generator must be a GeneratorType.
   assert(sugarIsa<GeneratorType>(generator.getType()) &&
          "generator type expected");
-  return BindParamsAttr::get(generator, getValues(), evaluationContext);
+  Type resultType = BindParamsAttr::inferResultType(generator, getValues(),
+                                                    evaluationContext);
+  return BindParamsAttr::get(generator.getContext(), generator, getValues(),
+                             resultType, evaluationContext);
 }
 
 GeneratorType

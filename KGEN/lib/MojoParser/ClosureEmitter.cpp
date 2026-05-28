@@ -969,8 +969,11 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
     TypedAttr symbol = GetWitnessAttr::get(
         ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
         parentName, traitFnOp.getSymNameAttr(), implCallSig);
+    Type boundSymbolType = BindParamsAttr::inferResultType(
+        symbol, paramArgs, &shared.getEvaluationContext());
     TypedAttr boundSymbol =
-        BindParamsAttr::get(symbol, paramArgs, &shared.getEvaluationContext());
+        BindParamsAttr::get(symbol.getContext(), symbol, paramArgs,
+                            boundSymbolType, &shared.getEvaluationContext());
     // Mark `__call__` as a transparent thunk so its identity delegates to the
     // wrapped impl (only `__call__` needs this; the other forwarders don't).
     if (closureParent.getClosureMethod() == ClosureMethod::CALL)
@@ -1334,8 +1337,10 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
           return ParamDeclRefAttr::get(p);
         }));
     if (!paramArgs.empty()) {
-      callee = BindParamsAttr::get(callee, paramArgs,
-                                   &shared.getEvaluationContext());
+      Type calleeType = BindParamsAttr::inferResultType(
+          callee, paramArgs, &shared.getEvaluationContext());
+      callee = BindParamsAttr::get(callee.getContext(), callee, paramArgs,
+                                   calleeType, &shared.getEvaluationContext());
     }
 
     // Mark `__call__` as a transparent thunk so its identity delegates to the
