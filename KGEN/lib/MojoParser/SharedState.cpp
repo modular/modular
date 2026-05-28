@@ -1610,9 +1610,14 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
       continue;
 
     FnTypeGeneratorType key = *trait.getClosureSignature();
-    auto creation = [&]() {
+    auto creation = [&]() -> ASTDecl * {
       if (failed(bytecodeReader->materialize(trait)))
-        this->emitError(loc, "failed to materialize closure trait");
+        return nullptr;
+      // A closure trait with no methods is a stub from a package that
+      // references but does not define the closure type. Skip it so the cache
+      // slot stays empty and a later package with the full body can fill it.
+      if (trait.getOps<FnOp>().empty())
+        return nullptr;
       trait->remove();
       theModule.push_back(trait);
       ASTDecl &traitDecl = declResolver->addBytecodeDecl(

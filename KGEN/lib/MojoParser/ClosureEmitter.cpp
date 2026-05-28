@@ -820,10 +820,15 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   b.setInsertionPointAfter(trait);
   MLIRContext *ctx = b.getContext();
 
+  FnOp callFn = getFnOpNamed(trait, "__call__");
+  if (!callFn) {
+    shared.diags.emitError(smLocation,
+                           "internal error: closure trait missing __call__");
+    return nullptr;
+  }
   SmallVector<ClosureParent> closureParents{
-      ClosureParent(trait, getFnOpNamed(trait, "__call__"),
-                    ClosureMethod::CALL),
-      moveParent, implicitlyDestructibleParent, anyParent};
+      ClosureParent(trait, callFn, ClosureMethod::CALL), moveParent,
+      implicitlyDestructibleParent, anyParent};
   if (isCopyable) {
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
@@ -1372,13 +1377,14 @@ Type ClosureEmitter::getConcreteClosureWrapperTypeForFnSymbol(
 ASTDecl *ClosureEmitter::getOrCreateClosureTrait(
     FnTypeGeneratorType key, llvm::function_ref<ASTDecl *()> creation) {
   auto ptr = closureTraitCache.find(key);
-  ASTDecl *traitDecl;
-  if (ptr != closureTraitCache.end()) {
-    traitDecl = ptr->getSecond();
-  } else {
-    traitDecl = creation();
+  if (ptr != closureTraitCache.end())
+    return ptr->getSecond();
+  ASTDecl *traitDecl = creation();
+  // Only cache successful creations. A null return (e.g. stub trait with no
+  // methods from bytecode) leaves the key absent so a later package with the
+  // full definition can fill the slot.
+  if (traitDecl)
     closureTraitCache.insert({key, traitDecl});
-  }
   return traitDecl;
 }
 
