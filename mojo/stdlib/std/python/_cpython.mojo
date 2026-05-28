@@ -1588,9 +1588,7 @@ struct CPython(Defaultable, Movable):
         )
         self._PyObject_Str = PyObject_Str.load(self.lib.borrow())
         self._PyObject_Hash = PyObject_Hash.load(self.lib.borrow())
-        self._PySequence_Contains = PySequence_Contains.load(
-            self.lib.borrow()
-        )
+        self._PySequence_Contains = PySequence_Contains.load(self.lib.borrow())
         self._PyObject_IsTrue = PyObject_IsTrue.load(self.lib.borrow())
         self._PyObject_Type = PyObject_Type.load(self.lib.borrow())
         self._PyObject_Length = PyObject_Length.load(self.lib.borrow())
