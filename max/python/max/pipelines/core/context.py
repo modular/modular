@@ -690,10 +690,9 @@ class TextContext:
             and self.matcher.try_consume_tokens([token]) != 1
         ):
             logger.error(
-                "Matcher rejected token %d under grammar enforcement "
-                "(request %s); disabling enforcement for the rest of "
-                "the request. matcher_errors=%s "
-                "matcher_warnings=%s",
+                "Matcher rejected token %d (request %s); disabling "
+                "enforcement for the rest of the request. "
+                "matcher_errors=%s matcher_warnings=%s",
                 token,
                 self.request_id,
                 self.matcher.get_error(),

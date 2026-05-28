@@ -804,46 +804,49 @@ def test_generate_tool_call_grammar_no_schema_returns_regex_grammar(
     assert matcher is not None
 
 
-def test_grammar_accepts_multiple_back_to_back_sections(
+def test_grammar_caps_to_single_section(
     ll_tokenizer: LLTokenizer,
 ) -> None:
-    """Matcher must accept a second ``<|tool_calls_section_begin|>`` after
-    the first section closes.
+    """Matcher accepts one full section and rejects a second section-begin.
 
-    A single-section grammar leaves the matcher in a terminal state after
-    the first ``<|tool_calls_section_end|>`` and rejects any subsequent
-    ``<|tool_calls_section_begin|>``. The outer ``{1,N}`` quantifier on
-    the section pattern lets the model open a new section after closing
-    the previous one (e.g. when emitting a thinking region between
-    batches of tool calls).
+    With ``_MAX_TOOL_CALL_SECTIONS == 1`` the outer ``{1,1}`` quantifier
+    leaves the matcher in a terminal state after the first
+    ``<|tool_calls_section_end|>``, so any subsequent
+    ``<|tool_calls_section_begin|>`` must be refused. This guards against
+    silently lifting the cap: bumping ``_MAX_TOOL_CALL_SECTIONS`` re-enables
+    multi-section emissions, but in ``tool_choice=auto`` the matcher must
+    also support re-entering grammar enforcement on the second
+    section-begin — verify that path before raising the constant.
     """
     grammar = KimiToolParser.generate_tool_call_grammar(
         tools=_tools("get_weather")
     )
     matcher = LLMatcher(ll_tokenizer, grammar)
 
-    two_sections = (
+    first_section = (
         "<|tool_calls_section_begin|>"
         "<|tool_call_begin|>functions.get_weather:0"
         "<|tool_call_argument_begin|>"
         '{"location": "NYC"}'
         "<|tool_call_end|>"
         "<|tool_calls_section_end|>"
-        "<|tool_calls_section_begin|>"
-        "<|tool_call_begin|>functions.get_weather:1"
-        "<|tool_call_argument_begin|>"
-        '{"location": "SF"}'
-        "<|tool_call_end|>"
-        "<|tool_calls_section_end|>"
     )
-    tokens = list(two_sections.encode("utf-8"))
+    second_section_begin = "<|tool_calls_section_begin|>"
+    first_tokens = list(first_section.encode("utf-8"))
+    second_tokens = list(second_section_begin.encode("utf-8"))
 
-    consumed = matcher.try_consume_tokens(tokens)
-
-    assert consumed == len(tokens), (
-        f"matcher rejected token at offset {consumed} of {len(tokens)}; "
-        f"rejected near: {two_sections.encode('utf-8')[max(0, consumed - 20) : consumed + 20]!r}, "
+    consumed_first = matcher.try_consume_tokens(first_tokens)
+    assert consumed_first == len(first_tokens), (
+        f"matcher should accept the first section in full but rejected at "
+        f"offset {consumed_first} of {len(first_tokens)}; "
         f"matcher error: {matcher.get_error()}"
+    )
+
+    consumed_second = matcher.try_consume_tokens(second_tokens)
+    assert consumed_second == 0, (
+        f"matcher should reject a second section-begin after the first "
+        f"section closes but accepted {consumed_second} of "
+        f"{len(second_tokens)} bytes"
     )
 
 

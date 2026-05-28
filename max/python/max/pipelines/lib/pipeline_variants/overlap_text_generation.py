@@ -2462,21 +2462,39 @@ class OverlapTextGenerationPipeline(
         # and leaves the trailing slots unconstrained (all-``True`` in
         # the boolean bitmask output).
         num_positions = overlap_state.num_positions
-        current_request_ids = [ctx.request_id for ctx in context_batch]
 
         needs_sync_prime = True
         if spec_state.has_precomputed_bitmask:
-            # The callback runs in iter-N's row order. Reuse it only when
-            # this batch is the same composition+order as the callback
-            # batch, AND every context already has a matcher (no joins).
-            if (
-                spec_state.callback_request_ids == current_request_ids
-                and not any(
-                    ctx.matcher is None
-                    and (ctx.grammar is not None or ctx.json_schema is not None)
-                    for ctx in context_batch
-                )
-            ):
+            # Adopt the callback's bitmask if every constrained row
+            # (matcher already present) sits at the same index with the
+            # same rid as in the callback batch. Unconstrained padding
+            # rows are ``-1`` (all-ones) in both the callback's output
+            # and any sync-prime output, so swapping them by index is
+            # identity-safe.
+            callback_rids = spec_state.callback_request_ids
+            can_adopt = len(context_batch) <= len(callback_rids)
+            if can_adopt:
+                for idx, ctx in enumerate(context_batch):
+                    if ctx.matcher is None:
+                        # A constrained context whose matcher hasn't
+                        # been built yet (typically a freshly admitted
+                        # request) needs sync_prime to lazily construct
+                        # the matcher and fill this row from the right
+                        # initial state.
+                        if (
+                            ctx.grammar is not None
+                            or ctx.json_schema is not None
+                        ):
+                            can_adopt = False
+                            break
+                        continue
+                    if callback_rids[idx] != ctx.request_id:
+                        # A constrained row moved or didn't exist in
+                        # the callback batch; its precomputed row is
+                        # for a different request.
+                        can_adopt = False
+                        break
+            if can_adopt:
                 needs_sync_prime = False
             # Clear the flag in either case: it's been consumed (either by
             # being adopted as-is or by being overwritten via prime).

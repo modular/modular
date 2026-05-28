@@ -54,8 +54,8 @@ TOOL_CALL_ARGUMENT_BEGIN = "<|tool_call_argument_begin|>"
 # payloads being re-emitted) and a fixed cap would silently drop them.
 # The ``max_tokens`` ceiling is the only meaningful upper bound there.
 _MAX_TOOL_CALL_INDEX_DIGITS = 8  # up to 99_999_999 tool calls per turn
-_MAX_TOOL_CALLS_PER_SECTION = 16
-_MAX_TOOL_CALL_SECTIONS = 8
+_MAX_TOOL_CALLS_PER_SECTION = 64
+_MAX_TOOL_CALL_SECTIONS = 1
 
 # Regex for one ``<|tool_call_begin|>...<|tool_call_end|>`` body. The
 # function id and arguments are captured; the call markers are anchored.
@@ -186,12 +186,10 @@ class KimiToolParser(StructuralTagToolParser):
         still happens at parse time; the regex only enforces structural
         framing.
 
-        The outer ``{1,_MAX_TOOL_CALL_SECTIONS}`` quantifier allows the
-        model to emit several back-to-back tool-call sections in a
-        single response (Kimi does this when it wants to think between
-        batches of calls). Without it, the matcher reaches a terminal
-        state after the first ``<|tool_calls_section_end|>`` and rejects
-        the next ``<|tool_calls_section_begin|>``.
+        With ``_MAX_TOOL_CALL_SECTIONS == 1`` the outer ``{1,1}``
+        quantifier is a structural no-op kept for readability. Bumping
+        it re-enables multiple back-to-back sections (Kimi emits these
+        when interleaving thinking with batches of calls).
         """
         if tool_names is not None:
             escaped_names = [re.escape(name) for name in tool_names]

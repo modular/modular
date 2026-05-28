@@ -739,6 +739,17 @@ class StructuredOutputHelper:
             if draft_token < 0 or draft_token >= vocab_size:
                 break
 
+            # EOS-class tokens are not part of the grammar — they signal end of
+            # generation. Skip the matcher so it stays in a clean
+            # terminal state. The speculative state is rolled back at
+            # the end via ``restore_grammar_state``, so this flip is
+            # transient. Drafts past EOS are pointless (the request
+            # ended), so exit the loop and leave remaining slots
+            # unconstrained.
+            if draft_token in ctx.eos_tracker.eos_token_ids:
+                ctx.grammar_enforced = False
+                break
+
             consumed = False
             if ctx.update_enforcement_state(draft_token):
                 if ctx.matcher.try_consume_tokens([draft_token]) == 1:
@@ -803,11 +814,26 @@ class StructuredOutputHelper:
                 if ctx.matcher is None:
                     continue
 
-                # Part 1: Advance the enforcement state machine through committed
-                # tokens, one at a time so special tokens (e.g. tool-call
-                # structural tag) can flip grammar enforcement mid-sequence.
-                # Only advance the matcher while grammar is enforced — this keeps
-                # matcher/state-machine in sync.
+                # Part 1: Advance the enforcement state machine through
+                # committed tokens, one at a time so special tokens (e.g.
+                # tool-call structural tags) can flip grammar enforcement
+                # mid-sequence. This mirrors the synchronous
+                # ``advance_fsm`` in ``context.py`` exactly:
+                #
+                #   * EOS-class tokens are not part of the grammar — they
+                #     signal end of generation. Skip the matcher so it
+                #     stays in a clean terminal state rather than getting
+                #     a spurious rejection.
+                #   * For everything else, gate on
+                #     ``update_enforcement_state``'s return value, not on
+                #     ``grammar_enforced``. The return value distinguishes
+                #     ``</think>`` (flip enforcement on, do NOT consume —
+                #     the thinking delimiter isn't grammar content) from
+                #     ``<|tool_calls_section_end|>`` (flip enforcement
+                #     off, DO consume — it's the grammar's terminal).
+                #   * If the matcher rejects, log and disable enforcement
+                #     for the rest of the request — continuing against a
+                #     desynced matcher produces schema-shaped nonsense.
                 n_accepted = int(num_accepted[ctx_idx])
                 bonus_token = int(bonus_tokens[ctx_idx])
                 committed_tokens = [
@@ -815,9 +841,40 @@ class StructuredOutputHelper:
                     for j in range(n_accepted)
                 ]
                 committed_tokens.append(bonus_token)
-                for token in committed_tokens:
-                    if ctx.update_enforcement_state(token):
-                        ctx.matcher.try_consume_tokens([token])
+
+                for committed_idx, token in enumerate(committed_tokens):
+                    if token in ctx.eos_tracker.eos_token_ids:
+                        ctx.grammar_enforced = False
+                    elif (
+                        ctx.update_enforcement_state(token)
+                        and ctx.matcher.try_consume_tokens([token]) != 1
+                    ):
+                        # ``role`` distinguishes a rejection on the bonus
+                        # token (sampled by target *with* bitmask, so a
+                        # rejection here usually means a bitmask/matcher
+                        # desync) from a rejection on an accepted draft
+                        # (produced by the draft model and verified by
+                        # target, where rejection more often reflects the
+                        # target sampling outside the matcher's allowed
+                        # set on a draft slot the speculative walk did
+                        # not constrain).
+                        role = (
+                            "bonus"
+                            if committed_idx == len(committed_tokens) - 1
+                            else f"accepted_draft[{committed_idx}]"
+                        )
+                        logger.error(
+                            "Async matcher rejected token %d "
+                            "(request %s, role=%s); disabling enforcement "
+                            "for the rest of the request. "
+                            "matcher_errors=%s matcher_warnings=%s",
+                            token,
+                            ctx.request_id,
+                            role,
+                            ctx.matcher.get_error(),
+                            ctx.matcher.get_grammar_warnings(),
+                        )
+                        ctx.grammar_enforced = False
 
                 # Part 2: speculative window for the next batch's bitmasks.
                 # A draft that flips enforcement on mid-window causes
