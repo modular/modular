@@ -24,6 +24,29 @@ def test_once_with() raises:
     assert_equal(next(it), 5)
     with assert_raises():
         _ = next(it)
+<<<<<<< HEAD
+
+
+def test_once_with_bounds() raises:
+    var it = once_with[_create_value]()
+=======
+>>>>>>> 15cf47cd52 (Made function pointer a compile-time parameter)
+
+    var lower, upper = it.bounds()
+    assert_equal(lower, 1)
+    assert_equal(upper, Optional(1))
+
+<<<<<<< HEAD
+    var _ = next(it)
+=======
+def test_once_with_iter() raises:
+    var it = once_with[_create_value]()
+    var it_copy = iter(it)
+>>>>>>> 15cf47cd52 (Made function pointer a compile-time parameter)
+
+    lower, upper = it.bounds()
+    assert_equal(lower, 0)
+    assert_equal(upper, Optional(0))
 
 
 def test_once_with_bounds() raises:
