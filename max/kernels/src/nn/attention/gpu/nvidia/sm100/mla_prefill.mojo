@@ -22,7 +22,11 @@ from layout import TileTensor
 from std.gpu.memory import AddressSpace
 from .mla_prefill_generic import mla_sm100_prefill_generic
 from .mla_prefill_blockscale import mla_sm100_prefill_blockscale
-from .mla_prefill_sparse import MLASparseConfig, mla_prefill_sparse
+from .mla_prefill_sparse import (
+    MLASparseConfig,
+    mla_prefill_sparse,
+    mla_prefill_sparse_fp8,
+)
 
 
 @always_inline
@@ -188,6 +192,90 @@ def mla_sm100_prefill_sparse[
         indices,
         topk_lengths,
         attn_sink_ptr,
+        scale,
+        Int32(indices_stride),
+        ctx,
+    )
+
+
+@always_inline
+def mla_sm100_prefill_sparse_fp8[
+    output_type: DType,
+    q_type: DType,
+    cache_t: KVCacheT,
+    //,
+    num_q_heads: Int,
+    qk_depth: Int,
+    v_depth: Int,
+    indices_stride: Int,
+    scale_block_size: Int,
+](
+    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    kv_cache: cache_t,
+    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
+    topk_lengths: TileTensor[
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    scale: Float32,
+    ctx: DeviceContext,
+) raises:
+    """FP8 KV-cache variant of ``mla_sm100_prefill_sparse``.
+
+    Thin wrapper around ``mla_prefill_sparse_fp8`` that builds the
+    ``MLASparseConfig`` from the passed dimensions.  The FP8 KV cache
+    uses ``DType.float8_e4m3fn`` storage with one Float32 scale per
+    physical KV token supplied via ``scales_ptr``.
+
+    Parameters:
+        output_type: Output element type (BF16).
+        q_type: Query element type (BF16).
+        cache_t: FP8 KV cache type (``DType.float8_e4m3fn``).
+        num_q_heads: Number of query heads (128 for DSv3.2).
+        qk_depth: Per-head Q/K depth (576 for DSv3.2).
+        v_depth: Per-head V depth (512 for DSv3.2).
+        indices_stride: Per-query indices buffer stride (= top-k count).
+        scale_block_size: Quantization block size along the depth axis.
+            Must be ``>= qk_depth`` (tensorwise, one scale per KV token).
+            Sub-token blockwise quantization is not yet supported because K
+            and V have different depths (``qk_depth != v_depth``), requiring
+            separate K/V scale pointers that this API does not expose.
+
+    Args:
+        output: Output tile tensor ``[total_q_tokens, num_q_heads, v_depth]``.
+        q: Query tile tensor ``[total_q_tokens, num_q_heads, qk_depth]``.
+        kv_cache: Paged MLA FP8 KV cache for the current layer.
+        indices: Per-query gather4 indices (uint32).
+        topk_lengths: Per-query effective top-k count.
+        attn_sink_ptr: Optional attention sink (pass ``None`` to skip).
+        scales_ptr: FP8 dequantization scales, one Float32 per physical KV
+            row (shape: ``[total_phys_rows]``).
+        scale: Softmax scale.
+        ctx: GPU device context.
+    """
+    comptime config = MLASparseConfig[q_type](
+        num_q_heads=num_q_heads,
+        num_kv_heads=1,
+        qk_depth=qk_depth,
+        v_depth=v_depth,
+        indices_stride=indices_stride,
+        group=num_q_heads,
+    )
+    mla_prefill_sparse_fp8[
+        config=config,
+        group=num_q_heads,
+        q_depth=qk_depth,
+        scale_block_size=scale_block_size,
+    ](
+        output,
+        q,
+        kv_cache,
+        indices,
+        topk_lengths,
+        attn_sink_ptr,
+        scales_ptr,
         scale,
         Int32(indices_stride),
         ctx,

@@ -55,6 +55,7 @@ from nn.attention.mha_utils import DynamicInt
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import (
     MLASparseConfig,
     mla_prefill_sparse,
+    mla_prefill_sparse_fp8,
 )
 from std.utils.index import Index, IndexList
 from std.utils.numerics import min_or_neg_inf
@@ -717,6 +718,501 @@ def run_test_prefill_sparse[
 
 
 # ===-----------------------------------------------------------------------===#
+# FP8 test helpers
+# ===-----------------------------------------------------------------------===#
+
+# FP8 e4m3fn max representable magnitude.
+comptime FP8_E4M3_MAX = Float32(448.0)
+
+
+def run_test_prefill_sparse_fp8[
+    num_heads: Int,
+    topk: Int,
+    scale_block_size: Int,
+](
+    name: StringLiteral,
+    batch_size: Int,
+    seq_len: Int,
+    num_kv_tokens: Int,
+    ctx: DeviceContext,
+    *,
+    valid_topk: Int = topk,
+) raises:
+    """FP8 KV-cache variant of run_test_prefill_sparse.
+
+    The KV cache is quantized to FP8 with tensorwise scaling (one Float32
+    scale per KV token when ``scale_block_size == QK_DEPTH``).  The host
+    reference is computed from the dequantized BF16 values so both kernel
+    and reference see the same quantization noise.
+
+    Tolerance is 0.45 — looser than the BF16 test's 0.18 to account for
+    FP8 quantization error on top of BF16 rounding noise (padded cases
+    with sentinel indices can reach ~0.40).
+    """
+    print(
+        "test:",
+        name,
+        " batch_size:",
+        batch_size,
+        " seq_len:",
+        seq_len,
+        " num_heads:",
+        num_heads,
+        " num_kv_tokens:",
+        num_kv_tokens,
+        " topk:",
+        topk,
+        " scale_block_size:",
+        scale_block_size,
+    )
+
+    var scale = Float32(1.0) / sqrt(Float32(SOFTMAX_SCALE_BASE_DIM))
+    comptime group = num_heads
+    var total_q_tokens = batch_size * seq_len
+
+    # -----------------------------------------------------------------------
+    # KV cache parameters — same dims as BF16, but FP8 dtype.
+    # -----------------------------------------------------------------------
+    comptime kv_params = KVCacheStaticParams(
+        num_heads=KV_NUM_HEADS, head_size=QK_DEPTH, is_mla=True
+    )
+    comptime kv_dim2 = 1
+
+    var total_pages = batch_size * ceildiv(num_kv_tokens, PAGE_SIZE)
+    var max_pages_per_batch = ceildiv(num_kv_tokens, PAGE_SIZE)
+
+    var block_shape = IndexList[6](
+        total_pages,
+        kv_dim2,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        kv_params.num_heads,
+        kv_params.head_size,
+    )
+    var block_elems = (
+        total_pages
+        * kv_dim2
+        * NUM_LAYERS
+        * PAGE_SIZE
+        * kv_params.num_heads
+        * kv_params.head_size
+    )
+    var page_stride_elems = (
+        kv_dim2
+        * NUM_LAYERS
+        * PAGE_SIZE
+        * kv_params.num_heads
+        * kv_params.head_size
+    )
+
+    # -----------------------------------------------------------------------
+    # Page lookup table (same coprime shuffle as BF16 test).
+    # -----------------------------------------------------------------------
+    var lut_size = batch_size * max_pages_per_batch
+    var lookup_table_host = alloc[UInt32](lut_size)
+    var page_offset = 0
+    for bi in range(batch_size):
+        var np = ceildiv(num_kv_tokens, PAGE_SIZE)
+        var mult = _coprime_multiplier(np)
+        for p in range(np):
+            var shuffled_p = (p * mult + 1) % np
+            lookup_table_host[bi * max_pages_per_batch + p] = UInt32(
+                page_offset + shuffled_p
+            )
+        page_offset += np
+
+    # -----------------------------------------------------------------------
+    # Generate random BF16 KV data, quantize to FP8, record scales.
+    # scales_host[phys_row] — phys_row = block_id * PAGE_SIZE + tok_in_page.
+    # -----------------------------------------------------------------------
+    var kv_total = batch_size * num_kv_tokens * QK_DEPTH
+    var kv_bf16_host = alloc[Scalar[DType.bfloat16]](kv_total)
+    randn[DType.bfloat16](
+        kv_bf16_host, kv_total, mean=0.0, standard_deviation=0.5
+    )
+
+    comptime scales_per_token = ceildiv(
+        QK_DEPTH, scale_block_size
+    )  # 1 for tensorwise
+    var total_phys_rows = total_pages * PAGE_SIZE
+    var scales_host = alloc[Float32](total_phys_rows * scales_per_token)
+    for i in range(total_phys_rows * scales_per_token):
+        scales_host[i] = Float32(1.0)
+
+    var blocks_fp8_host = alloc[Scalar[DType.float8_e4m3fn]](block_elems)
+    for i in range(block_elems):
+        blocks_fp8_host[i] = Scalar[DType.float8_e4m3fn](0)
+
+    # dequantized BF16 values for host reference.
+    var kv_dequant_host = alloc[Scalar[DType.bfloat16]](kv_total)
+
+    for bi in range(batch_size):
+        for t in range(num_kv_tokens):
+            var page_idx = t // PAGE_SIZE
+            var tok_in_page = t % PAGE_SIZE
+            var block_id = Int(
+                lookup_table_host[bi * max_pages_per_batch + page_idx]
+            )
+            var phys_row = block_id * PAGE_SIZE + tok_in_page
+            var src_base = (bi * num_kv_tokens + t) * QK_DEPTH
+
+            # Compute block scales and quantize.
+            comptime for blk in range(scales_per_token):
+                comptime blk_start = blk * scale_block_size
+                comptime blk_end = min(blk_start + scale_block_size, QK_DEPTH)
+                var abs_max = Float32(0.0)
+                for d in range(blk_start, blk_end):
+                    var v = abs(
+                        kv_bf16_host[src_base + d].cast[DType.float32]()
+                    )
+                    if v > abs_max:
+                        abs_max = v
+                var s = abs_max / FP8_E4M3_MAX if abs_max > Float32(
+                    0.0
+                ) else Float32(1.0)
+                scales_host[phys_row * scales_per_token + blk] = s
+
+                var base = block_id * page_stride_elems + tok_in_page * QK_DEPTH
+                for d in range(blk_start, blk_end):
+                    var q_val = (
+                        kv_bf16_host[src_base + d].cast[DType.float32]() / s
+                    )
+                    # Clamp to FP8 range to prevent overflow → NaN (FP8 e4m3fn
+                    # overflows to NaN, not infinity, for values > 448).
+                    var q_val_clamped = min(
+                        max(q_val, -FP8_E4M3_MAX), FP8_E4M3_MAX
+                    )
+                    var fp8_val = q_val_clamped.cast[DType.float8_e4m3fn]()
+                    blocks_fp8_host[base + d] = fp8_val
+                    kv_dequant_host[src_base + d] = (
+                        fp8_val.cast[DType.float32]() * s
+                    ).cast[DType.bfloat16]()
+
+    # -----------------------------------------------------------------------
+    # Q tensor: [total_q_tokens, num_heads, qk_depth]  (BF16)
+    # -----------------------------------------------------------------------
+    var q_elems = total_q_tokens * num_heads * QK_DEPTH
+    var q_host = alloc[Scalar[DType.bfloat16]](q_elems)
+    randn[DType.bfloat16](q_host, q_elems, mean=0.0, standard_deviation=0.5)
+
+    # -----------------------------------------------------------------------
+    # Per-query token selection (same coprime rotation).
+    # -----------------------------------------------------------------------
+    var selected_tokens = alloc[Int](total_q_tokens * topk)
+    var sel_mult = _coprime_multiplier(num_kv_tokens)
+    for bi in range(batch_size):
+        for s in range(seq_len):
+            var bs = bi * seq_len + s
+            var rotation = s % num_kv_tokens
+            for i in range(topk):
+                selected_tokens[bs * topk + i] = (
+                    (rotation + i) * sel_mult + 1
+                ) % num_kv_tokens
+
+    # -----------------------------------------------------------------------
+    # Sparse KV ref from DEQUANTIZED values.
+    # -----------------------------------------------------------------------
+    var kv_sparse_size = total_q_tokens * topk * QK_DEPTH
+    var kv_sparse = alloc[Scalar[DType.bfloat16]](kv_sparse_size)
+    for bi in range(batch_size):
+        for s in range(seq_len):
+            var bs = bi * seq_len + s
+            for i in range(topk):
+                var t = selected_tokens[bs * topk + i]
+                var src_base = (bi * num_kv_tokens + t) * QK_DEPTH
+                var dst_base = (bs * topk + i) * QK_DEPTH
+                for d in range(QK_DEPTH):
+                    kv_sparse[dst_base + d] = kv_dequant_host[src_base + d]
+
+    # -----------------------------------------------------------------------
+    # Host reference output.
+    # -----------------------------------------------------------------------
+    var out_elems = total_q_tokens * num_heads * V_DEPTH
+    var ref_host = alloc[Scalar[DType.bfloat16]](out_elems)
+    host_reference[DType.bfloat16](
+        q_host,
+        kv_sparse,
+        ref_host,
+        batch_size,
+        seq_len,
+        num_heads,
+        topk,
+        QK_DEPTH,
+        V_DEPTH,
+        scale,
+        valid_topk=valid_topk,
+    )
+    # -----------------------------------------------------------------------
+    # Copy data to device.
+    # -----------------------------------------------------------------------
+    var blocks_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+        block_elems
+    )
+    ctx.enqueue_copy(blocks_device, blocks_fp8_host)
+
+    var cache_lengths_host = alloc[UInt32](batch_size)
+    for bi in range(batch_size):
+        cache_lengths_host[bi] = UInt32(num_kv_tokens)
+
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
+
+    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    ctx.enqueue_copy(lookup_table_device, lookup_table_host)
+
+    var q_device = ctx.enqueue_create_buffer[DType.bfloat16](q_elems)
+    ctx.enqueue_copy(q_device, q_host)
+
+    var out_device = ctx.enqueue_create_buffer[DType.bfloat16](out_elems)
+
+    var scales_device = ctx.enqueue_create_buffer[DType.float32](
+        total_phys_rows * scales_per_token
+    )
+    ctx.enqueue_copy(scales_device, scales_host)
+
+    ctx.synchronize()
+
+    # -----------------------------------------------------------------------
+    # Build per-query gather4 indices.
+    # -----------------------------------------------------------------------
+    var total_indices = total_q_tokens * topk
+    var h_indices = alloc[UInt32](total_indices)
+    for bi in range(batch_size):
+        for s in range(seq_len):
+            var bs = bi * seq_len + s
+            for i in range(topk):
+                if i < valid_topk:
+                    var t = selected_tokens[bs * topk + i]
+                    var page_idx = t // PAGE_SIZE
+                    var tok_in_page = t % PAGE_SIZE
+                    var block_id = Int(
+                        lookup_table_host[bi * max_pages_per_batch + page_idx]
+                    )
+                    h_indices[bs * topk + i] = UInt32(
+                        block_id * PAGE_SIZE + tok_in_page
+                    )
+                else:
+                    # Sentinel: cast to int32 = -1, which fails the
+                    # `raw >= 0` check in load_k_scales_to_smem (scale→0)
+                    # and is treated as OOB by the TMA gather4 (writes 0).
+                    # WG3's kv_valid_producer masks scores ≥ valid_topk
+                    # to -inf via topk_lengths.
+                    h_indices[bs * topk + i] = UInt32(0xFFFFFFFF)
+
+    var indices_device = ctx.enqueue_create_buffer[DType.uint32](total_indices)
+    ctx.enqueue_copy(indices_device, h_indices)
+
+    var h_topk_lengths = alloc[UInt32](total_q_tokens)
+    for i in range(total_q_tokens):
+        h_topk_lengths[i] = UInt32(valid_topk)
+
+    var topk_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        total_q_tokens
+    )
+    ctx.enqueue_copy(topk_lengths_device, h_topk_lengths)
+
+    ctx.synchronize()
+
+    # -----------------------------------------------------------------------
+    # Build FP8 PagedKVCacheCollection.
+    # -----------------------------------------------------------------------
+    var blocks_lt = LayoutTensor[DType.float8_e4m3fn, Layout.row_major[6]()](
+        blocks_device.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    )
+
+    comptime cl_layout = Layout(UNKNOWN_VALUE)
+    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+        cache_lengths_device.unsafe_ptr(),
+        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    )
+
+    comptime lt_layout_2d = Layout.row_major[2]()
+    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+        lookup_table_device.unsafe_ptr(),
+        RuntimeLayout[lt_layout_2d].row_major(
+            IndexList[2](batch_size, max_pages_per_batch)
+        ),
+    )
+
+    var kv_collection = PagedKVCacheCollection[
+        DType.float8_e4m3fn, kv_params, PAGE_SIZE
+    ](
+        LayoutTensor[DType.float8_e4m3fn, Layout.row_major[6](), MutAnyOrigin](
+            blocks_lt.ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                blocks_lt.runtime_layout.shape.value,
+                blocks_lt.runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+            cache_lengths_lt.ptr,
+            RuntimeLayout[cl_layout](
+                cache_lengths_lt.runtime_layout.shape.value,
+                cache_lengths_lt.runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+            lookup_table_lt.ptr,
+            RuntimeLayout[lt_layout_2d](
+                lookup_table_lt.runtime_layout.shape.value,
+                lookup_table_lt.runtime_layout.stride.value,
+            ),
+        ),
+        UInt32(seq_len),
+        UInt32(num_kv_tokens),
+    )
+
+    var kv_cache = kv_collection.get_key_cache(0)
+
+    # -----------------------------------------------------------------------
+    # Build TileTensors.
+    # -----------------------------------------------------------------------
+    var q_tt = TileTensor(
+        q_device.unsafe_ptr(),
+        row_major((total_q_tokens, Idx[num_heads], Idx[QK_DEPTH])),
+    )
+
+    var out_tt = TileTensor(
+        out_device.unsafe_ptr(),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
+    )
+
+    var indices_tt = TileTensor(
+        indices_device.unsafe_ptr(),
+        row_major(total_indices),
+    )
+
+    var topk_lengths_tt = TileTensor(
+        topk_lengths_device.unsafe_ptr(),
+        row_major(total_q_tokens),
+    )
+
+    # -----------------------------------------------------------------------
+    # Call mla_prefill_sparse_fp8.
+    # -----------------------------------------------------------------------
+    print("  Launching mla_prefill_sparse_fp8...")
+
+    comptime config = MLASparseConfig[DType.bfloat16](
+        num_q_heads=num_heads,
+        num_kv_heads=1,
+        qk_depth=QK_DEPTH,
+        v_depth=V_DEPTH,
+        indices_stride=topk,
+        group=num_heads,
+    )
+
+    var attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+
+    mla_prefill_sparse_fp8[
+        config=config,
+        group=group,
+        q_depth=QK_DEPTH,
+        scale_block_size=scale_block_size,
+    ](
+        out_tt,
+        q_tt,
+        kv_cache,
+        indices_tt,
+        topk_lengths_tt,
+        attn_sink_ptr,
+        scales_device.unsafe_ptr().bitcast[Float32](),
+        scale,
+        Int32(topk),
+        ctx,
+    )
+
+    ctx.synchronize()
+
+    # -----------------------------------------------------------------------
+    # Verify output.
+    # -----------------------------------------------------------------------
+    var out_host = alloc[Scalar[DType.bfloat16]](out_elems)
+    ctx.enqueue_copy(out_host, out_device)
+    ctx.synchronize()
+
+    var atol = Float64(0.45)
+    var max_err = Float64(0)
+    var max_actual = Float64(0)
+    var num_nonzero = 0
+    var total_checked = 0
+    for b in range(batch_size):
+        for s in range(seq_len):
+            for h in range(num_heads):
+                for d in range(V_DEPTH):
+                    var idx = (
+                        b * seq_len * num_heads * V_DEPTH
+                        + s * num_heads * V_DEPTH
+                        + h * V_DEPTH
+                        + d
+                    )
+                    var ref_val = ref_host[idx].cast[DType.float64]()
+                    var actual_val = out_host[idx].cast[DType.float64]()
+                    var err = abs(actual_val - ref_val)
+                    if err > max_err:
+                        max_err = err
+                    if abs(actual_val) > max_actual:
+                        max_actual = abs(actual_val)
+                    if abs(actual_val) > 1e-6:
+                        num_nonzero += 1
+                    total_checked += 1
+
+    print(
+        "  DIAG: max_err=",
+        max_err,
+        " max_abs_actual=",
+        max_actual,
+        " num_nonzero=",
+        num_nonzero,
+        "/",
+        total_checked,
+    )
+
+    if max_err > atol:
+        raise Error(
+            "max_err exceeded tolerance: "
+            + String(max_err)
+            + " > atol "
+            + String(atol)
+        )
+    print(
+        "  PASSED: max_err=",
+        max_err,
+        " checked=",
+        total_checked,
+        " elements",
+    )
+
+    # -----------------------------------------------------------------------
+    # Cleanup
+    # -----------------------------------------------------------------------
+    _ = blocks_device
+    _ = cache_lengths_device
+    _ = lookup_table_device
+    _ = q_device
+    _ = out_device
+    _ = indices_device
+    _ = topk_lengths_device
+    _ = scales_device
+
+    blocks_fp8_host.free()
+    kv_bf16_host.free()
+    kv_dequant_host.free()
+    lookup_table_host.free()
+    cache_lengths_host.free()
+    q_host.free()
+    kv_sparse.free()
+    selected_tokens.free()
+    ref_host.free()
+    out_host.free()
+    h_indices.free()
+    h_topk_lengths.free()
+    scales_host.free()
+
+
+# ===-----------------------------------------------------------------------===#
 # Main
 # ===-----------------------------------------------------------------------===#
 
@@ -808,6 +1304,72 @@ def main() raises:
             # the second block — the mask must fire mid-block.
             run_test_prefill_sparse[DType.bfloat16, 128, 256](
                 "b1_s32_h128_kv512_topk256_valid192",
+                1,
+                32,
+                512,
+                ctx,
+                valid_topk=192,
+            )
+
+            run_test_prefill_sparse_fp8[128, 128, QK_DEPTH](
+                "b1_s32_h128_kv512_topk128_fp8_tensorwise",
+                1,
+                32,
+                512,
+                ctx,
+            )
+
+            # Multi-batch FP8: mirrors the BF16 b4 shape.
+            run_test_prefill_sparse_fp8[128, 128, QK_DEPTH](
+                "b4_s16_h128_kv256_topk128_fp8_tensorwise",
+                4,
+                16,
+                256,
+                ctx,
+            )
+
+            # Multi-block FP8: topk=256 = 2 × B_TOPK, exercises cross-block
+            # softmax state update in the FP8 path.
+            run_test_prefill_sparse_fp8[128, 256, QK_DEPTH](
+                "b1_s32_h128_kv512_topk256_fp8_tensorwise",
+                1,
+                32,
+                512,
+                ctx,
+            )
+
+            # Production-flavored FP8 shape (scaled down).
+            run_test_prefill_sparse_fp8[128, 256, QK_DEPTH](
+                "b1_s64_h128_kv1024_topk256_fp8_tensorwise_prodlike",
+                1,
+                64,
+                1024,
+                ctx,
+            )
+
+            # Padded FP8: single-block, half masked out.
+            run_test_prefill_sparse_fp8[128, 128, QK_DEPTH](
+                "b1_s32_h128_kv512_topk128_valid64_fp8_tensorwise",
+                1,
+                32,
+                512,
+                ctx,
+                valid_topk=64,
+            )
+
+            # Padded FP8: multi-block, second block entirely masked.
+            run_test_prefill_sparse_fp8[128, 256, QK_DEPTH](
+                "b1_s32_h128_kv512_topk256_valid128_fp8_tensorwise",
+                1,
+                32,
+                512,
+                ctx,
+                valid_topk=128,
+            )
+
+            # Padded FP8: multi-block, partial second block masked.
+            run_test_prefill_sparse_fp8[128, 256, QK_DEPTH](
+                "b1_s32_h128_kv512_topk256_valid192_fp8_tensorwise",
                 1,
                 32,
                 512,
