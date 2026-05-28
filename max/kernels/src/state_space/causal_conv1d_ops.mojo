@@ -511,5 +511,11 @@ struct CausalConv1DUpdate[activation: StaticString]:
         conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> Tuple[IndexList[rank], IndexList[rank]]:
-        return (input.shape(), conv_state_in.shape())
+    ) -> IndexList[rank]:
+        # NOTE: Op has two OutputTensors (output + conv_state). Return only the
+        # primary output's shape — the parameterized `Tuple` return type tripped
+        # the MLIR kernel-package loader's slot-name table (no entry for
+        # `std.Tuple`). Matches the working pattern used by
+        # `gemv_and_partial_norm` in `builtin_kernels/linalg.mojo`: op semantics
+        # handle the per-output shape split.
+        return input.shape()

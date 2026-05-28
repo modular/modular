@@ -817,5 +817,9 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=1, ...],
         z: InputTensor[dtype=dtype, rank=2, ...],
         dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-    ) -> Tuple[IndexList[3], IndexList[2]]:
-        return (state_in.shape(), x.shape())
+    ) -> IndexList[3]:
+        # NOTE: Op has two OutputTensors (state_out + output). Return only the
+        # primary state shape — `Tuple` return tripped the MLIR loader's
+        # slot-name table. Matches the working pattern in `linalg.mojo`'s
+        # `gemv_and_partial_norm`: op semantics handle the shape split.
+        return state_in.shape()

@@ -848,9 +848,13 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         z: InputTensor[dtype=dtype, rank=3, ...],
         dt_bias: InputTensor[dtype=dtype, rank=2, ...],
         state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    ) -> Tuple[IndexList[4], IndexList[3]]:
+    ) -> IndexList[4]:
+        # NOTE: Op has two OutputTensors (state_out + output). Return only the
+        # primary state shape — `Tuple` return tripped the MLIR loader's
+        # slot-name table. Matches the working pattern in `linalg.mojo`'s
+        # `gemv_and_partial_norm`: op semantics handle the shape split.
         var batch = x.dim_size(0)
         var nheads = x.dim_size(1)
         var dim = x.dim_size(2)
         var dstate = A.dim_size(2)
-        return (IndexList[4](batch, nheads, dim, dstate), x.shape())
+        return IndexList[4](batch, nheads, dim, dstate)
