@@ -38,7 +38,7 @@ from typing import Any
 
 from _version import __version__
 from client import FuzzClient, RunConfig
-from model_config import build_model_config
+from model_config import MODEL_PROFILES, build_model_config
 from reporting import (
     BOLD,
     CYAN,
@@ -221,9 +221,9 @@ Examples:
     )
     profile_group.add_argument(
         "--model-profile",
-        choices=["kimi-k2.5", "glm-5.1"],
+        choices=list(MODEL_PROFILES.keys()),
         default=None,
-        help="Activate model-specific test scenarios (e.g. kimi-k2.5, glm-5.1)",
+        help="Activate model-specific test scenarios (e.g. kimi-k2.5, glm-5.1, gemma4)",
     )
     profile_group.add_argument(
         "--k2vv-mode",

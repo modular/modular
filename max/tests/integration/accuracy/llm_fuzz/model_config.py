@@ -117,6 +117,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:glm-5.1"],
         description="GLM-5.1 model-specific tests",
     ),
+    "gemma4": ModelProfile(
+        name="gemma4",
+        default_port=8300,
+        tags=["model:gemma4"],
+        description="Gemma 4 model-specific tests",
+    ),
 }
 
 
