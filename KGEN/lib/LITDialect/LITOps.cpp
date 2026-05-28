@@ -501,9 +501,11 @@ TypedAttr FnOp::getBoundReference(ParameterEvaluationContext &evalContext,
   std::tie(resultType, bindings) = getUnboundSpecializedSignature(
       getFullSignature(), bindings, &evalContext);
 
-  if (ParamDeclAttr decl = getParamDeclAttr())
-    return BindParamsAttr::get(ParamDeclRefAttr::get(decl), bindings,
-                               &evalContext);
+  if (ParamDeclAttr decl = getParamDeclAttr()) {
+    TypedAttr generator = ParamDeclRefAttr::get(decl);
+    return BindParamsAttr::get(generator.getContext(), generator, bindings,
+                               resultType, &evalContext);
+  }
 
   return SymbolConstantAttr::get(getFullyResolvedSymbolRef(*this), resultType,
                                  bindings);
@@ -558,7 +560,10 @@ TypedAttr FnOp::getFuncLiteralGenerator(ParameterEvaluationContext &evalContext,
     // `origins` unrecoverable.
     return unboundGen;
   }
-  return BindParamsAttr::get(unboundGen, bindings, &evalContext);
+  Type resultType =
+      BindParamsAttr::inferResultType(unboundGen, bindings, &evalContext);
+  return BindParamsAttr::get(unboundGen.getContext(), unboundGen, bindings,
+                             resultType, &evalContext);
 }
 
 bool FnOp::isSynthetic() { return getSynthetic(); }

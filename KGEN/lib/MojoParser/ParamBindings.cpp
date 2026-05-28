@@ -262,8 +262,11 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
   TypedAttr fnRef = shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
       selfExpr, traitName, funcOp.getSymNameAttr(), signature);
 
-  return BindParamsAttr::get(fnRef, verifiedValues.drop_front(),
-                             &shared.getEvaluationContext());
+  ArrayRef<TypedAttr> remainingParamValues = verifiedValues.drop_front();
+  Type resultType = BindParamsAttr::inferResultType(
+      fnRef, remainingParamValues, &shared.getEvaluationContext());
+  return BindParamsAttr::get(fnRef.getContext(), fnRef, remainingParamValues,
+                             resultType, &shared.getEvaluationContext());
 }
 
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,

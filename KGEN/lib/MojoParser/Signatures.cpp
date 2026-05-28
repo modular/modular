@@ -957,8 +957,11 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
                            /*paramConstraints=*/pogs[idx].getConstraints());
       if (hadFailure)
         return {};
-      return BindParamsAttr::get(paramType.getParam(), paramValues,
-                                 &shared.getEvaluationContext());
+      TypedAttr generator = paramType.getParam();
+      Type resultType = BindParamsAttr::inferResultType(
+          generator, paramValues, &shared.getEvaluationContext());
+      return BindParamsAttr::get(generator.getContext(), generator, paramValues,
+                                 resultType, &shared.getEvaluationContext());
     }
   }
 
