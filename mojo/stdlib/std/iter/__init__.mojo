@@ -329,7 +329,7 @@ def empty[T: Movable]() -> _Empty[T]:
 
 
 # ===-----------------------------------------------------------------------===#
-# once
+# once-with
 # ===-----------------------------------------------------------------------===#
 
 
@@ -340,7 +340,7 @@ struct _OnceWith[T: Movable, //, F: def() thin -> T](
     Iterator,
 ):
     """Iterator that lazily generates an element exactly once by invoking
-    a closure.
+    a function pointer.
     """
 
     comptime Element = Self.T
@@ -377,7 +377,7 @@ struct _OnceWith[T: Movable, //, F: def() thin -> T](
 
 def once_with[T: Movable, //, F: def() thin -> T]() -> _OnceWith[F]:
     """Creates an iterator that lazily generates a value exactly once by
-    invoking the provided closure.
+    invoking the provided function pointer.
 
     Parameters:
         T: Type of the iterator's element.
@@ -385,7 +385,7 @@ def once_with[T: Movable, //, F: def() thin -> T]() -> _OnceWith[F]:
 
     Returns:
         An iterator that lazily generates a value exactly once by invoking
-        the provided closure.
+        the provided function pointer.
     """
     return _OnceWith[F]()
 
