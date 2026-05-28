@@ -157,6 +157,48 @@ class YourModelConfig(HFModelConfig):
 ./bazelw test //max/tests/integration/serve:test_tinyllama_serving_cpu
 ```
 
+### Avoid Per-Test Graph Recompilation
+
+Building a `Graph` and calling `InferenceSession.load(...)` inside every
+test case (or inside a `function`-scoped fixture) is one of the top
+causes of timeout-based flakes in MAX integration tests. Locally the
+compile cost may look modest, but on shared BuildBuddy CI workers CPU
+contention inflates compile time substantially — multiplying that by
+the number of cases is what pushes suites past their timeout. The
+blow-up is in CI, not locally.
+
+- **Antipattern**: building a `Graph` and calling `session.load(...)` inside
+  each `def test_*` or inside a `function`-scoped fixture when the cases only
+  differ in payload data, not graph structure.
+- **Why it matters**: on contended BuildBuddy workers each recompile is far
+  slower than locally; multiplying that by per-case repetition is the
+  dominant cost driver and the most common trigger for timeout-based flakes.
+- **Pattern to apply**: put `InferenceSession` and each unique compiled graph
+  behind `scope="module"` (or `scope="session"`) fixtures. Split the work into
+  a builder (`build_*` returns the compiled model + any resources like a
+  `PagedKVCacheManager`) and an executor (claims/runs/releases per call).
+  Parametrize per-case inputs separately and have each test consume the
+  compiled-model fixture.
+- **Also limit compilations per file**: a module-scoped fixture deduplicates
+  within a file, but the file's runtime still scales linearly with the
+  number of unique compiles it triggers — and each compile on a contended
+  worker can take ~2 minutes. When a single test file needs more than 1–2
+  unique compiles, split it into separate `test_*.py` files (one bazel
+  target per file) so the compiles parallelize across CI workers and a
+  single slow-compile branch can't bust the timeout budget for the rest of
+  the suite. Move shared fixtures into the directory's `conftest.py` so
+  pytest auto-discovers them, and put plain-Python helpers in a sibling
+  `_helpers.py` module added to `srcs` in the BUILD rule.
+- **Reference**: see
+  `max/tests/integration/architectures/gemma4/test_attention.py` (bf16
+  smoke), `test_attention_fp8_local.py`, and `test_attention_fp8_global.py`.
+  Shared fixtures sit in `gemma4/conftest.py`; `build_max_attention` /
+  `execute_max_attention` helpers live in `_attention_helpers.py`. On a
+  remote B200 the critical path dropped from ~440s (single file, 6
+  per-test compiles) to ~230s (three targets, 2 compiles each, running
+  in parallel). Also see `max/tests/integration/nn/kv_cache/conftest.py`
+  for the simpler session-scoped `InferenceSession` fixture pattern.
+
 ### Performance Testing
 
 ```bash

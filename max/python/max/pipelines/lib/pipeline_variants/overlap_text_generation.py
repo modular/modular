@@ -2716,7 +2716,7 @@ class OverlapTextGenerationPipeline(
             True if the callback was enqueued (FSM will be advanced asynchronously),
             False otherwise.
         """
-        if not self._structured_output.enabled:
+        if not self._pipeline_config.needs_bitmask_constraints:
             return False
 
         spec_state = self._spec_decode_state
@@ -3102,7 +3102,7 @@ class OverlapTextGenerationPipeline(
         same batch.
         """
         return (
-            self._structured_output.enabled
+            self._pipeline_config.needs_bitmask_constraints
             and self._prev_batch is not None
             and self._prev_batch.spec_decode is not None
             and not self._prev_batch.spec_decode.fsm_advanced_by_callback

@@ -167,26 +167,26 @@ def test_generic_associated_type() raises:
 
 from std.sys.info import bit_width_of
 
+comptime BaseElement = Copyable & ImplicitlyDestructible & Writable
+
 
 trait Test:
     comptime Element: RegisterPassable
     comptime element_bitwidth = bit_width_of[Self.Element]()
 
-    comptime KeyElement = Copyable & ImplicitlyDestructible & Writable
-
 
 @fieldwise_init
-struct SampleStruct_4[T: KeyElement & ImplicitlyDestructible](Test):
+struct SampleStruct_4[T: BaseElement](Test):
     comptime Element = Int64
     var x: Self.T
 
-    def show_element_bitwidth(self):
-        print(Self.element_bitwidth)
+    def show_element_bitwidth(self) raises:
+        assert_equal(Self.element_bitwidth, 64)
 
 
 def test_comptime_constants() raises:
     var s = SampleStruct_4[Int64](x=42)
-    s.show_element_bitwidth()  # 64
+    s.show_element_bitwidth()
     assert_equal(s.x, 42)
 
 

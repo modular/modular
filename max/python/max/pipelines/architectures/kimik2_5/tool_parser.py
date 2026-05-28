@@ -57,6 +57,14 @@ _MAX_TOOL_CALL_INDEX_DIGITS = 8  # up to 99_999_999 tool calls per turn
 _MAX_TOOL_CALLS_PER_SECTION = 64
 _MAX_TOOL_CALL_SECTIONS = 1
 
+# JSON string pattern for the tool-call body regex. Matches a complete
+# JSON string including proper escape-sequence handling: any character
+# except quote/backslash, or a backslash followed by any character.
+# This allows ``<`` inside strings (e.g. ``"if (x < y)"`` or HTML/XML)
+# while still rejecting ``<`` outside strings where it signals the
+# closing structural tag ``<|tool_call_end|>``.
+_JSON_STRING_PATTERN = r'"(?:[^"\\]|\\.)*"'
+
 # Regex for one ``<|tool_call_begin|>...<|tool_call_end|>`` body. The
 # function id and arguments are captured; the call markers are anchored.
 _TOOL_CALL_PATTERN = re.compile(
@@ -186,6 +194,13 @@ class KimiToolParser(StructuralTagToolParser):
         still happens at parse time; the regex only enforces structural
         framing.
 
+        The body pattern is JSON-string-aware: ``<`` is allowed inside
+        quoted strings (e.g. ``"if (x < y)"`` or HTML/XML content) but
+        rejected outside strings where it would signal the start of a
+        structural tag like ``<|tool_call_end|>``. This enables tool
+        arguments containing code comparisons, markup, or git diffs
+        without triggering premature tag detection.
+
         With ``_MAX_TOOL_CALL_SECTIONS == 1`` the outer ``{1,1}``
         quantifier is a structural no-op kept for readability. Bumping
         it re-enables multiple back-to-back sections (Kimi emits these
@@ -205,7 +220,7 @@ class KimiToolParser(StructuralTagToolParser):
             rf"{re.escape(TOOL_CALL_BEGIN)}"
             rf"functions\.{func_name_pattern}:[0-9]{{1,{_MAX_TOOL_CALL_INDEX_DIGITS}}}"
             rf"{re.escape(TOOL_CALL_ARGUMENT_BEGIN)}"
-            rf"\{{[^<]*\}}"
+            rf"\{{(?:[^\"<]|{_JSON_STRING_PATTERN})*\}}"
             rf"{re.escape(TOOL_CALL_END)}"
             rf"){{1,{_MAX_TOOL_CALLS_PER_SECTION}}}"
             rf"{re.escape(TOOL_CALLS_SECTION_END)}"

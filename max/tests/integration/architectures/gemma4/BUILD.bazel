@@ -24,7 +24,10 @@ modular_py_test(
             "test_video_processor.py",
             "test_vision_rotary_embedding.py",
         ],
-    ) + ["conftest.py"],
+    ) + [
+        "_attention_helpers.py",
+        "conftest.py",
+    ],
     data = [
         "//max/tests/integration/architectures/gemma4/testdata",
     ],

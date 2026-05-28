@@ -51,7 +51,9 @@ logger = logging.getLogger("max.pipelines")
 
 
 def _compute_seq_len(
-    ctx: TextGenerationContext, num_steps: int, num_speculative_steps: int
+    ctx: TextGenerationContext,
+    num_steps: int,
+    num_draft_tokens: int,
 ) -> int:
     # Each term accounts for one category of tokens that need a KV slot:
     #
@@ -59,19 +61,15 @@ def _compute_seq_len(
     #   maybe_accepted_draft_tokens   : draft tokens being verified in the
     #                                   *previous* batch (overlap scheduler);
     #                                   conservative: assume all are accepted
-    #   num_speculative_steps (x1)    : draft tokens to verify in the *next* batch
-    #   num_speculative_steps (x1)    : draft tokens generated *during* that batch
+    #   2 * num_draft_tokens          : drafts to verify *next* batch
+    #                                   + drafts written *during* that batch
     #   num_steps                     : regular decode steps
     #   -1                            : the last generated token has no KV entry
     #
-    # NOTE: `draft_tokens_to_verify` is intentionally excluded. Using
-    # `2 * num_speculative_steps` unconditionally is always correct and
-    # avoids an under-allocation when `draft_tokens_to_verify` is empty but
-    # the pipeline populates it with dummy draft tokens (_MAGIC_DRAFT_TOKEN_ID).
     seq_len = (
         len(ctx.tokens)
         + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
-        + 2 * num_speculative_steps
+        + 2 * num_draft_tokens
         + num_steps
         - 1
     )
@@ -523,7 +521,7 @@ class BlockManager:
         self,
         ctx: TextGenerationContext,
         num_steps: int = 1,
-        num_speculative_steps: int = 0,
+        num_draft_tokens: int = 0,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
@@ -535,7 +533,8 @@ class BlockManager:
         Args:
             ctx: The request context containing sequence information and token indices.
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
-            num_speculative_steps: Number of speculative steps to allocate blocks for. Defaults to 0.
+            num_draft_tokens: Total draft tokens generated per speculative
+                iteration. Zero for non-speculative decode.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -563,7 +562,9 @@ class BlockManager:
 
         # Determine number of new blocks to allocate.
         num_new_blocks = self.num_blocks_to_allocate(
-            ctx, num_steps, num_speculative_steps
+            ctx,
+            num_steps,
+            num_draft_tokens,
         )
 
         # Verify that committed tokens fit within the currently allocated
@@ -600,14 +601,15 @@ class BlockManager:
         self,
         ctx: TextGenerationContext,
         num_steps: int = 1,
-        num_speculative_steps: int = 0,
+        num_draft_tokens: int = 0,
     ) -> int:
         """Calculates the number of new blocks to allocate for a request.
 
         Args:
             ctx: The request context containing sequence information and token indices.
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
-            num_speculative_steps: Number of speculative steps to allocate blocks for. Defaults to 0.
+            num_draft_tokens: Total draft tokens generated per speculative
+                iteration. Zero for non-speculative decode.
 
         Returns:
             The number of new blocks to allocate.
@@ -615,7 +617,9 @@ class BlockManager:
         current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
         current_seq_len = _compute_seq_len(
-            ctx, num_steps, num_speculative_steps
+            ctx,
+            num_steps,
+            num_draft_tokens,
         )
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
         num_new_blocks = num_required_blocks - num_current_blocks
