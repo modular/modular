@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pytest
+
 from tests.util import assert_mojo_format
 
 
@@ -127,15 +129,22 @@ def test_ref_origin_untyped_param_with_extra_spaces():
     assert_mojo_format(source, expected)
 
 
-def test_out_address_space_in_initializer():
-    """No space between out and [address_space] in initializers."""
-    source = "def __init__(out[addrspace] self): pass"
-    expected = "def __init__(out[addrspace] self):\n    pass\n"
-    assert_mojo_format(source, expected)
-
-
-def test_out_address_space_in_initializer_with_space():
-    """Space between out and [address_space] should be removed."""
-    source = "def __init__(out [addrspace] self): pass"
-    expected = "def __init__(out[addrspace] self):\n    pass\n"
+@pytest.mark.parametrize("space", ["", " "])
+def test_out_address_space_in_initializer(space):
+    """Any space between out and [address_space] is removed in initializers."""
+    source = (
+        "from std.memory.pointer import AddressSpace\n"
+        "\n"
+        "\n"
+        "struct Foo:\n"
+        f"    def __init__(out{space}[AddressSpace.GENERIC] self): pass\n"
+    )
+    expected = (
+        "from std.memory.pointer import AddressSpace\n"
+        "\n"
+        "\n"
+        "struct Foo:\n"
+        "    def __init__(out[AddressSpace.GENERIC] self):\n"
+        "        pass\n"
+    )
     assert_mojo_format(source, expected)
