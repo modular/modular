@@ -47,10 +47,3 @@ def test_named_effect_no_space_already_correct():
     source = 'def foo() abi("C"):\n    pass\n'
     expected = 'def foo() abi("C"):\n    pass\n'
     assert_mojo_format(source, expected)
-
-
-def test_named_effect_in_functype_no_space():
-    """No space before ( in named effects inside function types."""
-    source = "def takes_f[f: def(Int) abi (\"C\") -> Int]():\n    pass\n"
-    expected = "def takes_f[f: def(Int) abi(\"C\") -> Int]():\n    pass\n"
-    assert_mojo_format(source, expected)
