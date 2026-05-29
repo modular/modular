@@ -44,7 +44,6 @@ from max.pipelines.lib.tool_parsing import (
     names_from_tools,
 )
 from max.pipelines.modeling.types import (
-    AudioGenerationRequest,
     GenerationStatus,
     ImageContentPart,
     LoRAOperation,
@@ -73,7 +72,6 @@ from max.serve.parser import (
     parse_json_from_text,
 )
 from max.serve.pipelines.llm import (
-    AudioGeneratorPipeline,
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
@@ -89,8 +87,6 @@ from max.serve.schemas.openai import (
     CompletionLogprobs,
     CompletionResponseChoice,
     CompletionUsage,
-    CreateAudioGenerationRequest,
-    CreateAudioGenerationResponse,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
     CreateChatCompletionStreamResponse,
@@ -252,13 +248,9 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
         pass
 
 
-def get_pipeline(
-    request: Request, model_name: str
-) -> TokenGeneratorPipeline | AudioGeneratorPipeline:
+def get_pipeline(request: Request, model_name: str) -> TokenGeneratorPipeline:
     app_state: State = request.app.state
-    pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
-        app_state.pipeline
-    )
+    pipeline: TokenGeneratorPipeline = app_state.pipeline
 
     models = [pipeline.model_name]
 
@@ -820,27 +812,6 @@ class OpenAIEmbeddingsResponseGenerator:
             )
 
 
-class OpenAISpeechResponseGenerator:
-    def __init__(self, pipeline: AudioGeneratorPipeline) -> None:
-        self.logger = logging.getLogger(
-            "max.serve.router.OpenAISpeechResponseGenerator"
-        )
-        self.pipeline = pipeline
-
-    async def synthesize_speech(
-        self, request: AudioGenerationRequest
-    ) -> CreateAudioGenerationResponse:
-        self.logger.debug("Streaming: Start: %s", request)
-        output = await self.pipeline.generate_full_audio(request)
-        assert output.audio_data is not None
-        audio_data = output.audio_data.tobytes()
-        response = CreateAudioGenerationResponse(
-            audio_data=base64.b64encode(audio_data),
-            metadata=output.metadata.to_dict(),
-        )
-        return response
-
-
 def _normalize_openai_role(role: str) -> Any:
     # The ``role`` options in OpenAI model spec include "developer" as a replacement for "system".
     # No MAX-supported chat template branches on developer
@@ -1187,10 +1158,7 @@ async def openai_create_chat_completion(
         completion_request = await _parse_openai_request_body(
             request, request_id, CreateChatCompletionRequest
         )
-        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
-            get_pipeline(request, completion_request.model)
-        )
-        assert isinstance(pipeline, TokenGeneratorPipeline)
+        pipeline = get_pipeline(request, completion_request.model)
 
         logger.debug(
             "Processing path, %s, req-id,%s%s, for model, %s.",
@@ -1577,10 +1545,7 @@ async def openai_create_embeddings(
         embeddings_request = CreateEmbeddingRequest.model_validate_json(
             await request.body()
         )
-        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
-            get_pipeline(request, embeddings_request.model)
-        )
-        assert isinstance(pipeline, TokenGeneratorPipeline)
+        pipeline = get_pipeline(request, embeddings_request.model)
 
         logger.debug(
             "Processing path, %s, req-id, %s, for model, %s.",
@@ -2049,10 +2014,7 @@ async def openai_create_completion(
             request, http_req_id, CreateCompletionRequest
         )
 
-        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
-            get_pipeline(request, completion_request.model)
-        )
-        assert isinstance(pipeline, TokenGeneratorPipeline)
+        pipeline = get_pipeline(request, completion_request.model)
 
         logger.debug(
             "Path: %s, Request: %s%s, Model: %s",
@@ -2234,76 +2196,6 @@ async def openai_get_model(model_id: str, request: Request) -> Model:
         return pipeline_model
 
     raise HTTPException(status_code=404)
-
-
-# TODO: This is a temporary hack that does not conform to OpenAI spec.
-@router.post("/audio/speech", response_model=None)
-async def create_streaming_audio_speech(
-    request: Request,
-) -> CreateAudioGenerationResponse | Response:
-    """Audio generation endpoint that streams audio data."""
-    try:
-        request_id = request.state.request_id
-        audio_generation_request = (
-            CreateAudioGenerationRequest.model_validate_json(
-                await request.body()
-            )
-        )
-        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
-            get_pipeline(request, audio_generation_request.model)
-        )
-        assert isinstance(pipeline, AudioGeneratorPipeline)
-        sampling_params = SamplingParams.from_input_and_generation_config(
-            SamplingParamsInput(
-                min_new_tokens=audio_generation_request.min_tokens
-            ),
-            sampling_params_defaults=request.app.state.pipeline_config.model.sampling_params_defaults,
-        )
-        audio_request = AudioGenerationRequest(
-            request_id=RequestID(request_id),
-            input=audio_generation_request.input,
-            model=audio_generation_request.model,
-            sampling_params=sampling_params,
-            audio_prompt_tokens=audio_generation_request.audio_prompt_tokens,
-            audio_prompt_transcription=audio_generation_request.audio_prompt_transcription,
-            # TODO: Add support for these options.
-            # instructions=audio_generation_request.instructions,
-            # response_format=audio_generation_request.response_format,
-            # speed=audio_generation_request.speed,
-        )
-
-        response_generator = OpenAISpeechResponseGenerator(pipeline)
-        response = await response_generator.synthesize_speech(audio_request)
-        return response
-
-    except _ClientDisconnectedError:
-        logger.info("Client disconnected for request %s", request_id)
-        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
-    except JSONDecodeError as e:
-        logger.exception("JSONDecodeError in request %s", request_id)
-        raise HTTPException(status_code=400, detail="Missing JSON.") from e
-    except KeyError as e:
-        logger.exception("KeyError in request %s", request_id)
-        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
-    except ValidationError as e:
-        logger.warning(
-            "Request validation error in request %s: %s", request_id, e
-        )
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except TypeError as e:
-        logger.exception("TypeError in request %s", request_id)
-        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
-    except InputError as e:
-        logger.warning(
-            "Input validation error in request %s: %s", request_id, str(e)
-        )
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except ValueError as e:
-        logger.warning("Value error in request %s: %s", request_id, str(e))
-        # NOTE(SI-722): These errors need to return more helpful details,
-        # but we don't necessarily want to expose the full error description
-        # to the user. There are many different ValueErrors that can be raised.
-        raise HTTPException(status_code=400, detail="Value error.") from e
 
 
 @router.post("/load_lora_adapter", response_model=None)

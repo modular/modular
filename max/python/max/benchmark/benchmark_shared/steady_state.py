@@ -32,7 +32,7 @@ from typing import Literal
 
 import numpy as np
 
-from .request import RequestFuncOutput, TTSRequestFuncOutput
+from .request import RequestFuncOutput
 
 DEFAULT_WINDOW_SIZE = 50
 DEFAULT_TTFT_THRESHOLD = 0.5
@@ -166,7 +166,7 @@ def _empty_result(
 
 
 def detect_steady_state(
-    outputs: Sequence[RequestFuncOutput | TTSRequestFuncOutput],
+    outputs: Sequence[RequestFuncOutput],
     window_size: int = DEFAULT_WINDOW_SIZE,
     ttft_threshold: float = DEFAULT_TTFT_THRESHOLD,
     tpot_threshold: float = DEFAULT_TPOT_THRESHOLD,

@@ -41,7 +41,6 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
-   AudioGenerationConfig
    KVCacheConfig
    LoRAConfig
    MAXModelConfig
@@ -60,7 +59,6 @@ Pipelines
 
    EmbeddingsPipeline
    PixelGenerationPipeline
-   SpeechTokenGenerationPipeline
    TextGenerationPipeline
    TextGenerationPipelineInterface
 
@@ -89,7 +87,6 @@ Context
    PixelContext
    TextAndVisionContext
    TextContext
-   TTSContext
 
 Tokenizers
 ----------
@@ -119,13 +116,6 @@ Enums
 
 Utilities
 ---------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   PrependPromptSpeechTokens
 
 .. autosummary::
    :nosignatures:

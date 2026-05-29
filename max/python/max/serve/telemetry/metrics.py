@@ -180,11 +180,6 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "(prompt tokens actually prefilled by the model)."
         ),
     ),  # type: ignore
-    "maxserve.tts.audio_output_length": _meter.create_counter(
-        "maxserve.tts.audio_output_length",
-        unit="ms",
-        description="Audio output length in milliseconds",
-    ),  # type: ignore
     "maxserve.input_tokens_per_request": _meter.create_histogram(
         "maxserve.input_tokens_per_request",
         unit="tokens",
@@ -615,16 +610,6 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.cache.preemption_count", 1, self.extra_attributes
-            ),
-            MetricLevel.DETAILED,
-        )
-
-    def audio_output_length(self, length_ms: int) -> None:
-        self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.tts.audio_output_length",
-                length_ms,
-                self.extra_attributes,
             ),
             MetricLevel.DETAILED,
         )

@@ -61,7 +61,6 @@ modular_py_test(
         requirement("safetensors"),
         requirement("sse-starlette"),
         requirement("taskgroup"),
-        requirement("torch"),
         requirement("transformers"),
         requirement("pillow"),
     ],

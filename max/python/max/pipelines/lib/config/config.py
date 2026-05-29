@@ -21,7 +21,7 @@ import logging
 import os
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, accelerator_api, load_devices
@@ -66,7 +66,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Self, override
+from typing_extensions import Self
 
 from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig, _format_config_entries
@@ -1786,8 +1786,6 @@ class PipelineConfig(ConfigFileModel):
         # Get reserved memory info from KVCache config (only for tasks that use KV cache)
         kv_cache_tasks = {
             PipelineTask.TEXT_GENERATION,
-            PipelineTask.AUDIO_GENERATION,
-            PipelineTask.SPEECH_TOKEN_GENERATION,
         }
 
         memory_str = None
@@ -1878,19 +1876,6 @@ def _parse_flag_int(value: str, flag_name: str) -> int:
         ) from exc
 
 
-PrependPromptSpeechTokens = Literal["never", "once", "rolling"]
-"""Controls whether prompt speech tokens are prepended to the audio decoder.
-
-``"never"``
-    Never prepend the prompt speech tokens sent to the audio decoder.
-``"once"``
-    Prepend the prompt speech tokens to the first block of the audio decoder.
-``"rolling"``
-    Prepend the prompt speech tokens to the first block of the audio decoder,
-    and to later blocks to reach the requested buffer size.
-"""
-
-
 PrometheusMetricsMode = Literal[
     "instrument_only", "launch_server", "launch_multiproc_server"
 ]
@@ -1904,192 +1889,3 @@ PrometheusMetricsMode = Literal[
 ``"launch_multiproc_server"``
     Launch a Prometheus server in multiprocess mode to report metrics.
 """
-
-
-class AudioGenerationConfig(PipelineConfig):
-    """Configuration for an audio generation pipeline."""
-
-    # TODO: Make these flags more discoverable.
-    audio_decoder: str = Field(
-        default="",
-        description="The name of the audio decoder model architecture.",
-    )
-    """The name of the audio decoder model architecture."""
-
-    audio_decoder_weights: str = Field(
-        default="", description="The path to the audio decoder weights file."
-    )
-    """The path to the audio decoder weights file."""
-
-    chunk_size: list[int] | None = Field(
-        default=None,
-        description=(
-            "The chunk sizes to use for streaming. If this is an int, fixed-size "
-            "chunks of the given size are used. If this is a list, variable "
-            "chunk sizes are used."
-        ),
-    )
-    """The chunk sizes to use for streaming."""
-
-    buffer: int = Field(
-        default=0,
-        description=(
-            "The number of previous speech tokens to pass to the audio decoder "
-            "on each generation step."
-        ),
-    )
-    """The number of previous speech tokens to pass to the audio decoder on each generation step."""
-
-    block_causal: bool = Field(
-        default=False,
-        description=(
-            "Whether prior buffered tokens should attend to tokens in the "
-            "current block. Has no effect if buffer is not set."
-        ),
-    )
-    """Whether prior buffered tokens attend to tokens in the current block."""
-
-    prepend_prompt_speech_tokens: PrependPromptSpeechTokens = Field(
-        default="once",
-        description=(
-            "Whether the prompt speech tokens should be forwarded to the audio "
-            "decoder. Options: never, once, rolling."
-        ),
-    )
-    """Whether the prompt speech tokens are forwarded to the audio decoder."""
-
-    prepend_prompt_speech_tokens_causal: bool = Field(
-        default=False,
-        description=(
-            "Whether the prompt speech tokens should attend to tokens in the "
-            "currently generated audio block. Has no effect if "
-            "prepend_prompt_speech_tokens is never."
-        ),
-    )
-    """Whether the prompt speech tokens attend to tokens in the current audio block."""
-
-    audio_decoder_config: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Parameters to pass to the audio decoder model.",
-    )
-    """Parameters to pass to the audio decoder model."""
-
-    prometheus_metrics_mode: PrometheusMetricsMode = Field(
-        default="instrument_only",
-        description="The mode to use for Prometheus metrics.",
-    )
-    """The mode to use for Prometheus metrics."""
-
-    _run_model_test_mode: bool = PrivateAttr(default=False)
-    """Test-only flag that indicates that test parameters have been passed to
-    the model, such as leaving the audio decoder weights empty or using a
-    dummy speech language model."""
-
-    def __init__(
-        self,
-        audio_decoder: str,
-        audio_decoder_weights: str = "",
-        chunk_size: list[int] | None = None,
-        buffer: int = 0,
-        block_causal: bool = False,
-        prepend_prompt_speech_tokens: PrependPromptSpeechTokens = "never",
-        prepend_prompt_speech_tokens_causal: bool = False,
-        run_model_test_mode: bool = False,
-        prometheus_metrics_mode: PrometheusMetricsMode = "instrument_only",
-        **kwargs: Any,
-    ) -> None:
-        # Must call the superclass's __init__ first, otherwise PipelineConfig's
-        # init will override values defined in the AudioGenerationConfig.
-        PipelineConfig.__init__(self, **kwargs)
-        if block_causal:
-            raise NotImplementedError("Causal generation is not implemented")
-        if prepend_prompt_speech_tokens_causal:
-            raise NotImplementedError(
-                "Prepend prompt speech tokens causal is not implemented"
-            )
-
-        self.audio_decoder = audio_decoder
-        self.audio_decoder_weights = audio_decoder_weights
-        self.chunk_size = chunk_size
-        self.buffer = buffer
-        self.block_causal = block_causal
-        self.prepend_prompt_speech_tokens = prepend_prompt_speech_tokens
-        self.prepend_prompt_speech_tokens_causal = (
-            prepend_prompt_speech_tokens_causal
-        )
-        self._run_model_test_mode = run_model_test_mode
-        self.prometheus_metrics_mode = prometheus_metrics_mode
-
-    @classmethod
-    def from_flags(
-        cls, audio_flags: dict[str, str], **config_flags: Any
-    ) -> AudioGenerationConfig:
-        """Builds an :class:`~max.pipelines.lib.config.AudioGenerationConfig` from audio CLI flags and config kwargs."""
-        audio_decoder = audio_flags.pop("audio_decoder", "")
-        if not audio_decoder:
-            raise ValueError(
-                "When running the audio generation task, --audio-decoder must be specified"
-            )
-        audio_decoder_weights = audio_flags.pop("audio_decoder_weights", "")
-
-        # Configuration for audio generation streaming.
-        chunk_size_str = audio_flags.pop("chunk_size", "")
-        if not chunk_size_str:
-            chunk_size = None
-        else:
-            chunk_size = [int(size) for size in chunk_size_str.split(",")]
-
-        buffer = _parse_flag_int(audio_flags.pop("buffer", "0"), "buffer")
-
-        block_causal = _parse_flag_bool(
-            audio_flags.pop("block_causal", "false"), "block_causal"
-        )
-
-        prepend_prompt_speech_tokens = cast(
-            PrependPromptSpeechTokens,
-            audio_flags.pop("prepend_prompt_speech_tokens", "never"),
-        )
-
-        prepend_prompt_speech_tokens_causal = _parse_flag_bool(
-            audio_flags.pop("prepend_prompt_speech_tokens_causal", "false"),
-            "prepend_prompt_speech_tokens_causal",
-        )
-
-        run_model_test_mode = _parse_flag_bool(
-            audio_flags.pop("run_model_test_mode", "false"),
-            "run_model_test_mode",
-        )
-
-        prometheus_metrics_mode = cast(
-            PrometheusMetricsMode,
-            audio_flags.pop("prometheus_metrics_mode", "instrument_only"),
-        )
-
-        if audio_flags:
-            raise ValueError(
-                f"Unknown audio generation option(s): {audio_flags}"
-            )
-
-        return cls(
-            audio_decoder=audio_decoder,
-            audio_decoder_weights=audio_decoder_weights,
-            chunk_size=chunk_size,
-            buffer=buffer,
-            block_causal=block_causal,
-            prepend_prompt_speech_tokens=prepend_prompt_speech_tokens,
-            prepend_prompt_speech_tokens_causal=prepend_prompt_speech_tokens_causal,
-            run_model_test_mode=run_model_test_mode,
-            prometheus_metrics_mode=prometheus_metrics_mode,
-            **config_flags,
-        )
-
-    @override
-    def _validate_and_resolve_overlap_scheduler(self) -> None:
-        if self.runtime.force:
-            return
-
-        if self.runtime.enable_overlap_scheduler:
-            raise ValueError(
-                "The Overlap scheduler does not support Audio Generation. "
-                "Detected AudioGenerationConfig."
-            )

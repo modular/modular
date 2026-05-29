@@ -18,13 +18,9 @@ from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, cast
 
-import numpy as np
-import numpy.typing as npt
-from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import reasoning
 from max.pipelines.modeling.types import (
-    AudioGenerationOutput,
-    AudioGenerationRequest,
     BaseContextType,
     EmbeddingsGenerationOutput,
     GenerationStatus,
@@ -445,78 +441,3 @@ class TokenGeneratorPipeline(
                     request.request_id,
                     total_sw.elapsed_ms,
                 )
-
-
-class AudioGeneratorPipeline(
-    BasePipeline[TTSContext, AudioGenerationRequest, AudioGenerationOutput]
-):
-    """Base class for LLM audio generation pipelines."""
-
-    async def next_chunk(
-        self, request: AudioGenerationRequest
-    ) -> AsyncGenerator[AudioGenerationOutput, None]:
-        """Generates and streams audio for the provided request."""
-        total_sw = StopWatch()
-        self.logger.debug(
-            "%s: Started: Elapsed: %0.2f ms",
-            request.request_id,
-            total_sw.elapsed_ms,
-        )
-
-        try:
-            with record_ms(METRICS.input_time):
-                context = await self.tokenizer.new_context(request)
-
-            with record_ms(METRICS.output_time):
-                async for responses in self.model_worker.stream(
-                    request.request_id, context
-                ):
-                    for response in responses:
-                        yield response
-        finally:
-            if self.debug_logging:
-                self.logger.debug(
-                    "%s: Completed: Elapsed: %0.2f ms",
-                    request.request_id,
-                    total_sw.elapsed_ms,
-                )
-
-    async def generate_full_audio(
-        self, request: AudioGenerationRequest
-    ) -> AudioGenerationOutput:
-        """Generates complete audio for the provided request."""
-        audio_chunks: list[AudioGenerationOutput] = []
-        np_chunks: list[npt.NDArray[np.floating[Any]]] = []
-        async for chunk in self.next_chunk(request):
-            if chunk.audio_data.size == 0:
-                continue
-            np_chunks.append(chunk.audio_data)
-            audio_chunks.append(chunk)
-
-        # We import torch here so that only folks that use the
-        # AudioGeneratorPipeline will need to have it installed.
-        import numpy as np
-
-        if len(audio_chunks) == 0:
-            return AudioGenerationOutput(
-                steps_executed=sum(
-                    chunk.steps_executed for chunk in audio_chunks
-                ),
-                final_status=GenerationStatus.END_OF_SEQUENCE,
-            )
-
-        # Combine audio chunks and metadata.
-        # Convert numpy arrays to torch tensors for concatenation, then back to numpy
-        combined_audio = np.concatenate(np_chunks, axis=-1)
-
-        # We should only return from the next_chunk loop when the last chunk
-        # is done.
-        last_chunk = audio_chunks[-1]
-        assert last_chunk.is_done
-
-        return AudioGenerationOutput(
-            audio_data=combined_audio,
-            metadata=last_chunk.metadata,
-            steps_executed=sum(chunk.steps_executed for chunk in audio_chunks),
-            final_status=GenerationStatus.END_OF_SEQUENCE,
-        )

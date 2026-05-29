@@ -32,7 +32,6 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     SamplingConfig,
 )
-from max.pipelines.lib.config import AudioGenerationConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
@@ -1794,25 +1793,6 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     config._validate_and_resolve_overlap_scheduler()
     assert config.runtime.enable_overlap_scheduler is True
     assert config.runtime.max_num_steps == 1
-
-    # Error out if user tries to enable overlap scheduler with AudioGenerationConfig
-    config = AudioGenerationConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="test/model",
-                    device_specs=[DeviceSpec.accelerator()],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            pipeline_role="prefill_and_decode",
-            enable_overlap_scheduler=True,
-        ),
-        audio_decoder=Mock(),
-    )
-    with pytest.raises(ValueError):
-        config._validate_and_resolve_overlap_scheduler()
 
     # Error out if user tries to enable overlap scheduler with structured output
     config = PipelineConfig(

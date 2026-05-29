@@ -56,11 +56,6 @@ from .pipeline import (
     PipelineOutputType,
 )
 from .pipeline_variants import (
-    AudioGenerationContextType,
-    AudioGenerationInputs,
-    AudioGenerationMetadata,
-    AudioGenerationOutput,
-    AudioGenerationRequest,
     BatchType,
     EmbeddingsContext,
     EmbeddingsGenerationContextType,
@@ -125,11 +120,6 @@ __all__ = [
     "DUMMY_REQUEST_ID",
     "LORA_REQUEST_ENDPOINT",
     "LORA_RESPONSE_ENDPOINT",
-    "AudioGenerationContextType",
-    "AudioGenerationInputs",
-    "AudioGenerationMetadata",
-    "AudioGenerationOutput",
-    "AudioGenerationRequest",
     "BaseContext",
     "BaseContextType",
     "BatchLogitsProcessor",

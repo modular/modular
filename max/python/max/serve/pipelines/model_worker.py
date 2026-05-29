@@ -116,10 +116,7 @@ def get_reset_prefix_cache_backend(
 def get_pipeline_model(
     pipeline: Pipeline[Any, Any],
 ) -> PipelineModel[Any] | None:
-    if pipeline.__class__.__name__ == "AudioGeneratorPipeline":
-        return pipeline.speech_lm_pipeline._pipeline_model  # type: ignore
-    else:
-        return getattr(pipeline, "_pipeline_model", None)
+    return getattr(pipeline, "_pipeline_model", None)
 
 
 class ModelWorker:

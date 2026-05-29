@@ -17,7 +17,7 @@ The endpoints exposed depend on the value of the ``MAX_SERVE_API_TYPES``
 environment variable (default: ``openai,sagemaker``):
 
 - ``openai``: ``/v1/completions``, ``/v1/chat/completions``,
-  ``/v1/embeddings``, ``/v1/audio/speech``, ``/v1/models``, ``/v1/health``
+  ``/v1/embeddings``, ``/v1/models``, ``/v1/health``
 - ``sagemaker``: SageMaker-compatible inference endpoints
 - ``kserve``: KServe-compatible inference endpoints
 - ``responses``: ``/v1/responses`` (required for the ``pixel_generation``
@@ -26,7 +26,7 @@ environment variable (default: ``openai,sagemaker``):
 The OpenAI routes are always registered when the ``openai`` API type is
 enabled, but each only functions when the model is served with a
 compatible ``--task`` value (for example ``embeddings_generation`` for
-``/v1/embeddings``, or ``audio_generation`` for ``/v1/audio/speech``).
+``/v1/embeddings``).
 
 To run inference without an HTTP server, see
 `max generate </max/cli/generate>`_ (text completion) or

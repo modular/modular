@@ -232,9 +232,8 @@ def cli_serve(
     exposes OpenAI-compatible HTTP endpoints for inference requests.
     """
     from max.entrypoints.cli import serve_api_server_and_model_worker
-    from max.entrypoints.cli.config import parse_task_flags
     from max.entrypoints.workers import start_workers
-    from max.pipelines import AudioGenerationConfig, PipelineConfig
+    from max.pipelines import PipelineConfig
     from max.pipelines.modeling.types import (
         PipelineTask,
         SamplingParams,
@@ -258,13 +257,7 @@ def cli_serve(
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
-    pipeline_config: PipelineConfig
-    if task == PipelineTask.AUDIO_GENERATION:
-        pipeline_config = AudioGenerationConfig.from_flags(
-            parse_task_flags(task_arg), **config_kwargs
-        )
-    else:
-        pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig(**config_kwargs)
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:

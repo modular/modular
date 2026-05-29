@@ -69,8 +69,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Soft floor on the decode batch size. If the TG batch size is "
             "larger, the scheduler continues TG batches; if it falls below, the "
             "scheduler prioritizes CE. This is not a strict minimum. By "
-            "default, this is ``max_queue_size_tg``. Experimental for the TTS "
-            "scheduler."
+            "default, this is ``max_queue_size_tg``."
         ),
     )
 
@@ -93,8 +92,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     ce_delay_ms: float = Field(
         default=0.0,
         description=(
-            "Duration of scheduler sleep prior to starting a prefill batch. "
-            "Experimental for the TTS scheduler."
+            "Duration of scheduler sleep prior to starting a prefill batch."
         ),
     )
 
@@ -103,7 +101,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "When enabled, the scheduler always runs a TG batch immediately "
             "after a CE batch with the same requests. This may reduce "
-            "time-to-first-chunk latency. Experimental for the TTS scheduler."
+            "time-to-first-chunk latency."
         ),
     )
 

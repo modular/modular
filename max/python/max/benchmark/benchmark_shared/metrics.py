@@ -898,65 +898,6 @@ class ChunkTimingMetrics:
         }
 
 
-class TTSBenchmarkMetrics(BaseBenchmarkMetrics):
-    """Container for TTS (text-to-speech) serving benchmark metrics.
-
-    Extends BaseBenchmarkMetrics with TTS-specific fields: real-time factor,
-    chunk timing, audio quality scores, and output length statistics.
-    """
-
-    total_input: int
-    total_output: float
-    nonempty_response_chunks: int
-
-    ttft_ms: StandardPercentileMetrics
-    tpot_ms: StandardPercentileMetrics
-    itl_ms: StandardPercentileMetrics
-    rtf_perc: StandardPercentileMetrics
-    first_chunk: ChunkTimingMetrics
-    nth_chunk: ChunkTimingMetrics
-
-    word_error_rate: float
-    noise_suppression_score: float
-
-    min_output: float
-    mean_output: float
-    median_output: float
-    max_output: float
-
-    startup_time: float
-
-    def to_result_dict(self) -> dict[str, object]:
-        d = super().to_result_dict()
-        d["total_input"] = self.total_input
-        d["total_output"] = self.total_output
-        d["nonempty_response_chunks"] = self.nonempty_response_chunks
-        d["word_error_rate"] = self.word_error_rate
-        d["noise_suppression_score"] = self.noise_suppression_score
-        d["min_output"] = self.min_output
-        d["mean_output"] = self.mean_output
-        d["median_output"] = self.median_output
-        d["max_output"] = self.max_output
-        d["startup_time"] = self.startup_time
-        return d
-
-    def confidence_warnings(self) -> list[str]:
-        warns: list[str] = []
-        for name, metric in [
-            ("ttft_ms", self.ttft_ms),
-            ("tpot_ms", self.tpot_ms),
-            ("rtf_perc", self.rtf_perc),
-        ]:
-            ci = getattr(metric, "confidence_info", None)
-            if ci and ci.confidence in ("low", "insufficient_data"):
-                warns.append(
-                    f"{name}: {ci.confidence} confidence"
-                    f" (CI width {ci.ci_relative_width:.0%} of mean,"
-                    f" n={ci.sample_size})"
-                )
-        return warns
-
-
 # ---------------------------------------------------------------------------
 # Speculative decoding metrics
 # ---------------------------------------------------------------------------
@@ -1177,5 +1118,4 @@ from max.profiler.cpu import CPUMetrics
 from .server_metrics import ParsedMetrics
 
 BaseBenchmarkMetrics.model_rebuild()
-TTSBenchmarkMetrics.model_rebuild()
 BenchmarkResult.model_rebuild()

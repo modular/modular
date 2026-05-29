@@ -43,7 +43,6 @@ from transformers import (
 )
 
 if TYPE_CHECKING:
-    from .audio_generator_pipeline import AudioGeneratorPipeline
     from .config import PipelineConfig
     from .pipeline_executor import PipelineExecutor
 
@@ -55,7 +54,6 @@ from max.pipelines.speculative.standalone import (
     _StandaloneSpeculativeDecodingPipeline,
 )
 
-from .audio_generator_pipeline import AudioGeneratorPipeline
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
@@ -63,7 +61,6 @@ from .pipeline_variants.overlap_text_generation import (
 )
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .reasoning import get_parser_cls
-from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
@@ -80,10 +77,8 @@ def get_pipeline_for_task(
 ) -> (
     type[TextGenerationPipeline[TextContext]]
     | type[EmbeddingsPipeline]
-    | type[AudioGeneratorPipeline]
     | type[PixelGenerationPipeline[Any]]
     | type[_StandaloneSpeculativeDecodingPipeline]
-    | type[SpeechTokenGenerationPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
 ):
     """Returns the pipeline class for the given task and config.
@@ -121,10 +116,6 @@ def get_pipeline_for_task(
         return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
         return EmbeddingsPipeline
-    elif task == PipelineTask.AUDIO_GENERATION:
-        return AudioGeneratorPipeline
-    elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
-        return SpeechTokenGenerationPipeline
     elif task == PipelineTask.PIXEL_GENERATION:
         return PixelGenerationPipeline
     else:
@@ -636,8 +627,7 @@ class PipelineRegistry:
     ) -> SupportedArchitecture | None:
         """Look up an architecture by name, optionally disambiguating by task.
 
-        When multiple architectures share the same name (e.g., a text generation
-        model and a TTS model both using LlamaForCausalLM), the task parameter
+        When multiple architectures share the same name, the task parameter
         allows selecting the correct one.
 
         Args:
@@ -973,9 +963,7 @@ class PipelineRegistry:
         Args:
             pipeline_config: The configuration for the pipeline.
             override_architecture: Optional architecture name to use instead of looking up
-                based on the model repository. This is useful for cases like audio generation
-                where the pipeline uses a different architecture (e.g., audio decoder) than
-                the underlying model repository.
+                based on the model repository.
             task: Optional pipeline task to disambiguate when multiple architectures share
                 the same name but serve different tasks.
 
