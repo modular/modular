@@ -855,7 +855,9 @@ def fa4_softmax[
             acc3 = add_ftz(acc3, s_load[i + 3]())
         return add_ftz(add_ftz(acc0, acc1), add_ftz(acc2, acc3))
 
-    var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](score_row)
+    var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](
+        seq_info.prompt_idx, score_row
+    )
     comptime mask_sets = MaskType.nonfull_sets[BM_mask, BN]()
     comptime mask_strategies = MaskType.mask_strategies[BM_mask, BN]()
     comptime num_sets = len(mask_strategies)
@@ -867,7 +869,7 @@ def fa4_softmax[
     comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
         mask_ends = mask.masked_set_ends[
             BM=BM_mask, BN=BN, page_size=page_size
-        ](score_row, num_keys)
+        ](seq_info.prompt_idx, score_row, num_keys)
         mask_iters[0] = mask_ends[0]
 
         comptime for i in range(1, num_sets):
@@ -972,6 +974,7 @@ def fa4_softmax[
             if kv_row >= num_keys:
                 break
             cur_mask_status = mask.status(
+                seq_info.prompt_idx,
                 Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                 Index[dtype=DType.int32](BM_mask, BN),
             )

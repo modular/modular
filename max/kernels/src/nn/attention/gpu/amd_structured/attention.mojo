@@ -577,6 +577,7 @@ struct Attention[
         comptime if Self.token_gen:
             # Decode: check single token at num_keys-1.
             return self.mask.status(
+                UInt32(self.batch_idx),
                 Index[dtype=DType.uint32](
                     self.num_keys - 1,
                     Int(kv_tile_start_row),
@@ -585,6 +586,7 @@ struct Attention[
             )
         else:
             return self.mask.status(
+                UInt32(self.batch_idx),
                 Index[dtype=DType.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),

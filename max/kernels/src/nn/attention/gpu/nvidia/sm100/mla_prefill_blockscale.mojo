@@ -357,6 +357,7 @@ __extension SM100MLA:
                 Self.page_size,
             ](
                 attn_smem,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -414,6 +415,7 @@ __extension SM100MLA:
             Self.mma(
                 ptr_tmem_addr[0],
                 cvt_to_mma_pipeline,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -440,7 +442,7 @@ __extension SM100MLA:
 
             var iter_count: UInt32 = (
                 mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
-                    pos.score_row, pos.num_keys
+                    seq_info.prompt_idx, pos.score_row, pos.num_keys
                 )
                 - 1
             )
@@ -567,7 +569,7 @@ __extension SM100MLA:
 
         var kv_row: UInt32 = mask.start_column[
             Self.BM, Self.BN, Self.page_size
-        ](score_row)
+        ](seq_info.prompt_idx, score_row)
         var paged_rows = kv_lut.populate[Self.config.BN, base_alignment](
             seq_info.prompt_idx, kv_row
         )
@@ -576,7 +578,7 @@ __extension SM100MLA:
         ](seq_info.prompt_idx, kv_row)
         var iter_count: UInt32 = (
             mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
-                score_row, num_keys
+                seq_info.prompt_idx, score_row, num_keys
             )
             - 1
         )
@@ -916,7 +918,9 @@ __extension SM100MLA:
 
                 comptime if check_mask:
                     if (
-                        Self.mask_status(mask, score_row, kv_row)
+                        Self.mask_status(
+                            mask, seq_info.prompt_idx, score_row, kv_row
+                        )
                         == TileMaskStatus.FULL_MASK
                     ):
                         continue
@@ -951,7 +955,9 @@ __extension SM100MLA:
                     var _skip_last = False
                     comptime if check_mask:
                         if (
-                            Self.mask_status(mask, score_row, kv_row)
+                            Self.mask_status(
+                                mask, seq_info.prompt_idx, score_row, kv_row
+                            )
                             == TileMaskStatus.FULL_MASK
                         ):
                             _skip_last = True
@@ -1155,7 +1161,9 @@ __extension SM100MLA:
 
                 comptime if check_mask:
                     if (
-                        Self.mask_status(mask, score_row, kv_row)
+                        Self.mask_status(
+                            mask, seq_info.prompt_idx, score_row, kv_row
+                        )
                         == TileMaskStatus.FULL_MASK
                     ):
                         continue
@@ -1188,7 +1196,9 @@ __extension SM100MLA:
                     var _skip_last = False
                     comptime if check_mask:
                         if (
-                            Self.mask_status(mask, score_row, kv_row)
+                            Self.mask_status(
+                                mask, seq_info.prompt_idx, score_row, kv_row
+                            )
                             == TileMaskStatus.FULL_MASK
                         ):
                             _skip_last = True
@@ -1329,6 +1339,7 @@ __extension SM100MLA:
     def mma(
         tmem_addr: UInt32,
         mut cvt_to_mma_pipeline: CvtToMMAPipeline,
+        seq_id: UInt32,
         score_row: UInt32,
         num_keys: UInt32,
         mask: Self.MaskType,
@@ -1415,7 +1426,7 @@ __extension SM100MLA:
 
             var iter_count: UInt32 = (
                 mask.total_iters[Self.BM, Self.BN, Self.page_size](
-                    score_row, num_keys
+                    seq_id, score_row, num_keys
                 )
                 - 1
             )
@@ -1554,7 +1565,7 @@ __extension SM100MLA:
             # We peel the first iteration, as we want to wait on q1
             var iter_count: UInt32 = (
                 mask.total_iters[Self.BM, Self.BN, Self.page_size](
-                    score_row, num_keys
+                    seq_id, score_row, num_keys
                 )
                 - 1
             )

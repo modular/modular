@@ -261,9 +261,13 @@ def fa4_load[
             ),
         )
 
-    var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](score_row)
+    var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](
+        seq_info.prompt_idx, score_row
+    )
     var iter_count: UInt32 = (
-        mask.last_masked_set_end[BM_mask, BN, page_size](score_row, num_keys)
+        mask.last_masked_set_end[BM_mask, BN, page_size](
+            seq_info.prompt_idx, score_row, num_keys
+        )
         - 1
     )
 
@@ -454,6 +458,7 @@ def fa4_load[
             comptime if check_mask:
                 if (
                     mask.status(
+                        seq_info.prompt_idx,
                         Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                         Index[dtype=DType.int32](BM_mask, BN),
                     )
@@ -498,6 +503,7 @@ def fa4_load[
                 comptime if check_mask:
                     if (
                         mask.status(
+                            seq_info.prompt_idx,
                             Index[dtype=DType.int32](
                                 Int(score_row), Int(kv_row)
                             ),
@@ -621,6 +627,7 @@ def fa4_load[
             comptime if check_mask:
                 if (
                     mask.status(
+                        seq_info.prompt_idx,
                         Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                         Index[dtype=DType.int32](BM_mask, BN),
                     )
@@ -670,6 +677,7 @@ def fa4_load[
                 comptime if check_mask:
                     if (
                         mask.status(
+                            seq_info.prompt_idx,
                             Index[dtype=DType.int32](
                                 Int(score_row), Int(kv_row)
                             ),

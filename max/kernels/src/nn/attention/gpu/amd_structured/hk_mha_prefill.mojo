@@ -882,6 +882,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 )
         else:
             var status = mask_functor.status(
+                batch_idx,
                 IndexList[2, element_type=DType.uint32](
                     Int(q_tile_idx * Self.Q_BLOCK_SIZE + start_pos),
                     Int(k_tile_idx * Self.KV_BLOCK),

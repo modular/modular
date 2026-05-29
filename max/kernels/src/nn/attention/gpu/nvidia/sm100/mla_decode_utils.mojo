@@ -3343,16 +3343,11 @@ struct MLA_SM100_Decode_Common[
         comptime SlidingWindowMask: Bool = (
             MaskTypeName == "SlidingWindowCausalMask"
         )
-        # Window size: 0 if not sliding.  Recovered from the trait-defined
-        # `mask_strategies()` method (the same channel SM100 MHA uses for
-        # sliding-window peeling) so we never touch `Self.MaskType.window_size`
-        # — that struct parameter is not exposed on the `MHAMask` trait and
-        # would fail type-checking even inside the comptime if guard.
-        comptime _sliding_window_size: Int = Int(
-            Self.MaskType.mask_strategies[Self.config.BM, Self.config.BN_QK]()[
-                0
-            ]._upper_triangular_window_size
-        )
+        # Window size: 0 if not sliding. The `MHAMask.sliding_window_size()`
+        # trait method is the canonical channel for this — `Self.MaskType.
+        # window_size` would fail type-checking inside the comptime if guard
+        # because it's a struct parameter, not exposed on the trait.
+        comptime _sliding_window_size: Int = Self.MaskType.sliding_window_size()
 
         # Same S base / stride as in mma()
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
@@ -4017,11 +4012,7 @@ struct MLA_SM100_Decode_Common[
             Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
         )
         comptime if _sliding_window_mask_corr:
-            comptime _W_corr: Int = Int(
-                Self.MaskType.mask_strategies[
-                    Self.config.BM, Self.config.BN_QK
-                ]()[0]._upper_triangular_window_size
-            )
+            comptime _W_corr: Int = Self.MaskType.sliding_window_size()
             var _global_lo_corr = max(
                 offset_position.cache_len() + 1 - _W_corr, 0
             )

@@ -45,6 +45,7 @@ def fa4_correction[
     page_size: Int,
 ](
     smem: SM100AttentionSMem[config],
+    seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
@@ -77,7 +78,8 @@ def fa4_correction[
 
     comptime BM_mask: Int = config.PairBM_eff()
     var iter_count: UInt32 = (
-        mask.total_iters[BM_mask, BN, page_size](score_row, num_keys) - 1
+        mask.total_iters[BM_mask, BN, page_size](seq_id, score_row, num_keys)
+        - 1
     )
 
     comptime batch_size = 16 if config.ov_depth % 16 == 0 else 8

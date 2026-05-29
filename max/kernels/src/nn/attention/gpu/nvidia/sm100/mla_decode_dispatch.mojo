@@ -772,11 +772,7 @@ def mla_decode_sm100_dispatch[
     # window_size + q_max_seq_len so partition heuristics don't
     # over-split a region the kernel will skip anyway.
     comptime if mask_t.get_type_name() == "SlidingWindowCausalMask":
-        # BM/BN_QK values are immaterial for window_size extraction; use the
-        # MLA decode tile shape (BM=64, BN_QK=64) for consistency.
-        comptime _sw_window_size: Int = Int(
-            mask_t.mask_strategies[64, 64]()[0]._upper_triangular_window_size
-        )
+        comptime _sw_window_size: Int = mask_t.sliding_window_size()
         var sw_cap: Int = _sw_window_size + q_max_seq_len
         # at high batch (bs>=64) with a small SW cap
         # (<=2048), shrinking the effective_split_len to sw_cap forces the

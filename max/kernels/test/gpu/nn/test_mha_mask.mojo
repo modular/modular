@@ -50,27 +50,40 @@ def test_causal_mask() raises:
 
     # Check tile status.
     assert_true(
-        mask.status(Index(4, 4), Index(4, 4)) == TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(4, 4), Index(4, 4))
+        == TileMaskStatus.PARTIAL_MASK
     )
     assert_true(
-        mask.status(Index(0, 2), Index(2, 2)) == TileMaskStatus.FULL_MASK
-    )
-    assert_true(mask.status(Index(2, 0), Index(2, 2)) == TileMaskStatus.NO_MASK)
-    assert_true(mask.status(Index(2, 1), Index(2, 2)) == TileMaskStatus.NO_MASK)
-    assert_true(
-        mask.status(Index(1, 5), Index(2, 2)) == TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(0, 2), Index(2, 2))
+        == TileMaskStatus.FULL_MASK
     )
     assert_true(
-        mask.status(Index(64, 0), Index(64, 128)) == TileMaskStatus.PARTIAL_MASK
+        mask.status(UInt32(0), Index(2, 0), Index(2, 2))
+        == TileMaskStatus.NO_MASK
     )
     assert_true(
-        mask.status(Index(64, 128), Index(64, 128)) == TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(2, 1), Index(2, 2))
+        == TileMaskStatus.NO_MASK
     )
     assert_true(
-        mask.status(Index(64, 256), Index(64, 128)) == TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(1, 5), Index(2, 2))
+        == TileMaskStatus.FULL_MASK
     )
     assert_true(
-        mask.status(Index(64, 384), Index(64, 128)) == TileMaskStatus.FULL_MASK
+        mask.status(UInt32(0), Index(64, 0), Index(64, 128))
+        == TileMaskStatus.PARTIAL_MASK
+    )
+    assert_true(
+        mask.status(UInt32(0), Index(64, 128), Index(64, 128))
+        == TileMaskStatus.FULL_MASK
+    )
+    assert_true(
+        mask.status(UInt32(0), Index(64, 256), Index(64, 128))
+        == TileMaskStatus.FULL_MASK
+    )
+    assert_true(
+        mask.status(UInt32(0), Index(64, 384), Index(64, 128))
+        == TileMaskStatus.FULL_MASK
     )
 
 
@@ -91,6 +104,7 @@ def test_causal_mask_asm() raises:
         )
         if (
             mask.status(
+                UInt32(0),
                 Index[dtype=DType.uint32](q_idx, k_idx),
                 Index[dtype=DType.uint32](4, 5),
             )
@@ -132,19 +146,30 @@ def test_and_mask() raises:
     assert_equal(masked_vec, SIMD[type, 4](0))
 
     # Check tile status.
-    assert_true(mask.status(Index(4, 4), Index(4, 4)) == TileMaskStatus.NO_MASK)
-    assert_true(mask.status(Index(0, 2), Index(2, 2)) == TileMaskStatus.NO_MASK)
-    assert_true(mask.status(Index(2, 0), Index(2, 2)) == TileMaskStatus.NO_MASK)
+    assert_true(
+        mask.status(UInt32(0), Index(4, 4), Index(4, 4))
+        == TileMaskStatus.NO_MASK
+    )
+    assert_true(
+        mask.status(UInt32(0), Index(0, 2), Index(2, 2))
+        == TileMaskStatus.NO_MASK
+    )
+    assert_true(
+        mask.status(UInt32(0), Index(2, 0), Index(2, 2))
+        == TileMaskStatus.NO_MASK
+    )
 
     var mask2 = AndMask[CausalMask(), CausalMask()]()
     assert_true(
-        mask2.status(Index(4, 4), Index(4, 4)) == TileMaskStatus.PARTIAL_MASK
+        mask2.status(UInt32(0), Index(4, 4), Index(4, 4))
+        == TileMaskStatus.PARTIAL_MASK
     )
     assert_true(
-        mask2.status(Index(64, 384), Index(64, 128))
+        mask2.status(UInt32(0), Index(64, 384), Index(64, 128))
         == TileMaskStatus.FULL_MASK,
         msg=String(
-            t"lhs = {mask2.status(Index(0, 0), Index(0, 0))} rhs ="
+            t"lhs ="
+            t" {mask2.status(UInt32(0), Index(0, 0), Index(0, 0))} rhs ="
             t" {TileMaskStatus.FULL_MASK}"
         ),
     )
@@ -161,7 +186,7 @@ def test_sliding_window_causal_mask() raises:
         size: type_of(offset),
         expected: TileMaskStatus,
     ) raises:
-        var status = mask.status(offset, size)
+        var status = mask.status(UInt32(0), offset, size)
         assert_equal(
             status,
             expected,
@@ -209,6 +234,7 @@ def test_sliding_window_causal_mask_asm() raises:
         )
         if (
             mask.status(
+                UInt32(0),
                 Index[dtype=DType.uint32](q_idx, k_idx),
                 Index[dtype=DType.uint32](64, 32),
             )

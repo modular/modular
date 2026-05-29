@@ -2026,68 +2026,33 @@ def apply_mask[
     comptime simd_size = 2
     comptime F32x2 = SIMD[DType.float32, simd_size]
 
-    comptime if (
-        MaskStrategy.LOWER_TRIANGULAR in mask_strategy
-        or MaskStrategy.UPPER_TRIANGULAR in mask_strategy
-        or (
-            MaskStrategy.OUT_OF_BOUNDS in mask_strategy
-            and MaskStrategy.COMPUTED not in mask_strategy
-        )
+    comptime if MaskStrategy.BITMASK in mask_strategy or (
+        MaskStrategy.OUT_OF_BOUNDS in mask_strategy
+        and MaskStrategy.COMPUTED not in mask_strategy
     ):
+        # Mask-driven bitmask path: each 32-col batch is masked by a 32-bit
+        # visibility pattern. Either the mask provides it via `mask_bits()`
+        # (`BITMASK`), or the kernel hardcodes "clip at num_keys" by setting
+        # `OUT_OF_BOUNDS` alone — used by softmax warps that fast-path the
+        # runtime-`NO_MASK` case.
         comptime num_batches = BN // 32
         comptime assert (BN % 32) == 0
 
-        # when score_row == kv_tile_start_row, 1 is valid
-        var n_valid: Int32 = max(1 + score_row - kv_tile_start_row, 0)
-        # OOB counter: number of in-bound columns (score_col < num_keys)
-        # remaining from the start of the current batch.
-        var n_valid_oob: Int32 = max(num_keys - kv_tile_start_row, 0)
-
         comptime for batch in range(num_batches):
-            var mask_bits: UInt32 = 0xFFFF_FFFF
+            var col_start: Int32 = kv_tile_start_row + Int32(32 * batch)
+            var mask_bits: UInt32
 
-            comptime if MaskStrategy.LOWER_TRIANGULAR in mask_strategy:
-                # Causal Mask
-                # score_row >= kv_tile_start_row
-                # 1 + score_row - kv_tile_start_row > 0
-                # n_valid > 0
-                mask_bits = (UInt32(1) << UInt32(n_valid)) - UInt32(
-                    1
-                ) if n_valid < 32 else mask_bits
-
-            comptime if MaskStrategy.UPPER_TRIANGULAR in mask_strategy:
-                # SlidingWindowCausalMask sliding window part
-                # score_row - kv_tile_start_row < window_size
-                # window_size + kv_tile_start_row - score_row > 0
-                # window_size + 1 - (1 + score_row - kv_tile_start_row) > 0
-                # window_size + 1 - n_valid > 0
-                #
-                # ex window_size = 1, score_row == kv_tile_start_row
-                #    n_valid = 1
-                # We should turn off `0`: first is on, and all the rest
-                # ex window_size = 4, score_row == kv_tile_start_row + 5
-                #    n_valid = 6
-                # We should turn off `2`: first two off, all the rest on
-                var mask_off_count: Int32 = (
-                    n_valid - mask_strategy._upper_triangular_window_size
+            comptime if MaskStrategy.BITMASK in mask_strategy:
+                mask_bits = mask.mask_bits(
+                    prompt_idx, score_row, col_start, num_keys
                 )
-                # we want mask_off_count `1`s
+            else:
+                # OUT_OF_BOUNDS alone: low `n_valid_oob` bits set, where
+                # n_valid_oob = max(num_keys - col_start, 0).
+                var n_valid_oob: Int32 = max(num_keys - col_start, 0)
                 mask_bits = (
-                    (
-                        mask_bits & (0xFFFF_FFFF << UInt32(mask_off_count))
-                    ) if mask_off_count
-                    < 32 else 0
-                ) if mask_off_count > 0 else mask_bits
-
-            comptime if MaskStrategy.OUT_OF_BOUNDS in mask_strategy:
-                # Bit i (0..31) of this batch corresponds to global column
-                # `kv_tile_start_row + 32*batch + i`. It is in-bounds iff
-                # that column is `< num_keys`, i.e. iff `i < n_valid_oob`.
-                # When `n_valid_oob >= 32`, all 32 columns are in-bound and
-                # the AND is a no-op.
-                mask_bits = (
-                    mask_bits & ((UInt32(1) << UInt32(n_valid_oob)) - UInt32(1))
-                ) if n_valid_oob < 32 else mask_bits
+                    (UInt32(1) << UInt32(n_valid_oob)) - UInt32(1)
+                ) if n_valid_oob < 32 else UInt32(0xFFFF_FFFF)
 
             comptime for n in range(32 // simd_size):
                 comptime frag_col_simd = n + 32 * batch // simd_size
@@ -2108,16 +2073,11 @@ def apply_mask[
                     var val: Float32 = s[i]
                     s[i] = val if in_bound else MASK_VALUE
 
-                # OOB is now folded into `mask_bits` above (when applicable),
-                # so we only need the optional log2e multiply that
-                # `apply_oob_mask` would otherwise perform.
                 comptime if MaskType.apply_log2e_after_mask:
                     s = mul_ftz(s, log2e)
 
                 srow[frag_col] = s[0]
                 srow[frag_col + 1] = s[1]
-            n_valid = max(n_valid - 32, 0)
-            n_valid_oob = max(n_valid_oob - 32, 0)
 
     else:
         comptime block_size = BN // simd_size

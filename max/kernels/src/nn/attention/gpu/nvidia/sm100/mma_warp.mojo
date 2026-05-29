@@ -41,6 +41,7 @@ def fa4_mma[
     page_size: Int,
 ](
     smem: SM100AttentionSMem[config],
+    seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
@@ -158,7 +159,10 @@ def fa4_mma[
 
         # We peel the first iteration, as we want to wait on q1
         var iter_count: UInt32 = (
-            mask.total_iters[BM_mask, BN, page_size](score_row, num_keys) - 1
+            mask.total_iters[BM_mask, BN, page_size](
+                seq_id, score_row, num_keys
+            )
+            - 1
         )
 
         # ---- Peeled iteration ----
@@ -258,7 +262,10 @@ def fa4_mma[
 
         # We peel the first iteration, as we want to wait on q1
         var iter_count: UInt32 = (
-            mask.total_iters[BM_mask, BN, page_size](score_row, num_keys) - 1
+            mask.total_iters[BM_mask, BN, page_size](
+                seq_id, score_row, num_keys
+            )
+            - 1
         )
 
         # Q_0 @ K_0' (staged over num_qk_stages)
