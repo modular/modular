@@ -758,11 +758,7 @@ struct SIMD[dtype: DType, size: Int](
         )
 
         _simd_construction_checks[Self.dtype, Self.size]()
-        var s = __mlir_op.`pop.cast_from_builtin`[
-            _type=__mlir_type.`!kgen.scalar<bool>`
-        ](value._mlir_value)
-
-        self._mlir_value = rebind[Self._Mask._mlir_type](s)
+        self._mlir_value = rebind[Self._Mask._mlir_type](value._mlir_value)
 
     @always_inline("nodebug")
     def __init__(out self: SIMD[DType.bool, Self.size], *, fill: Bool):
@@ -774,13 +770,9 @@ struct SIMD[dtype: DType, size: Int](
             fill: The bool value to fill each element of the SIMD vector with.
         """
         _simd_construction_checks[Self.dtype, Self.size]()
-        var s = __mlir_op.`pop.cast_from_builtin`[
-            _type=__mlir_type.`!kgen.scalar<bool>`
-        ](fill._mlir_value)
-
         self._mlir_value = __mlir_op.`pop.simd.splat`[
             _type=Self._Mask._mlir_type
-        ](s)
+        ](fill._mlir_value)
 
     @doc_hidden
     @always_inline("builtin")

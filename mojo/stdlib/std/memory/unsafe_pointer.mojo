@@ -1266,9 +1266,9 @@ struct UnsafePointer[
             for i in range(width):
                 v[i] = __mlir_op.`pop.load`[
                     alignment=alignment._int_mlir_index(),
-                    isVolatile=volatile._mlir_value,
-                    isInvariant=invariant._mlir_value,
-                    isNonTemporal=non_temporal._mlir_value,
+                    isVolatile=volatile.__mlir_i1__(),
+                    isInvariant=invariant.__mlir_i1__(),
+                    isNonTemporal=non_temporal.__mlir_i1__(),
                 ]((self + i).address)
             comptime if dtype.is_floating_point():
                 _check_not_poison[dtype, width](v)
@@ -1293,9 +1293,9 @@ struct UnsafePointer[
 
         var result = __mlir_op.`pop.load`[
             alignment=alignment._int_mlir_index(),
-            isVolatile=volatile._mlir_value,
-            isInvariant=invariant._mlir_value,
-            isNonTemporal=non_temporal._mlir_value,
+            isVolatile=volatile.__mlir_i1__(),
+            isInvariant=invariant.__mlir_i1__(),
+            isNonTemporal=non_temporal.__mlir_i1__(),
         ](address)
         comptime if dtype.is_floating_point():
             _check_not_poison[dtype, width](result)
@@ -1541,8 +1541,8 @@ struct UnsafePointer[
         else:
             __mlir_op.`pop.store`[
                 alignment=alignment._int_mlir_index(),
-                isVolatile=volatile._mlir_value,
-                isNonTemporal=non_temporal._mlir_value,
+                isVolatile=volatile.__mlir_i1__(),
+                isNonTemporal=non_temporal.__mlir_i1__(),
             ](val, self.bitcast[SIMD[dtype, width]]().address)
 
     @always_inline("nodebug")
