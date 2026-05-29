@@ -142,7 +142,7 @@ kgen.generator @test_variadic_ptrremove_map() {
 // CHECK:    kgen.return %[[V2]] : !kgen.scalar<f32>
 
 kgen.generator @float_constant_f32<value: f64, DT: dtype>() -> !kgen.scalar<DT> {
-  kgen.param.assert <eq(:dtype DT, f32)>, "float please"
+  kgen.param.assert <to_builtin(:scalar<bool> eq(:dtype DT, f32))>, "float please"
   %0 = kgen.param.constant: f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
   %2 = pop.cast_from_builtin %1: f32 to !kgen.scalar<DT>
@@ -173,7 +173,7 @@ kgen.generator @paramAssertExample() {
   kgen.param.declare flen = <4>
 
   // Should succeed.
-  kgen.param.assert <eq(flen, 4)>, "vector length should be 4 for floats"
+  kgen.param.assert <to_builtin(:scalar<bool> eq(flen, 4))>, "vector length should be 4 for floats"
   kgen.return
 }
 
@@ -383,7 +383,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
 
 // CHECK-LABEL: kgen.func @"takeStringParameter,SomeString=\22foo\22"
 kgen.generator @takeStringParameter<SomeString: string>() {
-  kgen.param.assert <eq(:string SomeString, "foo")>, "I want foo"
+  kgen.param.assert <to_builtin(:scalar<bool> eq(:string SomeString, "foo"))>, "I want foo"
   kgen.return
 }
 
@@ -423,7 +423,7 @@ kgen.generator @passTypeList() {
 // CHECK-LABEL: @"type_of_unknown
 kgen.generator @type_of_unknown<T: type, value: !kgen.param<T>>() {
   // CHECK-NEXT: <0>
-  kgen.param.constant: i1 = <eq(:!kgen.param<T> value, *?)>
+  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:!kgen.param<T> value, *?))>
   kgen.return
 }
 
@@ -442,7 +442,7 @@ kgen.generator @check() {
 //
 
 kgen.generator @genItf3<x>() {
-  kgen.param.if <eq(x, 0)> {
+  kgen.param.if <to_builtin(:scalar<bool> eq(x, 0))> {
     "impl.0"() {attr=#kgen.param.decl.ref<"x"> : index}: () -> ()
     kgen.param.yield
   } else {
@@ -596,7 +596,7 @@ kgen.generator @constexprIfBasic() {
   kgen.param.declare cond_var = <32>
 
   // CHECK-NEXT: "should.appear"
-  %0 = kgen.param.if <lt(cond_var, 10)> -> index {
+  %0 = kgen.param.if <to_builtin(:scalar<bool> lt(cond_var, 10))> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
     kgen.param.yield %1 : index
@@ -615,12 +615,12 @@ kgen.generator @nestedConstexprIf() {
 
   // CHECK-NEXT: "should.appear"
   // CHECK-NOT: "should.not.appear"
-  %0 = kgen.param.if <lt(cond_var, 10)> -> index {
+  %0 = kgen.param.if <to_builtin(:scalar<bool> lt(cond_var, 10))> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
     kgen.param.yield %1 : index
   } else {
-    %3 = kgen.param.if <gt(cond_var, 30)> -> index {
+    %3 = kgen.param.if <to_builtin(:scalar<bool> gt(cond_var, 30))> -> index {
       %4 = "should.appear"() : () -> index
       kgen.param.yield %4 : index
     } else {
@@ -637,13 +637,13 @@ kgen.generator @nestedConstexprIf() {
 kgen.generator @nestedConstexprIf2() {
   kgen.param.declare cond_var = <32>
 
-  %0 = kgen.param.if <lt(cond_var, 10)> -> index {
+  %0 = kgen.param.if <to_builtin(:scalar<bool> lt(cond_var, 10))> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
     kgen.param.yield %1 : index
   } else {
     // CHECK-NEXT: param.constant: i1 = <1>
-    %condition = kgen.param.constant : i1 = <gt(cond_var, 30)>
+    %condition = kgen.param.constant : i1 = <to_builtin(:scalar<bool> gt(cond_var, 30))>
     // CHECK-NEXT: hlcf.if
     %3 = hlcf.if %condition -> index {
       // CHECK-NEXT: "should.appear"
@@ -670,7 +670,7 @@ kgen.generator @nestedConstexprIf2() {
 // CHECK-LABEL: @"constexprIfInputParam,x=11"
 kgen.generator @constexprIfInputParam<x>() {
   // CHECK-NEXT: "should.appear"
-  %0 = kgen.param.if <gt(x, 10)> -> index {
+  %0 = kgen.param.if <to_builtin(:scalar<bool> gt(x, 10))> -> index {
     %1 = "should.appear"() : () -> index
     kgen.param.declare next_lt = <add(x, 10)>
     kgen.param.yield %1 : index
@@ -694,7 +694,7 @@ kgen.generator @caller() {
 kgen.generator @constexprIfEarlyExit() -> index {
   kgen.param.declare x = <11>
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
-  %0 = kgen.param.if <gt(x, 10)> -> index {
+  %0 = kgen.param.if <to_builtin(:scalar<bool> gt(x, 10))> -> index {
     %1 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
     kgen.return %1 : index
@@ -714,7 +714,7 @@ kgen.generator @constexprIfEarlyExit() -> index {
 kgen.generator @constexprIfEarlyExit2() -> index {
   kgen.param.declare x = <11>
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
-  %0 = kgen.param.if <gt(x, 10)> -> index {
+  %0 = kgen.param.if <to_builtin(:scalar<bool> gt(x, 10))> -> index {
     %1 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
     kgen.return %1 : index
@@ -723,7 +723,7 @@ kgen.generator @constexprIfEarlyExit2() -> index {
     kgen.param.yield %3 : index
   }
   // CHECK-NOT: "should.not.appear"
-  kgen.param.if <gt(x, 10)> {
+  kgen.param.if <to_builtin(:scalar<bool> gt(x, 10))> {
     "should.not.appear"() : () -> ()
     %4 = index.constant 3
     // CHECK-NOT: kgen.return
@@ -740,7 +740,7 @@ kgen.generator @constexprIfEarlyExit2() -> index {
 // CHECK-LABEL: @constexprIfEarlyExitWithParam
 kgen.generator @constexprIfEarlyExitWithParam() -> index {
   // CHECK-NEXT: [[RES:%[0-9]+]] = "should.appear"
-  %0 = kgen.param.if <gt(x, 10)> -> index {
+  %0 = kgen.param.if <to_builtin(:scalar<bool> gt(x, 10))> -> index {
     %1 = "should.appear"() : () -> index
     // CHECK-NEXT: kgen.return [[RES]]
     kgen.return %1 : index
@@ -934,7 +934,7 @@ kgen.generator @produce_one() -> index {
 // CHECK-NEXT: call @"paramRecurse,in=2"
 
 kgen.generator @paramRecurse<in>() {
-  kgen.param.if <eq(in, 0)> {
+  kgen.param.if <to_builtin(:scalar<bool> eq(in, 0))> {
     kgen.param.yield
   } else {
     kgen.call @paramRecurse<add(in, -1)>() : () -> ()
@@ -1098,7 +1098,7 @@ kgen.generator @entry(%arg0: index) {
 // CHECK-NEXT:    kgen.return %0 : index
 
 kgen.generator @recurse<axis>(%arg0: index) -> index {
-  kgen.param.if <eq(axis, 0)> {
+  kgen.param.if <to_builtin(:scalar<bool> eq(axis, 0))> {
     kgen.return %arg0 : index
   } else {
     kgen.param.yield

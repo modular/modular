@@ -2201,26 +2201,19 @@ LogicalResult ParamOperatorAttr::verify(
         !sugarIsa<SIMDType>(operands[0].getType()))
       return emitError() << "operator requires an index or integer type";
     break;
-  case POC::EQ:
-    if (operands.size() != 2)
-      return emitError() << "comparison operators must have two operands";
-    if (!type.isInteger(1) && !sugarIsa<SIMDType>(type))
-      return emitError() << "comparisons return i1/scalar<bool>";
-    break;
   case POC::In:
     if (operands.empty())
       return emitError() << "operator requires at least one operand";
-    if (!type.isInteger(1) && !sugarIsa<SIMDType>(type))
-      return emitError() << "in return i1/scalar<bool>";
+    if (!KGEN::isScalarOf<KGENDType::kBool>(type))
+      return emitError() << "in return scalar<bool>";
     break;
+  case POC::EQ:
   case POC::LT:
   case POC::LE:
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
-
-    if (!type.isInteger(1) && !sugarIsa<SIMDType>(type))
-      return emitError() << "comparisons return i1/scalar<bool>";
-
+    if (!KGEN::isSIMDOf<KGENDType::kBool>(type))
+      return emitError() << "comparisons return simd<bool>";
     // Allows almost every thing (index/float/bool/simd) for the operands.
     // TODO: restrict to simd after fully migrated.
     break;
@@ -3879,17 +3872,14 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
   if (llvm::is_contained({POC::LE, POC::LT, POC::EQ, POC::In}, opcode)) {
     origResultType = [&]() -> Type {
       // LT, LE, EQ, IN are all boolean expressions
-      if (auto simdType = dyn_cast<SIMDType>(origResultType)) {
-        auto dtype = DTypeConstantAttr::get(ctx, KGENDType::kBool);
-        // POC::In always returns a bool scalar.
-        if (opcode == POC::In)
-          return SIMDType::get(1, dtype);
+      auto boolDType = DTypeConstantAttr::get(ctx, KGENDType::kBool);
 
-        // otherwise, it is a lane-wise comparison.
-        return SIMDType::get(simdType.getSize(), dtype);
-      }
+      // Inherit the simd_size for lane-wise comparisons.
+      if (auto simdType = dyn_cast<SIMDType>(origResultType))
+        if (opcode != POC::In)
+          return SIMDType::get(simdType.getSize(), boolDType);
 
-      return IntegerType::get(ctx, 1);
+      return SIMDType::get(1, boolDType);
     }();
   }
 

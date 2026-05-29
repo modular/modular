@@ -12,7 +12,7 @@ kgen.generator @err() {
 }
 
 kgen.generator @"_mlirtype_is_eq"<t1: type, t2: type>() -> !kgen.scalar<bool> {
-  %0 = kgen.param.constant: i1 = <eq(:type t1, t2)>
+  %0 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:type t1, t2))>
   %1 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
   kgen.return %1 : !kgen.scalar<bool>
 }

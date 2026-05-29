@@ -3276,9 +3276,8 @@ void ClosureEmitter::addConformanceToDevicePassable(
         TypedAttr selfDeviceType = GetWitnessAttr::get(
             selfType, traitName, StringAttr::get(ctx, kDeviceType),
             deviceTypeAliasType);
-        TypedAttr isConvertible = ParamOperatorAttr::get(
-            b.getContext(), POC::EQ, {targetType, selfDeviceType},
-            SIMDType::get(b.getContext(), 1, KGENDType::kBool));
+        TypedAttr isConvertible =
+            ParamOperatorAttr::get(POC::EQ, targetType, selfDeviceType);
         auto isConvertibleValue =
             KGEN::ParamConstantOp::create(b, isConvertible);
         IREmitter::emitNormalReturn(b, isConvertibleValue);

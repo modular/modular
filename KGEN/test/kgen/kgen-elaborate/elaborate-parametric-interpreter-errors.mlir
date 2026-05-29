@@ -74,7 +74,7 @@ kgen.generator @brokenVLenAssert() {
   kgen.param.declare B : !kgen.string = <"foo">
 
   // expected-note @+1 {{constraint failed: foo}}
-  kgen.param.assert <eq(2, 3)>, B
+  kgen.param.assert <to_builtin(:scalar<bool> eq(2, 3))>, B
   kgen.return
 }
 
@@ -86,7 +86,7 @@ kgen.generator @fail_if_zero<value>() -> index {
   %0 = index.constant 0
   // expected-note @below {{failed to interpret operation}}
   // expected-note @below {{constraint failed: must not be zero!}}
-  kgen.param.assert <ne(value, 0)>, "must not be zero!"
+  kgen.param.assert <to_builtin(:scalar<bool> ne(value, 0))>, "must not be zero!"
   kgen.return %0 : index
 }
 
@@ -191,7 +191,7 @@ kgen.generator @will_fail() {
   kgen.param.declare B : !kgen.string = <"foo">
 
   // expected-note @+1 {{constraint failed: foo}}
-  kgen.param.assert <eq(2, 3)>, B
+  kgen.param.assert <to_builtin(:scalar<bool> eq(2, 3))>, B
 
   kgen.return
 }
