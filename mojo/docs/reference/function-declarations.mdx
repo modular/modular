@@ -292,15 +292,27 @@ def main():
     print(t"Sum: {sum}")  # Sum: 4080.0
 ```
 
-`where` clauses are only valid at the end of a declaration.
-They're not valid inside parameter or argument lists:
+`where` clauses belong at the end of a declaration:
 
 ```mojo
-# Error because where clauses are not valid in parameter lists
+# Correct: the `where` clause follows the signature.
+def correct[n: Int]() where n > 0:
+    pass
+```
+
+A `where` clause inside a parameter list is invalid. Add it to the end of
+the declaration:
+
+```mojo
+# Wrong: `where` is not allowed inside a parameter list.
 def wrong[n: Int where n > 0]():
     pass
+```
 
-# Error because where clauses are not valid in argument lists
+A `where` clause in an argument list is invalid:
+
+```mojo
+# Wrong: `where` clauses can only be used with compile-time parameters.
 def wrong(x: Int where x > 0):
     pass
 ```
