@@ -1401,7 +1401,7 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
     if (dtype.isInt() && dtype.getWidthInBits() == intType.getWidth() &&
         dtype.isSInt() == intType.isSigned())
       return true;
-    // Otherwise, we risk loosing bits, so we conservatively disallow.
+    // Otherwise, we risk losing bits, so we conservatively disallow.
     return false;
   }
 

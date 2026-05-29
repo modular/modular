@@ -118,7 +118,7 @@ def launch_ship2(mut ship: Spaceship):
 # - Extension signature resolution wanted to find its target struct,
 #   so it looked up "MyStruct" with resolve=false.
 #   - The lookup found the MyStruct struct and MyStruct extension.
-#   - It then signature-resolved all things it found (because it wasnt really
+#   - It then signature-resolved all things it found (because it wasn't really
 #     respecting resolve=false that well), including the extension.
 #     - Boom, cycle.
 # Solution was to make it so the lookup doesn't necessarily resolve everything
