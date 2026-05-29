@@ -18,10 +18,12 @@ from std.python.bindings import PythonModuleBuilder
 
 from _mojo_module import (
     Buffer,
+    Bundle,
     Context,
     Device,
     Driver,
     Event,
+    Function,
     Queue,
     Stream,
 )
@@ -54,11 +56,18 @@ def PyInit_mojo_module() -> PythonObject:
             .def_method[Context.alloc_sync]("alloc_sync")
             .def_method[Context.alloc_host_pinned]("alloc_host_pinned")
             .def_method[Context.memory_get_address]("memory_get_address")
+            .def_method[Context.load_function]("load_function")
         )
 
         _ = b.add_type[Buffer]("Buffer").def_method[Buffer.get_byte_size](
             "get_byte_size"
         )
+
+        _ = b.add_type[Bundle]("Bundle").def_method[Bundle.get_function_name](
+            "get_function_name"
+        )
+
+        _ = b.add_type[Function]("Function")
 
         _ = (
             b.add_type[Queue]("Queue")
