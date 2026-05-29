@@ -132,7 +132,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             Self.__arch(),
             `, `,
             _get_kgen_string[name](),
-            `> : i1`,
+            `> : !kgen.scalar<bool>`,
         ]
 
     @always_inline("nodebug")
@@ -450,7 +450,7 @@ def is_triple[
         _triple_attr[target](),
         `, `,
         name.value,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 
@@ -958,7 +958,7 @@ def is_little_endian[target: _TargetType = _current_target()]() -> Bool:
         ],
         `,`,
         `"little" : !kgen.string`,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 
@@ -982,7 +982,7 @@ def is_big_endian[target: _TargetType = _current_target()]() -> Bool:
         ],
         `,`,
         `"big" : !kgen.string`,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 

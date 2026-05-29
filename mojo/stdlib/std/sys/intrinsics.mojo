@@ -757,7 +757,7 @@ def _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
         `#kgen.type<`,
         +t2,
         `> : !kgen.type`,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 
@@ -781,7 +781,7 @@ def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
         `#kgen.type<`,
         +t2,
         `> : !kgen.type`,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 
