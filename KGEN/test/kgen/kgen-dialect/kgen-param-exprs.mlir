@@ -33,59 +33,59 @@ kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_sc
   %2 = kgen.param.constant = <mul(p1, 42, add(p2, p2))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(p1), 42))>
-  %3 = kgen.param.constant: i1 = <eq(42, p1)>
+  %3 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(42, p1))>
 
   // CHECK: = kgen.param.constant: i1 = <0>
-  %4 = kgen.param.constant: i1 = <eq(41, 42)>
+  %4 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(41, 42))>
 
   // CHECK: = kgen.param.constant: i1 = <1>
   %5 = kgen.param.constant: i1 = <1>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:dtype type, f32))>
-  %6 = kgen.param.constant: i1 = <eq(:dtype type, f32)>
+  %6 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:dtype type, f32))>
 
   // CHECK: = kgen.param.constant: i1 = <0>
-  %7 = kgen.param.constant: i1 = <eq(:dtype bf16, f16)>
+  %7 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:dtype bf16, f16))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:scalar<index> from_builtin(p1), [add(from_builtin(p2), 1), from_builtin(p2), 3, 1]))>
-  %8 = kgen.param.constant: i1 = <in(p1, [3, 1, p2, add(p2, 1), 1])>
+  %8 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, [3, 1, p2, add(p2, 1), 1]))>
 
   // CHECK: = kgen.param.constant: i1 = <0>
-  %9 = kgen.param.constant: i1 = <in(0, [1, 2])>
+  %9 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(0, [1, 2]))>
 
   // CHECK: = kgen.param.constant: i1 = <0>
-  %10 = kgen.param.constant: i1 = <in(p1, [])>
+  %10 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, []))>
 
   // CHECK: = kgen.param.constant: i1 = <1>
-  %11 = kgen.param.constant: i1 = <in(p1, [p1, 1])>
+  %11 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, [p1, 1]))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(p1), 1))>
-  %12 = kgen.param.constant: i1 = <in(p1, [1])>
+  %12 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, [1]))>
 
   // CHECK: <index>i1 = <#kgen.gen<to_builtin(:scalar<bool> eq(:type simd<*(0,0), f32>, simd<2, f32>))>>
   kgen.param.constant: !kgen.generator<<index>i1> = <
-    #kgen.gen<eq(:type
+    #kgen.gen<to_builtin(:scalar<bool> eq(:type
       #kgen.type<!kgen.simd<*(0,0), f32>>,
       #kgen.type<!kgen.simd<2, f32>>
-    )>>
+    ))>>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype f32, [type, f64]))>
-  %13 = kgen.param.constant: i1 = <in(:dtype f32, [f64, type, f64, type])>
+  %13 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype f32, [f64, type, f64, type]))>
 
   // CHECK: = kgen.param.constant: i1 = <0>
-  %14 = kgen.param.constant: i1 = <in(:dtype f32, [si64, f64])>
+  %14 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype f32, [si64, f64]))>
 
   // CHECK: = kgen.param.constant: i1 = <0>
-  %15 = kgen.param.constant: i1 = <in(:dtype type, [])>
+  %15 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, []))>
 
   // CHECK: = kgen.param.constant: i1 = <1>
-  %16 = kgen.param.constant: i1 = <in(:dtype type, [type, f32])>
+  %16 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [type, f32]))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [type2, f32]))>
-  %17 = kgen.param.constant: i1 = <in(:dtype type, [type2, f32])>
+  %17 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [type2, f32]))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:dtype type, f32))>
-  %18 = kgen.param.constant: i1 = <in(:dtype type, [f32])>
+  %18 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [f32]))>
 
   // CHECK: = kgen.param.constant: scalar<bool> = <not(int1)>
   %19 = kgen.param.constant: scalar<bool> = <xor(int1, true)>
@@ -94,10 +94,10 @@ kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_sc
   %20 = kgen.param.constant: scalar<bool> = <not(int1)>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:dtype type, f32))>
-  %21 = kgen.param.constant: i1 = <xor(eq(:dtype type, f32), 1)>
+  %21 = kgen.param.constant: i1 = <xor(to_builtin(:scalar<bool> eq(:dtype type, f32)), 1)>
 
   // CHECK: = kgen.param.constant: i1 = <1>
-  %22 = kgen.param.constant: i1 = <le(5, 9)>
+  %22 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> le(5, 9))>
 
   // CHECK: = kgen.param.constant = <get_sizeof(mlirType, #kgen.target
   %23 = kgen.param.constant = <get_sizeof(mlirType, #target)>
@@ -257,38 +257,38 @@ kgen.struct.generator @StructTypeGen1<a: index, b: index> = !kgen.struct<(index,
 kgen.generator @param_expr_type_equality<p1>() {
   // COM: Trivial pointer equality.
   // CHECK-NEXT: = kgen.param.constant: i1 = <1>
-  kgen.param.constant: i1 = <eq(
+  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(
     :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
     #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>
-  )>
+  ))>
 
   // COM: Different struct type references.
   // CHECK-NEXT: = kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <eq(
+  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(
     :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
     #kgen.type<!lit.struct<@StructType1<:index 1, :index p1>>>
-  )>
+  ))>
 
   // COM: One struct type reference and one non-struct type reference.
   // CHECK-NEXT: = kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <eq(
+  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(
     :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
     #kgen.type<index>
-  )>
+  ))>
 
   // COM: Different struct generator references.
   // CHECK-NEXT: = kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <eq(
+  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(
     :!kgen.type [typevalue<#kgen.genref<@StructTypeGen0<1, p1>>>, !kgen.struct<(index, index)>],
     [typevalue<#kgen.genref<@StructTypeGen1<1, p1>>>, !kgen.struct<(index, index)>]
-  )>
+  ))>
 
   // COM: One struct generator reference and one non-struct generator reference.
   // CHECK-NEXT: = kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <eq(
+  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(
     :!kgen.type [typevalue<#kgen.genref<@StructTypeGen0<1, p1>>>, !kgen.struct<(index, index)>],
     #kgen.type<index>
-  )>
+  ))>
   kgen.return
 }
 
@@ -307,7 +307,7 @@ kgen.generator @fixed_width_integers<p1: si32, p2: si32>() {
   %3 = kgen.param.constant: si32 = <div(12, 5)>
 
   // CHECK-NEXT: constant: i1 = <to_builtin(:scalar<bool> lt(:scalar<si32> from_builtin(:si32 p2), from_builtin(:si32 p1)))>
-  %4 = kgen.param.constant: i1 = <lt(:si32 p2, p1)>
+  %4 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> lt(:si32 p2, p1))>
 
   // CHECK-NEXT: constant: si32 = <1>
   %5 = kgen.param.constant: si32 = <div(mul_no_wrap(p1, p2), mul_no_wrap(p1, p2))>
@@ -370,10 +370,10 @@ kgen.generator @signed_unsigned_integers<ps: si8, pu: ui8>() {
 // CHECK-LABEL: @eq_compare_anything
 kgen.generator @eq_compare_anything() {
   // CHECK-NEXT: <1>
-  %0 = kgen.param.constant: i1 = <eq(:f32 1.5, 1.5)>
+  %0 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:f32 1.5, 1.5))>
 
   // CHECK-NEXT: <0>
-  %1 = kgen.param.constant: i1 = <ne(:f32 1.5, 1.5)>
+  %1 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:f32 1.5, 1.5))>
   kgen.return
 }
 
@@ -381,9 +381,9 @@ kgen.generator @eq_compare_anything() {
 kgen.generator @eq_compare_sub_elements<a: !kgen.param_list<index>, b: !kgen.param_list<index>, x: index, y: index>() {
   // CHECK-NEXT: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> and(eq(:scalar<index> from_builtin(#kgen.param_list.size<:param_list<index> a>), 2), eq(:scalar<index> from_builtin(#kgen.param_list.size<:param_list<index> b>), 2)))>
   kgen.param.constant: i1 = <and(
-    eq(:index #kgen.param_list.size<:!kgen.param_list<index> b>, 2),
-    eq(:index #kgen.param_list.size<:!kgen.param_list<index> a>, 2),
-    eq(:index #kgen.param_list.size<:!kgen.param_list<index> b>, 2)
+    to_builtin(:scalar<bool> eq(:index #kgen.param_list.size<:!kgen.param_list<index> b>, 2)),
+    to_builtin(:scalar<bool> eq(:index #kgen.param_list.size<:!kgen.param_list<index> a>, 2)),
+    to_builtin(:scalar<bool> eq(:index #kgen.param_list.size<:!kgen.param_list<index> b>, 2))
   )>
 
   kgen.return
@@ -393,28 +393,28 @@ kgen.generator @eq_compare_sub_elements<a: !kgen.param_list<index>, b: !kgen.par
 kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:dtype type, f32))>
-  %0 = kgen.param.constant: i1 = <ne(:dtype type, f32)>
+  %0 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:dtype type, f32))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:scalar<index> from_builtin(p1), 42))>
-  %1 = kgen.param.constant: i1 = <ne(p1, 42)>
+  %1 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(p1, 42))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(from_builtin(:i1 int1)))>
   %2 = kgen.param.constant: i1 = <not(int1)>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ge(:scalar<index> from_builtin(p1), from_builtin(p2)))>
-  %3 = kgen.param.constant: i1 = <ge(p1, p2)>
+  %3 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ge(p1, p2))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ge(:scalar<index> from_builtin(p1), 43))>
-  %4 = kgen.param.constant: i1 = <gt(p1, 42)>
+  %4 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> gt(p1, 42))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ge(:scalar<index> from_builtin(p1), 42))>
-  %5 = kgen.param.constant: i1 = <ge(p1, 42)>
+  %5 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ge(p1, 42))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ge(:scalar<index> from_builtin(p1), 4))>
-  %6 = kgen.param.constant: i1 = <le(4, p1)>
+  %6 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> le(4, p1))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ge(:scalar<index> from_builtin(p1), 5))>
-  %7 = kgen.param.constant: i1 = <lt(4, p1)>
+  %7 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> lt(4, p1))>
 
   // Shouldn't fold `index` constant expressions that differ for 32-/64-bit
   // targets without target info.
@@ -425,39 +425,39 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
   %9 = kgen.param.constant = <shl(1, 33)>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(in(:scalar<index> from_builtin(p1), [add(from_builtin(p2), 1), from_builtin(p2), 3, 1])))>
-  %10 = kgen.param.constant: i1 = <not_in(p1, [3, 1, p2, add(p2, 1), 1])>
+  %10 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(p1, [3, 1, p2, add(p2, 1), 1]))>
 
   // CHECK: = kgen.param.constant: i1 = <1>
-  %11 = kgen.param.constant: i1 = <not_in(0, [1, 2])>
+  %11 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(0, [1, 2]))>
 
   // CHECK: = kgen.param.constant: i1 = <1>
-  %12 = kgen.param.constant: i1 = <not_in(p1, [])>
+  %12 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(p1, []))>
 
   // CHECK: = kgen.param.constant: i1 = <0>
-  %13 = kgen.param.constant: i1 = <not_in(p1, [p1, 1])>
+  %13 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(p1, [p1, 1]))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:scalar<index> from_builtin(p1), 1))>
-  %14 = kgen.param.constant: i1 = <not_in(p1, [1])>
+  %14 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(p1, [1]))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(in(:dtype f32, [type, f64])))>
-  %15 = kgen.param.constant: i1 = <not_in(:dtype f32, [f64, type, f64, type])>
+  %15 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype f32, [f64, type, f64, type]))>
 
   // CHECK: = kgen.param.constant: i1 = <1>
-  %16 = kgen.param.constant: i1 = <not_in(:dtype f32, [si64, f64])>
+  %16 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype f32, [si64, f64]))>
 
   // CHECK: = kgen.param.constant: i1 = <1>
-  %17 = kgen.param.constant: i1 = <not_in(:dtype type, [])>
+  %17 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype type, []))>
 
   // CHECK: = kgen.param.constant: i1 = <0>
-  %18 = kgen.param.constant: i1 = <not_in(:dtype type, [type, f32])>
+  %18 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype type, [type, f32]))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:dtype type, f32))>
-  %19 = kgen.param.constant: i1 = <not_in(:dtype type, [f32])>
+  %19 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype type, [f32]))>
 
   // This can't be folded because it is target specific: true on 32-bit and
   // false on 64-bit.
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:scalar<index> 0, [4294967296, 8589934592]))>
-  %20 = kgen.param.constant: i1 = <in(0, [shl(1, 32), shl(2, 32)])>
+  %20 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(0, [shl(1, 32), shl(2, 32)]))>
 
   kgen.return
 }
@@ -571,15 +571,15 @@ kgen.generator @param_canonicalize<p1, p2>() {
   kgen.param.constant = <square>  // CHECK: kgen.param.constant = <square>
 
   // CHECK = <eq(p1, *?)>
-  kgen.param.declare unknown: i1 = <eq(*?, p1)>
+  kgen.param.declare unknown: i1 = <to_builtin(:scalar<bool> eq(*?, p1))>
   // CHECK: = <0>
-  kgen.param.declare unknownEq: i1 = <eq(:dtype *?, f32)>
+  kgen.param.declare unknownEq: i1 = <to_builtin(:scalar<bool> eq(:dtype *?, f32))>
   // CHECK: = <1>
-  kgen.param.declare unknownEqItself: i1 = <eq(:dtype *?, *?)>
+  kgen.param.declare unknownEqItself: i1 = <to_builtin(:scalar<bool> eq(:dtype *?, *?))>
   // CHECK: = <0>
-  kgen.param.declare unknownEqIndex: i1 = <eq(*?, 1)>
+  kgen.param.declare unknownEqIndex: i1 = <to_builtin(:scalar<bool> eq(*?, 1))>
   // CHECK: = <1>
-  kgen.param.declare unknownEqItselfIndex: i1 = <eq(*?, *?)>
+  kgen.param.declare unknownEqItselfIndex: i1 = <to_builtin(:scalar<bool> eq(*?, *?))>
 
   // Make sure operand deduplication happens for nested operands too
   kgen.param.declare max = <max(max(p1, 1), p1)>
@@ -647,7 +647,7 @@ kgen.generator @dtype_params<dt: dtype, f32: dtype, ui32: dtype>() {
 // CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
 kgen.generator @type_params<dt: dtype, typeParam: type>() {
   // CHECK: kgen.param.assert <to_builtin(:scalar<bool> eq(:type typeParam, scalar<f32>))>
-  kgen.param.assert <eq(:type typeParam, !kgen.scalar<f32>)>, "f32 scalarzzz"
+  kgen.param.assert <to_builtin(:scalar<bool> eq(:type typeParam, !kgen.scalar<f32>))>, "f32 scalarzzz"
   // CHECK: kgen.param.declare ty1: type = <scalar<f32>>
   kgen.param.declare ty1: type = <scalar<f32>>
 
@@ -669,10 +669,10 @@ kgen.generator @type_params<dt: dtype, typeParam: type>() {
 // CHECK-LABEL: kgen.generator @string_params<a: string, b: string>()
 kgen.generator @string_params<a: string, b: string>() {
   // CHECK: kgen.param.assert <to_builtin(:scalar<bool> eq(:string a, b))>, "samesies only"
-  kgen.param.assert <eq(:string a, b)>, "samesies only"
+  kgen.param.assert <to_builtin(:scalar<bool> eq(:string a, b))>, "samesies only"
 
   // CHECK: kgen.param.assert <to_builtin(:scalar<bool> in(:string a, [b, "foo"]))>, "samesies or foo"
-  kgen.param.assert <in(:string a, [b, "foo"])>, "samesies or foo"
+  kgen.param.assert <to_builtin(:scalar<bool> in(:string a, [b, "foo"]))>, "samesies or foo"
 
   // CHECK: kgen.param.declare s1: string = <"exciting">
   kgen.param.declare s1: string = <"exciting">
@@ -687,7 +687,7 @@ kgen.generator @string_params<a: string, b: string>() {
 // CHECK-LABEL: kgen.generator @target_params2<t0: target>()
 kgen.generator @target_params2<t0: target>() {
   // CHECK: kgen.param.assert <to_builtin(:scalar<bool> eq(:target t0, #kgen.target<triple = "triple", arch = "cpu", features = "features", data_layout = "p:32:32", simd_bit_width = 4>))>, "must support target!!"
-  kgen.param.assert <eq(:target t0, #kgen.target<triple="triple", arch="cpu", features="features", data_layout="p:32:32", simd_bit_width=4>)>, "must support target!!"
+  kgen.param.assert <to_builtin(:scalar<bool> eq(:target t0, #kgen.target<triple="triple", arch="cpu", features="features", data_layout="p:32:32", simd_bit_width=4>))>, "must support target!!"
   kgen.return
 }
 
@@ -699,28 +699,28 @@ kgen.generator @target_has_feature<t0: target>() {
 
 // CHECK-LABEL: kgen.generator @target_is_gpu_triple<t0: target>()
 kgen.generator @target_is_gpu_triple<t0: target>() {
-  kgen.param.assert <eq(:string target_get_field(t0, "triple"), "nvptx64-nvidia-cuda")>, "triple must be nvptx64-nvidia-cuda"
+  kgen.param.assert <to_builtin(:scalar<bool> eq(:string target_get_field(t0, "triple"), "nvptx64-nvidia-cuda"))>, "triple must be nvptx64-nvidia-cuda"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_is_os<t0: target>()
 kgen.generator @target_is_os<t0: target>() {
-  kgen.param.assert <eq(:string target_get_field(t0, "os"), "darwin")>, "os must be darwin"
+  kgen.param.assert <to_builtin(:scalar<bool> eq(:string target_get_field(t0, "os"), "darwin"))>, "os must be darwin"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_is_little_endian<t0: target>()
 kgen.generator @target_is_little_endian<t0: target>() {
-  kgen.param.assert <eq(:string target_get_field(t0, "endianness"), "little")>, "target must be little endian"
+  kgen.param.assert <to_builtin(:scalar<bool> eq(:string target_get_field(t0, "endianness"), "little"))>, "target must be little endian"
   kgen.return
 }
 
 
 // CHECK-LABEL: kgen.generator @target_get_field()
 kgen.generator @target_get_field() {
-  kgen.param.assert<eq(128, target_get_field(#target, "simd_bit_width"))>,
+  kgen.param.assert<to_builtin(:scalar<bool> eq(128, target_get_field(#target, "simd_bit_width")))>,
                     "simd_bit_width is always greater than 1"
-  kgen.param.assert<eq(:string target_get_field(#target, "os"), "darwin")>,
+  kgen.param.assert<to_builtin(:scalar<bool> eq(:string target_get_field(#target, "os"), "darwin"))>,
                     "target os is darwin"
   kgen.return
 }
@@ -797,8 +797,8 @@ lit.struct.decl @B {}
 // CHECK-LABEL: @symbol_exprs
 kgen.generator @symbol_exprs() {
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(get_sizeof(!lit.struct<@A>, #kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>)), from_builtin(get_sizeof(!lit.struct<@B>, #kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>))))>
-  %0 = kgen.param.constant: i1 = <eq(:index get_sizeof(@A, #target),
-                                  get_sizeof(@B, #target))>
+  %0 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:index get_sizeof(@A, #target),
+                                  get_sizeof(@B, #target)))>
   kgen.return
 }
 

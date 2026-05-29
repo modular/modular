@@ -2829,18 +2829,25 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           // yet. It can do it, but we don't have a way to pass the unsigned
           // flag through easily.
           break;
+        // TODO: we won't be needing the extra cast_to_builtin once we done
+        // simd/int unification.
         case mlir::index::IndexCmpPredicate::EQ:
-          return ParamOperatorAttr::get(POC::EQ, lhs, rhs);
+          return CastToBuiltinAttr::get(
+              ParamOperatorAttr::get(POC::EQ, lhs, rhs));
         case mlir::index::IndexCmpPredicate::NE:
-          return ParamOperatorAttr::getNE(lhs, rhs);
+          return CastToBuiltinAttr::get(ParamOperatorAttr::getNE(lhs, rhs));
         case mlir::index::IndexCmpPredicate::SLT:
-          return ParamOperatorAttr::get(POC::LT, lhs, rhs);
+          return CastToBuiltinAttr::get(
+              ParamOperatorAttr::get(POC::LT, lhs, rhs));
         case mlir::index::IndexCmpPredicate::SLE:
-          return ParamOperatorAttr::get(POC::LE, lhs, rhs);
+          return CastToBuiltinAttr::get(
+              ParamOperatorAttr::get(POC::LE, lhs, rhs));
         case mlir::index::IndexCmpPredicate::SGT:
-          return ParamOperatorAttr::get(POC::LT, rhs, lhs);
+          return CastToBuiltinAttr::get(
+              ParamOperatorAttr::get(POC::LT, rhs, lhs));
         case mlir::index::IndexCmpPredicate::SGE:
-          return ParamOperatorAttr::get(POC::LE, rhs, lhs);
+          return CastToBuiltinAttr::get(
+              ParamOperatorAttr::get(POC::LE, rhs, lhs));
         }
       }
   }

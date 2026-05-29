@@ -102,7 +102,7 @@ kgen.generator @param_assert_simplify<p1 : i1, p2>() {
   // CHECK-NOT: assert <1>
   kgen.param.assert <1>, "this is pointless"
   // CHECK-NEXT: kgen.param.assert <0>, "failing asserts must be kept"
-  kgen.param.assert <eq(42, 41)>, "failing asserts must be kept"
+  kgen.param.assert <to_builtin(:scalar<bool> eq(42, 41))>, "failing asserts must be kept"
   kgen.return
 }
 

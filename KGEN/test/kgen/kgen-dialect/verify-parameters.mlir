@@ -10,7 +10,7 @@ kgen.generator @parameterIsolatedRegions<A>() {
   // CHECK: {isolated}
 
   // CHECK: kgen.param.if
-  kgen.param.if <lt(A, 1)> {
+  kgen.param.if <to_builtin(:scalar<bool> lt(A, 1))> {
     kgen.param.yield
   } else {
     kgen.param.yield

@@ -205,7 +205,7 @@ kgen.generator @trait_constraints<x: index>() {
 
   // Trait with non-trivial constraint is printed with `where`.
   // CHECK: kgen.param.declare conditional: type = <trait<@Trait where #kgen.constraint<{{.*}}>
-  kgen.param.declare conditional: type = <!lit.trait<@Trait where #kgen.constraint<#kgen.cast_from_builtin<#kgen.param.expr<lt, 0 : index, #kgen.param.decl.ref<"x"> : index> : i1> : !kgen.scalar<bool>, loc("test.mlir":1:1)>>>
+  kgen.param.declare conditional: type = <!lit.trait<@Trait where #kgen.constraint<#kgen.param.expr<lt, 0 : index, #kgen.param.decl.ref<"x"> : index> : !kgen.scalar<bool>, loc("test.mlir":1:1)>>>
 
   // Literal true constraint is elided.
   // CHECK: kgen.param.declare literal_true: type = <trait<@MyTrait>>
@@ -213,7 +213,7 @@ kgen.generator @trait_constraints<x: index>() {
 
   // Foldable true constraint (gt(1, 0) = true) is also elided.
   // CHECK: kgen.param.declare foldable_true: type = <trait<@MyTrait>>
-  kgen.param.declare foldable_true: type = <!lit.trait<@MyTrait where #kgen.constraint<#kgen.cast_from_builtin<#kgen.param.expr<lt, 0 : index, 1 : index> : i1> : !kgen.scalar<bool>, loc("t":1:2)>>>
+  kgen.param.declare foldable_true: type = <!lit.trait<@MyTrait where #kgen.constraint<#kgen.param.expr<lt, 0 : index, 1 : index> : !kgen.scalar<bool>, loc("t":1:2)>>>
 
   // False constraints remove the trait slot entirely.
   // CHECK: kgen.param.declare false_removed: type = <trait<@Trait>>
@@ -222,7 +222,7 @@ kgen.generator @trait_constraints<x: index>() {
   // Combined: foldable true (elided) + non-trivial (kept) + false (removed).
   // Result: @MyTrait (no constraint), @Trait with constraint. @TParam is removed.
   // CHECK: kgen.param.declare combined: type = <trait<@MyTrait, @Trait where #kgen.constraint<{{.*}}>
-  kgen.param.declare combined: type = <!lit.trait<@MyTrait where #kgen.constraint<#kgen.cast_from_builtin<#kgen.param.expr<lt, 0 : index, 1 : index> : i1> : !kgen.scalar<bool>, loc("t":3:1)>, @Trait where #kgen.constraint<#kgen.cast_from_builtin<#kgen.param.expr<lt, 0 : index, #kgen.param.decl.ref<"x"> : index> : i1> : !kgen.scalar<bool>, loc("t":3:2)>, @TParam where #kgen.constraint<false, loc("t":3:3)>>>
+  kgen.param.declare combined: type = <!lit.trait<@MyTrait where #kgen.constraint<#kgen.param.expr<lt, 0 : index, 1 : index> : !kgen.scalar<bool>, loc("t":3:1)>, @Trait where #kgen.constraint<#kgen.param.expr<lt, 0 : index, #kgen.param.decl.ref<"x"> : index> : !kgen.scalar<bool>, loc("t":3:2)>, @TParam where #kgen.constraint<false, loc("t":3:3)>>>
 
   kgen.return
 }

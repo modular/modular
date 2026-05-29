@@ -610,8 +610,8 @@ lit.fn @"bar"<PARAM: index>[mut R](?, %__result__: !lit.ref<@Foo<:index PARAM>, 
 // CHECK-SAME: x {<{{.*}}lt{{.*}}x{{.*}}2{{.*}}, #loc>},
 // CHECK-SAME: y {<{{.*}}lt{{.*}}y{{.*}}10{{.*}}, #loc1>, <{{.*}}lt{{.*}}x{{.*}}10{{.*}}, #loc1>}
 lit.fn @has_pogs_requires<
-  x: index {<#kgen.param.expr<xor, #kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"x"> : index, 2 : index> : i1> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>, #loc>},
-  y: index {<#kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"y"> : index, 10 : index> : i1> : !kgen.scalar<bool>, #loc1>, <#kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"x"> : index, 10 : index> : i1> : !kgen.scalar<bool>, #loc1>}
+  x: index {<#kgen.param.expr<xor, #kgen.param.expr<lt, #kgen.param.decl.ref<"x"> : index, 2 : index> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>, #loc>},
+  y: index {<#kgen.param.expr<lt, #kgen.param.decl.ref<"y"> : index, 10 : index> : !kgen.scalar<bool>, #loc1>, <#kgen.param.expr<lt, #kgen.param.decl.ref<"x"> : index, 10 : index> : !kgen.scalar<bool>, #loc1>}
 >() -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
@@ -622,7 +622,7 @@ lit.fn @has_pogs_requires<
 // CHECK-SAME: <x, y {<{{.*}}lt{{.*}}y{{.*}}10{{.*}}, #loc1>}, {<true, #loc>, <true, #loc1>}>
 lit.fn @has_param_list_pre_constraint<
   x: index,
-  y: index {<#kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"y"> : index, 10 : index> : i1> : !kgen.scalar<bool>, #loc1>},
+  y: index {<#kgen.param.expr<lt, #kgen.param.decl.ref<"y"> : index, 10 : index> : !kgen.scalar<bool>, #loc1>},
   {<true, #loc>, <true, #loc1>}
 >() -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
