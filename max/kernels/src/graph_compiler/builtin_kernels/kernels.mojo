@@ -227,18 +227,16 @@ struct Range:
         step: Scalar[dtype],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
         @always_inline
         def func[
             width: Int, element_alignment: Int
-        ](idx: IndexList[1]) -> SIMD[dtype, width]:
+        ](idx: IndexList[1]) {var start, var step} -> SIMD[dtype, width]:
             return start + step * (iota[dtype, width](Scalar[dtype](idx[0])))
 
         foreach[
-            func,
             target=target,
             _trace_name=_trace_name,
-        ](output, ctx)
+        ](func, output, ctx)
 
     @staticmethod
     def shape[
