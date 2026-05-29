@@ -32,7 +32,7 @@ def test_assert_with_message_parameter[x: Int]():
 
 # CHECK-LABEL: lit.fn @"test_assert_with_param_expr
 def test_assert_with_param_expr[x: Int, y: Int]():
-    # CHECK: kgen.param.assert <{{.*}} to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), from_builtin(#lit.struct.extract<:!Int y, "_mlir_value">))))>, ""
+    # CHECK: kgen.param.assert <to_builtin(:scalar<bool> {{.*}}eq(:scalar<index> from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), from_builtin(#lit.struct.extract<:!Int y, "_mlir_value">))))>, ""
     comptime assert x == y
 
 
@@ -43,7 +43,7 @@ def requires_natural[x: Int](y: Int) where x >= 0:
 # CHECK-LABEL: lit.fn @"test_assert_enables_where_constraint
 def test_assert_enables_where_constraint[x: Int](y: Int):
     # First assert that x >= 0
-    # CHECK: kgen.param.assert <{{.*}} to_builtin(:scalar<bool> ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), 0)))>, ""
+    # CHECK: kgen.param.assert <to_builtin(:scalar<bool> {{.*}}ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), 0)))>, ""
     comptime assert x >= 0
 
     # Now we can call a function that requires x >= 0 via where clause

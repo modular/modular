@@ -1217,7 +1217,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
       parent->setToError(hasNextResult.takeError());
       return failure();
     }
-    if (!cast<BoolAttr>(*hasNextResult).getValue())
+    if (!cast<SIMDAttr>(*hasNextResult).getAsBool())
       break;
 
     // Get the next iterator value.

@@ -3002,6 +3002,13 @@ def KGEN_SIMDAttr : KGEN_ExprAttr<"SIMD", "simd"> {
     /// return null if the SIMD type is parametric or we don't know how to make
     /// a zero value of the specified dtype.
     static SIMDAttr getZeroValue(SIMDType type);
+
+    /// Create a bool scalar simd attr.
+    static SIMDAttr getScalarBool(MLIRContext *ctx, bool value);
+
+    /// Returns true/false for the simd literal. It *asserts* the simd value has
+    /// a scalar<bool> type.
+    bool getAsBool() const;
   }];
 
   let genVerifyDecl = 1;

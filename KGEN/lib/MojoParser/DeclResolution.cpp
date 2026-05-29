@@ -2996,6 +2996,7 @@ static ParseResult resolveConformanceList(
             : ConstraintAttr();
     if (traitConstraints && conformance.constraint) {
       IREmitter constraintEmitter(declScope, EC_Requires);
+      // TODO: directly emit scalar<bool> instead of i1.
       RValue propI1 = constraintEmitter.emitExprI1(
           conformance.constraint->propExpr, EC_Requires);
       if (!propI1) {
@@ -3008,7 +3009,8 @@ static ParseResult resolveConformanceList(
         constraintEmitter.emitErrorForDynamicValueInParameter(conformance.loc);
         return failure();
       }
-      TypedAttr simplifiedProp = LIT::deShortCircuitCond(propVal);
+      TypedAttr simplifiedProp =
+          LIT::deShortCircuitCond(CastFromBuiltinAttr::get(propVal));
       constraint = ConstraintAttr::get(
           simplifiedProp, shared.diags.translateLocation(conformance.loc));
     }

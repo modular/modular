@@ -24,7 +24,7 @@ struct StructWithIntParam[size: Int](RegisterPassable):
 
 # CHECK-LABEL: lit.fn @"paramArith{{.*}}"<x: !Int>() -> !kgen.none
 def paramArith[x: Int]():
-    # CHECK: lit.alias.decl *"y`": !Bool = <sugar_builtin(apply({{.*}}to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), 99)){{.*}})>
+    # CHECK: lit.alias.decl *"y`": !Bool = <sugar_builtin(apply({{.*}}{_mlir_value: scalar<bool> = eq(:scalar<index> from_builtin(#lit.struct.extract<:!Int x, "_mlir_value">), 99)})>
     comptime y = x == 98 + 1
 
 def take_3index(a: Int, b: Int, c: Int) -> Int:
@@ -223,7 +223,7 @@ def my_constrained[cond: Bool, message: StringLiteral]():
 
 # CHECK-LABEL: lit.fn @"pass_str_param
 def pass_str_param():
-    # CHECK: lit.call {{.+}}my_constrained{{.*}}<:string "foo", :!Bool {:i1 1}, :!lit.struct<#StringLiteral <:string "foo">> *?>()
+    # CHECK: lit.call {{.+}}my_constrained{{.*}}<:string "foo", :!Bool {:scalar<bool> true}, :!lit.struct<#StringLiteral <:string "foo">> *?>()
     my_constrained[1==1, "foo"]()
 
 # CHECK-LABEL: lit.fn @"implicit_params
@@ -793,7 +793,7 @@ struct MyStringSlice[mut: Bool, //, origin: Origin[mut=mut]]:  pass
 
 # This only binds to immutable things.
 # CHECK-LABEL: lit.fn @"test_imm_string_slice
-# CHECK-SAME: (%a: !lit.ref<{{.*}}MyStringSlice <:!Bool {:i1 0}
+# CHECK-SAME: (%a: !lit.ref<{{.*}}MyStringSlice <:!Bool {:scalar<bool> false}
 def test_imm_string_slice(a: ImmMyStringSlice):
     pass
 
@@ -1055,7 +1055,7 @@ struct ClosureParam[lt: Origin[mut=True], f: def () capturing [lt._mlir_origin] 
 def infer_implicit_params(var p: ClosureParam):
     # CHECK: lit.call {{.*}}ClosureParam::@"__init__
     # CHECK-SAME: *, "take"
-    # CHECK-SAME: <:origin<1> *"p.lt._mlir_origin``",
+    # CHECK-SAME: <:origin<true> *"p.lt._mlir_origin``",
     # CHECK-SAME: :!lit.generator<:{mut *"p.lt._mlir_origin``"}:() capturing -> !kgen.none> *"p.f`2">
     var tmp = p^
     _ = tmp^
@@ -1123,20 +1123,20 @@ def test_origin_struct_inf[imm_data: Int](mut data: Int):
    # This needs to infer the origin through an implicit conversion
    # CHECK: %0 = lit.ref.immut %data
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceImm::@"__init__
-   # CHECK-SAME: :origin<0> (mutcast mut *"data`"){{.*}}>(%0, %immTest)
+   # CHECK-SAME: :origin<false> (mutcast mut *"data`"){{.*}}>(%0, %immTest)
    immTest = OriginStructInferenceImm(data)
 
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferencePar::@"__init__
-   # CHECK-SAME: :origin<1> *"data`">> *?>(%data, %parTest)
+   # CHECK-SAME: :origin<true> *"data`">> *?>(%data, %parTest)
    parTest = OriginStructInferencePar(data)
 
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParWrapped::@"__init__
-   # CHECK-SAME: :origin<1> *"data`">> *?>(%data, %parWrappedTest)
+   # CHECK-SAME: :origin<true> *"data`">> *?>(%data, %parWrappedTest)
    parWrappedTest = OriginStructInferenceParWrapped(data)
 
    # CHECK: %[[IMMUT:.+]] = lit.ref.immut {{.*}} : <!Int, mut [[IMMUT_REF:.+]]>
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParSpecialized::@"__init__
-   # CHECK-SAME: :!Bool {:i1 0},
+   # CHECK-SAME: :!Bool {:scalar<bool> false},
    # CHECK-SAME: (%[[IMMUT]], %parSpecializedTest)
    parSpecializedTest = OriginStructInferenceParSpecialized(imm_data)
 
@@ -1366,7 +1366,7 @@ def default_inferring_param[O: ImmutOrigin](str: StringSlice[O] = StaticString("
 # CHECK-LABEL: lit.fn @"test_default_inferring_param
 def test_default_inferring_param(b: String):
     # Infers O to default value.
-    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSlice <:!Bool {:i1 0}, :origin<0> #lit.origin.field<#lit.static.origin : !lit.origin<0>, "__constants__">,
+    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSlice <:!Bool {:scalar<bool> false}, :origin<false> #lit.origin.field<#lit.static.origin : !lit.origin<false>, "__constants__">,
     # CHECK-NEXT: lit.call {{.*}}default_inferring_param{{.*}}(%0)
     default_inferring_param()
     default_inferring_param(StaticString("a"))
@@ -1636,7 +1636,7 @@ def getMOCO1144Bound() -> MOCO1144Bound[Int]: pass
 
 # CHECK-LABEL: lit.fn @"tryCallingAThingReturningMOCO1144Bound
 def tryCallingAThingReturningMOCO1144Bound():
-    # CHECK-NEXT:  lit.var.decl "x" {{.*}}#MOCO1144 <:!Bool {:i1 1}, :!AnyType !Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType !Int
+    # CHECK-NEXT:  lit.var.decl "x" {{.*}}#MOCO1144 <:!Bool {:scalar<bool> true}, :!AnyType !Int{{.*}}takeAnyTypeReturnInt[::AnyType]()"<:!AnyType !Int
     var x = getMOCO1144Bound()
 
 struct HasAutoParam[arg: StructWithIntParam]:
@@ -1670,13 +1670,13 @@ def test_variadic_inf():
 # Origin Parameters
 ##===----------------------------------------------------------------------===##
 
-struct SomeReference[lt: __mlir_type.`!lit.origin<0>`](TrivialRegisterPassable):
+struct SomeReference[lt: __mlir_type.`!lit.origin<false>`](TrivialRegisterPassable):
     pass
 
 
 # CHECK-LABEL: lit.fn @"unbound_origin
-# CHECK-SAME: <?, [[R:.*]]: origin<0>>
-# CHECK-SAME: #SomeReference <:origin<0> [[R]]>
+# CHECK-SAME: <?, [[R:.*]]: origin<false>>
+# CHECK-SAME: #SomeReference <:origin<false> [[R]]>
 def unbound_origin(r: SomeReference[_]):
     pass
 
@@ -1866,11 +1866,11 @@ def _copy_nd_buffer_to_layout_tensor[shape: DimList](src: NDBuffer[shape]):
 
 # Make sure default inferred value is installed.
 
-# CHECK-LABEL: lit.alias.decl *"ImmutOrigin{{.*}}": meta<!lit.struct<#Origin <:!Bool {:i1 0}, :origin<0> ?>, <"_mlir_origin": origin<0>, +>>>
+# CHECK-LABEL: lit.alias.decl *"ImmutOrigin{{.*}}": meta<!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> ?>, <"_mlir_origin": origin<false>, +>>>
 comptime ImmutOrigin = Origin[mut=False]
-# CHECK-LABEL: lit.alias.decl *"ImmutAnyOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:i1 0}, :origin<0> #lit.any.origin>>
+# CHECK-LABEL: lit.alias.decl *"ImmutAnyOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> #lit.any.origin>>
 comptime ImmutAnyOrigin = AnyOrigin[mut=False]
-# CHECK-LABEL: lit.alias.decl *"ImmutExternalOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:i1 0}, :origin<0> {}>>
+# CHECK-LABEL: lit.alias.decl *"ImmutExternalOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> {}>>
 comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
 
 

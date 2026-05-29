@@ -18,7 +18,7 @@ kgen.struct.generator @SIMDParamStruct<
 
 // CHECK-LABEL: kgen.func export @test_simd_param_printing
 kgen.generator export @test_simd_param_printing() {
-  // CHECK-NEXT: constant: string = <"SIMDParamStruct[42 : SIMD[DType.int32, 1], 1.5 : SIMD[DType.float32, 1], True : SIMD[DType.bool, 1], 7 : SIMD[DType.int, 1], 8 : SIMD[DType.uint, 1], [1, 2, 3, 4] : SIMD[DType.int32, 4]]">
+  // CHECK-NEXT: constant: string = <"SIMDParamStruct[42 : SIMD[DType.int32, 1], 1.5 : SIMD[DType.float32, 1], True, 7 : SIMD[DType.int, 1], 8 : SIMD[DType.uint, 1], [1, 2, 3, 4] : SIMD[DType.int32, 4]]">
   kgen.param.constant: string = <#kgen.get_type_name<
     #kgen.genref<@SIMDParamStruct<
       :!kgen.scalar<si32> #kgen<simd 42>,
@@ -27,6 +27,6 @@ kgen.generator export @test_simd_param_printing() {
       :!kgen.scalar<index> #kgen<simd 7>,
       :!kgen.scalar<uindex> #kgen<simd 8>,
       :!kgen.simd<4, si32> #kgen<simd<1, 2, 3, 4>>>>,
-    false>>
+    #kgen.simd<false>:!kgen.scalar<bool>>>
   kgen.return
 }

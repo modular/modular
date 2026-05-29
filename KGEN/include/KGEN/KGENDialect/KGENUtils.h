@@ -599,13 +599,13 @@ inline bool isAllIntLikeOne(SIMDAttr simdAttr) {
 /// Returns true if the proposition is trivially true (constant i1 = 1).
 inline bool isTriviallyTrueProposition(TypedAttr prop) {
   auto scalarBoolAttr = dyn_cast<SIMDAttr>(prop);
-  return scalarBoolAttr && scalarBoolAttr.getValues()[0].getBoolVal();
+  return scalarBoolAttr && scalarBoolAttr.getAsBool();
 }
 
 /// Returns true if the proposition is trivially true (constant i1 = 1).
 inline bool isTriviallyFalseProposition(TypedAttr prop) {
   auto scalarBoolAttr = dyn_cast<SIMDAttr>(prop);
-  return scalarBoolAttr && !scalarBoolAttr.getValues()[0].getBoolVal();
+  return scalarBoolAttr && !scalarBoolAttr.getAsBool();
 }
 
 /// Returns true if the constraint is trivially true (proposition = constant 1)
@@ -622,12 +622,6 @@ inline bool isTriviallyFalseConstraint(ConstraintAttr constraint) {
   if (!constraint)
     return false;
   return isTriviallyFalseProposition(constraint.getProposition());
-}
-
-/// Get a constant value of scalar<bool> type.
-inline SIMDAttr getScalarBoolConstant(MLIRContext *ctx, bool value) {
-  return SIMDAttr::get(DTypeValue(value, KGENDType::kBool),
-                       SIMDType::get(ctx, 1, KGENDType::kBool));
 }
 
 /// Create a placeholder constraint for unconditional trait conformance.

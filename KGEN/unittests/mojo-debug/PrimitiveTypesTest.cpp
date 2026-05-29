@@ -17,21 +17,21 @@ TEST(PrimitiveTypesTest, testBool) {
 
   StopContext ctx = buildAndLaunch("bool.mojo");
   SBValue trueVar = ctx.frame.FindVariable("true");
-  EXPECT_STREQ(trueVar.GetTypeName(), "i1");
+  EXPECT_STREQ(trueVar.GetTypeName(), "!kgen.scalar<bool>");
   EXPECT_EQ((int)trueVar.GetByteSize(), 1);
-  EXPECT_EQ((int)trueVar.GetValueAsUnsigned(2), 1);
+  EXPECT_EQ((int)trueVar.GetChildAtIndex(0).GetValueAsUnsigned(2), 1);
   EXPECT_STREQ(trueVar.GetSummary(), "True");
 
   SBValue falseVar = ctx.frame.FindVariable("false");
-  EXPECT_STREQ(falseVar.GetTypeName(), "i1");
+  EXPECT_STREQ(falseVar.GetTypeName(), "!kgen.scalar<bool>");
   EXPECT_EQ((int)falseVar.GetByteSize(), 1);
-  EXPECT_EQ((int)falseVar.GetValueAsUnsigned(2), 0);
+  EXPECT_EQ((int)falseVar.GetChildAtIndex(0).GetValueAsUnsigned(2), 0);
   EXPECT_STREQ(falseVar.GetSummary(), "False");
 
   SBValue otherVar = ctx.frame.FindVariable("other");
-  EXPECT_STREQ(otherVar.GetTypeName(), "i1");
+  EXPECT_STREQ(otherVar.GetTypeName(), "!kgen.scalar<bool>");
   EXPECT_EQ((int)otherVar.GetByteSize(), 1);
-  EXPECT_EQ((int)otherVar.GetValueAsUnsigned(2), 1);
+  EXPECT_EQ((int)otherVar.GetChildAtIndex(0).GetValueAsUnsigned(2), 1);
   EXPECT_STREQ(otherVar.GetSummary(), "True");
 }
 

@@ -327,7 +327,7 @@ kgen.generator export @main() -> index {
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @illegal_type_name() {
   // expected-note @below {{'get_type_name' requires a concrete type}}
-  kgen.param.constant: string = <#kgen.get_type_name<:!kgen.struct<()> #kgen.struct<> , false>>
+  kgen.param.constant: string = <#kgen.get_type_name<:!kgen.struct<()> #kgen.struct<> , #kgen.simd<false>:!kgen.scalar<bool>>>
   kgen.return
 }
 
@@ -431,10 +431,11 @@ kgen.generator @count_to_zero(%arg0: !kgen.pointer<index> read_mem, %arg1: !kgen
   kgen.return %none : !kgen.none
 }
 
-kgen.generator @count_to_zero_has_next(%arg0: index) -> i1 {
+kgen.generator @count_to_zero_has_next(%arg0: index) -> !kgen.scalar<bool> {
   %idx0 = index.constant 0
   %0 = index.cmp ne(%idx0, %arg0)
-  kgen.return %0 : i1
+  %1 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+  kgen.return %1 : !kgen.scalar<bool>
 }
 
 // -----

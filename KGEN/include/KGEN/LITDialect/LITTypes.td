@@ -452,7 +452,7 @@ def LIT_OriginType : LITType<"Origin", "origin",
   }];
 
   let parameters = (ins "TypedAttr":$isMutable);
-  let assemblyFormat = "`<` custom<I1ParamValue>($isMutable) `>`";
+  let assemblyFormat = "`<` custom<ScalarBoolParamValue>($isMutable) `>`";
 
   let builders = [
     TypeBuilder<(ins "bool":$isMutable)>,

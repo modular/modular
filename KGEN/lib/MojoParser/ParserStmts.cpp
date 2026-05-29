@@ -1106,6 +1106,7 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
   }
 
   IREmitter emitter = getParamEmitter(EC_ComptimeAssert);
+  // TODO: directly emit scalar<bool> instead of i1.
   RValue propI1 = emitter.emitExprI1(expr, EC_ComptimeAssert);
   if (!propI1)
     return failure();
@@ -1145,7 +1146,8 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
                                                          kwLoc, curDeclScope);
   // Inject this assumption into the newly created context.
   // Convert `x and y` to `x & y` so we get better canonicalization.
-  TypedAttr deShortCircuitCond = LIT::deShortCircuitCond(propVal.get());
+  TypedAttr deShortCircuitCond =
+      LIT::deShortCircuitCond(CastFromBuiltinAttr::get(propVal.get()));
   curDeclScope->insertKnownAssumptions(
       {ConstraintAttr::get(deShortCircuitCond, loc)});
   return success();
@@ -2751,7 +2753,8 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
   auto buildBranchAssumption = [&](Location loc,
                                    bool invertCondition) -> ConstraintAttr {
     // Convert `x and y` to `x & y` so we get better canonicalization.
-    TypedAttr branchCondition = LIT::deShortCircuitCond(paramIfOp.getCond());
+    TypedAttr branchCondition =
+        LIT::deShortCircuitCond(CastFromBuiltinAttr::get(paramIfOp.getCond()));
     if (invertCondition)
       branchCondition = ParamOperatorAttr::getNot(branchCondition);
     return ConstraintAttr::get(branchCondition, loc);

@@ -698,7 +698,7 @@ def test_or(a: MemExample) -> MemExample:
 
 # CHECK-LABEL: lit.fn @"variadic_mems
 # CHECK-SAME: [imm *"mems`2"](
-# CHECK-SAME: %mems: !lit.ref<!lit.struct<#VariadicList <:!Bool {:i1 0}, :origin<0> *"mems.origin._mlir_origin``", :!lit.struct<#Origin <:!Bool {:i1 0}, :origin<0> *"mems.origin._mlir_origin``">> *"mems.origin`1", :!AnyType !MemExample, :!Bool {:i1 0}>>, imm *"mems`2"> read_mem|pos_vararg)
+# CHECK-SAME: %mems: !lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> false}, :origin<false> *"mems.origin._mlir_origin``", :!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *"mems.origin._mlir_origin``">> *"mems.origin`1", :!AnyType !MemExample, :!Bool {:scalar<bool> false}>>, imm *"mems`2"> read_mem|pos_vararg)
 def variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %none = kgen.param.constant
   pass
@@ -712,7 +712,7 @@ def call_variadic_mems(a: MemExample, b: MemExample):
   # CHECK-NEXT: lit.var.lifetime.start %__passed_varargs__
   # CHECK-NEXT: lit.ref.store [[ARRAY]], %__passed_varargs__
   # CHECK: lit.call {{.*}}VariadicList::@"__init__
-  # CHECK: lit.call {{.*}}variadic_mems{{.*}}<:origin<0> {*"a`", *"b`1"}
+  # CHECK: lit.call {{.*}}variadic_mems{{.*}}<:origin<false> {*"a`", *"b`1"}
   variadic_mems(a, b)
   # CHECK-NEXT: lit.var.lifetime.end %anonymous
   # CHECK-NEXT: lit.var.lifetime.end %__passed_varargs__
@@ -726,7 +726,7 @@ def call_variadic_mems(a: MemExample, b: MemExample):
   # CHECK-NEXT: {{%.*}} = lit.var.decl "__passed_varargs__"
   # CHECK-NEXT: {{%.*}} = pop.array.create {{.}}[[IMMREF]]
   # CHECK: lit.call {{.*}}VariadicList::@"__init__
-  # CHECK: lit.call {{.*}}variadic_mems{{.*}}:origin<0> (mutcast mut *"c`4")>
+  # CHECK: lit.call {{.*}}variadic_mems{{.*}}:origin<false> (mutcast mut *"c`4")>
   variadic_mems(c)
   # CHECK-NEXT: lit.var.lifetime.end %anonymous
   # CHECK-NEXT: lit.var.lifetime.end %__passed_varargs__
@@ -753,7 +753,7 @@ def variadic_field_sensitivity():
   # CHECK-NEXT: {{%.*}} = lit.var.decl "__passed_varargs__"
   # CHECK-NEXT: {{%.*}} = pop.array.create {{.}}[[IMMREF]]
   # CHECK: lit.call {{.*}}VariadicList::@"__init__
-  # CHECK: lit.call {{.*}}variadic_mems{{.*}}:origin<0> (mutcast mut *"memPair`"->b)
+  # CHECK: lit.call {{.*}}variadic_mems{{.*}}:origin<false> (mutcast mut *"memPair`"->b)
   variadic_mems(memPair.b)
 
   # Need to restore 'a' so memPair may destruct.
@@ -768,7 +768,7 @@ def variadic_field_sensitivity():
 
 # CHECK-LABEL: lit.fn @"variadic_inout_mems
 # CHECK-SAME: [imm *"mems`2"]
-# CHECK-SAME: (%mems: !lit.ref<!lit.struct<#VariadicList <:!Bool {:i1 1}, :origin<1> *"mems.origin._mlir_origin``", :!lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *"mems.origin._mlir_origin``">> *"mems.origin`1", :!AnyType !MemExample, :!Bool {:i1 0}>>, imm *"mems`2"> mut|pos_vararg)
+# CHECK-SAME: (%mems: !lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> true}, :origin<true> *"mems.origin._mlir_origin``", :!lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"mems.origin._mlir_origin``">> *"mems.origin`1", :!AnyType !MemExample, :!Bool {:scalar<bool> false}>>, imm *"mems`2"> mut|pos_vararg)
 def variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__getitem__{{.*}}(%mems, [[ZERO]])
@@ -789,7 +789,7 @@ def call_variadic_inout_mems():
   # CHECK-NEXT: {{%.*}} = lit.var.decl "__passed_varargs__"
   # CHECK-NEXT: {{%.*}} = pop.array.create [[[AR]], [[BR]]]
   # CHECK: lit.call {{.*}}VariadicList::@"__init__
-  # CHECK: lit.call {{.*}}variadic_inout_mems{{.*}}:origin<1> {*"a`", *"b`1"}
+  # CHECK: lit.call {{.*}}variadic_inout_mems{{.*}}:origin<true> {*"a`", *"b`1"}
   variadic_inout_mems(a, b)
   # CHECK-NEXT: lit.var.lifetime.end %anonymous
   # CHECK-NEXT: lit.var.lifetime.end %__passed_varargs__
@@ -1186,7 +1186,7 @@ def handleAnyLifetime5():
 
 # CHECK-LABEL: lit.fn @"test_origin_ctor_folding
 def test_origin_ctor_folding[orig1: Origin](abcdef: A):
-    # CHECK-NEXT: lit.alias.decl *"x{{.*}}:origin<0> *"abcdef`2">>
+    # CHECK-NEXT: lit.alias.decl *"x{{.*}}:origin<false> *"abcdef`2">>
     comptime x = origin_of(abcdef)
 
     # MOCO-1467: Origin type equality problem.
@@ -1194,7 +1194,7 @@ def test_origin_ctor_folding[orig1: Origin](abcdef: A):
     comptime y = Origin[_mlir_origin = orig1._mlir_origin]()
 
     # Check that origin_of works on origins as well as MValues.
-    # CHECK-NEXT: lit.alias.decl *"o2{{.*}}:origin<0> {*"abcdef`2", (mutcast mut={{.*}}, *"orig1._mlir_origin`1")}>>
+    # CHECK-NEXT: lit.alias.decl *"o2{{.*}}:origin<false> {*"abcdef`2", (mutcast mut={{.*}}, *"orig1._mlir_origin`1")}>>
     comptime o2 = origin_of(orig1, abcdef)
 
 def useMemory(a: MemExample): pass
@@ -1314,7 +1314,7 @@ def testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
   consume(t2^)
 
 # CHECK-LABEL: lit.fn @"my_min1
-# CHECK-SAME: !lit.ref<!Int, mut=to_builtin(:scalar<bool> and(from_builtin(:i1 *"x_is_mut`"), from_builtin(:i1 *"y_is_mut`2"))), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
+# CHECK-SAME: !lit.ref<!Int, mut=and(*"x_is_mut`", *"y_is_mut`2"), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
 def my_min1(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [x, y] Int:
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %x

@@ -92,8 +92,8 @@ void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
   }
 
   TypedAttr mutability = sugarCast<OriginType>(value.getType()).isMutable();
-  if (auto boolAttr = dyn_cast<BoolAttr>(mutability)) {
-    p << (boolAttr.getValue() ? "mut " : "imm ");
+  if (auto boolAttr = dyn_cast<SIMDAttr>(mutability)) {
+    p << (boolAttr.getAsBool() ? "mut " : "imm ");
   } else {
     p << "mut=";
     printParamValue(p, mutability);
@@ -113,10 +113,10 @@ ParseResult LIT::parseOriginParamValue(AsmParser &p, TypedAttr &result) {
     // !lit.ref<T, mut origin>    ==> mutable
     TypedAttr mutability;
     if (failed(p.parseOptionalEqual())) {
-      mutability = BoolAttr::get(p.getContext(), true);
+      mutability = SIMDAttr::getScalarBool(p.getContext(), true);
     } else {
       // !lit.ref<T, mut=expr, origin  ==> parametric
-      if (parseI1ParamValue(p, mutability) || p.parseComma())
+      if (parseScalarBoolParamValue(p, mutability) || p.parseComma())
         return failure();
     }
     type = OriginType::get(mutability);
@@ -177,10 +177,11 @@ LIT::parseOptionalOriginSet(AsmParser &p,
   auto parseLifetime = [&]() -> ParseResult {
     TypedAttr mut;
     if (succeeded(p.parseOptionalKeyword("mut")))
-      mut = BoolAttr::get(p.getContext(), true);
+      mut = SIMDAttr::getScalarBool(p.getContext(), true);
     else if (succeeded(p.parseOptionalKeyword("imm")))
-      mut = BoolAttr::get(p.getContext(), false);
-    else if (p.parseLParen() || parseI1ParamValue(p, mut) || p.parseRParen())
+      mut = SIMDAttr::getScalarBool(p.getContext(), false);
+    else if (p.parseLParen() || parseScalarBoolParamValue(p, mut) ||
+             p.parseRParen())
       return failure();
     return parseParamValue(p, lifetimes.emplace_back(), OriginType::get(mut));
   };
@@ -196,8 +197,8 @@ void LIT::printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
     TypedAttr mut = type.isMutable();
     // If the mutability is known, pretty print it. Otherwise, print the
     // parametric mutability expression within parens.
-    if (auto known = dyn_cast<BoolAttr>(mut)) {
-      p << (known.getValue() ? "mut" : "imm");
+    if (auto known = dyn_cast<SIMDAttr>(mut)) {
+      p << (known.getAsBool() ? "mut" : "imm");
     } else {
       p << '(';
       printParamValue(p, mut);
@@ -520,7 +521,7 @@ FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
       return failure();
   }
 
-  return {getScalarBoolConstant(conformsTo.getContext(), true)};
+  return {SIMDAttr::getScalarBool(conformsTo.getContext(), true)};
 }
 
 static LIT::StructType getStructTypeForTypeValue(TypedAttr typeValue) {

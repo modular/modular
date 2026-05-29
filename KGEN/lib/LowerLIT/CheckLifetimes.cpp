@@ -583,7 +583,7 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
     auto whereClause = conformance.getConstraint().getProposition();
     whereClause = evaluator.getReboundAttribute(whereClause);
     auto whereCst = sugarDynCast<SIMDAttr>(whereClause);
-    if (!whereCst || !isAllIntLikeOne(whereCst)) {
+    if (!whereCst || !whereCst.getAsBool()) {
       // If the type is linear, then ignore an explicitly declared
       // destructor for the purposes of destructor insertion.
       // FIXME: This is wrong, we should check the 'where' clause on the
@@ -600,9 +600,9 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
     // prove that it is 1, then we can ignore this destructor.
     if (auto structAttr = sugarDynCast<LITStructAttr>(isTrivialAttr)) {
       if (structAttr.getValues().size() == 1) {
-        if (auto boolAttr = sugarDynCast<BoolAttr>(
+        if (auto boolAttr = sugarDynCast<SIMDAttr>(
                 std::get<1>(structAttr.getValues().front()))) {
-          if (boolAttr.getValue())
+          if (boolAttr.getAsBool())
             return SpecialMemberInfo::available({}); // trivial!
         }
       }

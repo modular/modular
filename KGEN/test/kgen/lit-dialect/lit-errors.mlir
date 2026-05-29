@@ -337,14 +337,14 @@ lit.call @calls[mut a]() : !lit.generator<[1](!lit.ref<index, mut *[0,1]>) -> ()
 
 // -----
 
-lit.fn @ref_immut<life: origin<0>>(%ref1: !lit.ref<index, imm life>) ->  !lit.ref<index, imm life> {
+lit.fn @ref_immut<life: origin<false>>(%ref1: !lit.ref<index, imm life>) ->  !lit.ref<index, imm life> {
   %ref2 = lit.ref.immut %ref1: !lit.ref<index, imm life>
   kgen.return %ref2: !lit.ref<index, imm life>
 }
 
 // -----
 
-lit.fn @ref_to_kgen_ptr_address_space_mismatch<life: origin<0>>(
+lit.fn @ref_to_kgen_ptr_address_space_mismatch<life: origin<false>>(
     %ref1: !lit.ref<index, imm life, 1>) {
   // expected-error @below {{address space mismatch: ref has address space 1 : index but result has 0 : index}}
   %ptr = lit.ref.to_kgen_ptr %ref1 : !lit.ref<index, imm life, 1>
@@ -354,7 +354,7 @@ lit.fn @ref_to_kgen_ptr_address_space_mismatch<life: origin<0>>(
 
 // -----
 
-lit.fn @ref_from_kgen_ptr_address_space_mismatch<life: origin<0>>(
+lit.fn @ref_from_kgen_ptr_address_space_mismatch<life: origin<false>>(
     %ptr: !kgen.pointer<index, 2>) {
   // expected-error @below {{address space mismatch: pointer has address space 2 : index but result has 0 : index}}
   %ref = lit.ref.from_kgen_ptr %ptr : !kgen.pointer<index, 2>
@@ -364,7 +364,7 @@ lit.fn @ref_from_kgen_ptr_address_space_mismatch<life: origin<0>>(
 
 // -----
 
-lit.fn @invalid_memcpy<out: origin<1>, in: origin<0>>(%dst: !lit.ref<f32, mut out>, %src: !lit.ref<index, imm in>) {
+lit.fn @invalid_memcpy<out: origin<true>, in: origin<false>>(%dst: !lit.ref<f32, mut out>, %src: !lit.ref<index, imm in>) {
   // expected-error @below {{'lit.memcpy' op failed to verify that all of {src, dst} have same element types}}
   lit.memcpy %src, %dst : !lit.ref<index, imm in>-> !lit.ref<f32, mut out>
   lit.end_fn

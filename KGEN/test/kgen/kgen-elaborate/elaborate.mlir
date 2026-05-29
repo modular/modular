@@ -1421,14 +1421,14 @@ kgen.struct.generator @"LinkedList"<T: type> = struct_inst<
 // CHECK-LABEL: kgen.func @"parameter_get_type_name
 kgen.generator @parameter_get_type_name<T: type>(%arg: !kgen.param<T>) {
   // CHECK-NEXT: constant: string = <"LinkedList[<unprintable>]">
-  kgen.param.constant: string = <#kgen.get_type_name<#kgen.param.decl.ref<"T">, false>>
+  kgen.param.constant: string = <#kgen.get_type_name<#kgen.param.decl.ref<"T">, #kgen.simd<false>:!kgen.scalar<bool>>>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func export @get_type_name
 kgen.generator export @get_type_name(%arg0: !kgen.struct<(none, !kgen.pointer<none>)>) {
   // CHECK-NEXT: constant: string = <"NonParametric">
-  kgen.param.constant: string = <#kgen.get_type_name<#kgen.genref<@NonParametric>, false>>
+  kgen.param.constant: string = <#kgen.get_type_name<#kgen.genref<@NonParametric>, #kgen.simd<false>:!kgen.scalar<bool>>>
   kgen.call @parameter_get_type_name<:type #linkedlist>(%arg0) : (!kgen.struct<(none, !kgen.pointer<none>)>) -> ()
   kgen.return
 }

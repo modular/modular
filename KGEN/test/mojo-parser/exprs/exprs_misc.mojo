@@ -250,15 +250,15 @@ def typeof_dynval_in_param(x: _index):
 
 # CHECK-LABEL: lit.fn @"lifetime_of
 def lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
-    # CHECK-NEXT: lit.alias.decl *"lt0{{.*}}:origin<0> {}
+    # CHECK-NEXT: lit.alias.decl *"lt0{{.*}}:origin<false> {}
     comptime lt0 = origin_of()
-    # CHECK-NEXT: lit.alias.decl *"lt1{{.*}}:origin<0> *"x`">>
+    # CHECK-NEXT: lit.alias.decl *"lt1{{.*}}:origin<false> *"x`">>
     comptime lt1 = origin_of(x)
-    # CHECK-NEXT: lit.alias.decl *"lt2{{.*}}:origin<0> {*"x`", *"y`1"}>>
+    # CHECK-NEXT: lit.alias.decl *"lt2{{.*}}:origin<false> {*"x`", *"y`1"}>>
     comptime lt2 = origin_of(x, y)
-    # CHECK-NEXT: lit.alias.decl *"lt3{{.*}}:origin<1> *"z`2">>
+    # CHECK-NEXT: lit.alias.decl *"lt3{{.*}}:origin<true> *"z`2">>
     comptime lt3 = origin_of(z)
-    # CHECK-NEXT: lit.alias.decl *"lt4{{.*}}:origin<0> {*"x`", (mutcast mut *"z`2")}>>
+    # CHECK-NEXT: lit.alias.decl *"lt4{{.*}}:origin<false> {*"x`", (mutcast mut *"z`2")}>>
     comptime lt4 = origin_of(x, z)
 
 
@@ -395,7 +395,7 @@ def test_mergewith(
     # CHECK-NEXT: [[COND:%.*]] = hlcf.if [[FALSE]]
     # CHECK-NEXT:   kgen.unreachable
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   = kgen.param.constant: !Bool = <{:i1 0}>
+    # CHECK-NEXT:   = kgen.param.constant: !Bool = <{:scalar<bool> false}>
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: }
     # expected-warning @+1 {{unreachable code on right side of 'False and ...'}}
@@ -450,11 +450,11 @@ def chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
 
 # Test chained comparison op in parameter domain for issue
 # https://github.com/modularml/modular/issues/22050
-# CHECK: lit.alias.decl *"chainedCmpAlias1{{.*}}": !Bool ={{.*}}{:i1 0}
+# CHECK: lit.alias.decl *"chainedCmpAlias1{{.*}}": !Bool ={{.*}}{:scalar<bool> false}
 comptime chainedCmpAlias1 = 1 == 2 == 3 == 4 == 5
-# CHECK: lit.alias.decl *"chainedCmpAlias2{{.*}}": !Bool ={{.*}}{:i1 1}
+# CHECK: lit.alias.decl *"chainedCmpAlias2{{.*}}": !Bool ={{.*}}{:scalar<bool> true}
 comptime chainedCmpAlias2 = 1 <= 2 <= 3 <= 4 <= 5
-# CHECK: lit.alias.decl *"chainedCmpAlias3{{.*}}": !Bool ={{.*}}{:i1 0}
+# CHECK: lit.alias.decl *"chainedCmpAlias3{{.*}}": !Bool ={{.*}}{:scalar<bool> false}
 comptime chainedCmpAlias3 = 1 <= 2 <= 9 <= 4 <= 5
 
 
@@ -470,7 +470,7 @@ def chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
     # CHECK-NEXT:     [[CMPRESULT2:%.*]] = {{.*}}__lt__{{.*}}(%x, [[PV]])
     # CHECK-NEXT:     [[IFCOND:%.*]] = {{.*}}__mlir_i1__{{.*}}([[CMPRESULT2]])
     # CHECK-NEXT:     [[MOSTINNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
-    # CHECK-NEXT:       [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:i1 1}
+    # CHECK-NEXT:       [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:scalar<bool> true}
     # CHECK-NEXT:       hlcf.yield [[TRUEPARAM]]
     # CHECK-NEXT:     } else {
     # CHECK-NEXT:       hlcf.yield [[CMPRESULT2]]
@@ -481,7 +481,7 @@ def chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
     # CHECK-NEXT:   }
     # CHECK-NEXT:   hlcf.yield [[INNERRESULT]]
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:   [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:i1 1}
+    # CHECK-NEXT:   [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:scalar<bool> true}
     # CHECK-NEXT:   hlcf.yield [[TRUEPARAM]]
     # CHECK-NEXT: }
     # CHECK: [[XCMP:%.*]] = lit.var.decl "xCmp"

@@ -159,7 +159,7 @@ def testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   # CHECK: lit.call @std::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%a)
   var aref = Pointer(to=a)
-  # CHECK: lit.alias.decl *"aLifetime{{.*}}": origin<1> = <*"a`1">
+  # CHECK: lit.alias.decl *"aLifetime{{.*}}": origin<true> = <*"a`1">
   comptime aLifetime =  aref.origin._mlir_origin
 
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
@@ -215,17 +215,17 @@ struct SelfRefTest(ImplicitlyCopyable):
 # CHECK-LABEL: lit.fn @"testSelfRef
 def testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
   # Bind immutably to a
-  # CHECK: = lit.call {{.*}}method{{.*}}<:i1 0, :origin<0> *"a`">(%a)
+  # CHECK: = lit.call {{.*}}method{{.*}}<:scalar<bool> false, :origin<false> *"a`">(%a)
   _ = a.method()
 
   # Bind mutably to b
-  # CHECK: = lit.call {{.*}}method{{.*}}<:i1 1, :origin<1> *"b`1">(%b)
+  # CHECK: = lit.call {{.*}}method{{.*}}<:scalar<bool> true, :origin<true> *"b`1">(%b)
   _ = b.method()
 
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
-# CHECK-SAME: !lit.struct<#Pointer <{{.*}}:origin<0> *"a`">> *?, :!AddressSpace {_value: !Int = {0}}>>
+# CHECK-SAME: !lit.struct<#Pointer <{{.*}}:origin<false> *"a`">> *?, :!AddressSpace {_value: !Int = {0}}>>
 def testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
   return Pointer(to=a)
 
@@ -242,11 +242,11 @@ def callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample)
   # CHECK: lit.var.decl "l1" var : !lit.ref<{{.*}}(mutcast mut *"x`")
   var l1 = returnOneArgLifetime(x)
 
-  # CHECK: lit.var.decl "l2" var : !lit.ref<{{.*}}#TwoLifetimes <:origin<0> (mutcast mut *"x`"), :origin<0> (mutcast mut *"y`1"),
+  # CHECK: lit.var.decl "l2" var : !lit.ref<{{.*}}#TwoLifetimes <:origin<false> (mutcast mut *"x`"), :origin<false> (mutcast mut *"y`1"),
   var l2 = returnTwoArgLifetimes(x, y)
-  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<{{.*}}#TwoLifetimes <:origin<0> (mutcast mut *"x`"), :origin<0> (mutcast mut *"x`"),
+  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<{{.*}}#TwoLifetimes <:origin<false> (mutcast mut *"x`"), :origin<false> (mutcast mut *"x`"),
   var l3 = returnTwoArgLifetimes(x, x)
-  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<{{.*}}#TwoLifetimes <:origin<0> *"z`2", :origin<0> *"z`2",
+  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<{{.*}}#TwoLifetimes <:origin<false> *"z`2", :origin<false> *"z`2",
   var l4 = returnTwoArgLifetimes(z, z)
 
   use_any(l1, l2, l3, l4)
@@ -387,7 +387,7 @@ def test_pvalue_ref_formation[a: SelfRefTest]():
   # CHECK: [[ANONTMP:%.*]] = lit.var.decl "anonymous*" {{.*}}!lit.ref<!SelfRefTest,
   var r = a.method()
   # The result reference should have inferred the origin of the temp
-  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}!SelfRefTest, {{.*}}origin<0> (mutcast mut *"anonymous*`
+  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}!SelfRefTest, {{.*}}origin<false> (mutcast mut *"anonymous*`
 
   # This use of the temp should keep it alive.
   # CHECK: [[REFERENCE:%.*]] = lit.ref.load %r
@@ -512,7 +512,7 @@ struct FieldSensitiveUse:
 def test_getitem_setitem(mut d: TestDict[Int, Int]):
     # This should bind to a mutable reference, not an immutable one.
     # CHECK: %0 = lit.call {{.*}}@TestDict::@"__getitem__
-    # CHECK: lit.call {{.*}}@"check_mutability{{.*}}<:!Bool {:i1 1}, {{.*}}(%0)
+    # CHECK: lit.call {{.*}}@"check_mutability{{.*}}<:!Bool {:scalar<bool> true}, {{.*}}(%0)
     check_mutability(d[])
 
 
