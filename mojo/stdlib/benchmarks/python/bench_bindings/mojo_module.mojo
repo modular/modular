@@ -142,7 +142,7 @@ def str_byte_len_raw_fastcall(
     py_self: PyObjectPtr,
     args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
     nargs: Py_ssize_t,
-) -> PyObjectPtr:
+) abi("C") -> PyObjectPtr:
     # Lower bound for `str_byte_len_def`: get the UTF-8 buffer and return
     # its byte length as a Python int, without any `String` / `PythonObject`
     # wrapping.
