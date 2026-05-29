@@ -11,6 +11,7 @@ _BUILDIFIER_IGNORES = [
     "./CloudInfra/go/pkg/*",
     "./third-party/llvm-project/*",
     "./oss/max-llm-book/.pixi/*",
+    "./oss/skills/port-an-llm-to-max/.pixi/*",
 ]
 
 modular_py_library(
@@ -123,6 +124,18 @@ modular_py_binary(
     for check in (True, False)
     for fast in (True, False)
 ]
+
+modular_py_binary(
+    name = "lint_docstrings",
+    srcs = ["lint_docstrings.py"],
+    deps = [":lint_helpers"],
+)
+
+command(
+    name = "lint-docstrings.check",
+    command = ":lint_docstrings",
+    run_from_workspace_root = True,
+)
 
 modular_py_binary(
     name = "action-versions-pinned",

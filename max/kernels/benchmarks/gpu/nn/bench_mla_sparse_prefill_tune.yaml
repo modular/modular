@@ -1,0 +1,88 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Tuning sweep for the sparse MLA prefill kernel (DSv3.2 shape).
+# Sweeps B_TOPK, num_mbars (pipeline depth), and Q smem/tmem split across
+# the five s_kv sizes from FlashMLA's perf benchmark.
+#
+# Usage:
+#   kbench bench_mla_sparse_prefill_tune.yaml
+#   kbench bench_mla_sparse_prefill_tune.yaml --param sparse_b_topk:"[128]"
+#   kbench bench_mla_sparse_prefill_tune.yaml --param sparse_num_mbars:"[2,3]"
+
+name: bench_mla_sparse_prefill_tune
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_mla.mojo
+
+# DSv3.2 absorbed-space dims — fixed for all cases.
+dsv32: &dsv32
+  num_heads: 128
+  depth: 576
+  sparse_topk: 2048
+  $batch_size: 1
+  $mode: sparse_prefill
+
+params:
+
+# B_TOPK sweep: vary tile size, fix pipeline depth at baseline.
+- <<: *dsv32
+  $seq_len: 4096
+  $num_keys: [8192, 32768, 65536, 98304, 131072]
+  sparse_b_topk: [64, 128, 256]
+  sparse_num_mbars: 2
+  sparse_q_smem_depth: 192
+  sparse_q_tmem_depth: 384
+  metadata:
+    SWEEP: b_topk
+
+# num_mbars sweep: vary pipeline depth, fix B_TOPK at baseline.
+- <<: *dsv32
+  $seq_len: 4096
+  $num_keys: [8192, 32768, 65536, 98304, 131072]
+  sparse_b_topk: 128
+  sparse_num_mbars: [2, 3, 4]
+  sparse_q_smem_depth: 192
+  sparse_q_tmem_depth: 384
+  metadata:
+    SWEEP: num_mbars
+
+# Q smem/tmem split sweep: vary how qk_depth=576 is divided between SS and TS MMA.
+# Constraint: q_smem_depth + q_tmem_depth must equal qk_depth (576).
+- <<: *dsv32
+  $seq_len: 4096
+  $num_keys: [8192, 131072]
+  sparse_b_topk: 128
+  sparse_num_mbars: 2
+  sparse_q_smem_depth: 128
+  sparse_q_tmem_depth: 448
+  metadata:
+    SWEEP: q_split
+
+- <<: *dsv32
+  $seq_len: 4096
+  $num_keys: [8192, 131072]
+  sparse_b_topk: 128
+  sparse_num_mbars: 2
+  sparse_q_smem_depth: 256
+  sparse_q_tmem_depth: 320
+  metadata:
+    SWEEP: q_split
+
+- <<: *dsv32
+  $seq_len: 4096
+  $num_keys: [8192, 131072]
+  sparse_b_topk: 128
+  sparse_num_mbars: 2
+  sparse_q_smem_depth: 288
+  sparse_q_tmem_depth: 288
+  metadata:
+    SWEEP: q_split

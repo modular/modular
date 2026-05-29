@@ -28,7 +28,6 @@ from std.algorithm import mean
 from comm.allreduce import allreduce
 
 from comm.allreduce_residual_rmsnorm_fp8 import allreduce_residual_rmsnorm_fp8
-from comm.device_collective import _launch_device_collective
 from comm import MAX_GPUS, Signal
 from extensibility import StaticTensorSpec
 from std.gpu.host import CompletionFlag, DeviceContext, DeviceContextList
@@ -97,6 +96,10 @@ from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
 from state_space.gated_delta_conv1d import gated_delta_conv1d_fwd_gpu
 from state_space.gated_delta import gated_delta_recurrence_fwd_gpu
+from std.runtime.asyncrt import (
+    TaskGroup,
+    task_id_for_device,
+)
 from std.runtime.tracing import trace_arg
 from extensibility import (
     InputTensor,
@@ -2188,6 +2191,67 @@ def _partitioned_scratch_requirement[
     var vecs_per_device = ceildiv(num_vecs, num_devices)
 
     return vecs_per_device * pessemistic_simd_width * size_of[dtype]()
+
+
+@always_inline
+def _launch_device_collective[
+    num_devices: Int,
+    F: def[Int]() raises -> None,
+](func: F, var dev_ctxs: InlineArray[DeviceContext, num_devices]) raises:
+    """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
+
+    # One Optional[Error] slot per device; None means no error.
+    # Each task writes only to its own index, so there is no data race.
+    var errors = InlineArray[Optional[Error], num_devices](
+        fill=Optional[Error]()
+    )
+
+    # Wrap the launch function in a Mojo async function which does not raise.
+    @always_inline
+    @parameter
+    async def wrapper[index: Int]() -> None:
+        try:
+            func[index]()
+        except e:
+            errors[index] = e^
+
+    # Set up a task group to launch the tasks in parallel.
+    var tg = TaskGroup()
+    comptime for i in range(num_devices):
+        # Dispatch to the worker thread that has affinity for this device.
+        var worker_id = task_id_for_device(Int(dev_ctxs[i].id()))
+        tg._create_task(wrapper[i](), desired_worker_id=worker_id)
+
+    # Wait for all tasks to complete.
+    tg.wait()
+
+    # Re-raise the first error encountered.
+    comptime for i in range(num_devices):
+        if errors[i]:
+            raise errors[i].take()
+
+
+@always_inline
+def _launch_device_collective[
+    num_devices: Int,
+    F: def[Int]() raises -> None,
+](func: F, var dev_ctxs: DeviceContextList) raises:
+    """Dispatch async tasks to call func[i]() for each device in dev_ctxs.
+
+    `DeviceContextList` overload. Forwards to the `InlineArray` overload
+    by unpacking the list's underlying storage.
+    """
+
+    comptime assert (
+        dev_ctxs.size == num_devices
+    ), "expected dev_ctxs to have the same number of elements as num_devices"
+
+    _launch_device_collective[num_devices](
+        func,
+        rebind[InlineArray[DeviceContext, num_devices]](
+            dev_ctxs.device_contexts^
+        ),
+    )
 
 
 @compiler.register("mo.bundled.allreduce.sum")

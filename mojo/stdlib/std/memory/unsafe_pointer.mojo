@@ -41,6 +41,7 @@ from std.memory.memory import _free, _malloc
 from std.memory import UnsafeMaybeUninit
 from std.memory._poison import _check_not_poison, _check_not_poison_masked
 from std.os import abort
+from std._plugin import CurrentPlugin
 from std.python import PythonObject
 from std.utils._nicheable import (
     UnsafeSingleNicheable,
@@ -1124,6 +1125,14 @@ struct UnsafePointer[
         ```
         """
         comptime alignment = align_of[Self.type]()
+        comptime if CurrentPlugin.unsafe_dangling_fn:
+            comptime address = CurrentPlugin.unsafe_dangling_fn.value()[
+                alignment
+            ]()
+            comptime assert (
+                address != 0
+            ), "UnsafePointer cannot be constructed with address 0"
+            return Self(unsafe_from_address=address)
         return Self(unsafe_from_address=alignment)
 
     @always_inline("nodebug")

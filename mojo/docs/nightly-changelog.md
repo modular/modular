@@ -141,8 +141,12 @@ This version is still a work in progress.
 - The core collection types no longer require their element type to be
   `Copyable` — `Movable & ImplicitlyDestructible` is now the minimum bound.
   This applies to `List[T]`, `Deque[T]`, `LinkedList[T]`, `InlineArray[T,
-  size]`, and the value type `V` of `Dict[K, V, H]` (and the underlying
-  `SwissTable`/`SwissTableEntry` and `OwnedKwargsDict`).
+  size]`, both type parameters of `Dict[K, V, H]` (along with
+  `SwissTable`/`SwissTableEntry`/`OwnedKwargsDict` and the loosened
+  `KeyElement` trait), and `Set[T]`. Copy-requiring methods stay gated on
+  `Copyable`. `Counter[V]` is unchanged. `Dict.setdefault` and `Set.add`
+  now take their argument by `var T`; for move-only types call them as
+  `d.setdefault(key^, default)` or `set.add(value^)`.
 
 - `reflect[T]` is now a `comptime` alias for the `Reflected[T]` handle type
   rather than a function returning a zero-sized handle instance. All methods on
@@ -231,6 +235,17 @@ This version is still a work in progress.
   print(iter(l).nth(0).value())   # 10
   print(iter(l).nth(3).value())   # 40
   var missing = iter(l).nth(10)   # None (Optional)
+  ```
+
+- `String` and `StringSlice` now expose a `bytes()` method that returns a new
+  `BytesIter`, an iterator over the raw UTF-8 bytes of the string. This
+  complements the existing `codepoints()` and `graphemes()` iterators by
+  operating at the byte level without interpreting multi-byte UTF-8 sequences.
+
+  ```mojo
+  var s = StringSlice("é")  # Encoded in UTF-8 as 0xC3 0xA9.
+  for b in s.bytes():
+      print(b)  # 195, 169
   ```
 
 - `String` and `StringSlice` now have a keyword only `string[codepoint=...]`

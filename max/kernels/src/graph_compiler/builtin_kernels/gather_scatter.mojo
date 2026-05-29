@@ -1390,29 +1390,28 @@ struct Gather:
         axis: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
         @always_inline
         def input_fn[
             width: Int, _rank: Int, element_alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
+        ](coords: IndexList[_rank]) {var input} -> SIMD[output.dtype, width]:
             return input._lambda_load[
                 width=width, element_alignment=element_alignment
             ](rebind[IndexList[input.rank]](coords))
 
-        @parameter
         @always_inline
         def indices_fn[
             width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[indices.dtype, width]:
+        ](coords: IndexList[_rank]) {var indices} -> SIMD[indices.dtype, width]:
             return indices._fused_load[width=width](
                 rebind[IndexList[indices.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDSize, _rank: Int, element_alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[_rank], val: SIMD[output.dtype, width]) {
+            var output
+        }:
             output._lambda_store[
                 width=width, element_alignment=element_alignment
             ](
@@ -1421,15 +1420,17 @@ struct Gather:
             )
 
         gather[
-            input_fn=input_fn,
-            indices_fn=indices_fn,
-            output_fn=output_fn,
+            output.dtype,
+            indices.dtype,
             target=target,
         ](
             Axis(Int(axis), input.rank),
             input.shape(),
             indices.shape(),
             output.shape(),
+            input_fn=input_fn,
+            indices_fn=indices_fn,
+            output_fn=output_fn,
             context=ctx,
         )
 
