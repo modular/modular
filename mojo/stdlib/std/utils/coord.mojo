@@ -1334,9 +1334,28 @@ def _get_flattened[
 
 comptime _IsStaticPredicate[T: CoordLike] = T.is_static_value
 
-comptime _AllStatic[*element_types: CoordLike] = element_types.all_satisfies[
+comptime _IsNotTuplePredicate[T: CoordLike] = not T.is_tuple
+
+comptime _IsFlat[*element_types: CoordLike] = element_types.all_satisfies[
+    _IsNotTuplePredicate,
+]()
+"""True iff no element in the variadic is a tuple. Single-pass; lets
+`_AllStatic` / `_StaticProduct` skip the multi-pass `_Flattened` rewrite
+on the (typical) flat path."""
+
+
+comptime _AllStaticFlat[
+    *element_types: CoordLike
+] = element_types.all_satisfies[
     _IsStaticPredicate,
 ]()
+
+
+comptime _AllStatic[*element_types: CoordLike] = _AllStaticFlat[
+    *element_types
+] if _IsFlat[*element_types] else _AllStaticFlat[*_Flattened[*element_types]]
+"""True iff every leaf element in the (possibly nested) variadic is a
+compile-time-known dim."""
 
 comptime _AllEqualPredicate[
     T1: AnyType, T2: type_of(T1)
@@ -1353,10 +1372,20 @@ comptime _StaticProductReducer[
     T: CoordLike,
 ] = Prev * T.static_value
 
-comptime _StaticProduct[*element_types: CoordLike] = element_types.reduce[
+comptime _StaticProductFlat[*element_types: CoordLike] = element_types.reduce[
     1,
     _StaticProductReducer,
 ]
+
+
+comptime _StaticProduct[*element_types: CoordLike] = _StaticProductFlat[
+    *element_types
+] if _IsFlat[*element_types] else _StaticProductFlat[
+    *_Flattened[*element_types]
+]
+"""Compile-time product of all leaf dimensions in the (possibly nested)
+variadic. Caller should gate on `_AllStatic` first — a dynamic leaf
+(`static_value == -1`) makes the product meaningless."""
 
 comptime _IntToComptimeIntMapper[
     idx: Int,

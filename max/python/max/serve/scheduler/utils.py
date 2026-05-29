@@ -21,13 +21,13 @@ from dataclasses import dataclass, field
 from max.driver import Buffer
 from max.pipelines.core import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.lib.speculative_decoding.utils import (
-    SpeculativeDecodingMetrics,
-)
 from max.pipelines.modeling.types import (
     BatchType,
     RequestID,
     TextGenerationInputs,
+)
+from max.pipelines.speculative.utils import (
+    _SpeculativeDecodingMetrics,
 )
 from max.serve.queue import MAXPullQueue, drain_queue
 from max.serve.telemetry.metrics import METRICS
@@ -119,7 +119,7 @@ class BatchMetrics:
         num_pending_reqs: int,
         num_terminated_reqs: int,
         total_preemption_count: int,
-        speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
+        speculative_decoding_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
@@ -592,7 +592,7 @@ class SchedulerLogger:
         num_pending_reqs: int,
         num_terminated_reqs: int,
         total_preemption_count: int,
-        speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
+        speculative_decoding_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
     ) -> None:
         """Periodically logs batch-level metrics to console.

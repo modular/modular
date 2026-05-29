@@ -205,13 +205,20 @@ struct Group(Copyable, Movable):
 
 @fieldwise_init
 struct SwissTableEntry[
-    K: KeyElement, V: Copyable & ImplicitlyDestructible, H: Hasher
-](Copyable):
+    K: KeyElement & ImplicitlyDestructible,
+    V: Movable & ImplicitlyDestructible,
+    H: Hasher,
+](
+    Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
+    Movable,
+):
     """Store a key-value pair entry inside a Swiss Table-based collection.
 
     Parameters:
-        K: The key type. Must be `Hashable`, `Equatable`, and `Copyable`.
-        V: The value type.
+        K: The key type. Must be `Movable`, `Hashable`, and `Equatable`.
+            `Copyable` is required only for entry copy construction.
+        V: The value type. Must be `Movable` and `ImplicitlyDestructible`.
+            `Copyable` is required only for entry copy construction.
         H: The type of the hasher used to hash the key.
     """
 
@@ -256,10 +263,13 @@ struct SwissTableEntry[
 
 
 struct SwissTable[
-    K: KeyElement,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & ImplicitlyDestructible,
+    V: Movable & ImplicitlyDestructible,
     H: Hasher = default_hasher,
-](Copyable, Movable):
+](
+    Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
+    Movable,
+):
     """Raw Swiss Table providing the hash table core for Dict and HashMap.
 
     This struct manages the control byte array, slot array, probing, and
@@ -267,8 +277,10 @@ struct SwissTable[
     their own iteration and ordering strategy.
 
     Parameters:
-        K: The key type. Must be `Hashable`, `Equatable`, and `Copyable`.
-        V: The value type.
+        K: The key type. Must be `Movable`, `Hashable`, and `Equatable`.
+            `Copyable` is required only for table copy construction.
+        V: The value type. Must be `Movable` and `ImplicitlyDestructible`.
+            `Copyable` is required only for table copy construction.
         H: The hasher type.
     """
 
@@ -335,7 +347,9 @@ struct SwissTable[
         self._len = 0
         self._growth_left = self._capacity * 7 // 8
 
-    def __init__(out self, *, copy: Self):
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.K, Copyable) and conforms_to(Self.V, Copyable):
         """Copy an existing Swiss Table.
 
         Args:

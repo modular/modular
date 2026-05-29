@@ -18,9 +18,8 @@ from __future__ import annotations
 import os
 
 from max.config import ConfigFileModel
-from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.modeling.config_enums import PipelineRole
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, PrivateAttr
 
 # Default max batch input tokens for chunked prefill and memory estimation.
@@ -170,20 +169,11 @@ class PipelineRuntimeConfig(ConfigFileModel):
     custom_architectures: list[str] = Field(
         default_factory=list,
         description=(
-            "Custom architecture implementations to register. Each input can "
-            "either be a raw module name or an import path followed by a colon "
-            "and the module name. Each module must expose an ``ARCHITECTURES`` list "
-            "of architectures to register."
-        ),
-    )
-
-    zmq_endpoint_base: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description=(
-            "Prefix for ZMQ endpoints used for IPC. This ensures unique "
-            "endpoints across MAX Serve instances on the same host. Example: "
-            "``lora_request_zmq_endpoint = "
-            'f"{zmq_endpoint_base}-lora_request"``.'
+            "Custom architecture implementations to register. Each input is "
+            "either a path to a single custom-architecture module directory "
+            "or an ``IMPORT_PATH:MODULE_NAME`` colon-form. Each module must "
+            "expose a top-level ``ARCHITECTURES`` list of "
+            "``SupportedArchitecture`` instances."
         ),
     )
 

@@ -20,17 +20,23 @@ the internal refactor.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU
+from max.driver import (
+    CPU,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
 from max.engine import CompiledModel, InferenceSession, Model
 from max.engine._compilation_stats import collect_compilation_stats
 from max.experimental.nn._compilation_timer import CompilationTimer
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, Module, TensorType, TensorValue, ops
 
 
 @dataclass
@@ -41,13 +47,14 @@ class Unity:
         return ops.constant(1.0, dtype=DType.float32, device=DeviceRef.CPU())
 
 
-def _unity_graph(name: str = "unity") -> Graph:
+def _unity_graph(name: str = "unity", module: Module | None = None) -> Graph:
     return Graph(
         name,
         forward=Unity(),
         input_types=[
             TensorType(DType.float32, ["batch", "dim"], device=DeviceRef.CPU())
         ],
+        module=module,
     )
 
 
@@ -197,6 +204,35 @@ def test_compilation_timer_populates_outer_collector() -> None:
     assert stats.compile_seconds > 0.0
     assert stats.init_seconds > 0.0
     assert stats.num_phases == 1
+
+
+@pytest.fixture
+def virtual_device_mode() -> Iterator[None]:
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_80")
+    set_virtual_device_count(1)
+    try:
+        yield
+    finally:
+        set_virtual_device_count(0)
+
+
+def test_init_all_in_virtual_device_mode_returns_dict(
+    virtual_device_mode: None,
+) -> None:
+    """Cross-compilation: init_all() returns a subscriptable dict keyed by
+    graph name even when virtual devices are in use, so multi-graph callers
+    like the Kimi K2.5 vision+language pipeline can do
+    ``models[vision_graph.name]``.
+    """
+    session = InferenceSession(devices=[CPU()])
+    module = Module()
+    encoder = _unity_graph(name="encoder", module=module)
+    decoder = _unity_graph(name="decoder", module=module)
+    compiled = session.compile(module)
+    models = session.init_all(compiled)
+
+    assert set(models.keys()) == {encoder.name, decoder.name}
 
 
 def test_nested_collectors_both_observe_phases() -> None:

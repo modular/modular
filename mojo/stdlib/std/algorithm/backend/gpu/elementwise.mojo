@@ -106,14 +106,14 @@ struct _ClcKernel[
     shape_dtype: DType,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, alignment: Int = 1](Coord) register_passable -> None,
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     //,
     handle_uneven_simd: Bool,
     simd_width: Int,
     block_size: Int,
     elems_per_thread: Int,
     trace_description: StaticString = "",
-](ImplicitlyCopyable, RegisterPassable, def() register_passable -> None):
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Work-stealing CLC kernel as a callable struct.
 
     Parameterizing on `handle_uneven_simd` lets one struct serve both the
@@ -266,7 +266,7 @@ def _elementwise_impl_gpu_clc[
     block_size: Int,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, alignment: Int = 1](Coord) register_passable -> None,
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     elems_per_thread: Int,
     *,
     trace_description: StaticString = "",
@@ -347,14 +347,14 @@ struct _GridStrideKernel[
     shape_dtype: DType,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, alignment: Int = 1](Coord) register_passable -> None,
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     //,
     handle_uneven_simd: Bool,
     simd_width: Int,
     block_size: Int,
     elems_per_thread: Int,
     trace_description: StaticString = "",
-](ImplicitlyCopyable, RegisterPassable, def() register_passable -> None):
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Grid-stride elementwise kernel as a callable struct.
 
     See `_ClcKernel` for the rationale behind the callable-struct form.
@@ -435,7 +435,7 @@ def _elementwise_impl_gpu_grid_stride[
     threads_per_multiprocessor: Int,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, alignment: Int = 1](Coord) register_passable -> None,
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     elems_per_thread: Int,
     *,
     trace_description: StaticString = "",
@@ -519,21 +519,19 @@ struct _DualGridStrideKernel[
     rank: Int,
     shape_0_dtype: DType,
     shape_1_dtype: DType,
-    Func0Type: ImplicitlyCopyable
-    & def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
-    Func1Type: ImplicitlyCopyable
-    & def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
+    Func0Type: RegisterPassable
+    & ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+    Func1Type: RegisterPassable
+    & ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     //,
     handle_uneven_simd: Bool,
     simd_width: Int,
     block_size: Int,
     elems_per_thread: Int,
     trace_description: StaticString = "",
-](ImplicitlyCopyable, RegisterPassable, def() register_passable -> None):
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Dual-elementwise grid-stride kernel as a callable struct.
 
     See `_ClcKernel` for the rationale behind the callable-struct form.
@@ -648,13 +646,11 @@ def _dual_elementwise_impl_gpu_grid_stride[
     sm_count: Int,
     threads_per_multiprocessor: Int,
     Func0Type: ImplicitlyCopyable
-    & def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     Func1Type: ImplicitlyCopyable
-    & def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     elems_per_thread: Int,
     *,
     trace_description: StaticString = "",
@@ -763,7 +759,8 @@ def _dual_elementwise_impl_gpu_grid_stride[
 def _elementwise_impl_gpu[
     simd_width: Int,
     FuncType: ImplicitlyCopyable
-    & def[width: Int, alignment: Int = 1](Coord) register_passable -> None,
+    & RegisterPassable
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     trace_description: StaticString = "",
 ](func: FuncType, *, shape: Coord, ctx: DeviceContext) raises:
     """Executes `func[width](indices)` as sub-tasks for a suitable
@@ -902,13 +899,11 @@ def _dual_elementwise_impl_gpu[
     //,
     simd_width: Int,
     Func0Type: ImplicitlyCopyable
-    & def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     Func1Type: ImplicitlyCopyable
-    & def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     *,
     trace_description: StaticString = "",
 ](

@@ -178,7 +178,11 @@ def configure_telemetry(color: str | None = None) -> None:
 
 
 def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
-    @click.option("--port", type=int, help="Port to run the server on.")
+    @click.option(
+        "--port",
+        type=int,
+        help="Port for the HTTP API. Defaults to ``8000``.",
+    )
     @click.option(
         "--headless",
         is_flag=True,
@@ -224,9 +228,8 @@ def cli_serve(
 ) -> None:
     """Start a model serving endpoint for inference.
 
-    This command launches a server that can handle inference requests for the
-    specified model. The server supports various performance optimization
-    options and monitoring capabilities.
+    Loads a model from a Hugging Face model ID or local path and
+    exposes OpenAI-compatible HTTP endpoints for inference requests.
     """
     from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.cli.config import parse_task_flags

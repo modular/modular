@@ -73,7 +73,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             graph_mode = "auto"
 
         dtype = self.dtype
-        if dtype == DType.float8_e4m3fn:
+        if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
             quant_config = parse_quant_config(config, state_dict, dtype)
         else:
             quant_config = None
@@ -108,9 +108,15 @@ class DeepseekV3_2Model(DeepseekV3Model):
             )
 
             if config.n_shared_experts == 1:
-                # Only enable shared expert fusion if the shared expert is of
-                # the same shape as routed experts.
-                ep_kwargs["fused_shared_expert"] = True
+                # Fuse into EP dispatch only when shared experts use the same
+                # quantized layout as routed experts (modelopt ``*shared_experts*``
+                # ignore leaves them bf16 → separate unfused path).
+                if quant_config is None:
+                    ep_kwargs["fused_shared_expert"] = True
+                else:
+                    ep_kwargs["fused_shared_expert"] = (
+                        quant_config.shared_experts_weight_dtype is None
+                    )
 
             if quant_config is not None:
                 ep_kwargs["dispatch_quant_config"] = quant_config
@@ -134,7 +140,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             correction_bias_dtype = None
 
         # Initialize config with parameters from pipeline_config
-        model_config = DeepseekV3_2Config.initialize(self.pipeline_config)
+        model_config = self.model_config_cls.initialize(self.pipeline_config)
 
         # Finalize config with state_dict-dependent parameters
         model_config.norm_dtype = norm_dtype

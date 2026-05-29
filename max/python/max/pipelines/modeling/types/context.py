@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
@@ -26,6 +27,25 @@ from max.pipelines.request import RequestID
 
 from .logit_processors_type import LogitsProcessor
 from .status import GenerationStatus
+
+
+def _validate_temperature(value: float, name: str) -> None:
+    """Validate that a temperature-style parameter is in ``[0.0, 2.0]``.
+
+    Raises ``ValueError`` rather than ``max.pipelines.core.exceptions.
+    InputError``: importing that class into ``max.pipelines.modeling.types``
+    creates an init-time cycle through ``max.pipelines.core.context``'s
+    ``EOSTracker`` reference. Aligns with the surrounding ``min_p`` /
+    ``top_p`` / ``repetition_penalty`` validations which also raise
+    ``ValueError``. The chat-completion route maps ``ValueError`` to
+    ``HTTPException(400, detail="Value error.")`` so the descriptive
+    message is lost to the client; a broader cleanup to break the
+    cycle and switch every ``__post_init__`` validation to
+    ``InputError`` is tracked separately.
+    """
+    if not math.isfinite(value) or not 0.0 <= value <= 2.0:
+        raise ValueError(f"{name} must be in [0.0, 2.0], was {value}.")
+
 
 _logger = logging.getLogger("max.pipelines")
 
@@ -365,6 +385,22 @@ class SamplingParams:
 
         if self.top_p < 0.0 or self.top_p > 1.0:
             raise ValueError(f"top_p must be in [0.0, 1.0], was {self.top_p}.")
+
+        # Temperature is divided into logits in the sampling kernel; a
+        # negative or non-finite value produces NaN/Inf logits that
+        # propagate through top-k/top-p and yield out-of-range token
+        # ids. Under the overlap scheduler the resulting hung request
+        # keeps the in-flight batch slot alive forever, wedging every
+        # subsequent request. Extreme positive values (e.g. 100) make
+        # the distribution near-uniform; the model almost never samples
+        # EOS and the request runs out the token window before
+        # returning -- the client sees a timeout. Pin to OpenAI's
+        # documented range so the bad value never reaches the GPU.
+        _validate_temperature(self.temperature, "temperature")
+        if self.thinking_temperature is not None:
+            _validate_temperature(
+                self.thinking_temperature, "thinking_temperature"
+            )
 
         # If temperature is 0, set top_k to 1.
         if self.temperature == 0:

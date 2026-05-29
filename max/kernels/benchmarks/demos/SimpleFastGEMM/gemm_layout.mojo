@@ -132,13 +132,13 @@ def gemm[
 
 
 # kgen --emit=asm max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
-@export(ABI="C")
+@export
 def gemm_export_dynamic(
     a_ptr: UnsafePointer[Scalar[dtype], _],
     b_packed_ptr: UnsafePointer[Scalar[dtype], _],
     c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     M: Int,
-):
+) abi("C"):
     comptime N = 1024
     comptime K = 1024
     var a = TileTensor(a_ptr, row_major(M, Idx[N]))

@@ -21,6 +21,7 @@ import os
 from typing import Any
 
 from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.weight_loader import WeightLoader, _role_prefixed_loader
 from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
@@ -247,6 +248,31 @@ class ModelManifest(dict[str, MAXModelConfig]):
                 "total_weights_size. Call resolve() first."
             )
         return sum(config.weights_size() for config in self.values())
+
+    def loader(self) -> WeightLoader:
+        """Returns a :class:`WeightLoader` over the role-prefixed union.
+
+        Public entry point for multi-component pipelines (diffusion,
+        speculative decoding). Each role's loader is exposed under its
+        dotted role prefix, so a query like
+        ``"transformer.blocks.0.attn.qkv_proj.weight"`` routes to the
+        ``transformer`` config's loader with ``"blocks.0.attn.qkv_proj.weight"``.
+
+        Single-model pipelines should call ``manifest["main"].loader()``
+        instead -- the role prefix is not useful when there's only one
+        source and the Module tree's parameter names don't carry it.
+
+        Resolution is lazy: per-role loaders defer to the underlying
+        :class:`~max.graph.weights.Weights` source, so weight bytes only
+        page in when the Module's adapter chain actually queries them.
+
+        Returns:
+            A :class:`WeightLoader` resolving ``f"{role}.{name}"`` keys
+            against the per-role source loaders.
+        """
+        return _role_prefixed_loader(
+            {role: config.loader() for role, config in self.items()}
+        )
 
     # ------------------------------------------------------------------
     # Logging

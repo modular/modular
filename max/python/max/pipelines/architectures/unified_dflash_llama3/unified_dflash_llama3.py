@@ -33,7 +33,7 @@ from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
 )
-from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
+from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
 )
 

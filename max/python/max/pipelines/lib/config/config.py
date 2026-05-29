@@ -27,8 +27,14 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
+from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
-from max.pipelines.lib.interfaces import PipelineModel
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.lib.interfaces import (
+    ArchConfig,
+    ArchConfigWithKVCache,
+    PipelineModel,
+)
 from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
     to_human_readable_bytes,
@@ -44,13 +50,13 @@ from max.pipelines.lib.registry import (
     get_pipeline_for_task,
 )
 from max.pipelines.lib.sampling import SamplingConfig
-from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
 from max.pipelines.modeling.kv_cache_config import (
     KVCacheConfig,
     KVConnectorConfig,
 )
 from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.modeling.weights.hf_utils import is_diffusion_pipeline
+from max.pipelines.speculative.config import SpeculativeConfig
 from pydantic import (
     ConfigDict,
     Field,
@@ -65,7 +71,6 @@ from typing_extensions import Self, override
 from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig, _format_config_entries
 from .profiling_config import ProfilingConfig
-from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -144,6 +149,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedDflashLlama3ForCausalLM",
+    "UnifiedDflashKimiK25ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",
     "Eagle3DeepseekV3ForCausalLM",
@@ -301,6 +307,26 @@ class PipelineConfig(ConfigFileModel):
     )
     """The model-agnostic runtime settings for pipeline execution."""
 
+    @property
+    def needs_bitmask_constraints(self) -> bool:
+        """Whether constrained decoding can fire and requires the bitmask path.
+
+        True if the user enabled ``--enable-structured-output`` (for
+        user-supplied ``response_format=json_schema``) or a tool parser is
+        configured (tool-call grammars work without the flag — they are
+        server-generated and gated on having a parser that can both produce
+        the grammar and parse the resulting output).
+
+        Drives whether model / sampler graphs are compiled with a bitmask
+        input and whether the D2H pinned buffer is allocated. Distinct from
+        ``sampling.enable_structured_output``, which is the user-facing
+        flag and only gates honoring user-supplied JSON schemas.
+        """
+        return (
+            self.sampling.enable_structured_output
+            or self.runtime.tool_parser is not None
+        )
+
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -316,6 +342,59 @@ class PipelineConfig(ConfigFileModel):
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
         session._use_vendor_ccl(self.runtime.use_vendor_ccl)
+
+    def estimate_signal_buffer_memory(
+        self, arch_config: ArchConfig | None = None
+    ) -> int:
+        """Estimates total signal-buffer memory across all devices.
+
+        Signal buffers are fixed-size (:attr:`~max.nn.comm.allreduce.Signals.NUM_BYTES`)
+        per-GPU allocations used by P2P collectives. Each independent allocation
+        site contributes one set of ``ngpus`` buffers. The base estimate counts
+        the sites visible from :class:`PipelineConfig`:
+
+        - main model graph (multi-GPU only),
+        - :class:`BlockOffloadEngine` for KV-cache offloading, *only* when its
+          ``replicate_kv_across_tp`` path is active (MLA model with DP=1 and
+          multi-device TP). See ``block_copy_engine.py`` / ``transfer_engine.py``.
+
+        Returns 0 for single-device pipelines. Architecture-specific outliers
+        (e.g. always-allreduce mixins, Flux2, multimodal encoders) should
+        override :meth:`~max.pipelines.lib.interfaces.PipelineModel.estimate_signal_buffer_memory`.
+
+        Args:
+            arch_config: Optional architecture config. When provided and it
+                exposes KV params, the BCE term is gated on the actual
+                ``replicates_kv_across_tp`` flag rather than only the
+                ``kv_connector`` setting. Without it, the BCE term is added
+                whenever a connector is configured (conservative).
+
+        Returns:
+            Estimated total signal-buffer memory in bytes (across all devices).
+        """
+        ngpus = len(self.model.device_specs)
+        if ngpus <= 1:
+            return 0
+
+        count_per_gpu = 1  # main model
+        if self.model.kv_cache.kv_connector in {
+            KVConnectorType.tiered,
+            KVConnectorType.local,
+        }:
+            # BlockOffloadEngine only allocates signal buffers when its
+            # broadcast path is active (replicate_kv_across_tp = is_mla AND
+            # dp==1 AND n_devices>1; see block_copy_engine.py:242-306).
+            # Without arch_config we can't tell, so be conservative and add
+            # the set; with arch_config, gate precisely.
+            bce_allocates = True
+            if isinstance(arch_config, ArchConfigWithKVCache):
+                bce_allocates = (
+                    arch_config.get_kv_params().replicates_kv_across_tp
+                )
+            if bce_allocates:
+                count_per_gpu += 1  # BlockOffloadEngine
+
+        return Signals.NUM_BYTES * count_per_gpu * ngpus
 
     @staticmethod
     def _extract_kwargs_for_config(
@@ -1013,7 +1092,10 @@ class PipelineConfig(ConfigFileModel):
                     if self.draft_model is not None
                     else None
                 )
-                if draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                if self.speculative.is_dflash():
+                    # MLA target + DFlash MHA draft.
+                    target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
+                elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
                     # MLA target + MHA (Llama-style) Eagle3 draft.
                     target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
                 else:
@@ -1523,6 +1605,9 @@ class PipelineConfig(ConfigFileModel):
         activation_size = arch.pipeline_model.estimate_activation_memory(
             self, model_config.huggingface_config
         )
+        signal_buffer_size = arch.pipeline_model.estimate_signal_buffer_memory(
+            self, arch_config
+        )
 
         MemoryEstimator.estimate_memory_footprint(
             self,
@@ -1531,6 +1616,7 @@ class PipelineConfig(ConfigFileModel):
             devices,
             weights_size,
             activation_size,
+            signal_buffer_size,
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
@@ -1539,6 +1625,7 @@ class PipelineConfig(ConfigFileModel):
             model_config,
             devices,
             arch_config,
+            signal_buffer_size,
         ):
             if self.model.max_length is None:
                 self.model.max_length = clamped_max_seq_len

@@ -96,7 +96,7 @@ HF_MODELS: dict[str, set[str]] = {
     "Qwen/Qwen3-8B": MULTI,
     "Qwen/Qwen3-VL-4B-Instruct": XL | {"vllm@B200"},  # MODELS-1020
     "Qwen/Qwen3-VL-4B-Instruct-FP8": XL | {"MI355", "2xMI355"},  # MI355: no FP8
-    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": DISABLE,  # MODELS-1442
+    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": XL | {"MI355", "2xMI355", "max-ci@B200", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
     "Qwen/Qwen3-VL-30B-A3B-Thinking": XL | {"max"},
     "Qwen/Qwen3.5-9B": MULTI | {"max", "max-ci@MI355"},
     "Qwen/Qwen3.6-27B": MULTI | {"max", "max-ci@MI355"},
@@ -127,7 +127,11 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": DISABLE,  # SERVSYS-1248
     "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
+    "google/gemma-4-26B-A4B-it__tieredkv": MULTI,
+    "google/gemma-4-31B-it__tieredkv": MULTI,
     "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": MULTI | {"MI355"},
+    "nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv": MULTI | {"MI355"},
+    "nvidia/Gemma-4-31B-IT-NVFP4__tieredkv": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},

@@ -181,8 +181,8 @@ def test_micro_kernel[
     c_ptr.free()
 
 
-@export(ABI="C")
-def kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
+@export
+def kernel_export_dynamic(m: Int, n: Int, k: Int) abi("C") raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 

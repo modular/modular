@@ -26,7 +26,8 @@ from std.sys import size_of
 from std.utils import IndexList
 
 from layout import TensorLayout
-from layout.tile_layout import row_major
+from layout.coord import Coord, Idx
+from layout.tile_layout import row_major, row_major_nested
 
 from structured_kernels.amd_tile_io import (
     RegTile,
@@ -195,6 +196,30 @@ struct MhaMmaOp[T: DType, config: HKMhaConfig]:
     ]()
     """Attention block (QK output, col_l rt_32x32 FP32)."""
 
+    # Per-lane decomposition of a col_l rt_32x32 base tile: each lane
+    # owns 16 FP32 within one column band — 16 rows by 1 col.
+    comptime FRAG_H_COL_L = 16
+    """Per-lane row count for one col_l rt_32x32 base tile."""
+    comptime FRAG_W_COL_L = 1
+    """Per-lane col count for one col_l rt_32x32 base tile."""
+
+    comptime ATT_LAYOUT_NESTED = row_major_nested(
+        Coord(
+            Coord(
+                Idx[Self.KV_BLOCK // Self.MMA_M],
+                Idx[Self.FRAG_H_COL_L],
+            ),
+            Coord(
+                Idx[Self.Q_BLOCK_SIZE // Self.MMA_N],
+                Idx[Self.FRAG_W_COL_L],
+            ),
+        )
+    )
+    """Nested form of `ATT_LAYOUT`: rank 2 (flat_rank 4) — outer dims
+    count base tiles, inner sub-dims count per-lane positions. Use via
+    `.tile[FRAG_H_COL_L, FRAG_W_COL_L](i, j)` to grab the (16, 1)
+    fragment at outer base-tile `(i, j)`."""
+
     comptime ATT_BF16_SUB_LAYOUT = row_major[
         16 // 16,
         Self.Q_BLOCK_SIZE // Self.MMA_N,
@@ -216,6 +241,20 @@ struct MhaMmaOp[T: DType, config: HKMhaConfig]:
         (Self.MMA_M * Self.MMA_N) // 64,
     ]()
     """Output accumulator (col_l rt_32x32 FP32)."""
+
+    comptime O_LAYOUT_NESTED = row_major_nested(
+        Coord(
+            Coord(
+                Idx[Self.DEPTH // Self.MMA_M],
+                Idx[Self.FRAG_H_COL_L],
+            ),
+            Coord(
+                Idx[Self.Q_BLOCK_SIZE // Self.MMA_N],
+                Idx[Self.FRAG_W_COL_L],
+            ),
+        )
+    )
+    """CuTe-nested form of `O_LAYOUT`. See `ATT_LAYOUT_NESTED`."""
 
     comptime O_T_LAYOUT = row_major[
         Self.Q_BLOCK_SIZE // Self.MMA_M,

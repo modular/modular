@@ -46,17 +46,14 @@ except Exception:
 
 @dataclass
 class HistogramData:
-    """Histogram data with buckets, sum and count.
+    """Histogram data with buckets, sum and count."""
 
-    Attributes:
-        buckets: List of (upper_bound, cumulative_count) tuples representing histogram buckets
-        sum: Total sum of all observed values
-        count: Total number of observations
-    """
-
-    buckets: list[tuple[str, float]]  # List of (upper_bound, cumulative_count)
+    buckets: list[tuple[str, float]]
+    """List of (upper_bound, cumulative_count) tuples representing histogram buckets."""
     sum: float
+    """Total sum of all observed values."""
     count: float
+    """Total number of observations."""
 
     def __bool__(self) -> bool:
         """Check if histogram has any observations.
@@ -83,12 +80,6 @@ class HistogramData:
 class ParsedMetrics:
     """Structured metrics data parsed from Prometheus endpoint.
 
-    Attributes:
-        counters: Dictionary of counter metrics (monotonically increasing values)
-        gauges: Dictionary of gauge metrics (can increase or decrease)
-        histograms: Dictionary of histogram metrics with bucket distributions
-        raw_text: Raw Prometheus text format for debugging
-
     Note:
         Metrics with labels are stored with keys in the format:
         "metric_name{label1="value1",label2="value2"}"
@@ -97,9 +88,13 @@ class ParsedMetrics:
     """
 
     counters: dict[str, float]
+    """Dictionary of counter metrics (monotonically increasing values)."""
     gauges: dict[str, float]
+    """Dictionary of gauge metrics (can increase or decrease)."""
     histograms: dict[str, HistogramData]
-    raw_text: str  # Keep raw Prometheus text for debugging
+    """Dictionary of histogram metrics with bucket distributions."""
+    raw_text: str
+    """Raw Prometheus text format for debugging."""
 
     def get_histogram(
         self, metric_name: str, labels: dict[str, str] | None = None
@@ -559,22 +554,39 @@ def parse_spec_decode_metrics(raw_text: str) -> SpecDecodeMetrics | None:
 def fetch_spec_decode_metrics(
     backend: Backend,
     base_url: str,
+    metrics_urls: Mapping[str, str] | None = None,
 ) -> SpecDecodeMetrics | None:
-    """Fetch speculative decoding metrics from the Prometheus endpoint.
+    """Fetch and merge speculative decoding metrics from Prometheus endpoints.
 
-    Returns ``None`` when the backend does not expose speculative decoding
-    metrics or the metrics endpoint cannot be reached.
+    Returns ``None`` when no endpoint exposes speculative decoding metrics.
 
     Args:
         backend: Backend type (``vllm`` / ``vllm-chat``, ``modular`` /
             ``modular-chat``, etc.).
         base_url: Server base URL (e.g., ``http://localhost:8000``).
+        metrics_urls: Explicit Prometheus metrics endpoint URLs, keyed by
+            label. When empty, a single endpoint is derived from *backend*
+            and *base_url*.
     """
-    try:
-        metrics_text = fetch_metrics(get_metrics_url(backend, base_url))
-    except Exception:
-        return None
-    return parse_spec_decode_metrics(metrics_text)
+    urls = metrics_urls or {"server": get_metrics_url(backend, base_url)}
+
+    merged: SpecDecodeMetrics | None = None
+    for label, url in urls.items():
+        try:
+            metrics_text = fetch_metrics(url)
+        except Exception:
+            logger.warning(
+                "Failed to fetch spec-decode metrics from %s (%s)", label, url
+            )
+            continue
+        parsed = parse_spec_decode_metrics(metrics_text)
+        if parsed is None:
+            continue
+        if merged is None:
+            merged = parsed
+        else:
+            merged += parsed
+    return merged
 
 
 def print_server_metrics(metrics: ParsedMetrics) -> None:

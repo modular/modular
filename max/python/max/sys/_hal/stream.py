@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .buffer import Buffer
 from .event import Event
 
 
@@ -48,6 +49,24 @@ class Stream:
 
     def record_event(self) -> Event:
         return Event._wrap(self._inner.record_event())
+
+    def copy_to_device(
+        self, dst: Buffer, src_address: int, byte_size: int
+    ) -> None:
+        self._inner.copy_to_device(dst._inner, src_address, byte_size)
+
+    def copy_from_device(
+        self, dst_address: int, src: Buffer, byte_size: int
+    ) -> None:
+        self._inner.copy_from_device(dst_address, src._inner, byte_size)
+
+    def copy_intra_device(
+        self, dst: Buffer, src: Buffer, byte_size: int
+    ) -> None:
+        self._inner.copy_intra_device(dst._inner, src._inner, byte_size)
+
+    def wait_for_events(self, *events: Event) -> None:
+        self._inner.wait_for_events(tuple(e._inner for e in events))
 
     def __repr__(self) -> str:
         return "Stream()"

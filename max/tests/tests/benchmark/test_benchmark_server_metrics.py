@@ -805,3 +805,38 @@ def test_spec_decode_stats_to_result_dict_omits_missing_aggregates() -> None:
     assert stats.to_result_dict() == {
         "spec_decode_per_position_acceptance_rates": [0.88, 0.50],
     }
+
+
+def test_spec_decode_metrics_iadd() -> None:
+    """SpecDecodeMetrics.__iadd__ merges all fields by summation."""
+    a = SpecDecodeMetrics(
+        num_drafts=10,
+        num_draft_tokens=30,
+        num_accepted_tokens=20,
+        accepted_per_pos={0: 10, 1: 7},
+        per_pos_rate_sum={0: 800.0, 1: 500.0},
+        per_pos_rate_count={0: 10, 1: 10},
+        avg_acceptance_length_sum=5.0,
+        avg_acceptance_length_count=2.0,
+    )
+    b = SpecDecodeMetrics(
+        num_drafts=5,
+        num_draft_tokens=15,
+        num_accepted_tokens=11,
+        accepted_per_pos={0: 5, 2: 3},
+        per_pos_rate_sum={0: 400.0, 2: 300.0},
+        per_pos_rate_count={0: 5, 2: 5},
+        avg_acceptance_length_sum=3.0,
+        avg_acceptance_length_count=1.0,
+    )
+
+    a += b
+
+    assert a.num_drafts == 15
+    assert a.num_draft_tokens == 45
+    assert a.num_accepted_tokens == 31
+    assert a.accepted_per_pos == {0: 15, 1: 7, 2: 3}
+    assert a.per_pos_rate_sum == {0: 1200.0, 1: 500.0, 2: 300.0}
+    assert a.per_pos_rate_count == {0: 15, 1: 10, 2: 5}
+    assert a.avg_acceptance_length_sum == pytest.approx(8.0)
+    assert a.avg_acceptance_length_count == pytest.approx(3.0)

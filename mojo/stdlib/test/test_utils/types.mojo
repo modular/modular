@@ -28,6 +28,7 @@
 * `AbortOnCopy`
 """
 
+from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
 from std.os import abort
 from std.reflection import call_location
@@ -38,7 +39,12 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveOnly[T: Movable & ImplicitlyDestructible](Movable):
+struct MoveOnly[T: Movable & ImplicitlyDestructible](
+    Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
+    Movable,
+    Writable where conforms_to(T, Writable),
+):
     """Utility for testing MoveOnly types.
 
     Parameters:
@@ -56,6 +62,40 @@ struct MoveOnly[T: Movable & ImplicitlyDestructible](Movable):
             i: The test data payload.
         """
         self.data = i^
+
+    def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
+        """Compare two `MoveOnly` instances for equality on their payload.
+
+        Args:
+            other: The other instance to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.data == other.data
+
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Hash the payload using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.data.__hash__(hasher)
+
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
+        """Write the payload to a `Writer`.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(self.data)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -174,10 +214,13 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 
 
 struct CopyCounter[
-    T: ImplicitlyCopyable & Writable & Defaultable = NoneType,
+    T: ImplicitlyCopyable
+    & ImplicitlyDestructible
+    & Writable
+    & Defaultable = NoneType,
     *,
     trivial_copy: Bool = False,
-](ImplicitlyCopyable, Writable):
+](ImplicitlyCopyable, ImplicitlyDestructible, Writable):
     """Counts the number of copies performed on a value.
 
     Parameters:

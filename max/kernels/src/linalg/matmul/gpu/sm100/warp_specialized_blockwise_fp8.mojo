@@ -830,7 +830,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime MMA_N = config.mma_shape[1]
     comptime MMA_K = config.mma_shape[2]
 
-    comptime assert BK == 128, "Only support BK = 128"
+    comptime assert BK in (64, 128), "Only support BK in (64, 128)"
     comptime assert MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK, (
         "MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK. MMA_N="
         + String(MMA_N)

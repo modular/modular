@@ -136,7 +136,7 @@ def bench_matmul[
             @__copy_capture(tensor_c)
             def test_lambda_add_coords_prod[
                 _dtype: DType,
-                width: Int,
+                width: SIMDSize,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[

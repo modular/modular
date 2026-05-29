@@ -170,7 +170,6 @@ def _build_attention_graph(
         # Flat order from KVCacheInputsPerDevice.flatten():
         #   kv_blocks, cache_lengths, lookup_table, max_lengths,
         #   [kv_scales,]    <-- only when quantized_kv_cache=True
-        #   [kv_staging,]   <-- only when quantized_kv_cache=True
         #   attention_dispatch_metadata
         kv_input_tensors = g.inputs[4:]
         kv_symbolic_item = kv_symbolic.inputs[0]
@@ -183,9 +182,6 @@ def _build_attention_graph(
             max_lengths=kv_vals.max_lengths.tensor,
             kv_scales=kv_vals.kv_scales.buffer
             if kv_vals.kv_scales is not None
-            else None,
-            kv_staging=kv_vals.kv_staging.buffer
-            if kv_vals.kv_staging is not None
             else None,
             attention_dispatch_metadata=kv_vals.attention_dispatch_metadata.tensor
             if kv_vals.attention_dispatch_metadata is not None

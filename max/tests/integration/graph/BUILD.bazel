@@ -96,7 +96,14 @@ modular_py_test(
     ignore_extra_deps = [
         # Optional dep of max.graph, used to test loading weights
         requirement("gguf"),
+        # Loaded automatically by pytest; not imported by any test source.
+        requirement("pytest-asyncio"),
     ],
+    # ``AsyncValue.__await__`` (monkeypatched by max.engine.mlrt) declares
+    # ``AsyncValue[T]`` in its signature; mypy resolves that to
+    # ``max._core.mlrt.AsyncValue`` but the dep graph already covers it
+    # transitively via //max/python/max/engine.
+    ignore_unresolved_imports = ["max._core.mlrt.AsyncValue"],
     mojo_deps = [
         "//max:builtin_kernels",
         "//max/tests/integration/Inputs/test_user_op",
@@ -107,6 +114,7 @@ modular_py_test(
     ],
     deps = [
         ":modular_graph_test",
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -117,6 +125,7 @@ modular_py_test(
         requirement("gguf"),
         requirement("hypothesis"),
         requirement("numpy"),
+        requirement("pytest-asyncio"),
         requirement("torch"),
         requirement("torchvision"),
     ],
@@ -232,7 +241,7 @@ modular_py_test(
     ],
 )
 
-# CPU-only graph op tests (no macOS/ASAN restrictions unlike cpu_tests)
+# CPU-only graph op tests (ASAN-only restriction unlike cpu_tests)
 modular_py_test(
     name = "cpu_graph_op_tests",
     size = "medium",
@@ -243,6 +252,12 @@ modular_py_test(
         "test_is_inf.py",
         "test_is_nan.py",
     ],
+    # TODO(GEX-3773): test_is_nan times out at 600s on slow macOS BuildBuddy
+    # workers; disable the whole group on macOS until investigated.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -434,6 +449,10 @@ modular_py_test(
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
+        # TODO(GEX-3776): Cold `from max.engine import InferenceSession`
+        # subprocesses exceed the test's internal 60s timeout on slow macOS
+        # BuildBuddy workers.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [

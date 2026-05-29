@@ -22,9 +22,6 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib.config.lora_config import LoRAConfig
 from max.pipelines.lib.lora import LoRAManager
 from max.pipelines.modeling.types import (
-    LoRAOperation,
-    LoRARequest,
-    LoRAResponse,
     LoRAStatus,
 )
 
@@ -61,50 +58,9 @@ def configured_mock_lora(mock_lora_model: MagicMock) -> MagicMock:
     return mock_lora_model
 
 
-class MockLoRARequestProcessor:
-    """Mock LoRARequestProcessor that doesn't create ZMQ sockets or threads."""
-
-    def __init__(
-        self,
-        manager: LoRAManager,
-        zmq_endpoint_base: str,
-    ) -> None:
-        self.manager = manager
-
-    def _handle_lora_request(self, request: LoRARequest) -> LoRAResponse:
-        """Mock request handler for testing."""
-
-        if request.operation == LoRAOperation.LOAD:
-            status = self.manager.load_adapter(
-                f"{request.lora_name}={request.lora_path}"
-            )
-            return LoRAResponse(
-                status=status,
-                message=f"LoRA '{request.lora_name}' loaded successfully"
-                if status == LoRAStatus.SUCCESS
-                else "Failed to load",
-            )
-        elif request.operation == LoRAOperation.UNLOAD:
-            status = self.manager.unload_adapter(request.lora_name)
-            return LoRAResponse(
-                status=status,
-                message=f"LoRA '{request.lora_name}' unloaded successfully"
-                if status == LoRAStatus.SUCCESS
-                else "Failed to unload",
-            )
-        else:
-            return LoRAResponse(
-                status=LoRAStatus.LOAD_ERROR, message="Unknown operation"
-            )
-
-
 @pytest.fixture
 def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
     """Create a LoRAManager instance with mocked ZMQ handler and locks disabled."""
-    monkeypatch.setattr(
-        "max.pipelines.lib.lora.LoRARequestProcessor", MockLoRARequestProcessor
-    )
-
     mock_load_weights = MagicMock()
     monkeypatch.setattr(
         "max.pipelines.lib.lora.load_weights", mock_load_weights
@@ -121,7 +77,6 @@ def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
         n_heads=32,
         n_kv_heads=8,
         head_dim=128,
-        zmq_endpoint_base="fake",
     )
 
     manager._validate_lora_path = lambda path: LoRAStatus.SUCCESS  # type: ignore

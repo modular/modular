@@ -42,6 +42,7 @@ from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.telemetry.metrics import NoopClient
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 
 
 @pytest.fixture
@@ -114,6 +115,7 @@ async def test_model_worker_propagates_exception(
                 PipelineTask.TEXT_GENERATION,
                 context_type=TextContext,
             ),
+            zmq_endpoint_base=generate_zmq_ipc_path(),
         ):
             raise ValueError("kaboom")
 
@@ -156,6 +158,7 @@ async def test_model_worker_propagates_construction_exception(
                 context_type=TextContext,
             ),
             metric_client=NoopClient(),
+            zmq_endpoint_base=generate_zmq_ipc_path(),
         ):
             pass
 
@@ -193,6 +196,7 @@ async def test_model_worker_start_timeout(
             model_worker_interface=ZmqModelWorkerInterface(
                 PipelineTask.TEXT_GENERATION, context_type=TextContext
             ),
+            zmq_endpoint_base=generate_zmq_ipc_path(),
         ):
             pass
 
@@ -235,5 +239,6 @@ async def test_lifespan_propagates_worker_exception(
             FastAPI(),
             settings,
             serving_settings,
+            generate_zmq_ipc_path(),
         ):
             pass

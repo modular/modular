@@ -61,18 +61,6 @@ class PipelineType(Enum):
     SPEECH_TOKEN = "speech_token"
 
 
-class MockLoRARequestProcessor:
-    def __init__(
-        self,
-        manager: LoRAManager,
-        zmq_endpoint_base: str,
-    ) -> None:
-        del manager, zmq_endpoint_base
-
-    def process_lora_requests(self) -> None:
-        pass
-
-
 class MockModelInputs(ModelInputs):
     def __init__(
         self,
@@ -252,19 +240,14 @@ def create_lora_manager(
         lora_paths=[],
     )
 
-    with patch(
-        "max.pipelines.lib.lora.LoRARequestProcessor",
-        MockLoRARequestProcessor,
-    ):
-        manager = LoRAManager(
-            config=config,
-            base_model_path=base_model_path,
-            base_dtype=DType.float32,
-            n_heads=32,
-            n_kv_heads=8,
-            head_dim=128,
-            zmq_endpoint_base="fake",
-        )
+    manager = LoRAManager(
+        config=config,
+        base_model_path=base_model_path,
+        base_dtype=DType.float32,
+        n_heads=32,
+        n_kv_heads=8,
+        head_dim=128,
+    )
 
     for name in lora_names:
         fake_lora = NonCallableMock(spec=LoRAModel)

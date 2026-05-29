@@ -66,6 +66,7 @@ from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from uvicorn import Config
 
 ROUTES = {
@@ -108,6 +109,7 @@ async def lifespan(
     app: FastAPI,
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
+    zmq_endpoint_base: str,
 ) -> AsyncGenerator[None]:
     try:
         if not settings.disable_telemetry:
@@ -172,12 +174,13 @@ async def lifespan(
                 settings,
                 metric_client,
                 model_worker_interface=model_worker_interface,
+                zmq_endpoint_base=zmq_endpoint_base,
             )
         )
 
         lora_queue: LoRAQueue | None = (
             LoRAQueue(
-                serving_settings.pipeline_config.runtime.zmq_endpoint_base,
+                zmq_endpoint_base,
                 serving_settings.pipeline_config.lora.lora_paths,
             )
             if serving_settings.pipeline_config.lora
@@ -225,6 +228,7 @@ async def lifespan(
         # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
+        app.state.zmq_endpoint_base = zmq_endpoint_base
 
         # Also store as handler for OpenResponses API route compatibility
         # For pixel generation, this is the same as pipeline
@@ -278,10 +282,14 @@ def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
+    zmq_endpoint_base = generate_zmq_ipc_path()
+
     @asynccontextmanager
     async def lifespan_wrap(app: FastAPI) -> AsyncGenerator[None, None]:
         try:
-            async with lifespan(app, settings, serving_settings):
+            async with lifespan(
+                app, settings, serving_settings, zmq_endpoint_base
+            ):
                 yield
         except BaseException as e:
             # Worker already logs the detailed traceback, so we use
@@ -322,9 +330,7 @@ def fastapi_app(
     app.add_api_route("/version", version)
     app.add_api_route("/health", health)
 
-    reset_prefix_cache_frontend = ResetPrefixCacheFrontend(
-        serving_settings.pipeline_config.runtime.zmq_endpoint_base
-    )
+    reset_prefix_cache_frontend = ResetPrefixCacheFrontend(zmq_endpoint_base)
 
     async def reset_prefix_cache() -> Response:
         """Reset the prefix cache."""

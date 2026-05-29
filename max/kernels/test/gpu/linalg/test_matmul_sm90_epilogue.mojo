@@ -170,7 +170,7 @@ def main() raises:
         @always_inline
         def test_lambda_fn_square[
             _dtype: DType,
-            width: Int,
+            width: SIMDSize,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -196,7 +196,7 @@ def main() raises:
         @always_inline
         def test_lambda_add_coords[
             _dtype: DType,
-            width: Int,
+            width: SIMDSize,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[

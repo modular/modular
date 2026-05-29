@@ -15,7 +15,11 @@
 from .mxfp4_dequant_matmul_amd import mxfp4_dequant_matmul_amd
 from .mxfp4_dequant_grouped_matmul_amd import mxfp4_dequant_grouped_matmul_amd
 from .mxfp4_matmul_amd import mxfp4_block_scaled_matmul_amd, MXFP4MatmulAMD
-from .mxfp4_grouped_matmul_amd import mxfp4_grouped_matmul_amd
+from .mxfp4_grouped_matmul_amd import (
+    PreShuffledBGroupedGEMM,
+    mxfp4_grouped_matmul_amd,
+    mxfp4_grouped_matmul_amd_preb,
+)
 from .mxfp4_moe_matmul_amd import (
     InputRowMode,
     MXFP4MoERoutedMatmul,

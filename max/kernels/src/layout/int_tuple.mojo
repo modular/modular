@@ -58,7 +58,7 @@ var total_size = size(shape)  # Results in 120
 
 from std.os import abort
 
-from std.builtin.range import _StridedRange
+from std.builtin.range import _StridedRange, _StridedScalarRange
 from std.memory import memcpy
 from std.sys.intrinsics import _type_is_eq_parse_time
 from std.collections import check_bounds

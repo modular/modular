@@ -57,7 +57,7 @@ from .vnni import Inner_matmul_vnni
 # - _run_inner_loop_i8mm()
 
 
-trait InnerMatmulKernel(ImplicitlyCopyable):
+trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDestructible):
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -599,7 +599,7 @@ def matmul[
         @parameter
         @always_inline
         def cast_epilogue[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](coord: IndexList[2], val: SIMD[dtype, width]):
             var cast_val = val.cast[c.dtype]()
             comptime if elementwise_lambda_fn:

@@ -31,7 +31,7 @@ from create_pipelines import (
     VLLMPipeline,
 )
 from max import driver, pipelines
-from max.pipelines.lib.pipeline_variants.pixel_generation import (
+from max.pipelines.diffusion.pipeline import (
     PixelGenerationPipeline,
 )
 from max.pipelines.modeling.types import PipelineTask

@@ -15,11 +15,14 @@
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
+from max.graph.weights import WeightData
 from max.pipelines.lib.config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.weight_loader import WeightLoader, dict_loader
 
 # All unit tests patch _load_model_index and validate_hf_repo_access to
 # avoid network calls.  We also force HF_HUB_OFFLINE=False so that
@@ -1066,3 +1069,157 @@ class TestCrossRepoSubfolder:
         assert manifest["transformer"].weight_path == [
             Path("weights.safetensors")
         ]
+
+
+# ---------------------------------------------------------------------------
+# loader() helpers
+# ---------------------------------------------------------------------------
+
+LOAD_WEIGHTS_TARGET = "max.pipelines.lib.config.model_config.load_weights"
+
+
+def _wd(name: str, value: float = 0.0) -> WeightData:
+    """Build a tiny ``WeightData`` carrying a single-element float32 array."""
+    return WeightData.from_numpy(np.array([value], dtype=np.float32), name)
+
+
+def _fake_weights(items: dict[str, WeightData]) -> MagicMock:
+    """Mock the ``Weights`` protocol enough for ``_loader_over_weights``.
+
+    Supports both access paths the loader uses:
+    - ``w.items()`` -> ``(name, accessor)`` pairs (for ``keys()`` iteration).
+    - ``w[name]`` -> accessor (for query resolution).
+
+    Each accessor's ``.data()`` returns the corresponding ``WeightData``.
+    """
+    accessors = {
+        name: MagicMock(data=MagicMock(return_value=wd))
+        for name, wd in items.items()
+    }
+    weights = MagicMock()
+    weights.items.return_value = list(accessors.items())
+    weights.__getitem__.side_effect = lambda name: accessors[name]
+    return weights
+
+
+def _per_role_loader_patch(
+    manifest: ModelManifest, per_role: dict[str, dict[str, WeightData]]
+) -> Any:
+    """Patches ``MAXModelConfig.loader`` to route by-role into ``dict_loader``."""
+
+    def fake_loader(self: MAXModelConfig) -> WeightLoader:
+        for role, cfg in manifest.items():
+            if cfg is self:
+                return dict_loader(per_role[role])
+        raise AssertionError("unknown config")
+
+    return patch.object(MAXModelConfig, "loader", fake_loader)
+
+
+class TestMAXModelConfigLoader:
+    def test_loader_resolves_and_enumerates(self) -> None:
+        cfg = _make_config("test/model")
+        wd_a = _wd("a")
+        wd_b = _wd("b")
+        fake = _fake_weights({"layer.0.weight": wd_a, "layer.1.bias": wd_b})
+        with (
+            patch.object(
+                MAXModelConfig,
+                "resolved_weight_paths",
+                return_value=[Path("/tmp/w.safetensors")],
+            ),
+            patch(LOAD_WEIGHTS_TARGET, return_value=fake) as load_mock,
+        ):
+            loader = cfg.loader()
+            assert loader("layer.0.weight") is wd_a
+            assert loader("layer.1.bias") is wd_b
+            assert set(loader.keys()) == {"layer.0.weight", "layer.1.bias"}
+
+        load_mock.assert_called_once_with([Path("/tmp/w.safetensors")])
+
+    def test_loader_keys_filter_by_prefix(self) -> None:
+        cfg = _make_config("test/model")
+        fake = _fake_weights(
+            {"layers.0.weight": _wd("a"), "embed.weight": _wd("b")}
+        )
+        with (
+            patch.object(
+                MAXModelConfig,
+                "resolved_weight_paths",
+                return_value=[Path("/tmp/w.safetensors")],
+            ),
+            patch(LOAD_WEIGHTS_TARGET, return_value=fake),
+        ):
+            loader = cfg.loader()
+            assert set(loader.keys("layers.")) == {"layers.0.weight"}
+
+    def test_empty_when_no_weights(self) -> None:
+        cfg = _make_config("test/model")
+        with patch.object(
+            MAXModelConfig, "resolved_weight_paths", return_value=[]
+        ):
+            loader = cfg.loader()
+
+        assert list(loader.keys()) == []
+        with pytest.raises(KeyError):
+            loader("any.name")
+
+
+class TestModelManifestLoader:
+    def test_loader_resolves_role_prefixed_keys(self) -> None:
+        manifest = ModelManifest({"text_encoder": _make_config("te")})
+        wd = _wd("v")
+        per_role = {"text_encoder": {"layers.0.weight": wd}}
+
+        with _per_role_loader_patch(manifest, per_role):
+            loader = manifest.loader()
+
+        assert loader("text_encoder.layers.0.weight") is wd
+        assert set(loader.keys()) == {"text_encoder.layers.0.weight"}
+
+    def test_loader_unions_multiple_roles(self) -> None:
+        manifest = ModelManifest(
+            {
+                "text_encoder": _make_config("te"),
+                "vae": _make_config("vae"),
+            }
+        )
+        per_role = {
+            "text_encoder": {"encoder.weight": _wd("te.w")},
+            "vae": {
+                "decoder.weight": _wd("vae.w"),
+                "decoder.bias": _wd("vae.b"),
+            },
+        }
+
+        with _per_role_loader_patch(manifest, per_role):
+            loader = manifest.loader()
+
+        assert set(loader.keys()) == {
+            "text_encoder.encoder.weight",
+            "vae.decoder.weight",
+            "vae.decoder.bias",
+        }
+
+    def test_loader_keys_filter_by_role_prefix(self) -> None:
+        manifest = ModelManifest(
+            {
+                "text_encoder": _make_config("te"),
+                "vae": _make_config("vae"),
+            }
+        )
+        per_role = {
+            "text_encoder": {"a": _wd("a")},
+            "vae": {"b": _wd("b")},
+        }
+
+        with _per_role_loader_patch(manifest, per_role):
+            loader = manifest.loader()
+
+        assert set(loader.keys("vae.")) == {"vae.b"}
+
+    def test_empty_manifest_returns_loader_with_no_keys(self) -> None:
+        loader = ModelManifest({}).loader()
+        assert list(loader.keys()) == []
+        with pytest.raises(KeyError):
+            loader("anything")

@@ -467,8 +467,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # Per-row max: register-only reduce + 4-way SMEM consolidation.
             # Double-buffered to avoid the W-W race between N+1's write and
             # iteration N's read.
-            comptime rescale_threshold: Float32 = Float32(
-                -8 if size_of[Self.fp8_type]() >= 2 else 0
+            comptime rescale_threshold: Float32 = (
+                Self.config.skip_correction_threshold
             )
             var buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
             var max_buf = TileTensor[

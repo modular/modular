@@ -62,6 +62,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import logging
+import threading
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -78,9 +79,11 @@ from typing import (
 import numpy as np
 import numpy.typing as npt
 from max.driver import (
+    CPU,
     Buffer,
     DeviceEvent,
     DevicePinnedBuffer,
+    is_virtual_device_mode,
     load_devices,
 )
 from max.dtype import DType
@@ -105,12 +108,12 @@ from max.nn import kernels
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
+from max.pipelines.core.exceptions import (
+    InputError,  # noqa: F401 (for docstring)
+)
 from max.pipelines.kv_cache import PagedKVCacheManager, load_multi_kv_managers
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     _contiguous_prefix_2d,
-)
-from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
-    shape_to_scalar,
 )
 from max.pipelines.modeling.types import (
     BatchType,
@@ -125,10 +128,14 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
 )
 from max.pipelines.modeling.types.tokens import TokenBuffer
+from max.pipelines.speculative.base import _SpeculativeDecodingMetrics
+from max.pipelines.speculative.ragged_token_merger import (
+    _shape_to_scalar,
+)
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
 
-from ..speculative_decoding.base import SpeculativeDecodingMetrics
+from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
     StructuredOutputHelper,
@@ -277,7 +284,7 @@ class SpecDecodeState:
     draft_kv_blocks: list[Buffer]
     """The KVCache blocks for the draft model."""
 
-    metrics: SpeculativeDecodingMetrics
+    metrics: _SpeculativeDecodingMetrics
     """The metrics for speculative decoding."""
 
     persistent_draft_tokens: Buffer
@@ -301,18 +308,13 @@ class SpecDecodeState:
     """Persistent ``[total_max_batch]`` uint64 seed values, one per request,
     derived from ``sampling_params.seed + len(tokens)``."""
 
-    persistent_bitmask: Buffer | None = None
-    """Persistent bitmask buffer for structured output.
-
-    Shape: [max_batch_size, num_speculative_tokens + 1, vocab_size].
-    None when structured output is disabled globally.
-    """
-
     persistent_bitmask_pinned: DevicePinnedBuffer | None = None
-    """Pinned memory for async bitmask computation from CUDA host callbacks.
+    """Pinned memory for the packed int32 bitmask the async callback writes.
 
     Shape: [max_batch_size, num_speculative_tokens + 1, ceil(vocab_size/32)].
-    Uses packed int32 format for direct use with llguidance.
+    Uses packed int32 format for direct use with llguidance. The callback
+    unpacks this to bool into :attr:`overlap_state.pinned_bitmask` before
+    returning.
     None when structured output is disabled globally.
     """
 
@@ -353,30 +355,32 @@ class SpecDecodeState:
     None when structured output is disabled globally.
     """
 
-    persistent_bitmask_bool_pinned: DevicePinnedBuffer | None = None
-    """Pinned memory for the unpacked bool bitmask written by the async callback.
-
-    The CUDA host callback computes the packed int32 bitmask (into
-    persistent_bitmask_pinned), then immediately unpacks it to bool here.
-    _compute_speculative_bitmasks can then H2D-copy directly from this buffer
-    without any CPU synchronization: same-stream ordering guarantees the
-    callback has written the data before the H2D copy DMA starts.
-
-    Shape: [total_max_batch, num_speculative_tokens + 1, vocab_size]. DType bool.
-    None when structured output is disabled globally.
-    """
-
     has_precomputed_bitmask: bool = False
     """True when a CUDA host callback has computed a bitmask for the next batch."""
 
     callback_request_ids: list[RequestID] = dataclasses.field(
         default_factory=list
     )
-    """Request IDs of the batch the callback last computed bitmasks for, in row order.
+    """Request IDs of the batch the callback last computed bitmasks for, in
+    row order.
 
-    Used by `_compute_speculative_bitmasks` to remap precomputed rows when the next
-    batch's composition or ordering differs from the callback batch.
+    Used by ``_assign_bitmask_inputs`` to decide whether the precomputed
+    bitmask can be adopted as-is or must be recomputed (composition / order
+    change).
     """
+
+    overlap_state: StructuredOutputOverlapState | None = None
+    """Flag + pinned/device bitmask buffers for constrained-decoding
+    overlap. ``None`` when structured output is globally off (no vocab
+    size). Owned for the lifetime of :class:`SpecDecodeState`.
+    """
+
+    last_callback_done_event: threading.Event | None = None
+    """Set by the most recent async bitmask callback's worker after it
+    writes pinned. ``_assign_bitmask_inputs`` waits on it before
+    ``sync_prime`` so the worker can't overwrite ``prime()``'s pinned
+    writes. Lives on the process-lifetime state because ``_prev_batch``
+    is cleared between requests."""
 
     @classmethod
     def load(
@@ -448,7 +452,7 @@ class SpecDecodeState:
         num_speculative_tokens = (
             pipeline_config.speculative.num_speculative_tokens
         )
-        spec_decoding_metrics = SpeculativeDecodingMetrics.empty(
+        spec_decoding_metrics = _SpeculativeDecodingMetrics.empty(
             num_speculative_tokens=num_speculative_tokens
         )
 
@@ -483,13 +487,11 @@ class SpecDecodeState:
             device=model.devices[0],
         )
 
-        # Allocate persistent bitmask for structured output if vocab_size is provided.
-        # Shape: [max_batch_size, num_speculative_tokens + 1, vocab_size]
-        # Position i contains valid tokens given FSM state after draft[0:i-1].
-        # Position num_speculative_tokens is for the bonus token.
-        persistent_bitmask: Buffer | None = None
+        # Allocate the packed-int32 bitmask staging buffer used by the
+        # async FSM callback. The unpacked bool bitmask the model graph
+        # reads lives in :class:`StructuredOutputOverlapState`'s
+        # ``pinned_bitmask`` and is allocated below.
         persistent_bitmask_pinned: DevicePinnedBuffer | None = None
-        persistent_bitmask_bool_pinned: DevicePinnedBuffer | None = None
         persistent_bonus_tokens_pinned: DevicePinnedBuffer | None = None
         persistent_num_accepted_pinned: DevicePinnedBuffer | None = None
         persistent_next_draft_tokens_pinned: DevicePinnedBuffer | None = None
@@ -497,11 +499,6 @@ class SpecDecodeState:
             None
         )
         if vocab_size is not None:
-            persistent_bitmask = Buffer(
-                dtype=DType.bool,
-                shape=(total_max_batch, num_speculative_tokens + 1, vocab_size),
-                device=model.devices[0],
-            )
             packed_vocab_size = ceildiv(vocab_size, 32)
             persistent_bitmask_pinned = DevicePinnedBuffer(
                 dtype=DType.int32,
@@ -509,15 +506,6 @@ class SpecDecodeState:
                     total_max_batch,
                     num_speculative_tokens + 1,
                     packed_vocab_size,
-                ),
-                device=model.devices[0],
-            )
-            persistent_bitmask_bool_pinned = DevicePinnedBuffer(
-                dtype=DType.bool,
-                shape=(
-                    total_max_batch,
-                    num_speculative_tokens + 1,
-                    vocab_size,
                 ),
                 device=model.devices[0],
             )
@@ -547,6 +535,16 @@ class SpecDecodeState:
             device=model.devices[0],
         )
 
+        overlap_state: StructuredOutputOverlapState | None = None
+        if vocab_size is not None:
+            overlap_state = StructuredOutputOverlapState(
+                device=model.devices[0],
+                cpu=CPU(),
+                max_batch_size=total_max_batch,
+                num_positions=num_speculative_tokens + 1,
+                vocab_size=vocab_size,
+            )
+
         return SpecDecodeState(
             num_speculative_tokens=num_speculative_tokens,
             target_kv_manager=target_kv_manager,
@@ -556,15 +554,14 @@ class SpecDecodeState:
             persistent_temperature=persistent_temperature,
             persistent_top_k=persistent_top_k,
             persistent_top_p=persistent_top_p,
-            persistent_bitmask=persistent_bitmask,
             persistent_bitmask_pinned=persistent_bitmask_pinned,
-            persistent_bitmask_bool_pinned=persistent_bitmask_bool_pinned,
             persistent_bonus_tokens_pinned=persistent_bonus_tokens_pinned,
             persistent_num_accepted_pinned=persistent_num_accepted_pinned,
             persistent_next_draft_tokens_pinned=persistent_next_draft_tokens_pinned,
             persistent_accepted_draft_tokens_pinned=persistent_accepted_draft_tokens_pinned,
             persistent_in_thinking_phase=persistent_in_thinking_phase,
             persistent_seed=persistent_seed,
+            overlap_state=overlap_state,
         )
 
 
@@ -582,7 +579,7 @@ class _SupportsModelCapture(Protocol):
 @dataclass
 class _AsyncBatchOutput:
     output_dict: PipelineOutputsDict[TextGenerationOutput]
-    spec_decode_metrics: SpeculativeDecodingMetrics | None = None
+    spec_decode_metrics: _SpeculativeDecodingMetrics | None = None
 
 
 @dataclass
@@ -824,7 +821,7 @@ class AsyncBatch(Generic[TextGenerationContextType]):
             if num_draft_tokens_to_verify > 0:
                 num_verifications = batch_size - sum(is_dummy_draft_tokens)
 
-            metrics = SpeculativeDecodingMetrics(
+            metrics = _SpeculativeDecodingMetrics(
                 num_speculative_tokens=num_speculative_tokens,
                 accepted_per_position=accepted_per_position,
                 num_verifications=num_verifications,
@@ -1064,7 +1061,7 @@ def build_realize_future_token_graph(
             num_draft_tokens_dim = (
                 spec_decode.prev_generated_draft_tokens.shape[1]
             )
-            num_draft_tokens = shape_to_scalar(
+            num_draft_tokens = _shape_to_scalar(
                 num_draft_tokens_dim, device0, dtype=DType.uint32
             )
 
@@ -1112,7 +1109,7 @@ def build_realize_future_token_graph(
             # ``num_speculative_tokens``, not the realize graph's draft-column count:
             # when the current batch passes ``draft_tokens`` with shape ``(B, 0)`` we
             # still must subtract the full K used for optimistic cache extension.
-            prev_num_draft_tokens = shape_to_scalar(
+            prev_num_draft_tokens = _shape_to_scalar(
                 spec_decode.prev_draft_tokens.shape[1],
                 device0,
                 dtype=DType.int64,
@@ -1444,7 +1441,6 @@ class _CallbackInputs:
     accepted_draft_tokens_np: npt.NDArray[np.int64]
     next_draft_tokens_np: npt.NDArray[np.int64]
     bitmask_pinned_np: npt.NDArray[np.int32]
-    bitmask_bool_pinned_np: npt.NDArray[np.bool_]
 
 
 @final
@@ -1520,6 +1516,10 @@ class OverlapTextGenerationPipeline(
             )
 
         # Initialize structured output helper for constrained decoding.
+        # The helper's ``enable_response_format_schema`` mirrors the user
+        # flag and gates user-supplied JSON schemas; the bitmask-in-the-graph
+        # decisions below are gated separately on
+        # ``pipeline_config.needs_bitmask_constraints``.
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
@@ -1581,11 +1581,20 @@ class OverlapTextGenerationPipeline(
                 available_cache_memory=available_cache_memory,
             )
         else:
+            # vocab_size gates bitmask buffer + overlap_state
+            # allocation. Pass None when constrained decoding can't
+            # fire so we don't allocate persistent pinned buffers /
+            # an overlap state that the (bitmask-less) model graph
+            # has no inputs for.
             self._spec_decode_state = SpecDecodeState.load(
                 session=session,
                 model=self._pipeline_model,
                 pipeline_config=self._pipeline_config,
-                vocab_size=self.vocab_size,
+                vocab_size=(
+                    self.vocab_size
+                    if pipeline_config.needs_bitmask_constraints
+                    else None
+                ),
             )
             self._kv_manager = self._spec_decode_state.target_kv_manager
             if (
@@ -1600,48 +1609,47 @@ class OverlapTextGenerationPipeline(
                     self._pipeline_config.speculative.synthetic_acceptance_rate,
                 )
 
-        # Load sampler(s). When structured output is enabled, we need two
-        # samplers: one with bitmask support and one without. This allows
-        # batches without structured output requests to use the faster path.
+        # Load sampler(s) for the non-spec-decode path. The bitmask-aware
+        # sampler is loaded when constrained decoding could fire (see
+        # ``needs_bitmask_constraints``). The bitmask-free sampler is
+        # always loaded so requests that don't engage structured output
+        # (even with ``--enable-structured-output`` set server-wide) can
+        # still be sampled.
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
         if not is_spec_decode:
+            with_bitmask_graph = None
             with CompilationTimer("sampler") as sampler_timer:
-                if pipeline_config.sampling.enable_structured_output:
+                if pipeline_config.needs_bitmask_constraints:
                     with_bitmask_graph = token_sampler(
                         pipeline_config.sampling,
                         device=DeviceRef.from_device(self._devices[0]),
+                        needs_bitmask_input=True,
                     )
-                    cfg_without_bitmask = copy.deepcopy(
-                        pipeline_config.sampling
-                    )
-                    cfg_without_bitmask.enable_structured_output = False
-                    without_bitmask_graph = token_sampler(
-                        cfg_without_bitmask,
-                        device=DeviceRef.from_device(self._devices[0]),
-                    )
-                    sampler_timer.mark_build_complete()
+                without_bitmask_graph = token_sampler(
+                    pipeline_config.sampling,
+                    device=DeviceRef.from_device(self._devices[0]),
+                    needs_bitmask_input=False,
+                )
+                sampler_timer.mark_build_complete()
+                if with_bitmask_graph is not None:
                     self._sampler_with_bitmask = session.load(
                         with_bitmask_graph
                     )
-                    self._sampler_without_bitmask = session.load(
-                        without_bitmask_graph
-                    )
-                else:
-                    sampler_graph = token_sampler(
-                        pipeline_config.sampling,
-                        device=DeviceRef.from_device(self._devices[0]),
-                    )
-                    sampler_timer.mark_build_complete()
-                    self._sampler_without_bitmask = session.load(sampler_graph)
+                self._sampler_without_bitmask = session.load(
+                    without_bitmask_graph
+                )
 
-        # Pre-allocate pinned buffer for D2H token copies only when structured
-        # output is enabled. This buffer is used for async token transfers in
-        # the guided decoding path. Allocated once and reused across batches.
+        # Pre-allocate pinned buffer for D2H token copies only when the
+        # bitmask path is wired in. This buffer is used for async token
+        # transfers in the guided decoding path. Allocated once and reused
+        # across batches. Skip in virtual device mode (compile-only) since
+        # VirtualDevice does not support memory allocation.
         self._pinned_new_tokens: Buffer | None = None
         if (
-            pipeline_config.sampling.enable_structured_output
+            pipeline_config.needs_bitmask_constraints
             and not self._devices[0].is_host
+            and not is_virtual_device_mode()
         ):
             max_batch_size = pipeline_config.runtime.max_batch_size
             assert max_batch_size is not None, "max_batch_size must be set"
@@ -1743,7 +1751,7 @@ class OverlapTextGenerationPipeline(
             index: Global position into the bitmask for this request.
 
         Raises:
-            ValueError: If a JSON schema is provided but structured output is not
+            InputError: If a JSON schema is provided but structured output is not
                 enabled via sampling configuration.
         """
         self._structured_output.update_context(context, bitmask, index)
@@ -1874,33 +1882,43 @@ class OverlapTextGenerationPipeline(
                     sampling_buffers.in_thinking_phase
                 )
 
-                # Set all-True bitmask for warmup (unconstrained).
-                # Shape: [batch_size, num_speculative_tokens + 1, vocab_size].
-                if self._spec_decode_state.persistent_bitmask is not None:
-                    total_batch = batch_size * dp_size
-                    persistent_bitmask = (
-                        self._spec_decode_state.persistent_bitmask
-                    )
-                    num_positions = persistent_bitmask.shape[1]
-                    vocab_size_dim = persistent_bitmask.shape[2]
-                    # Flatten, slice to batch size, reshape back to 3D.
-                    num_elements = total_batch * num_positions * vocab_size_dim
-                    flat = persistent_bitmask.view(
-                        persistent_bitmask.dtype,
-                        (persistent_bitmask.num_elements,),
-                    )
-                    bitmask_device = flat[:num_elements].view(
-                        persistent_bitmask.dtype,
+                # Set all-True bitmask for warmup (unconstrained). Shape:
+                # [batch_size, num_speculative_tokens + 1, vocab_size].
+                # The overlap path replaces the single device-side
+                # bitmask input with a (pinned, wait_payload, scratch)
+                # triple and primes the completion flag so each warmup
+                # replay's in-graph wait passes immediately.
+                overlap_state = self._spec_decode_state.overlap_state
+                total_batch = batch_size * dp_size
+                if overlap_state is not None:
+                    num_positions = overlap_state.num_positions
+                    vocab_size_dim = overlap_state.vocab_size
+                    prime_np = np.ones(
                         (total_batch, num_positions, vocab_size_dim),
+                        dtype=np.bool_,
                     )
-                    bitmask_host = DevicePinnedBuffer(
-                        dtype=DType.bool,
-                        shape=bitmask_device.shape,
-                        device=self._devices[0],
+                    overlap_state.prime(prime_np)
+                    # Bind the persistent pinned bitmask + device
+                    # scratch via the cached-view helper. The helper
+                    # returns the SAME ``Buffer`` view object every
+                    # time it is called with this ``(total_batch,
+                    # num_positions)`` key, including across warmup
+                    # capture and every steady-state replay. Reusing
+                    # the same object is what makes
+                    # ``GraphCaptureRunner.replay``'s per-input
+                    # preface ``inplace_copy_from`` short-circuit
+                    # via ``self is src`` (the identity check at
+                    # ``Buffer.inplace_copy_from``). Building a fresh
+                    # view (e.g. via ``flat[:N].view(...)``) every
+                    # iter would alias the same memory but fail the
+                    # identity check, and the preface would
+                    # materialize a real copy on every replay.
+                    pinned_view, scratch_view = overlap_state.get_input_views(
+                        total_batch, num_positions
                     )
-                    bitmask_host.to_numpy()[:] = True
-                    bitmask_device.inplace_copy_from(bitmask_host)
-                    model_inputs.token_bitmasks = bitmask_device
+                    model_inputs.pinned_bitmask = pinned_view
+                    model_inputs.wait_payload = overlap_state.wait_payload
+                    model_inputs.device_bitmask_scratch = scratch_view
 
             yield model_inputs
 
@@ -2216,17 +2234,32 @@ class OverlapTextGenerationPipeline(
         # the CUDA host callback computing the bitmask on the driver thread.
         # No CPU synchronize is needed: same-stream ordering guarantees the
         # callback's bool data is valid when the H2D copy DMA starts.
-        if draft_tokens is not None and self._structured_output.enabled:
+        #
+        # Gate on ``overlap_state is not None`` (equivalently
+        # ``pipeline_config.needs_bitmask_constraints``) rather than
+        # ``structured_output.enabled``: the helper is enabled
+        # whenever the tokenizer can build an FSM, but the bitmask
+        # graph inputs / persistent buffers are only allocated when
+        # constrained decoding can actually fire (user enabled the
+        # feature flag OR a tool parser is configured). With
+        # ``enabled=True`` but no overlap_state, the graph has no
+        # bitmask inputs to bind and ``_assign_bitmask_inputs`` would
+        # assert.
+        if (
+            draft_tokens is not None
+            and self._structured_output.enabled
+            and self._spec_decode_state is not None
+            and self._spec_decode_state.overlap_state is not None
+        ):
             assert draft_tokens_np is not None, (
                 "draft_tokens_np must be provided when structured output is enabled"
             )
-            token_bitmasks = self._compute_speculative_bitmasks(
+            self._assign_bitmask_inputs(
+                model_inputs=model_inputs,
                 context_batch=inputs.flat_batch,
                 draft_tokens_np=draft_tokens_np,
                 num_draft_tokens_to_verify=num_draft_tokens_to_verify,
             )
-            assert token_bitmasks is not None
-            model_inputs.token_bitmasks = token_bitmasks
 
         # Execute the model and get next tokens.
         try:
@@ -2396,239 +2429,136 @@ class OverlapTextGenerationPipeline(
             structured_output=self._structured_output,
         )
 
-    @traced
-    def _compute_speculative_bitmasks(
+    def _assign_bitmask_inputs(
         self,
+        model_inputs: Any,
         context_batch: list[TextGenerationContextType],
         draft_tokens_np: npt.NDArray[np.int64],
         num_draft_tokens_to_verify: int,
-    ) -> Buffer | None:
-        """Compute speculative bitmasks for structured output in spec decode.
+    ) -> None:
+        """Populate the structured-output bitmask graph inputs.
 
-        For each draft position i, the bitmask at position i contains valid
-        tokens given the FSM state after consuming draft[0:i-1]. Position K
-        (num_speculative_tokens) is for the bonus token.
-
-        Args:
-            context_batch: List of generation contexts.
-            draft_tokens_np: Draft tokens to verify, shape [batch, K].
-            num_draft_tokens_to_verify: Number of draft tokens (K). May be 0
-                for prefill (no draft tokens to verify).
-
-        Returns:
-            Device buffer containing the bitmask with shape
-            [batch_size, num_draft_tokens_to_verify + 1, vocab_size],
-            or None if structured output is disabled.
+        Sets the (pinned, wait_payload, device_scratch) triple on
+        ``model_inputs`` from :class:`StructuredOutputOverlapState`.
+        The pinned source is either (a) already populated by the prior
+        iteration's async callback when ``has_precomputed_bitmask`` is
+        set and the callback's row order still matches this batch, or
+        (b) computed synchronously on the main thread via
+        :meth:`StructuredOutputOverlapState.prime`. In both cases the
+        flag is at ``1`` by the time the in-graph wait fires.
         """
-        # Skip bitmask computation when structured output is disabled.
-        # The graph is compiled without the bitmask input in this case.
-        if not self._structured_output.enabled:
-            return None
-
         assert self._spec_decode_state is not None
-        assert self.vocab_size is not None
-        batch_size = len(context_batch)
-
-        # Number of positions needed: one per draft token + one for bonus token.
-        # This must match the target logits shape in the acceptance sampler.
-        num_positions = num_draft_tokens_to_verify + 1
-
-        # Get the persistent bitmask buffer and slice to actual dimensions needed.
-        assert self._spec_decode_state.persistent_bitmask is not None
-        persistent_bitmask = self._spec_decode_state.persistent_bitmask
-        vocab_size_dim = persistent_bitmask.shape[2]
-        # Flatten, slice to actual size needed, reshape back to 3D.
-        num_elements = batch_size * num_positions * vocab_size_dim
-        flat = persistent_bitmask.view(
-            persistent_bitmask.dtype, (persistent_bitmask.num_elements,)
-        )
-        bitmask_device = flat[:num_elements].view(
-            persistent_bitmask.dtype,
-            (batch_size, num_positions, vocab_size_dim),
+        overlap_state = self._spec_decode_state.overlap_state
+        assert overlap_state is not None, (
+            "_assign_bitmask_inputs requires structured output to be enabled"
         )
 
-        # The precomputed bitmask was computed by the CUDA host callback for the
-        # PREVIOUS batch.  It is only valid when the same contexts continue from
-        # that batch (matchers already initialized).  For a new request whose
-        # matcher is still None, we must take the sync path: it calls
-        # update_context → LLMatcher(), initialising ctx._matcher.  Using the
-        # precomputed bitmask for a context that was not part of the computation
-        # that produced it would silently constrain generation with stale FSM
-        # state from the previous request.
-        any_needs_matcher = self._structured_output.enabled and any(
-            ctx.matcher is None
-            and (ctx.grammar is not None or ctx.json_schema is not None)
-            for ctx in context_batch
-        )
-        # Guard: precomputed bitmask is only valid for batches that actually
-        # have constrained contexts.  An unconstrained request (no matcher, no
-        # schema) arrives with any_needs_matcher=False but must NOT inherit the
-        # previous request's constrained bitmask.
-        any_has_constraint = any(
-            ctx.matcher is not None
-            or ctx.grammar is not None
-            or ctx.json_schema is not None
-            for ctx in context_batch
-        )
-
+        # Determine whether the prior async callback already wrote
+        # pinned rows for this batch's request_ids in this exact
+        # order. If so, no work to do -- the trampoline will signal
+        # the flag and the in-graph wait will pass when the captured
+        # graph reaches it. Otherwise (cold start, composition
+        # change, ordering change), compute synchronously and call
+        # ``prime`` to populate pinned and signal the flag.
         spec_state = self._spec_decode_state
-        if (
-            not any_needs_matcher
-            and any_has_constraint
-            and spec_state.has_precomputed_bitmask
-            and spec_state.persistent_bitmask_bool_pinned is not None
-        ):
-            # The CUDA host callback (enqueued for the previous batch) has
-            # computed and unpacked the bool bitmask into persistent_bitmask_bool_pinned.
-            # The callback batch may have different ordering or composition than the
-            # current batch, so route each row by request ID. Per-row H2Ds are queued
-            # on the default CUDA stream after the callback's pinned writes — stream
-            # ordering guarantees the data is valid when each DMA starts, no CPU sync.
+        batch_size = len(context_batch)
+        # Must match the captured-graph shape; otherwise
+        # ``get_input_views`` raises and the runtime buffer aliases the
+        # wrong rows of the persistent pinned/scratch storage. When
+        # ``num_draft_tokens_to_verify == 0`` (prefill -> decode
+        # boundary), ``compute_speculative_bitmasks`` writes only slot 0
+        # and leaves the trailing slots unconstrained (all-``True`` in
+        # the boolean bitmask output).
+        num_positions = overlap_state.num_positions
+
+        needs_sync_prime = True
+        if spec_state.has_precomputed_bitmask:
+            # Adopt the callback's bitmask if every constrained row
+            # (matcher already present) sits at the same index with the
+            # same rid as in the callback batch. Unconstrained padding
+            # rows are ``-1`` (all-ones) in both the callback's output
+            # and any sync-prime output, so swapping them by index is
+            # identity-safe.
+            callback_rids = spec_state.callback_request_ids
+            can_adopt = len(context_batch) <= len(callback_rids)
+            if can_adopt:
+                for idx, ctx in enumerate(context_batch):
+                    if ctx.matcher is None:
+                        # A constrained context whose matcher hasn't
+                        # been built yet (typically a freshly admitted
+                        # request) needs sync_prime to lazily construct
+                        # the matcher and fill this row from the right
+                        # initial state.
+                        if (
+                            ctx.grammar is not None
+                            or ctx.json_schema is not None
+                        ):
+                            can_adopt = False
+                            break
+                        continue
+                    if callback_rids[idx] != ctx.request_id:
+                        # A constrained row moved or didn't exist in
+                        # the callback batch; its precomputed row is
+                        # for a different request.
+                        can_adopt = False
+                        break
+            if can_adopt:
+                needs_sync_prime = False
+            # Clear the flag in either case: it's been consumed (either by
+            # being adopted as-is or by being overwritten via prime).
             spec_state.has_precomputed_bitmask = False
 
-            row_size = num_positions * vocab_size_dim
-            bool_flat = spec_state.persistent_bitmask_bool_pinned.view(
-                DType.bool,
-                (spec_state.persistent_bitmask_bool_pinned.num_elements,),
+        if needs_sync_prime:
+            # Wait for the prior iter's async callback worker to finish
+            # writing pinned before ``prime()`` overwrites it; otherwise
+            # the worker can stomp ``prime()``'s rows after the in-graph
+            # wait passes, and the captured H2D DMAs stale rows into the
+            # sampler's device scratch. CPU<->CPU on a ``threading.Event``
+            # (not a CUDA event), so no ``device.synchronize()``.
+            prev_evt = spec_state.last_callback_done_event
+            if prev_evt is not None and not prev_evt.is_set():
+                # Bounded so a worker that died before reaching the
+                # ``finally`` (dispatch failure, AsyncRT shutdown) degrades
+                # to a noisy bitmask race instead of a silent hang.
+                if not prev_evt.wait(timeout=5.0):
+                    logger.error(
+                        "Async bitmask callback's done_event was not set "
+                        "within 5s; proceeding with sync_prime — pinned "
+                        "bitmask may have been stomped by the worker."
+                    )
+            # Cleared here so the next sync_prime doesn't re-wait on this
+            # already-consumed event after a callback-less iter (e.g.
+            # another CE prefill).
+            spec_state.last_callback_done_event = None
+            bitmask_np = self._structured_output.compute_speculative_bitmasks(
+                context_batch=context_batch,
+                draft_tokens=draft_tokens_np,
+                num_positions=num_positions,
             )
-            bitmask_device_flat = bitmask_device.view(
-                DType.bool, (bitmask_device.num_elements,)
-            )
+            # ``prime`` writes the leading ``batch`` rows of pinned
+            # in place and release-stores ``1`` to the completion
+            # flag so the in-graph wait passes when the captured
+            # graph reaches it.
+            overlap_state.prime(bitmask_np)
 
-            missing_indices, missing_contexts = (
-                self._remap_precomputed_bitmask_rows(
-                    context_batch=context_batch,
-                    callback_request_ids=spec_state.callback_request_ids,
-                    src_flat=bool_flat,
-                    bitmask_device_flat=bitmask_device_flat,
-                    row_size=row_size,
-                    num_positions=num_positions,
-                    vocab_size_dim=vocab_size_dim,
-                )
-            )
-
-            if missing_contexts:
-                self._fill_missing_bitmask_rows_sync(
-                    missing_indices=missing_indices,
-                    missing_contexts=missing_contexts,
-                    draft_tokens_np=draft_tokens_np,
-                    bitmask_device_flat=bitmask_device_flat,
-                    row_size=row_size,
-                    num_positions=num_positions,
-                    vocab_size_dim=vocab_size_dim,
-                )
-
-            return bitmask_device
-
-        # Clear any stale precomputed flag so the next call doesn't incorrectly
-        # consume a bitmask computed for a different (prior) request.
-        spec_state.has_precomputed_bitmask = False
-        bitmask_np = self._structured_output.compute_speculative_bitmasks(
-            context_batch=context_batch,
-            draft_tokens=draft_tokens_np,
-            num_positions=num_positions,
+        # Wire the graph inputs via the cached-view helper. The
+        # helper returns the SAME ``Buffer`` view objects every
+        # time it is called with this ``(batch_size,
+        # num_positions)`` key -- including across warmup capture
+        # and every steady-state replay. That object identity is
+        # what makes ``GraphCaptureRunner.replay``'s preface
+        # ``inplace_copy_from`` short-circuit via ``self is src``
+        # at ``Buffer.inplace_copy_from``; otherwise the engine
+        # would materialize a real DtoD copy of the device scratch
+        # (and a real CPU-side memcpy through the pinned buffer's
+        # mapping) on every replay even though src and dst alias
+        # the same underlying storage.
+        pinned_view, scratch_view = overlap_state.get_input_views(
+            batch_size, num_positions
         )
-
-        with Tracer("copy_bitmask_to_device"):
-            # Sync path: copy to device via a fresh per-call pinned buffer.
-            bitmask_host = DevicePinnedBuffer(
-                dtype=DType.bool,
-                shape=bitmask_np.shape,
-                device=self._devices[0],
-            )
-            bitmask_host.to_numpy()[:] = bitmask_np
-            with Tracer("inplace_copy_bitmask"):
-                bitmask_device.inplace_copy_from(bitmask_host)
-                return bitmask_device
-
-    def _remap_precomputed_bitmask_rows(
-        self,
-        context_batch: list[TextGenerationContextType],
-        callback_request_ids: list[RequestID],
-        src_flat: Buffer,
-        bitmask_device_flat: Buffer,
-        row_size: int,
-        num_positions: int,
-        vocab_size_dim: int,
-    ) -> tuple[list[int], list[TextGenerationContextType]]:
-        """Per-row H2D from the callback's pinned bitmask to the device.
-
-        Routes rows by request ID from `src_flat` into `bitmask_device_flat`.
-
-        `src_flat` is a flat (1D) view of the source pinned buffer (currently
-        `persistent_bitmask_bool_pinned`; the planned GPU-unpack follow-up PR
-        will swap this to `persistent_bitmask_pinned` packed int32 with a
-        smaller `vocab_size_dim`). The buffer parameter is intentionally
-        opaque so the same helper supports both layouts.
-
-        Returns (missing_indices, missing_contexts) for current-batch rows
-        whose request_ids were NOT in the callback batch — the caller fills
-        those synchronously via `_fill_missing_bitmask_rows_sync`.
-        """
-        old_rid_to_idx = {rid: i for i, rid in enumerate(callback_request_ids)}
-        missing_indices: list[int] = []
-        missing_contexts: list[TextGenerationContextType] = []
-        with Tracer("inplace_copy_bitmask"):
-            for new_idx, ctx in enumerate(context_batch):
-                old_idx = old_rid_to_idx.get(ctx.request_id)
-                if old_idx is not None:
-                    src = src_flat[
-                        old_idx * row_size : (old_idx + 1) * row_size
-                    ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                    dst = bitmask_device_flat[
-                        new_idx * row_size : (new_idx + 1) * row_size
-                    ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                    dst.inplace_copy_from(src)
-                else:
-                    missing_indices.append(new_idx)
-                    missing_contexts.append(ctx)
-        return missing_indices, missing_contexts
-
-    def _fill_missing_bitmask_rows_sync(
-        self,
-        missing_indices: list[int],
-        missing_contexts: list[TextGenerationContextType],
-        draft_tokens_np: npt.NDArray[np.int64],
-        bitmask_device_flat: Buffer,
-        row_size: int,
-        num_positions: int,
-        vocab_size_dim: int,
-    ) -> None:
-        """Compute and H2D bitmask rows for contexts missing from the callback.
-
-        Handles contexts not in the callback batch (e.g. a returning request)
-        by computing their bitmask rows synchronously and copying them to
-        their destination rows in `bitmask_device_flat`.
-
-        Safe to call concurrently with the async bitmask callback because
-        the callback only touches matchers from its own context_batch —
-        these missing contexts are by definition not in that set, so there
-        is no Rust RefCell borrow risk.
-        """
-        missing_drafts = draft_tokens_np[missing_indices]
-        missing_np = self._structured_output.compute_speculative_bitmasks(
-            context_batch=missing_contexts,
-            draft_tokens=missing_drafts,
-            num_positions=num_positions,
-        )
-        missing_host = DevicePinnedBuffer(
-            dtype=DType.bool,
-            shape=missing_np.shape,
-            device=self._devices[0],
-        )
-        missing_host.to_numpy()[:] = missing_np
-        missing_host_flat = missing_host.view(
-            DType.bool, (missing_host.num_elements,)
-        )
-        with Tracer("inplace_copy_bitmask"):
-            for i, new_idx in enumerate(missing_indices):
-                src = missing_host_flat[i * row_size : (i + 1) * row_size].view(
-                    DType.bool, (1, num_positions, vocab_size_dim)
-                )
-                dst = bitmask_device_flat[
-                    new_idx * row_size : (new_idx + 1) * row_size
-                ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                dst.inplace_copy_from(src)
+        model_inputs.pinned_bitmask = pinned_view
+        model_inputs.wait_payload = overlap_state.wait_payload
+        model_inputs.device_bitmask_scratch = scratch_view
 
     def _capture_callback_inputs(
         self,
@@ -2660,7 +2590,6 @@ class OverlapTextGenerationPipeline(
             )
             assert spec_state.persistent_next_draft_tokens_pinned is not None
             assert spec_state.persistent_bitmask_pinned is not None
-            assert spec_state.persistent_bitmask_bool_pinned is not None
             bonus_tokens_np = (
                 spec_state.persistent_bonus_tokens_pinned.to_numpy()[
                     :batch_size
@@ -2684,18 +2613,12 @@ class OverlapTextGenerationPipeline(
             bitmask_pinned_np = spec_state.persistent_bitmask_pinned.to_numpy()[
                 :batch_size, :num_positions, :
             ]
-            bitmask_bool_pinned_np = (
-                spec_state.persistent_bitmask_bool_pinned.to_numpy()[
-                    :batch_size, :num_positions, :
-                ]
-            )
         return _CallbackInputs(
             bonus_tokens_np=bonus_tokens_np,
             num_accepted_np=num_accepted_np,
             accepted_draft_tokens_np=accepted_draft_tokens_np,
             next_draft_tokens_np=next_draft_tokens_np,
             bitmask_pinned_np=bitmask_pinned_np,
-            bitmask_bool_pinned_np=bitmask_bool_pinned_np,
         )
 
     def _build_bitmask_callback(
@@ -2706,16 +2629,18 @@ class OverlapTextGenerationPipeline(
         accepted_draft_tokens_np: npt.NDArray[np.int64],
         next_draft_tokens_np: npt.NDArray[np.int64],
         bitmask_pinned_np: npt.NDArray[np.int32],
-        bitmask_bool_pinned_np: npt.NDArray[np.bool_],
+        overlap_bool_pinned_np: npt.NDArray[np.bool_],
+        done_event: threading.Event,
     ) -> Callable[[], None]:
         """Build a callback closure that advances FSM then computes bitmasks.
 
         All numpy arrays must be views into persistent pinned buffers owned by
-        SpecDecodeState (or plain copies for CPU-only data). Views are safe
-        because SpecDecodeState outlives every callback invocation, so freeing
-        a DLPack view inside the CUDA host callback never drives the owning
-        DevicePinnedBuffer's refcount to zero, and cuMemFreeHost is never called
-        from within the callback.
+        SpecDecodeState / StructuredOutputOverlapState (or plain copies for
+        CPU-only data). Views are safe because the owning state objects
+        outlive every callback invocation, so freeing a DLPack view inside
+        the CUDA host callback never drives the owning DevicePinnedBuffer's
+        refcount to zero, and cuMemFreeHost is never called from within the
+        callback.
 
         Args:
             context_batch: List of generation contexts for the batch.
@@ -2723,16 +2648,26 @@ class OverlapTextGenerationPipeline(
             num_accepted_np: Accepted draft token counts, shape [batch].
             accepted_draft_tokens_np: Draft tokens verified, shape [batch, K].
             next_draft_tokens_np: Draft tokens for next batch, shape [batch, K].
-            bitmask_pinned_np: Packed int32 bitmask output view, shape [batch, K+1, packed_vocab].
-            bitmask_bool_pinned_np: Unpacked bool bitmask output view, shape [batch, K+1, vocab_size].
-                Written after the int32 computation so the main thread can H2D-copy
-                from it without a CPU synchronize (same-stream ordering suffices).
+            bitmask_pinned_np: Packed int32 bitmask staging view written by
+                ``advance_fsm_and_compute_bitmasks``. Shape
+                [batch, K+1, packed_vocab].
+            overlap_bool_pinned_np: Unpacked bool bitmask view aliasing the
+                leading rows of
+                :attr:`StructuredOutputOverlapState.pinned_bitmask`. The
+                callback writes the unpacked rows here in iter-N's row
+                order; the next iter's in-graph H2D reads them after the
+                ``mo.wait_host_value_with_dep`` op passes.
+            done_event: Set by the callback in a ``finally`` block after
+                ``overlap_bool_pinned_np`` is fully written, so the next
+                iter's ``_assign_bitmask_inputs`` can ``wait()`` on it
+                before ``sync_prime`` to avoid stomping pinned mid-write.
 
         Returns:
-            A zero-argument callable for use with __unsafe_enqueue_py_host_func.
+            A zero-argument callable for use with
+            ``Device.__unsafe_enqueue_async_py_host_func``.
         """
         structured_output = self._structured_output
-        vocab_size = bitmask_bool_pinned_np.shape[2]
+        vocab_size = overlap_bool_pinned_np.shape[2]
 
         def callback() -> None:
             try:
@@ -2745,22 +2680,36 @@ class OverlapTextGenerationPipeline(
                     bitmask_out=bitmask_pinned_np,
                 )
                 with Tracer("unpack_bitmask_in_callback"):
-                    # Unpack int32 → bool in-callback so _compute_speculative_bitmasks
-                    # can H2D-copy without any CPU synchronize. CUDA callbacks cannot
-                    # call CUDA API, so the actual H2D copy must be submitted by the
-                    # main thread — but same-stream ordering guarantees it starts only
-                    # after this callback has written the bool data.
+                    # Unpack int32 -> bool in-callback so the next
+                    # iteration's in-graph H2D reads bool rows directly
+                    # from ``overlap_bool_pinned_np``'s backing pinned
+                    # buffer.
                     bits = 2 ** np.arange(32, dtype=np.int32)
                     unpacked = (bitmask_pinned_np[..., np.newaxis] & bits) != 0
-                    bitmask_bool_pinned_np[:] = unpacked.reshape(
+                    unpacked = unpacked.reshape(
                         bitmask_pinned_np.shape[0],
                         bitmask_pinned_np.shape[1],
                         -1,
                     )[:, :, :vocab_size]
+                    overlap_bool_pinned_np[:] = unpacked
             except Exception as e:
                 logger.error(
                     "Async bitmask callback failed: %s", e, exc_info=True
                 )
+                # Trampoline auto-signals the flag on exception, but the
+                # pinned buffer could be partially written. All-True
+                # (unconstrained) is the safest fallback: the model
+                # still produces a token, generation makes forward
+                # progress, and the grammar will re-converge on the
+                # next iter.
+                try:
+                    overlap_bool_pinned_np[:] = True
+                except Exception:
+                    pass
+            finally:
+                # Signal completion so a downstream ``sync_prime`` waiting
+                # on this event can proceed without racing the pinned write.
+                done_event.set()
 
         return callback
 
@@ -2772,18 +2721,25 @@ class OverlapTextGenerationPipeline(
         next_draft_k: int,
         verify_draft_tokens: bool,
     ) -> bool:
-        """Enqueue a CUDA host callback to advance FSM and compute bitmasks.
+        """Enqueue an async host callback to advance FSM and compute bitmasks.
 
-        Extracts numpy views from persistent DevicePinnedBuffers BEFORE enqueueing
-        (so the callback closure captures live views into persistent buffers), then
-        schedules the callback on the device's default stream. A CUDA event is
-        recorded afterwards so the main thread can wait for completion.
+        Extracts numpy views from persistent DevicePinnedBuffers BEFORE
+        enqueueing (so the callback closure captures live views into
+        persistent buffers), then dispatches the callback via
+        :meth:`StructuredOutputOverlapState.enqueue_async_callback`. The
+        kickoff trampoline lands on the device's default stream so it
+        is naturally ordered with the next iter's captured-graph
+        ``mo.wait_host_value_with_dep`` op; the actual FSM advance +
+        bitmask compute runs on a separate AsyncRT worker thread and
+        signals the completion flag when finished.
 
-        Only enqueued for decode batches (verify_draft_tokens=True). For prefill,
-        the bitmask is computed synchronously on the next decode iteration.
+        Only enqueued for decode batches (verify_draft_tokens=True).
+        For prefill, the bitmask is computed synchronously on the next
+        decode iteration via :meth:`StructuredOutputOverlapState.prime`.
 
-        This enables CPU/GPU overlap: the bitmask for batch N+1 is computed on
-        the CUDA driver thread while the main thread is preparing batch N+1.
+        This enables CPU/GPU overlap: the bitmask for batch N+1 is
+        computed on an AsyncRT worker while the model stream runs
+        iter N+1's target forward.
 
         Args:
             context_batch: Generation contexts for the current batch.
@@ -2795,17 +2751,18 @@ class OverlapTextGenerationPipeline(
                 mode). When False (prefill), the callback is not enqueued.
 
         Returns:
-            True if the callback was enqueued (FSM will be advanced asynchronously),
-            False otherwise.
+            True if the callback was enqueued. The worker's completion
+            event is stashed on ``spec_state.last_callback_done_event``
+            for the next iter's ``_assign_bitmask_inputs`` to wait on
+            before ``sync_prime``.
         """
-        if not self._structured_output.enabled:
+        if not self._pipeline_config.needs_bitmask_constraints:
             return False
 
         spec_state = self._spec_decode_state
         if (
             spec_state is None
             or spec_state.persistent_bitmask_pinned is None
-            or spec_state.persistent_bitmask_bool_pinned is None
             or spec_state.persistent_bonus_tokens_pinned is None
             or spec_state.persistent_num_accepted_pinned is None
             or spec_state.persistent_accepted_draft_tokens_pinned is None
@@ -2829,6 +2786,23 @@ class OverlapTextGenerationPipeline(
             next_draft_k=next_draft_k,
         )
 
+        overlap_state = spec_state.overlap_state
+        assert overlap_state is not None, (
+            "Async bitmask callback requires structured output to be enabled"
+        )
+        # View the leading rows of the persistent pinned bitmask.
+        # The worker writes here; the captured graph reads here. The
+        # in-graph ``mo.wait_host_value_with_dep`` gates the captured
+        # graph's read on the worker's release-store of the flag, so
+        # the writer and reader cannot race even though they share
+        # storage. Same lifetime guarantees as the other numpy views
+        # captured here: the underlying DevicePinnedBuffer outlives
+        # every callback invocation.
+        overlap_bool_pinned_np = overlap_state.pinned_bitmask.to_numpy()[
+            :batch_size, :num_positions, :
+        ]
+
+        done_event = threading.Event()
         with Tracer("build_bitmask_callback"):
             callback = self._build_bitmask_callback(
                 context_batch=context_batch,
@@ -2837,21 +2811,53 @@ class OverlapTextGenerationPipeline(
                 accepted_draft_tokens_np=callback_inputs.accepted_draft_tokens_np,
                 next_draft_tokens_np=callback_inputs.next_draft_tokens_np,
                 bitmask_pinned_np=callback_inputs.bitmask_pinned_np,
-                bitmask_bool_pinned_np=callback_inputs.bitmask_bool_pinned_np,
+                overlap_bool_pinned_np=overlap_bool_pinned_np,
+                done_event=done_event,
             )
 
-        device = self._devices[0]
-        # Use getattr to avoid Python name mangling: inside a class body,
-        # identifiers with a double-underscore prefix are rewritten to
-        # _ClassName__attr, which the C extension does not expose.
-        getattr(device, "__unsafe_enqueue_py_host_func")(callback)
+        # Trampoline + worker dispatch goes on the device's default
+        # stream. The trampoline's ``flag.reset()`` is therefore
+        # naturally ordered against the next iter's captured-graph
+        # ``mo.wait_host_value_with_dep`` (same stream), eliminating
+        # the cross-stream race where the wait could observe a stale
+        # ``1`` from iter N's prime / worker N-1's signal and pass
+        # immediately, DMA'ing stale pinned rows into device scratch.
+        #
+        # The trampoline itself is microseconds (atomic store + heap
+        # alloc + ``MLRT::addTask`` + return). The slow FSM advance
+        # and bitmask compute happen inside ``fn``, which runs on an
+        # AsyncRT worker thread off-stream and signals the flag on
+        # completion -- so overlap with the target forward is
+        # preserved; only the trampoline body serialises against the
+        # model stream.
+        #
+        # ASSERTION: at the moment we capture
+        # ``overlap_bool_pinned_np`` and snapshot
+        # ``callback_request_ids``, both reflect ``context_batch``'s
+        # row order, and the closure will write into pinned in that
+        # same order. Downstream ``_assign_bitmask_inputs`` compares
+        # this captured order against iter-N+1's batch to decide
+        # whether to adopt the callback's writes in place. If a
+        # future scheduler refactor decides iter-N+1's row order
+        # before this enqueue (so the closure could write in
+        # iter-N+1's order directly), this assertion is the single
+        # point of truth that needs to be re-evaluated. Today every
+        # code path in ``_execute_spec_decode`` reaches this site
+        # with the current-iteration batch fully formed and stable.
+        assert overlap_bool_pinned_np.shape[0] == len(context_batch), (
+            "Overlap pinned-bitmask view row count must match "
+            "context_batch length at enqueue time."
+        )
+        overlap_state.enqueue_async_callback(callback)
 
-        # Snapshot the request IDs in row order so `_compute_speculative_bitmasks`
-        # can remap rows in the next batch even when composition/ordering changes.
+        # Snapshot the request IDs in row order so the next iter's
+        # ``_assign_bitmask_inputs`` can detect whether the precomputed
+        # bitmask layout still matches.
         spec_state.callback_request_ids = [
             ctx.request_id for ctx in context_batch
         ]
         spec_state.has_precomputed_bitmask = True
+        spec_state.last_callback_done_event = done_event
         return True
 
     def _d2h_spec_decode_outputs(
@@ -2980,12 +2986,13 @@ class OverlapTextGenerationPipeline(
         )
 
         # The bitmask callback is only ever enqueued for decode batches
-        # (verify_draft_tokens=True).  Any has_precomputed_bitmask=True seen
-        # here when verify_draft_tokens=False was set by a previous request's
-        # decode callback and is stale for this batch.  Clearing it forces
-        # _compute_speculative_bitmasks onto the sync path, which initialises
-        # ctx.matcher for new contexts and computes the bitmask from the
-        # correct initial FSM state.
+        # (verify_draft_tokens=True). Any has_precomputed_bitmask=True
+        # seen here when verify_draft_tokens=False was set by a
+        # previous request's decode callback and is stale for this
+        # batch. Clearing it forces ``_assign_bitmask_inputs`` onto
+        # the sync-prime path, which initialises ctx.matcher for new
+        # contexts and computes the bitmask from the correct initial
+        # FSM state.
         # Delete the saved draft tokens if we are not verifying them.
         if not verify_draft_tokens:
             self._spec_decode_state.has_precomputed_bitmask = False
@@ -3138,7 +3145,7 @@ class OverlapTextGenerationPipeline(
         same batch.
         """
         return (
-            self._structured_output.enabled
+            self._pipeline_config.needs_bitmask_constraints
             and self._prev_batch is not None
             and self._prev_batch.spec_decode is not None
             and not self._prev_batch.spec_decode.fsm_advanced_by_callback
@@ -3200,10 +3207,11 @@ class OverlapTextGenerationPipeline(
                         self._prev_batch.sync_and_process_outputs()
                     )
 
-                # FSM is advanced asynchronously by the CUDA host callback
-                # enqueued in _execute_spec_decode. The bitmask computed by
-                # that callback is waited on inside _compute_speculative_bitmasks
-                # before the forward pass, so the FSM is always up-to-date.
+                # FSM is advanced asynchronously by the host callback
+                # enqueued in ``_execute_spec_decode``. The captured
+                # graph's ``mo.wait_host_value_with_dep`` blocks the
+                # in-graph H2D until the worker signals, so the FSM
+                # advancement is observed before the sampler runs.
                 curr_batch = self._execute_spec_decode(inputs)
             else:
                 # Run the entire forward pass and output processing if the
@@ -3339,7 +3347,7 @@ class OverlapTextGenerationPipeline(
             return None
         return self._spec_decode_state.draft_kv_blocks
 
-    def spec_decode_metrics(self) -> SpeculativeDecodingMetrics | None:
+    def spec_decode_metrics(self) -> _SpeculativeDecodingMetrics | None:
         """Returns the draft token acceptance metrics for speculative decoding."""
         if self._spec_decode_state is None:
             return None

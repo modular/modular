@@ -31,6 +31,7 @@ from .pixel_generation import (
 )
 from .text_generation import (
     BatchType,
+    GrammarEnforcementSnapshot,
     ImageContentPart,
     ImageMetadata,
     MessageContent,
@@ -61,6 +62,7 @@ __all__ = [
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
+    "GrammarEnforcementSnapshot",
     "ImageContentPart",
     "ImageMetadata",
     "MessageContent",

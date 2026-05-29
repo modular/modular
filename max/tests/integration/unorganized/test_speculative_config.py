@@ -19,7 +19,7 @@ from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
     compute_synthetic_acceptance_base_rate,
 )
-from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.speculative.config import SpeculativeConfig
 
 
 def test_is_eagle() -> None:

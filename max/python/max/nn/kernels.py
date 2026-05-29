@@ -2221,22 +2221,9 @@ def flash_attention_ragged(
     op_name = "mo.mha.ragged.paged"
 
     if _fp8_kv_pairing:
-        # fp8-KV path: dequantize fp8 KV to a bf16 staging buffer inside the
-        # kernel, then run standard bf16 flash attention.  The op signature
-        # includes kv_scales and kv_staging before layer_idx, and uses
-        # quantization_granularity as an additional compile-time parameter.
-        # kv_staging is a pre-allocated bf16 scratch buffer (one layer only,
-        # shape [num_blocks, 2, 1, page_size, num_heads, head_dim]) that avoids
-        # dynamic cudaMalloc inside the CUDA graph capture region.
         if kv_params.kvcache_quant_config is None:
             raise ValueError(
                 "kvcache_quant_config is required for fp8_kv flash attention"
-            )
-        if kv_collection.kv_staging is None:
-            raise ValueError(
-                "kv_staging is required for fp8_kv flash attention: "
-                "the KV cache manager must allocate a bf16 staging buffer "
-                "when quantized_kv_cache is enabled"
             )
         fp8_kv_parameters = {
             **parameters,
@@ -2246,12 +2233,6 @@ def flash_attention_ragged(
             input,
             input_row_offsets,
             *kv_collection.flatten_without_attention_dispatch_metadata(),
-            # kv_staging is NOT included by flatten_without_attention_dispatch_metadata
-            # (which only covers kv_blocks, cache_lengths, lookup_table,
-            # max_lengths, kv_scales).  Insert it here explicitly so that only
-            # the mo.mha.ragged.paged.fp8_kv op sees it — all other callers of
-            # flatten_without_attention_dispatch_metadata are unaffected.
-            kv_collection.kv_staging,
             layer_idx,
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
             dispatch_metadata.tensor,
@@ -2785,6 +2766,32 @@ def _build_mla_prefill_decode_out_type(
     )
 
 
+def _fp8_mla_scale_params(
+    quant_config: QuantConfig,
+    override: int | None,
+) -> dict[str, int]:
+    """Returns the scale-granularity parameters the FP8 MLA kernel reads.
+
+    When `override` is `None` the kernel uses the on-disk
+    `weight_scale.block_size`. When the per-head row count straddles
+    that block, callers pass an explicit override (e.g. 64 vs the
+    on-disk 128); both N- and K-direction matmul granularities take the
+    same value because the straddling sits along the M-disk axis.
+    """
+    assert quant_config.input_scale.block_size is not None
+    assert quant_config.weight_scale.block_size is not None
+    gran = (
+        override
+        if override is not None
+        else quant_config.weight_scale.block_size[0]
+    )
+    return {
+        "m_scale_granularity": quant_config.input_scale.block_size[0],
+        "n_scale_granularity": gran,
+        "k_scale_granularity": gran,
+    }
+
+
 def mla_prefill_graph(
     q: TensorValue,
     kv: TensorValue,
@@ -2807,6 +2814,7 @@ def mla_prefill_graph(
     w_k_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     quant_config: QuantConfig | None = None,
+    scale_granularity_override: int | None = None,
 ) -> TensorValue:
     """This is a manually fused kernel that performs the following operations:
     - Apply RoPE to the query and the key cache (in-place).
@@ -2884,14 +2892,8 @@ def mla_prefill_graph(
 
     if quant_config is not None:
         assert w_k_scale is not None and w_uv_scale is not None
-        assert quant_config.input_scale.block_size is not None
-        assert quant_config.weight_scale.block_size is not None
         parameters.update(
-            {
-                "m_scale_granularity": quant_config.input_scale.block_size[0],
-                "n_scale_granularity": quant_config.weight_scale.block_size[0],
-                "k_scale_granularity": quant_config.weight_scale.block_size[1],
-            }
+            _fp8_mla_scale_params(quant_config, scale_granularity_override)
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uv_scale]
@@ -3008,6 +3010,7 @@ def mla_decode_graph(
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     quant_config: QuantConfig | None = None,
+    scale_granularity_override: int | None = None,
     sparse_indices: TensorValue | None = None,
     sparse_topk_lengths: TensorValue | None = None,
     sparse_attn_sink: TensorValue | None = None,
@@ -3091,14 +3094,8 @@ def mla_decode_graph(
 
     if quant_config is not None:
         assert w_uk_scale is not None and w_uv_scale is not None
-        assert quant_config.input_scale.block_size is not None
-        assert quant_config.weight_scale.block_size is not None
         parameters.update(
-            {
-                "m_scale_granularity": quant_config.input_scale.block_size[0],
-                "n_scale_granularity": quant_config.weight_scale.block_size[0],
-                "k_scale_granularity": quant_config.weight_scale.block_size[1],
-            }
+            _fp8_mla_scale_params(quant_config, scale_granularity_override)
         )
         op_name += ".fp8"
         input_values += [w_uk_scale, w_uv_scale]
@@ -3173,6 +3170,7 @@ def mla_prefill_decode_graph(
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     quant_config: QuantConfig | None = None,
+    scale_granularity_override: int | None = None,
     sparse_indices: TensorValue | None = None,
     sparse_topk_lengths: TensorValue | None = None,
     sparse_attn_sink: TensorValue | None = None,
@@ -3254,14 +3252,8 @@ def mla_prefill_decode_graph(
             and w_uk_scale is not None
             and w_uv_scale is not None
         )
-        assert quant_config.input_scale.block_size is not None
-        assert quant_config.weight_scale.block_size is not None
         parameters.update(
-            {
-                "m_scale_granularity": quant_config.input_scale.block_size[0],
-                "n_scale_granularity": quant_config.weight_scale.block_size[0],
-                "k_scale_granularity": quant_config.weight_scale.block_size[1],
-            }
+            _fp8_mla_scale_params(quant_config, scale_granularity_override)
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
@@ -3889,6 +3881,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     expert_usage_stats_host: TensorValue,
     out_type: DType = DType.bfloat16,
     estimated_total_m: TensorValue | None = None,
+    preshuffled_b: bool = False,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -4000,6 +3993,16 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             f"[{weight.shape[0]}, {weight.shape[1]}, {b_scales_dim_2}] but got {b_scales.shape}"
         )
 
+    # `estimated_total_m` defaults to 0 (unknown). When `preshuffled_b` is
+    # True, the AMD preb kernel uses it to choose between persistent (small)
+    # and direct 3D-grid (large) dispatch paths. Ignored on the dense path.
+    if estimated_total_m is None:
+        estimated_total_m_arg = ops.constant(
+            0, dtype=DType.uint32, device=hidden_states.device
+        )
+    else:
+        estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
+
     output = ops.custom(
         "mo.grouped.matmul.block.scaled.mxfp4",
         device=hidden_states.device,
@@ -4012,6 +4015,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             expert_ids,
             expert_usage_stats_host[0],
             expert_usage_stats_host[1],
+            estimated_total_m_arg,
         ],
         out_types=[
             TensorType(
@@ -4020,6 +4024,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
                 device=hidden_states.device,
             ),
         ],
+        parameters={"preshuffled_b": preshuffled_b},
     )[0].tensor
 
     return output
@@ -4404,7 +4409,6 @@ def grouped_dynamic_scaled_fp8_matmul(
     input_scale_spec: InputScaleSpec,
     weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
-    tokens_padded_per_expert: bool = False,
 ) -> TensorValue:
     """Grouped blockwise scaled matmul used in MoE layer.
 
@@ -4422,8 +4426,6 @@ def grouped_dynamic_scaled_fp8_matmul(
         expert_usage_stats_host: The maximum number of tokens assigned to any expert, and the number of active experts.
         input_scale_spec: The scaling granularity for the input tensor.
         weight_scale_spec: The scaling granularity for the weight tensor.
-        tokens_padded_per_expert: If True, It's guaranteed that the number of tokens for each local expert will be
-            padded, so that `a_scales` is aligned to 16 bytes. This is needed by the optimized grouped matmul kernel.
 
     Returns:
         The result of the matmul operation.
@@ -4544,7 +4546,6 @@ def grouped_dynamic_scaled_fp8_matmul(
             "m_scale_granularity": input_scale_spec.block_size[0],
             "n_scale_granularity": weight_scale_spec.block_size[0],
             "k_scale_granularity": weight_scale_spec.block_size[1],
-            "tokens_padded_per_expert": tokens_padded_per_expert,
         },
     )[0].tensor
 
@@ -5548,6 +5549,45 @@ def block_scales_interleave(
     )[0].tensor
 
     return result
+
+
+def mxfp4_preshuffle_b_5d(b: TensorValue) -> TensorValue:
+    """Applies the AMD CDNA4 MXFP4 B 5D preshuffle to a rank-3 weight.
+
+    Reorders the packed-FP4 bytes from ``[E, N, K_BYTES]`` row-major into the
+    5D ``(E, N0, K0, KLane=4, NLane=16, KPack=16)`` byte layout expected by
+    the ``mxfp4_grouped_matmul_amd_preb`` reader. Output is byte-identical to
+    ``Shuffler[E].preshuffle_b_5d`` running on the same input.
+
+    Intended for eager invocation from weight adapters (one-shot graph), not
+    inside the main forward graph — the preb matmul kernel reads weights
+    that are already in this layout.
+
+    Args:
+        b: Rank-3 ``uint8`` tensor ``[E, N, K_BYTES]`` of packed FP4 weights.
+            ``N`` must be a multiple of 16 and ``K_BYTES`` a multiple of 64.
+
+    Returns:
+        Rank-3 ``uint8`` tensor with the same shape and total byte count as
+        ``b``, with bytes reordered to the 5D layout.
+    """
+    if b.rank != 3:
+        raise ValueError("b must be a rank 3 tensor [E, N, K_BYTES]")
+    if b.dtype != DType.uint8:
+        raise ValueError(f"b must be uint8 (packed MXFP4), got {b.dtype}")
+
+    return ops.custom(
+        "mo.mxfp4.preshuffle.b.5d",
+        device=b.device,
+        values=[b],
+        out_types=[
+            TensorType(
+                dtype=DType.uint8,
+                shape=b.shape,
+                device=b.device,
+            ),
+        ],
+    )[0].tensor
 
 
 def matmul_static_scaled_float8(
@@ -6809,6 +6849,52 @@ def launch_host_func(payload: BufferValue, device: DeviceRef) -> None:
         "mo.launch_host_func",
         device=device,
         values=[payload],
+        out_types=[],
+    )
+
+
+def wait_host_value_with_dep(
+    payload: BufferValue,
+    dep: BufferValue,
+    device: DeviceRef,
+) -> None:
+    """Variant of ``wait_host_value`` with a fake mutable dependency.
+
+    Wraps ``mo.wait_host_value_with_dep``. Behaves identically to
+    :func:`wait_host_value` at runtime, but threads ``dep`` through the
+    op as a mutated operand so any downstream op that mutates ``dep``
+    must chain after the wait completes.
+
+    Use this in place of :func:`wait_host_value` when the next op is an
+    :func:`inplace_memcpy` whose dst is the buffer that needs to
+    receive host-produced data. Without a shared operand the two
+    ``inplace_custom`` ops carry no data dependency, and the graph
+    compiler / cuGraph capture is free to parallelise them -- so the
+    in-graph H2D can complete before the host callback signals the
+    flag, producing one-iter-stale data at the consumer.
+
+    Args:
+        payload: CPU buffer of shape ``[2]`` and dtype ``int64`` holding
+            ``[CompletionFlag._unsafe_ptr, expected_value]``. Same as
+            :func:`wait_host_value`'s ``payload``.
+        dep: The buffer the downstream op mutates. Threaded through as
+            a fake mutable operand here to register a data dependency;
+            not otherwise touched by this op.
+        device: GPU device on whose stream to insert the wait node.
+    """
+    if payload.dtype != DType.int64:
+        raise ValueError(f"Expected payload dtype int64, got {payload.dtype}")
+    if payload.shape != [2]:
+        raise ValueError(f"Expected payload shape [2], got {payload.shape}")
+    if not device.is_gpu():
+        raise ValueError(
+            "wait_host_value_with_dep is only supported on GPU devices"
+        )
+
+    ops.inplace_custom(
+        "mo.wait_host_value_with_dep",
+        device=device,
+        values=[payload, dep],
         out_types=[],
     )
 

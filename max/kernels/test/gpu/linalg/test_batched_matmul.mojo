@@ -26,7 +26,7 @@ from std.testing import assert_almost_equal
 from std.utils import IndexList
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
@@ -34,7 +34,7 @@ comptime epilogue_func_type = def[
 @parameter
 def elementwise_epilogue_fn[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     *,
     alignment: Int = 1,
 ](val: SIMD[dtype, width],) -> SIMD[dtype, width]:
@@ -87,7 +87,7 @@ def run_bmm_and_check_result[
     @__copy_capture(c_device)
     def epilogue_fn[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         rank: Int,
         *,
         alignment: Int = 1,

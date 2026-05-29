@@ -39,6 +39,7 @@ from typing import (
 
 import click
 from max.driver import DeviceSpec
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -49,7 +50,6 @@ from max.pipelines.lib import (
     SamplingConfig,
     SpeculativeConfig,
 )
-from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
 from pydantic import BaseModel
 from typing_extensions import ParamSpec
 

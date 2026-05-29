@@ -120,7 +120,7 @@ def test_matmul_sm100_epilogue[
     @__copy_capture(c_tensor_lt)
     def test_lambda_add_coords_prod[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -221,7 +221,7 @@ def test_matmul_sm100_epilogue[
         @__copy_capture(c_host_copy_lt)
         def test_lambda_add_coords_prod_local[
             _dtype: DType,
-            width: Int,
+            width: SIMDSize,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[

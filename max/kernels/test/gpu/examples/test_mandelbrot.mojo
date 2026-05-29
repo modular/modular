@@ -40,7 +40,7 @@ comptime max_y = 1.12
 
 @always_inline
 def mandelbrot_kernel[
-    simd_width: Int
+    simd_width: SIMDSize
 ](c: ComplexSIMD[float_type, simd_width]) -> SIMD[int_type, simd_width]:
     """A vectorized implementation of the inner mandelbrot computation."""
     var z = ComplexSIMD[float_type, simd_width](0, 0)

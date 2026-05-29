@@ -1115,6 +1115,9 @@ def tanh[
         The result of the elementwise tanh operation.
     """
 
+    comptime if CurrentPlugin.tanh_fn[dtype, width]:
+        return comptime (CurrentPlugin.tanh_fn[dtype, width].value())(x)
+
     comptime if is_nvidia_gpu():
         comptime instruction = "tanh.approx.f32"
 
@@ -3845,7 +3848,7 @@ def max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-def max[T: Copyable & Comparable](x: T, *ys: T) -> T:
+def max[T: Copyable & Comparable & ImplicitlyDestructible](x: T, *ys: T) -> T:
     """Gets the maximum value from a sequence of values.
 
     Parameters:
@@ -3913,7 +3916,7 @@ def min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-def min[T: Copyable & Comparable](x: T, *ys: T) -> T:
+def min[T: Copyable & Comparable & ImplicitlyDestructible](x: T, *ys: T) -> T:
     """Gets the minimum value from a sequence of values.
 
     Parameters:

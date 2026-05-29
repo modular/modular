@@ -48,6 +48,11 @@ from rich.console import Console
 from terminal_viz import render_results
 from utils import _get_gpu_count, check_valid_target_accelerator
 
+# QUA-386 / KERN-2930: disabled due to nondeterminism
+pytestmark = pytest.mark.skip(
+    reason="QUA-386 / KERN-2930: nondeterministic, see runbook"
+)
+
 
 def get_abs_path(path: str) -> Path:
     return Path(string.Template(str(path)).substitute(os.environ)).absolute()

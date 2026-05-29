@@ -255,32 +255,16 @@ def _compute_num_partitions_64[
 
     target_partitions = min(target_partitions, half_sms)
 
-    # max_pages_per_split for single head group: 18 * 2 / 1 = 36
-    comptime _head_groups = 1
-    comptime _base_max_pages_per_split = 18
-    comptime max_pages_per_split = _base_max_pages_per_split * 2 // _head_groups
-    var min_partitions_for_work = ceildiv(
-        num_kv_cache_pages, max_pages_per_split
-    )
+    # Pages-per-CTA lower bound to avoid under-utilizing CTAs (per-CTA setup
+    # + combine-grid overhead would dominate if each CTA processed too few
+    # pages).
+    comptime _min_pages_per_split = 4
+    var max_np_for_min_pages = num_kv_cache_pages // _min_pages_per_split
 
-    # Single head group: use max(target_partitions, min_partitions_for_work).
-    # wave_aligned and page_constrained (num_kv_cache_pages//min_pages_per_split)
-    # are not used for single head group -- target_partitions dominates.
-    #
-    # Fold-active long-cache path: cap np at 8 only for bs≥16. At bs<16 the
-    # cap starves CTAs (target_partitions floor is needed for SM utilization).
-    # At bs≥16, combine grid overhead at np=16 dominates, and bs*8 ≈ SM count
-    # keeps decode CTAs sufficient.
-    var num_partitions: Int
-    if fold_active and batch_size >= 16 and effective_max_cache_len >= 8192:
-        # Long-cache + high-batch: combine grid overhead at np=16 dominates,
-        # and bs*8 ≈ SM count keeps decode CTAs sufficient. Cap np at 9 so
-        # bs=16 → 144 CTAs (vs 128 at np=8) — fills more SMs without hitting
-        # the np=16 combine-overhead cliff.
-        num_partitions = min(target_partitions, 9)
-    else:
-        # Default: maintain SM utilization (low batch needs higher np).
-        num_partitions = max(target_partitions, min_partitions_for_work)
+    # Policy: honor wave-aligned target_partitions, but cap np DOWN if it
+    # would leave too few pages per CTA (under-utilization). Long K-loops
+    # per CTA are FINE — they amortize fixed costs better than splitting.
+    var num_partitions: Int = min(target_partitions, max_np_for_min_pages)
 
     # Clamp: allow np=1 for very short cache + large batch, or when single
     # head group fills >= 80% of SMs.

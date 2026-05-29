@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_library", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -7,24 +7,10 @@ exports_files(["__init__.mojo"])
 mojo_library(
     name = "extensibility",
     srcs = glob(["**/*.mojo"]),
+    docs_base_path = "kernels",
     validate_missing_docs = False,
     deps = [
         "//max:layout",
         "@mojo//:std",
     ],
-)
-
-filegroup(
-    name = "extensibility.doc_group",
-    srcs = [
-        ":extensibility.docs",
-    ],
-    tags = ["manual"],
-)
-
-pkg_files(
-    name = "docs",
-    srcs = [":extensibility.doc_group"],
-    prefix = "extensibility",
-    strip_prefix = strip_prefix.from_pkg("extensibility.docs"),
 )

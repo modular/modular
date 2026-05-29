@@ -100,16 +100,20 @@ def test[
 
     # K and V are filled with uniform constants for this test instead of being
     # randomly initialized.
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    rand(k_ptr.as_span())
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
-    k_device_ptr.enqueue_fill(Scalar[qkv_type](0.25))
 
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    rand(v_ptr.as_span())
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
-    v_device_ptr.enqueue_fill(Scalar[qkv_type](0.5))
 
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy(q_device_ptr, q_ptr)
+    ctx.enqueue_copy(k_device_ptr, k_ptr)
+    ctx.enqueue_copy(v_device_ptr, v_ptr)
 
     # Construct device buffers.
     var q_device = TileTensor(
