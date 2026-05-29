@@ -1135,8 +1135,9 @@ LogicalResult ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
     // Conservatively only handle the types we know have a single field.  We
     // special case these ones to avoid name lookup in common cases.
     if (expDRT.getName().strref() != "AddressSpace" &&
-        expDRT.getName().strref() != "Int" &&
-        expDRT.getName().strref() != "Bool") {
+        expDRT.getName().strref() != "SIMDSize" &&
+        expDRT.getName().strref() != "Bool" &&
+        expDRT.getName().strref() != "Int") {
       // For non-trivial types like Origin[IsMut], we may need to infer
       // parameters, so do a full conversion check.
 
