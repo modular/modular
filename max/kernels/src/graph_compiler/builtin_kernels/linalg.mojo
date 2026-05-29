@@ -346,20 +346,19 @@ struct LinalgBandPart:
         exclude: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
         @always_inline
         def input_fn[
             width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
+        ](coords: IndexList[_rank]) {var input} -> SIMD[output.dtype, width]:
             return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
         matrix_band_part[
-            input_0_fn=input_fn,
             simd_width=simd_width_of[dtype](),
             target=target,
         ](
+            input_fn,
             input.shape(),
             num_lower.to_tile_tensor[int_type](),
             num_upper.to_tile_tensor[int_type](),
