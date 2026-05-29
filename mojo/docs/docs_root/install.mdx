@@ -8,6 +8,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
 import VersionSubheader from '@site/src/components/VersionSubheader';
+import Link from '@docusaurus/Link';
 
 <VersionSubheader />
 
@@ -48,6 +49,10 @@ Or add Mojo to a project:
 </TabItem>
 </Tabs>
 
+This installs the nightly build, which isn't complete and might have new bugs.
+If you instead want the stable build, <Link href="/install/">switch to the stable
+docs</Link>.
+
 </ConditionalVersionDocs>
 
 <ConditionalVersionDocs version="stable">
@@ -79,6 +84,9 @@ Or add Mojo to a project:
 
 </TabItem>
 </Tabs>
+
+If you instead want the latest nightly build, <Link
+href="/nightly/install/">switch to the nightly docs</Link>.
 
 </ConditionalVersionDocs>
 
