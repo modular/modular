@@ -545,6 +545,9 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   }
 
   auto tryEmitBindingConversion = [&](TypedAttr candidate) -> TypedAttr {
+    // Use the more refined type value to check convertibility.
+    candidate = UpcastAttr::strip(candidate);
+
     // Check the type matches what is expected, and perform an implicit
     // conversion if needed.
     if (expectedType.isEqualCanon(candidate.getType()))
