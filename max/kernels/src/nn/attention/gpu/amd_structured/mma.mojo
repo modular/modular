@@ -300,6 +300,84 @@ struct KVMmaOp[
             dst[Int(i), 0] = rebind[type_of(dst[Int(i), 0])](frags[Int(i)])
 
     @always_inline
+    def load_prefill_split[
+        bk_tile: Int,
+        has_hi: Bool,
+    ](
+        self,
+        warp_smem_lo: TileTensor[
+            Self.in_type, _, _, address_space=AddressSpace.SHARED, ...
+        ],
+        warp_smem_hi: TileTensor[
+            Self.in_type, _, _, address_space=AddressSpace.SHARED, ...
+        ],
+    ):
+        """Load the `bk_tile`-th MMA K=128 strip composed of two
+        adjacent `WN × (MMA_K/2)` SMEM blocks.
+
+        Used by FP8 16x16x128 MLA decode when the SMEM block width
+        (`bk_smem`) is `MMA_K/2 = 64` instead of `BK = 128`. Each MMA
+        strip's two K-halves live in two separate `BN × 64` SMEM blocks
+        (matching the no-pad K layout at depth=576).
+
+        When `has_hi == False` the hi half is register-zero — this
+        handles the partial K-tile at the rope tail (strip 4 for
+        depth=576: lo holds depth 512..575 from block 8, hi has no
+        backing block, MMA upper-half lane registers get 0).
+        """
+        comptime assert Self.transpose_b, "load_prefill_split is K-operand only"
+        comptime assert (
+            Self.in_type.is_float8() and Self.MMA_K == 128
+        ), "load_prefill_split is FP8 16x16x128 only"
+
+        # Half-K MMA tile shape: 16 × 16 × 64 (matches load_b's
+        # `num_packs == 2` half).
+        comptime half_k_shape = IndexList[3](
+            Self.MMA_M, Self.mma_shape[1], Self.MMA_K // 2
+        )
+        # Half-K per-lane fragment width.  Bound symbolically to the
+        # MMA shape so `lo.join(hi)` stays correct if MMA_K ever
+        # changes.  For FP8 16x16x128 this equals 16, matching
+        # `simd_width_of[in_type]`; check that invariant so a future
+        # shape mismatch surfaces here.
+        comptime half_frag_w = num_matrix_reg[Self.MMA_M, Self.MMA_K // 2]()
+        comptime assert (
+            half_frag_w == simd_width_of[Self.in_type]()
+        ), "load_prefill_split: half-K frag size must equal SIMD width"
+        comptime total_frags = Self.num_mmas * Self.num_k_mmas
+
+        var dst = self.reg_tile.tile[
+            Self._rows_per_k_tile, Self.input_frag_size
+        ](bk_tile, 0).vectorize[1, Self.input_frag_size]()
+
+        comptime for i in range(total_frags):
+            # Each warp_smem_{lo,hi} is (WN, MMA_K/2).  Slice out the
+            # i-th MMA-M strip (rows [i*MMA_M, (i+1)*MMA_M), cols [0, MMA_K/2)).
+            # _load_b_tile reads the full 16×64 sub-tile at k_tile_idx=0.
+            var src_lo = warp_smem_lo.tile[Self.MMA_M, Self.MMA_K // 2](
+                Int(i), 0
+            )
+            var lo = TiledMmaLoader[
+                Self.in_type, Self.mma_shape, Self.swizzle
+            ]._load_b_tile[half_k_shape, 0](src_lo)
+
+            # Bind `hi`'s type to `lo`'s so the two halves stay
+            # type-coherent for `lo.join(hi)`.
+            var hi: type_of(lo)
+            comptime if has_hi:
+                var src_hi = warp_smem_hi.tile[Self.MMA_M, Self.MMA_K // 2](
+                    Int(i), 0
+                )
+                hi = TiledMmaLoader[
+                    Self.in_type, Self.mma_shape, Self.swizzle
+                ]._load_b_tile[half_k_shape, 0](src_hi)
+            else:
+                hi = type_of(lo)(0)
+
+            var joined = lo.join(hi)
+            dst[Int(i), 0] = rebind[type_of(dst[Int(i), 0])](joined)
+
+    @always_inline
     def mma_tile_at[
         bk_tile: Int, kg: Int
     ](self) -> TileTensor[

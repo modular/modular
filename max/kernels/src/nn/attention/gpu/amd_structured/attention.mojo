@@ -160,12 +160,12 @@ struct Attention[
     # P swizzle for shared_memory_backed path (BN != WN, 16x16 MMA).
     # Mirrors amd/attention.mojo: Swizzle(3,0,3) XORs bits [5:3] into [2:0]
     # of the 8-element group index, spreading rows across LDS bank groups.
+    # Extended to FP8 16x16x128 (MMA_K=128, MMA_N=16) — same col_major[16, 4]
+    # P-write pattern as the BF16 16x16x32 case, just with FP8 simd_w=16.
     comptime _p_shared_memory_backed = Self.BN != Self.WN
     comptime _p_swizzle = (
         Swizzle(3, 0, 3) if (
-            Self._p_shared_memory_backed
-            and Self.mma_shape[0] == 16
-            and Self.mma_shape[2] <= 2 * Self.mma_shape[1]
+            Self._p_shared_memory_backed and Self.mma_shape[0] == 16
         ) else Optional[Swizzle](None)
     )
 
@@ -227,8 +227,26 @@ struct Attention[
     comptime _smem_alignment = align_of[
         SIMD[Self.q_type, simd_width_of[Self.q_type]()]
     ]()
+    # SMEM physical block width for K/V.  When the MMA strip width (BK)
+    # doesn't divide depth, fall back to a finer-grain BK_SMEM=64 layout
+    # so the K SMEM stride matches `depth` exactly (no zero-pad block).
+    # `_bk_smem` only diverges from `BK` for the FP8 MLA-decode case
+    # (BK=128, depth=576, depth%64==0): K SMEM stride becomes 64, and
+    # each MMA K=128 strip is composed of two adjacent BN×64 blocks (see
+    # `KVMmaOp.load_prefill_split`).  All other paths (BK%depth==0,
+    # BF16, prefill) keep `_bk_smem == BK` and use the single-block MMA
+    # load.
+    comptime _bk_smem = 64 if (
+        Self.BK == 128 and Self.depth % Self.BK != 0 and Self.depth % 64 == 0
+    ) else Self.BK
+    # K SMEM holds `ceildiv(depth, _bk_smem)` blocks of width `_bk_smem`.
+    # For depth=576, _bk_smem=64 → 9 blocks × BN × 64 = BN × 576 (exact).
+    # For depth%BK==0, _bk_smem=BK → ceildiv(depth,BK) blocks = depth/BK,
+    # so this reduces to BN × depth.
+    comptime _k_smem_blocks = ceildiv(Self.depth, Self._bk_smem)
     comptime _k_smem_size = Self.BN * (
-        Self.depth if Self.amd_structured_config.full_kv else Self.BK
+        Self._k_smem_blocks
+        * Self._bk_smem if Self.amd_structured_config.full_kv else Self.BK
     ) * (
         2 if (
             Self.amd_structured_config.double_buffer
@@ -276,8 +294,9 @@ struct Attention[
     ]
     # Dedicated warp-reduction scratch SMEM. Decoupling from K SMEM
     # avoids races between softmax's scratch ds_writes and other warps'
-    # in-flight K ds_reads (the prior overlay only happened to be safe
-    # for non-kv-alias decode because V's later DMA wiped the corruption).
+    # in-flight K ds_reads. Overlaying scratch onto K SMEM is unsafe in
+    # `mla_kv_alias` mode (V reads from K's SMEM, so there's no later
+    # V DMA to overwrite the corruption).
     var warp_scratch_ptr: UnsafePointer[
         Scalar[Self.accum_type],
         MutExternalOrigin,

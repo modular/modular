@@ -657,9 +657,17 @@ def flare_mla_decoding_dispatch[
         @parameter
         def launch_with_BM[BM: Int]() raises:
             comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
-            comptime BK = 64 if (
-                has_nvidia_gpu_accelerator() or amd_fp8
-            ) else 32  # 8 mma_tile per row resolves bank conflict on nvidia
+            # AMD-structured config picks 16x16x128 for MLA decode when
+            # `num_heads <= 16` (Kimi-K2.5 TP=4) or `depth % 128 == 0`;
+            # both need BK=128 so each MFMA call consumes 128 elements
+            # of depth (depth=576 → 4 full tiles + 1 partial tile
+            # zero-padded in registers).
+            comptime amd_fp8_16x16x128 = amd_fp8 and (
+                num_heads <= 16 or depth % 128 == 0
+            )
+            comptime BK = 128 if amd_fp8_16x16x128 else (
+                64 if (has_nvidia_gpu_accelerator() or amd_fp8) else 32
+            )  # 8 mma_tile per row resolves bank conflict on nvidia
             comptime WM = BM
             comptime WN = 16 if has_nvidia_gpu_accelerator() else 32
             # num warps in M and N, multiplied by warp size.
@@ -921,7 +929,15 @@ def flare_mla_decoding_dispatch[
         # For num_heads <= 32, BM=32 already covers all heads in one m_mma,
         # so BM=64 has no head-packing benefit — keep BM=32.
         comptime if amd_fp8:
-            comptime if num_heads > 32:
+            # `num_heads <= 16` triggers the 16x16x128 MFMA shape (see
+            # `AMDStructuredConfig.get_mma_shape`); pair it with BM=WM=16
+            # so each warp packs one MFMA tile of valid heads (no m_mma=1
+            # doing wasted work on OOB rows).  Without this, BM=32 with
+            # mma_shape[0]=16 gives num_m_mmas=2 and the second m_mma is
+            # wasted for any num_heads <= 16.
+            comptime if num_heads <= 16:
+                launch_with_BM[16]()
+            elif num_heads > 32:
                 # MI355X L2 = 256 MB; threshold ≈ 0.4 × L2 = 100 MB leaves
                 # headroom for Q + V + working state in L2.
                 comptime L2_K_BYTES_THRESHOLD = 100 * 1024 * 1024
