@@ -243,7 +243,8 @@ session = InferenceSession(
     devices=[device],
 )
 
-model = session.load(graph)
+compiled = session.compile(graph)
+model = session.init(compiled)
 ```
 
 Finally, we generate some random data and pass it as input:
