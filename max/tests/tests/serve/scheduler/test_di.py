@@ -30,7 +30,6 @@ from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngineMetadata,
 )
 from max.pipelines.lib import OverlapTextGenerationPipeline
-from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.pipeline_variants.utils import (
     update_spec_decode_context_and_prepare_responses,
 )
@@ -41,6 +40,7 @@ from max.pipelines.modeling.types import (
     TextGenerationOutput,
     TokenBuffer,
 )
+from max.pipelines.speculative.config import SpeculativeConfig
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,

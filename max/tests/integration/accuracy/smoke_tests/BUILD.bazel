@@ -74,6 +74,18 @@ modular_py_binary(
     ],
 )
 
+modular_py_library(
+    name = "check_golden_eligibility",
+    srcs = ["check_golden_eligibility.py"],
+    data = ["golden_ignore_list.yaml"],
+    imports = [".."],
+    deps = [
+        requirement("click"),
+        requirement("pyyaml"),
+        requirement("requests"),
+    ],
+)
+
 modular_py_binary(
     name = "prefetch_hf_repos",
     testonly = True,
@@ -92,6 +104,47 @@ modular_py_binary(
     testonly = True,
     srcs = ["bisect_smoke_test.py"],
     imports = [".."],
+)
+
+modular_py_binary(
+    name = "upload_smoke_test_results",
+    srcs = ["upload_smoke_test_results.py"],
+    imports = [".."],
+    tags = ["no-pydeps"],
+    deps = [
+        requirement("google-cloud-bigquery"),
+    ],
+)
+
+modular_py_library(
+    name = "compute_accuracy_status",
+    srcs = [
+        "accuracy_windows_config.py",
+        "compute_accuracy_status.py",
+    ],
+    imports = [".."],
+    tags = ["no-pydeps"],
+    deps = [
+        ":smoke_test_github_matrix",
+        requirement("click"),
+        requirement("google-cloud-bigquery"),
+    ],
+)
+
+modular_py_test(
+    name = "test_compute_accuracy_status",
+    size = "small",
+    srcs = [
+        "conftest.py",
+        "test_compute_accuracy_status.py",
+    ],
+    imports = [".."],
+    tags = ["no-pydeps"],
+    deps = [
+        ":compute_accuracy_status",
+        ":smoke_test_github_matrix",
+        requirement("click"),
+    ],
 )
 
 modular_py_test(
@@ -150,6 +203,25 @@ modular_py_test(
     deps = [
         ":smoke_test",
         ":smoke_test_github_matrix",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_check_golden_eligibility",
+    size = "small",
+    srcs = [
+        "conftest.py",
+        "test_check_golden_eligibility.py",
+    ],
+    imports = [".."],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":check_golden_eligibility",
         requirement("click"),
     ],
 )

@@ -24,19 +24,30 @@ def test_preshuffle_b_round_trip[
 ](ctx: DeviceContext) raises:
     var src_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
     var dst_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
+
+    var src_db = ctx.enqueue_create_buffer[DType.uint8](N * K_BYTES)
+    var dst_db = ctx.enqueue_create_buffer[DType.uint8](N * K_BYTES)
     ctx.synchronize()
 
     for i in range(N * K_BYTES):
         src_hb[i] = UInt8(i & 0xFF)
 
-    var src_tt = TileTensor(
-        src_hb, row_major(Coord(Idx[1], Idx[N], Idx[K_BYTES]))
-    )
-    var dst_tt = Shuffler[1].preshuffle_b_5d[N=N, K_BYTES=K_BYTES](
-        src_tt, dst_hb
-    )
-    _ = dst_tt
+    ctx.enqueue_copy(src_db, src_hb)
 
+    var src_tt = TileTensor(
+        src_db, row_major(Coord(Idx[1], Idx[N], Idx[K_BYTES]))
+    )
+
+    var dst_tt = TileTensor(
+        dst_db, Shuffler[1].b_5d_grouped_layout[N=N, K_BYTES=K_BYTES]
+    )
+
+    Shuffler[1].preshuffle_b_5d[N=N, K_BYTES=K_BYTES](src_tt, dst_tt, ctx)
+
+    ctx.enqueue_copy(dst_hb, dst_db)
+    ctx.synchronize()
+
+    _ = dst_tt
     # Inverse re-index: the output byte at b_5d_grouped_layout(0, n, k_byte)
     # must equal the input byte at [n, k_byte] (row-major).
     for n in range(N):

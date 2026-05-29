@@ -3833,27 +3833,39 @@ struct DeviceGraphBuilder(Movable):
         ](self._handle)
 
     @doc_hidden
-    def _last_node(self) raises -> DeviceGraphNode:
-        """Returns a handle to the most recently added node.
+    def _last_node_id(self) -> Optional[Int32]:
+        """Returns the id of the most recently added node, or None if no
+        nodes have been added yet.
 
-        Used internally by the public `add_*` methods to retrieve the handle
-        of a node they just added.
-
-        Raises:
-            If no nodes have been added yet.
+        Cannot fail. Used by `_last_node` and `collect_dependencies`
+        to query the builder's current state.
         """
-        var id: Int32 = 0
-        # const char *AsyncRT_DeviceGraphBuilder_lastNodeId(
-        #     DeviceGraphBuilder *builder, int32_t *result)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceGraphBuilder_lastNodeId",
-                _CString[],
-                _DeviceGraphBuilderPtr[mut=True],
-                UnsafePointer[Int32, origin_of(id)],
-            ](self._handle, UnsafePointer(to=id))
-        )
-        return DeviceGraphNode(id)
+        # int32_t AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone(
+        #     DeviceGraphBuilder *builder)
+        var id = external_call[
+            "AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone",
+            Int32,
+            _DeviceGraphBuilderPtr[mut=True],
+        ](self._handle)
+
+        if id < 0:
+            return None
+        return id
+
+    @doc_hidden
+    def _last_node(self) -> Optional[DeviceGraphNode]:
+        """Returns a handle to the most recently added node, or `None`
+        if no nodes have been added yet.
+
+        Used internally by the public `add_*` methods to retrieve the
+        handle of a node they just added; those call sites always expect
+        a `Some` result and unwrap via `.value()`.
+        """
+
+        def to_device_node(id: Int32) -> DeviceGraphNode:
+            return DeviceGraphNode(id)
+
+        return self._last_node_id().map[To=DeviceGraphNode](to_device_node)
 
     @parameter
     @always_inline
@@ -3923,11 +3935,11 @@ struct DeviceGraphBuilder(Movable):
             constant_memory=constant_memory^,
             location=call_location(),
         )
-        return self._last_node()
+        return self._last_node().value()
 
     @always_inline
     def add_function[
-        FuncType: def() register_passable -> None,
+        FuncType: def() -> None,
         //,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4015,12 +4027,16 @@ struct DeviceGraphBuilder(Movable):
         _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
-        var compiled = self._ctx.compile_function_unchecked[
+        var compiled = DeviceFunction[
             FuncType.__call__,
+            None,
+            target=DeviceContext.default_device_info.target(),
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](self._ctx)
+        compiled.dump_rep[
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
         ]()
         # Build a transient enqueuer that pairs the builder handle with the
         # caller-supplied deps. It implements `_FunctionEnqueuer` so the
@@ -4039,9 +4055,8 @@ struct DeviceGraphBuilder(Movable):
             constant_memory=constant_memory^,
             location=call_location(),
         )
-        return self._last_node()
+        return self._last_node().value()
 
-    @always_inline
     def add_copy[
         dtype: DType
     ](
@@ -4089,9 +4104,8 @@ struct DeviceGraphBuilder(Movable):
                 dep_args.count,
             )
         )
-        return self._last_node()
+        return self._last_node().value()
 
-    @always_inline
     def add_copy[
         dtype: DType
     ](
@@ -4139,9 +4153,8 @@ struct DeviceGraphBuilder(Movable):
                 dep_args.count,
             )
         )
-        return self._last_node()
+        return self._last_node().value()
 
-    @always_inline
     def add_copy[
         dtype: DType
     ](
@@ -4191,9 +4204,8 @@ struct DeviceGraphBuilder(Movable):
                 dep_args.count,
             )
         )
-        return self._last_node()
+        return self._last_node().value()
 
-    @always_inline
     def add_memset[
         dtype: DType
     ](
@@ -4263,7 +4275,111 @@ struct DeviceGraphBuilder(Movable):
                 dep_args.count,
             )
         )
-        return self._last_node()
+        return self._last_node().value()
+
+    def add_empty(
+        self,
+        *,
+        var dependencies: List[DeviceGraphNode],
+    ) raises -> DeviceGraphNode:
+        """Adds an empty (no-op) node to the graph.
+
+        Empty nodes perform no work at execution time. They are used purely
+        for transitive ordering: a single empty node fanned in from `m`
+        predecessors and out to `n` successors expresses an `m`-to-`n`
+        barrier using `m + n` edges instead of `m * n`, and serves as a
+        stable handle for "the completion of this phase" when the producer
+        set is not visible to the consumer.
+
+        Args:
+            dependencies: Explicit list of predecessor node handles. An
+                empty list makes the new node a graph root with no
+                predecessors; a non-empty list uses those exact handles
+                as predecessors.
+
+        Returns:
+            A handle to the newly added empty node.
+
+        Raises:
+            If adding the node fails.
+        """
+        var dep_args = _pack_dep_args(dependencies)
+        # const char *AsyncRT_DeviceGraphBuilder_addEmpty(
+        #     DeviceGraphBuilder *builder, const int32_t *depIds,
+        #     int64_t numDeps)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_addEmpty",
+                _CString[],
+                _DeviceGraphBuilderPtr[mut=True],
+                UnsafePointer[Int32, ImmutAnyOrigin],
+                Int64,
+            ](self._handle, dep_args.ids, dep_args.count)
+        )
+        return self._last_node().value()
+
+    def collect_dependencies(
+        self, work: Some[def(Self) raises]
+    ) raises -> DeviceGraphNode:
+        """Runs `work` and returns a single empty node that joins every
+        node added to this builder during its execution.
+
+        The returned handle is suitable for use as a one-element
+        `dependencies=` entry on a downstream `add_*` call. The empty
+        node performs no work at execution time; it exists purely as a
+        fan-in barrier so the caller does not need to thread the
+        producer set's individual handles to every consumer.
+
+        Args:
+            work: Closure whose effects on this builder are captured. The
+                builder is passed as `work`'s sole argument; the closure
+                must not capture the same builder, since doing so would
+                alias with this method's receiver. The closure may add
+                any number of nodes (zero or more) via any of the
+                `add_*` methods.
+
+        Returns:
+            Handle of the empty node that joins every node added by
+            `work`.
+
+        Raises:
+            Anything `work` itself raises, or anything raised while
+            adding the join node.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext, DeviceGraphBuilder
+
+        with DeviceContext() as ctx:
+            var builder = ctx.create_graph_builder()
+
+            def add_producers(b: DeviceGraphBuilder) raises {read} -> None:
+                _ = b.add_memset(buf_a, UInt8(1), dependencies=[])
+                _ = b.add_memset(buf_b, UInt8(2), dependencies=[])
+
+            var producers_join = builder.collect_dependencies(add_producers)
+            _ = builder.add_copy(
+                buf_c, host_src, dependencies=[producers_join]
+            )
+            var graph = builder^.instantiate()
+            graph.replay()
+        ```
+        """
+        var start_id = self._last_node_id()
+        work(self)
+        var end_id = self._last_node_id()
+
+        var deps = List[DeviceGraphNode]()
+
+        if end_id:
+            var end_val = end_id.value()
+            var start_val = start_id.or_else(-1)
+            deps.reserve(Int(end_val) - Int(start_val))
+            for id in range(start_val + 1, end_val + 1):
+                deps.append(DeviceGraphNode(Int32(id)))
+
+        return self.add_empty(dependencies=deps^)
 
     def instantiate(var self) raises -> DeviceGraph:
         """Instantiates the constructed graph into an executable device graph.
@@ -4853,89 +4969,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         ```
         """
         return HostBuffer[dtype](self, size)
-
-    @always_inline
-    def compile_function_unchecked[
-        func_type: TrivialRegisterPassable,
-        //,
-        func: func_type,
-        *,
-        compile_options: StaticString = CompilationTarget[
-            Self.default_device_info.target()
-        ].default_compile_options(),
-        link_options: StaticString = "",
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *,
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        out result: DeviceFunction[
-            func,
-            None,
-            target=Self.default_device_info.target(),
-            compile_options=compile_options,
-            link_options=link_options,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ],
-    ) raises:
-        """Compiles the provided function for execution on this device.
-
-        Parameters:
-            func_type: Type of the function.
-            func: The function to compile.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            func_attribute: An attribute to use when compiling the code (such
-                as maximum shared memory size).
-
-        Returns:
-            The compiled function via the `result` output parameter.
-
-        Raises:
-            If the operation fails.
-
-        Notes:
-
-        - This method doesn't perform compile-time type-checking of the kernel
-          function arguments. You will encounter run-time errors if the values
-          you pass don't conform to the expected argument types.
-        - This method will be deprecated and eventually removed.
-          Use `compile_function()` instead for type-checked kernel compilation.
-        """
-        assert (
-            not func_attribute
-            or func_attribute.value().attribute
-            != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-            or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
-        ), "Requested more than available shared memory."
-        comptime result_type = type_of(result)
-        result = result_type(
-            self,
-            func_attribute=func_attribute,
-        )
-
-        result.dump_rep[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-        ]()
 
     @deprecated("Pass the kernel only once: `compile_function[func]`.")
     @always_inline
@@ -6065,7 +6098,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     @always_inline
     def enqueue_function[
-        FuncType: def() register_passable -> None,
+        FuncType: def() -> None,
         //,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -6156,12 +6189,16 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             block_dim, location=call_location()
         )
 
-        var gpu_kernel = self.compile_function_unchecked[
+        var gpu_kernel = DeviceFunction[
             FuncType.__call__,
+            None,
+            target=Self.default_device_info.target(),
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](self)
+        gpu_kernel.dump_rep[
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
         ]()
 
         gpu_kernel._call_with_pack(

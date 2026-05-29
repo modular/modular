@@ -28,6 +28,7 @@ import numpy as np
 import numpy.typing as npt
 import PIL.Image
 from max.pipelines.core import PixelContext
+from max.pipelines.diffusion.schedulers import SchedulerFactory
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TokenBuffer,
@@ -43,8 +44,6 @@ from max.pipelines.request.provider_options import (
     PixelProviderOptionsBase,
 )
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
-
-from .diffusion_schedulers import SchedulerFactory
 
 if TYPE_CHECKING:
     import PIL.Image

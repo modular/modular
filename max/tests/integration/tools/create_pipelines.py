@@ -43,6 +43,9 @@ from max.pipelines.architectures.flux2.flux2_klein_executor import (
 )
 from max.pipelines.architectures.flux2.tokenizer import Flux2Tokenizer
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
+from max.pipelines.architectures.qwen3.text_encoder import (
+    Qwen3TextEncoderKleinModel,
+)
 from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
 from max.pipelines.architectures.wan.wan_executor import WanExecutor
@@ -1137,6 +1140,44 @@ class GenericOracle(PipelineOracle):
         return self._use_cache
 
 
+class ComponentModelOracle(GenericOracle):
+    """Oracle for verifying a MAX ComponentModel (e.g. a text encoder) against
+    a HuggingFace reference.
+
+    The MAX path runs the ComponentModel directly, bypassing the standard
+    text-generation pipeline. The Torch path uses the inherited GenericOracle
+    loader and routes through ``run_text_encode``, which captures the
+    pre-norm hidden state via a hook on ``model.model.norm``.
+
+    ``padded_length`` controls input padding for both sides. Set to an
+    integer to pad each prompt to that length via ``apply_chat_template`` +
+    tokenizer ``padding="max_length"``; set to ``None`` to tokenize each
+    prompt at its natural length with an all-ones attention mask.
+    """
+
+    def __init__(
+        self,
+        *,
+        component_model_class: type,
+        padded_length: int | None = 512,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.component_model_class = component_model_class
+        self.padded_length = padded_length
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        raise NotImplementedError(
+            "ComponentModelOracle does not use the standard MAX pipeline; "
+            "run_max_text_encoder is dispatched directly."
+        )
+
+
 class LoRAOracle(PipelineOracle):
     """Oracle for models with LoRA adapters."""
 
@@ -1858,6 +1899,12 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "Qwen/Qwen3-VL-4B-Instruct-FP8": Qwen3VLPipelineOracle(
         "Qwen/Qwen3-VL-4B-Instruct-FP8",
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
+    "Qwen/Qwen3-4B-text-encoder": ComponentModelOracle(
+        model_path="Qwen/Qwen3-4B",
+        component_model_class=Qwen3TextEncoderKleinModel,
+        padded_length=512,
+        device_encoding_map={"gpu": ["bfloat16"]},
     ),
     "Qwen/Qwen3-8B": GenericOracle(
         model_path="Qwen/Qwen3-8B",

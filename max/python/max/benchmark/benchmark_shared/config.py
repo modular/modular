@@ -25,6 +25,7 @@ from .datasets import DatasetMode, DistributionParameter
 from .utils import int_or_none, parse_comma_separated
 
 BaseBackend = Literal[
+    "mcloud",
     "modular",
     "sglang",
     "trtllm",
@@ -32,6 +33,7 @@ BaseBackend = Literal[
 ]
 
 Backend = Literal[
+    "mcloud",
     "modular",
     "modular-chat",
     "sglang",
@@ -601,6 +603,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     warmup_oversample_factor: int = Field(
         default=8,
         description="Warmup-candidate pool multiplier (sessions per warmup slot). 0 disables length-biased warmup; 1 = uniform random turn warmup; >=2 = length-biased warmup.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_concurrency: int = Field(
+        default=128,
+        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
         json_schema_extra={"group": "Traffic Control"},
     )
 

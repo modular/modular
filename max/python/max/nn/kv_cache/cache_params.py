@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import reduce
 from operator import mul
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
@@ -30,6 +30,13 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups
 from .input_types import KVCacheInputs, KVCacheInputsPerDevice
+
+# Mirror of max.pipelines.speculative.config.SpeculativeMethod. Defined
+# inline rather than imported because max.pipelines.speculative depends
+# on max.nn (BUILD.bazel), so importing back would create a circular
+# bazel dependency. The two definitions are structurally identical
+# Literals, so mypy treats them as the same type at use sites.
+SpeculativeMethod = Literal["standalone", "eagle", "mtp", "dflash"]
 
 logger = logging.getLogger("max.pipelines")
 
@@ -161,7 +168,19 @@ class KVCacheParamInterface(Protocol):
     n_devices: int
     kv_connector: KVConnectorType | None
     host_kvcache_swap_space_gb: float | None
-    num_eagle_speculative_tokens: int = 0
+    speculative_method: SpeculativeMethod | None = None
+    num_draft_tokens: int = 0
+
+    @property
+    def num_draft_tokens_per_step(self) -> int:
+        """Number of draft tokens written per draft forward.
+
+        One for autoregressive drafts (``eagle``, ``mtp``, ``standalone``);
+        equal to ``num_draft_tokens`` for block drafts (``dflash``).
+        """
+        if self.speculative_method == "dflash":
+            return self.num_draft_tokens
+        return 1
 
     @property
     def bytes_per_block(self) -> int:
@@ -249,8 +268,14 @@ class KVCacheParams(KVCacheParamInterface):
     kvcache_quant_config: KVCacheQuantizationConfig | None = None
     """KVCache quantization config. Currently only FP8 quantization supported."""
 
-    num_eagle_speculative_tokens: int = 0
-    """Number of draft tokens to generate for EAGLE speculative decoding."""
+    speculative_method: SpeculativeMethod | None = None
+    """Speculative decoding method propagated from
+    SpeculativeConfig"""
+
+    num_draft_tokens: int = 0
+    """Total draft tokens generated per speculative iteration.
+
+    Zero when no speculative decoding is configured."""
 
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
@@ -446,28 +471,6 @@ class KVCacheParams(KVCacheParamInterface):
         return shape_per_block
 
     @property
-    def shape_per_staging_block(self) -> list[int]:
-        """Returns the shape of the bf16 staging block for fp8-KV dequant.
-
-        The staging buffer holds exactly ONE layer's worth of bf16 KV data
-        (``num_layers=1``) so that the MOGG op does not allocate 50x more
-        memory than needed for Gemma4-31B (50 layers).  The MOGG op always
-        writes to layer slot 0 regardless of the real layer being processed.
-
-        Returns:
-            ``[kv_dim, 1, page_size, n_kv_heads_per_device, head_dim]`` —
-            note ``num_layers=1`` in position 1.
-        """
-        kv_dim = 2 if not self.is_mla else 1
-        return [
-            kv_dim,
-            1,  # num_layers == 1: single-layer scratch
-            self.page_size,
-            self.n_kv_heads_per_device,
-            self.head_dim,
-        ]
-
-    @property
     def bytes_per_block(self) -> int:
         """Returns the number of bytes per cache block.
 
@@ -567,7 +570,7 @@ class KVCacheParams(KVCacheParamInterface):
         draft_params: KVCacheParams | None = (
             draft_attention_group
             if draft_attention_group is not None
-            else (self if self.num_eagle_speculative_tokens > 0 else None)
+            else (self if self.num_draft_tokens > 0 else None)
         )
 
         return [
@@ -601,13 +604,6 @@ class KVCacheParams(KVCacheParamInterface):
                 kv_scales=BufferType(
                     kv_cache_scale_dtype,
                     shape=["total_num_pages", *self.shape_per_scale_block],
-                    device=device,
-                )
-                if self.quantized_kv_cache
-                else None,
-                kv_staging=BufferType(
-                    DType.bfloat16,
-                    shape=["total_num_pages", *self.shape_per_staging_block],
                     device=device,
                 )
                 if self.quantized_kv_cache
@@ -680,10 +676,8 @@ class KVCacheParams(KVCacheParamInterface):
                 values.append(value)
 
             scales: list[Buffer] | None = None
-            staging: list[Buffer] | None = None
             if self.quantized_kv_cache:
                 scales = []
-                staging = []
                 assert self.kvcache_quant_config is not None
                 scale_dtype = self.kvcache_quant_config.scale_dtype
                 for device in devices:
@@ -693,20 +687,10 @@ class KVCacheParams(KVCacheParamInterface):
                         device=device,
                     )
                     scales.append(scale)
-                    stg = Buffer.zeros(
-                        shape=[
-                            total_num_pages,
-                            *self.shape_per_staging_block,
-                        ],
-                        dtype=DType.bfloat16,
-                        device=device,
-                    )
-                    staging.append(stg)
 
             kv_cache_buffer = KVCacheBuffer(
                 values=values,
                 scales=scales,
-                staging=staging,
                 total_num_pages=total_num_pages,
             )
             kv_cache_buffers.append(kv_cache_buffer)
@@ -730,7 +714,8 @@ class MultiKVCacheParams(KVCacheParamInterface):
     n_devices: int
     kv_connector: KVConnectorType | None
     host_kvcache_swap_space_gb: float | None
-    num_eagle_speculative_tokens: int = 0
+    speculative_method: SpeculativeMethod | None = None
+    num_draft_tokens: int = 0
 
     @classmethod
     def from_params(cls, *params: KVCacheParams) -> MultiKVCacheParams:
@@ -758,7 +743,8 @@ class MultiKVCacheParams(KVCacheParamInterface):
             n_devices=params[0].n_devices,
             kv_connector=params[0].kv_connector,
             host_kvcache_swap_space_gb=params[0].host_kvcache_swap_space_gb,
-            num_eagle_speculative_tokens=params[0].num_eagle_speculative_tokens,
+            speculative_method=params[0].speculative_method,
+            num_draft_tokens=params[0].num_draft_tokens,
         )
 
     def __post_init__(self) -> None:
@@ -800,12 +786,16 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 f"All params must use the same host_kvcache_swap_space_gb, got: {host_kvcache_swap_space_gb}"
             )
 
-        num_eagle_speculative_tokens = {
-            p.num_eagle_speculative_tokens for p in self.params
-        }
-        if len(num_eagle_speculative_tokens) > 1:
+        speculative_methods = {p.speculative_method for p in self.params}
+        if len(speculative_methods) > 1:
             raise ValueError(
-                f"All params must use the same num_eagle_speculative_tokens, got: {num_eagle_speculative_tokens}"
+                f"All params must use the same speculative_method, got: {speculative_methods}"
+            )
+
+        num_draft_tokens_set = {p.num_draft_tokens for p in self.params}
+        if len(num_draft_tokens_set) > 1:
+            raise ValueError(
+                f"All params must use the same num_draft_tokens, got: {num_draft_tokens_set}"
             )
 
     @property

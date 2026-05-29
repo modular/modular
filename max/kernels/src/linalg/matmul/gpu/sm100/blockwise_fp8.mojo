@@ -92,6 +92,11 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    # B-scale N-direction block size; defaults to 128 to match the
+    # original DeepSeek-style (n_g=k_g=128) callers. Set to a smaller
+    # value (e.g. 64) when N-direction scale granularity is finer than
+    # the kernel's BK.
+    b_scaling_block_n: Int = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
@@ -138,7 +143,11 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime b_scales_k = b_scales_layout.shape[1].value()
     comptime a_scales_k = a_scales_layout.shape[1].value()
 
-    comptime B_SCALING_BLOCK_N = N // b_scales_n
+    # B-scale N-direction block size is supplied by the caller via
+    # `b_scaling_block_n` (defaults to 128). It cannot be derived from
+    # `N // b_scales_n` because N is not required to be a multiple of
+    # the scale block size (the last N-block can be partial).
+    comptime B_SCALING_BLOCK_N = b_scaling_block_n
     comptime B_SCALING_BLOCK_K = K // b_scales_k
     comptime A_SCALING_BLOCK = K // a_scales_k
 
@@ -357,13 +366,17 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
             var b_scale: Scalar[b_scales_type]
 
-            comptime if BN != BK:
+            # N-direction scale block size is independent of BK_kernel;
+            # derive it from the b_scales layout (set by the caller).
+            comptime if BN != B_SCALING_BLOCK_N:
                 var global_n = block_idx.x * BN
 
-                var begin_n = min(BN, BK - umod(global_n, BK))
+                var begin_n = min(
+                    BN, B_SCALING_BLOCK_N - umod(global_n, B_SCALING_BLOCK_N)
+                )
                 comptime end_n = BN  # if N % BN !=0 then it should be  min(BN, N - block_idx.x * BN)
 
-                var idx0 = ufloordiv(global_n, BK)
+                var idx0 = ufloordiv(global_n, B_SCALING_BLOCK_N)
                 var next_n = begin_n if begin_n < end_n else BN
 
                 if ld_iter < (next_n // 8):
@@ -503,6 +516,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    b_scaling_block_n: Int = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
@@ -547,6 +561,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         b_swizzle=b_swizzle,
         num_threads=num_threads,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        b_scaling_block_n=b_scaling_block_n,
     ](
         a_tma_op,
         b_tma_op,
@@ -658,7 +673,10 @@ def matmul_sm100_blockwise_scaled_fp8[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    comptime assert BK == 128, "blockwise scaled fp8 only works with BK = 128"
+    comptime assert BK in (
+        64,
+        128,
+    ), "blockwise scaled fp8 only supports BK in (64, 128)"
 
     var M = c_lt.dim(0)
     var N = c_lt.dim(1)
@@ -668,15 +686,18 @@ def matmul_sm100_blockwise_scaled_fp8[
     var a_scales_dim1 = a_scales_3D.dim(2)
     var b_scales_dim1 = b_scales_lt.dim(1)
 
+    # The K-direction scale granularity is fixed at BK
+    # (k_scale_granularity == BK). The N-direction granularity may be
+    # finer and is independent of BK_kernel.
     if (
         a_scales_dim0 != b_scales_dim1
         or K % a_scales_dim0 != 0
         or (K // a_scales_dim0) != BK
     ):
         raise Error(
-            "a_scales_3D.dim(1) must be equal to b_scales.dim(1) and K must be"
-            " divisible by a_scales.dim(0) and (K // a_scales.dim(0)) must be"
-            " equal to 128"
+            "a_scales_3D.dim(1) must equal b_scales.dim(1), K must be"
+            " divisible by a_scales.dim(1), and (K // a_scales.dim(1)) must"
+            " equal BK."
         )
 
     var padding_size = 16 // size_of[a_scales_type]()

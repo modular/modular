@@ -195,7 +195,7 @@ def _assemble_stream_tool_args(chunks: list[str]) -> dict[int, str]:
         if not cd:
             continue
         delta = _get_delta(cd)
-        for tc in delta.get("tool_calls", []):
+        for tc in delta.get("tool_calls") or []:
             idx = tc.get("index", 0)
             fn_args = (tc.get("function") or {}).get("arguments", "")
             args_by_index.setdefault(idx, "")
@@ -214,7 +214,7 @@ def _get_stream_tool_names(chunks: list[str]) -> list[str]:
         if not cd:
             continue
         delta = _get_delta(cd)
-        for tc in delta.get("tool_calls", []):
+        for tc in delta.get("tool_calls") or []:
             name = (tc.get("function") or {}).get("name")
             if name:
                 names.append(name)
@@ -1753,7 +1753,8 @@ class ProviderBaseline(BaseScenario):
             **self._exchange_verbose(pl_large, resp),
         )
 
-        # OR: DeveloperRole — status_ok (200 or 400 accepted)
+        # OR: DeveloperRole — must be accepted (normalized to system at the
+        # OpenAI-compat route layer per OpenAI model spec compatibility).
         pl_dev = self._req(
             model,
             None,
@@ -1766,15 +1767,18 @@ class ProviderBaseline(BaseScenario):
             ],
         )
         resp = await client.post_json(pl_dev)
-        if resp.status in (200, 400):
+        if resp.status == 200:
             v, d = (
                 Verdict.PASS,
-                f"Status {resp.status} (developer role accepted or gracefully rejected)",
+                "Status 200 (developer role normalized to system)",
             )
         elif resp.status >= 500:
             v, d = Verdict.FAIL, f"Server error {resp.status}"
         else:
-            v, d = Verdict.INTERESTING, f"Status {resp.status}"
+            v, d = (
+                Verdict.FAIL,
+                f"Status {resp.status} (developer role should be accepted)",
+            )
         result(
             "developer-role",
             v,

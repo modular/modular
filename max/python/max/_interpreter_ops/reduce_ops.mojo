@@ -73,7 +73,7 @@ comptime ReduceFn = def[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -90,7 +90,7 @@ def _reduce_max[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -114,7 +114,7 @@ def _reduce_min[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -138,7 +138,7 @@ def _reduce_sum[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -162,7 +162,7 @@ def _reduce_mean[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -192,7 +192,7 @@ def _reduce_mul[
     input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
         dtype, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
@@ -421,7 +421,7 @@ def reduce_op[
     @parameter
     @__copy_capture(out_ptr, outStride0)
     def output_fn[
-        width: Int, rank: Int
+        width: SIMDSize, rank: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]):
         var c = rebind[IndexList[3]](coords)
         var flat_idx = c[0] * outStride0 + c[2]

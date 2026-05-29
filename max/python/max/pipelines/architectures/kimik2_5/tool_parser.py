@@ -34,6 +34,7 @@ from typing import Any
 from llguidance import LLMatcher
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
+    names_from_tools,
     register,
 )
 from max.pipelines.modeling.types import ParsedToolCall
@@ -44,6 +45,25 @@ TOOL_CALLS_SECTION_END = "<|tool_calls_section_end|>"
 TOOL_CALL_BEGIN = "<|tool_call_begin|>"
 TOOL_CALL_END = "<|tool_call_end|>"
 TOOL_CALL_ARGUMENT_BEGIN = "<|tool_call_argument_begin|>"
+
+# Bounds on the constrained-decoding grammar quantifiers. Without these,
+# a model can spin emitting digits in the call index or an unbounded
+# number of back-to-back calls, holding a GPU slot until ``max_tokens``.
+# The argument body is intentionally unbounded — tool arguments can be
+# arbitrarily large (e.g. code blobs, embedded documents, search-result
+# payloads being re-emitted) and a fixed cap would silently drop them.
+# The ``max_tokens`` ceiling is the only meaningful upper bound there.
+_MAX_TOOL_CALL_INDEX_DIGITS = 8  # up to 99_999_999 tool calls per turn
+_MAX_TOOL_CALLS_PER_SECTION = 64
+_MAX_TOOL_CALL_SECTIONS = 1
+
+# JSON string pattern for the tool-call body regex. Matches a complete
+# JSON string including proper escape-sequence handling: any character
+# except quote/backslash, or a backslash followed by any character.
+# This allows ``<`` inside strings (e.g. ``"if (x < y)"`` or HTML/XML)
+# while still rejecting ``<`` outside strings where it signals the
+# closing structural tag ``<|tool_call_end|>``.
+_JSON_STRING_PATTERN = r'"(?:[^"\\]|\\.)*"'
 
 # Regex for one ``<|tool_call_begin|>...<|tool_call_end|>`` body. The
 # function id and arguments are captured; the call markers are anchored.
@@ -160,31 +180,58 @@ class KimiToolParser(StructuralTagToolParser):
 
     @staticmethod
     def _build_tool_call_regex(tool_names: list[str] | None = None) -> str:
-        """Builds the regex pattern for Kimi tool calls."""
+        """Builds the regex pattern for Kimi tool calls.
+
+        The count-style fields (call index digits, calls per section,
+        sections per response, function-name fallback length) are
+        bounded so a model cannot hold a GPU slot until ``max_tokens``
+        by spinning inside them; see the ``_MAX_TOOL_CALL_*`` constants
+        for the limits and rationale. The argument body quantifier is
+        intentionally unbounded — real tool arguments can be
+        arbitrarily large (code blobs, embedded documents, search-
+        result payloads being re-emitted), and ``max_tokens`` is the
+        only meaningful upper bound there. Real argument validation
+        still happens at parse time; the regex only enforces structural
+        framing.
+
+        The body pattern is JSON-string-aware: ``<`` is allowed inside
+        quoted strings (e.g. ``"if (x < y)"`` or HTML/XML content) but
+        rejected outside strings where it would signal the start of a
+        structural tag like ``<|tool_call_end|>``. This enables tool
+        arguments containing code comparisons, markup, or git diffs
+        without triggering premature tag detection.
+
+        With ``_MAX_TOOL_CALL_SECTIONS == 1`` the outer ``{1,1}``
+        quantifier is a structural no-op kept for readability. Bumping
+        it re-enables multiple back-to-back sections (Kimi emits these
+        when interleaving thinking with batches of calls).
+        """
         if tool_names is not None:
             escaped_names = [re.escape(name) for name in tool_names]
             func_name_pattern = "(" + "|".join(escaped_names) + ")"
         else:
-            func_name_pattern = r"[a-zA-Z0-9_-]+"
+            # Fallback for the no-menu case: cap the name length so a
+            # spinning model can't pad the identifier forever.
+            func_name_pattern = r"[a-zA-Z0-9_-]{1,128}"
 
-        # Permissive JSON pattern: any sequence of non-'<' characters
-        # between braces. Real validation happens at parse time.
-        return (
+        single_section = (
             rf"{re.escape(TOOL_CALLS_SECTION_BEGIN)}"
             r"("
             rf"{re.escape(TOOL_CALL_BEGIN)}"
-            rf"functions\.{func_name_pattern}:[0-9]+"
+            rf"functions\.{func_name_pattern}:[0-9]{{1,{_MAX_TOOL_CALL_INDEX_DIGITS}}}"
             rf"{re.escape(TOOL_CALL_ARGUMENT_BEGIN)}"
-            r"\{[^<]*\}"
+            rf"\{{(?:[^\"<]|{_JSON_STRING_PATTERN})*\}}"
             rf"{re.escape(TOOL_CALL_END)}"
-            r")+"
+            rf"){{1,{_MAX_TOOL_CALLS_PER_SECTION}}}"
             rf"{re.escape(TOOL_CALLS_SECTION_END)}"
         )
+        return rf"({single_section}){{1,{_MAX_TOOL_CALL_SECTIONS}}}"
 
     @staticmethod
     def generate_tool_call_grammar(
-        tool_names: list[str] | None = None,
         response_format_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
     ) -> str:
         """Generates a grammar for constrained decoding of Kimi tool calls.
 
@@ -192,6 +239,7 @@ class KimiToolParser(StructuralTagToolParser):
         Lark grammar that accepts either tool calls or JSON content
         matching the schema (the model's first tokens select the branch).
         """
+        tool_names = names_from_tools(tools)
         tool_call_regex = KimiToolParser._build_tool_call_regex(tool_names)
 
         if response_format_schema is None:

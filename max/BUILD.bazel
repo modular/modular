@@ -10,6 +10,7 @@ package_group(
     name = "consumers",
     packages = [
         "//",  # root BUILD.bazel file
+        "//Faux/...",
         "//GraphCompiler/...",
         "//Kernels/...",
         "//SDK/...",

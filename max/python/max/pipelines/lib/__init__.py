@@ -86,10 +86,6 @@ from .sampling import (
     rejection_sampler_with_residuals,
     token_sampler,
 )
-from .speculative_decoding import (
-    SpeculativeDecodingPipelineBase,
-    StandaloneSpeculativeDecodingPipeline,
-)
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
@@ -137,7 +133,6 @@ __all__ = [
     "SamplingConfig",
     "SpeculativeConfig",
     "SpeechTokenGenerationPipeline",
-    "StandaloneSpeculativeDecodingPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TextAndVisionTokenizer",

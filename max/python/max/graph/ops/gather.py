@@ -68,7 +68,7 @@ def gather_nd(
     """Selects elements out of an input tensor by N-dimensional index.
 
     This operation performs N-dimensional indexing into ``input`` using ``indices``.
-    Unlike :obj:`gather()`, which indexes along a single axis, ``gather_nd()`` allows
+    Unlike :func:`gather`, which indexes along a single axis, ``gather_nd()`` allows
     indexing along multiple dimensions simultaneously.
 
     .. code-block:: python

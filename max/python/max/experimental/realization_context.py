@@ -675,9 +675,6 @@ class GraphRealizationContext(RealizationContext):
     Unlike eager contexts, this context does not support executing operations
     immediately. Attempting to realize tensors will raise a TypeError.
 
-    Attributes:
-        graph: The graph being constructed in this context.
-
     Example::
 
         graph = Graph("my_model", input_types=[TensorType(...)])
@@ -689,6 +686,7 @@ class GraphRealizationContext(RealizationContext):
     """
 
     graph: Graph
+    """The graph being constructed in this context."""
     signal_buffers: list[BufferValue] | None
 
     def __init__(

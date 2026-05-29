@@ -37,7 +37,11 @@ from max.graph import (
     ops,
 )
 from max.nn.comm import Signals
-from max.nn.kernels import eagle_prefill_shift_tokens
+from max.nn.kernels import (
+    eagle_prefill_shift_tokens,
+    inplace_memcpy,
+    wait_host_value_with_dep,
+)
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
@@ -53,12 +57,12 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
-from max.pipelines.lib.config import SpeculativeConfig
-from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
-    RaggedTokenMerger,
-    shape_to_scalar,
-)
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.speculative.ragged_token_merger import (
+    RaggedTokenMerger,
+    _shape_to_scalar,
+)
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
 from ..deepseekV3.model_config import DeepseekV3Config
@@ -148,7 +152,9 @@ class Eagle3MHAKimiK25Unified(Module):
         image_token_indices: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
-        token_bitmasks: TensorValue | None = None,
+        pinned_bitmask: TensorValue | None = None,
+        wait_payload: BufferValue | None = None,
+        device_bitmask_scratch: BufferValue | None = None,
     ) -> tuple[TensorValue, ...]:
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
@@ -218,6 +224,50 @@ class Eagle3MHAKimiK25Unified(Module):
         logits = target_outputs[1]
         hidden_states = list(target_outputs[3 : 3 + n_devs])
 
+        # Constrained-decoding overlap: gate the model stream on the
+        # async callback's release-store to ``wait_payload``, then
+        # in-graph H2D from pinned host memory to
+        # ``device_bitmask_scratch``. The sampler reads the scratch.
+        # ``device_bitmask_scratch`` is threaded through the wait as
+        # a fake mutable operand so the graph compiler / cuGraph
+        # capture serialises the memcpy after the wait (both ops
+        # mutate the same buffer). The triple is all-or-none.
+        if not (
+            (pinned_bitmask is None)
+            == (wait_payload is None)
+            == (device_bitmask_scratch is None)
+        ):
+            raise ValueError(
+                "pinned_bitmask, wait_payload, and device_bitmask_scratch "
+                "must be either all None or all non-None; got "
+                f"pinned_bitmask={'set' if pinned_bitmask is not None else 'None'}, "
+                f"wait_payload={'set' if wait_payload is not None else 'None'}, "
+                f"device_bitmask_scratch={'set' if device_bitmask_scratch is not None else 'None'}"
+            )
+        effective_bitmasks: TensorValue | None = None
+        if (
+            pinned_bitmask is not None
+            and wait_payload is not None
+            and device_bitmask_scratch is not None
+        ):
+            wait_host_value_with_dep(
+                wait_payload, device_bitmask_scratch, device=devices[0]
+            )
+            inplace_memcpy(device_bitmask_scratch, pinned_bitmask)
+            # Trim the persistent buffer's worst-case
+            # ``num_speculative_tokens + 1`` rows down to
+            # ``num_steps + 1`` so the acceptance sampler's rebind
+            # to ``num_steps + 1`` lines up. Position ``i`` of the
+            # bitmask holds the FSM state with ``i`` drafts
+            # consumed, so positions ``0..num_steps`` cover the
+            # ``num_steps`` draft-verification slots plus the bonus
+            # slot at index ``num_steps``; the target never emits
+            # logits for the trailing rows this iter.
+            num_steps_plus_one = draft_tokens.shape[1] + 1
+            effective_bitmasks = device_bitmask_scratch[
+                :, :num_steps_plus_one, :
+            ]
+
         seed_scalar = seed[0]
         first_rejected, recovered, bonus = self.acceptance_sampler(
             draft_tokens,
@@ -229,7 +279,7 @@ class Eagle3MHAKimiK25Unified(Module):
             top_p=top_p,
             min_top_p=min_top_p,
             in_thinking_phase=in_thinking_phase,
-            token_bitmasks=token_bitmasks,
+            token_bitmasks=effective_bitmasks,
         )
 
         target_tokens = ops.concat([recovered, bonus], axis=1)
@@ -255,6 +305,10 @@ class Eagle3MHAKimiK25Unified(Module):
 
         assert draft_kv_collections is not None
 
+        draft0_kv_collections = [
+            _patch_draft0_kv_cache(kv) for kv in draft_kv_collections
+        ]
+
         # Step 0: ALL hidden states + VARIABLE logits.
         self.draft.return_hidden_states = ReturnHiddenStates.ALL
         self.draft.return_logits = ReturnLogits.VARIABLE
@@ -262,7 +316,7 @@ class Eagle3MHAKimiK25Unified(Module):
             shifted_corrected,
             hidden_states,
             signal_buffers,
-            draft_kv_collections,
+            draft0_kv_collections,
             return_n_logits,
             merged_offsets_per_dev,
             host_merged_offsets,
@@ -291,7 +345,9 @@ class Eagle3MHAKimiK25Unified(Module):
         hidden_dim = self.draft.config.hidden_size
 
         last_idx = merged_offsets[1:] - 1
-        num_draft_sentinel_gpu = shape_to_scalar(draft_tokens.shape[1], device0)
+        num_draft_sentinel_gpu = _shape_to_scalar(
+            draft_tokens.shape[1], device0
+        )
         last_accepted_idx = (
             ops.rebind(last_idx, ["batch_size"])
             - num_draft_sentinel_gpu.broadcast_to(["batch_size"])
@@ -450,7 +506,8 @@ class Eagle3MHAKimiK25Unified(Module):
             + cache_lengths + lookup_table + max_lengths +
             attention_dispatch_metadata + draft_attention_dispatch_metadata),
             seed, temperature, top_k, max_k, top_p, min_top_p,
-            in_thinking_phase, [token_bitmasks].
+            in_thinking_phase, [pinned_bitmask, wait_payload,
+            device_bitmask_scratch].
 
         The draft cache contributes its own per-device dispatch metadata
         (one buffer for the q_max_seq_len = ``1 + num_speculative_tokens``
@@ -591,12 +648,57 @@ class Eagle3MHAKimiK25Unified(Module):
             ]
         )
 
+        # Constrained-decoding bitmask triple (pinned host bitmask +
+        # wait_payload + device scratch). The pinned input is declared
+        # on CPU per the engine's input binding rule.
+        # ``num_bitmask_positions = num_speculative_tokens + 1``.
         if self.enable_structured_output:
-            token_bitmasks_type = TensorType(
+            pinned_bitmask_type = TensorType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=DeviceRef.CPU(),
+            )
+            wait_payload_type = BufferType(
+                DType.int64,
+                shape=[2],
+                device=DeviceRef.CPU(),
+            )
+            device_bitmask_scratch_type = BufferType(
                 DType.bool,
                 shape=["batch_size", "num_bitmask_positions", "vocab_size"],
                 device=device_ref,
             )
-            all_input_types.append(token_bitmasks_type)
+            all_input_types.extend(
+                [
+                    pinned_bitmask_type,
+                    wait_payload_type,
+                    device_bitmask_scratch_type,
+                ]
+            )
 
         return tuple(all_input_types)
+
+
+# TODO(SERVOPT-1437): This is a temporary patch, until we have a proper way
+# to pass the draft0 attention dispatch metadata.
+def _patch_draft0_kv_cache(kv: PagedCacheValues) -> PagedCacheValues:
+    """Returns ``kv`` with ``attention_dispatch_metadata`` re-sized for the
+    unified-eagle draft's step-0 prefill.
+
+    The unified-eagle graph calls the draft twice per spec-decode step:
+      1. First on a merged prefill sequence whose per-ctx q is larger than 1,
+      2. Then on single-token decode steps where q == 1.
+
+    The ``cache_manager`` resolves ``draft_attention_dispatch_metadata`` with
+    ``max_prompt_length == 1``, which is the correct width for the
+    decode steps, but not for prefill. This function patches the metadata
+    to the correct width for the prefill step.
+    """
+    decode_md = kv.draft_attention_dispatch_metadata
+    assert decode_md is not None
+    step0_max_prompt = kv.max_lengths[0, 0].cast(DType.int64).reshape([1]) + 1
+    step0_md = ops.concat(
+        [decode_md[0:1], step0_max_prompt, decode_md[2:4]],
+        axis=0,
+    )
+    return replace(kv, attention_dispatch_metadata=step0_md)

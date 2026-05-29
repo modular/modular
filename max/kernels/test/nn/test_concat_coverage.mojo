@@ -271,7 +271,7 @@ def test_fused_concat_cpu() raises:
     @always_inline
     @__copy_capture(output)
     def output_fn[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
@@ -392,7 +392,7 @@ def test_concat_with_epilogue() raises:
     @always_inline
     @__copy_capture(output)
     def epilogue_add_10[
-        c_type: DType, _rank: Int, width: Int, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank

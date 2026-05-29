@@ -17,6 +17,9 @@ from collections.abc import AsyncGenerator
 from typing import Any, cast
 
 from max.pipelines.core import TextContext, TTSContext
+from max.pipelines.diffusion.pipeline import (
+    PixelGenerationPipeline,
+)
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import (
     EmbeddingsPipelineType,
@@ -25,9 +28,6 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
-)
-from max.pipelines.lib.pipeline_variants.pixel_generation import (
-    PixelGenerationPipeline,
 )
 from max.pipelines.modeling.types import (
     AudioGenerationOutput,

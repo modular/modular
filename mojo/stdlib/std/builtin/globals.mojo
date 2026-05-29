@@ -16,6 +16,8 @@ This module provides helper functions for efficiently creating references to
 compile-time constants without materializing entire data structures in memory.
 """
 
+from std.memory import is_trivially_copyable, is_trivially_destructible
+
 
 def global_constant[
     T: Copyable & ImplicitlyDestructible, //, value: T
@@ -36,8 +38,8 @@ def global_constant[
 
     Parameters:
         T: The type of the constant value. Must have trivial copy and destroy
-            semantics (`__copy_ctor_is_trivial` and `__del__is_trivial` must be
-            `True`).
+            semantics (`is_trivially_copyable[T]()` and
+            `is_trivially_destructible[T]()` must be `True`).
         value: The compile-time constant value.
 
     Returns:
@@ -61,7 +63,9 @@ def global_constant[
     print(data_ref[0], data_ref[1], data_ref[2])  # Prints: 1 11 100
     ```
     """
-    comptime assert T.__copy_ctor_is_trivial and T.__del__is_trivial, (
+    comptime assert (
+        is_trivially_copyable[T]() and is_trivially_destructible[T]()
+    ), (
         "global_constant requires a type with trivial copy and destroy"
         " semantics. Types with heap allocations like Dict, List, or String"
         " are not supported because their internal pointers would be"

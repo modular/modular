@@ -17,6 +17,12 @@ This version is still a work in progress.
 
 ### Inference server
 
+- MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
+  normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
+  o1/o3 chat-completion spec uses `developer` in place of `system`, and
+  recent OpenAI SDKs emit it by default. The previous behavior rejected
+  the request with a 422 (`literal_error` on the message role).
+
 - Fixed `CreateChatCompletionRequest` rejecting explicit `null` values for
   optional fields such as `tool_choice`, `tools`, and `response_format`.
   OpenAI-compatible clients (LangChain, JS SDKs, anything that serializes
@@ -119,6 +125,22 @@ This version is still a work in progress.
   or `Device.__unsafe_enqueue_async_py_host_func` to issue the host
   work whose completion the consumer waits on.
 
+- Added two new nanobind types to `max._core.engine` that split the
+  compile-and-load pipeline at the type level:
+
+  - `CompiledModels` represents the compile artifact returned by
+    `compile_from_path` / `compile_from_object` on the
+    `max._core.engine.InferenceSession` binding (these methods don't exist on
+    the public `max.engine.InferenceSession` class). It holds the MEF bytes
+    and one or more sub-models; it is not directly executable.
+  - `ModelMetadata` exposes per-sub-model metadata (`name`,
+    `input_metadata`, `output_metadata`) and is yielded by iterating a
+    `CompiledModels` or indexing it with `[i]`.
+
+  `Model` continues to represent the runnable, post-init handle (still
+  produced by `InferenceSession._load_all`). The high-level
+  `max.engine.CompiledModel` wrapper now holds a `CompiledModels` instance
+  internally.
 - Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
   per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
   in `max.experimental.realization_context`). The previous 512 MiB scratch
@@ -240,6 +262,15 @@ This version is still a work in progress.
   has been removed.
 
 ## Fixes
+
+- Fixed an expert-parallelism dispatch assertion (`Cannot dispatch EP
+  kernel with N input tokens when the maximum tokens per rank is N-1`)
+  that fired whenever `--max-batch-input-tokens` was not evenly
+  divisible by the tensor-parallel degree. The EP per-rank cap now uses
+  ceiling division to match the ragged binning of `reducescatter` in
+  TP-attention + EP-MoE mode, so the largest shard fits in the
+  dispatch buffer. Affects DeepSeek-V3, Kimi-K2.5, MiniMax-M2, Qwen3,
+  and Step3.5 deployments configured with non-divisible batch sizes.
 
 - `MODULAR_DEBUG=ir-output-dir=<dir>` (and the equivalent
   `[max-debug] ir-output-dir = <dir>` config-file entry and

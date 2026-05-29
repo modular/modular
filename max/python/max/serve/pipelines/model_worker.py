@@ -33,6 +33,7 @@ from max.dtype import DType
 from max.experimental.nn._compilation_timer import collect_compilation_stats
 from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.lib import PipelineConfig, PipelineModel
+from max.pipelines.lib.lora_request_processor import LoRARequestProcessor
 from max.pipelines.modeling.types import (
     BaseContextType,
     Pipeline,
@@ -168,6 +169,7 @@ class ModelWorker:
         model_worker_interface: ModelWorkerInterface[
             BaseContextType, PipelineOutputType
         ],
+        zmq_endpoint_base: str,
         spawn_start_wall_ts: float | None = None,
     ) -> None:
         """Runs a model worker process.
@@ -181,6 +183,8 @@ class ModelWorker:
             pipeline_config: The config for the pipeline
             settings: Global server settings
             metric_client_factory: Factory function to create metric client
+            zmq_endpoint_base: Prefix for ZMQ IPC endpoints shared between
+                the API server process and this worker process.
             spawn_start_wall_ts: ``time.time()`` recorded in the parent just
                 before spawning this worker. Used to log how long the worker
                 process took to start (Python imports + driver init), which
@@ -328,18 +332,20 @@ class ModelWorker:
 
             # Get the reset prefix cache backend.
             reset_prefix_cache_backend, kv_cache = (
-                get_reset_prefix_cache_backend(
-                    pipeline, pipeline_config.runtime.zmq_endpoint_base
-                )
+                get_reset_prefix_cache_backend(pipeline, zmq_endpoint_base)
             )
 
-            # Maybe retrieve LoRA manager.
-            lora_manager = None
+            # Maybe retrieve LoRA manager and construct the ZMQ request processor.
+            lora_request_processor = None
             pipeline_model = get_pipeline_model(pipeline)
             if pipeline_config.lora:
                 assert pipeline_model is not None
                 lora_manager = pipeline_model.lora_manager
                 assert lora_manager is not None
+                lora_request_processor = LoRARequestProcessor(
+                    lora_manager,
+                    zmq_endpoint_base,
+                )
 
             # Mark the start of the process, and run the scheduler.
             logger.debug("Started model worker!")
@@ -348,8 +354,8 @@ class ModelWorker:
             while True:
                 alive.set()
                 # Checks for new LoRA requests and processes them.
-                if lora_manager is not None:
-                    lora_manager.process_lora_requests()
+                if lora_request_processor is not None:
+                    lora_request_processor.process_lora_requests()
                 # Check for request to reset prefix cache.
                 if (
                     reset_prefix_cache_backend is not None
@@ -381,6 +387,7 @@ class ModelWorker:
         model_worker_interface: ModelWorkerInterface[
             BaseContextType, PipelineOutputType
         ],
+        zmq_endpoint_base: str,
         spawn_start_wall_ts: float | None = None,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
@@ -395,6 +402,8 @@ class ModelWorker:
             pipeline_config: The config for the pipeline
             settings: Global server settings
             metric_client_factory: Factory for creating metric client instances
+            zmq_endpoint_base: Prefix for ZMQ IPC endpoints shared between
+                the API server process and this worker process.
         """
         try:
             uvloop.run(
@@ -405,6 +414,7 @@ class ModelWorker:
                     settings,
                     metric_client_factory,
                     model_worker_interface,
+                    zmq_endpoint_base,
                     spawn_start_wall_ts,
                 )
             )
@@ -425,6 +435,7 @@ async def start_model_worker(
     model_worker_interface: ModelWorkerInterface[
         BaseContextType, PipelineOutputType
     ],
+    zmq_endpoint_base: str,
 ) -> AsyncGenerator[ModelWorkerProxy[BaseContextType, PipelineOutputType]]:
     """Starts a model worker and associated process.
 
@@ -433,6 +444,9 @@ async def start_model_worker(
         pipeline_config: The config for the pipeline
         settings: Global server settings
         metric_client: Metric client for recording metrics
+        model_worker_interface: Interface for communicating with the worker
+        zmq_endpoint_base: Prefix for ZMQ IPC endpoints shared between
+            the API server process and the worker process.
 
     Returns:
         AsyncIterator[Worker]: Iterator to model worker.
@@ -455,6 +469,7 @@ async def start_model_worker(
             settings,
             metric_client.cross_process_factory(settings),
             model_worker_interface,
+            zmq_endpoint_base,
             spawn_start_wall_ts,
         )
 

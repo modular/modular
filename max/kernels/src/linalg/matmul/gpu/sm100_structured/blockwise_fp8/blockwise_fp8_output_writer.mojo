@@ -151,6 +151,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         c_tma_op: TMATensorTile[
@@ -181,6 +182,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         c_tma_op: TMATensorTile[
@@ -288,6 +290,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         m_abs: UInt32,
@@ -325,6 +328,7 @@ struct BlockwiseFP8TileWriter[
             Self.block_tile_shape,
             Self.mma_shape,
             cluster_size,
+            _,
         ],
         c_tiles: Self.CTileArray,
         m_abs: UInt32,

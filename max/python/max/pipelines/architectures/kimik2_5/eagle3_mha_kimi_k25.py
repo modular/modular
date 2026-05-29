@@ -440,6 +440,14 @@ class Eagle3MHAKimiK25(Module):
         ret_val: tuple[TensorValue, ...] = (last_logits,)
 
         if self.return_logits == ReturnLogits.VARIABLE:
+            # Compute the range on device 0 and broadcast to all
+            # devices. Using distributed_broadcast instead of per-device
+            # .to() copies avoids cross-stream D2D event sync that
+            # breaks CUDA graph capture. Per-device ops.range with a
+            # shared out_dim was also attempted and hit "input device
+            # gpu:0 must match result device gpu:1 in rebind()" — the
+            # shared symbolic dim triggers a cross-device rebind
+            # downstream.
             draft_return_n_logits_range = ops.range(
                 start=return_n_logits[0],
                 stop=0,
@@ -448,50 +456,31 @@ class Eagle3MHAKimiK25(Module):
                 dtype=DType.int64,
                 device=devices[0],
             )
-            if self.use_data_parallel_attention:
-                draft_return_n_logits_range_per_dev = ops.distributed_broadcast(
-                    draft_return_n_logits_range, signal_buffers
+            draft_return_n_logits_range_per_dev = ops.distributed_broadcast(
+                draft_return_n_logits_range, signal_buffers
+            )
+            variable_per_dev: list[TensorValue] = []
+            for dev_idx in range(num_devices):
+                dev_offsets = (
+                    ops.unsqueeze(input_row_offsets_[dev_idx][1:], -1)
+                    - draft_return_n_logits_range_per_dev[dev_idx]
                 )
-                variable_per_dev: list[TensorValue] = []
-                for dev_idx in range(num_devices):
-                    dev_offsets = (
-                        ops.unsqueeze(input_row_offsets_[dev_idx][1:], -1)
-                        - draft_return_n_logits_range_per_dev[dev_idx]
-                    )
-                    variable_per_dev.append(
-                        ops.gather(
-                            hs[dev_idx],
-                            ops.reshape(dev_offsets, shape=(-1,)),
-                            axis=0,
-                        )
-                    )
-                variable_distributed = ops.allgather(
+                dev_indices = ops.reshape(dev_offsets, shape=(-1,))
+                variable_per_dev.append(
+                    ops.gather(hs[dev_idx], dev_indices, axis=0)
+                )
+            if self.use_data_parallel_attention:
+                variable_per_dev = ops.allgather(
                     variable_per_dev, signal_buffers
                 )
-                norm_variable = forward_sharded_layers(
-                    self.norm_shards, variable_distributed
-                )
-                variable_logits = ops.cast(
-                    self.lm_head(norm_variable, signal_buffers)[0],
-                    DType.float32,
-                )
-            else:
-                last_offsets = (
-                    ops.unsqueeze(input_row_offsets_[0][1:], -1)
-                    - draft_return_n_logits_range
-                )
-                last_indices = ops.reshape(last_offsets, shape=(-1,))
-                variable_logits = ops.gather(
-                    ops.cast(
-                        self.lm_head(
-                            forward_sharded_layers(self.norm_shards, hs),
-                            signal_buffers,
-                        )[0],
-                        DType.float32,
-                    ),
-                    last_indices,
-                    axis=0,
-                )
+
+            variable_logits = ops.cast(
+                self.lm_head(
+                    forward_sharded_layers(self.norm_shards, variable_per_dev),
+                    signal_buffers,
+                )[0],
+                DType.float32,
+            )
             logit_offsets = ops.range(
                 0,
                 TensorValue(variable_logits.shape[0]) + return_n_logits[0],

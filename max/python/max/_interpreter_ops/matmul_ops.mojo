@@ -390,16 +390,18 @@ def _batch_matmul_shape_for_rank[
         a_shape[i] = a_dims[i]
         b_shape[i] = b_dims[i]
 
-    # Create shape-only InputTensors with null pointers
+    # Create shape-only InputTensors with placeholder pointers — the
+    # shape kernel never dereferences the data, so a dangling pointer
+    # is safe here.
     comptime spec = StaticTensorSpec[DType.float32, rank, ...].get_unknown()
-    var null_ptr = UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
-        unsafe_from_address=0
-    )
+    var placeholder_ptr = UnsafePointer[
+        Scalar[DType.float32], MutAnyOrigin
+    ].unsafe_dangling()
     var a = ManagedTensorSlice[io_spec=Input, static_spec=spec](
-        null_ptr, a_shape
+        placeholder_ptr, a_shape
     )
     var b = ManagedTensorSlice[io_spec=Input, static_spec=spec](
-        null_ptr, b_shape
+        placeholder_ptr, b_shape
     )
 
     return BatchMatmulKernel.shape[rank, DType.float32, DType.float32](a, b)

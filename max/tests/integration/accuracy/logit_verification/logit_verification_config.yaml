@@ -643,6 +643,22 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.4e-01
     kl_div_threshold: 1.1e0
 
+  # Qwen3-4B in text-encoder mode
+  # This simulates the text-encoder ComponentModel in FLUX-Klein models.
+  # The main difference from a prefill run in text-gen mode is that in the
+  # encoder case all prompts are padded to 512 tokens.
+  Qwen/Qwen3-4B-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_1x]
+    pipeline: "Qwen/Qwen3-4B-text-encoder"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/Qwen_Qwen3-4B-text-encoder_golden/1/f5721c1ef348e25a39e3355e3750b188d4a19a568ddba4eb2e476e5929c8f80b/Qwen_Qwen3-4B-text-encoder_golden.tar.gz"
+      json_file: "torch_Qwen_Qwen3-4B-text-encoder_bfloat16_golden.json"
+    tags: [nvidia-only]
+    cos_dist_threshold: .6 # FIXME: Reduce to ~.0015 after MODELS-1490 is closed
+
   # TODO(MODELS-1099): Re-enable once upstream tokenizer is fixed.
   allenai/OLMo-2-1124-7B-float32:
     pre_submit_agents: []
@@ -762,8 +778,11 @@ logit_verification_pipelines:
     compatible_with: [gpu]
     encoding: bfloat16
     tags: []
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_DeepseekV2_golden/2/766f24d143790850ecf71d500360ef1a078c8a66c908f44a35898b237cb61b58/torch_DeepseekV2_golden.tar.gz"
+      json_file: "torch_lite-chat_bfloat16_golden.json"
     cos_dist_threshold: 8.0e-03
-    kl_div_threshold: 1.5e-01
+    kl_div_threshold: 1.9e-01
 
   # TODO(MODELS-812): Investigate deepseek timeout
   kathywu95/deepseek-v3-small-random-bfloat16:
@@ -861,17 +880,19 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.7e-02
     kl_div_threshold: 2.2e+01
 
-  # Same NVFP4 weights as austinpowers/Kimi-K2.5-NVFP4-DeepseekV3, but loaded
-  # from a directory pre-staged on the dedicated prod-2 8xB200 runner. The
-  # `prod-2-8xb200` tag pins this entry to the matching matrix entry in
-  # pipelineVerification.yaml — no other matrix label includes `+prod-2-8xb200`.
+  # Same NVFP4 weights as austinpowers/Kimi-K2.5-NVFP4-DeepseekV3, loaded from
+  # a directory pre-staged on the dedicated prod-2 8xB200 runner. The tags
+  # restrict this pipeline to that runner only: `prod-2-8xb200` matches the
+  # `+prod-2-8xb200` requirement on the prod-2 matrix entry, while
+  # `nvidia-only` and `no-b200` exclude it from the single-B200 and MI355
+  # runners (which do not have the weights staged).
   nvidia/Kimi-K2.5-NVFP4__internal:
     pre_submit_agents: []
     post_submit_agents: []
     pipeline: "nvidia/Kimi-K2.5-NVFP4__internal"
     compatible_with: [gpu]
     encoding: float4_e2m1fnx2
-    tags: [prod-2-8xb200]
+    tags: [prod-2-8xb200, nvidia-only, no-b200]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/nvidia_Kimi-K2.5-NVFP4__internal_golden/1/1e59f3ee02ae446ebcaccb0b1fd4ff7d92122771c9306e5c2e7147ab595045f2/nvidia_Kimi-K2.5-NVFP4__internal_golden.tar.gz"
       json_file: "vllm_nvidia_Kimi-K2.5-NVFP4__internal_float4_e2m1fnx2_golden.json"

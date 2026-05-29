@@ -94,23 +94,28 @@ trait DeviceTypeEncoder:
             - `ValueType` must conform to `DevicePassable`.
             - `ValueType` must be its own leaf `device_type` (i.e.
               `ValueType._is_convertible_to_device_type[ValueType]()` holds).
-            - `ValueType` must conform to `ImplicitlyCopyable` or to
+            - `ValueType` must conform to
+              `ImplicitlyCopyable & ImplicitlyDestructible` or to
               `Copyable & ImplicitlyDestructible`.
         """
         comptime assert ValueType._is_convertible_to_device_type[
             ValueType
         ](), "encode: ValueType must be its own leaf device_type"
 
-        comptime if conforms_to(ValueType, ImplicitlyCopyable):
-            comptime T = downcast[ValueType, ImplicitlyCopyable]
+        comptime if conforms_to(
+            ValueType, ImplicitlyCopyable & ImplicitlyDestructible
+        ):
+            comptime T = downcast[
+                ValueType, ImplicitlyCopyable & ImplicitlyDestructible
+            ]
             target.bitcast[T]()[] = rebind[T](value)
         elif conforms_to(ValueType, Copyable & ImplicitlyDestructible):
             comptime T = downcast[ValueType, Copyable & ImplicitlyDestructible]
             target.bitcast[T]()[] = rebind[T](value).copy()
         else:
             abort(
-                "encode: Type must conform to ImplicitlyCopyable or Copyable &"
-                " ImplicitlyDestructible"
+                "encode: Type must conform to ImplicitlyCopyable &"
+                " ImplicitlyDestructible or Copyable & ImplicitlyDestructible"
             )
 
     def encode_device_ptr(

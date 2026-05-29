@@ -92,9 +92,10 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         func: FunctionHandle,
         grid: Tuple[UInt32, UInt32, UInt32],
         block: Tuple[UInt32, UInt32, UInt32],
-        args: UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin],
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        args: UnsafePointer[mut=True, OpaquePointer[MutExternalOrigin], _],
+        arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
+        shared_mem_bytes: UInt32 = 0,
     ) raises HALError:
         """
         Enqueue an execution of the passed function as a kernel on this queue.
@@ -103,13 +104,20 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         if backed by a stream.
         """
         self._raw[].execute_function(
-            self._handle, func, grid, block, args, arg_sizes, num_args
+            self._handle,
+            func,
+            grid,
+            block,
+            args,
+            arg_sizes,
+            num_args,
+            shared_mem_bytes=shared_mem_bytes,
         )
 
     def copy_to_device(
         self,
         dst: Buffer,
-        src: UnsafePointer[UInt8, ImmutAnyOrigin],
+        src: UnsafePointer[mut=False, UInt8, _],
         size: UInt64,
     ) raises HALError:
         """
@@ -121,7 +129,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
 
     def copy_from_device(
         self,
-        dst: UnsafePointer[UInt8, MutAnyOrigin],
+        dst: UnsafePointer[mut=True, UInt8, _],
         src: Buffer,
         size: UInt64,
     ) raises HALError:

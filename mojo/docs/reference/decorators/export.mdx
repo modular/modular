@@ -26,20 +26,19 @@ def my_other_function():
     print("Another function.")
 ```
 
-The `@export` decorator can take two optional arguments:
+The `@export` decorator can take an optional argument:
 
 - An alternate name to export the function under, as shown above.
-- An ABI specifier. Currently only the C ABI is supported.
 
-Use the name and ABI specifier to export a function that complies with the C
-calling conventions. You must also supply a function name that is a valid C
-identifier. For example:
+Use the name specifier and `abi("C")` effect to export a function that complies
+with the C calling conventions. You must also supply a function name that is a
+valid C identifier. For example:
 
 ```mojo
-@export("my_func", ABI="C")
+@export("my_func")
 def my_function(
     name: StaticString,
     ptr: OpaquePointer[MutExternalOrigin],
-) -> None:
+) abi("C") -> None:
     pass
 ```

@@ -1011,6 +1011,22 @@ class SpecDecodeMetrics:
     avg_acceptance_length_sum: float = 0.0
     avg_acceptance_length_count: float = 0.0
 
+    def __iadd__(self, other: SpecDecodeMetrics) -> SpecDecodeMetrics:
+        self.num_drafts += other.num_drafts
+        self.num_draft_tokens += other.num_draft_tokens
+        self.num_accepted_tokens += other.num_accepted_tokens
+        for pos, n in other.accepted_per_pos.items():
+            self.accepted_per_pos[pos] = self.accepted_per_pos.get(pos, 0) + n
+        for pos, s in other.per_pos_rate_sum.items():
+            self.per_pos_rate_sum[pos] = self.per_pos_rate_sum.get(pos, 0.0) + s
+        for pos, c in other.per_pos_rate_count.items():
+            self.per_pos_rate_count[pos] = (
+                self.per_pos_rate_count.get(pos, 0) + c
+            )
+        self.avg_acceptance_length_sum += other.avg_acceptance_length_sum
+        self.avg_acceptance_length_count += other.avg_acceptance_length_count
+        return self
+
 
 @dataclass
 class SpecDecodeStats:
@@ -1018,24 +1034,23 @@ class SpecDecodeStats:
 
     Fields are ``None`` when the underlying metric was not exposed by the
     backend in the scraped Prometheus output.
-
-    Attributes:
-        num_drafts: Number of draft sequences generated.
-        draft_tokens: Total number of draft tokens generated.
-        accepted_tokens: Total number of draft tokens accepted.
-        acceptance_rate: Percentage of draft tokens accepted.
-        acceptance_length: Average number of tokens accepted per draft
-            (including the verified token).
-        per_position_acceptance_rates: Acceptance rate at each draft position
-            as a fraction (0-1). Empty when no per-position data was exposed.
     """
 
     num_drafts: int | None = None
+    """Number of draft sequences generated."""
     draft_tokens: int | None = None
+    """Total number of draft tokens generated."""
     accepted_tokens: int | None = None
+    """Total number of draft tokens accepted."""
     acceptance_rate: float | None = None
+    """Percentage of draft tokens accepted."""
     acceptance_length: float | None = None
+    """Average number of tokens accepted per draft (including verified token)."""
     per_position_acceptance_rates: list[float] = field(default_factory=list)
+    """Acceptance rate at each draft position as a fraction (0-1).
+
+    Empty when no per-position data was exposed.
+    """
 
     def to_result_dict(self) -> dict[str, object]:
         """Return a flat dict of spec-decode keys for the benchmark result.

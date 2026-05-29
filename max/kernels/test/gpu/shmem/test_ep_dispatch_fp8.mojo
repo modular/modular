@@ -452,7 +452,7 @@ def test_dispatch[
                             remote_rank_top_k_ids[
                                 remote_loc * Int32(top_k) + remote_topk_id
                             ],
-                            curr_expert,
+                            Int32(curr_expert),
                         )
 
                         var remote_rank_input_tokens = (

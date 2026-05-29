@@ -7,7 +7,6 @@ bazel_dep(name = "curl", version = "8.12.0")
 bazel_dep(name = "gazelle", version = "0.50.0")
 bazel_dep(name = "google_benchmark", version = "1.9.4")
 bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
-bazel_dep(name = "imgui", version = "1.91.8")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.18")
@@ -271,6 +270,7 @@ mojo.gpu_toolchains(
         "RTX 4070 Ti": "",
         "RTX 4080 SUPER": "",
         "RTX 4090": "rtx4090",
+        "NVIDIA GeForce RTX 5060 Ti": "rtx5060ti",
         "NVIDIA GeForce RTX 3090": "rtx3090",
         "NVIDIA GeForce GTX 1080 Ti": "gtx1080ti",
         "NVIDIA GeForce GTX 1060": "gtx1060",
@@ -314,6 +314,7 @@ mojo.gpu_toolchains(
         "gtx1080ti": "nvidia:sm_61",
         "gtx1060": "nvidia:sm_61",
         "rtx4090": "nvidia:sm_89",
+        "rtx5060ti": "nvidia:sm_120a",
         "rtx5090": "nvidia:sm_120a",
         "gb10": "nvidia:sm_121",
         "rx6900xt": "amdgpu:gfx1030",

@@ -107,9 +107,7 @@ class TextEncoder(CompiledComponent):
 
             graph.output(result)
 
-        self._model = self._load_graph(
-            graph, weights_registry=module.state_dict()
-        )
+        self._load_graph(graph, weights_registry=module.state_dict())
 
     @traced(message="TextEncoder.__call__")
     def __call__(

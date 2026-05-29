@@ -32,6 +32,7 @@ from std.collections.string._utf8 import (
 )
 from std.collections.string.format import _FormatUtils
 from std.collections.string.iterators import (
+    BytesIter,
     CodepointSliceIter,
     CodepointsIter,
     GraphemeIndicesIter,
@@ -1304,6 +1305,47 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ):
             l_idx += 1
         return Self(unsafe_from_utf8=self.as_bytes()[l_idx:])
+
+    def bytes(self) -> BytesIter[Self.origin]:
+        """Returns an iterator over the raw bytes of this string slice.
+
+        Unlike `codepoints()` and `graphemes()`, this iterator operates at the
+        byte level and yields individual `Byte` values without interpreting
+        multi-byte UTF-8 sequences.
+
+        Returns:
+            An iterator type that returns successive `Byte` values stored in
+            this string slice.
+
+        Examples:
+
+        Iterate over the bytes of an ASCII string:
+
+        ```mojo
+        from std.testing import assert_equal, assert_raises
+
+        var s = StringSlice("abc")
+        var iter = s.bytes()
+        assert_equal(next(iter), Byte(ord("a")))
+        assert_equal(next(iter), Byte(ord("b")))
+        assert_equal(next(iter), Byte(ord("c")))
+        with assert_raises():
+            _ = next(iter) # raises StopIteration
+        ```
+
+        Multi-byte UTF-8 sequences are yielded as individual bytes:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        # "é" is encoded in UTF-8 as two bytes: 0xC3 0xA9.
+        var s = StringSlice("é")
+        var iter = s.bytes()
+        assert_equal(next(iter), Byte(0xC3))
+        assert_equal(next(iter), Byte(0xA9))
+        ```
+        """
+        return BytesIter(_slice=self)
 
     @always_inline
     def codepoints(self) -> CodepointsIter[Self.origin]:

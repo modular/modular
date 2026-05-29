@@ -563,7 +563,7 @@ def test_conv2d_epilogue_lambda[
     @__copy_capture(bias_tensor)
     def epilogue_add_bias[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -762,7 +762,7 @@ def test_conv2d_bias_fusion[
     @__copy_capture(bias_tensor)
     def add_bias[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -1193,7 +1193,7 @@ def test_conv_gpu_scale_epilogue[
     @always_inline
     @__copy_capture(out_epilogue_tt)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
+        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
         out_epilogue_tt.store[
@@ -1318,7 +1318,7 @@ def test_conv_gpu_additive_epilogue[
     @always_inline
     @__copy_capture(out_epilogue_tt)
     def add_bias_epilogue[
-        _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
+        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var coord = Coord(coords[0], coords[1], coords[2], coords[3])
         var existing = out_epilogue_tt.load[

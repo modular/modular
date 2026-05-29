@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from dataclasses import dataclass, field
@@ -26,6 +27,7 @@ import numpy.typing as npt
 from max.pipelines.modeling.types import (
     EOSTracker,
     GenerationStatus,
+    GrammarEnforcementSnapshot,
     ImageMetadata,
     LogProbabilities,
     PixelGenerationContext,
@@ -34,6 +36,7 @@ from max.pipelines.modeling.types import (
     SpecDecodingState,
     TextGenerationContext,
     TextGenerationOutput,
+    TextGenerationResponseFormat,
     TokenBuffer,
     VLMTextGenerationContext,
 )
@@ -42,6 +45,8 @@ from max.pipelines.request.open_responses import OutputImageContent
 
 CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
+
+logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
@@ -90,6 +95,18 @@ class GrammarEnforcementState:
     4. ``response_format: json_schema`` with thinking (thinking region set):
        - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
        - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
+
+    5. ``tool_choice=auto`` + ``response_format: json_schema`` + thinking:
+       - Combined grammar constrains to tool calls OR JSON schema
+       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
+       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
+         (``has_json_schema`` triggers re-enforcement even with ``tool_region`` set)
+
+    For section-wrapped parsers (e.g. Kimi K2.5, DeepSeek V3) that define
+    ``SECTION_BEGIN``/``SECTION_END``, the tool region end tag turns off
+    enforcement after the entire tool-calling section.  For flat parsers
+    (e.g. Gemma 4) the tool region has no end tag — the grammar handles
+    termination.
     """
 
     grammar_enforced: bool = False
@@ -115,6 +132,9 @@ class GrammarEnforcementState:
     pure tool-call grammars derived from the model's tool parser.
     """
 
+    has_json_schema: bool = False
+    """Whether this request includes a JSON schema response format."""
+
     tool_region: StructuredOutputRegionDelimiters | None = None
     """Token sequences defining tool call boundaries, if conditional enforcement."""
 
@@ -129,7 +149,7 @@ class GrammarEnforcementState:
 
     _in_thinking_region: bool = False
     """Whether currently inside a thinking region.
-    
+
     TODO: Consider consolidating with ``in_thinking_phase`` in text generation pipeline.
     """
 
@@ -138,6 +158,20 @@ class GrammarEnforcementState:
 
     _thinking_match_buffer: list[int] = field(default_factory=list)
     """Buffer for partial matching of thinking end sequence."""
+
+    @classmethod
+    def from_response_format(
+        cls, response_format: TextGenerationResponseFormat | None
+    ) -> GrammarEnforcementState:
+        """Creates a state from the given response format, or a default state."""
+        if not response_format:
+            return cls()
+        return cls(
+            grammar_enforced=response_format.grammar_enforced,
+            tools_forced=response_format.tools_forced,
+            requires_structured_output_flag=response_format.requires_structured_output_flag,
+            has_json_schema=response_format.has_json_schema,
+        )
 
     def update_enforcement_state(self, token: int) -> bool:
         """Update enforcement state based on sampled token.
@@ -150,13 +184,11 @@ class GrammarEnforcementState:
             token: The newly sampled token.
 
         Returns:
-            True if enforcement state changed.
+            True if the matcher should consume the token.
         """
-        changed = False
-
-        # Check thinking region transitions FIRST (higher priority)
-        # When thinking is enabled, we START in thinking region (template already
-        # emits <think>). We only detect </think> to exit.
+        # Check thinking region transitions FIRST (higher priority).
+        # Thinking-end delimiter is NOT grammar content — return False
+        # so the caller skips the matcher even though enforcement resumed.
         if (
             self.thinking_region_delimiters is not None
             and self._in_thinking_region
@@ -170,18 +202,16 @@ class GrammarEnforcementState:
                 )
             ):
                 self._in_thinking_region = False
-                # After thinking ends:
-                # - For required tools (tools_forced=True): immediately enforce
-                # - For json_schema without tools (tool_region is None):
-                #   immediately enforce
-                # - For auto tools: stay free, tool region logic will handle it
-                if self.tools_forced or self.tool_region is None:
+                if self.tools_forced or self.has_json_schema:
                     self.grammar_enforced = True
-                changed = True
+            return False
 
-        # Tool region logic (for tool_choice=auto)
-        if not changed and self.tool_region is not None:
-            # Check for start sequence (only when not enforcing)
+        # Tool region logic (for tool_choice=auto). Skipped when tools_forced
+        # is set: forced grammars enforce start-to-finish via the regex
+        # itself, so auto-mode toggles must not flip grammar_enforced.
+        # Both start and end tags ARE grammar content — return True so the
+        # caller feeds the token to the matcher before enforcement flips.
+        if self.tool_region is not None and not self.tools_forced:
             if not self.grammar_enforced:
                 if (
                     self.tool_region.start_token_ids is not None
@@ -190,8 +220,7 @@ class GrammarEnforcementState:
                     )
                 ):
                     self.grammar_enforced = True
-                    changed = True
-            # Check for end sequence (only when enforcing)
+                    return True
             else:
                 if (
                     self.tool_region.end_token_ids is not None
@@ -201,9 +230,32 @@ class GrammarEnforcementState:
                 ):
                     self.grammar_enforced = False
                     self._tool_calling_match_buffer.clear()
-                    changed = True
+                    return True
 
-        return changed
+        return self.grammar_enforced
+
+    def snapshot(self) -> GrammarEnforcementSnapshot:
+        """Capture state needed to roll back a speculative advance.
+
+        The speculative bitmask path walks the enforcement state through
+        draft tokens to compute downstream slot constraints, then
+        unwinds so that committed-token processing on the next batch
+        replays the same transitions from a clean state. The returned
+        snapshot is opaque to callers; pass it to `restore`.
+        """
+        return GrammarEnforcementSnapshot(
+            in_thinking_region=self._in_thinking_region,
+            grammar_enforced=self.grammar_enforced,
+            tool_calling_match_buffer=list(self._tool_calling_match_buffer),
+            thinking_match_buffer=list(self._thinking_match_buffer),
+        )
+
+    def restore(self, snapshot: GrammarEnforcementSnapshot) -> None:
+        """Restore state captured by :meth:`snapshot`."""
+        self._in_thinking_region = snapshot.in_thinking_region
+        self.grammar_enforced = snapshot.grammar_enforced
+        self._tool_calling_match_buffer[:] = snapshot.tool_calling_match_buffer
+        self._thinking_match_buffer[:] = snapshot.thinking_match_buffer
 
     def _check_sequence_match(self, token: int, target: list[int]) -> bool:
         """Check if token completes a target sequence using the default buffer."""
@@ -298,6 +350,15 @@ class TextContext:
 
     When set, the DKVConnector reads this during lookup() to determine
     which blocks are available in the external BlockStore system.
+    """
+
+    dkv_hint_instance_name: str = field(default="")
+    """Instance name from the Orchestrator's dkv_cache_hint identifying
+    the dKV instance that owns the cached blocks. The DKVConnector
+    compares this to its own instance name (learned via
+    ExchangeMetadata) and skips the fetch when they match — those
+    blocks are owned locally and surface through MAX's own prefix
+    cache instead.
     """
 
     cached_prefix_length: int | None = field(default=None)
@@ -472,18 +533,24 @@ class TextContext:
         """Advance the grammar-enforcement state machine by one token.
 
         Forwards to :meth:`GrammarEnforcementState.update_enforcement_state`.
-        Used by spec-decode paths that need to advance the state machine
-        without invoking ``matcher.consume_token`` (which asserts on
-        rejection); the matcher is advanced separately via
-        ``try_consume_tokens`` for tolerance.
 
         Args:
             token: The newly committed token.
 
         Returns:
-            True if enforcement state changed.
+            True if the matcher should consume the token.
         """
         return self.grammar_state.update_enforcement_state(token)
+
+    def snapshot_grammar_state(self) -> GrammarEnforcementSnapshot:
+        """Forwards to `GrammarEnforcementState.snapshot`."""
+        return self.grammar_state.snapshot()
+
+    def restore_grammar_state(
+        self, snapshot: GrammarEnforcementSnapshot
+    ) -> None:
+        """Forwards to `GrammarEnforcementState.restore`."""
+        self.grammar_state.restore(snapshot)
 
     def to_generation_output(self) -> TextGenerationOutput:
         """Get completion tokens that are ready to be returned to the user.
@@ -593,32 +660,45 @@ class TextContext:
         separately if token buffer advancement is needed, or use ``update()``
         for the common case of advancing both together.
 
+        Matcher rejection is not expected at this point (assuming the
+        bitmask was applied correctly). But if the matcher does reject
+        a token, enforcement is disabled for the rest of the request.
+        Continuing to enforce against a desynced matcher would produce schema-shaped nonsense
+        (every downstream bitmask would be filtered against a stale
+        grammar position with no relation to what was emitted).
+        Instead we let the request finish unconstrained.
+
         Args:
             token: The token to consume in the FSM.
 
         Returns:
-            True if the token was processed, False if no matcher is present.
-
-        Raises:
-            AssertionError: If the matcher rejects the token, indicating
-                a mismatch between the bitmask and FSM state.
+            True if the token was handled — either consumed by the FSM,
+            recognized as a state-transition delimiter (e.g. a
+            thinking-end token), or skipped because enforcement is
+            inactive. False only when no matcher is present.
         """
         if self.matcher is None:
             return False
 
-        # Update enforcement state (may toggle grammar_enforced)
-        self.grammar_state.update_enforcement_state(token)
-
-        # Only consume token in FSM if enforcement is active
-        # TODO: Does this need to raise an error if consumption fails?
-        if self.grammar_state.grammar_enforced:
-            try:
-                assert self.matcher.consume_token(token)
-            except Exception:
-                print(
-                    f"Matcher Errors: {self.matcher.get_error()} \nMatcher Warnings: {self.matcher.get_grammar_warnings()}"
-                )
-                raise
+        # EOS tokens are not part of the grammar — they signal the end of
+        # generation, not schema content.  Skip the matcher so it stays in
+        # a clean terminal state rather than logging a spurious rejection.
+        if token in self.eos_tracker.eos_token_ids:
+            self.grammar_state.grammar_enforced = False
+        elif (
+            self.grammar_state.update_enforcement_state(token)
+            and self.matcher.try_consume_tokens([token]) != 1
+        ):
+            logger.error(
+                "Matcher rejected token %d (request %s); disabling "
+                "enforcement for the rest of the request. "
+                "matcher_errors=%s matcher_warnings=%s",
+                token,
+                self.request_id,
+                self.matcher.get_error(),
+                self.matcher.get_grammar_warnings(),
+            )
+            self.grammar_state.grammar_enforced = False
 
         return True
 

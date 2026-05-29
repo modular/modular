@@ -96,19 +96,28 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         func: FunctionHandle,
         grid: Tuple[UInt32, UInt32, UInt32],
         block: Tuple[UInt32, UInt32, UInt32],
-        args: UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin],
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        args: UnsafePointer[mut=True, OpaquePointer[MutExternalOrigin], _],
+        arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
+        shared_mem_bytes: UInt32 = 0,
     ) raises HALError:
         """Enqueues a function execution. Runs after all previous Stream ops."""
         self._chain_wait()
-        self._queue[].execute(func, grid, block, args, arg_sizes, num_args)
+        self._queue[].execute(
+            func,
+            grid,
+            block,
+            args,
+            arg_sizes,
+            num_args,
+            shared_mem_bytes=shared_mem_bytes,
+        )
         self._chain_signal()
 
     def copy_to_device(
         mut self,
         dst: Buffer,
-        src: UnsafePointer[UInt8, ImmutAnyOrigin],
+        src: UnsafePointer[mut=False, UInt8, _],
         size: UInt64,
     ) raises HALError:
         """Host-to-device copy. Runs after all previous Stream ops."""
@@ -118,7 +127,7 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
 
     def copy_from_device(
         mut self,
-        dst: UnsafePointer[UInt8, MutAnyOrigin],
+        dst: UnsafePointer[mut=True, UInt8, _],
         src: Buffer,
         size: UInt64,
     ) raises HALError:

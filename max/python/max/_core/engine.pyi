@@ -19,12 +19,14 @@ import enum
 import inspect
 import os
 import types
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
+import max._core.mlrt
 from max._core.driver import Buffer
+from max._core.mlrt import AsyncValue
 from max._core_types.driver import DLPackArray
 
 InputType = DLPackArray | Buffer | int | float | bool
@@ -55,6 +57,32 @@ class TensorSpec:
 
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
+
+class ModelMetadata:
+    """Input and output metadata for a compiled model function."""
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def input_metadata(self) -> list[TensorSpec]: ...
+    @property
+    def output_metadata(self) -> list[TensorSpec]: ...
+
+class CompiledModels:
+    """A compiled model artifact containing one or more submodels."""
+
+    def __len__(self) -> int: ...
+    def __getitem__(self, arg: int, /) -> ModelMetadata: ...
+    def __iter__(self) -> Iterator[ModelMetadata]: ...
+    @property
+    def names(self) -> list[str]: ...
+    def export_mef(self, path: str) -> None:
+        """
+        Exports the compiled model as MEF bytes to the given file.
+
+        Args:
+            path: Filesystem path to write the MEF to.
+        """
 
 class Model:
     """
@@ -467,13 +495,15 @@ class InferenceSession:
         """
 
     def _load_all(
-        self, compiled: Model, weights_registry: Mapping[str, Any]
+        self,
+        compiled: AsyncValue[CompiledModels],
+        weights_registry: Mapping[str, Any],
     ) -> list[Model]: ...
     def compile_from_path(
         self,
         model_path: str | os.PathLike,
         custom_extension_paths: Sequence[str | os.PathLike],
-    ) -> Model:
+    ) -> max._core.mlrt.AsyncValue[CompiledModels]:
         """
         Compiles a model from a file path.
 
@@ -482,7 +512,8 @@ class InferenceSession:
             custom_extension_paths: Paths to custom Mojo extension libraries.
 
         Returns:
-            Model: The compiled model ready for execution.
+            AsyncValue[CompiledModels]: handle to the compiled artifact,
+            ready to be initialized with weights via :meth:`_load_all`.
         """
 
     def compile_from_object(
@@ -490,7 +521,7 @@ class InferenceSession:
         model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
-    ) -> Model:
+    ) -> max._core.mlrt.AsyncValue[CompiledModels]:
         """
         Compiles a model from an in-memory capsule object.
 
@@ -500,7 +531,8 @@ class InferenceSession:
             pipeline_name: Name identifier for the compiled pipeline.
 
         Returns:
-            Model: The compiled model ready for execution.
+            CompiledModels: The compiled artifact, ready to be initialized
+            with weights via :meth:`_load_all`.
         """
 
     def set_debug_print_options(

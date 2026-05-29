@@ -60,9 +60,9 @@ def run_elementwise[
     rank: Int,
     //,
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
-        dtype, width
-    ],
+    kernel_fn: def[dtype: DType, width: SIMDSize](
+        SIMD[dtype, width]
+    ) thin -> SIMD[dtype, width],
 ](
     mut m: Bench,
     fn_name: StaticString,

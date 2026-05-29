@@ -18,6 +18,7 @@ import random
 from collections.abc import Iterable, Sequence
 from typing import Any
 
+import msgspec
 from datasets import load_dataset
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
@@ -63,6 +64,59 @@ _CHAT_ONLY_ROLES = frozenset({"system", "user", "assistant"})
 _MAX_STREAM_ROWS_PER_REQUEST = 50
 
 
+class MessageContentPart(msgspec.Struct):
+    type: str = ""
+    text: str = ""
+
+
+class Message(msgspec.Struct):
+    role: str = ""
+    content: str | list[MessageContentPart] | None = None
+
+
+class AnthropicTool(msgspec.Struct):
+    id: str = ""
+    description: str = ""
+    # ``inputSchema`` is either ``{"jsonSchema": {...}}`` (Anthropic's wrapper)
+    # or the JSON Schema dict directly. The inner contents are an arbitrary
+    # JSON Schema document, so the leaf is left as a raw dict.
+    inputSchema: dict[str, Any] | None = None
+
+
+class NemotronOpenCodeRow(msgspec.Struct):
+    messages: list[Message] | None = None
+    tools: list[AnthropicTool] | None = None
+
+
+def _anthropic_tool_to_openai(tool: AnthropicTool) -> dict[str, Any]:
+    """Translate an Anthropic-style tool schema to OpenAI function-tool shape.
+
+    The nemotron-opencode corpus records OpenCode CLI sessions whose ``tools``
+    field uses Anthropic's tool schema (``{id, description, inputSchema:
+    {jsonSchema: ...}}``). The MAX OpenAI-compatible server validates against
+    ``ChatCompletionFunctionToolParam`` which expects ``{type: "function",
+    function: {name, description, parameters}}``. Without translation every
+    request fails with ~120 Pydantic validation errors per call.
+    """
+    input_schema = tool.inputSchema
+    if isinstance(input_schema, dict) and "jsonSchema" in input_schema:
+        parameters = input_schema["jsonSchema"]
+    elif isinstance(input_schema, dict):
+        # Defensive fallback: some rows may place the JSON Schema directly
+        # under ``inputSchema`` without the ``jsonSchema`` wrapper.
+        parameters = input_schema
+    else:
+        parameters = {}
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.id,
+            "description": tool.description,
+            "parameters": parameters,
+        },
+    }
+
+
 class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
     """Benchmark dataset backed by ``nvidia/Nemotron-SFT-OpenCode-v1``.
 
@@ -72,8 +126,10 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
 
     - ``messages``: list of ``{"role", "content"}`` entries covering the full
       system/user/assistant/tool exchange.
-    - ``tools``: list of OpenAI-style tool schemas the model was permitted to
-      call during the trace.
+    - ``tools``: list of Anthropic-style tool schemas (``{id, description,
+      inputSchema}``) the model was permitted to call during the trace.
+      Translated to OpenAI ``{type, function}`` shape via
+      :func:`_anthropic_tool_to_openai` before being forwarded on the wire.
     - ``enabled_tools``, ``agent_prompt``, ``skills_path``, ``uuid``,
       ``question_category``, ``complexity_level``, ``hf_split``: trace
       metadata.
@@ -110,7 +166,7 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
     #: ``gen_multiturn_sessions`` call. One entry per emitted request/session.
     #: Empty until the first call. Exposed for follow-up work that wires
     #: ``tools`` through the request payload.
-    last_loaded_tool_schemas: list[list[dict[str, Any]]]
+    last_loaded_tool_schemas: list[list[AnthropicTool]]
 
     def __init__(self) -> None:
         self.last_loaded_tool_schemas = []
@@ -137,11 +193,13 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
 
     # ------------------------------------------------------------------ utils
 
-    def _iter_rows(self) -> Iterable[dict[str, Any]]:
+    def _iter_rows(self) -> Iterable[NemotronOpenCodeRow]:
         """Stream rows from the configured subset.
 
-        Yields raw dataset dicts in source order (the HF stream does not
-        shuffle). Callers are responsible for breaking out of the iterator
+        Yields decoded ``NemotronOpenCodeRow`` structs in source order (the HF
+        stream does not shuffle). Rows that fail msgspec validation are
+        silently skipped so a single malformed entry does not abort the
+        benchmark. Callers are responsible for breaking out of the iterator
         once they have enough samples.
         """
         if self.subset not in NEMOTRON_OPENCODE_SUBSETS:
@@ -158,31 +216,27 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             split="train",
             streaming=True,
         )
-        yield from stream
+        for raw in stream:
+            try:
+                yield msgspec.convert(raw, type=NemotronOpenCodeRow)
+            except msgspec.ValidationError:
+                continue
 
     @staticmethod
-    def _message_text(content: Any) -> str:
+    def _message_text(
+        content: str | list[MessageContentPart] | None,
+    ) -> str:
         """Flatten a message ``content`` field to a plain string."""
         if content is None:
             return ""
         if isinstance(content, str):
             return content
-        if isinstance(content, list):
-            parts: list[str] = []
-            for part in content:
-                if isinstance(part, dict):
-                    text = part.get("text")
-                    if isinstance(text, str):
-                        parts.append(text)
-                elif isinstance(part, str):
-                    parts.append(part)
-            return "".join(parts)
-        return str(content)
+        return "".join(part.text for part in content)
 
     @classmethod
     def _to_chat_messages(
         cls,
-        messages: Sequence[dict[str, Any]],
+        messages: Sequence[Message],
     ) -> list[ChatMessage]:
         """Convert raw dataset messages into ``ChatMessage`` objects.
 
@@ -192,19 +246,20 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         """
         chat_messages: list[ChatMessage] = []
         for msg in messages:
-            role = msg.get("role")
-            if not isinstance(role, str):
+            if not msg.role:
                 continue
-            text = cls._message_text(msg.get("content"))
+            text = cls._message_text(msg.content)
             chat_messages.append(
-                ChatMessage(role=role, content=[TextContentBlock(text=text)])
+                ChatMessage(
+                    role=msg.role, content=[TextContentBlock(text=text)]
+                )
             )
         return chat_messages
 
     @staticmethod
     def _split_prompt_and_completion(
-        messages: Sequence[dict[str, Any]],
-    ) -> tuple[list[dict[str, Any]], str] | None:
+        messages: Sequence[Message],
+    ) -> tuple[list[Message], str] | None:
         """Split a conversation into (prompt-messages, last-assistant-text).
 
         Returns ``None`` if the trace does not end on a non-empty assistant
@@ -213,11 +268,9 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         last_assistant_idx: int | None = None
         for i in range(len(messages) - 1, -1, -1):
             msg = messages[i]
-            if msg.get("role") != "assistant":
+            if msg.role != "assistant":
                 continue
-            text = NemotronOpenCodeBenchmarkDataset._message_text(
-                msg.get("content")
-            )
+            text = NemotronOpenCodeBenchmarkDataset._message_text(msg.content)
             if text.strip():
                 last_assistant_idx = i
                 break
@@ -225,7 +278,7 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             return None
         prompt_messages = list(messages[:last_assistant_idx])
         completion = NemotronOpenCodeBenchmarkDataset._message_text(
-            messages[last_assistant_idx].get("content")
+            messages[last_assistant_idx].content
         )
         return prompt_messages, completion
 
@@ -278,25 +331,22 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             num_requests + _MAX_STREAM_ROWS_PER_REQUEST * num_requests,
         )
 
-        candidates: list[tuple[list[dict[str, Any]], str, list[dict[str, Any]]]]
+        candidates: list[tuple[list[Message], str, list[AnthropicTool]]]
         candidates = []
         for row in self._iter_rows():
             if len(candidates) >= candidate_count:
                 break
-            messages = row.get("messages")
-            if not isinstance(messages, list):
+            if not row.messages:
                 continue
             if not enable_tool_calls and any(
-                m.get("role") not in _CHAT_ONLY_ROLES for m in messages
+                m.role not in _CHAT_ONLY_ROLES for m in row.messages
             ):
                 continue
-            split = self._split_prompt_and_completion(messages)
+            split = self._split_prompt_and_completion(row.messages)
             if split is None:
                 continue
             prompt_messages, completion = split
-            tools_raw = row.get("tools") or []
-            if not isinstance(tools_raw, list):
-                tools_raw = []
+            tools_raw = row.tools or []
             candidates.append((prompt_messages, completion, tools_raw))
 
         if shuffle:
@@ -307,7 +357,7 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             random.shuffle(candidates)
 
         sampled: list[SampledRequest] = []
-        sampled_tool_schemas: list[list[dict[str, Any]]] = []
+        sampled_tool_schemas: list[list[AnthropicTool]] = []
         for prompt_messages, completion, tools_raw in candidates:
             if len(sampled) >= num_requests:
                 break
@@ -342,9 +392,11 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
                     # full target length instead of letting an early EOS skew
                     # throughput vs. instruct-coder baselines.
                     ignore_eos=True,
-                    tools=tools_raw
-                    if (enable_tool_calls and tools_raw)
-                    else None,
+                    tools=(
+                        [_anthropic_tool_to_openai(t) for t in tools_raw]
+                        if (enable_tool_calls and tools_raw)
+                        else None
+                    ),
                 )
             )
             sampled_tool_schemas.append(tools_raw)
@@ -434,19 +486,18 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             num_sessions + _MAX_STREAM_ROWS_PER_REQUEST * num_sessions,
         )
 
-        candidates: list[tuple[list[SessionMessage], list[dict[str, Any]]]] = []
+        candidates: list[tuple[list[SessionMessage], list[AnthropicTool]]] = []
         for row in self._iter_rows():
             if len(candidates) >= candidate_count:
                 break
-            messages = row.get("messages")
-            if not isinstance(messages, list):
+            if not row.messages:
                 continue
             if not enable_tool_calls and any(
-                m.get("role") not in _CHAT_ONLY_ROLES for m in messages
+                m.role not in _CHAT_ONLY_ROLES for m in row.messages
             ):
                 continue
             session_messages = self._build_session_messages(
-                messages,
+                row.messages,
                 tokenizer=tokenizer,
                 max_turns_per_session=max_turns_per_session,
                 min_input_len=min_input_len,
@@ -454,16 +505,14 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             )
             if not session_messages:
                 continue
-            tools_raw = row.get("tools") or []
-            if not isinstance(tools_raw, list):
-                tools_raw = []
+            tools_raw = row.tools or []
             candidates.append((session_messages, tools_raw))
 
         if shuffle:
             random.shuffle(candidates)
 
         chat_sessions: list[ChatSession] = []
-        session_tool_schemas: list[list[dict[str, Any]]] = []
+        session_tool_schemas: list[list[AnthropicTool]] = []
         for idx, (session_messages, tools_raw) in enumerate(candidates):
             if len(chat_sessions) >= num_sessions:
                 break
@@ -484,7 +533,7 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
 
     def _build_session_messages(
         self,
-        messages: Sequence[dict[str, Any]],
+        messages: Sequence[Message],
         *,
         tokenizer: PreTrainedTokenizerBase,
         max_turns_per_session: int | None,
@@ -496,8 +545,8 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         pending_user: str | None = None
         turns = 0
         for msg in messages:
-            role = msg.get("role")
-            text = self._message_text(msg.get("content"))
+            role = msg.role
+            text = self._message_text(msg.content)
             if not text.strip():
                 continue
             if role == "user":
@@ -555,17 +604,16 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         for row in self._iter_rows():
             if len(texts) >= target:
                 break
-            messages = row.get("messages")
-            if not isinstance(messages, list):
+            if not row.messages:
                 continue
             if not enable_tool_calls and any(
-                m.get("role") not in _CHAT_ONLY_ROLES for m in messages
+                m.role not in _CHAT_ONLY_ROLES for m in row.messages
             ):
                 continue
-            for msg in messages:
-                if msg.get("role") != "user":
+            for msg in row.messages:
+                if msg.role != "user":
                     continue
-                text = self._message_text(msg.get("content"))
+                text = self._message_text(msg.content)
                 if text.strip():
                     texts.append(text)
         return texts

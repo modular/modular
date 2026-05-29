@@ -50,7 +50,10 @@ from .sampling_logits_processor import PenaltyInputs, SamplerInputs
 
 
 def _sampling_input_types(
-    sampling_config: SamplingConfig, return_logits: bool, device: DeviceRef
+    sampling_config: SamplingConfig,
+    return_logits: bool,
+    device: DeviceRef,
+    needs_bitmask_input: bool,
 ) -> dict[str, TensorType | BufferType]:
     inputs: dict[str, TensorType | BufferType] = {}
 
@@ -109,8 +112,8 @@ def _sampling_input_types(
         )
         inputs["logit_offsets"] = logit_offset_type
 
-    # If we have structured_outputs enabled
-    if sampling_config.enable_structured_output:
+    # If constrained decoding can fire, wire in the bitmask input.
+    if needs_bitmask_input:
         # Use separate symbolic dimension to avoid conflicts with logits' vocab_size
         # since llguidance creates 32-bit aligned bitmasks.
         bitmask_type = TensorType(
@@ -157,6 +160,7 @@ def token_sampler(
     sampling_config: SamplingConfig,
     device: DeviceRef,
     return_logits: bool = False,
+    needs_bitmask_input: bool | None = None,
 ) -> Graph:
     """Builds a sampling graph that samples tokens from logits.
 
@@ -164,12 +168,22 @@ def token_sampler(
         sampling_config: Sampling configuration (top-k, temperature, etc.).
         device: Device for the graph inputs and ops.
         return_logits: Whether the graph should expose logits as an output.
+        needs_bitmask_input: Whether to wire a ``bitmask`` input into the
+            graph. When ``None``, falls back to
+            ``sampling_config.enable_structured_output``. Callers should
+            pass ``True`` explicitly when tool-call grammars can fire even
+            though ``--enable-structured-output`` is off.
 
     Returns:
         A graph that takes logits (and optional penalty inputs) and outputs tokens.
     """
+    if needs_bitmask_input is None:
+        needs_bitmask_input = sampling_config.enable_structured_output
     _input_dict = _sampling_input_types(
-        sampling_config, return_logits=return_logits, device=device
+        sampling_config,
+        return_logits=return_logits,
+        device=device,
+        needs_bitmask_input=needs_bitmask_input,
     )
     with Graph("top_k_sampler", input_types=_input_dict.values()) as graph:
         # Deconstruct inputs

@@ -140,7 +140,7 @@ def dispatch_1x1x1_matmul_conv3d[
         @__copy_capture(DHW_out, HW_out, H_out, W_out)
         def _gemm_epilogue[
             _dtype: DType,
-            _width: Int,
+            _width: SIMDSize,
             *,
             alignment: Int = 1,
         ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):

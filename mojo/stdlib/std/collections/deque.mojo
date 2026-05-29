@@ -23,6 +23,7 @@ from std.collections import Deque
 
 
 from std.bit import next_power_of_two
+from std.builtin.rebind import downcast
 import std.format._utils as fmt
 from std.hashlib import Hasher
 from std.collections import check_bounds
@@ -33,13 +34,14 @@ from std.memory.alloc import alloc, free, Layout
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: Copyable & ImplicitlyDestructible](
+struct Deque[ElementType: Movable & ImplicitlyDestructible](
     Boolable,
-    Copyable,
+    Copyable where conforms_to(ElementType, Copyable),
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
     Iterable,
     IterableOwned,
+    Movable,
     Sized,
     Writable where conforms_to(ElementType, Writable),
 ):
@@ -49,13 +51,18 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     underlying storage as needed.
 
     Parameters:
-        ElementType: The type of the elements in the deque.
-            Must implement the traits `Copyable`.
+        ElementType: The type of the elements in the deque. Must implement
+            `Movable` and `ImplicitlyDestructible`.
     """
 
+    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the
+    # `downcast`s below — it is already implied by `ElementType`'s bound.
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _DequeIter[Self.ElementType, iterable_origin]
+    ]: Iterator = _DequeIter[
+        downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+        iterable_origin,
+    ]
     """The iterator type for this deque.
 
     Parameters:
@@ -63,7 +70,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         iterable_origin: The origin of the iterable.
     """
 
-    comptime IteratorOwnedType: Iterator = _DequeIterOwned[Self.ElementType]
+    comptime IteratorOwnedType: Iterator = _DequeIterOwned[
+        downcast[Self.ElementType, Copyable & ImplicitlyDestructible]
+    ]
     """The owned iterator type for this deque."""
 
     # ===-------------------------------------------------------------------===#
@@ -183,7 +192,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         # Remember how many values we have.
         self._tail = args_length
 
-    def __init__(out self, *, copy: Self):
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.ElementType, Copyable):
         """Creates a deep copy of the given deque.
 
         Args:
@@ -195,9 +206,14 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             maxlen=copy._maxlen,
             shrink=copy._shrink,
         )
+        comptime UnsafePointerType = UnsafePointer[
+            downcast[Self.ElementType, Copyable], MutExternalOrigin
+        ]
         for i in range(len(copy)):
             offset = copy._physical_index(copy._head + i)
-            (self._data + i).init_pointee_copy((copy._data + offset)[])
+            rebind[UnsafePointerType](self._data + i).init_pointee_copy(
+                rebind[UnsafePointerType](copy._data + offset)[]
+            )
 
         self._tail = len(copy)
 
@@ -212,7 +228,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    def __add__(self, other: Self) -> Self:
+    def __add__(
+        self, other: Self
+    ) -> Self where conforms_to(Self.ElementType, Copyable):
         """Concatenates self with other and returns the result as a new deque.
 
         Args:
@@ -226,7 +244,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             new.append(element.copy())
         return new^
 
-    def __iadd__(mut self, other: Self):
+    def __iadd__(
+        mut self, other: Self
+    ) where conforms_to(Self.ElementType, Copyable):
         """Appends the elements of other deque into self.
 
         Args:
@@ -235,7 +255,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         for element in other:
             self.append(element.copy())
 
-    def __mul__(self, n: Int) -> Self:
+    def __mul__(
+        self, n: Int
+    ) -> Self where conforms_to(Self.ElementType, Copyable):
         """Concatenates `n` deques of `self` and returns a new deque.
 
         Args:
@@ -257,7 +279,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                 new.append(element.copy())
         return new^
 
-    def __imul__(mut self, n: Int):
+    def __imul__(
+        mut self, n: Int
+    ) where conforms_to(Self.ElementType, Copyable):
         """Concatenates self `n` times in place.
 
         Args:
@@ -333,7 +357,20 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             An iterator that owns the deque's elements.
         """
-        return {self^, 0}
+        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
+        comptime assert conforms_to(
+            Self.ElementType, Copyable
+        ), "Deque iteration requires the element to be `Copyable`."
+        return {
+            rebind_var[
+                Deque[
+                    downcast[
+                        Self.ElementType, Copyable & ImplicitlyDestructible
+                    ]
+                ]
+            ](self^),
+            0,
+        }
 
     def __iter__(
         ref self,
@@ -343,17 +380,55 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             An iterator of the references to the deque elements.
         """
-        return _DequeIter(0, Pointer(to=self))
+        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
+        comptime assert conforms_to(
+            Self.ElementType, Copyable
+        ), "Deque iteration requires the element to be `Copyable`."
+        return _DequeIter(
+            0,
+            rebind[
+                Pointer[
+                    Deque[
+                        downcast[
+                            Self.ElementType, Copyable & ImplicitlyDestructible
+                        ]
+                    ],
+                    origin_of(self),
+                ]
+            ](Pointer(to=self)),
+        )
 
+    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the
+    # `downcast` below — it is already implied by `ElementType`'s bound.
     def __reversed__(
         ref self,
-    ) -> _DequeIter[Self.ElementType, origin_of(self), False]:
+    ) -> _DequeIter[
+        downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+        origin_of(self),
+        False,
+    ]:
         """Iterate backwards over the deque, returning the references.
 
         Returns:
             A reversed iterator of the references to the deque elements.
         """
-        return _DequeIter[forward=False](len(self), Pointer(to=self))
+        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
+        comptime assert conforms_to(
+            Self.ElementType, Copyable
+        ), "Deque iteration requires the element to be `Copyable`."
+        return _DequeIter[forward=False](
+            len(self),
+            rebind[
+                Pointer[
+                    Deque[
+                        downcast[
+                            Self.ElementType, Copyable & ImplicitlyDestructible
+                        ]
+                    ],
+                    origin_of(self),
+                ]
+            ](Pointer(to=self)),
+        )
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -722,7 +797,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         raise "ValueError: Given element is not in deque"
 
-    def peek(self) raises -> Self.ElementType:
+    def peek(
+        self,
+    ) raises -> Self.ElementType where conforms_to(Self.ElementType, Copyable):
         """Inspect the last (rightmost) element of the deque without removing it.
 
         Returns:
@@ -736,7 +813,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         return (self._data + self._physical_index(self._tail - 1))[].copy()
 
-    def peekleft(self) raises -> Self.ElementType:
+    def peekleft(
+        self,
+    ) raises -> Self.ElementType where conforms_to(Self.ElementType, Copyable):
         """Inspect the first (leftmost) element of the deque without removing it.
 
         Returns:

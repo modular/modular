@@ -39,7 +39,7 @@ def _ri(v: Int) -> Int64:
 
 
 def apply[
-    func: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
+    func: def[dtype: DType, width: SIMDSize](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -57,7 +57,7 @@ def apply[
 
 
 def bench_unary[
-    func: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
+    func: def[dtype: DType, width: SIMDSize](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -67,7 +67,7 @@ def bench_unary[
 
 
 def bench_unary[
-    func: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
+    func: def[dtype: DType, width: SIMDSize](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -109,7 +109,7 @@ def bench_unary[
 
 
 def ldexp2kf_opt[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x_in: SIMD[dtype, simd_width], q_in: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
@@ -136,7 +136,7 @@ def ldexp2kf_opt[
 
 
 def pow2if[
-    simd_width: Int
+    simd_width: SIMDSize
 ](q: SIMD[DType.int32, simd_width]) -> SIMD[DType.float32, simd_width]:
     var x = (
         ((q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]())
@@ -145,7 +145,7 @@ def pow2if[
 
 
 def ldexp2kf[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](d: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
@@ -169,7 +169,7 @@ def ldexp2kf[
 
 @always_inline
 def exp_libm[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     var res = SIMD[dtype, simd_width]()
 
@@ -180,7 +180,7 @@ def exp_libm[
 
 @always_inline
 def ldexp_libm[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
@@ -192,7 +192,7 @@ def ldexp_libm[
 
 
 def exp_sleef[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](d: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime inv_lg2 = SIMD[dtype, simd_width](1.4426950408889634)
     comptime lg2it = SIMD[dtype, simd_width](0.6931471805599453)
@@ -219,7 +219,7 @@ def exp_sleef[
 
 @always_inline
 def _exp_taylor0[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime coefficients: List[Scalar[dtype]] = [
         1.0,
@@ -236,7 +236,7 @@ def _exp_taylor0[
 
 @always_inline
 def exp_mojo_opt[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
@@ -264,7 +264,7 @@ def exp_mojo_opt[
 
 @always_inline
 def exp_mojo_opt2[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
@@ -289,7 +289,7 @@ def exp_mojo_opt2[
 
 @always_inline
 def _exp_taylor3[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime coefficients: List[Scalar[dtype]] = [
         0.5,
@@ -304,7 +304,7 @@ def _exp_taylor3[
 
 @always_inline
 def exp_mojo_opt3[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
@@ -328,7 +328,7 @@ def exp_mojo_opt3[
 
 @always_inline
 def _exp_taylor_mlas[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     return polynomial_evaluate[
         [
@@ -345,7 +345,7 @@ def _exp_taylor_mlas[
 
 @always_inline
 def exp_mlas[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
@@ -366,7 +366,7 @@ def exp_mlas[
 
 @always_inline
 def llvm_ldexp[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
@@ -375,7 +375,7 @@ def llvm_ldexp[
 
 @always_inline
 def mlas_llvm_ldexp[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
