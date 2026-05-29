@@ -12,7 +12,7 @@ modular_py_test(
     size = "large",
     srcs = glob(["*.py"]),
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "9",
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = ["gpu"],
