@@ -835,6 +835,20 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
 
   bool hadFailure = false;
 
+  // Re-attach an auto-parameterized generator's trailing `where` (body)
+  // constraints to the enclosing parameter list (rebinding their index refs to
+  // the just-declared parameters) so they are still checked once the
+  // generator's parameters are inferred; must be called after those parameters
+  // are declared.
+  auto propagateBodyConstraints = [&](PogListAttr srcParamList) {
+    for (ConstraintAttr bodyConstraint : srcParamList.getBodyConstraints()) {
+      TypedAttr remappedProp =
+          evaluator.getReboundAttribute(bodyConstraint.getProposition());
+      paramList.emittedBodyConstraints.push_back(
+          ConstraintAttr::get(remappedProp, bodyConstraint.getLoc()));
+    }
+  };
+
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name,
                                 ArrayRef<ConstraintAttr> paramConstraints) {
@@ -932,13 +946,14 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
 
   if (auto gen = sugarDynCast<GeneratorType>(type)) {
     if (bindUnboundGeneratorTypes) {
-      PogListAttr paramList = gen.getParamListAttrs();
-      ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
+      PogListAttr genParamList = gen.getParamListAttrs();
+      ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
       for (auto [idx, type] : llvm::enumerate(gen.getInputParamTypes()))
         declareAndAddParam(type, pogs[idx].getName(),
                            /*paramConstraints=*/pogs[idx].getConstraints());
       if (hadFailure)
         return {};
+      propagateBodyConstraints(genParamList);
       return gen
           .getSpecializedGenerator(paramValues, &shared.getEvaluationContext(),
                                    shared.translateLocation(loc))
@@ -950,13 +965,14 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   if (auto paramType = sugarDynCast<ParamType>(type)) {
     if (auto genType =
             dyn_cast<GeneratorType>(paramType.getParam().getType())) {
-      PogListAttr paramList = genType.getParamListAttrs();
-      ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
+      PogListAttr genParamList = genType.getParamListAttrs();
+      ArrayRef<PogMetadataAttr> pogs = genParamList.getPogs();
       for (auto [idx, type] : llvm::enumerate(genType.getInputParamTypes()))
         declareAndAddParam(type, pogs[idx].getName(),
                            /*paramConstraints=*/pogs[idx].getConstraints());
       if (hadFailure)
         return {};
+      propagateBodyConstraints(genParamList);
       TypedAttr generator = paramType.getParam();
       Type resultType = BindParamsAttr::inferResultType(
           generator, paramValues, &shared.getEvaluationContext());
