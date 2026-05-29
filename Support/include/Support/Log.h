@@ -26,6 +26,8 @@
 #ifndef SUPPORT_LOG_H
 #define SUPPORT_LOG_H
 
+#include "LogChannels.h"
+
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -154,21 +156,24 @@ struct LogRecord {
   std::array<LogArg, maxArgs> args;
   uint8_t argCount;
   LogLevel level;
+  Channel::Channels channel;
 
   template <typename... Args>
-  LogRecord(Timestamp ts, LogLevel lvl, std::string_view fmt, Args &&...args)
+  LogRecord(Timestamp ts, LogLevel lvl, Channel::Channels c,
+            std::string_view fmt, Args &&...args)
       : timestamp(ts), fmtString(fmt),
         args{Detail::toLogArg(std::forward<Args>(args))...},
-        argCount(sizeof...(Args)), level(lvl) {
+        argCount(sizeof...(Args)), level(lvl), channel(c) {
     static_assert(sizeof...(Args) <= maxArgs, "Too many log arguments");
   }
 
   // Constructs from a pre-built args array. Used by the C FFI shim
   // (LogFFI.cpp), which serializes typed arguments across the boundary itself.
-  LogRecord(Timestamp ts, LogLevel lvl, std::string_view fmt,
-            std::array<LogArg, maxArgs> prebuiltArgs, uint8_t count)
+  LogRecord(Timestamp ts, LogLevel lvl, Channel::Channels c,
+            std::string_view fmt, std::array<LogArg, maxArgs> prebuiltArgs,
+            uint8_t count)
       : timestamp(ts), fmtString(fmt), args(std::move(prebuiltArgs)),
-        argCount(count), level(lvl) {}
+        argCount(count), level(lvl), channel(c) {}
 };
 
 // Receives formatted log lines and writes to destinations (stdout, file &c).
@@ -186,14 +191,25 @@ class Logger {
   } formatState;
   std::atomic<LogLevel> level = LogLevel::WARN;
   std::vector<std::unique_ptr<Sink>> sinks;
+  ChannelState channelsEnabled;
 
   llvm::SmallString<32> buildTimestampString(LogRecord::Timestamp);
-  llvm::SmallString<128> buildLogPrefix(LogLevel, LogRecord::Timestamp);
+  llvm::SmallString<128> buildLogPrefix(LogLevel, Channel::Channels,
+                                        LogRecord::Timestamp);
 
 public:
   Logger();
   ~Logger();
   void log(LogRecord record);
+
+  void enableChannel(Channel::Channels c) { channelsEnabled.enable(c); }
+  void disableChannel(Channel::Channels c) { channelsEnabled.disable(c); }
+  void enableAllChannels() { channelsEnabled.enableAll(); }
+  void disableAllChannels() { channelsEnabled.disableAll(); }
+
+  bool isEnabled(Channel::Channels c) const {
+    return channelsEnabled.isEnabled(c);
+  }
 
   LogLevel getLogLevel() const {
     return level.load(std::memory_order::acquire);
@@ -211,6 +227,18 @@ inline Logger &getDefaultLog() {
 
 inline void setLogLevel(LogLevel level) { getDefaultLog().setLogLevel(level); }
 
+inline void enableChannel(Channel::Channels c) {
+  getDefaultLog().enableChannel(c);
+}
+
+inline void disableChannel(Channel::Channels c) {
+  getDefaultLog().disableChannel(c);
+}
+
+inline void enableAllChannels() { getDefaultLog().enableAllChannels(); }
+
+inline void disableAllChannels() { getDefaultLog().disableAllChannels(); }
+
 inline void logWrite(Logger &log, LogRecord record) {
   log.log(std::move(record));
 }
@@ -219,11 +247,12 @@ inline void logWrite(Logger &log, LogRecord record) {
 // dispatches to the Logger object.
 template <typename... Args>
 inline void logWriteDispatch(Logger &log, LogLevel level,
+                             Channel::Channels channel,
                              fmt::format_string<Args...> fmt, Args &&...args) {
-  if (log.getLogLevel() > level)
+  if (log.getLogLevel() > level || !log.isEnabled(channel))
     return;
 
-  LogRecord record(std::chrono::system_clock::now(), level,
+  LogRecord record(std::chrono::system_clock::now(), level, channel,
                    {fmt.get().data(), fmt.get().size()},
                    std::forward<Args>(args)...);
   logWrite(log, std::move(record));
@@ -231,13 +260,28 @@ inline void logWriteDispatch(Logger &log, LogLevel level,
 
 template <typename... Args>
 void log(fmt::format_string<Args...> fmt, Args &&...args) {
-  logWriteDispatch(getDefaultLog(), LogLevel::INFO, fmt,
+  logWriteDispatch(getDefaultLog(), LogLevel::INFO, Channel::Default, fmt,
                    std::forward<Args>(args)...);
 }
 
 template <typename... Args>
 void log(LogLevel level, fmt::format_string<Args...> fmt, Args &&...args) {
-  logWriteDispatch(getDefaultLog(), level, fmt, std::forward<Args>(args)...);
+  logWriteDispatch(getDefaultLog(), level, Channel::Default, fmt,
+                   std::forward<Args>(args)...);
+}
+
+template <typename... Args>
+void log(Channel::Channels channel, fmt::format_string<Args...> fmt,
+         Args &&...args) {
+  logWriteDispatch(getDefaultLog(), LogLevel::INFO, channel, fmt,
+                   std::forward<Args>(args)...);
+}
+
+template <typename... Args>
+void log(LogLevel level, Channel::Channels channel,
+         fmt::format_string<Args...> fmt, Args &&...args) {
+  logWriteDispatch(getDefaultLog(), level, channel, fmt,
+                   std::forward<Args>(args)...);
 }
 
 } // namespace M::Log

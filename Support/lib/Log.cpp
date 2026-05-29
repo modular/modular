@@ -37,6 +37,7 @@ static constexpr llvm::StringLiteral LOG_MICROSECONDS = "log.microseconds";
 static constexpr llvm::StringLiteral LOG_NO_ENHANCED = "log.no_enhanced";
 static constexpr llvm::StringLiteral LOG_NO_TIMESTAMP = "log.no_timestamp";
 static constexpr llvm::StringLiteral LOG_JSON = "log.json";
+static constexpr llvm::StringLiteral LOG_CHANNELS = "log.enabled_channels";
 } // namespace ConfigEntry
 
 static LogLevel parseLogLevelFromString(llvm::StringRef levelStr) {
@@ -78,6 +79,19 @@ static llvm::raw_ostream::Colors getLogLevelColor(LogLevel level) {
   case LogLevel::FATAL:
     return RED;
   }
+}
+
+static llvm::StringRef getChannelName(Channel::Channels c) {
+  switch (c) {
+#define CHANNEL_CASE(ch, cfgName)                                              \
+  case Channel::ch:                                                            \
+    return cfgName;
+    MLOG_CHANNELS(CHANNEL_CASE)
+#undef CHANNEL_CASE
+  case Channel::NChannels:
+    break;
+  }
+  llvm_unreachable("invalid Channel::Channels value");
 }
 
 static llvm::StringLiteral getLogLevelPrefix(LogLevel level) {
@@ -128,8 +142,10 @@ static llvm::SmallString<32> buildISOFormatString(LogRecord::Timestamp now,
   return result;
 }
 
-static llvm::SmallString<512>
-buildJSONLogLine(LogLevel level, llvm::StringRef msg, LogRecord::Timestamp ts) {
+static llvm::SmallString<512> buildJSONLogLine(LogLevel level,
+                                               Channel::Channels channel,
+                                               llvm::StringRef msg,
+                                               LogRecord::Timestamp ts) {
   // Always use full ISO 8601 with microseconds in JSON mode regardless of
   // the showTimeStamp / useIsoTimestamps / showMicroseconds config flags.
   auto timestamp = buildISOFormatString(ts, /*includeMicroseconds=*/true);
@@ -140,6 +156,7 @@ buildJSONLogLine(LogLevel level, llvm::StringRef msg, LogRecord::Timestamp ts) {
   json.object([&] {
     json.attribute("timestamp", timestamp);
     json.attribute("level", getLogLevelPrefix(level).trim());
+    json.attribute("channel", getChannelName(channel));
     json.attribute("message", msg);
   });
   return jsonLogLine;
@@ -260,13 +277,35 @@ Logger::Logger() {
     sinks.push_back(std::make_unique<StdoutSink>());
   if (!logFilePath.empty()) {
     auto fileSinkOrErr = FileSink::create(logFilePath);
-    if (fileSinkOrErr)
+    if (fileSinkOrErr) {
       sinks.push_back(std::move(*fileSinkOrErr));
-    else
+    } else {
       llvm::errs() << "Failed to open log file '" << logFilePath
                    << "': " << fileSinkOrErr.getError().message()
                    << (logToStdout ? "\nLog messages only going to stdout.\n"
                                    : "\nNo log messages will be emitted.\n");
+    }
+  }
+  auto channelsList = cfg.getValueOr(LOG_CHANNELS, "");
+  llvm::SmallVector<llvm::StringRef> names;
+  llvm::StringRef(channelsList).split(names, ';');
+  for (auto name : names) {
+    name = name.trim();
+    if (name.empty())
+      continue;
+    if (name == "all") {
+      channelsEnabled.enableAll();
+      continue;
+    }
+#define MATCH(channel, cfgName)                                                \
+  if (name == cfgName) {                                                       \
+    channelsEnabled.enable(Channel::channel);                                  \
+    continue;                                                                  \
+  }
+    MLOG_CHANNELS(MATCH)
+#undef MATCH
+    llvm::errs() << "Unknown channel name \"" << name
+                 << "\" in configuration file parsing\n";
   }
 }
 
@@ -277,9 +316,10 @@ void Logger::log(LogRecord record) {
   auto level = record.level;
   llvm::SmallString<512> enhancedOrJSONMsg;
   if (formatState.emitJSON) {
-    enhancedOrJSONMsg = buildJSONLogLine(level, msg, record.timestamp);
+    enhancedOrJSONMsg =
+        buildJSONLogLine(level, record.channel, msg, record.timestamp);
   } else if (formatState.useEnhancedFormat) {
-    enhancedOrJSONMsg = buildLogPrefix(level, record.timestamp);
+    enhancedOrJSONMsg = buildLogPrefix(level, record.channel, record.timestamp);
     enhancedOrJSONMsg += msg;
   } else {
     enhancedOrJSONMsg = msg;
@@ -317,6 +357,7 @@ llvm::SmallString<32> Logger::buildTimestampString(LogRecord::Timestamp ts) {
 
 // TODO(dmcbain): change how format options are used to move this out-of-line
 llvm::SmallString<128> Logger::buildLogPrefix(LogLevel level,
+                                              Channel::Channels channel,
                                               LogRecord::Timestamp ts) {
   using enum llvm::raw_ostream::Colors;
   llvm::SmallString<128> prefix;
@@ -338,6 +379,10 @@ llvm::SmallString<128> Logger::buildLogPrefix(LogLevel level,
     if (formatState.showColors)
       prefix += llvm::sys::Process::ResetColor();
   }
+
+  prefix += "[";
+  prefix += getChannelName(channel);
+  prefix += "] ";
 
   return prefix;
 }

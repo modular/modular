@@ -32,8 +32,9 @@ uint8_t MLog_get_level(void);
 /// default logger. args must point to argCount elements whose layout matches
 /// M::Log::LogArg (verified by static_asserts in LogFFI.cpp). timestamp
 /// must be a value returned from MLog_now to reconstruct time values.
-void MLog_write(uint8_t level, int64_t timestamp, const char *fmt,
-                size_t fmtLen, const void *args, uint8_t argCount);
+void MLog_write(uint8_t level, uint64_t channel, int64_t timestamp,
+                const char *fmt, size_t fmtLen, const void *args,
+                uint8_t argCount);
 
 /// Sets the minimum log level on the default logger.
 void MLog_set_level(uint8_t level);
