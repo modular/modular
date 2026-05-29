@@ -23,9 +23,7 @@ from layout import (
     row_major,
 )
 from layout._fillers import random
-from state_space.causal_conv1d import (
-    causal_conv1d_channel_first_fwd_cpu,
-)
+from state_space.causal_conv1d import causal_conv1d_fwd_cpu
 from std.testing import TestSuite, assert_almost_equal
 
 from std.utils.index import Index
@@ -120,21 +118,27 @@ def run_causal_conv1d[
 
     var silu_activation = activation == "silu"
 
-    # Test kernel
-    causal_conv1d_channel_first_fwd_cpu[
+    # Test kernel. Read-only inputs are passed as immutable borrows, so bias_tt
+    # can stand in for the unused seq_idx argument (has_seq_idx=False) without a
+    # separate allocation or an aliasing conflict.
+    causal_conv1d_fwd_cpu[
         dtype,
         dtype,
         dtype,
         dtype,
+        dtype,
+        True,
+        False,
     ](
         batch,
         dim,
         seqlen,
         width,
-        input_tt,
-        weight_tt,
+        input_tt.as_immut(),
+        weight_tt.as_immut(),
         result_fused_tt,
-        bias_tt,
+        bias_tt.as_immut(),
+        bias_tt.as_immut(),
         x_batch_stride,
         x_c_stride,
         x_l_stride,
@@ -144,6 +148,8 @@ def run_causal_conv1d[
         out_c_stride,
         out_l_stride,
         bias_stride,
+        UInt32(0),
+        UInt32(0),
         silu_activation,
     )
 
