@@ -767,8 +767,32 @@ ParseResult KGEN::parseParamName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
+static ParseResult
+parseDischargedBodyConstraints(AsmParser &p, DenseBoolArrayAttr &discharged) {
+  if (failed(p.parseOptionalVerticalBar()))
+    return success();
+
+  std::string mask;
+  if (p.parseString(&mask))
+    return failure();
+
+  SmallVector<bool> values;
+  values.reserve(mask.size());
+  for (char bit : mask) {
+    if (bit != '0' && bit != '1') {
+      return p.emitError(
+          p.getCurrentLocation(),
+          "expected discharged mask to contain only '0' and '1'");
+    }
+    values.push_back(bit == '1');
+  }
+  discharged = Builder(p.getContext()).getDenseBoolArrayAttr(values);
+  return success();
+}
+
 ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
                                   SmallVectorImpl<TypedAttr> &paramValues,
+                                  DenseBoolArrayAttr &discharged,
                                   Type preParsedGeneratorType) {
   if (!preParsedGeneratorType &&
       parseColonTypeOrIndex(p, preParsedGeneratorType))
@@ -788,11 +812,12 @@ ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
     if (parseColonTypeParamValue(p, paramValues.emplace_back()))
       return failure();
   }
-  return success();
+  return parseDischargedBodyConstraints(p, discharged);
 }
 
 void KGEN::printBindParams(AsmPrinter &p, TypedAttr generator,
-                           ArrayRef<TypedAttr> paramValues) {
+                           ArrayRef<TypedAttr> paramValues,
+                           DenseBoolArrayAttr discharged) {
   printColonTypeParamValue(p, generator);
   for (TypedAttr value : paramValues) {
     p << ", ";
@@ -800,6 +825,12 @@ void KGEN::printBindParams(AsmPrinter &p, TypedAttr generator,
     // necessarily has the same representation as the generator input parameter
     // type when they are both inferred from outer scope.
     printColonTypeParamValue(p, value);
+  }
+  if (discharged && !discharged.empty()) {
+    p << " | \"";
+    for (bool value : discharged.asArrayRef())
+      p << (value ? '1' : '0');
+    p << '"';
   }
 }
 
@@ -1119,12 +1150,13 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
       if (keyword == "bind_params" && operandType) {
         TypedAttr generator;
         SmallVector<TypedAttr> paramValues;
-        if (parseBindParams(p, generator, paramValues, operandType))
+        DenseBoolArrayAttr discharged;
+        if (parseBindParams(p, generator, paramValues, discharged, operandType))
           return failure();
         if (p.parseRParen())
           return failure();
-        value =
-            BindParamsAttr::get(p.getContext(), generator, paramValues, type);
+        value = BindParamsAttr::get(p.getContext(), generator, paramValues,
+                                    discharged, type);
         return success();
       }
 
@@ -1412,7 +1444,8 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
 
   if (auto bindParams = dyn_cast<BindParamsAttr>(value)) {
     p << "bind_params(";
-    printBindParams(p, bindParams.getGenerator(), bindParams.getParamValues());
+    printBindParams(p, bindParams.getGenerator(), bindParams.getParamValues(),
+                    bindParams.getDischarged());
     p << ')';
     return;
   }

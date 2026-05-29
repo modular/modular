@@ -912,6 +912,22 @@ static LogicalResult lowerAttributesAndTypes(
     return replaceGeneratorAttrType(singletonTypeHelper, replacer, gen);
   });
 
+  replacer.addReplacement(
+      [&](BindParamsAttr attr)
+          -> std::optional<std::pair<TypedAttr, WalkResult>> {
+        DenseBoolArrayAttr discharged = attr.getDischarged();
+        if (!discharged || discharged.empty())
+          return std::nullopt;
+
+        // Remove discharge mask since it goes together with the generator
+        // metadata's body constraints.
+        return std::make_pair(
+            cast<TypedAttr>(BindParamsAttr::get(
+                attr.getContext(), attr.getGenerator(), attr.getParamValues(),
+                attr.getType(), /*evaluationContext=*/nullptr)),
+            WalkResult::advance());
+      });
+
   replacer.addReplacement([&](StructInstanceType structInstType) {
     auto it = symbolDroppedParamDecls.find(structInstType.getName());
     if (it == symbolDroppedParamDecls.end() ||

@@ -46,6 +46,7 @@ class ConversionPatternRewriter;
 class ConversionTarget;
 class DenseElementsAttr;
 class DenseIntElementsAttr;
+using DenseBoolArrayAttr = detail::DenseArrayAttrImpl<bool>;
 using DenseI8ArrayAttr = detail::DenseArrayAttrImpl<int8_t>;
 class DenseResourceElementsAttr;
 namespace detail {
@@ -178,6 +179,7 @@ using mlir::ConversionPattern;
 using mlir::ConversionPatternRewriter;
 using mlir::ConversionTarget;
 using mlir::DefaultTypeStorage;
+using mlir::DenseBoolArrayAttr;
 using mlir::DenseElementsAttr;
 using mlir::DenseI8ArrayAttr;
 using mlir::DenseIntElementsAttr;

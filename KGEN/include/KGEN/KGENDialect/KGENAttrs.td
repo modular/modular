@@ -1410,15 +1410,24 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
   let parameters = (ins
     "TypedAttr":$generator,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues,
+    OptionalParameter<"DenseBoolArrayAttr">:$discharged,
     AttributeSelfTypeParameter<"", "Type">:$type
   );
-  let assemblyFormat = "`<` custom<BindParams>($generator, $paramValues) `>`";
+  let assemblyFormat =
+      "`<` custom<BindParams>($generator, $paramValues, $discharged) `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
     // Optionally takes an evaluation context to use when simplifying/folding.
     // The evaluation context is never stored, only used temporarily prior to
     // construction.
+    AttrBuilder<(ins
+      "TypedAttr":$generator,
+      "ArrayRef<TypedAttr>":$paramValues,
+      "DenseBoolArrayAttr":$discharged,
+      "Type":$type,
+      CArg<"ParameterEvaluationContext *", "nullptr">:$evaluationContext
+    ), "", "TypedAttr">,
     AttrBuilder<(ins
       "TypedAttr":$generator,
       "ArrayRef<TypedAttr>":$paramValues,
@@ -1433,7 +1442,17 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
     /// ignored.
     static Type inferResultType(
         TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+        DenseBoolArrayAttr discharged,
         ParameterEvaluationContext *evaluationContext);
+    static Type inferResultType(
+        TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+        ParameterEvaluationContext *evaluationContext);
+
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// bypassing simplification.
+    static BindParamsAttr getFromBytecode(
+        TypedAttr generator, ArrayRef<TypedAttr> paramValues, Type type,
+        DenseBoolArrayAttr discharged = {});
   }];
   let genVerifyDecl = 1;
 }

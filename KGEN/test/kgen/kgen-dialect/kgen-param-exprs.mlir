@@ -945,6 +945,12 @@ kgen.generator @bindParams<c, d: type>() {
   // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, :type d)>
   kgen.param.declare bind_all: (!pop.array<c, d>) -> () =
     <#kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, c, :type d>>
+  // CHECK: declare bind_discharged_all = <bind_params(:!lit.generator<<index, {<true, {{.*}}>, <true, {{.*}}>, <true, {{.*}}>}>index> ?, 1 | "111")>
+  kgen.param.declare bind_discharged_all: index =
+    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":1:1)>, <true, loc("bind_params":1:2)>, <true, loc("bind_params":1:3)>}>index> ?, 1 | "111">>
+  // CHECK: declare bind_discharged_none: !lit.generator<{{.*}} | "000"
+  kgen.param.declare bind_discharged_none: !lit.generator<<{<true, loc("bind_params":2:1)>, <true, loc("bind_params":2:2)>, <true, loc("bind_params":2:3)>}>index> =
+    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":2:1)>, <true, loc("bind_params":2:2)>, <true, loc("bind_params":2:3)>}>index> ?, 1 | "000">>
   // CHECK: declare bind0_then_bind1: (!pop.array<c, d>) -> () =
   // CHECK-SAME: <bind_params(:<type>(!pop.array<c, *(0,0)>) -> () bind0, :type d)>
   kgen.param.declare bind0_then_bind1: (!pop.array<c, d>) -> () =
@@ -969,6 +975,17 @@ kgen.generator @bindParams<c, d: type>() {
       :!kgen.generator<<index>(!pop.array<*(0,0), d>) -> ()>
         #kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, ?, :type d>,
       c>>
+  // The outer mask is indexed over the residual constraints from the inner
+  // bind_params. Inner discharged original constraint 1, so residual
+  // constraint 0 maps back to original constraint 0. The flattened
+  // original-indexed mask is therefore "110".
+  // CHECK: declare nested_discharged: !lit.generator<<{<true, {{.*}}}>index> =
+  // CHECK-SAME: <bind_params(:!lit.generator<<index, type, {<true, {{.*}}>, <true, {{.*}}>, <true, {{.*}}>}>index> ?, 1, :type i64 | "110")>
+  kgen.param.declare nested_discharged: !lit.generator<<{<true, loc("bind_params":3:3)>}>index> =
+    <#kgen.bind_params<
+      :!lit.generator<<type, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:3)>}>index>
+        #kgen.bind_params<:!lit.generator<<index, type, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:2)>, <true, loc("bind_params":3:3)>}>index> ?, 1, :type ? | "010">,
+      :type i64 | "10">>
   kgen.return
 }
 
