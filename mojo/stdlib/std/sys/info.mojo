@@ -170,7 +170,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         Returns:
             True if the target supports SSE4, False otherwise.
         """
-        return Self._has_feature["sse4"]()
+        return Self._has_feature["sse4.1"]()
 
     @staticmethod
     def has_avx() -> Bool:
