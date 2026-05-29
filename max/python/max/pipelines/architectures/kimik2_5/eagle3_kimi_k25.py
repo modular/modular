@@ -403,10 +403,10 @@ class Eagle3KimiK25(Module):
                 dtype=DType.int64,
                 device=devices[0],
             )
+            draft_return_n_logits_range_per_dev = ops.distributed_broadcast(
+                draft_return_n_logits_range, signal_buffers
+            )
             if self.use_data_parallel_attention:
-                draft_return_n_logits_range_per_dev = ops.distributed_broadcast(
-                    draft_return_n_logits_range, signal_buffers
-                )
                 # DP: each device has a batch shard; gather per-device then
                 # allgather to reconstruct the full batch.
                 variable_per_dev: list[TensorValue] = []
@@ -433,23 +433,29 @@ class Eagle3KimiK25(Module):
                     DType.float32,
                 )
             else:
-                # TP: tokens replicated; gather from device 0's offsets,
-                # then norm + lm_head across all devices.
-                last_offsets = (
-                    ops.unsqueeze(input_row_offsets_[0][1:], -1)
-                    - draft_return_n_logits_range
+                # TP: tokens replicated; gather from the same offsets on each
+                # device, then norm + lm_head across all devices.
+                # (input_row_offsets_ is same for all devices)
+                last_indices_per_dev = [
+                    ops.reshape(
+                        ops.unsqueeze(input_row_offsets_[dev_idx][1:], -1)
+                        - draft_return_n_logits_range_per_dev[dev_idx],
+                        shape=(-1,),
+                    )
+                    for dev_idx in range(len(devices))
+                ]
+                gathered = [
+                    ops.gather(h_dev, last_indices, axis=0)
+                    for h_dev, last_indices in zip(
+                        hs, last_indices_per_dev, strict=True
+                    )
+                ]  # [batch*num_steps, hidden] per shard
+                norm_variable = forward_sharded_layers(
+                    self.norm_shards, gathered
                 )
-                last_indices = ops.reshape(last_offsets, shape=(-1,))
-                variable_logits = ops.gather(
-                    ops.cast(
-                        self.lm_head(
-                            forward_sharded_layers(self.norm_shards, hs),
-                            signal_buffers,
-                        )[0],
-                        DType.float32,
-                    ),
-                    last_indices,
-                    axis=0,
+                variable_logits = ops.cast(
+                    self.lm_head(norm_variable, signal_buffers)[0],
+                    DType.float32,
                 )
             logit_offsets = ops.range(
                 0,
