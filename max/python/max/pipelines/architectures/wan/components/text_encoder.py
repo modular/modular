@@ -43,9 +43,14 @@ class TextEncoder(CompiledComponent):
 
     _model: Model
 
-    # Diffusers pads tokens to 512 but trims final embeddings to 226
-    # for cross-attention.
-    embed_seq_len: int = 226
+    # Wan-AI's reference implementation pads tokens to 512 and feeds the
+    # full 512-length context to cross-attention. The broader DiT inference
+    # ecosystem follows the same convention:
+    # - diffusers WanPipeline.__call__ default:
+    #   https://github.com/huggingface/diffusers/blob/v0.38.0/src/diffusers/pipelines/wan/pipeline_wan.py#L403
+    # - cache-dit hardcoded 512:
+    #   https://github.com/vipshop/cache-dit/blob/v1.3.9/src/cache_dit/distributed/transformers/wan.py#L80
+    embed_seq_len: int = 512
 
     @traced(message="TextEncoder.__init__")
     def __init__(
@@ -86,7 +91,7 @@ class TextEncoder(CompiledComponent):
         input_types = [
             TensorType(DType.int64, ["batch", "seq_len"], device=self._device),
         ]
-        embed_len = self.embed_seq_len  # 226
+        embed_len = self.embed_seq_len
         with Graph("umt5_encoder", input_types=input_types) as graph:
             input_ids = graph.inputs[0].tensor
 
@@ -126,7 +131,7 @@ class TextEncoder(CompiledComponent):
             token_ids: Token IDs, shape ``(batch, seq)`` or ``(seq,)``
                 int64 on device.
             num_videos_per_prompt: Number of videos per prompt for batching.
-            max_sequence_length: Must equal ``embed_seq_len`` (226) or
+            max_sequence_length: Must equal ``embed_seq_len`` (512) or
                 ``None``. Compiled into the graph at init time.
 
         Returns:
@@ -152,7 +157,7 @@ class TextEncoder(CompiledComponent):
 
         # Repeat for num_videos_per_prompt (rare, typically 1).
         if num_videos_per_prompt > 1:
-            # Small tensor (1, 226, hidden_dim) in bf16 — acceptable D2H/H2D.
+            # Small tensor (1, embed_seq_len, hidden_dim) in bf16 — acceptable D2H/H2D.
             result_np = np.from_dlpack(result.to(CPU()))
             repeated = np.ascontiguousarray(
                 np.repeat(result_np, num_videos_per_prompt, axis=0)
