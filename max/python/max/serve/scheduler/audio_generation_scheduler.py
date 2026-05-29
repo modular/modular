@@ -147,10 +147,7 @@ class SchedulerLogger:
             for replica_idx in range(dp)
         )
         num_input_tokens = batch.input_tokens
-        cache_tokens = sum(
-            kv_cache.get_metrics(replica_idx).cache_tokens
-            for replica_idx in range(dp)
-        )
+        cache_tokens = kv_cache.get_metrics_aggregated().cache_tokens
         denominator = cache_tokens + num_input_tokens
         if denominator == 0:
             cache_hit_rate = 0.0

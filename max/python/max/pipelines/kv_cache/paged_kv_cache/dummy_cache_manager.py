@@ -87,8 +87,8 @@ class DummyKVCache(PagedKVCacheManager):
         """Returns 1."""
         return 1
 
-    def get_metrics(self, replica_idx: int) -> KVCacheMetrics:
-        """Returns empty metrics."""
+    def get_metrics_aggregated(self) -> KVCacheMetrics:
+        """Returns empty aggregated metrics."""
         return KVCacheMetrics()
 
     def reset_metrics(self) -> None:

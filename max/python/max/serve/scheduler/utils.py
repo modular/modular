@@ -164,32 +164,22 @@ class BatchMetrics:
                 kv_cache.get_num_host_pages(replica_idx)
                 for replica_idx in range(num_replicas)
             )
+
+            metrics_agg = kv_cache.get_metrics_aggregated()
+
             if total_host_kv_blocks > 0:
                 used_host_kv_blocks = sum(
                     kv_cache.get_num_used_host_pages(replica_idx)
                     for replica_idx in range(num_replicas)
                 )
                 used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
-                h2d_blocks_copied = sum(
-                    kv_cache.get_metrics(replica_idx).h2d_blocks_copied
-                    for replica_idx in range(num_replicas)
-                )
-                d2h_blocks_copied = sum(
-                    kv_cache.get_metrics(replica_idx).d2h_blocks_copied
-                    for replica_idx in range(num_replicas)
-                )
-                disk_blocks_written = sum(
-                    kv_cache.get_metrics(replica_idx).disk_blocks_written
-                    for replica_idx in range(num_replicas)
-                )
-                disk_blocks_read = sum(
-                    kv_cache.get_metrics(replica_idx).disk_blocks_read
-                    for replica_idx in range(num_replicas)
-                )
-                inflight_disk_ops = sum(
-                    kv_cache.get_metrics(replica_idx).inflight_disk_ops
-                    for replica_idx in range(num_replicas)
-                )
+
+            h2d_blocks_copied = metrics_agg.h2d_blocks_copied
+            d2h_blocks_copied = metrics_agg.d2h_blocks_copied
+            disk_blocks_written = metrics_agg.disk_blocks_written
+            disk_blocks_read = metrics_agg.disk_blocks_read
+            inflight_disk_ops = metrics_agg.inflight_disk_ops
+
             total_disk_kv_blocks = sum(
                 kv_cache.get_num_disk_pages(replica_idx)
                 for replica_idx in range(num_replicas)
@@ -202,19 +192,12 @@ class BatchMetrics:
                 used_disk_kv_pct = used_disk_kv_blocks / total_disk_kv_blocks
 
             # dKV latency metrics: sum across replicas then average.
-            agg = sum(
-                (
-                    kv_cache.get_metrics(replica_idx)
-                    for replica_idx in range(num_replicas)
-                ),
-                kv_cache.get_metrics(0).__class__(),
-            )
-            nixl_read_latency_avg_ms = agg.nixl_read_latency_avg_ms
-            nixl_write_latency_avg_ms = agg.nixl_write_latency_avg_ms
-            rpc_acquire_latency_avg_ms = agg.rpc_acquire_latency_avg_ms
-            rpc_read_latency_avg_ms = agg.rpc_read_latency_avg_ms
-            nixl_read_gib_per_s = agg.nixl_read_gib_per_s
-            nixl_write_gib_per_s = agg.nixl_write_gib_per_s
+            nixl_read_latency_avg_ms = metrics_agg.nixl_read_latency_avg_ms
+            nixl_write_latency_avg_ms = metrics_agg.nixl_write_latency_avg_ms
+            rpc_acquire_latency_avg_ms = metrics_agg.rpc_acquire_latency_avg_ms
+            rpc_read_latency_avg_ms = metrics_agg.rpc_read_latency_avg_ms
+            nixl_read_gib_per_s = metrics_agg.nixl_read_gib_per_s
+            nixl_write_gib_per_s = metrics_agg.nixl_write_gib_per_s
 
             kv_cache.reset_metrics()
 

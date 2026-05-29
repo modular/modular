@@ -861,10 +861,12 @@ class PagedKVCacheManager:
             replica.block_manager.reset_prefix_cache()
             replica.connector.reset_prefix_cache()
 
-    def get_metrics(self, replica_idx: int) -> KVCacheMetrics:
-        """Returns metrics for the given replica."""
-        replica = self._replica[replica_idx]
-        return replica.block_manager.metrics
+    def get_metrics_aggregated(self) -> KVCacheMetrics:
+        """Returns aggregated metrics across all replicas."""
+        return sum(
+            (replica.block_manager.metrics for replica in self._replica),
+            start=KVCacheMetrics(),
+        )
 
     def get_req_blocks(
         self, request_id: RequestID, replica_idx: int
