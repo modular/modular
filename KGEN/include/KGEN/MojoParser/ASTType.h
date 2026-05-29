@@ -44,6 +44,9 @@ class RefPackType;
 class SharedState;
 class TraitType;
 
+/// Context threaded through the recursive ASTType printer.
+struct ASTTypePrinterContext;
+
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
 /// for working with our types, provides pretty printing in diagnostics, and
 ///
@@ -266,7 +269,7 @@ public:
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.
-  std::string getAsString(SharedState *forDiag = nullptr) const;
+  std::string getAsString(ASTTypePrinterContext ctx) const;
 
   /// Print to standard error with newline after it, for use in a debugger.
   void dump() const;
@@ -279,13 +282,13 @@ public:
     return ASTType(Type::getFromOpaquePointer(ptr));
   }
 
-  /// Print the ASTType. If `diagShared` is set, prettier printing is used to
+  /// Print the ASTType. If `ctx.shared` is set, prettier printing is used to
   /// print the type.
-  void print(raw_ostream &os, SharedState *diagShared = nullptr) const;
+  void print(raw_ostream &os, ASTTypePrinterContext ctx) const;
 
   /// Print the specified parameter like we would in AST type printing.
   static void printParam(raw_ostream &os, TypedAttr param,
-                         SharedState *diagShared);
+                         ASTTypePrinterContext ctx);
 
   /// Print the specified parameter like we would in an origin expression, works
   /// in an `origin_of(x)` body.
@@ -328,6 +331,20 @@ public:
   static TypedAttr extractOriginOf(TypedAttr value);
 };
 raw_ostream &operator<<(raw_ostream &os, ASTType type);
+
+/// Context threaded through the recursive ASTType printer.
+struct ASTTypePrinterContext {
+  /// SharedState, for prettier diagnostic-style printing
+  SharedState *shared = nullptr;
+  /// An optional "self" type that, when matched against a sub-expression,
+  /// prints `Self` in place of the fully-expanded form.
+  ASTType selfType = {};
+
+  ASTTypePrinterContext() {}
+  ASTTypePrinterContext(SharedState *shared) : shared(shared) {}
+  ASTTypePrinterContext(SharedState *shared, ASTType selfType)
+      : shared(shared), selfType(selfType) {}
+};
 
 } // namespace KGEN::LIT
 

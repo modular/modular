@@ -851,7 +851,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
                                       "deprecated implicit conversion from ")
                   << operands[0].ir.getRValueTypeIfResolvable() << " to "
                   << selfResultType << getExpr()->getRange();
-      std::string resTypeStr = selfResultType.getAsString(&emitter.shared);
+      std::string resTypeStr = selfResultType.getAsString({&emitter.shared});
       diag.attachNote(getExprLoc())
           << "call '" << resTypeStr + "(...)' explicitly"
           << FixIt::insertBeforeToken(getExpr()->getRangeStart(),

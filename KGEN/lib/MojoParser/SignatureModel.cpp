@@ -168,7 +168,7 @@ std::string mergeConformsToConstraints(ArrayRef<ConstraintAttr> constraints,
     std::string printed;
     {
       llvm::raw_string_ostream pos(printed);
-      ASTType::printParam(pos, proposition, &shared);
+      ASTType::printParam(pos, proposition, {&shared});
     }
 
     StringRef paramName, traitStr;
@@ -418,7 +418,7 @@ bool parseConformsToString(StringRef printed, StringRef &paramName,
 std::string generatePValueString(SharedState &shared, PValue value) {
   std::string typeName;
   llvm::raw_string_ostream os(typeName);
-  ASTType::printParam(os, value, /*forDiag=*/&shared);
+  ASTType::printParam(os, value, /*ctx=*/{&shared});
   return os.str();
 }
 
@@ -502,7 +502,7 @@ std::string generateTypeString(SharedState &shared, ASTType type,
     if (convention)
       type = RefType::stripRefConvention(type, *convention);
     ASTType::printParam(os, type.getVariadicPackInfo().typeList,
-                        /*forDiag=*/&shared);
+                        /*ctx=*/{&shared});
     return os.str();
   }
 
@@ -519,11 +519,8 @@ std::string generateTypeString(SharedState &shared, ASTType type,
   if (varKind == VariadicKind::KwVarArg)
     type = type.getKwargsDictValueType();
 
-  // If this type is the same as the self type, use the "Self" keyword.
-  if (selfType && type.isEqualCanon(*selfType))
-    os << "Self";
-  else
-    os << type.getAsString(/*forDiag=*/&shared);
+  ASTTypePrinterContext ctx{&shared, selfType.value_or(ASTType{})};
+  os << type.getAsString(ctx);
 
   return os.str();
 }

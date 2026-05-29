@@ -1004,7 +1004,9 @@ ASTType ASTType::getSignatureUserResultType() const {
 }
 
 /// Print to standard error with newline after it, for use in a debugger.
-void ASTType::dump() const { llvm::errs() << getAsString() << '\n'; }
+void ASTType::dump() const {
+  llvm::errs() << getAsString(ASTTypePrinterContext{}) << '\n';
+}
 
 RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
   auto ctx = mlirType.getContext();

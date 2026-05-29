@@ -349,7 +349,7 @@ MojoASTDeclRef MojoASTTypeRef::getDecl(SharedState &shared) {
 }
 
 std::string MojoASTTypeRef::getAsString(SharedState &shared) const {
-  return type.getAsString(/*forDiag=*/&shared);
+  return type.getAsString(/*ctx=*/{&shared});
 }
 
 /// If the current type is a reference, return the type of the pointee. This

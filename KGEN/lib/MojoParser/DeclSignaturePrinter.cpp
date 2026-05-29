@@ -251,7 +251,7 @@ MojoInflightDiag &MojoInflightDiag::attachNote(Location loc, TypedAttr attr) & {
 
   std::string out;
   llvm::raw_string_ostream os(out);
-  ASTType::printParam(os, attr, /*forDiag=*/shared);
+  ASTType::printParam(os, attr, /*ctx=*/{shared});
 
   if (!out.empty())
     note.addCustomLineText(out);

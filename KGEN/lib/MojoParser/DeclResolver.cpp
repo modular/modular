@@ -1671,7 +1671,7 @@ static void printConstraints(llvm::raw_ostream &os,
   llvm::interleave(
       constraints, os,
       [&](ConstraintAttr constraint) {
-        ASTType::printParam(os, constraint.getProposition(), /*diags=*/nullptr);
+        ASTType::printParam(os, constraint.getProposition(), /*diags=*/{});
       },
       ",");
   os << '}';
@@ -1703,7 +1703,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
             os << "*";
             type = type.getParameterListInfo().elementType;
           }
-          os << type.getAsString(/*diags=*/nullptr);
+          os << type.getAsString(/*diags=*/{});
           printConstraints(os, pogs[idx].getConstraints());
         },
         ",");
@@ -1742,7 +1742,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
                                    .getVariadicPackInfo()
                                    .typeList;
       mangledName += '*';
-      ASTType::printParam(os, packVariadic, /*diags=*/nullptr);
+      ASTType::printParam(os, packVariadic, /*diags=*/{});
       continue;
     } else if (fullSig.isKwVarArg(argNo)) {
       // TODO: Propagate convention correctly.
@@ -1752,7 +1752,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     } else {
       argType = RefType::stripRefConvention(argType, convention);
     }
-    mangledName += argType.getAsString(/*forDiag=*/nullptr);
+    mangledName += argType.getAsString(/*ctx=*/{nullptr});
 
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {

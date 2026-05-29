@@ -757,7 +757,7 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
           os << name << ": ";
       }
       Type reboundType = cast<Type>(replacer.replace(paramType));
-      os << ASTType(reboundType).getAsString(&shared);
+      os << ASTType(reboundType).getAsString({&shared});
       if (numPrependedCaptures && idx + 1 == numPrependedCaptures)
         os << ", #";
     }
@@ -784,7 +784,7 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
           os << name.getValue() << ": ";
         Type stripped = RefType::stripRefConvention(argType, convention);
         Type reboundType = cast<Type>(replacer.replace(stripped));
-        os << ASTType(reboundType).getAsString(&shared);
+        os << ASTType(reboundType).getAsString({&shared});
       });
   os << ')';
 
@@ -799,7 +799,7 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
     os << "None";
   else
     os << ASTType(cast<Type>(replacer.replace(resultType)))
-              .getAsString(&shared);
+              .getAsString({&shared});
 
   return result;
 }
@@ -1150,7 +1150,7 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
 
   // The wrapper relies only on the function signature. Use that as the struct
   // name.
-  SmallString<128> name(ASTType(selfContainedSignature).getAsString(&shared));
+  SmallString<128> name(ASTType(selfContainedSignature).getAsString({&shared}));
   name += "_PtrWrapper";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
   if (auto decls = moduleDecl.lookupInCurrentScope(name); !decls.empty()) {

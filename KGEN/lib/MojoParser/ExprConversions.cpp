@@ -208,9 +208,9 @@ static GeneratorType getReducedGeneratorType(GeneratorType gen) {
 static std::string generateThunkName(Type expected, Type actual) {
   std::string name;
   llvm::raw_string_ostream os(name);
-  ASTType(expected).print(os, /*diags=*/nullptr);
+  ASTType(expected).print(os, /*diags=*/{});
   os << '|';
-  ASTType(actual).print(os, /*diags=*/nullptr);
+  ASTType(actual).print(os, /*diags=*/{});
 
   // Mix in the full signatures to disambiguate.
   std::string sigHash;
