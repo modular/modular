@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Note: this contains snippets currently displayed on the modular homepage,
-# outside of the purview of the docsite. We keep them here so we're notified
-# if they break.
+# Code examples from the mojolang.org landing page.
 
 from std.algorithm import vectorize
 from std.gpu import global_idx
@@ -37,16 +35,20 @@ comptime size = 8
 comptime layout = row_major[size]()
 
 # GPU programming example
+# The homepage example shows only the vector_add kernel.
+# we use a.layout.size() instead of the comptime size because
+# there's no explanation of where "size" comes from.
 
 
 def vector_add(
-    a: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
-    b: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
-    result: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
-    size: Int,
+    a: TileTensor[float_dtype, type_of(layout), element_size=1, ...],
+    b: TileTensor[float_dtype, type_of(layout), element_size=1, ...],
+    result: TileTensor[
+        mut=True, float_dtype, type_of(layout), element_size=1, ...
+    ],
 ):
     var i = global_idx.x
-    if i < size:
+    if i < a.layout.size():
         result[i] = a[i] + b[i]
 
 
@@ -56,15 +58,9 @@ def run_gpu_programming_example() raises:
     ), "This example requires a supported accelerator"
 
     var ctx = DeviceContext()
-    var a_buffer = ctx.enqueue_create_buffer[float_dtype](
-        comptime (layout.size())
-    )
-    var b_buffer = ctx.enqueue_create_buffer[float_dtype](
-        comptime (layout.size())
-    )
-    var result_buffer = ctx.enqueue_create_buffer[float_dtype](
-        comptime (layout.size())
-    )
+    var a_buffer = ctx.enqueue_create_buffer[float_dtype](size)
+    var b_buffer = ctx.enqueue_create_buffer[float_dtype](size)
+    var result_buffer = ctx.enqueue_create_buffer[float_dtype](size)
 
     # Map input buffers to host to fill with values from CPU
     with a_buffer.map_to_host() as host_buffer:
@@ -79,10 +75,11 @@ def run_gpu_programming_example() raises:
             b_tensor[i] = Float32(i)
         print("b vector:", b_tensor)
 
-    # Wrap device buffers in `LayoutTensor`
+    # Wrap device buffers in `TileTensor`
     var a_tensor = TileTensor(a_buffer, layout)
     var b_tensor = TileTensor(b_buffer, layout)
     var result_tensor = TileTensor(result_buffer, layout)
+    print("wrapped")
 
     # The grid is divided up into blocks, making sure there's an extra
     # full block for any remainder. This hasn't been tuned for any specific
@@ -90,17 +87,13 @@ def run_gpu_programming_example() raises:
     comptime BLOCK_SIZE = 16
     comptime num_blocks = ceildiv(size, BLOCK_SIZE)
 
-    # Launch the compiled function on the GPU. The target device is specified
-    # first, followed by all function arguments. The last two named parameters
+    # wrapper closure for the actual kernel
+    def wrapper() {var}:
+        vector_add(a_tensor, b_tensor, result_tensor)
+
+    # Launch the compiled function on the GPU. The last two named parameters
     # are the dimensions of the grid in blocks, and the block dimensions.
-    ctx.enqueue_function[vector_add](
-        a_tensor,
-        b_tensor,
-        result_tensor,
-        size,
-        grid_dim=(num_blocks),
-        block_dim=(BLOCK_SIZE),
-    )
+    ctx.enqueue_function(wrapper, grid_dim=(num_blocks), block_dim=(BLOCK_SIZE))
 
     # Move the output tensor back onto the CPU so that we can read the results.
     with result_buffer.map_to_host() as host_buffer:
@@ -113,10 +106,10 @@ def run_gpu_programming_example() raises:
 
 def mojo_square_array(array_obj: PythonObject) raises:
     comptime simd_width = simd_width_of[DType.int64]()
-    ptr = array_obj.ctypes.data.unsafe_get_as_pointer[DType.int64]()
+    var ptr = array_obj.ctypes.data.unsafe_get_as_pointer[DType.int64]()
 
     def pow[width: Int](i: Int) {mut ptr}:
-        elem = ptr.load[width=width](i)
+        var elem = ptr.load[width=width](i)
         ptr.store[width=width](i, elem * elem)
 
     vectorize[simd_width](len(array_obj), pow)
@@ -136,17 +129,12 @@ def run_python_interop_example() raises:
 
 trait FauxEquatable(ImplicitlyDestructible):
     # Generic implementation using reflection: compare all fields
-    @always_inline
     def __eq__(self, other: Self) -> Bool:
-        comptime names = reflect[Self].field_names()
-        comptime types = reflect[Self].field_types()
+        comptime r = reflect[Self]
 
-        comptime for i in range(names.size):
-            comptime T = types[i]
-            comptime assert conforms_to(T, Equatable)
-            if trait_downcast[Equatable](
-                reflect[Self].field_ref[i](self)
-            ) != trait_downcast[Equatable](reflect[Self].field_ref[i](other)):
+        comptime for i in range(r.field_names().size):
+            comptime assert conforms_to(r.field_types()[i], Equatable)
+            if r.field_ref[i](self) != r.field_ref[i](other):
                 return False
         return True
 
