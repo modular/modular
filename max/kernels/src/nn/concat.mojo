@@ -1588,9 +1588,10 @@ def fused_concat[
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     output_layout: TensorLayout,
+    *,
+    axis: Int,
     target: StaticString = "cpu",
 ](
-    axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
     output: TileTensor[mut=True, dtype, output_layout, _],
     ctx: DeviceContext,
