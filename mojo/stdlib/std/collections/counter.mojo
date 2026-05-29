@@ -42,7 +42,8 @@ from std.utils import Variant
 
 @fieldwise_init
 struct Counter[
-    V: KeyElement & ImplicitlyDestructible, H: Hasher = default_hasher
+    V: KeyElement & Copyable & ImplicitlyDestructible,
+    H: Hasher = default_hasher,
 ](
     Boolable,
     Copyable,
@@ -61,11 +62,11 @@ struct Counter[
     counts. Mojo's `Counter` follows Python's model, and adds math versatility by
     supporting negative counts.
 
-    The value type must implement the `KeyElement` trait, as its values are
-    stored in a dictionary as keys.
-    The keys' uniform value type are specified statically, unlike a Python
-    `Counter`, which can accept arbitrary value types.
-    They must be hashable for use in the underlying dictionary.
+    The value type must implement the `KeyElement` trait and be `Copyable`, as
+    its values are stored in a dictionary as keys and the API copies elements
+    extensively (e.g., `most_common`, `subtract`, merge ops). The keys' uniform
+    value type must be hashable for use in the
+    underlying dictionary.
 
     Example:
 
@@ -78,7 +79,7 @@ struct Counter[
     ```
 
     Parameters:
-        V: The value type to be counted. Currently must be `KeyElement`.
+        V: The value type to be counted. Must be `KeyElement` and `Copyable`.
         H: The type of the hasher in the underlying dictionary.
     """
 
@@ -982,7 +983,9 @@ struct Counter[
             self[item.key] = self.get(item.key, 0) - item.value
 
 
-struct CountTuple[V: KeyElement & ImplicitlyDestructible](Comparable, Copyable):
+struct CountTuple[V: KeyElement & Copyable & ImplicitlyDestructible](
+    Comparable, Copyable
+):
     """A tuple representing a value and its count in a `Counter`.
 
     Parameters:

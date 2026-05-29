@@ -48,6 +48,14 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.8",
         timeout=90,
     ),
+    PipelineEntry(
+        pipeline="google/gemma-4-31B-it",
+        model_path="google/gemma-4-31b-it",
+        runner="modrunner-b200",
+        gpu_flag="--devices gpu:0",
+        instance_type="bm.gpu.b200.1",
+        timeout=60,
+    ),
 ]
 
 

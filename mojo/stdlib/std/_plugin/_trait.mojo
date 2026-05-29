@@ -83,6 +83,17 @@ trait PluginHooks:
         ]
     ]
 
+    comptime unsafe_dangling_fn: Optional[def[alignment: Int]() thin -> Int]
+    """`UnsafePointer.unsafe_dangling()` address override.
+
+    Parameters:
+        alignment: The natural alignment of the pointee type, which the
+            stdlib default uses as the dangling address.
+
+    Returns:
+        The raw integer address used to construct the dangling pointer.
+    """
+
     comptime print_emit_fn: Optional[PrintEmitFnType]
     """Plugin hook for emitting a `print()` UTF-8 byte buffer to a file
     descriptor."""
@@ -216,6 +227,10 @@ struct DefaultPlugin(PluginHooks):
         ]() thin -> UnsafePointer[
             type, MutExternalOrigin, address_space=address_space
         ]
+    ] = None
+
+    comptime unsafe_dangling_fn: Optional[
+        def[alignment: Int]() thin -> Int
     ] = None
 
     comptime print_emit_fn: Optional[PrintEmitFnType] = None

@@ -52,9 +52,6 @@ from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
 
-# Cap concurrent warmup requests to avoid swamping the server.
-_WARMUP_MAX_INFLIGHT = 512
-
 
 async def chat_session_driver(
     model_id: str,
@@ -226,6 +223,7 @@ async def prerun_warmup_turns(
     api_url: str,
     max_chat_len: int,
     sampling: SamplingConfig,
+    max_concurrency: int,
     disable_tqdm: bool = False,
 ) -> None:
     """Send one warmup request per session with prefix_turns > 0.
@@ -309,7 +307,7 @@ async def prerun_warmup_turns(
     if pbar is not None:
         request_driver = ProgressBarRequestDriver(request_driver, pbar)
 
-    semaphore = asyncio.Semaphore(_WARMUP_MAX_INFLIGHT)
+    semaphore = asyncio.Semaphore(max_concurrency)
 
     async def _fire(req: RequestFuncInput) -> None:
         async with semaphore:

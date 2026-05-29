@@ -177,7 +177,9 @@ def test_optional_conditional_conformances() raises:
 
     assert_true(conforms_to(Optional[Int], Hashable))
     assert_true(conforms_to(Optional[String], Hashable))
-    assert_false(conforms_to(Optional[MoveOnly[Int]], Hashable))
+    # `MoveOnly[T]` is conditionally `Hashable` when `T` is `Hashable`.
+    assert_true(conforms_to(Optional[MoveOnly[Int]], Hashable))
+    assert_false(conforms_to(Optional[_NonWritable], Hashable))
 
 
 struct _NonTrivial(Copyable):
