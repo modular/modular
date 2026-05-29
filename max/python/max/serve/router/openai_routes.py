@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
 import logging
 import queue
@@ -130,6 +131,7 @@ from openai.types.shared_params import (
     ResponseFormatJSONSchema as ResponseFormatJsonSchema,
 )
 from openai.types.shared_params import ResponseFormatText as ResponseFormatText
+from PIL import Image, UnidentifiedImageError
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
@@ -820,6 +822,20 @@ def _normalize_openai_role(role: str) -> Any:
     return "system" if role == "developer" else role
 
 
+def _validate_decodable_images(images: list[bytes]) -> None:
+    # Identify each image (a cheap header parse, not a full pixel decode) so
+    # empty or non-image base64 fails here as a clean 400 instead of reaching
+    # the model worker and crashing it with an unhandled
+    # PIL.UnidentifiedImageError (HTTP 500). The actual decode still happens
+    # once, later, in the tokenizer.
+    for image_bytes in images:
+        try:
+            with Image.open(io.BytesIO(image_bytes)):
+                pass
+        except (UnidentifiedImageError, OSError, ValueError, SyntaxError) as e:
+            raise InputError("invalid or unreadable image content") from e
+
+
 async def openai_parse_chat_completion_request(
     completion_request: CreateChatCompletionRequest,
     wrap_content: bool,
@@ -914,6 +930,8 @@ async def openai_parse_chat_completion_request(
         resolve_image_from_url(image_url, settings) for image_url in image_refs
     ]
     request_images = await asyncio.gather(*resolve_image_tasks)
+
+    _validate_decodable_images(request_images)
 
     resolve_video_tasks = [
         resolve_image_from_url(video_url, settings) for video_url in video_refs

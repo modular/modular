@@ -23,6 +23,7 @@ modular_py_library(
         requirement("httpx"),
         requirement("llguidance"),
         requirement("openai"),
+        requirement("pillow"),
         requirement("pydantic"),
         requirement("sse-starlette"),
         requirement("starlette"),

@@ -13,6 +13,7 @@
 
 
 import asyncio
+import io
 import json
 import logging
 import sys
@@ -59,6 +60,7 @@ from max.serve.router.openai_routes import (
     _create_response_format,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
+    _validate_decodable_images,
     get_tool_parser,
     openai_create_chat_completion,
 )
@@ -74,6 +76,7 @@ from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
 from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
+from PIL import Image
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -246,6 +249,21 @@ async def test_openai_chat_completion_input_error_returns_400(app) -> None:  # n
 
         assert response_json.status_code == 400
         assert response_json.json()["detail"] == "invalid image input"
+
+
+def test_validate_decodable_images_rejects_bad_bytes() -> None:
+    # Empty / non-image bytes must raise (the request handler maps this to a
+    # 400), not reach the worker and crash it later with an unhandled
+    # PIL.UnidentifiedImageError (HTTP 500).
+    for bad in (b"", b"tiny", b"\x00\x01\x02\x03"):
+        with pytest.raises(InputError):
+            _validate_decodable_images([bad])
+
+
+def test_validate_decodable_images_accepts_valid_image() -> None:
+    buf = io.BytesIO()
+    Image.new("RGB", (1, 1)).save(buf, format="PNG")
+    _validate_decodable_images([buf.getvalue()])  # must not raise
 
 
 def test_vllm_response_deserialization() -> None:
