@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import ClassVar, Protocol, TextIO
 
 from max.benchmark.benchmark_shared.metrics import (
-    ServingBenchmarkMetrics,
+    BenchmarkResult,
     StandardPercentileMetrics,
 )
 from typing_extensions import Self
@@ -102,11 +102,11 @@ class LLMBenchmarkResult(SweepServingBenchmarkResult):
     @classmethod
     def from_metrics(
         cls,
-        metrics: ServingBenchmarkMetrics,
+        metrics: BenchmarkResult,
         percentiles: list[int],
         result_filename: str | None = None,
     ) -> LLMBenchmarkResult:
-        """Constructs from a text-gen :class:`ServingBenchmarkMetrics`."""
+        """Constructs from a text-gen :class:`BenchmarkResult`."""
         t = metrics.text_data
         assert t is not None, "expected populated text_data for text-gen run"
         gpu_util = metrics.gpu_utilization
@@ -168,11 +168,11 @@ class TextToImageBenchmarkResult(SweepServingBenchmarkResult):
     @classmethod
     def from_metrics(
         cls,
-        metrics: ServingBenchmarkMetrics,
+        metrics: BenchmarkResult,
         percentiles: list[int],
         result_filename: str | None = None,
     ) -> TextToImageBenchmarkResult:
-        """Constructs from a pixel-gen :class:`ServingBenchmarkMetrics`."""
+        """Constructs from a pixel-gen :class:`BenchmarkResult`."""
         p = metrics.pixel_data
         assert p is not None, "expected populated pixel_data for pixel-gen run"
         gpu_util = metrics.gpu_utilization

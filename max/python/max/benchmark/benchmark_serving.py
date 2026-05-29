@@ -73,8 +73,7 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
 from max.benchmark.benchmark_shared.metrics import (
-    PixelGenerationBenchmarkResult,
-    TextGenerationBenchmarkResult,
+    BenchmarkResult,
     calculate_spec_decode_stats,
 )
 from max.benchmark.benchmark_shared.multi_turn import (
@@ -313,9 +312,7 @@ async def benchmark(
     session: BenchmarkSession,
     max_concurrency: int | None,
     request_rate: float,
-) -> tuple[
-    TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult, bool
-]:
+) -> tuple[BenchmarkResult, bool]:
     """Run a single benchmark invocation.
 
     ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
@@ -765,7 +762,7 @@ async def benchmark(
 
     achieved_request_rate = 0.0
 
-    result: PixelGenerationBenchmarkResult | TextGenerationBenchmarkResult
+    result: BenchmarkResult
     if session.benchmark_task in PIXEL_GENERATION_TASKS:
         result = build_pixel_generation_result(
             outputs=all_outputs,
@@ -810,7 +807,7 @@ async def benchmark(
         result.lora_metrics = session.lora_manager.metrics
 
     print_benchmark_summary(
-        metrics=result.metrics,
+        metrics=result,
         request_rate=request_rate,
         max_concurrency=max_concurrency,
         achieved_request_rate=achieved_request_rate,
@@ -966,9 +963,7 @@ class BenchmarkRunResult:
     max_concurrency: int | None
     request_rate: float
     num_prompts: int
-    result: (
-        TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult | None
-    ) = None
+    result: BenchmarkResult | None = None
 
 
 @dataclass
@@ -1273,9 +1268,7 @@ def _run_benchmark_sweep(
             )
 
         for rr in args.request_rate:
-            iteration_results: list[
-                TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult
-            ] = []
+            iteration_results: list[BenchmarkResult] = []
             validation_passed = True
             for _iteration in range(args.num_iters):
                 if args.flush_prefix_cache:
@@ -1298,7 +1291,7 @@ def _run_benchmark_sweep(
                     [
                         agg.request_throughput
                         for r in iteration_results
-                        if (agg := r.metrics.aggregates) is not None
+                        if (agg := r.aggregates) is not None
                     ]
                 )
                 idx = argmedian(throughputs)

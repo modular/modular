@@ -67,7 +67,7 @@ def _build_sweep_result(
         if is_pixel_gen:
             return TextToImageBenchmarkResult.zeros(percentiles)
         return LLMBenchmarkResult.zeros(percentiles)
-    metrics = result.result.metrics
+    metrics = result.result
     if metrics.task_type == "pixel":
         return TextToImageBenchmarkResult.from_metrics(metrics, percentiles)
     return LLMBenchmarkResult.from_metrics(metrics, percentiles)

@@ -22,15 +22,13 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, TypeGuard
 
 from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
     PixelGenAggregates,
-    PixelGenerationBenchmarkResult,
     RatePercentileMetrics,
-    ServingBenchmarkMetrics,
     SpecDecodeStats,
     StandardPercentileMetrics,
     SteadyStateResult,
     TextGenAggregates,
-    TextGenerationBenchmarkResult,
     ThroughputMetrics,
 )
 from max.benchmark.benchmark_shared.request import (
@@ -154,7 +152,7 @@ def calculate_metrics(
     max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
-) -> ServingBenchmarkMetrics:
+) -> BenchmarkResult:
     actual_output_lens: list[int] = []
     failures = 0
     failed_responses: list[RequestFuncOutput] = []
@@ -383,7 +381,7 @@ def calculate_metrics(
         per_turn_cached_token_rates=per_turn_cached_token_rates,
     )
 
-    return ServingBenchmarkMetrics(
+    return BenchmarkResult(
         task_type="text",
         max_concurrency=max_concurrency or len(outputs),
         peak_gpu_memory_mib=peak_gpu_memory_mib,
@@ -403,7 +401,7 @@ def calculate_pixel_generation_metrics(
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
-) -> ServingBenchmarkMetrics:
+) -> BenchmarkResult:
     completed = 0
     failures = 0
     latencies: list[float] = []
@@ -458,7 +456,7 @@ def calculate_pixel_generation_metrics(
         num_generated_outputs=[o.num_generated_outputs for o in outputs],
     )
 
-    return ServingBenchmarkMetrics(
+    return BenchmarkResult(
         task_type="pixel",
         max_concurrency=max_concurrency or len(outputs),
         peak_gpu_memory_mib=peak_gpu_memory_mib,
@@ -494,7 +492,7 @@ def build_pixel_generation_result(
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
-) -> PixelGenerationBenchmarkResult:
+) -> BenchmarkResult:
     """Compute metrics and build the result dict for pixel-generation tasks."""
     if not _is_pixel_generation_outputs(outputs):
         raise TypeError(
@@ -510,7 +508,7 @@ def build_pixel_generation_result(
         collect_gpu_stats=collect_gpu_stats,
         metrics_by_endpoint=metrics_by_endpoint,
     )
-    return PixelGenerationBenchmarkResult(metrics=metrics)
+    return metrics
 
 
 def build_text_generation_result(
@@ -527,7 +525,7 @@ def build_text_generation_result(
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
     spec_decode_stats: SpecDecodeStats | None = None,
-) -> TextGenerationBenchmarkResult:
+) -> BenchmarkResult:
     """Compute metrics and build the result dict for text-generation tasks."""
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
@@ -562,10 +560,12 @@ def build_text_generation_result(
         metrics_by_endpoint=metrics_by_endpoint,
     )
 
-    return TextGenerationBenchmarkResult(
-        metrics=text_metrics,
-        steady_state_result=steady_state_result,
-        spec_decode_stats=spec_decode_stats,
+    return text_metrics.model_copy(
+        update={
+            "steady_state_result": steady_state_result,
+            "spec_decode_stats": spec_decode_stats,
+            "task_type": "text",
+        }
     )
 
 
