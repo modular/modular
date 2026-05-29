@@ -1160,7 +1160,7 @@ PublicStructFieldDecl::PublicStructFieldDecl(MojoASTDeclRef declRef)
   auto fieldOp = cast<StructFieldOp>(declRef.getIfOperation());
 
   llvm::raw_string_ostream typeOS(type);
-  ASTType(fieldOp.getType()).print(typeOS, /*forDiag=*/declRef.getShared());
+  ASTType(fieldOp.getType()).print(typeOS, /*ctx=*/{declRef.getShared()});
 
   if (std::optional<DocString> docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();

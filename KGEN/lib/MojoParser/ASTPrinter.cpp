@@ -248,8 +248,9 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol,
 /// implicit conversions to tidy up the printout because struct's can't be
 /// overloaded on parameter sets like functions are.
 static void printParamList(raw_ostream &os, PogListAttr paramInfo,
-                           ArrayRef<TypedAttr> params, SharedState *diagShared,
-                           bool typesImplied) {
+                           ArrayRef<TypedAttr> params,
+                           ASTTypePrinterContext ctx, bool typesImplied) {
+  SharedState *diagShared = ctx.shared;
   if (params.empty())
     return;
 
@@ -346,7 +347,7 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
           TypedAttr value = std::get<1>(param);
           if (typesImplied && diagShared)
             removeImplicitCtorCall(value, diagShared);
-          ASTType::printParam(os, value, diagShared);
+          ASTType::printParam(os, value, ctx);
         });
     os << ']';
   }
@@ -360,12 +361,13 @@ template <typename BodyT>
 static BodyT printGeneratorInterface(raw_ostream &os,
                                      ArrayRef<Type> inputParamTypes,
                                      PogListAttr paramInfo,
-                                     SharedState *diagShared, BodyT body) {
+                                     ASTTypePrinterContext ctx, BodyT body) {
   assert(paramInfo && "always present");
+  SharedState *diagShared = ctx.shared;
   if (!diagShared) {
     os << '[';
     // If no param metadata, just print the types.
-    auto printFn = [&](Type type) { ASTType(type).print(os, diagShared); };
+    auto printFn = [&](Type type) { ASTType(type).print(os, ctx); };
     llvm::interleaveComma(inputParamTypes, os, printFn);
     os << ']';
     return body;
@@ -507,7 +509,7 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, bool elideOriginOf,
     for (auto p : ASTType(paramDecl.getType()).getParamBindings()) {
       if (p == declRef) {
         // The param found may itself be an autoparam.  Recurse to print it.
-        ASTType::printParam(os, ParamDeclRefAttr::get(paramDecl), &shared);
+        ASTType::printParam(os, ParamDeclRefAttr::get(paramDecl), {&shared});
         os << "." << demangledName;
         return;
       }
@@ -621,11 +623,12 @@ findArgNameForImplicitOriginRef(ImplicitOriginRefAttr originRef,
 
 /// Pretty print a parameter value.
 void ASTType::printParam(raw_ostream &os, TypedAttr param,
-                         SharedState *diagShared) {
+                         ASTTypePrinterContext ctx) {
+  SharedState *diagShared = ctx.shared;
   if (auto cast = dyn_cast<CastFromBuiltinAttr>(param))
-    return printParam(os, cast.getArg(), diagShared);
+    return printParam(os, cast.getArg(), ctx);
   if (auto cast = dyn_cast<CastToBuiltinAttr>(param))
-    return printParam(os, cast.getArg(), diagShared);
+    return printParam(os, cast.getArg(), ctx);
 
   auto printOperands =
       [&](ArrayRef<TypedAttr> operands, StringRef separator = ", ",
@@ -637,24 +640,24 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
           // Don't print extracts out of Int.value.
           if (auto extract = dyn_cast<LIT::StructExtractAttr>(value))
             value = extract.getStructValue();
-          printParam(os, value, diagShared);
+          printParam(os, value, ctx);
         },
         separator);
     os << rSeparator;
   };
 
   if (auto bindParams = dyn_cast<BindParamsAttr>(param)) {
-    printParam(os, bindParams.getGenerator(), diagShared);
+    printParam(os, bindParams.getGenerator(), ctx);
     printOperands(bindParams.getParamValues(), ", ", "[", "]");
     return;
   }
 
   auto printGeneratorAttr = [&](GeneratorAttr genAttr) {
-    TypedAttr reboundBody = printGeneratorInterface(
-        os, genAttr.getInputParamTypes(), genAttr.getMetadata(), diagShared,
-        genAttr.getBody());
+    TypedAttr reboundBody =
+        printGeneratorInterface(os, genAttr.getInputParamTypes(),
+                                genAttr.getMetadata(), ctx, genAttr.getBody());
     os << ' ';
-    printParam(os, reboundBody, diagShared);
+    printParam(os, reboundBody, ctx);
   };
 
   if (auto genAttr = dyn_cast<GeneratorAttr>(param)) {
@@ -676,9 +679,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
   if (auto refPack = dyn_cast<RefPackAttr>(param)) {
-    llvm::interleaveComma(refPack.getValues(), os, [&](TypedAttr value) {
-      printParam(os, value, diagShared);
-    });
+    llvm::interleaveComma(refPack.getValues(), os,
+                          [&](TypedAttr value) { printParam(os, value, ctx); });
     return;
   }
 
@@ -771,7 +773,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
         if (auto store = sugarDynCast<StoreToMemAttr>(operand))
           operandToPrint = store.getValue();
 
-      printParam(os, operandToPrint, diagShared);
+      printParam(os, operandToPrint, ctx);
       needComma = true;
     }
 
@@ -792,7 +794,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (!nameAttr) {
         // If we're calling a parameter of function type, print it as a normal
         // call.
-        printParam(os, operands.front(), diagShared);
+        printParam(os, operands.front(), ctx);
         return printOperands(operands.drop_front());
       }
 
@@ -800,7 +802,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       StringRef name = getNameFromSymbolRef(nameAttr);
       // Don't print conversions of boolean's to i1.
       if (name == "__mlir_i1__" && operands.size() == 2)
-        return printParam(os, operands.back(), diagShared);
+        return printParam(os, operands.back(), ctx);
 
       // Don't print Bool.__init__ wrapping a TypeConformsToTraitAttr — the
       // Bool wrapper adds no user value and we already print the inner
@@ -808,7 +810,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (name == "__init__" && operands.size() >= 2 &&
           tryGetTypeNameFromSymbolRef(nameAttr) == "Bool" &&
           isa<TypeConformsToTraitAttr>(operands.back()))
-        return printParam(os, operands.back(), diagShared);
+        return printParam(os, operands.back(), ctx);
 
       // Print arithmetic functions using their mathematical form rather than
       // as dunder method calls.
@@ -844,7 +846,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (auto it = unaryOpNames.find(name); it != unaryOpNames.end()) {
         if (!operandsToPrint.empty()) {
           os << it->second;
-          return printParam(os, operandsToPrint.front(), diagShared);
+          return printParam(os, operandsToPrint.front(), ctx);
         }
         // A unary op with no operands is malformed AST.
         llvm_unreachable("unexpected empty operand list for unary operator");
@@ -852,11 +854,11 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
       // Print `x.__getitem__(args...)` as `x[args...]`
       if (name == "__getitem__" && !operandsToPrint.empty()) {
-        printParam(os, operandsToPrint.front(), diagShared);
+        printParam(os, operandsToPrint.front(), ctx);
         os << '[';
         llvm::interleaveComma(
             operandsToPrint.slice(1), os,
-            [&](const TypedAttr &value) { printParam(os, value, diagShared); });
+            [&](const TypedAttr &value) { printParam(os, value, ctx); });
         os << ']';
         return;
       }
@@ -877,7 +879,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
       // If we can tell that this is a method call, print the receiver first.
       if (!operandsToPrint.empty() && calleeIsMethod && !calleeIsStatic) {
-        printParam(os, operandsToPrint.front(), diagShared);
+        printParam(os, operandsToPrint.front(), ctx);
         os << '.';
         operandsToPrint = operandsToPrint.drop_front();
       } else {
@@ -896,7 +898,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
         // Helper function to try printing just the literal value
         auto tryPrintLiteralValue = [&](ArrayRef<TypedAttr> args) -> bool {
           if (args.size() == 1) {
-            printParam(os, args[0], diagShared);
+            printParam(os, args[0], ctx);
             return true;
           }
           return false;
@@ -944,7 +946,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       // constructor calls, because the function could be overloaded.  We could
       // check to see if the function is not overloaded and elide it.
       printParamList(os, fullSig ? fullSig.getParamListAttrs() : PogListAttr(),
-                     calleeParams, diagShared,
+                     calleeParams, ctx,
                      /*typesImplied*/ false);
 
       // Finally, also print any operands.
@@ -952,12 +954,12 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     }
     case POC::And:
       llvm::interleave(
-          operands, [&](TypedAttr op) { printParam(os, op, diagShared); },
+          operands, [&](TypedAttr op) { printParam(os, op, ctx); },
           [&] { os << " and "; });
       return;
     case POC::Or:
       llvm::interleave(
-          operands, [&](TypedAttr op) { printParam(os, op, diagShared); },
+          operands, [&](TypedAttr op) { printParam(os, op, ctx); },
           [&] { os << " or "; });
       return;
     case POC::Cond: {
@@ -972,31 +974,31 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (diagShared) {
         if (cond == operands[2]) {
           // "A and B" pattern: condition (stripped) matches else-branch.
-          printParam(os, cond, diagShared);
+          printParam(os, cond, ctx);
           os << " and ";
-          printParam(os, operands[1], diagShared);
+          printParam(os, operands[1], ctx);
           return;
         }
         if (cond == operands[1]) {
           // "A or B" pattern: condition (stripped) matches then-branch.
-          printParam(os, cond, diagShared);
+          printParam(os, cond, ctx);
           os << " or ";
-          printParam(os, operands[2], diagShared);
+          printParam(os, operands[2], ctx);
           return;
         }
       }
 
       // Regular ternary (not a lowered and/or).
-      printParam(os, operands[1], diagShared);
+      printParam(os, operands[1], ctx);
       os << " if ";
-      printParam(os, cond, diagShared);
+      printParam(os, cond, ctx);
       os << " else ";
-      printParam(os, operands[2], diagShared);
+      printParam(os, operands[2], ctx);
       return;
     }
     case POC::Rebind:
       // Just omit the types.
-      printParam(os, operands.front(), diagShared);
+      printParam(os, operands.front(), ctx);
       return;
     default:
       // Otherwise, fall back to printing as a parenthesized form like the KGEN
@@ -1004,7 +1006,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       // print nested subexpressions as KGEN and lose all sugar.
       os << '(' << stringifyEnum(op.getOpcode()) << ' ';
       llvm::interleaveComma(operands, os, [&](TypedAttr operand) {
-        printParam(os, operand, diagShared);
+        printParam(os, operand, ctx);
       });
       os << ')';
       return;
@@ -1017,21 +1019,21 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
                           os, getWitness.getTypeValue(),
                           getWitness.getWitnessName().strref(), diagShared))
       return;
-    printParam(os, getWitness.getTypeValue(), diagShared);
+    printParam(os, getWitness.getTypeValue(), ctx);
     os << "." << getWitness.getWitnessName().strref();
     return;
   }
   if (auto typeAttr = dyn_cast<TypeParamAttr>(param)) {
-    ASTType(typeAttr.getMlirType()).print(os, diagShared);
+    ASTType(typeAttr.getMlirType()).print(os, ctx);
     return;
   }
   if (auto upcast = dyn_cast<UpcastAttr>(param))
-    return printParam(os, upcast.getInputTypeValue(), diagShared);
+    return printParam(os, upcast.getInputTypeValue(), ctx);
 
   if (auto downcast = dyn_cast<DowncastAttr>(param)) {
-    printParam(os, downcast.getInputTypeValue(), diagShared);
+    printParam(os, downcast.getInputTypeValue(), ctx);
     os << "(";
-    ASTType(downcast.getType()).print(os, diagShared);
+    ASTType(downcast.getType()).print(os, ctx);
     os << ")";
     return;
   }
@@ -1042,7 +1044,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     // internal names like "std::builtin::bool::Boolable" into diagnostics and
     // doc output.
     os << "conforms_to(";
-    printParam(os, conformsTo.getTypeValue(), diagShared);
+    printParam(os, conformsTo.getTypeValue(), ctx);
     os << ", ";
     llvm::interleave(
         conformsTo.getTraitSymbols(), os,
@@ -1053,7 +1055,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   }
 
   if (auto extractAttr = dyn_cast<LIT::StructExtractAttr>(param)) {
-    printParam(os, extractAttr.getStructValue(), diagShared);
+    printParam(os, extractAttr.getStructValue(), ctx);
     // Don't print ._mlir_value in user-facing output; it is an internal
     // implementation detail for accessing the underlying MLIR type.
     if (!diagShared || extractAttr.getField() != "_mlir_value")
@@ -1064,17 +1066,16 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   if (auto variadicCst = dyn_cast<ParamListAttr>(param)) {
     // ParamListAttr appears in a pack list, so it doesn't need extra []'s
     // around it.
-    llvm::interleaveComma(variadicCst.getValues(), os, [&](TypedAttr value) {
-      printParam(os, value, diagShared);
-    });
+    llvm::interleaveComma(variadicCst.getValues(), os,
+                          [&](TypedAttr value) { printParam(os, value, ctx); });
     return;
   }
 
   if (auto reduce = dyn_cast<ParamListReduceAttr>(param)) {
     os << "#" << reduce.name << "(";
-    printParam(os, reduce.getParamList(), diagShared);
+    printParam(os, reduce.getParamList(), ctx);
     os << ", base=";
-    printParam(os, reduce.getBase(), diagShared);
+    printParam(os, reduce.getBase(), ctx);
     os << ", reducer=";
     printGeneratorAttr(cast<GeneratorAttr>(reduce.getGenerator()));
     os << ")";
@@ -1083,14 +1084,14 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   if (auto concat = dyn_cast<ParamListConcatAttr>(param)) {
     os << "#" << concat.name << "(";
-    printParam(os, concat.getParamLists(), diagShared);
+    printParam(os, concat.getParamLists(), ctx);
     os << ")";
     return;
   }
 
   if (auto tabulate = dyn_cast<ParamListTabulateAttr>(param)) {
     os << "#" << tabulate.name << "(";
-    printParam(os, tabulate.getCount(), diagShared);
+    printParam(os, tabulate.getCount(), ctx);
     os << ", ";
     printGeneratorAttr(cast<GeneratorAttr>(tabulate.getGenerator()));
     os << ")";
@@ -1099,15 +1100,15 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   if (auto size = dyn_cast<ParamListSizeAttr>(param)) {
     os << "len(";
-    printParam(os, size.getParamList(), diagShared);
+    printParam(os, size.getParamList(), ctx);
     os << ")";
     return;
   }
 
   if (auto get = dyn_cast<ParamListGetAttr>(param)) {
-    printParam(os, get.getParamList(), diagShared);
+    printParam(os, get.getParamList(), ctx);
     os << "[";
-    printParam(os, get.getIndex(), diagShared);
+    printParam(os, get.getIndex(), ctx);
     os << "]";
     return;
   }
@@ -1144,7 +1145,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   // generally shouldn't be printed (the apply should suck them in) but we
   // handle it in case the printer isn't perfect.
   if (auto storeAttr = dyn_cast<StoreToMemAttr>(param))
-    return printParam(os, storeAttr.getValue(), diagShared);
+    return printParam(os, storeAttr.getValue(), ctx);
 
   /// A StructAttr is due to an inline @always_inline("builtin") initializer.
   /// Elide it if we have the default type with a literal so we don't print
@@ -1170,7 +1171,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (typeName == "Int" || typeName == "UInt" || typeName == "Bool") {
         if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
           elt = extract.getStructValue();
-        printParam(os, elt, diagShared);
+        printParam(os, elt, ctx);
         return;
       }
 
@@ -1193,21 +1194,21 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
     // Otherwise do the default "memberwise" printing of a struct, because we
     // don't know where it came from.
-    ASTType(structAttr.getType()).print(os, diagShared);
+    ASTType(structAttr.getType()).print(os, ctx);
     os << '(';
     // TODO: Could print keywords for the labels if there is a reason someday.
     llvm::interleaveComma(structAttr.getValues(), os, [&](auto elt) {
       TypedAttr value = std::get<1>(elt);
       if (auto extract = dyn_cast<LIT::StructExtractAttr>(value))
         value = extract.getStructValue();
-      printParam(os, value, diagShared);
+      printParam(os, value, ctx);
     });
     os << ')';
     return;
   }
 
   if (auto convert = dyn_cast<POP::IntLiteralConvertAttr>(param)) {
-    printParam(os, convert.getInput(), diagShared);
+    printParam(os, convert.getInput(), ctx);
     return;
   }
 
@@ -1289,7 +1290,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       auto structType = cast<LIT::StructType>(param.getType());
       assert(structType.getParamValues().size() == 1 &&
              "Literal type should have one parameter");
-      printParam(os, structType.getParamValues()[0], diagShared);
+      printParam(os, structType.getParamValues()[0], ctx);
       return;
     }
     if (typeName == "Origin") {
@@ -1319,7 +1320,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
             os << "ImmutExternalOrigin";
           else {
             os << "ExternalOrigin[";
-            printParam(os, unionAttr.getType().getIsMutable(), diagShared);
+            printParam(os, unionAttr.getType().getIsMutable(), ctx);
             os << "]";
           }
           return;
@@ -1333,7 +1334,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
           os << "ImmutAnyOrigin";
         else {
           os << "AnyOrigin[mut=";
-          printParam(os, anyOrig.getType().getIsMutable(), diagShared);
+          printParam(os, anyOrig.getType().getIsMutable(), ctx);
           os << "]";
         }
         return;
@@ -1359,7 +1360,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   // Try to resolve an indexRef to a ParamDeclRefAttr for better printing.
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
     if (auto declRef = findDeclRefForIndexRef(indexRef, diagShared))
-      return printParam(os, declRef, diagShared);
+      return printParam(os, declRef, ctx);
 
     os << '$';
     if (size_t depth = indexRef.getDepth())
@@ -1391,7 +1392,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       param = sugar.getSugared();
     else
       param = sugar.getExpanded();
-    printParam(os, param, diagShared);
+    printParam(os, param, ctx);
     if (diagShared && sugar.getKind() == SugarKind::MemberAlias)
       os << '.' << sugar.getMemberName().strref();
     return;
@@ -1545,7 +1546,7 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
   }
 
   if (isa<StructExtractAttr, ParamIndexRefAttr, UnknownAttr>(param))
-    return printParam(os, param, diagShared);
+    return printParam(os, param, {diagShared});
 
   if (auto sugar = dyn_cast<SugarAttr>(param)) {
     if (diagShared) {
@@ -1579,7 +1580,7 @@ static T getSingleElementStructAttr(TypedAttr param) {
 }
 
 static void printRef(RefType refType, raw_ostream &os,
-                     SharedState *diagShared) {
+                     ASTTypePrinterContext ctx) {
   os << "ref";
   bool printed = false;
 
@@ -1588,21 +1589,21 @@ static void printRef(RefType refType, raw_ostream &os,
   // coded - print something like "ref [mut=True]"?
   if (!isa<UnboundAttr>(refType.getOrigin())) {
     os << '[';
-    ASTType::printRefOriginParam(os, refType.getOrigin(), diagShared);
+    ASTType::printRefOriginParam(os, refType.getOrigin(), ctx.shared);
     printed = true;
   }
 
   if (!refType.isDefaultAddrSpace()) {
     if (printed)
       os << ", ";
-    ASTType::printParam(os, refType.getAddressSpace(), diagShared);
+    ASTType::printParam(os, refType.getAddressSpace(), ctx);
     printed = true;
   }
   os << (printed ? "] " : " ");
 }
 
 static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
-                                 raw_ostream &os, SharedState *diagShared) {
+                                 raw_ostream &os, ASTTypePrinterContext ctx) {
   if (type.isAsync())
     os << "async ";
   os << "def";
@@ -1617,7 +1618,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       sugarCast<GeneratorType>(type.getAsType()).getInputParamTypes();
   if (!paramTypes.empty()) {
     fnType = printGeneratorInterface(os, paramTypes, type.getParamListAttrs(),
-                                     diagShared, fnType);
+                                     ctx, fnType);
   }
   os << '(';
   bool hadAnyNames = false;
@@ -1677,7 +1678,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       os << "deinit ";
     else if (convention == ArgConvention::Ref ||
              convention == ArgConvention::MutRef)
-      printRef(cast<RefType>(type), os, diagShared);
+      printRef(cast<RefType>(type), os, ctx);
 
     os << stars;
     if (!name.empty())
@@ -1690,10 +1691,10 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       TypedAttr variadic = ASTType(fnType.getIfVariadicListOrPack(idx))
                                .getVariadicPackInfo()
                                .typeListStruct;
-      ASTType::printParam(os, variadic, diagShared);
+      ASTType::printParam(os, variadic, ctx);
     } else {
       type = RefType::stripRefConvention(type, convention);
-      type.print(os, diagShared);
+      type.print(os, ctx);
     }
 
     // Check if we are at the end; if so, we might still have to print a
@@ -1722,7 +1723,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       typeName = structType.getSymbol().getLeafReference().strref();
     if (typeName != "Error") {
       os << ' ';
-      ASTType(errorType).print(os, diagShared);
+      ASTType(errorType).print(os, ctx);
     }
   }
 
@@ -1731,19 +1732,29 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
 
   if (fnType.isRefResult()) {
     auto refType = cast<RefType>(resultType);
-    printRef(refType, os, diagShared);
+    printRef(refType, os, ctx);
     resultType = refType.getElementType();
   }
 
   if (isa<KGEN::NoneType>(resultType))
     os << "None";
   else
-    ASTType(resultType).print(os, diagShared);
+    ASTType(resultType).print(os, ctx);
 }
 
-void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
+void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
+  SharedState *diagShared = ctx.shared;
   if (!mlirType) {
     os << "<<NULL ASTTYPE>>";
+    return;
+  }
+
+  // Self-substitution: when threaded a selfType, render any sub-expression
+  // equal to it as `Self`. This is what makes nested forms like
+  // `SIMD[dt, Self.element_size]` print as Self rather than the fully
+  // expanded self type.
+  if (ctx.selfType && isEqualCanon(ctx.selfType)) {
+    os << "Self";
     return;
   }
 
@@ -1766,7 +1777,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
           return;
         }
         os << "Origin[mut=";
-        printParam(os, params[0], diagShared);
+        printParam(os, params[0], ctx);
         os << "]";
         return;
       }
@@ -1819,7 +1830,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
           // Otherwise if we know the size is 1, we can use Scalar[] alias,
           // even if the dtype is parametric.
           os << "Scalar[";
-          printParam(os, params[0], diagShared);
+          printParam(os, params[0], ctx);
           os << "]";
           return;
         }
@@ -1837,7 +1848,8 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
                       .getParamListAttrs();
     }
 
-    printParamList(os, paramInfo, params, diagShared, /*typesImplied*/ true);
+    printParamList(os, paramInfo, params, ctx,
+                   /*typesImplied*/ true);
   };
 
   if (auto structTy = dyn_cast<StructType>(type)) {
@@ -1880,39 +1892,38 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
         " & ");
   } else if (auto anyTrait = dyn_cast<AnyTraitType>(type)) {
     os << "AnyTrait[";
-    ASTType(anyTrait.getTraitType()).print(os, diagShared);
+    ASTType(anyTrait.getTraitType()).print(os, ctx);
     os << ']';
   } else if (isNoneType()) {
     os << "None";
   } else if (auto ref = dyn_cast<RefType>(type)) {
-    printRef(ref, os, diagShared);
-    ASTType(ref.getElementType()).print(os, diagShared);
+    printRef(ref, os, ctx);
+    ASTType(ref.getElementType()).print(os, ctx);
   } else if (auto variadic = dyn_cast<ParamListType>(type)) {
     os << "KGENParamList[";
-    ASTType(variadic.getElementType()).print(os, diagShared);
+    ASTType(variadic.getElementType()).print(os, ctx);
     os << "]";
   } else if (sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(type)) {
-    printFnGeneratorType(FnOrFnLiteralTypeGeneratorType::get(type), os,
-                         diagShared);
+    printFnGeneratorType(FnOrFnLiteralTypeGeneratorType::get(type), os, ctx);
   } else if (auto paramRef = dyn_cast<ParamType>(type)) {
-    printParam(os, paramRef.getParam(), diagShared);
+    printParam(os, paramRef.getParam(), ctx);
   } else if (auto genType = dyn_cast<GeneratorType>(type)) {
-    Type reboundBody = printGeneratorInterface(os, genType.getInputParamTypes(),
-                                               genType.getMetadata(),
-                                               diagShared, genType.getBody());
+    Type reboundBody =
+        printGeneratorInterface(os, genType.getInputParamTypes(),
+                                genType.getMetadata(), ctx, genType.getBody());
     os << ' ';
-    ASTType(reboundBody).print(os, diagShared);
+    ASTType(reboundBody).print(os, ctx);
   } else if (isa<TypeType>(type)) {
     os << "__TypeOfAllTypes";
 #if 0
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
     os << "def (";
     llvm::interleaveComma(fnType.getInputs(), os, [&](Type type) {
-      ASTType(type).print(os, diagShared);
+      ASTType(type).print(os, ctx);
     });
     os << ") -> (";
     llvm::interleaveComma(fnType.getResults(), os, [&](Type type) {
-      ASTType(type).print(os, diagShared);
+      ASTType(type).print(os, ctx);
     });
     os << ')';
 #endif
@@ -1923,7 +1934,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
       os << "LITImmutOrigin";
     else {
       os << "LITOrigin[";
-      printParam(os, originType.isMutable(), diagShared);
+      printParam(os, originType.isMutable(), ctx);
       os << ']';
     }
   } else if (isa<OriginSetType>(type)) {
@@ -1970,7 +1981,7 @@ void ASTType::printParamAfterType(raw_ostream &os, TypedAttr value,
   // Which is literally what is happening, but not very pretty.  To clean this
   // up, check to see if call is to an implicit constructor, and if so, elide
   // the call.
-  printParam(os, value, /*forDiag=*/&shared);
+  printParam(os, value, /*ctx=*/{&shared});
 }
 
 /// Convert this type to a human readable string representation so it can be
@@ -1978,14 +1989,14 @@ void ASTType::printParamAfterType(raw_ostream &os, TypedAttr value,
 raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os, ASTType astType) {
   if (!astType)
     return os << "<<NULL ASTTYPE>>";
-  astType.print(os);
+  astType.print(os, ASTTypePrinterContext{});
   return os;
 }
 
-std::string ASTType::getAsString(SharedState *forDiags) const {
+std::string ASTType::getAsString(ASTTypePrinterContext ctx) const {
   std::string result;
   llvm::raw_string_ostream os(result);
-  print(os, forDiags);
+  print(os, ctx);
 
   // Having "@" in mangled names confuses gnu ld and triggers error at linking
   // stage. See issue #6918. So replacing "@" with "_".
@@ -1998,7 +2009,7 @@ std::string ASTType::getParamAsString(TypedAttr param,
                                       SharedState *diagShared) {
   std::string result;
   llvm::raw_string_ostream os(result);
-  printParam(os, param, diagShared);
+  printParam(os, param, {diagShared});
   return os.str();
 }
 

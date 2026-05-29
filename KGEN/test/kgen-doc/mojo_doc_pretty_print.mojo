@@ -38,3 +38,26 @@ def higher_order(
     f: def(List[Int]) thin -> Int,
 ) -> def(List[Int]) thin -> Int:
     return f
+
+
+# Self-substitution at sub-expression depth: when the self type appears as a
+# parameter of an outer parametric type, the printer should still emit `Self`
+# rather than the fully-expanded form.
+
+
+struct Wrap[T: AnyType]:
+    pass
+
+
+struct SelfSubHost[N: Int]:
+    # CHECK: "name": "takes_wrap_of_self"
+    # CHECK: "type": "Wrap[Self]"
+    # CHECK: "signature": "def takes_wrap_of_self(self, w: Wrap[Self])"
+    def takes_wrap_of_self(self, w: Wrap[Self]):
+        pass
+
+    # CHECK: "name": "returns_wrap_of_self"
+    # CHECK: "type": "Wrap[Self]"
+    # CHECK: "signature": "def returns_wrap_of_self(self) -> Wrap[Self]"
+    def returns_wrap_of_self(self) -> Wrap[Self]:
+        pass
