@@ -579,9 +579,8 @@ def _pack_matmul_b_shape_func_impl[
     var k = dim1 if transpose_in_0 else dim0
     var tile_n_k = IndexList[2]()
 
-    @parameter
     @always_inline
-    def dispatch_on_kernel_type[kernel_type: Bool]():
+    def dispatch_on_kernel_type[kernel_type: Bool]() {mut tile_n_k, b_input}:
         comptime config = get_kernel_config[
             a_type,
             b_input.dtype,
@@ -592,7 +591,7 @@ def _pack_matmul_b_shape_func_impl[
             a_type, b_input.dtype, c_type, config.kernel_cols, transpose_in_0
         ](b_input)
 
-    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+    dispatch_get_kernel_type(dispatch_on_kernel_type, kernel_type_m, n, k)
 
     comptime if transpose_in_0:
         output[0] = dim1
@@ -790,9 +789,10 @@ def _pack_b_ndbuffer_impl[
                 memcpy(dest=output_buffer.ptr, src=b_input.ptr, count=n * k)
             return
 
-        @parameter
         @always_inline
-        def dispatch_on_kernel_type[kernel_type: Bool]():
+        def dispatch_on_kernel_type[
+            kernel_type: Bool
+        ]() {output_buffer, b_input}:
             comptime config = get_kernel_config[
                 a_type,
                 b_type,
@@ -811,7 +811,7 @@ def _pack_b_ndbuffer_impl[
                 c_type,
             ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
 
-        dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+        dispatch_get_kernel_type(dispatch_on_kernel_type, kernel_type_m, n, k)
 
 
 @always_inline
