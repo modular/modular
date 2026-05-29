@@ -24,7 +24,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from max import driver, graph
-from max.driver import Accelerator, Buffer, DLPackArray
+from max.driver import CPU, Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.engine import Model
 from max.experimental.functional import transfer_to
@@ -235,14 +235,22 @@ def _reconstruct_outputs(
 def _flatten_named_buffers(
     named_tensors: Iterable[tuple[str, Tensor]],
 ) -> dict[str, DLPackArray]:
-    """Flattens named parameters to a ``name -> DLPackArray`` mapping."""
+    """Flattens named parameters to a ``name -> DLPackArray`` mapping.
+
+    The registry must contain host-resident buffers: ``Tensor._as_constant_external``
+    declares every parameter's external constant on CPU and the lowering emits
+    a ``host_to_device`` op to copy it to the target device, so the runtime
+    reads the registered pointer as a host pointer. Copy any non-CPU-resident
+    buffer to CPU here to honor that contract.
+    """
+    cpu = CPU()
     result: dict[str, DLPackArray] = {}
     for name, t in named_tensors:
         if t.real:
             bufs = t.buffers
             for i, buf in enumerate(bufs):
                 key = f"{name}._shard.{i}" if len(bufs) > 1 else name
-                result[key] = buf
+                result[key] = buf if buf.device == cpu else buf.to(cpu)
         else:
             result[name] = t
     return result
