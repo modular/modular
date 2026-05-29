@@ -1483,10 +1483,10 @@ kgen.generator @fwd(%arg0: index) -> index {
 // -----
 
 // CHECK-LABEL: kgen.func @"decorators,a=1"
-// CHCEK-NEXT: decorators<1>  # (FIXME: MOCO-3991)  # spellchecker:disable-line
+// CHECK-NEXT: decorators <1>
 
 // CHECK-LABEL: kgen.func @"decorators,a=2"
-// CHCEK-NEXT: decorators<1>  # (FIXME: MOCO-3991)  # spellchecker:disable-line
+// CHECK-NEXT: decorators <1>
 
 kgen.generator @decorators<a>()
     decorators<1> {
