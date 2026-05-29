@@ -45,21 +45,18 @@ ConfidenceLevel = Literal["high", "medium", "low", "insufficient_data"]
 
 @dataclass
 class ConfidenceInfo:
-    """Confidence interval metadata for a metric.
-
-    Attributes:
-        ci_lower: Lower bound of the confidence interval (scaled units).
-        ci_upper: Upper bound of the confidence interval (scaled units).
-        ci_relative_width: Width of the CI as a fraction of the mean.
-        confidence: Classification based on ci_relative_width.
-        sample_size: Number of data points used to compute the CI.
-    """
+    """Confidence interval metadata for a metric."""
 
     ci_lower: float
+    """Lower bound of the confidence interval (scaled units)."""
     ci_upper: float
+    """Upper bound of the confidence interval (scaled units)."""
     ci_relative_width: float
+    """Width of the CI as a fraction of the mean."""
     confidence: ConfidenceLevel
+    """Classification based on ci_relative_width."""
     sample_size: int
+    """Number of data points used to compute the CI."""
 
 
 class Metrics(ABC):

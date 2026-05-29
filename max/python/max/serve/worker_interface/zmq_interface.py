@@ -76,8 +76,8 @@ class ZmqModelWorkerProxy(
         the context, the queue is cleaned up from the pending output queues.
 
         Args:
-            req_id (RequestID): The unique identifier for the request.
-            data (BaseContextType): The input data associated with the request.
+            req_id: The unique identifier for the request.
+            data: The input data associated with the request.
 
         Yields:
             asyncio.Queue: The queue to receive streamed results for the request.
@@ -160,7 +160,7 @@ class ZmqModelWorkerProxy(
         This method sends a cancellation message to the worker for the given request ID.
 
         Args:
-            req_id (RequestID): The unique identifier of the request to cancel.
+            req_id: The unique identifier of the request to cancel.
         """
         # Send cancellation message to worker
         self.cancel_queue.put_nowait([req_id])

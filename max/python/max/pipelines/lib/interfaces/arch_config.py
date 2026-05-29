@@ -116,10 +116,10 @@ class ArchConfigWithStoredKVParams:
     the trivial accessor.
 
     Also provides a default :meth:`construct_kv_params` for the common grouped
-    attention case. EAGLE draft slots default to zero via
+    attention case. Speculative decoding defaults to ``None`` via
     :meth:`KVCacheConfig.to_params` unless a subclass (e.g. Llama3) passes a
-    nonzero ``num_eagle_speculative_tokens``. Configs that need a different
-    head/layer mapping or MLA should override ``construct_kv_params``.
+    nonzero ``num_draft_tokens``. Configs that need a different head/layer
+    mapping or MLA should override ``construct_kv_params``.
     """
 
     kv_params: KVCacheParams

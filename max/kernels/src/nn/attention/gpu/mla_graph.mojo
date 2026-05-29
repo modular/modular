@@ -958,11 +958,13 @@ def quantize_and_bmm_fp8_helper[
     comptime scales_m_padding = 16 // size_of[fp8_scale_dtype]()
     var scales_padded_m = align_up(m, scales_m_padding)
     var fp8_a_scale_buf = ctx.enqueue_create_buffer[fp8_scale_dtype](
-        B * (K // k_scale_granularity) * scales_padded_m
+        B * ceildiv(K, k_scale_granularity) * scales_padded_m
     )
     var fp8_a_scale = TileTensor(
         fp8_a_scale_buf,
-        row_major((Idx[B], Idx[K // k_scale_granularity], scales_padded_m)),
+        row_major(
+            (Idx[B], Idx[ceildiv(K, k_scale_granularity)], scales_padded_m)
+        ),
     )
 
     @parameter

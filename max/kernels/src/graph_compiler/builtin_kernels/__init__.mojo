@@ -11,16 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from attention_kernels import *
-from conv_kernels import *
-from distributed_kernels import *
-from elementwise_kernels import *
-from ep_kernels import *
-from gather_scatter_kernels import *
-from common_kernels import *
-from kv_cache_kernels import *
-from linalg_kernels import *
-from logprobs_kernels import *
-from nan_check_kernels import *
-from quantization_kernels import *
-from reductions_kernels import *
+from .attention import *
+from .conv import *
+from .distributed import *
+from .elementwise import *
+from .ep import *
+from .gather_scatter import *
+from .kernels import *
+from .kv_cache import *
+from .linalg import *
+from .quantization import *
+from .reductions import *

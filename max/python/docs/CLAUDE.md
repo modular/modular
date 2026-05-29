@@ -54,7 +54,7 @@ submodules list them in a "Submodules" toctree at the bottom.
 1. Create `{module}.rst` with `.. automodule::` and `.. autosummary::` sections
    (copy an existing file like `nn.rst` as a starting point).
 2. Add the filename (without `.rst`) to the toctree in `index.rst`.
-3. Add a sidebar entry in `oss/modular/docs/sidebars.js` with
+3. Add a sidebar entry in `oss/modular/docs/sidebars.json` with
    `"__AUTOGEN:max.module.name__"` as the items stub.
 4. Run `./bazelw build //max/python/docs:python-api-docs` and verify.
 
@@ -67,8 +67,8 @@ Read these when you need to understand or modify the doc build:
   filtering in autosummary.
 - `oss/modular/docs/post-process-docs.py` -- Runs after Sphinx generates
   markdown. Demotes headings, removes empty sections, populates
-  `__AUTOGEN:prefix__` stubs in `sidebars.js` with generated page paths.
-- `oss/modular/docs/sidebars.js` -- Docusaurus sidebar definition. Each
+  `__AUTOGEN:prefix__` stubs in `sidebars.json` with generated page paths.
+- `oss/modular/docs/sidebars.json` -- Docusaurus sidebar definition. Each
   module's `items` array uses an `__AUTOGEN` stub that `post-process-docs.py`
   fills in.
 - `_templates/autosummary/` -- Jinja2 templates for autosummary stub pages

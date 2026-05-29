@@ -52,6 +52,7 @@ def register_all_models() -> None:
     from .gemma3multimodal import gemma3_multimodal_arch
     from .gemma3multimodal_modulev3 import gemma3_multimodal_modulev3_arch
     from .gemma4 import gemma4_arch
+    from .glm5_1 import glm5_1_arch
     from .gpt_oss import gpt_oss_arch
     from .gpt_oss_modulev3 import gpt_oss_modulev3_arch
     from .granite import granite_arch
@@ -118,6 +119,7 @@ def register_all_models() -> None:
         gemma3_multimodal_arch,
         gemma3_multimodal_modulev3_arch,
         gemma4_arch,
+        glm5_1_arch,
         granite_arch,
         granite_modulev3_arch,
         gpt_oss_arch,

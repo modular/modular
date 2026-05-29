@@ -293,14 +293,15 @@ the `Element` associated type and a named trait composition:
 ```mojo
 from std.sys.info import bit_width_of
 
+comptime BaseElement = Copyable & ImplicitlyDestructible & Writable
+
 trait Test:
     comptime Element: RegisterPassable
     comptime element_bitwidth = bit_width_of[Self.Element]()
 
-    comptime KeyElement = Copyable & ImplicitlyDestructible & Writable
 
 @fieldwise_init
-struct SampleStruct[T: KeyElement & ImplicitlyDestructible](Test):
+struct SampleStruct[T: BaseElement](Test):
     comptime Element = Int64
     var x: Self.T
 

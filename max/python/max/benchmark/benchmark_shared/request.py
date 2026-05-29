@@ -1388,10 +1388,6 @@ class RequestCounter:
     of requests sent across multiple concurrent threads. It uses a threading.Lock
     to ensure thread-safe access to the counter.
 
-    Attributes:
-        max_requests: Maximum number of requests allowed
-        total_sent_requests: Current count of sent requests
-        req_counter_lock: Threading lock for thread-safe access
     """
 
     def __init__(

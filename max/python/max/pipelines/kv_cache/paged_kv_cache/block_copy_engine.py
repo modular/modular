@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
-from max._distributed_ops import distributed_broadcast_raw
+from max._distributed_ops import distributed_broadcast
 from max.driver import (
     Buffer,
     Device,
@@ -292,8 +292,6 @@ class BlockOffloadEngine:
         self._signals: Signals | None = None
         self._signal_buffers: list[Buffer] = []
         self._broadcast_devices: list[Device] = []
-        self._signal_buffer_ptrs: list[int] = []
-        self._broadcast_device_ptrs: list[int] = []
         if self.replicated_buffers:
             # Every group shares the same TP devices in the same order.
             self._broadcast_devices = [
@@ -306,12 +304,6 @@ class BlockOffloadEngine:
                 ]
             )
             self._signal_buffers = self._signals.buffers()
-            self._signal_buffer_ptrs = [
-                b._data_ptr() for b in self._signal_buffers
-            ]
-            self._broadcast_device_ptrs = [
-                d._device_context_ptr() for d in self._broadcast_devices
-            ]
 
     @traced
     def memcpy_h2d(self, dst: int, src: int) -> None:
@@ -344,17 +336,11 @@ class BlockOffloadEngine:
             strict=True,
         ):
             with Tracer("distributed_broadcast"):
-                in_slice = root[dst, :]
-                out_ptrs = [
-                    in_slice._data_ptr(),
-                    *(p[dst, :]._data_ptr() for p in peers),
-                ]
-                distributed_broadcast_raw(
-                    input_data_ptr=out_ptrs[0],
-                    output_data_ptrs=out_ptrs,
-                    signal_data_ptrs=self._signal_buffer_ptrs,
-                    device_context_ptrs=self._broadcast_device_ptrs,
-                    num_bytes=in_slice.num_elements,
+                distributed_broadcast(
+                    input_buffer=root[dst, :],
+                    output_buffers=[root[dst, :], *(p[dst, :] for p in peers)],
+                    signal_buffers=self._signal_buffers,
+                    devices=self._broadcast_devices,
                     root=0,
                 )
 

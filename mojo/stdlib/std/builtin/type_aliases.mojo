@@ -75,8 +75,8 @@ Useful when interfacing with memory from outside the current Mojo program.
 comptime StaticConstantOrigin = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
-        `#lit.static.origin : !lit.origin<0>`,
-        `, "__constants__"> : !lit.origin<0>`,
+        `#lit.static.origin : !lit.origin<false>`,
+        `, "__constants__"> : !lit.origin<false>`,
     ]
 ]()
 """An origin for strings and other always-immutable static constants."""

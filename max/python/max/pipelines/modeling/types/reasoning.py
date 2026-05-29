@@ -83,22 +83,19 @@ class ReasoningSpan:
 
 @dataclass(frozen=True)
 class ParsedReasoningDelta:
-    """Result of applying reasoning parsing to a streaming delta chunk.
-
-    Attributes:
-        span: The :class:`ReasoningSpan` identifying the reasoning portion
-            of the chunk.
-        is_still_reasoning: Whether the reasoning section is still active.
-        reasoning_text_formatter: Optional callback to post-process decoded
-            reasoning text. Returns the formatted text, or ``None`` if the
-            text should be ignored.
-    """
+    """Result of applying reasoning parsing to a streaming delta chunk."""
 
     span: ReasoningSpan
+    """The ReasoningSpan identifying the reasoning portion of the chunk."""
     is_still_reasoning: bool
+    """Whether the reasoning section is still active."""
     reasoning_text_formatter: Callable[[str], str | None] | None = field(
         default=None
     )
+    """Optional callback to post-process decoded reasoning text.
+
+    Returns the formatted text, or ``None`` if the text should be ignored.
+    """
 
 
 class ReasoningParser(ABC):

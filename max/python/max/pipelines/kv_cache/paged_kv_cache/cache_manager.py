@@ -424,7 +424,9 @@ class PagedKVCacheManager:
         replica = self._replica[replica_idx]
         replica.block_manager.reuse_blocks_from_prefix_cache(data)
         replica.block_manager.allocate_new_blocks(
-            data, num_steps, self.params.num_eagle_speculative_tokens
+            data,
+            num_steps,
+            self.params.num_draft_tokens,
         )
 
     def _does_req_need_more_blocks(
@@ -439,7 +441,7 @@ class PagedKVCacheManager:
         seq_len = _compute_seq_len(
             ctx,
             num_steps,
-            self.params.num_eagle_speculative_tokens,
+            self.params.num_draft_tokens,
         )
         num_blocks = len(block_manager.req_to_blocks[ctx.request_id])
         return seq_len > num_blocks * self.params.page_size
@@ -483,7 +485,9 @@ class PagedKVCacheManager:
 
             # Compute the total sequence length
             seq_len = _compute_seq_len(
-                ctx, num_steps, self.params.num_eagle_speculative_tokens
+                ctx,
+                num_steps,
+                self.params.num_draft_tokens,
             )
             max_seq_len = max(max_seq_len, seq_len)
 
@@ -580,7 +584,9 @@ class PagedKVCacheManager:
 
             # Sanity check that we have enough blocks.
             seq_len = _compute_seq_len(
-                ctx, num_steps, self.params.num_eagle_speculative_tokens
+                ctx,
+                num_steps,
+                self.params.num_draft_tokens,
             )
             num_required_blocks = ceildiv(seq_len, self.params.page_size)
             assert len(blocks) >= num_required_blocks
@@ -612,9 +618,7 @@ class PagedKVCacheManager:
         # advance to the values for the next row. This should not be allocated
         # on pinned memory since it is exclusively accessed on the CPU and never
         # copied to the GPU.
-        absolute_max_cached_len = (
-            max_cached_len + self.params.num_eagle_speculative_tokens
-        )
+        absolute_max_cached_len = max_cached_len + self.params.num_draft_tokens
         max_lengths_host = build_max_lengths_tensor(
             num_steps,
             max_prompt_len,
@@ -643,7 +647,7 @@ class PagedKVCacheManager:
             )
         )
 
-        if self.params.num_eagle_speculative_tokens > 0:
+        if self.params.num_draft_tokens > 0:
             draft_resolver = (
                 replica.draft_attention_dispatch_resolver
                 or replica.attention_dispatch_resolver
@@ -651,9 +655,7 @@ class PagedKVCacheManager:
             draft_resolved_metadata: list[Buffer] | None = (
                 draft_resolver.resolve_for_replica(
                     batch_size,
-                    # TODO(SERVOPT-1437): During draft 0, this must be patched
-                    # to the correct prefill width.
-                    1,
+                    self.params.num_draft_tokens_per_step,
                     absolute_max_cached_len,
                 )
             )

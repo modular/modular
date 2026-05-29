@@ -411,7 +411,7 @@ struct RawDriver(Movable):
         self,
         queue: QueueHandle,
         dst: MemoryHandle,
-        src: UnsafePointer[UInt8, ImmutAnyOrigin],
+        src: UnsafePointer[mut=False, UInt8, _],
         size: UInt64,
     ) raises HALError:
         var status = self._raw.queue_copy_to_device.f(queue, dst, src, size)
@@ -425,7 +425,7 @@ struct RawDriver(Movable):
     def copy_from_device(
         self,
         queue: QueueHandle,
-        dst: UnsafePointer[UInt8, MutAnyOrigin],
+        dst: UnsafePointer[mut=True, UInt8, _],
         src: MemoryHandle,
         size: UInt64,
     ) raises HALError:
@@ -533,7 +533,7 @@ struct RawDriver(Movable):
     def wait_for_events(
         self,
         queue: QueueHandle,
-        handles: UnsafePointer[EventHandle, MutAnyOrigin],
+        handles: UnsafePointer[mut=True, EventHandle, _],
         num_events: UInt32,
     ) raises HALError:
         var status = self._raw.queue_wait_for_events.f(
@@ -595,8 +595,8 @@ struct RawDriver(Movable):
         func: FunctionHandle,
         grid: Tuple[UInt32, UInt32, UInt32],
         block: Tuple[UInt32, UInt32, UInt32],
-        args: UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin],
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        args: UnsafePointer[mut=True, OpaquePointer[MutExternalOrigin], _],
+        arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
     ) raises HALError:

@@ -19,15 +19,12 @@ from dataclasses import dataclass
 
 @dataclass
 class DatasetRegistryEntry:
-    """Registry entry for a benchmark dataset.
-
-    Attributes:
-        class_name: The name of the BenchmarkDataset subclass that implements this dataset.
-        has_multiturn_chat_support: Whether this dataset supports multiturn chat scenarios.
-    """
+    """Registry entry for a benchmark dataset."""
 
     class_name: str
+    """The name of the BenchmarkDataset subclass that implements this dataset."""
     has_multiturn_chat_support: bool
+    """Whether this dataset supports multiturn chat scenarios."""
 
 
 """Registry mapping dataset names to their implementation metadata and capabilities.

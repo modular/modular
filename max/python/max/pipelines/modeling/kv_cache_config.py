@@ -24,6 +24,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheQuantizationConfig,
     KVConnectorType,
 )
+from max.pipelines.speculative.config import SpeculativeMethod
 from pydantic import ConfigDict, Field, PrivateAttr
 
 
@@ -172,7 +173,8 @@ class KVCacheConfig(ConfigFileModel):
         is_mla: bool = False,
         num_q_heads: int | None = None,
         kvcache_quant_config: KVCacheQuantizationConfig | None = None,
-        num_eagle_speculative_tokens: int = 0,
+        speculative_method: SpeculativeMethod | None = None,
+        num_draft_tokens: int = 0,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -187,7 +189,11 @@ class KVCacheConfig(ConfigFileModel):
             num_q_heads: Number of query attention heads. Required when
                 ``is_mla`` is True.
             kvcache_quant_config: KV cache quantization configuration.
-            num_eagle_speculative_tokens: Number of draft tokens to generate for EAGLE speculative decoding.
+            speculative_method: Speculative decoding method propagated from
+                :class:`~max.pipelines.speculative.SpeculativeConfig`.
+                ``None`` when speculative decoding is disabled.
+            num_draft_tokens: Total draft tokens generated per
+                speculative iteration. Zero when no speculative decoding.
 
         Returns:
             The constructed KV cache parameters.
@@ -210,5 +216,6 @@ class KVCacheConfig(ConfigFileModel):
             num_q_heads=num_q_heads,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
-            num_eagle_speculative_tokens=num_eagle_speculative_tokens,
+            speculative_method=speculative_method,
+            num_draft_tokens=num_draft_tokens,
         )

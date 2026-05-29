@@ -11,6 +11,16 @@ max.graph
 
 .. currentmodule:: max.graph
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   graph.ops
+   graph.quantization
+   graph.weights
+
 Graph construction
 ------------------
 
@@ -97,12 +107,3 @@ Configuration
 
    GraphDebugConfig
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   graph.ops
-   graph.quantization
-   graph.weights

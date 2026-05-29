@@ -273,7 +273,8 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
             data_parallel_degree=target_kv.data_parallel_degree,
             is_mla=False,
             num_q_heads=int(draft_hf.num_attention_heads),
-            num_eagle_speculative_tokens=target_kv.num_eagle_speculative_tokens,
+            speculative_method=target_kv.speculative_method,
+            num_draft_tokens=target_kv.num_draft_tokens,
         )
 
         draft_config = _build_mha_draft_config(
