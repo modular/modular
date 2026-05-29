@@ -374,3 +374,31 @@ def test_gpu_causal_conv1d_strict_tolerance() raises:
     run_causal_conv1d_gpu[DType.float32, "silu"](
         1, 1536, 7, 4, ctx=ctx, rtol=0.0001
     )
+
+
+def test_gpu_causal_conv1d_vectorized_fast_path() raises:
+    """Exercise the vectorized fast path (vector load + warp-shuffle halo).
+
+    The fast path engages only when L-contiguous, no seq_idx, kNElts-aligned,
+    and blocks are full: seqlen % (kNThreads * kNElts) == 0. The launcher here
+    uses kNThreads=128, kNElts=4, so seqlen must be a multiple of 512. Covers
+    every width (the halo spans width-1 prior elements, pulled across lanes by
+    warp shuffle) and both activations, with multiple channels/batches so the
+    per-(batch, channel) base offsets are exercised.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for width in [1, 2, 3, 4]:
+        # Single full block (seqlen == kNThreads*kNElts) and two full blocks.
+        run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 512, width, ctx=ctx)
+        run_causal_conv1d_gpu[DType.float32, "silu"](2, 8, 512, width, ctx=ctx)
+        run_causal_conv1d_gpu[DType.float32, "silu"](1, 4, 1024, width, ctx=ctx)
+
+
+def test_gpu_causal_conv1d_vectorized_mamba_prefill() raises:
+    """Vectorized fast path at mamba prefill dimensions (dim=1536, L=512)."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_causal_conv1d_gpu[DType.float32, "silu"](1, 1536, 512, 4, ctx=ctx)

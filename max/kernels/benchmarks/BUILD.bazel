@@ -192,6 +192,7 @@ _CPU_TESTS = glob(
             "gpu/nn/bench_conv2d.mojo",
             "gpu/layout/bench_tile_io_copy.mojo",
             "gpu/nn/bench_conv3d.mojo",
+            "gpu/state_space/bench_causal_conv1d.mojo",
         ],
     )
 ]
@@ -208,9 +209,34 @@ _CPU_TESTS = glob(
             "gpu/nn/bench_conv2d.mojo",
             "gpu/layout/bench_tile_io_copy.mojo",
             "gpu/nn/bench_conv3d.mojo",
+            "gpu/state_space/bench_causal_conv1d.mojo",
         ],
     )
 ]
+
+# causal_conv1d bench needs the state_space kernel package (not in the glob deps).
+mojo_binary(
+    name = "gpu/state_space/bench_causal_conv1d",
+    srcs = ["gpu/state_space/bench_causal_conv1d.mojo"],
+    enable_assertions = False,
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:nn",
+        "//max:state_space",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/state_space/bench_causal_conv1d.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/state_space/bench_causal_conv1d"],
+)
 
 # Runnable GPU benchmark targets (mojo_test wrappers so they execute on the
 # remote GPU via `bazel test --config=remote-b200 ...`).

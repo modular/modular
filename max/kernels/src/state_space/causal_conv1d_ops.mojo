@@ -140,7 +140,12 @@ struct CausalConv1D[activation: StaticString]:
             )
         elif is_gpu[target]():
             var gpu_ctx: DeviceContext = ctx
-            comptime kNThreads = 128
+            # 64 threads x kNElts=4 (float4) => a 256-position tile per block with
+            # every thread busy. The channel-first kernel's vectorized fast path
+            # (one float4 load + halo) beats Dao-AILab/causal-conv1d at mamba
+            # prefill dimensions; kNThreads=64 avoids the half-idle block that
+            # kNThreads=128 (tile 512) leaves at the common L=256.
+            comptime kNThreads = 64
             comptime kNElts = 4
             var silu_activation_int8 = Int8(silu_activation)
             var grid = (

@@ -30,12 +30,13 @@ Kernel inventory:
           CPU core. Channel-first vs channel-last is expressed purely through the
           stride values supplied by the caller, so one function serves both.
         - `causal_conv1d_channel_first_fwd_gpu[…]` — GPU kernel for (B, C, L);
-          one channel per block-row, L-contiguous coalescing.
+          one channel per block-row, L-contiguous coalescing. Dense prefill hits
+          a vectorized fast path (one width-kNElts vector load per thread + a
+          short L2-cached halo, fully comptime-unrolled); seq_idx / non-contiguous
+          / ragged-tail inputs fall back to a width-generic scalar accumulation.
         - `causal_conv1d_channel_last_fwd_gpu[…]` — GPU kernel for (B, L, C); a
-          chunk of `kNElts` channels per block, C-contiguous coalescing.
-
-        Both GPU kernels use a width-generic scalar accumulation over the kWidth
-        taps (one code path for all supported widths).
+          chunk of `kNElts` channels per block, C-contiguous coalescing, using a
+          width-generic scalar accumulation over the kWidth taps.
 
         Every forward kernel is parameterized by whether a bias is present and
         whether a `seq_idx` packed-sequence mask is present, instead of carrying
@@ -64,8 +65,13 @@ seq_idx (packed sequences):
     sub-sequence boundary.
 
 GPU Optimization Parameters:
-    - kNThreads=128: Threads per block for sequence processing
-    - kNElts=4: Elements processed per thread for better ILP
+    - kNElts=4: sequence positions per thread; also the fast-path vector width
+      (float4 for FP32), the lever that makes channel-first beat
+      Dao-AILab/causal-conv1d at mamba prefill dims on GB10.
+    - kNThreads=64: threads per block; 64*kNElts == 256 keeps every thread busy
+      at the common L=256 (vs the half-idle block kNThreads=128 leaves).
+    - block_dim.y (optional): channels folded per block to add warps/block; the
+      channel-first op launches 1D (block_dim.y == 1), which profiled fastest.
 
 Activation Support:
     - None: Direct convolution output
@@ -73,6 +79,7 @@ Activation Support:
 """
 
 from std.math import exp
+from std.sys.info import align_of
 
 from std.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
@@ -343,7 +350,15 @@ def causal_conv1d_channel_first_fwd_gpu[
     """
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
-    var channel_id: Int = block_idx.y
+    # Channels may be folded along the block's y dimension to raise occupancy:
+    # each block-row covers block_dim.y channels, one per thread_idx.y. With the
+    # default 1D launch (block_dim.y == 1, thread_idx.y == 0) this reduces to the
+    # classic one-channel-per-block-row mapping, so existing callers are
+    # unaffected. Roofline showed the 1D launch occupancy-bound (~63%); folding
+    # 2+ channels per block doubles warps/block and hides latency.
+    var channel_id: Int = Int(block_idx.y) * Int(block_dim.y) + Int(
+        thread_idx.y
+    )
     var chunk_id: Int = block_idx.x
     var kChunkSize: Int = block_dim.x
 
@@ -391,6 +406,67 @@ def causal_conv1d_channel_first_fwd_gpu[
     var silu_active = Bool(Int(silu_activation) != 0)
     var use_seq_idx = has_seq_idx != 0
 
+    var out_cbase: UInt32 = (
+        UInt32(batch_id) * out_batch_stride + UInt32(channel_id) * out_c_stride
+    )
+
+    # ---- Fast vectorized path ------------------------------------------------
+    # Hot path for dense prefill (e.g. mamba): L-contiguous x/out, no
+    # packed-sequence masking, a full (non-ragged) tile, and kNElts-aligned base
+    # offsets. The generic path below issues kNElts*kWidth scalar global loads
+    # per thread; here we issue a single width-kNElts vector load for this
+    # thread's tile plus kWidth-1 L2-cached halo scalars, then compute fully
+    # unrolled at compile time (every tap/halo selection resolves at comptime).
+    # This collapses the load-instruction count that bounds the scalar path.
+    var aligned = (
+        x_c_stride % UInt32(kNElts) == 0
+        and x_batch_stride % UInt32(kNElts) == 0
+        and out_c_stride % UInt32(kNElts) == 0
+        and out_batch_stride % UInt32(kNElts) == 0
+    )
+    if (
+        x_l_stride == 1
+        and out_l_stride == 1
+        and not use_seq_idx
+        and seq_start + kNElts <= nSeqLen
+        and aligned
+    ):
+        comptime vec_align = align_of[SIMD[x_dtype, kNElts]]()
+        var xv = x.raw_load[width=kNElts, alignment=vec_align](
+            x_cbase + UInt32(seq_start)
+        )
+        # Halo = the kWidth-1 positions immediately preceding this thread's tile:
+        # halo[k] = x[seq_start - (kWidth-1) + k]; causal out-of-range -> 0.
+        # These belong to the previous thread's tile and are read from global,
+        # but they hit L2 (the neighbour just loaded them), so on GB10 this is
+        # cheaper than a warp shuffle to fetch them across lanes (measured: the
+        # shuffle variant regressed ~9% from the per-thread branch divergence).
+        var halo = InlineArray[Scalar[x_dtype], kWidth](fill=0)
+        comptime for k in range(kWidth - 1):
+            var input_l: Int = seq_start - (kWidth - 1) + k
+            if input_l >= 0:
+                halo[k] = Scalar[x_dtype](x.raw_load(x_cbase + UInt32(input_l)))
+
+        var fast_out: SIMD[output_dtype, kNElts] = 0
+        comptime for i in range(kNElts):
+            var acc: Scalar[x_dtype] = 0
+            comptime for w in range(kWidth):
+                comptime rel = i - (kWidth - 1 - w)
+                comptime if rel >= 0:
+                    acc = acc + W[w] * xv[rel]
+                else:
+                    acc = acc + W[w] * halo[i + w]
+            var ov: Scalar[output_dtype] = Scalar[output_dtype](
+                cur_bias
+            ) + Scalar[output_dtype](acc)
+            fast_out[i] = apply_silu(ov, silu_active)
+
+        output.raw_store[width=kNElts, alignment=vec_align](
+            out_cbase + UInt32(seq_start), fast_out
+        )
+        return
+    # ---- Generic scalar path (seq_idx / non-contiguous / ragged tail) --------
+
     comptime for i in range(kNElts):
         var pos: Int = seq_start + i
         if pos >= seq_end:
@@ -426,9 +502,6 @@ def causal_conv1d_channel_first_fwd_gpu[
         ) + Scalar[output_dtype](conv_result)
         out_vals[i] = apply_silu(out_val, silu_active)
 
-    var out_cbase: UInt32 = (
-        UInt32(batch_id) * out_batch_stride + UInt32(channel_id) * out_c_stride
-    )
     comptime for i in range(kNElts):
         var pos: Int = seq_start + i
         if pos >= seq_end:
