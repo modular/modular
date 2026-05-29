@@ -33,13 +33,14 @@ def trait_downcast_anytype[T: AnyType](x: T):
     y.test()
 
 
-struct ListIterator[T: Copyable]:
+struct ListIterator[T: Copyable & Movable]:
     var t: Self.T
 
 
 struct List[T: Movable]:
     var t: Self.T
 
+    # CHECK: lit.alias.decl *"Iterator`": meta<!lit.struct<#ListIterator <:!Copyable_Movable downcast(:!Movable T)>>>
     comptime Iterator = ListIterator[downcast[Self.T, Copyable]]
 
     def iter(self) -> Self.Iterator:
