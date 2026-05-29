@@ -33,7 +33,7 @@ struct PreShuffledBGroupedGEMM[
     wg_per_cu: Int = 2,
 ]:
     # This Grouped GEMM works when the weights B are shuffled into the layout
-    # that allows coalsced reads from shared memory and direct MFMA usage
+    # that allows coalesced reads from shared memory and direct MFMA usage
 
     comptime num_xcd = 8
     comptime total_wg = Self.cu_count * Self.wg_per_cu
@@ -42,7 +42,7 @@ struct PreShuffledBGroupedGEMM[
     @always_inline
     @staticmethod
     def to_swizzled_idx(linear_idx: Int) -> Int:
-        # If we have 10 blcoks and 8 xcd's the block scheduler assigns
+        # If we have 10 blocks and 8 xcd's the block scheduler assigns
         # a block to the xcd in this round robin fashion
 
         # XCD:         0 1 2 3 4 5 6 7
@@ -737,7 +737,7 @@ def mxfp4_grouped_matmul_amd_preb(
         b_pre.flat_rank == 2 or b_pre.flat_rank == 3
     ), "b_pre must be rank-2 (flat) or rank-3 ([E, N, K_BYTES])"
     comptime num_experts = b_pre.static_shape[0]
-    comptime m_threshhold = 4096
+    comptime m_threshold = 4096
 
     comptime b_per_expert_bytes = (
         b_pre.static_shape[1] if b_pre.flat_rank
@@ -757,15 +757,15 @@ def mxfp4_grouped_matmul_amd_preb(
         ctx.default_device_info == MI355X
     ), "preb path currently only supports MI355X"
 
-    comptime PreBGrouppedGemmType = PreShuffledBGroupedGEMM[
+    comptime PreBGroupedGemmType = PreShuffledBGroupedGEMM[
         cu_count=ctx.default_device_info.sm_count
     ]
 
     comptime can_use_bk_512 = packed_K >= 256 and packed_K % 256 == 0
-    var use_direct = estimated_total_m >= m_threshhold
+    var use_direct = estimated_total_m >= m_threshold
     comptime if can_use_bk_512:
         if use_direct:
-            PreBGrouppedGemmType.launch[
+            PreBGroupedGemmType.launch[
                 BM=64, BN=128, BK_ELEMS=512, WN=64, persistent=False
             ](
                 c,
@@ -780,7 +780,7 @@ def mxfp4_grouped_matmul_amd_preb(
                 ctx,
             )
         else:
-            PreBGrouppedGemmType.launch[
+            PreBGroupedGemmType.launch[
                 BM=64, BN=128, BK_ELEMS=512, WN=64, persistent=True
             ](
                 c,
@@ -796,7 +796,7 @@ def mxfp4_grouped_matmul_amd_preb(
             )
     else:
         if use_direct:
-            PreBGrouppedGemmType.launch[
+            PreBGroupedGemmType.launch[
                 BM=64, BN=128, BK_ELEMS=128, WN=64, persistent=False
             ](
                 c,
@@ -811,7 +811,7 @@ def mxfp4_grouped_matmul_amd_preb(
                 ctx,
             )
         else:
-            PreBGrouppedGemmType.launch[
+            PreBGroupedGemmType.launch[
                 BM=64, BN=128, BK_ELEMS=128, WN=64, persistent=True
             ](
                 c,

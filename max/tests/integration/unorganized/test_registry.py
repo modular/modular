@@ -61,7 +61,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
                 {
                     "main": MAXModelConfig(
                         model_path="GSAI-ML/LLaDA-8B-Instruct",
-                        # This forces it to fail if we dont have it.
+                        # This forces it to fail if we don't have it.
                         trust_remote_code=True,
                         max_length=1,
                     )
