@@ -516,6 +516,11 @@ struct MLAPrefillSparse[
     comptime v_tile_shape = Index(Self.v_tile_height, Self.v_gather_box)
     comptime v_desc_shape = Index(1, Self.v_gather_box)
 
+    # desc_shape inner dim 64×2=128B satisfies the ≤256B SWIZZLE_NONE constraint.
+    # SMEM is written in column-group order to match TMA's sub-copy layout.
+    comptime o_tile_shape = Index(Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth)
+    comptime o_desc_shape = Index(Self.NUM_Q_HEADS_PER_CTA, 64)
+
     # FP8 TMA swizzle modes. SWIZZLE_NONE paired with INT64 packing means one
     # gather4 descriptor covers the full row without inner col-tiling.
     comptime FP8_K_SWIZZLE = TensorMapSwizzle.SWIZZLE_NONE
@@ -585,6 +590,7 @@ struct MLAPrefillSparse[
     @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(v_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(o_tma_op, `nvvm.grid_constant`)
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -617,17 +623,18 @@ struct MLAPrefillSparse[
             Self.v_tile_shape,
             Self.v_desc_shape,
         ],
+        o_tma_op: TMATensorTile[
+            Self.output_dtype,
+            2,
+            Self.o_tile_shape,
+            Self.o_desc_shape,
+        ],
         topk_lengths: TileTensor[DType.uint32, TopKLengthLayout, MutAnyOrigin],
         indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
         indices_stride: Int32,
-        # Raw gmem output pointer. Used for the per-thread output store in
-        # the WG0 epilogue. RaggedTMA3DTile's box-along-dim-2 stride is
-        # `num_heads*v_depth`, which writes BM SEQ positions per call —
-        # but our cluster produces 1 seq * BM heads, the wrong shape for
-        # that descriptor. Direct global store sidesteps that.
         output_gmem_ptr: UnsafePointer[Scalar[Self.output_dtype], MutAnyOrigin],
     ) where (topk_lengths.flat_rank == 1 and indices.flat_rank == 1):
         var cta_id = UInt32(block_idx.x % Self.config.cta_group)
@@ -1011,39 +1018,26 @@ struct MLAPrefillSparse[
             #   - Warp 3: heads 32..63,                    cluster cols 128..255
             # Atom1 writes those cols to v_depth offsets 0..255; atom2
             # adds V_DEPTH_PER_CTA=256 to land in 256..511.
-            var local_warp_idx_wg0 = UInt32(warp_idx)  # 0..3 for WG0
-            var head_row_block = local_warp_idx_wg0 % UInt32(2)
-            var depth_col_block = local_warp_idx_wg0 // UInt32(2)
-
-            var local_lane = UInt32(lane_idx)  # 0..31 within a warp
+            var head_row_block = UInt32(warp_idx) % UInt32(2)
+            var depth_col_block = UInt32(warp_idx) // UInt32(2)
+            var local_lane = UInt32(lane_idx)
             var head_local = head_row_block * UInt32(32) + local_lane
-            var head_global = (
-                cta_id * UInt32(Self.NUM_Q_HEADS_PER_CTA) + head_local
-            )
-            var depth_col_start = depth_col_block * UInt32(Self.V_BMN_PER_ATOM)
 
-            # gmem byte offset for the start of this thread's row.
-            var gmem_row_stride: Int = (
-                Self.config.num_q_heads * Self.config.v_depth
-            )
-            var gmem_row_offset_base: Int = (
-                Int(seq_idx) * gmem_row_stride
-                + Int(head_global) * Self.config.v_depth
-                + Int(depth_col_start)
-            )
+            # SMEM layout: [8_col_groups, 64_heads, 64_cols] so each 64-column
+            # group is contiguous — matches the TMA desc_shape=[64, 64] sub-copies.
+            # col_group = depth_col_block*2 + atom_idx*4 + chunk tiles v_depth=512.
+            comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
 
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
-                # Atom 0: TMEM addr=0,   gmem depth offset = 0
-                # Atom 1: TMEM addr=128, gmem depth offset = +V_DEPTH_PER_CTA
                 comptime atom_o_tmem_addr = (
                     Self.O_TMEM_ADDR + atom_idx * Self.V_BMN_PER_ATOM
-                )
-                comptime atom_gmem_depth_shift = (
-                    atom_idx * Self.V_DEPTH_PER_CTA
                 )
 
                 comptime for chunk in range(2):
                     comptime CHUNK = 64
+                    var col_group = (
+                        Int(depth_col_block) * 2 + atom_idx * 4 + chunk
+                    )
                     var c_chunk: InlineArray[Scalar[DType.float32], CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
@@ -1055,13 +1049,6 @@ struct MLAPrefillSparse[
                     ](UInt32(atom_o_tmem_addr + chunk * CHUNK))
                     tcgen05_load_wait()
 
-                    # This chunk holds elements 2*(chunk*32) ..
-                    # 2*(chunk*32)+63 of the per-thread fragment.  Scale
-                    # in fp32 and cast to bf16 ONCE — phase1.cuh:332-334
-                    # uses `float2_mul(o, scale)` then a single
-                    # `__float22bfloat162_rn`.  Casting first and then
-                    # multiplying in bf16 (the old code path) doubled the
-                    # rounding count and showed up in `max_err`.
                     comptime for i in range(CHUNK // 2):
                         var v0_f32 = (
                             rebind[Scalar[DType.float32]](c_chunk[2 * i])
@@ -1071,16 +1058,37 @@ struct MLAPrefillSparse[
                             rebind[Scalar[DType.float32]](c_chunk[2 * i + 1])
                             * output_scale
                         )
-                        var v = SIMD[Self.output_dtype, 2](
-                            v0_f32.cast[Self.output_dtype](),
-                            v1_f32.cast[Self.output_dtype](),
+                        var v = SIMD[Self.qkv_dtype, 2](
+                            v0_f32.cast[Self.qkv_dtype](),
+                            v1_f32.cast[Self.qkv_dtype](),
                         )
-                        var gmem_offset = (
-                            gmem_row_offset_base
-                            + atom_gmem_depth_shift
-                            + (chunk * (CHUNK // 2) + i) * 2
+                        var smem_offset = (
+                            col_group * GROUP_STRIDE
+                            + Int(head_local) * 64
+                            + i * 2
                         )
-                        (output_gmem_ptr + gmem_offset).store[width=2](v)
+                        (o_ptr + smem_offset).store[width=2](v)
+
+            named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
+            if warp_idx == 0:
+                if elect_one_sync():
+                    fence_async_view_proxy()
+                    var o_smem_tile = TileTensor(
+                        o_ptr.bitcast[Scalar[Self.output_dtype]](),
+                        row_major[
+                            Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth
+                        ](),
+                    )
+                    o_tma_op.async_store(
+                        o_smem_tile,
+                        (
+                            0,  # col (depth, innermost in TMA coords)
+                            Int(seq_idx) * Self.config.num_q_heads
+                            + Int(cta_id) * Self.NUM_Q_HEADS_PER_CTA,
+                        ),
+                    )
+                    cp_async_bulk_commit_group()
+            cp_async_bulk_wait_group[0]()
 
             if warp_idx == 0:
                 tcgen05_dealloc[Self.config.cta_group](
@@ -2594,6 +2602,7 @@ struct MLAPrefillSparse[
     @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(k_tma_op_fp8, `nvvm.grid_constant`)
     @__llvm_arg_metadata(v_tma_op_fp8, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(o_tma_op, `nvvm.grid_constant`)
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
     @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__name(
@@ -2621,6 +2630,12 @@ struct MLAPrefillSparse[
             2,
             Self.v_tma_tile_shape_fp8,
             Self.v_tma_desc_shape_fp8,
+        ],
+        o_tma_op: TMATensorTile[
+            Self.output_dtype,
+            2,
+            Self.o_tile_shape,
+            Self.o_desc_shape,
         ],
         topk_lengths: TileTensor[DType.uint32, TopKLengthLayout, MutAnyOrigin],
         indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
@@ -2946,36 +2961,23 @@ struct MLAPrefillSparse[
             if not have_valid_indices:
                 output_scale = 1.0
 
-            var local_warp_idx_wg0 = UInt32(warp_idx)
-            var head_row_block = local_warp_idx_wg0 % UInt32(2)
-            var depth_col_block = local_warp_idx_wg0 // UInt32(2)
-
+            var head_row_block = UInt32(warp_idx) % UInt32(2)
+            var depth_col_block = UInt32(warp_idx) // UInt32(2)
             var local_lane = UInt32(lane_idx)
             var head_local = head_row_block * UInt32(32) + local_lane
-            var head_global = (
-                cta_id * UInt32(Self.NUM_Q_HEADS_PER_CTA) + head_local
-            )
-            var depth_col_start = depth_col_block * UInt32(Self.V_BMN_PER_ATOM)
 
-            var gmem_row_stride: Int = (
-                Self.config.num_q_heads * Self.config.v_depth
-            )
-            var gmem_row_offset_base: Int = (
-                Int(seq_idx) * gmem_row_stride
-                + Int(head_global) * Self.config.v_depth
-                + Int(depth_col_start)
-            )
+            comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
 
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
                 comptime atom_o_tmem_addr = (
                     Self.O_TMEM_ADDR + atom_idx * Self.V_BMN_PER_ATOM
                 )
-                comptime atom_gmem_depth_shift = (
-                    atom_idx * Self.V_DEPTH_PER_CTA
-                )
 
                 comptime for chunk in range(2):
                     comptime CHUNK = 64
+                    var col_group = (
+                        Int(depth_col_block) * 2 + atom_idx * 4 + chunk
+                    )
                     var c_chunk: InlineArray[Scalar[DType.float32], CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
@@ -2996,16 +2998,37 @@ struct MLAPrefillSparse[
                             rebind[Scalar[DType.float32]](c_chunk[2 * i + 1])
                             * output_scale
                         )
-                        var v = SIMD[Self.output_dtype, 2](
-                            v0_f32.cast[Self.output_dtype](),
-                            v1_f32.cast[Self.output_dtype](),
+                        var v = SIMD[Self.qkv_dtype, 2](
+                            v0_f32.cast[Self.qkv_dtype](),
+                            v1_f32.cast[Self.qkv_dtype](),
                         )
-                        var gmem_offset = (
-                            gmem_row_offset_base
-                            + atom_gmem_depth_shift
-                            + (chunk * (CHUNK // 2) + i) * 2
+                        var smem_offset = (
+                            col_group * GROUP_STRIDE
+                            + Int(head_local) * 64
+                            + i * 2
                         )
-                        (output_gmem_ptr + gmem_offset).store[width=2](v)
+                        (o_ptr + smem_offset).store[width=2](v)
+
+            named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
+            if warp_idx == 0:
+                if elect_one_sync():
+                    fence_async_view_proxy()
+                    var o_smem_tile = TileTensor(
+                        o_ptr.bitcast[Scalar[Self.output_dtype]](),
+                        row_major[
+                            Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth
+                        ](),
+                    )
+                    o_tma_op.async_store(
+                        o_smem_tile,
+                        (
+                            0,
+                            Int(seq_idx) * Self.config.num_q_heads
+                            + Int(cta_id) * Self.NUM_Q_HEADS_PER_CTA,
+                        ),
+                    )
+                    cp_async_bulk_commit_group()
+            cp_async_bulk_wait_group[0]()
 
             if warp_idx == 0:
                 tcgen05_dealloc[Self.config.cta_group](
@@ -3297,11 +3320,17 @@ def mla_prefill_sparse[
         tile_height=config.B_TOPK // 2,
     ](ctx)
 
-    # Output is laid out as [num_q_rows, num_q_heads, v_depth]. Each CTA
-    # Output is written via direct gmem store from WG0's epilogue, not
-    # TMA — `RaggedTMA3DTile`'s box-along-dim-2 stride is `num_heads *
-    # v_depth`, which writes BM SEQ positions per call, but our cluster
-    # produces 1 seq * BM heads, the wrong shape for that descriptor.
+    # Output viewed 2D as [num_q_rows * num_q_heads, v_depth] so per-cluster
+    # TMA stores address the right head range with a single [row, col] coord.
+    var output_2d = TileTensor(
+        output.ptr,
+        row_major(num_q_rows * config.num_q_heads, config.v_depth),
+    )
+    o_tma_op = create_tensor_tile[
+        Index(config.num_q_heads // config.cta_group, config.v_depth),
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __desc_shape=Index(config.num_q_heads // config.cta_group, 64),
+    ](ctx, output_2d)
 
     comptime assert type_of(topk_lengths).flat_rank == 1
     comptime assert type_of(indices).flat_rank == 1
@@ -3320,6 +3349,7 @@ def mla_prefill_sparse[
         q_tma_op,
         k_tma_op,
         v_tma_op,
+        o_tma_op,
         topk_lengths,
         indices,
         kv_operand,
@@ -3397,6 +3427,16 @@ def mla_prefill_sparse_fp8[
         tma_dtype=DType.int64,
     ](ctx)
 
+    var output_2d_fp8 = TileTensor(
+        output.ptr,
+        row_major(num_q_rows * config.num_q_heads, config.v_depth),
+    )
+    o_tma_op_fp8 = create_tensor_tile[
+        Index(config.num_q_heads // config.cta_group, config.v_depth),
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+        __desc_shape=Index(config.num_q_heads // config.cta_group, 64),
+    ](ctx, output_2d_fp8)
+
     comptime assert type_of(topk_lengths).flat_rank == 1
     comptime assert type_of(indices).flat_rank == 1
     comptime kernel = MLAPrefillSparse[
@@ -3417,6 +3457,7 @@ def mla_prefill_sparse_fp8[
         q_tma_op,
         k_tma_op_fp8,
         v_tma_op_fp8,
+        o_tma_op_fp8,
         topk_lengths,
         indices,
         kv_operand,
