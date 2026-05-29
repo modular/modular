@@ -35,6 +35,7 @@ from max.nn.sampling.rejection_sampler import (
 )
 from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
+    _shape_to_scalar,
 )
 
 from ..dflash_llama3 import DFlashLlama3
@@ -225,15 +226,11 @@ class UnifiedDflashLlama3(Module):
             min_top_p=inputs.min_top_p,
         )
 
-        num_steps_tensor = ops.shape_to_tensor([inputs.draft_tokens.shape[1]])[
-            0
-        ].cast(DType.uint32)
-        zero_u32_cpu = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
-        is_prefill = (
-            (num_steps_tensor == zero_u32_cpu)
-            .broadcast_to(["batch_size"])
-            .to(device)
+        num_steps_u32 = _shape_to_scalar(
+            inputs.draft_tokens.shape[1], device, dtype=DType.uint32
         )
+        zero = ops.constant(0, DType.uint32, device=device)
+        is_prefill = (num_steps_u32 == zero).broadcast_to(["batch_size"])
         magic_token = ops.constant(
             _MAGIC_DRAFT_TOKEN_ID, DType.int64, device=device
         )
@@ -246,9 +243,12 @@ class UnifiedDflashLlama3(Module):
             ),
             axis=-1,
         )
-        is_dummy_draft = num_magic_tokens == num_steps_tensor.to(device).cast(
-            DType.int32
-        ).broadcast_to(["batch_size"])
+        num_steps = _shape_to_scalar(
+            inputs.draft_tokens.shape[1], device, dtype=DType.int32
+        )
+        is_dummy_draft = num_magic_tokens == num_steps.broadcast_to(
+            ["batch_size"]
+        )
         num_accepted = ops.where(
             is_prefill | is_dummy_draft,
             ops.constant(0, num_accepted.dtype, device=device).broadcast_to(

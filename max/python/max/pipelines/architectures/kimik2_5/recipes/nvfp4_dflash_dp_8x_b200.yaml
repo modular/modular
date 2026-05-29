@@ -10,24 +10,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
+# Kimi K2.5 NVFP4 with the z-lab DFlash draft on 8x B200, data-parallel.
+
 model:
-  model_path: meta-llama/Llama-3.1-8B-Instruct
-  device_specs: [0]
-  max_length: 8192
+  model_path: nvidia/Kimi-K2.5-NVFP4
+  trust_remote_code: true
+  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
+  data_parallel_degree: 8
+  max_length: 163840
   kv_cache:
-    device_memory_utilization: 0.75
+    kv_cache_format: float8_e4m3fn
+    device_memory_utilization: 0.65
 
 draft_model:
-  model_path: z-lab/LLaMA3.1-8B-Instruct-DFlash-UltraChat
-  device_specs: [0]
+  model_path: z-lab/Kimi-K2.5-DFlash
   trust_remote_code: true
+  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
+  data_parallel_degree: 8
   quantization_encoding: bfloat16
 
 speculative:
   speculative_method: dflash
-  num_speculative_tokens: 9
+  num_speculative_tokens: 7
 
 runtime:
-  max_num_steps: 1
+  ep_size: 8
   max_batch_input_tokens: 4096
-  device_graph_capture: true
+  max_num_steps: 1
+  device_graph_capture: false

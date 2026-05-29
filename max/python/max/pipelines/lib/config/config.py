@@ -1093,7 +1093,6 @@ class PipelineConfig(ConfigFileModel):
                     else None
                 )
                 if self.speculative.is_dflash():
-                    # MLA target + DFlash MHA draft.
                     target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
                 elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
                     # MLA target + MHA (Llama-style) Eagle3 draft.
