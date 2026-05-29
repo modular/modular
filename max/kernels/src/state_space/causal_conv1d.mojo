@@ -55,15 +55,19 @@ Activation Support:
     - SiLU: Sigmoid Linear Unit activation (x * sigmoid(x))
 """
 
-from std.math import exp
+from std.math import ceildiv, exp
+from std.sys import size_of
 
 from std.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
 from std.gpu import (
+    barrier,
     block_dim,
     block_idx,
     thread_idx,
 )
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
 from layout import TensorLayout, TileTensor
 
 
@@ -737,13 +741,15 @@ def causal_conv1d_channel_first_fwd_gpu[
     """Optimized GPU implementation of causal conv1d for channel-first layout with bias.
 
     Key optimizations:
-    1. SIMD vectorization for input/output operations (kNElts elements per thread).
-    2. Efficient memory access patterns with coalesced loads.
-    3. Vectorized weight loading and computation for width=2 and width=4.
-    4. Optimized activation function with SIMD operations.
-    5. Better thread utilization and memory bandwidth usage.
+    1. Grid = (dim, batch): one block per (B, C) walks the full seqlen, loading
+       weight/bias once instead of per chunk-block.
+    2. 16-byte LDG: kNElts = 16 / sizeof(dtype) elements per thread per chunk as
+       a single 128-bit load/store (when contiguous + aligned).
+    3. Shared-memory ring-buffer for the (W-1) halo, shared across chunks.
+    4. Scalar strided fallback keeps correctness for non-contiguous inputs and
+       mixed dtypes.
 
-    Grid: (ceildiv(seqlen, kNThreads * kNElts), dim, batch)
+    Grid: (dim, batch) — one block per (B, C) walks the full seqlen.
     Block: kNThreads
 
     Args:
@@ -767,219 +773,151 @@ def causal_conv1d_channel_first_fwd_gpu[
         silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
 
+    # Grid = (dim, batch): one block per (B, C) walks the whole seqlen in a
+    # chunk loop, loading weight/bias once and sharing the (W-1) halo across
+    # chunks via shared memory. Per thread we load/store kNElts elements; when
+    # the layout is contiguous + aligned this is a single 128-bit (16-byte)
+    # vector op (kNElts = 16 / sizeof(dtype)), otherwise a scalar strided path
+    # keeps correctness for non-contiguous inputs (e.g. the Mamba permute+split
+    # path) and mixed dtypes.
     var tidx: Int = thread_idx.x
-    var batch_id: Int = block_idx.z
-    var channel_id: Int = block_idx.y
-    var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = block_dim.x
+    var channel_id: Int = block_idx.x
+    var batch_id: Int = block_idx.y
 
-    var nBatches: Int = Int(x.dim[0]())
-    var nChannels: Int = Int(x.dim[1]())
-    var nSeqLen: Int = Int(x.dim[2]())
-
-    if batch_id >= nBatches or channel_id >= nChannels or kWidth != width:
+    if batch_id >= batch or channel_id >= dim or kWidth != width:
         return
 
-    # Safety check for null pointers
-    if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
-    ):
+    # Safety check for null pointers.
+    if Int(x.ptr) == 0 or Int(output.ptr) == 0 or Int(weight.ptr) == 0:
         return
 
-    # Safety check for bias dimension - if bias is empty or channel_id is out of bounds, use zero bias
-    var bias_dim = Int(bias.dim[0]())
-    var cur_bias: Scalar[x_dtype] = 0
-    if bias_dim > 0 and channel_id < bias_dim:
-        var bias_offset = UInt32(channel_id) * bias_stride
-        cur_bias = Scalar[x_dtype](bias.raw_load(bias_offset))
+    comptime accum_t = DType.float32
+    comptime kChunkSize: Int = kNThreads * kNElts
 
-    var out_vals: SIMD[output_dtype, kNElts] = 0
-    var prev_input_chunk: SIMD[x_dtype, kNElts]
-    var input_chunk: SIMD[x_dtype, kNElts]
-
-    # For width 3, we need to use scalars instead of SIMD (SIMD requires power-of-2 widths)
-    # Declare variables for both cases - only one will be used based on kWidth
-    var W_2: SIMD[x_dtype, 2] = 0
-    var W_4: SIMD[x_dtype, 4] = 0
-    var w0: Scalar[x_dtype] = 0
-    var w1: Scalar[x_dtype] = 0
-    var w2: Scalar[x_dtype] = 0
-    var w_single: Scalar[x_dtype] = 0  # For width 1
-
+    # ---- Load weight into fp32 registers once per block (runtime strides) ----
     var weight_c_base: UInt32 = UInt32(channel_id) * weight_c_stride
-    if kWidth == 1:
-        w_single = Scalar[x_dtype](
-            weight.raw_load(weight_c_base + UInt32(0) * weight_width_stride)
-        )
-    elif kWidth == 2:
-        var w0_val = Scalar[x_dtype](
-            weight.raw_load(weight_c_base + UInt32(0) * weight_width_stride)
-        )
-        var w1_val = Scalar[x_dtype](
-            weight.raw_load(weight_c_base + UInt32(1) * weight_width_stride)
-        )
-        W_2 = SIMD[x_dtype, 2](w0_val, w1_val)
-    elif kWidth == 4:
-        var w0_val = Scalar[x_dtype](
-            weight.raw_load(weight_c_base + UInt32(0) * weight_width_stride)
-        )
-        var w1_val = Scalar[x_dtype](
-            weight.raw_load(weight_c_base + UInt32(1) * weight_width_stride)
-        )
-        var w2_val = Scalar[x_dtype](
-            weight.raw_load(weight_c_base + UInt32(2) * weight_width_stride)
-        )
-        var w3_val = Scalar[x_dtype](
-            weight.raw_load(weight_c_base + UInt32(3) * weight_width_stride)
-        )
-        W_4 = SIMD[x_dtype, 4](w0_val, w1_val, w2_val, w3_val)
-    else:
-        w0 = Scalar[x_dtype](
-            weight.raw_load(weight_c_base + UInt32(0) * weight_width_stride)
-        )
-        w1 = Scalar[x_dtype](
-            weight.raw_load(weight_c_base + UInt32(1) * weight_width_stride)
-        )
-        w2 = Scalar[x_dtype](
-            weight.raw_load(weight_c_base + UInt32(2) * weight_width_stride)
+    var weight_vals = SIMD[accum_t, kWidth](0)
+
+    comptime for k in range(kWidth):
+        weight_vals[k] = weight.raw_load(
+            weight_c_base + UInt32(k) * weight_width_stride
+        ).cast[accum_t]()
+
+    # ---- Load bias once per block (with safety check) ----
+    var bias_val: Scalar[accum_t] = 0
+    var bias_dim = Int(bias.dim[0]())
+    if bias_dim > 0 and channel_id < bias_dim:
+        bias_val = bias.raw_load(UInt32(channel_id) * bias_stride).cast[
+            accum_t
+        ]()
+
+    var silu_active: Bool = Int(silu_activation) != 0
+
+    # ---- Per-(B, C) base element offsets ----
+    var x_base: UInt32 = (
+        UInt32(batch_id) * x_batch_stride + UInt32(channel_id) * x_c_stride
+    )
+    var out_base: UInt32 = (
+        UInt32(batch_id) * out_batch_stride + UInt32(channel_id) * out_c_stride
+    )
+    var x_row = x.ptr + Int(x_base)
+    var out_row = output.ptr + Int(out_base)
+
+    # ---- Choose the 16-byte vector path when contiguous + aligned ----
+    # These are block-uniform (no warp divergence). When seqlen % kNElts == 0,
+    # seq_start (always a multiple of kNElts) never straddles seqlen, so the
+    # vector op is always either fully in-bounds or fully past the end.
+    var vec_ok: Bool = (seqlen % kNElts) == 0
+    var use_vec_load: Bool = (
+        Int(x_l_stride) == 1 and vec_ok and (Int(x_row) & 15) == 0
+    )
+    var use_vec_store: Bool = (
+        Int(out_l_stride) == 1
+        and vec_ok
+        and (Int(out_row) & 15) == 0
+        and size_of[output_dtype]() == size_of[x_dtype]()
+    )
+
+    # ---- Smem ring-buffer for the (W-1) halo across chunks ----
+    # Slot i holds thread i's last kNElts x values; slot kNThreads-1 doubles as
+    # the inter-chunk carry (initialised to 0 for the first chunk).
+    var smem_exchange = stack_allocation[
+        kNThreads * kNElts, x_dtype, address_space=AddressSpace.SHARED
+    ]()
+
+    if tidx == 0:
+        (smem_exchange + (kNThreads - 1) * kNElts).store[alignment=16](
+            SIMD[x_dtype, kNElts](0)
         )
 
-    var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
-    var seq_end: Int = min(seq_start + kNElts, nSeqLen)
+    var n_chunks: Int = ceildiv(seqlen, kChunkSize)
 
-    if seq_start >= nSeqLen:
-        return
-    var prev_chunk_col: Int = (seq_start - 1) // kNElts
-    prev_input_chunk = 0
-    if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
-        comptime for i in range(kNElts):
-            var prev_seq_idx: Int = prev_chunk_col * kNElts + i
-            if prev_seq_idx >= 0 and prev_seq_idx < nSeqLen:
-                var prev_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(prev_seq_idx) * x_l_stride
-                )
-                prev_input_chunk[i] = Scalar[x_dtype](x.raw_load(prev_offset))
+    for chunk in range(n_chunks):
+        var seq_start: Int = chunk * kChunkSize + tidx * kNElts
 
-    var current_chunk_col: Int = seq_start // kNElts
-    input_chunk = 0
-    if current_chunk_col >= 0 and current_chunk_col * kNElts < nSeqLen:
-        comptime for i in range(kNElts):
-            var curr_seq_idx: Int = current_chunk_col * kNElts + i
-            if curr_seq_idx < nSeqLen:
-                var curr_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(curr_seq_idx) * x_l_stride
-                )
-                input_chunk[i] = Scalar[x_dtype](x.raw_load(curr_offset))
-
-    _ = prev_input_chunk.join(input_chunk)
-    var silu_active = Bool(Int(silu_activation) != 0)
-
-    comptime for i in range(kNElts):
-        var seq_idx: Int = seq_start + i
-        if seq_idx >= seq_end:
-            break
-
-        # Build input window by loading directly from memory
-        # This avoids SIMD slice issues while maintaining correctness
-        var conv_result: Scalar[x_dtype] = 0
-
-        comptime if kWidth == 1:
-            if seq_idx >= 0 and seq_idx < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(seq_idx) * x_l_stride
-                )
-                var x_val = Scalar[x_dtype](x.raw_load(load_offset))
-                conv_result = w_single * x_val
-        elif kWidth == 2:
-            var input_window: SIMD[x_dtype, 2] = 0
-
-            comptime for w in range(2):
-                var input_l: Int = seq_idx - (1 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    var load_offset: UInt32 = (
-                        UInt32(batch_id) * x_batch_stride
-                        + UInt32(channel_id) * x_c_stride
-                        + UInt32(input_l) * x_l_stride
-                    )
-                    input_window[w] = Scalar[x_dtype](x.raw_load(load_offset))
-            var tmp: SIMD[x_dtype, 2] = W_2 * input_window
-            conv_result = tmp.reduce_add[1]()
-        elif kWidth == 4:
-            var input_window: SIMD[x_dtype, 4] = 0
-
-            comptime for w in range(4):
-                var input_l: Int = seq_idx - (3 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    var load_offset: UInt32 = (
-                        UInt32(batch_id) * x_batch_stride
-                        + UInt32(channel_id) * x_c_stride
-                        + UInt32(input_l) * x_l_stride
-                    )
-                    input_window[w] = Scalar[x_dtype](x.raw_load(load_offset))
-            var tmp: SIMD[x_dtype, 4] = W_4 * input_window
-            conv_result = tmp.reduce_add[1]()
-        else:
-            # kWidth == 3 case
-            var x0: Scalar[x_dtype] = 0
-            var x1: Scalar[x_dtype] = 0
-            var x2: Scalar[x_dtype] = 0
-            var input_l0: Int = seq_idx - 2
-            var input_l1: Int = seq_idx - 1
-            var input_l2: Int = seq_idx
-            if input_l0 >= 0 and input_l0 < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(input_l0) * x_l_stride
-                )
-                x0 = Scalar[x_dtype](x.raw_load(load_offset))
-            if input_l1 >= 0 and input_l1 < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(input_l1) * x_l_stride
-                )
-                x1 = Scalar[x_dtype](x.raw_load(load_offset))
-            if input_l2 >= 0 and input_l2 < nSeqLen:
-                var load_offset: UInt32 = (
-                    UInt32(batch_id) * x_batch_stride
-                    + UInt32(channel_id) * x_c_stride
-                    + UInt32(input_l2) * x_l_stride
-                )
-                x2 = Scalar[x_dtype](x.raw_load(load_offset))
-            conv_result = w0 * x0 + w1 * x1 + w2 * x2
-
-        var out_val: Scalar[output_dtype] = Scalar[output_dtype](
-            cur_bias
-        ) + Scalar[output_dtype](conv_result)
-        if silu_active:
-            comptime if output_dtype.is_floating_point():
-                out_val = silu(out_val)
+        # ---- [P1] Load this thread's kNElts of x ----
+        var x_curr = SIMD[x_dtype, kNElts](0)
+        if seq_start < seqlen:
+            if use_vec_load:
+                x_curr = (x_row + seq_start).load[width=kNElts, alignment=16]()
             else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[
-                    output_dtype
-                ]()
-        out_vals[i] = out_val
+                comptime for i in range(kNElts):
+                    var t = seq_start + i
+                    if t < seqlen:
+                        x_curr[i] = Scalar[x_dtype](
+                            x.raw_load(x_base + UInt32(t) * x_l_stride)
+                        )
 
-    comptime for i in range(kNElts):
-        var seq_idx: Int = seq_start + i
-        if seq_idx >= seq_end:
-            break
-        var out_offset: UInt32 = (
-            UInt32(batch_id) * out_batch_stride
-            + UInt32(channel_id) * out_c_stride
-            + UInt32(seq_idx) * out_l_stride
-        )
-        output.raw_store(out_offset, Scalar[output_dtype](out_vals[i]))
+        # ---- [P2] Halo dance (three barriers, mirrors upstream) ----
+        barrier()
+        if tidx < kNThreads - 1:
+            (smem_exchange + tidx * kNElts).store[alignment=16](x_curr)
+        barrier()
+
+        var prev_tidx = tidx - 1 if tidx > 0 else (kNThreads - 1)
+        var x_prev = (smem_exchange + prev_tidx * kNElts).load[
+            width=kNElts, alignment=16
+        ]()
+
+        barrier()
+        if tidx == kNThreads - 1:
+            (smem_exchange + tidx * kNElts).store[alignment=16](x_curr)
+
+        if seq_start >= seqlen:
+            continue
+
+        # ---- [P3] x_window = [x_prev || x_curr] in fp32 ----
+        var x_vals = SIMD[accum_t, 2 * kNElts](0)
+
+        comptime for i in range(kNElts):
+            x_vals[i] = x_prev[i].cast[accum_t]()
+            x_vals[kNElts + i] = x_curr[i].cast[accum_t]()
+
+        # ---- [P4] out[i] = bias + sum_w weight[w] * x_window[...] ----
+        var out_vals = SIMD[output_dtype, kNElts](0)
+
+        comptime for i in range(kNElts):
+            var acc: Scalar[accum_t] = bias_val
+
+            comptime for w in range(kWidth):
+                comptime x_idx: Int = kNElts + i - (kWidth - 1 - w)
+                acc += weight_vals[w] * x_vals[x_idx]
+
+            if silu_active:
+                acc = acc / (Scalar[accum_t](1) + exp(-acc))
+
+            out_vals[i] = acc.cast[output_dtype]()
+
+        # ---- [P5] Store out_vals ----
+        if use_vec_store and seq_start + kNElts <= seqlen:
+            (out_row + seq_start).store[alignment=16](out_vals)
+        else:
+            comptime for i in range(kNElts):
+                var t = seq_start + i
+                if t < seqlen:
+                    output.raw_store(
+                        out_base + UInt32(t) * out_l_stride, out_vals[i]
+                    )
 
 
 # Optimized GPU version without bias

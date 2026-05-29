@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv
 from std.random import rand, seed
 from std.sys import get_defined_dtype, get_defined_int, size_of
 
@@ -57,9 +56,10 @@ def execute_causal_conv1d[
     seqlen: Int,
     silu: Bool,
 ) raises:
-    # Matches the validated test config (kNThreads=128, kNElts=4).
+    # Matches the op wrapper launch config: 16-byte LDG (kNElts=16/sizeof),
+    # grid=(dim, batch).
     comptime kNThreads = 128
-    comptime kNElts = 4
+    comptime kNElts = 16 // size_of[dtype]()
     comptime kWidth = width
 
     # Host buffers, filled with random data.
@@ -143,7 +143,6 @@ def execute_causal_conv1d[
                     bias_stride,
                     silu_activation,
                     grid_dim=(
-                        ceildiv(seqlen, kNThreads * kNElts),
                         dim,
                         batch,
                     ),

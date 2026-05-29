@@ -18,6 +18,7 @@ Provides compiler-registered operations for causal 1D convolution:
 """
 
 from std.math import ceildiv
+from std.sys import size_of
 
 import extensibility as compiler
 from std.gpu.host import DeviceContext
@@ -133,7 +134,8 @@ struct CausalConv1D[activation: StaticString]:
         elif is_gpu[target]():
             var gpu_ctx: DeviceContext = ctx
             comptime kNThreads = 128
-            comptime kNElts = 4
+            # 16-byte LDG: 8 elements for fp16/bf16, 4 for fp32.
+            comptime kNElts = 16 // size_of[X.dtype]()
             if width == 1:
                 comptime kWidth = 1
                 var compiled_func = gpu_ctx.compile_function[
@@ -173,7 +175,6 @@ struct CausalConv1D[activation: StaticString]:
                     bias_stride,
                     silu_activation_int8,
                     grid_dim=(
-                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
                         Int(X.dim[1]()),
                         Int(X.dim[0]()),
                     ),
@@ -218,7 +219,6 @@ struct CausalConv1D[activation: StaticString]:
                     bias_stride,
                     silu_activation_int8,
                     grid_dim=(
-                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
                         Int(X.dim[1]()),
                         Int(X.dim[0]()),
                     ),
@@ -263,7 +263,6 @@ struct CausalConv1D[activation: StaticString]:
                     bias_stride,
                     silu_activation_int8,
                     grid_dim=(
-                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
                         Int(X.dim[1]()),
                         Int(X.dim[0]()),
                     ),
@@ -308,7 +307,6 @@ struct CausalConv1D[activation: StaticString]:
                     bias_stride,
                     silu_activation_int8,
                     grid_dim=(
-                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
                         Int(X.dim[1]()),
                         Int(X.dim[0]()),
                     ),
