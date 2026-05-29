@@ -250,3 +250,41 @@ def call___init___via_various_kinds_of_things():
 comptime MyStructGenerator[b: Int] = MyStruct[1, b]
 # CHECK: lit.alias.decl *"MyStructGeneratorDotA{{.*}}": !Int = <{1}>
 comptime MyStructGeneratorDotA = MyStructGenerator.a
+
+
+##===----------------------------------------------------------------------===##
+# auto-parameterization propagates body constraints onto the signature
+##===----------------------------------------------------------------------===##
+# When a parameterized comptime alias with a trailing `where` clause is
+# auto-parameterized (its inferred parameters hoisted onto a function), the
+# alias's body constraints are attached to the function's generator signature so
+# they are checked once the inferred parameters are bound. The constraint shows
+# up as a `sugar_preserved` body constraint in the function type. This applies
+# to every auto-parameterization form: argument types, value-parameter types,
+# and variadic element types.
+
+
+@fieldwise_init
+struct WhereTag[n: Int](Copyable, Movable):
+    pass
+
+
+comptime WherePositive[n: Int, //] where n > 0 = WhereTag[n]
+
+
+# CHECK: lit.fn @"where_arg
+# CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@Int::@"__gt__(::Int,::Int)"{{.*}}
+def where_arg(p: WherePositive):
+    pass
+
+
+# CHECK: lit.fn @"where_param
+# CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@Int::@"__gt__(::Int,::Int)"{{.*}}
+def where_param[p: WherePositive]():
+    pass
+
+
+# CHECK: lit.fn @"where_variadic
+# CHECK-SAME: {<sugar_preserved({{.*}}@std::@builtin::@stubs::@Int::@"__gt__(::Int,::Int)"{{.*}}
+def where_variadic(*p: WherePositive):
+    pass

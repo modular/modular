@@ -84,3 +84,72 @@ def test_variable_type_parameterization():
     # .. and try to parameterize it.
     # expected-error @below {{types are not subscriptable}}
     var instance: struct_type[Int]
+
+
+##===----------------------------------------------------------------------===##
+# Trailing 'where' constraints are enforced when the alias's parameters are
+# inferred during auto-parameterization, not just for explicit bindings
+# (MOCO-4081). This covers every form that auto-parameterizes the alias
+# generator: argument types, value-parameter types, and variadic element types.
+##===----------------------------------------------------------------------===##
+
+
+@fieldwise_init
+struct Tag[n: Int](Copyable, Movable):
+    pass
+
+
+# A distinct alias is used per form so each violated call's note points at its
+# own 'where' clause (identical notes at one location are coalesced by the
+# diagnostic verifier).
+
+# Alias used as a function argument type.
+# expected-note @+1 {{constraint declared here evaluated to False, expected '(n > 0)'}}
+comptime PositiveArg[n: Int, //] where n > 0 = Tag[n]
+
+
+# expected-note @+1 {{function declared here}}
+def take_arg(p: PositiveArg):
+    pass
+
+
+# Alias used as a value-parameter type.
+# expected-note @+1 {{constraint declared here evaluated to False, expected '(n > 0)'}}
+comptime PositiveParam[n: Int, //] where n > 0 = Tag[n]
+
+
+# expected-note @+1 {{function declared here}}
+def take_param[p: PositiveParam]():
+    pass
+
+
+# Alias used as a variadic argument element type.
+# expected-note @+1 {{constraint declared here evaluated to False, expected '(n > 0)'}}
+comptime PositiveVar[n: Int, //] where n > 0 = Tag[n]
+
+
+# expected-note @+1 {{function declared here}}
+def take_variadic(*p: PositiveVar):
+    pass
+
+
+def use_ok():
+    # Inferred bindings that satisfy the constraint are accepted in every form.
+    take_arg(Tag[1]())
+    take_param[Tag[1]()]()
+    take_variadic(Tag[1](), Tag[1]())
+
+
+def use_arg_bad():
+    # expected-error @+1 {{invalid call to 'take_arg': violated constraint}}
+    take_arg(Tag[-1]())
+
+
+def use_param_bad():
+    # expected-error @+1 {{invalid call to 'take_param': violated constraint}}
+    take_param[Tag[-1]()]()
+
+
+def use_variadic_bad():
+    # expected-error @+1 {{invalid call to 'take_variadic': violated constraint}}
+    take_variadic(Tag[-1]())
