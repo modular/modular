@@ -5170,8 +5170,8 @@ LogicalResult SIMDAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 bool SIMDAttr::isConstant() const { return true; }
 
 SIMDAttr SIMDAttr::get(uint64_t intVal, SIMDType type) {
-  DType dtype = *type.getResolvedDType();
-  APInt apVal(dtype.getIntegerWidthInBits(), intVal);
+  KGENDType dtype = *type.getResolvedDType();
+  APInt apVal(dtype.getWidthInBits(nullptr), intVal);
   APSInt apsVal(std::move(apVal), /*isUnsigned=*/dtype.isUInt());
   DTypeValue scalarVal(std::move(apsVal), dtype);
   return SIMDAttr::get(scalarVal, type);
@@ -5179,8 +5179,8 @@ SIMDAttr SIMDAttr::get(uint64_t intVal, SIMDType type) {
 
 SIMDAttr SIMDAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                               uint64_t intVal, SIMDType type) {
-  DType dtype = *type.getResolvedDType();
-  APInt apVal(dtype.getIntegerWidthInBits(), intVal);
+  KGENDType dtype = *type.getResolvedDType();
+  APInt apVal(dtype.getWidthInBits(nullptr), intVal);
   APSInt apsVal(std::move(apVal), /*isUnsigned=*/dtype.isUInt());
   DTypeValue scalarVal(std::move(apsVal), dtype);
   return SIMDAttr::getChecked(emitError, scalarVal, type);
