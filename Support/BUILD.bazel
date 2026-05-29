@@ -988,7 +988,10 @@ modular_cc_library(
 modular_cc_library(
     name = "Log",
     srcs = ["lib/Log.cpp"],
-    hdrs = ["include/Support/Log.h"],
+    hdrs = [
+        "include/Support/Log.h",
+        "include/Support/LogChannels.h",
+    ],
     deps = [
         "Configuration",
         "@fmt",

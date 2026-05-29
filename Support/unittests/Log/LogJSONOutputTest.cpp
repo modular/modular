@@ -43,13 +43,13 @@ std::string validateLogLineSchema(const std::string &line) {
     return "top-level value is not a JSON object";
 
   // required fields
-  for (const char *key : {"timestamp", "level", "message"})
+  for (const char *key : {"timestamp", "level", "channel", "message"})
     if (!obj->get(key))
       return std::string("missing required field: ") + key;
 
   // no additional properties
   static const llvm::StringSet<> allowed = {
-      {"timestamp"}, {"level"}, {"message"}};
+      {"timestamp"}, {"level"}, {"channel"}, {"message"}};
   for (auto &[k, v] : *obj)
     if (!allowed.contains(k))
       return "unexpected field: " + k.str();
@@ -59,6 +59,8 @@ std::string validateLogLineSchema(const std::string &line) {
     return R"("timestamp" must be a string)";
   if (!obj->getString("level"))
     return R"("level" must be a string)";
+  if (!obj->getString("channel"))
+    return R"("channel" must be a string)";
   if (!obj->getString("message"))
     return R"("message" must be a string)";
 
@@ -186,6 +188,11 @@ TEST_F(LogJSONTest, LevelFieldWarn) {
 TEST_F(LogJSONTest, LevelFieldError) {
   MLOG(LogLevel::ERROR, "msg");
   EXPECT_NE(capturedOutput().find(R"("level":"ERR")"), std::string::npos);
+}
+
+TEST_F(LogJSONTest, ChannelFieldIsPresent) {
+  MLOG(LogLevel::INFO, "channel check");
+  EXPECT_NE(capturedOutput().find(R"("channel":"default")"), std::string::npos);
 }
 
 TEST_F(LogJSONTest, MessageFieldIsPresent) {

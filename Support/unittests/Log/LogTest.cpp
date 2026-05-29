@@ -177,6 +177,18 @@ TEST_F(LogOutputTest, LevelPrefixError) {
   EXPECT_NE(capturedOutput().find("[ ERR]"), std::string::npos);
 }
 
+TEST_F(LogOutputTest, ChannelPrefixDefault) {
+  MLOG(LogLevel::INFO, "msg");
+  EXPECT_NE(capturedOutput().find("[default]"), std::string::npos);
+}
+
+TEST_F(LogOutputTest, ChannelPrefixNonDefault) {
+  enableChannel(Channel::Mojo);
+  log(Channel::Mojo, "msg");
+  disableChannel(Channel::Mojo);
+  EXPECT_NE(capturedOutput().find("[mojo]"), std::string::npos);
+}
+
 // Disabled: FATAL aborts the process
 // TEST_F(LogOutputTest, LevelPrefixFatal) {
 //  MLOG(LogLevel::FATAL, "msg");
