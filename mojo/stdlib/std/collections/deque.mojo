@@ -892,6 +892,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
 
         If `n` is positive, rotates to the right.
         If `n` is negative, rotates to the left.
+        On an empty deque or when `n == 0`, this is a no-op.
 
         Args:
             n: Number of steps to rotate the deque
