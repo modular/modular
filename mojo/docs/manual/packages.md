@@ -95,7 +95,8 @@ which way you import a package. When importing from source files, the directory
 name works as the package name, whereas when importing from a compiled package,
 the filename is the package name (which you specify with the [`mojo
 precompile`](/docs/cli/precompile) command—it can differ from the directory
-name).
+name). For examples, see the section below about
+[naming and identifiers](#package-naming-and-identifiers).
 
 For example, consider a project with these files:
 
@@ -260,3 +261,20 @@ scope varies, and is subject to change. Refer to the [documentation for each
 module](/docs/std/) to see how you can import its members.
 
 :::
+
+### Package naming and identifiers
+
+Package names are taken from directory names in the case of source packages, or
+the precompiled (`.mojoc`) filename for binary ones.
+
+Note that if the package name is not a valid identifier, an escaped identifier
+may be used instead:
+
+```mojo
+import `модул`
+import `package-with-hyphens and a space!` as package_without_hyphens_or_a_space
+
+def main():
+    `модул`.`здрасти`()
+    package_without_hyphens_or_a_space.hello()
+```
