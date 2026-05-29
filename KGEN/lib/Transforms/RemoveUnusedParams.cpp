@@ -361,7 +361,7 @@ struct WorklistHelper {
     }
 
     // If all possible cycles have been eliminated and we still couldn't find
-    // something legal then theres no more we can do and there's no more
+    // something legal then there's no more we can do and there's no more
     // functions to schedule.
     return {nullptr, 0};
   }

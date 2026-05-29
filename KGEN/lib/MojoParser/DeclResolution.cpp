@@ -4812,8 +4812,8 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
   if (ParserBase(shared, lexer).parseSuite(extensionDecl))
     return failure();
 
-  // Now check for conflicts; things in the extension shouldnt already be in the
-  // struct, unless they're both methods because overloading is fine.
+  // Now check for conflicts; things in the extension shouldn't already be in
+  // the struct, unless they're both methods because overloading is fine.
   if (extensionDecl.declsInScope && structAstDecl.declsInScope) {
     for (auto &[declName, extensionMemberDecls] : *extensionDecl.declsInScope) {
       ASTDecl *firstExtensionMemberDecl = extensionMemberDecls.front();

@@ -50,10 +50,10 @@ namespace std {
 ```
 
 From the compiler’s point of view, `std::string` and
-`std::basic_string<char, std::char_traits<char>, std::allocator<char>>`
-are **exactly the same type**. However from the programmer’s point of view, the
-are not interchangeable in diagnostics, readability, or intent. Most C++
-programers don't need or want to know about the fact that `string` is a typedef.
+`std::basic_string<char, std::char_traits<char>, std::allocator<char>>` are
+**exactly the same type**. However from the programmer’s point of view, the are
+not interchangeable in diagnostics, readability, or intent. Most C++ programmers
+don't need or want to know about the fact that `string` is a typedef.
 
 Consider an error like:
 

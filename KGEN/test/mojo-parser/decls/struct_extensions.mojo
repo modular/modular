@@ -302,7 +302,7 @@ __extension MyContainer:
 
 
 def test_param_access[dtype: Int]():
-    # Note the Int below, thats what makes sure it's working.
+    # Note the Int below, that's what makes sure it's working.
     # CHECK: lit.alias.decl *"element_type`": !Int = <dtype>
     comptime element_type = MyContainer[dtype].d
 
