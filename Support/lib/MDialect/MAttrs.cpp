@@ -12,6 +12,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "Support/MArchTarget/MArchTargetMinimal.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/MDialect/MTypes.h"
 #include "mlir/IR/AsmState.h"
@@ -1142,10 +1143,42 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
       DataLayout::parse(machine->createDataLayout().getStringRepresentation());
   assert(!dl.isError() && "failed to parse LLVM data layout?");
 
-  // Return a TargetInfoAttr built for the host.
+  // Expand the explicit feature delta against the CPU model so TargetInfoAttr
+  // stores the fully resolved feature set. Without this, hasFeature() returns
+  // false for features that are enabled by CPU model defaults but absent from
+  // the explicit delta (e.g. avx512f on znver4 when -avx512f is not passed).
+  std::string resolvedFeatures = features.str();
+  if (!arch.empty()) {
+    ErrorOr<std::vector<std::string>> baseOr =
+        M::getFeatures(targetTriple, arch);
+    ErrorOr<DecodedFeatures> deltaOr = M::decodeFeatures(features);
+    if (!baseOr.isError() && !deltaOr.isError()) {
+      // Build the resolved feature set while preserving the user's ordering:
+      // 1. Start with the user's explicitly enabled features (in their order).
+      // 2. Append CPU model defaults not mentioned in the user's delta — these
+      //    are features LLVM enables silently (e.g. avx512f on znver4) that
+      //    must be visible to hasFeature().
+      // 3. Disabled features go at the end (handled by encodeFeatures).
+      auto isMentioned = [&](StringRef f) {
+        return llvm::is_contained(deltaOr->enabled, f) ||
+               llvm::is_contained(deltaOr->disabled, f);
+      };
+
+      std::vector<std::string> resolved = deltaOr->enabled;
+      for (StringRef f : *baseOr)
+        if (!isMentioned(f))
+          resolved.push_back(f.str());
+
+      TargetInfo ti(llvm::Triple(targetTriple), arch.str(), std::move(resolved),
+                    std::move(deltaOr->disabled));
+      resolvedFeatures = encodeFeatures(ti);
+    }
+  }
+
   return TargetInfoAttr::get(
-      ctx, llvm::Triple(targetTriple), arch, features, std::move(*dl),
-      machine->getRelocationModel(), simdWidthFromFeatures(features),
+      ctx, llvm::Triple(targetTriple), arch, resolvedFeatures, std::move(*dl),
+      machine->getRelocationModel(),
+      simdWidthFromFeatures(StringRef(resolvedFeatures)),
       dl->getPointerBitWidth(), tuneCpu, acceleratorArch);
 }
 

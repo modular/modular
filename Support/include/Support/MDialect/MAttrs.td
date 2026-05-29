@@ -300,7 +300,14 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     supports a compile time microarchitecutre or feature it may be necessary
     to compare these versions numerically rather than textually.
 
-    Features are encoded in the form of "+feature1,+feature2".
+    Features are encoded in the form of "+feature1,+feature2,-feature3",
+    where "+" enables and "-" disables a feature. The list is fully
+    expanded: it includes both the features explicitly requested by the
+    user and all features enabled by default for the target CPU (e.g.
+    avx512f on znver4), with explicit user overrides applied on top.
+    A feature present in the list without a "-" entry is enabled; a
+    feature absent from the list was not enabled by the CPU model and
+    was not explicitly requested.
 
     Example:
     ```mlir
@@ -352,8 +359,9 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     }
 
     /// Check if the target supports a specific hardware feature.
+    /// See M::hasFeature for the matching contract.
     bool hasFeature(StringRef feature) const {
-      return getFeatures().contains(feature);
+      return M::hasFeature(getFeatures(), feature);
     }
 
     /// Returns the operating system for the triple.

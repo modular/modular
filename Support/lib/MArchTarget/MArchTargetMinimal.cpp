@@ -118,15 +118,15 @@ ErrorOr<TargetInfo> M::getHostTargetInfo() {
   // CPUID detection to identify absent features and record them in
   // disabledFeatures so LLVM doesn't re-enable them from CPU model defaults.
   llvm::StringMap<bool> runtimeFeatures = llvm::sys::getHostCPUFeatures();
-  std::vector<std::string> disabledFeatures;
+  std::vector<std::string> disabledFeatures{};
   if (!runtimeFeatures.empty()) {
-    auto featureIsAbsent = [&](const std::string &f) {
+    auto featureIsAbsent = [&](StringRef f) {
       auto it = runtimeFeatures.find(f);
       return it != runtimeFeatures.end() && !it->second;
     };
-    for (const std::string &f : *featuresOr)
+    for (StringRef f : *featuresOr)
       if (featureIsAbsent(f))
-        disabledFeatures.push_back(f);
+        disabledFeatures.push_back(f.str());
     llvm::erase_if(*featuresOr, featureIsAbsent);
   }
 

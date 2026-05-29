@@ -65,15 +65,26 @@ struct VersionedName {
 
 } // namespace
 
+bool M::hasFeature(StringRef featureStr, StringRef feature) {
+  StringRef remaining = featureStr;
+  while (!remaining.empty()) {
+    auto [token, rest] = remaining.split(',');
+    if (token.size() > 1 && token[0] == '+' && token.drop_front(1) == feature)
+      return true;
+    remaining = rest;
+  }
+  return false;
+}
+
 std::string M::encodeFeatures(const TargetInfo &ti) {
   std::string result;
-  for (const std::string &f : ti.features) {
+  for (StringRef f : ti.features) {
     if (!result.empty())
       result += ',';
     result += '+';
     result += f;
   }
-  for (const std::string &f : ti.disabledFeatures) {
+  for (StringRef f : ti.disabledFeatures) {
     if (!result.empty())
       result += ',';
     result += '-';
@@ -83,25 +94,41 @@ std::string M::encodeFeatures(const TargetInfo &ti) {
 }
 
 ErrorOr<DecodedFeatures> M::decodeFeatures(StringRef encodedFeatures) {
-  DecodedFeatures result;
-  SmallVector<StringRef> featureCommas;
-  encodedFeatures.split(featureCommas, ',', /*MaxSplit=*/-1,
-                        /*KeepEmpty=*/false);
-  for (StringRef featureComma : featureCommas) {
-    if (featureComma.empty())
-      return Error(Twine("ill-formed features: '") + encodedFeatures + "'");
-    char sign = featureComma.front();
+  SmallVector<StringRef> tokens;
+  encodedFeatures.split(tokens, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+
+  // This complicated loop does two thingss:
+  // 1. Tracks insertion order (do not swap or sort features).
+  // 2. Applies last-wins semantics: e.g. "+avx512f,-avx512f" resolves to
+  // disabled.
+
+  SmallVector<StringRef> order;
+  llvm::StringMap<bool> state; // name → enabled (last wins)
+  for (StringRef token : tokens) {
+    char sign = token.front();
+    StringRef name;
+    bool enabled;
     if (sign == '+' || sign == '-') {
-      if (featureComma.size() < 2)
+      if (token.size() < 2)
         return Error(Twine("ill-formed features: '") + encodedFeatures + "'");
-      if (sign == '-')
-        result.disabled.emplace_back(featureComma.drop_front(1));
-      else
-        result.enabled.emplace_back(featureComma.drop_front(1));
+      name = token.drop_front(1);
+      enabled = (sign == '+');
     } else {
       // Unsigned names treated as enabled for backward compat.
-      result.enabled.emplace_back(featureComma.str());
+      name = token;
+      enabled = true;
     }
+    if (!state.contains(name))
+      order.push_back(name);
+    state[name] = enabled;
+  }
+
+  DecodedFeatures result;
+  for (StringRef name : order) {
+    if (state[name])
+      result.enabled.emplace_back(name);
+    else
+      result.disabled.emplace_back(name);
   }
   return result;
 }
@@ -504,29 +531,30 @@ const DeviceSpec &DeviceSpecCollection::getHostDeviceSpec() const {
 // SIMD Width
 //===----------------------------------------------------------------------===//
 
-size_t M::simdWidthFromFeatures(StringRef featureStr) {
-  // featureStr may be a comma-separated LLVM signed string (e.g.
-  // "+avx2,-avx512f") or a single plain feature name. Split on comma and
-  // skip disabled ('-X') tokens.
-  size_t maxWidth = 128;
-  SmallVector<StringRef> tokens;
-  featureStr.split(tokens, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-  for (StringRef token : tokens) {
-    if (!token.empty() && token[0] == '-')
-      continue;
-    StringRef name = token.ltrim('+');
-    if (name.contains("avx512"))
-      return 512;
-    if (name.contains("avx2"))
-      maxWidth = 256;
-  }
-  return maxWidth;
+size_t M::simdWidthFromFeature(StringRef plainFeature) {
+  if (plainFeature.contains("avx512"))
+    return 512;
+  if (plainFeature.contains("avx2"))
+    return 256;
+  return 128;
 }
 
-size_t M::simdWidthFromFeatures(ArrayRef<std::string> features) {
+size_t M::simdWidthFromFeatures(StringRef llvmFeatureStr) {
+  size_t width = 128;
+  SmallVector<StringRef> tokens;
+  llvmFeatureStr.split(tokens, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  for (StringRef token : tokens) {
+    if (token.empty() || token[0] == '-')
+      continue;
+    width = std::max(width, simdWidthFromFeature(token.ltrim("+")));
+  }
+  return width;
+}
+
+size_t M::simdWidthFromFeatures(ArrayRef<std::string> plainFeatures) {
   size_t maxWidth = 128;
-  for (StringRef feature : features) {
-    maxWidth = std::max(maxWidth, simdWidthFromFeatures(feature));
+  for (StringRef plainFeature : plainFeatures) {
+    maxWidth = std::max(maxWidth, simdWidthFromFeature(plainFeature));
     if (maxWidth == 512)
       return maxWidth;
   }

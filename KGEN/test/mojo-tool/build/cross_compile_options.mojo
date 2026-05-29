@@ -45,6 +45,33 @@
 # CHECK_MARCH: target triple = "x86_64-unknown-linux-gnu"
 # CHECK_MARCH: "target-cpu"="x86-64"
 
+# Test that compile-time CPU feature queries reflect what LLVM will actually
+# compile for. znver4 enables avx512f by default; an explicit -avx512f in
+# --target-features (simulating an OS that withholds AVX-512 via XCR0) must
+# make has_avx512f() return false, while omitting -avx512f must return true.
+#
+# RUN: %mojo-build --target-triple x86_64-unknown-linux-gnu --target-cpu znver4 \
+# RUN:   --target-features "+avx2,-avx512f" --emit=llvm -o - %s 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=CHECK_AVX512F_OFF
+#
+# RUN: %mojo-build --target-triple x86_64-unknown-linux-gnu --target-cpu znver4 \
+# RUN:   --target-features "+avx2" --emit=llvm -o - %s 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=CHECK_AVX512F_ON
+
+# CHECK_AVX512F_OFF-LABEL: @has_avx512f
+# CHECK_AVX512F_OFF-NEXT:  ret i1 false
+
+# CHECK_AVX512F_ON-LABEL: @has_avx512f
+# CHECK_AVX512F_ON-NEXT:  ret i1 true
+
+
+from std.sys.info import CompilationTarget
+
+
+@export
+def has_avx512f() -> Bool:
+    return CompilationTarget.has_avx512f()
+
 
 def main():
     pass
