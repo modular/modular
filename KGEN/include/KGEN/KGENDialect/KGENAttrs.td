@@ -2905,6 +2905,12 @@ def KGEN_CastFromBuiltinAttr : KGEN_ExprAttr<"CastFromBuiltin",
     // A builder that infers the return type from the argument type.
     AttrBuilderWithInferredContext<(ins "TypedAttr":$arg), "", "TypedAttr">
   ];
+
+  let extraClassDeclaration = [{
+    /// Return the SIMD type that `cast_from_builtin(arg)` infers from `arg`'s
+    /// builtin type alone. Returns null when no equivalent SIMD type exists.
+    static SIMDType getInferredResultType(TypedAttr arg);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -2937,6 +2943,12 @@ def KGEN_CastToBuiltinAttr : KGEN_ExprAttr<"CastToBuiltin", "cast_to_builtin"> {
     // A builder that infers the return type from the argument type.
     AttrBuilderWithInferredContext<(ins "TypedAttr":$arg), "", "TypedAttr">
   ];
+
+  let extraClassDeclaration = [{
+    /// Return the builtin MLIR type that `cast_to_builtin(arg)` infers from
+    /// `arg`'s SIMD type alone. Returns null when no equivalent type exists.
+    static Type getInferredResultType(TypedAttr arg);
+  }];
 }
 
 //===----------------------------------------------------------------------===//

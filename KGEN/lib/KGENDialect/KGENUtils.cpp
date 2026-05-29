@@ -1055,7 +1055,21 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
       TypedAttr arg;
       if (parseColonTypeParamValue(p, arg) || p.parseRParen())
         return failure();
-      value = CastFromBuiltinAttr::get(arg);
+      // An optional trailing `: <type>` overrides the result type that would
+      // otherwise be inferred from the arg's type.
+      if (succeeded(p.parseOptionalColon())) {
+        llvm::SMLoc typeLoc = p.getCurrentLocation();
+        Type explicitType;
+        if (parseKGENType(p, explicitType))
+          return failure();
+        auto simdType = dyn_cast<SIMDType>(explicitType);
+        if (!simdType)
+          return p.emitError(typeLoc,
+                             "expected a SIMDType for 'from_builtin' result");
+        value = CastFromBuiltinAttr::get(p.getContext(), arg, simdType);
+      } else {
+        value = CastFromBuiltinAttr::get(arg);
+      }
       return success();
     }
 
@@ -1063,7 +1077,16 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
       TypedAttr arg;
       if (parseColonTypeParamValue(p, arg) || p.parseRParen())
         return failure();
-      value = CastToBuiltinAttr::get(arg);
+      // An optional trailing `: <type>` overrides the result type that would
+      // otherwise be inferred from the arg's type.
+      if (succeeded(p.parseOptionalColon())) {
+        Type explicitType;
+        if (parseKGENType(p, explicitType))
+          return failure();
+        value = CastToBuiltinAttr::get(p.getContext(), arg, explicitType);
+      } else {
+        value = CastToBuiltinAttr::get(arg);
+      }
       return success();
     }
 
@@ -1423,6 +1446,14 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     p << "from_builtin(";
     printColonTypeParamValue(p, from.getArg());
     p << ')';
+    // If the actual result type differs from what would be inferred from the
+    // arg's type, print it explicitly so the syntax round-trips.
+    SIMDType inferredType =
+        CastFromBuiltinAttr::getInferredResultType(from.getArg());
+    if (inferredType != from.getType()) {
+      p << " : ";
+      printKGENType(p, from.getType());
+    }
     return;
   }
 
@@ -1430,6 +1461,13 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     p << "to_builtin(";
     printColonTypeParamValue(p, to.getArg());
     p << ')';
+    // If the actual result type differs from what would be inferred from the
+    // arg's type, print it explicitly so the syntax round-trips.
+    Type inferredType = CastToBuiltinAttr::getInferredResultType(to.getArg());
+    if (inferredType != to.getType()) {
+      p << " : ";
+      printKGENType(p, to.getType());
+    }
     return;
   }
 

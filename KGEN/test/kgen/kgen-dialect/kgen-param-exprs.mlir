@@ -231,6 +231,22 @@ kgen.generator @uindex_print_parse() -> (!kgen.scalar<uindex>, !kgen.scalar<uind
   kgen.return %0, %1 : !kgen.scalar<uindex>, !kgen.scalar<uindex>
 }
 
+
+// CHECK-LABEL: @cast_explicit_type_print_parse
+kgen.generator @cast_explicit_type_print_parse<p: index, v: !kgen.simd<1, ui32>>() {
+  // Inferred matches stored: no explicit type printed.
+  // CHECK: kgen.param.constant: scalar<index> = <from_builtin(p)>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <from_builtin(:index p) : !kgen.scalar<index>>
+
+  // Otherwise, need an explicit result type.
+  // CHECK: kgen.param.constant: scalar<uindex> = <from_builtin(p) : scalar<uindex>>
+  %1 = kgen.param.constant: !kgen.scalar<uindex> = <from_builtin(:index p) : !kgen.scalar<uindex>>
+  // CHECK: kgen.param.constant: i32 = <to_builtin(:scalar<ui32> v) : i32>
+  %2 = kgen.param.constant: i32 = <to_builtin(:!kgen.simd<1, ui32> v) : i32>
+
+  kgen.return
+}
+
 lit.struct.decl @StructType0<a: index, b: index> {}
 lit.struct.decl @StructType1<a: index, b: index> {}
 
