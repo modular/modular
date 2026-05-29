@@ -517,8 +517,9 @@ FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
   return cast<SymbolConstantAttr>(getBoundReference(evalContext, bindings));
 }
 
-TypedAttr FnOp::getFuncLiteralGenerator(ParameterEvaluationContext &evalContext,
-                                        ParameterExprArrayAttr bindings) {
+TypedAttr FnOp::getFuncLiteralGenerator(
+    ParameterEvaluationContext &evalContext, ParameterExprArrayAttr bindings,
+    const llvm::BitVector &dischargedBodyConstraints) {
   // legacy @parameter closure is not a function literal.
   if (getParamDeclAttr())
     return getBoundReference(evalContext, bindings);
@@ -560,10 +561,12 @@ TypedAttr FnOp::getFuncLiteralGenerator(ParameterEvaluationContext &evalContext,
     // `origins` unrecoverable.
     return unboundGen;
   }
-  Type resultType =
-      BindParamsAttr::inferResultType(unboundGen, bindings, &evalContext);
+  DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
+      unboundGen.getContext(), dischargedBodyConstraints);
+  Type resultType = BindParamsAttr::inferResultType(unboundGen, bindings,
+                                                    discharged, &evalContext);
   return BindParamsAttr::get(unboundGen.getContext(), unboundGen, bindings,
-                             resultType, &evalContext);
+                             discharged, resultType, &evalContext);
 }
 
 bool FnOp::isSynthetic() { return getSynthetic(); }

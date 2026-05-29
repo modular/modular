@@ -274,7 +274,8 @@ PogListAttr::verifyGenerator(function_ref<InFlightDiagnostic()> emitError,
 
 PogListAttr PogListAttr::getSpecializedMetadata(
     ParameterEvaluator &evaluator, const llvm::BitVector &boundParams,
-    function_ref<InFlightDiagnostic()> emitError) const {
+    function_ref<InFlightDiagnostic()> emitError,
+    const llvm::BitVector &dischargedBodyConstraints) const {
 
   // Now update POG metadata.
   SmallVector<PogMetadataAttr> newPogs;
@@ -292,8 +293,14 @@ PogListAttr PogListAttr::getSpecializedMetadata(
   if (!hasAnyVarArg)
     varargsConvention = ArgConvention::ByRefError;
 
+  assert((dischargedBodyConstraints.empty() ||
+          dischargedBodyConstraints.size() == getBodyConstraints().size()) &&
+         "discharged body constraint mask must match the metadata");
   SmallVector<ConstraintAttr> newBodyConstraints;
-  for (ConstraintAttr constraint : getBodyConstraints()) {
+  for (auto [idx, constraint] : llvm::enumerate(getBodyConstraints())) {
+    if (idx < dischargedBodyConstraints.size() &&
+        dischargedBodyConstraints[idx])
+      continue;
     newBodyConstraints.push_back(
         cast<ConstraintAttr>(evaluator.getReboundAttribute(constraint)));
   }

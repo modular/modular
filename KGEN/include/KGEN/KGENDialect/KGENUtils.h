@@ -19,6 +19,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
+#include "llvm/ADT/BitVector.h"
 
 namespace M::KGEN {
 class DeclInterface;
@@ -134,6 +135,11 @@ ParseResult parseBindParams(AsmParser &p, TypedAttr &generator,
 void printBindParams(AsmPrinter &p, TypedAttr generator,
                      ArrayRef<TypedAttr> paramValues,
                      DenseBoolArrayAttr discharged = {});
+
+/// Convert a bitvector mask to a dense bool array attribute. Empty masks are
+/// represented as a null attribute so callers keep the compact default form.
+DenseBoolArrayAttr getDenseBoolArrayAttr(MLIRContext *context,
+                                         const llvm::BitVector &mask);
 
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise. When

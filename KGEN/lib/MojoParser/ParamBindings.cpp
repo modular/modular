@@ -13,6 +13,7 @@
 #include "Traits.h"
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -229,8 +230,9 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
   // If this is a global function or struct reference, bind it directly.
   auto parentTrait = dyn_cast<TraitDeclOp>(funcOp->getParentOp());
   if (!parentTrait) {
-    return funcOp.getFuncLiteralGenerator(shared.getEvaluationContext(),
-                                          verified.asAttr());
+    return funcOp.getFuncLiteralGenerator(
+        shared.getEvaluationContext(), verified.asAttr(),
+        verified.getDischargedBodyConstraints());
   }
 
   ArrayRef<TypedAttr> verifiedValues = verified.getValues();
@@ -263,10 +265,15 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
       selfExpr, traitName, funcOp.getSymNameAttr(), signature);
 
   ArrayRef<TypedAttr> remainingParamValues = verifiedValues.drop_front();
+  const llvm::BitVector &discharged = verified.getDischargedBodyConstraints();
+  DenseBoolArrayAttr dischargedAttr =
+      KGEN::getDenseBoolArrayAttr(fnRef.getContext(), discharged);
   Type resultType = BindParamsAttr::inferResultType(
-      fnRef, remainingParamValues, &shared.getEvaluationContext());
+      fnRef, remainingParamValues, dischargedAttr,
+      &shared.getEvaluationContext());
   return BindParamsAttr::get(fnRef.getContext(), fnRef, remainingParamValues,
-                             resultType, &shared.getEvaluationContext());
+                             dischargedAttr, resultType,
+                             &shared.getEvaluationContext());
 }
 
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,

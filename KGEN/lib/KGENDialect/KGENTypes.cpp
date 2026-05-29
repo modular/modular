@@ -439,7 +439,8 @@ GeneratorType GeneratorType::getSpecializedGenerator(
   PogListAttr genMetadata = getMetadata();
   if (genMetadata) {
     PogListAttr specialized = genMetadata.getSpecializedMetadata(
-        specialization.evaluator, specialization.boundParams, emitErrorFn);
+        specialization.evaluator, specialization.boundParams, emitErrorFn,
+        specialization.dischargedBodyConstraints);
     if (!specialized)
       return {};
     genMetadata = specialized;

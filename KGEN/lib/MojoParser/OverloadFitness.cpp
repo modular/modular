@@ -624,7 +624,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // rebound by `setInferredValue` against `signature.getInputParamTypes()`, so
   // there is no need for the additional `getUnboundSpecializedSignature`
   // rebinding loop here.
-  signature = verifiedBindings.specializeGeneratorType(signature);
+  signature =
+      cast<GeneratorType>(verifiedBindings.specializeGeneratorType(signature));
 
   // This is the result we will return if we succeed.
   OverloadFitness result(std::move(verifiedBindings),

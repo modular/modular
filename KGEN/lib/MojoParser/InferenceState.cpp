@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "InferenceState.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -173,10 +174,16 @@ LogicalResult InferenceState::checkBodyConstraints() {
   // current bindings.
   ConcretenessChecker concreteness(evaluator.getIndexBindings());
   SmallVector<ConstraintAttr> concreteConstraints;
+  SmallVector<size_t> concreteConstraintIndices;
   concreteConstraints.reserve(bodyConstraints.size());
-  for (ConstraintAttr constraint : bodyConstraints)
-    if (concreteness.isConcrete(constraint.getProposition()))
+  concreteConstraintIndices.reserve(bodyConstraints.size());
+  dischargedBodyConstraints.resize(bodyConstraints.size());
+  for (auto [idx, constraint] : llvm::enumerate(bodyConstraints)) {
+    if (concreteness.isConcrete(constraint.getProposition())) {
       concreteConstraints.push_back(constraint);
+      concreteConstraintIndices.push_back(idx);
+    }
+  }
 
   if (concreteConstraints.empty())
     return success();
@@ -188,6 +195,8 @@ LogicalResult InferenceState::checkBodyConstraints() {
       LIT::checkConstraints(declScope, declaredParamPogs, concreteConstraints,
                             /*origConstraints=*/{}, diag.getDiag(),
                             &bodyUnprovableConstraints, &evaluator);
+  for (size_t idx : concreteConstraintIndices)
+    dischargedBodyConstraints.set(idx);
   return success(result != ConstraintResult::Violated);
 }
 
@@ -211,17 +220,39 @@ VerifiedParamBindings::specializeGenerator(TypedAttr generator) const {
   // Otherwise, the type of the generator must be a GeneratorType.
   assert(sugarIsa<GeneratorType>(generator.getType()) &&
          "generator type expected");
-  Type resultType = BindParamsAttr::inferResultType(generator, getValues(),
-                                                    evaluationContext);
+  Type specializedType =
+      specializeGeneratorType(sugarCast<GeneratorType>(generator.getType()));
+  DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
+      generator.getContext(), dischargedBodyConstraints);
   return BindParamsAttr::get(generator.getContext(), generator, getValues(),
-                             resultType, evaluationContext);
+                             discharged, specializedType, evaluationContext);
 }
 
-GeneratorType
-VerifiedParamBindings::specializeGeneratorType(GeneratorType genType) const {
+Type VerifiedParamBindings::specializeGeneratorType(
+    GeneratorType genType) const {
   assert(*this && "specializing with failed inference bindings");
-  return genType.getSpecializedGenerator(getValues(), evaluationContext,
-                                         /*emitErrorFn=*/{});
+  std::optional<PartiallySpecializedInputParams> specializationOpt =
+      PartiallySpecializedInputParams::from(
+          genType.getInputParamTypes(), getValues(), evaluationContext,
+          /*emitErrorFn=*/{}, dischargedBodyConstraints);
+  assert(specializationOpt &&
+         "verified bindings should specialize this generator");
+
+  PartiallySpecializedInputParams &specialization = *specializationOpt;
+  GeneratorType specialized =
+      genType.getSpecializedGenerator(specialization, /*emitErrorFn=*/{});
+  // Perform generator instantiation only if all parameters are bound and all
+  // body constraints are discharged. In addition, for back-compat, we do not
+  // eagerly instantiate function generators.
+  Type reboundBody = specialized.getBody();
+  bool canEagerInstantiate = specialization.unboundParamTypes.empty() &&
+                             dischargedBodyConstraints.all() &&
+                             !sugarIsa<FuncType>(reboundBody) &&
+                             !sugarIsa<FuncLiteralType>(reboundBody);
+  if (canEagerInstantiate)
+    return reboundBody;
+  assert(specialized && "parser generator specialization should succeed");
+  return specialized;
 }
 
 void InferenceState::dump() const {

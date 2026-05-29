@@ -510,7 +510,8 @@ std::optional<PartiallySpecializedInputParams>
 PartiallySpecializedInputParams::from(
     ArrayRef<Type> paramTypes, ArrayRef<TypedAttr> paramBindings,
     ParameterEvaluationContext *evaluationContext,
-    function_ref<InFlightDiagnostic()> emitErrorFn) {
+    function_ref<InFlightDiagnostic()> emitErrorFn,
+    const llvm::BitVector &dischargedBodyConstraints) {
   // Verify the number of input parameters.
   if (paramBindings.size() != paramTypes.size()) {
     assert(emitErrorFn && "unexpected invalid bindings");
@@ -521,6 +522,7 @@ PartiallySpecializedInputParams::from(
   }
 
   PartiallySpecializedInputParams result;
+  result.dischargedBodyConstraints = dischargedBodyConstraints;
   ParameterEvaluator &evaluator = result.evaluator;
   SmallVector<Type, 16> &unboundParamTypes = result.unboundParamTypes;
   llvm::BitVector &boundParams = result.boundParams;
