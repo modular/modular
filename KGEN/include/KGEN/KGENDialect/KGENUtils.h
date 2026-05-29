@@ -129,9 +129,11 @@ void printStructDefFields(AsmPrinter &p, ArrayRef<StructDefFieldAttr> fields);
 
 ParseResult parseBindParams(AsmParser &p, TypedAttr &generator,
                             SmallVectorImpl<TypedAttr> &paramValues,
+                            DenseBoolArrayAttr &discharged,
                             Type preParsedGeneratorType = {});
 void printBindParams(AsmPrinter &p, TypedAttr generator,
-                     ArrayRef<TypedAttr> paramValues);
+                     ArrayRef<TypedAttr> paramValues,
+                     DenseBoolArrayAttr discharged = {});
 
 /// Print a parameter name correctly, using a double quoted syntax if it
 /// conflicts with an MLIR or KGEN keyword, or a bareword otherwise. When

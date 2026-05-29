@@ -766,3 +766,21 @@ kgen.generator @closure_types(%arg0 : index) {
 "some.op"() {
   b = #pop.simd_cmp<eq, #kgen<simd 1> : !kgen.scalar<ui8>, #kgen<simd 2> : !kgen.scalar<ui8>> : !kgen.simd<3, ui8>
 } : () -> ()
+
+// -----
+
+kgen.generator @bind_params_discharged_mask_size() {
+  // expected-error @+2 {{bind_params discharged mask has size 1 but the generator has 2 body constraints}}
+  kgen.param.declare bad: index =
+    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:2)>}>index> ?, 1 | "1">>
+  kgen.return
+}
+
+// -----
+
+kgen.generator @bind_params_discharged_residual_size() {
+  // expected-error @+2 {{bind_params type has 0 body constraints but the discharge mask claims 1 survive}}
+  kgen.param.declare bad: index =
+    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":4:1)>, <true, loc("bind_params":4:2)>}>index> ?, 1 | "10">>
+  kgen.return
+}

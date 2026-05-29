@@ -966,6 +966,50 @@ mergeParamBindings(ArrayRef<TypedAttr> prevBindings,
   return mergedBindings;
 }
 
+/// Merge an outer residual-indexed discharge mask into an inner
+/// original-indexed discharge mask.
+static DenseBoolArrayAttr mergeDischargedConstraints(
+    MLIRContext *context, DenseBoolArrayAttr innerOriginalMask,
+    DenseBoolArrayAttr outerResidualMask, size_t origBodyCount) {
+  assert((!innerOriginalMask ||
+          static_cast<size_t>(innerOriginalMask.size()) == origBodyCount) &&
+         "inner discharge mask must be original-indexed");
+
+  SmallVector<bool> merged(origBodyCount, false);
+  size_t numDischarged = 0;
+  if (innerOriginalMask) {
+    for (auto [idx, value] : llvm::enumerate(innerOriginalMask.asArrayRef())) {
+      merged[idx] = value;
+      numDischarged += value;
+    }
+  }
+
+  size_t residualCount = origBodyCount - numDischarged;
+  assert((!outerResidualMask ||
+          static_cast<size_t>(outerResidualMask.size()) == residualCount) &&
+         "outer discharge mask must be residual-indexed");
+
+  size_t residualIdx = 0;
+  for (size_t origIdx = 0; origIdx != origBodyCount; ++origIdx) {
+    if (merged[origIdx])
+      continue;
+    if (outerResidualMask && outerResidualMask[residualIdx])
+      merged[origIdx] = true;
+    ++residualIdx;
+  }
+  assert(residualIdx == residualCount &&
+         "residual walk must consume every surviving constraint");
+  return Builder(context).getDenseBoolArrayAttr(merged);
+}
+
+BindParamsAttr BindParamsAttr::getFromBytecode(TypedAttr generator,
+                                               ArrayRef<TypedAttr> paramValues,
+                                               Type type,
+                                               DenseBoolArrayAttr discharged) {
+  return Base::get(generator.getContext(), generator, paramValues, discharged,
+                   type);
+}
+
 static bool isEagerlyInstantiatable(GeneratorType generator) {
   // We can not eagerly instantiate a generator that contains a FuncType, since
   // it might contain implicit origins that must be used within a generator.
@@ -992,6 +1036,7 @@ normalizeBindParamsValues(GeneratorType genType,
 
 Type BindParamsAttr::inferResultType(
     TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+    DenseBoolArrayAttr discharged,
     ParameterEvaluationContext *evaluationContext) {
   auto genType = sugarCast<GeneratorType>(generator.getType());
   SmallVector<TypedAttr> normalizedParamValues =
@@ -1007,10 +1052,18 @@ Type BindParamsAttr::inferResultType(
   return canEagerInstantiate ? specializedType.getBody() : specializedType;
 }
 
+Type BindParamsAttr::inferResultType(
+    TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+    ParameterEvaluationContext *evaluationContext) {
+  return inferResultType(generator, paramValues, /*discharged=*/{},
+                         evaluationContext);
+}
+
 static TypedAttr simplifyBindParams(TypedAttr generator,
                                     ArrayRef<TypedAttr> paramValues, Type type,
-                                    ParameterEvaluationContext *evalContext) {
-  if (paramValues.empty())
+                                    ParameterEvaluationContext *evalContext,
+                                    DenseBoolArrayAttr discharged) {
+  if (paramValues.empty() && !discharged)
     return generator;
 
   // If the actual generator is a BindParamsAttr, then we can flatten the new
@@ -1018,9 +1071,20 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
   if (auto bindParams = sugarDynCast<BindParamsAttr>(generator)) {
     SmallVector<TypedAttr> mergedParamValues =
         mergeParamBindings(bindParams.getParamValues(), paramValues);
+    DenseBoolArrayAttr innerMask = bindParams.getDischarged();
+    DenseBoolArrayAttr mergedMask;
+    if (innerMask || discharged) {
+      auto genType =
+          sugarCast<GeneratorType>(bindParams.getGenerator().getType());
+      PogListAttr metadata = genType.getMetadata();
+      size_t origBodyCount =
+          metadata ? metadata.getBodyConstraints().size() : 0;
+      mergedMask = mergeDischargedConstraints(generator.getContext(), innerMask,
+                                              discharged, origBodyCount);
+    }
     return BindParamsAttr::get(bindParams.getContext(),
                                bindParams.getGenerator(), mergedParamValues,
-                               type, evalContext);
+                               mergedMask, type, evalContext);
   }
 
   // Can simplify if the generator is a GeneratorAttr.
@@ -1081,15 +1145,36 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
 }
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
-                              ArrayRef<TypedAttr> paramValues, Type type,
+                              ArrayRef<TypedAttr> paramValues,
+                              DenseBoolArrayAttr discharged, Type type,
                               ParameterEvaluationContext *evaluationContext) {
-  if (auto simplified =
-          simplifyBindParams(generator, paramValues, type, evaluationContext)) {
+  if (auto simplified = simplifyBindParams(generator, paramValues, type,
+                                           evaluationContext, discharged)) {
     assert(isEqualCanon(simplified.getType(), type) &&
            "bind_params simplification must preserve the requested type");
     return simplified;
   }
-  return Base::get(generator.getContext(), generator, paramValues, type);
+  return Base::get(generator.getContext(), generator, paramValues, discharged,
+                   type);
+}
+
+TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
+                              ArrayRef<TypedAttr> paramValues, Type type,
+                              ParameterEvaluationContext *evaluationContext) {
+  return get(context, generator, paramValues, /*discharged=*/{}, type,
+             evaluationContext);
+}
+
+TypedAttr
+BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                           MLIRContext *context, TypedAttr generator,
+                           ArrayRef<TypedAttr> paramValues,
+                           DenseBoolArrayAttr discharged, Type type,
+                           ParameterEvaluationContext *evaluationContext) {
+  if (failed(verify(emitError, generator, paramValues, discharged, type)))
+    return {};
+  return get(context, generator, paramValues, discharged, type,
+             evaluationContext);
 }
 
 TypedAttr
@@ -1097,7 +1182,8 @@ BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                            MLIRContext *context, TypedAttr generator,
                            ArrayRef<TypedAttr> paramValues, Type type,
                            ParameterEvaluationContext *evaluationContext) {
-  if (failed(verify(emitError, generator, paramValues, type)))
+  if (failed(
+          verify(emitError, generator, paramValues, /*discharged=*/{}, type)))
     return {};
   return get(context, generator, paramValues, type, evaluationContext);
 }
@@ -1107,7 +1193,7 @@ bool BindParamsAttr::isConstant() const { return false; }
 LogicalResult
 BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        TypedAttr generator, ArrayRef<TypedAttr> paramValues,
-                       Type type) {
+                       DenseBoolArrayAttr discharged, Type type) {
   auto genType = sugarDynCast<GeneratorType>(generator.getType());
   if (!genType)
     return emitError()
@@ -1117,6 +1203,36 @@ BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   if (paramValues.size() > genType.getInputParamTypes().size())
     return emitError()
            << "bind_params has more parameters than the generator expects";
+
+  if (!discharged || discharged.empty())
+    return success();
+
+  PogListAttr genMetadata = genType.getMetadata();
+  size_t origBodyCount =
+      genMetadata ? genMetadata.getBodyConstraints().size() : 0;
+  size_t dischargedSize = static_cast<size_t>(discharged.size());
+  if (dischargedSize != origBodyCount)
+    return emitError() << "bind_params discharged mask has size "
+                       << dischargedSize << " but the generator has "
+                       << origBodyCount
+                       << (origBodyCount == 1 ? " body constraint"
+                                              : " body constraints");
+
+  size_t numDischarged = llvm::count(discharged.asArrayRef(), true);
+  size_t expectedResidual = discharged.size() - numDischarged;
+
+  auto typeGen = sugarDynCast<GeneratorType>(type);
+  size_t actualResidual = 0;
+  if (typeGen) {
+    PogListAttr typeMetadata = typeGen.getMetadata();
+    actualResidual =
+        typeMetadata ? typeMetadata.getBodyConstraints().size() : 0;
+  }
+  if (actualResidual != expectedResidual)
+    return emitError() << "bind_params type has " << actualResidual
+                       << " body constraint" << (actualResidual == 1 ? "" : "s")
+                       << " but the discharge mask claims " << expectedResidual
+                       << " survive";
 
   // It is possible that the parameter values do not have identical types as
   // what the generator type expects. This happens for example during

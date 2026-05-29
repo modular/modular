@@ -245,8 +245,11 @@ def WrappedTypeParamAttr : DialectAttribute<(attr
 def BindParamsAttr : DialectAttribute<(attr
   ConcreteAttribute<"TypedAttr">:$generator,
   TypedAttrArray:$paramValues,
-  Type:$type
-)>;
+  Type:$type,
+  ConcreteOptionalAttribute<"DenseBoolArrayAttr">:$discharged
+)> {
+  let cBuilder = "BindParamsAttr::getFromBytecode($_args)";
+}
 
 def TypeGeneratorRefAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,

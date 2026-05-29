@@ -76,6 +76,16 @@ lit.fn @decorated_fn()
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @bind_params_discharged_mask_cleared
+// CHECK: kgen.param.declare bound = <bind_params(
+// CHECK-NOT: | "
+// CHECK: kgen.return
+kgen.generator @bind_params_discharged_mask_cleared() {
+  kgen.param.declare bound: index =
+    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("lower-lit":1:1)>}>index> ?, 1 | "1">>
+  kgen.return
+}
+
 // CHECK-LABEL: @generic_types_retain_convention
 lit.fn @generic_types_retain_convention<T: type>[imm a](
   // CHECK: %arg0: !kgen.param<T>,
