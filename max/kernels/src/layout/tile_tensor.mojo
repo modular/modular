@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """TileTensor type for structured memory access with compile-time layout information."""
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import align_of, simd_width_of, is_gpu, size_of
 from std.os import abort
 
 from std.builtin.builtin_slice import ContiguousSlice
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.int import index as _index
 from std.collections._conditional import _ComptimeConditional
 from std.memory import stack_allocation as _std_stack_allocation
@@ -27,7 +27,8 @@ from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout._fillers import BATCH_SIZE
 from std.sys import prefetch
 from std.sys.intrinsics import PrefetchOptions, _type_is_eq_parse_time
-from std.utils import IndexList
+from std.utils import IndexList, StaticTuple
+from std.utils.coord import _coerce_dynamic
 
 from .swizzle import Swizzle
 
@@ -39,18 +40,15 @@ from .tile_layout import (
     _RowMajor,
     row_major,
 )
-from .coord import (
+from layout.coord import (
     ComptimeInt,
-    RuntimeInt,
     Idx,
     Coord,
     CoordLike,
     _All,
     _IntToComptimeInt,
     coord,
-    coord_to_int_tuple,
     coord_to_index_list,
-    _IntTupleToCoordLike,
     _CoordToDynamic,
     _Multiply,
     _Divide,
@@ -58,6 +56,7 @@ from .coord import (
     _Flattened,
     DynamicCoord,
 )
+from .int_tuple import coord_to_int_tuple, _IntTupleToCoordLike
 
 
 @always_inline
@@ -66,7 +65,8 @@ def _default_invariant[mut: Bool]() -> Bool:
 
 
 def _copy_widen_factor[
-    dtype: DType,
+    dst_dtype: DType,
+    src_dtype: DType,
     element_size: Int,
     dst_row_major: Bool,
     src_row_major: Bool,
@@ -83,7 +83,10 @@ def _copy_widen_factor[
     comptime if not dst_row_major or not src_row_major or element_size != 1:
         return 1
 
-    comptime native = simd_width_of[dtype]()
+    # Use the narrower SIMD width so both load and store fit native lanes
+    comptime native = min(
+        simd_width_of[dst_dtype](), simd_width_of[src_dtype]()
+    )
     var w = native
     while w > 1:
         if num_elements % w == 0:
@@ -227,8 +230,10 @@ struct TileTensor[
     comptime device_type = Self
     """Device-side type for GPU kernel parameter passing."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -289,7 +294,7 @@ struct TileTensor[
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
-        [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext) to
+        [`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext) to
         allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
         that can be accessed on the GPU. You cannot directly access data in the
         `DeviceBuffer` or `LayoutTensor` from the CPU.
@@ -320,7 +325,7 @@ struct TileTensor[
         # Create TileTensor to use on device
         var tensor = TileTensor(
              dev_buf,
-             row_major(Idx[4](), Idx[4]()),
+             row_major(Idx[4], Idx[4]),
         )
         ...
         ```
@@ -359,7 +364,7 @@ struct TileTensor[
 
         var tensor = TileTensor(
             host_buf,
-            row_major(Idx[4](), Idx[4]()),
+            row_major(Idx[4], Idx[4]),
         )
         ```
 
@@ -417,65 +422,33 @@ struct TileTensor[
         self.layout = other.layout
 
     @always_inline("nodebug")
-    def __getitem__(
-        self, coord: Coord
-    ) -> Self.ElementType where not coord.contains_slices:
+    def __getitem__[
+        *CoordLikes: CoordLike
+    ](self, *coords: *CoordLikes) -> Self.ElementType:
         """Retrieve a single element from the tensor at the specified coordinates.
 
-        Accepts Coords of flat_rank (flattened).
-
-        Args:
-            coord: The coordinates specifying the element's position.
-
-        Returns:
-            The element at the specified position.
-        """
-        return self.load(coord)
-
-    @always_inline("nodebug")
-    def __getitem__[
-        *IndexTypes: Indexer & Copyable
-    ](self, *items: *IndexTypes) -> Self.ElementType where (
-        IndexTypes.size == Self.flat_rank
-    ):
-        """Retrieves a single element from the tensor at the specified indices.
-
-        Uses flat indexing based on flat_rank. For non-nested layouts,
-        flat_rank == rank, so tensor[i, j, k] works normally. For nested
-        layouts (e.g., from blocked_product), use all flat_rank indices:
-        tensor[i0, i1, i2, i3] for a tensor with flat_rank == 4.
+        Accepts either a single `Coord` argument or multiple scalar
+        `CoordLike` arguments packed into a `Coord`.
 
         Parameters:
-            IndexTypes: The types of the indices (must implement Indexer).
+            CoordLikes: The types of each index argument (`CoordLike`).
 
         Args:
-            items: The indices specifying the element's position.
+            coords: The coordinates specifying the element's position.
 
         Returns:
             The element at the specified position.
         """
-        comptime arg_count = IndexTypes.size
-        var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
-
-        comptime for i in range(arg_count):
-            UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
-                rebind[type_of(linear_tuple).element_types[i]](
-                    RuntimeInt[Self.linear_idx_type](
-                        Scalar[Self.linear_idx_type](index(items[i]))
-                    )
-                )
-            )
-
-        # Inline load logic to avoid constraint propagation issues
-        return self.raw_load[
-            width=Self.element_size,
-            alignment=align_of[
-                SIMD[Self.dtype, Self.element_size]
-            ]() if is_gpu() else 1,
-        ](self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple))
+        comptime if CoordLikes.size == 1 and CoordLikes[0].is_tuple:
+            return self.load(coords[0].tuple())
+        else:
+            var coord = Coord[*CoordLikes]()
+            comptime for i in range(CoordLikes.size):
+                UnsafePointer(to=coord[i]).init_pointee_copy(coords[i])
+            return self.load(coord)
 
     @always_inline
-    def __getitem__[
+    def slice[
         *IndexTypes: CoordLike
     ](self, *indices: *IndexTypes) -> TileTensor[
         Self.dtype,
@@ -498,7 +471,7 @@ struct TileTensor[
         """Fix some dimensions at scalar indices and keep others, returning a
         lower-rank view.
 
-        Each argument is either a concrete index (`Idx(n)` / `Idx[n]()`) to
+        Each argument is either a concrete index (`n` / `Idx[n]`) to
         collapse that dimension, or `All` to keep it. The output rank equals
         the number of `All` arguments.
 
@@ -533,7 +506,7 @@ struct TileTensor[
         var t = TileTensor(storage, row_major[2, 8, 4, 16]())
 
         # Fix batch=1 and heads=2, keep N and head_dim → 2D (8, 16)
-        var selected = t[Idx(1), All, Idx(2), All]
+        var selected = t.slice(Idx[1], All, Idx[2], All)
         ```
         """
         # Compute pointer offset from fixed (non-All) dimensions.
@@ -623,9 +596,7 @@ struct TileTensor[
         comptime for i in range(arg_count):
             UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
                 rebind[type_of(linear_tuple).element_types[i]](
-                    RuntimeInt[Self.linear_idx_type](
-                        Scalar[Self.linear_idx_type](index(items[i]))
-                    )
+                    Scalar[Self.linear_idx_type](index(items[i]))
                 )
             )
 
@@ -665,6 +636,12 @@ struct TileTensor[
         Returns:
             A SIMD vector containing the loaded elements.
         """
+        comptime assert (
+            Self.is_compatible_with[coord.element_types]
+            or coord.rank == Self.flat_rank
+            or coord.rank == 1
+        )
+
         return self.raw_load[
             width=width,
             alignment=alignment,
@@ -818,7 +795,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def raw_store[
-        width: Int = 1,
+        width: SIMDSize = 1,
         alignment: Int = align_of[Self.dtype](),
         non_temporal: Bool = False,
     ](
@@ -844,7 +821,7 @@ struct TileTensor[
             value: The SIMD vector to store.
         """
         self.ptr.unsafe_mut_cast[True]().store[
-            alignment=alignment, non_temporal=non_temporal
+            width=width, alignment=alignment, non_temporal=non_temporal
         ](_index(offset), value)
 
     @always_inline("nodebug")
@@ -947,11 +924,10 @@ struct TileTensor[
             result *= Int(self.layout.shape[i]().value())
         return result
 
-    def copy(
+    @always_inline("nodebug")
+    def copy_from(
         self,
-        other: TileTensor[
-            dtype=Self.dtype, element_size=Self.element_size, ...
-        ],
+        other: TileTensor[element_size=Self.element_size, ...],
     ) where Self.mut:
         """Copy data from another tensor into this tensor.
 
@@ -962,45 +938,51 @@ struct TileTensor[
         have different shapes or strides (as long as they agree on total
         element count).
 
-        When both tensors have fully static layouts, matching inner
-        dimensions, and unit stride along the innermost axis, the copy
-        widens to SIMD loads/stores of up to `simd_width_of[dtype]()`
-        elements at a time.
+        When both tensors have fully static, row-major layouts,
+        the copy widens to SIMD load + cast + SIMD store,
+        using the narrower of the two dtypes' native SIMD widths.
 
         Constraints:
 
         - Both tensors must have statically known shapes with matching total
             element count.
+        - Both tensors must have the same logical element size.
+        - Source and destination dtypes may differ; each logical element is
+            cast to the destination dtype.
 
         Args:
             other: The source tensor to copy data from. Must have the same
-                `dtype`, `element_size`, and total number of elements as
-                `self`.
+                `element_size` and total number of elements as `self`.
         """
-        comptime src_static = Coord[
-            *type_of(other).LayoutType._shape_types
-        ].static_product
-        comptime dst_static = Coord[
-            *Self.LayoutType._shape_types
-        ].static_product
+        comptime OtherType = type_of(other)
+        comptime assert (
+            Self.LayoutType.shape_known and OtherType.LayoutType.shape_known
+        ), "TileTensor.copy_from requires statically known shapes"
+
+        comptime src_static = OtherType.LayoutType.static_product
+        comptime dst_static = Self.LayoutType.static_product
 
         comptime assert (
             src_static == dst_static
-        ), "TileTensor.copy requires matching total element count"
+        ), "TileTensor.copy_from requires matching total element count"
 
         comptime num_elements = dst_static
 
         comptime widen = _copy_widen_factor[
-            dtype=Self.dtype,
+            dst_dtype=Self.dtype,
+            src_dtype=OtherType.dtype,
             element_size=Self.element_size,
             dst_row_major=Self.is_row_major,
-            src_row_major=type_of(other).is_row_major,
+            src_row_major=OtherType.is_row_major,
             num_elements=num_elements,
         ]()
 
         comptime width = Self.element_size * widen
-        comptime alignment = align_of[
+        comptime dst_alignment = align_of[
             SIMD[Self.dtype, width]
+        ]() if is_gpu() else 1
+        comptime src_alignment = align_of[
+            SIMD[OtherType.dtype, width]
         ]() if is_gpu() else 1
 
         comptime if widen > 1:
@@ -1016,19 +998,21 @@ struct TileTensor[
             var src_ptr = other.ptr
             var dst_ptr = self.ptr.mut_cast[True]()
             comptime for i in range(num_chunks):
-                dst_ptr.store[alignment=alignment](
+                dst_ptr.store[alignment=dst_alignment](
                     i * width,
-                    src_ptr.load[width=width, alignment=alignment](i * width),
+                    src_ptr.load[width=width, alignment=src_alignment](
+                        i * width
+                    ).cast[Self.dtype](),
                 )
         else:
             comptime for i in range(num_elements):
-                var src_offset = other.layout(Idx[i]())
-                var dst_offset = self.layout(Idx[i]())
-                self.ptr.mut_cast[True]().store[alignment=alignment](
+                var src_offset = other.layout(Idx[i])
+                var dst_offset = self.layout(Idx[i])
+                self.ptr.mut_cast[True]().store[alignment=dst_alignment](
                     dst_offset,
                     other.ptr.load[
-                        width=Self.element_size, alignment=alignment
-                    ](src_offset),
+                        width=Self.element_size, alignment=src_alignment
+                    ](src_offset).cast[Self.dtype](),
                 )
 
     def _distance(
@@ -1142,7 +1126,7 @@ struct TileTensor[
     ]:
         """Tile with explicit static strides.
 
-        Use when the parent tensor has dynamic (RuntimeInt) strides but
+        Use when the parent tensor has dynamic (Scalar) strides but
         the actual stride values are known at compile time. This produces
         a tile with all_dims_known=True, enabling vectorize/distribute.
 
@@ -1419,9 +1403,7 @@ struct TileTensor[
         comptime for i in range(Self.rank):
             UnsafePointer(to=coordinates[i]).init_pointee_copy(
                 rebind[coordinates.element_types[i]](
-                    RuntimeInt[Self.linear_idx_type](
-                        Scalar[Self.linear_idx_type](tile_coords[i])
-                    )
+                    Scalar[Self.linear_idx_type](tile_coords[i])
                 )
             )
 
@@ -1580,13 +1562,13 @@ struct TileTensor[
 
             # TODO: MSTDL-1352 we can use memory element to fill the tensor.
             comptime for i in range(num_elements):
-                var idx = self.layout(Idx[i]())
+                var idx = self.layout(Idx[i])
                 self.ptr.mut_cast[True]()[idx] = val
         else:
             var num_elements = self.num_elements()
 
             for i in range(num_elements):
-                var idx = self.layout(Idx(i))
+                var idx = self.layout(i)
                 self.ptr.mut_cast[True]()[idx] = val
         return self
 
@@ -1655,6 +1637,227 @@ struct TileTensor[
         # Should this raise instead?
         abort("attempt to dynamically index out of bounds")
 
+    comptime SplitElementType[
+        count: Int,
+        axis: Int = 0,
+    ] = TileTensor[
+        Self.dtype,
+        Layout[
+            _StaticSplitShape[count, axis, Self.LayoutType._shape_types](),
+            Self.LayoutType._stride_types,
+        ],
+        ImmutOrigin(Self.origin),
+        address_space=Self.address_space,
+        linear_idx_type=Self.linear_idx_type,
+        element_size=Self.element_size,
+    ]
+    """Type alias for equal-sized split element tensors.
+
+    The result has an immutable origin.
+
+    Parameters:
+        count: The number of equal-sized partitions.
+        axis: The axis along which the tensor is split.
+    """
+
+    comptime StaticSplitType[
+        count: Int,
+        axis: Int = 0,
+    ] = StaticTuple[
+        Self.SplitElementType[count, axis],
+        count,
+    ]
+    """Type alias for static split result tuples.
+
+    Each tuple element is an immutable view.
+
+    Parameters:
+        count: The number of equal-sized partitions.
+        axis: The axis along which the tensor is split.
+    """
+
+    @always_inline("nodebug")
+    def split[
+        count: Int,
+        axis: Int = 0,
+    ](self) -> Self.StaticSplitType[count, axis] where not Self.mut:
+        """Splits the tensor into equal-sized views along an axis.
+
+        Split views are immutable. Call `as_immut().split[count]()` on a
+        mutable tensor before splitting.
+
+        Parameters:
+            count: The number of partitions to split into.
+            axis: The axis along which to split.
+
+        Constraints:
+            The tensor shape must be statically known. The split axis must
+            have static, scalar shape and stride values. The split-axis shape
+            must be evenly divisible by `count`.
+
+        Returns:
+            A `StaticTuple` containing `count` non-overlapping `TileTensor`
+            views into this tensor.
+
+        See also:
+            Use `split(count, idx)` to return a single partition with a
+            runtime-sized split axis. The dynamic overload takes `axis` before
+            `split_alignment` as compile-time parameters, while this overload
+            takes `count` before `axis`.
+        """
+        comptime assert (
+            axis >= 0 and axis < Self.rank
+        ), "TileTensor.split axis out of bounds"
+        comptime assert (
+            Self.LayoutType.shape_known
+        ), "TileTensor.split[count]() requires statically known shapes"
+        comptime assert Self.LayoutType._shape_types[
+            axis
+        ].is_value, "TileTensor.split only supports scalar dimensions"
+        comptime assert (
+            Self.LayoutType._shape_types[axis].is_static_value
+            and Self.LayoutType._stride_types[axis].is_static_value
+        ), "TileTensor.split requires static shape and stride on the split axis"
+        comptime assert (
+            Self.LayoutType._shape_types[axis].static_value % count == 0
+        ), "The input dimension must be divisible by the input count"
+
+        comptime tile_size = (
+            Self.LayoutType._shape_types[axis].static_value // count
+        )
+        comptime axis_stride = Self.LayoutType._stride_types[axis].static_value
+
+        var tiles = Self.StaticSplitType[count, axis]()
+        var split_layout = self._split_layout[count, axis]()
+
+        comptime for i in range(count):
+            tiles[i] = Self.SplitElementType[count, axis](
+                self.ptr.as_immutable() + i * tile_size * axis_stride,
+                split_layout,
+            )
+
+        return tiles
+
+    comptime DynamicSplitType[
+        axis: Int = 0,
+    ] = TileTensor[
+        Self.dtype,
+        Layout[
+            _DynamicSplitShape[
+                Self.linear_idx_type, axis, Self.LayoutType._shape_types
+            ](),
+            Self.LayoutType._stride_types,
+        ],
+        ImmutOrigin(Self.origin),
+        address_space=Self.address_space,
+        linear_idx_type=Self.linear_idx_type,
+        element_size=Self.element_size,
+    ]
+    """Type alias for runtime-sized split element tensors.
+
+    The result has an immutable origin.
+
+    Parameters:
+        axis: The axis along which the tensor is split.
+    """
+
+    @always_inline("nodebug")
+    def split[
+        axis: Int = 0,
+        split_alignment: Int = 1,
+    ](self, count: Int, idx: Int) -> Self.DynamicSplitType[
+        axis
+    ] where not Self.mut:
+        """Returns one partition of the tensor after splitting along an axis.
+
+        The returned partition is immutable. Call
+        `as_immut().split(count, idx)` on a mutable tensor before splitting.
+
+        The base partition size is `align_up(ceildiv(axis_dim, count),
+        split_alignment)`. This can make the first `count - 1` partitions
+        larger than `ceildiv(axis_dim, count)`; each returned view is clamped
+        to the remaining elements. If the aligned partition offsets exhaust
+        the axis before all `count` partitions are assigned, trailing
+        partitions have size 0.
+
+        Parameters:
+            axis: The axis along which to split.
+            split_alignment: Alignment for the partition size.
+
+        Args:
+            count: The number of partitions.
+            idx: The partition index to return.
+
+        Returns:
+            An immutable `TileTensor` view whose split axis has runtime shape.
+
+        See also:
+            Use `split[count]()` to split into a `StaticTuple` of equal-sized
+            views when the partition count is known at compile time.
+        """
+        comptime assert (
+            axis >= 0 and axis < Self.rank
+        ), "TileTensor.split axis out of bounds"
+        comptime assert Self.LayoutType._shape_types[
+            axis
+        ].is_value, "TileTensor.split only supports scalar dimensions"
+        comptime assert (
+            Self.LayoutType._shape_types[axis].is_static_value
+            and Self.LayoutType._stride_types[axis].is_static_value
+        ), "TileTensor.split requires static shape and stride on the split axis"
+        debug_assert(count > 0, "split requires count > 0")
+        debug_assert(idx >= 0 and idx < count, "split idx out of range")
+
+        comptime axis_dim = Self.LayoutType._shape_types[axis].static_value
+        comptime axis_stride = Self.LayoutType._stride_types[axis].static_value
+
+        var axis_partition_dim = align_up(
+            ceildiv(axis_dim, count), split_alignment
+        )
+        var raw_remaining = axis_dim - idx * axis_partition_dim
+        var partition_dim = max(0, min(axis_partition_dim, raw_remaining))
+        comptime NewShapeTypes = _DynamicSplitShape[
+            Self.linear_idx_type, axis, Self.LayoutType._shape_types
+        ]()
+        var new_shape = Coord[*NewShapeTypes]()
+
+        comptime for i in range(Self.rank):
+            comptime NewShapeType = NewShapeTypes[i]
+            comptime if i == axis:
+                UnsafePointer(to=new_shape[i]).init_pointee_copy(
+                    rebind[NewShapeType](
+                        Scalar[Self.linear_idx_type](partition_dim)
+                    )
+                )
+            else:
+                UnsafePointer(to=new_shape[i]).init_pointee_copy(
+                    rebind[NewShapeType](self.layout.shape[i]())
+                )
+
+        return Self.DynamicSplitType[axis](
+            self.ptr.as_immutable() + idx * axis_partition_dim * axis_stride,
+            Layout(new_shape, self.layout.stride_coord()),
+        )
+
+    @always_inline("nodebug")
+    def _split_layout[
+        count: Int,
+        axis: Int = 0,
+    ](self) -> Layout[
+        _StaticSplitShape[count, axis, Self.LayoutType._shape_types](),
+        Self.LayoutType._stride_types,
+    ]:
+        comptime NewShapeTypes = _StaticSplitShape[
+            count, axis, Self.LayoutType._shape_types
+        ]()
+        var new_shape = Coord[*NewShapeTypes]()
+
+        comptime for i in range(Self.rank):
+            comptime NewShapeType = NewShapeTypes[i]
+            UnsafePointer(to=new_shape[i]).init_pointee_copy(NewShapeType())
+
+        return Layout(new_shape, self.layout.stride_coord())
+
     @always_inline
     def slice[
         *slices: ContiguousSlice
@@ -1714,7 +1917,7 @@ struct TileTensor[
         - The step size must be 1 for all dimensions (no gaps allowed).
         - Slice bounds are not checked at runtime; accessing out-of-bounds
             indices will result in undefined behavior.
-        - Shape and stride types are converted to RuntimeInt in the sliced
+        - Shape and stride types are converted to Scalar in the sliced
             tensor, even if the original tensor had ComptimeInt dimensions.
             This is necessary because we can't change ComptimeInt[4] to
             ComptimeInt[2] in the type system.
@@ -1733,7 +1936,7 @@ struct TileTensor[
             offset += Scalar[Self.linear_idx_type](slice_start) * stride_i
 
         # Build new shape tuple with runtime types
-        # Even though slice bounds are compile-time known, we use RuntimeInt
+        # Even though slice bounds are compile-time known, we use Scalar
         # because we can't change ComptimeInt[4] to ComptimeInt[2] in the type system
         comptime NewShapeTypes = _Slice[slices, Self.LayoutType._shape_types]()
         var new_shape = Coord[*NewShapeTypes]()
@@ -1788,7 +1991,7 @@ struct TileTensor[
             slices: Variadic (start, end) tuples, one per dimension.
 
         Returns:
-            A view into the sliced region with RuntimeInt shape.
+            A view into the sliced region with Scalar shape.
 
         Example:
             ```mojo
@@ -1817,9 +2020,7 @@ struct TileTensor[
 
         comptime for i in range(Self.rank):
             new_shape[i] = rebind[NewShapeTypes[i]](
-                RuntimeInt[Self.linear_idx_type](
-                    Scalar[Self.linear_idx_type](slices[i][1] - slices[i][0])
-                )
+                Scalar[Self.linear_idx_type](slices[i][1] - slices[i][0])
             )
 
         var new_layout = Layout(new_shape, self.layout.stride_coord())
@@ -1854,6 +2055,7 @@ struct TileTensor[
             ],
         ],
         address_space=Self.address_space,
+        linear_idx_type=Self.linear_idx_type,
         element_size=Coord[*_IntToComptimeInt[*vector_shape]].static_product,
     ]
     """Type alias for vectorized tensor types.
@@ -2075,7 +2277,7 @@ struct TileTensor[
         # Reshape with runtime-determined dimensions
         var rows = 2
         var cols = 6
-        var reshaped = tensor.reshape(Coord(Idx(rows), Idx(cols)))
+        var reshaped = tensor.reshape(Coord(rows, cols))
         ```
 
         Performance:
@@ -2149,19 +2351,19 @@ struct TileTensor[
     """Type alias for dynamic tensor types.
 
     Parameters:
-        dyn_dtype: The data type for RuntimeInt values in the dynamic tensor.
+        dyn_dtype: The data type for Scalar values in the dynamic tensor.
     """
 
     @always_inline("nodebug")
     def make_dynamic[dyn_dtype: DType](self) -> Self.DynamicType[dyn_dtype]:
-        """Convert all elements in shape and stride to RuntimeInt[dyn_dtype].
+        """Convert all elements in shape and stride to Scalar[dyn_dtype].
 
         Parameters:
-            dyn_dtype: The data type for the resulting RuntimeInt values.
+            dyn_dtype: The data type for the resulting Scalar values.
 
         Returns:
             A new TileTensor where all elements in shape and stride
-            are converted to RuntimeInt[dyn_dtype].
+            are converted to Scalar[dyn_dtype].
 
         Examples:
             ```mojo
@@ -2170,7 +2372,7 @@ struct TileTensor[
             var storage = InlineArray[Float32, 12](uninitialized=True)
             var tensor = TileTensor(Span(storage), row_major[3, 4]())
             var dynamic = tensor.make_dynamic[DType.int64]()
-            # dynamic has RuntimeInt[DType.int64] for all shape/stride dimensions
+            # dynamic has Int64 for all shape/stride dimensions
             ```
         """
         return Self.DynamicType[dyn_dtype](
@@ -2644,6 +2846,7 @@ def stack_allocation[
     //,
     dtype: DType,
     address_space: AddressSpace = AddressSpace.GENERIC,
+    alignment: Int = align_of[dtype](),
 ](var layout: LayoutType) -> TileTensor[
     dtype,
     LayoutType,
@@ -2660,6 +2863,12 @@ def stack_allocation[
         LayoutType: The layout type (inferred from layout argument).
         dtype: The data type of tensor elements.
         address_space: Memory address space (default: GENERIC).
+        alignment: Allocation alignment in bytes (default: natural type
+            alignment from `align_of[dtype]()`). Pass an explicit value
+            when downstream loads/stores require larger alignment (for
+            example, AMD `ds_read_b128` requires 16 B, and sub-block
+            swizzles can require alignment up to the sub-block size).
+            Forwarded to the underlying `std.memory.stack_allocation`.
 
     Args:
         layout: The layout instance defining shape and strides.
@@ -2679,6 +2888,7 @@ def stack_allocation[
         _std_stack_allocation[
             Coord[*LayoutType._shape_types].static_product,
             Scalar[dtype],
+            alignment=alignment,
             address_space=address_space,
         ](),
         layout,
@@ -2691,9 +2901,7 @@ def _pretty_print_elementwise[W: Writer](tensor: TileTensor, mut writer: W):
     writer.write("[")
     for i in range(n):
         var offset = tensor.layout[linear_idx_type=tensor.linear_idx_type](
-            RuntimeInt[tensor.linear_idx_type](
-                Scalar[tensor.linear_idx_type](i)
-            )
+            Scalar[tensor.linear_idx_type](i)
         )
         writer.write(tensor.ptr.load[width=tensor.element_size](offset))
         if i < n - 1:
@@ -2802,20 +3010,16 @@ def _distribute[
     comptime for i in range(NewShapeTypes.size):
         comptime if not NewShapeTypes[i].is_static_value:
             UnsafePointer(to=shape[i]).init_pointee_copy(
-                rebind[NewShapeTypes[i]](
-                    Idx(
-                        Int(data_layout_tensor.layout.shape_coord()[i].value())
-                        // thread_layout.shape_types[i].static_value
-                    )
+                _coerce_dynamic[NewShapeTypes[i]](
+                    Int(data_layout_tensor.layout.shape_coord()[i].value())
+                    // thread_layout.shape_types[i].static_value
                 )
             )
         comptime if not NewStrideTypes[i].is_static_value:
             UnsafePointer(to=stride[i]).init_pointee_copy(
-                rebind[NewStrideTypes[i]](
-                    Idx(
-                        Int(data_layout_tensor.layout.stride_coord()[i].value())
-                        * thread_layout.shape_types[i].static_value
-                    )
+                _coerce_dynamic[NewStrideTypes[i]](
+                    Int(data_layout_tensor.layout.stride_coord()[i].value())
+                    * thread_layout.shape_types[i].static_value
                 )
             )
 
@@ -2913,20 +3117,16 @@ def _distribute_with_offset[
     comptime for i in range(NewShapeTypes.size):
         comptime if not NewShapeTypes[i].is_static_value:
             UnsafePointer(to=shape[i]).init_pointee_copy(
-                rebind[NewShapeTypes[i]](
-                    Idx(
-                        Int(data_layout_tensor.layout.shape_coord()[i].value())
-                        // thread_layout.shape_types[i].static_value
-                    )
+                _coerce_dynamic[NewShapeTypes[i]](
+                    Int(data_layout_tensor.layout.shape_coord()[i].value())
+                    // thread_layout.shape_types[i].static_value
                 )
             )
         comptime if not NewStrideTypes[i].is_static_value:
             UnsafePointer(to=stride[i]).init_pointee_copy(
-                rebind[NewStrideTypes[i]](
-                    Idx(
-                        Int(data_layout_tensor.layout.stride_coord()[i].value())
-                        * thread_layout.shape_types[i].static_value
-                    )
+                _coerce_dynamic[NewStrideTypes[i]](
+                    Int(data_layout_tensor.layout.stride_coord()[i].value())
+                    * thread_layout.shape_types[i].static_value
                 )
             )
 
@@ -3269,6 +3469,7 @@ def _vectorize[
     ],
     data_layout_tensor.origin,
     address_space=data_layout_tensor.address_space,
+    linear_idx_type=data_layout_tensor.linear_idx_type,
     element_size=Coord[*vector_shape_types].static_product,
 ]:
     """Create a vectorized view of a TileTensor.
@@ -3350,6 +3551,7 @@ def _vectorize[
         ResultLayout,
         data_layout_tensor.origin,
         address_space=data_layout_tensor.address_space,
+        linear_idx_type=data_layout_tensor.linear_idx_type,
         element_size=Coord[*vector_shape_types].static_product,
     ](data_layout_tensor.ptr, new_layout)
 
@@ -3377,14 +3579,14 @@ comptime _ToRuntimeMapper[
     dtype: DType,
     element_types: TypeList[Trait=CoordLike, _],
     idx: Int,
-] = RuntimeInt[dtype]
-"""Convert shape types to RuntimeInt for slicing operations.
+] = Scalar[dtype]
+"""Convert shape types to Scalar for slicing operations.
 
 When slicing, compile-time dimensions become runtime dimensions because
 we can't change ComptimeInt[4] to ComptimeInt[2] in the type system.
 
 Parameters:
-    dtype: The default data type to use for RuntimeInt conversions.
+    dtype: The default data type to use for Scalar conversions.
     element_types: The variadic sequence of types to convert (wrapped in values).
     idx: The current index being processed.
 """
@@ -3403,6 +3605,45 @@ comptime _Slice[
     element_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     element_types.size, _SliceTabulator[slices, element_types, _]
+]
+
+
+comptime _StaticSplitShapeTabulator[
+    count: Int,
+    axis: Int,
+    element_types: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = (
+    ComptimeInt[element_types[idx].static_value // count] if idx
+    == axis else element_types[idx]
+)
+
+
+comptime _StaticSplitShape[
+    count: Int,
+    axis: Int,
+    element_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    element_types.size,
+    _StaticSplitShapeTabulator[count, axis, element_types, _],
+]
+
+
+comptime _DynamicSplitShapeTabulator[
+    dtype: DType,
+    axis: Int,
+    element_types: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = Scalar[dtype] if idx == axis else element_types[idx]
+
+
+comptime _DynamicSplitShape[
+    dtype: DType,
+    axis: Int,
+    element_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    element_types.size,
+    _DynamicSplitShapeTabulator[dtype, axis, element_types, _],
 ]
 
 # ===-----------------------------------------------------------------------===#
@@ -3458,11 +3699,11 @@ False otherwise. For row-major, stride[i] = product(shape[i+1:]).
 
 
 comptime _FlatLeadingLayout[L: TensorLayout] = RowMajorLayout[
-    *Coord[RuntimeInt[DType.int64], L._shape_types[L.rank - 1]].element_types
+    *Coord[Int64, L._shape_types[L.rank - 1]].element_types
 ]
 """Layout type after merging leading two dims: (A, B, C) -> (A*B, C).
 
-The merged dimension is always RuntimeInt. The last dimension preserves
+The merged dimension is always Scalar. The last dimension preserves
 its original static/dynamic type.
 """
 
@@ -3476,9 +3717,7 @@ def flatten_leading[
     tensor: TileTensor[dtype=dtype, LayoutType=layout, ...],
 ) -> tensor.ViewType[
     RowMajorLayout[
-        *Coord[
-            RuntimeInt[DType.int64], layout._shape_types[layout.rank - 1]
-        ].element_types
+        *Coord[Int64, layout._shape_types[layout.rank - 1]].element_types
     ]
 ]:
     """Merge the first two dimensions of a rank-3 TileTensor: (A, B, C) -> (A*B, C).
@@ -3500,14 +3739,11 @@ def flatten_leading[
         A rank-2 TileTensor where dim[0] = old dim[0] * dim[1].
     """
     comptime assert type_of(tensor).rank == 3, "flatten_leading requires rank 3"
-    var merged = RuntimeInt[DType.int64](
-        Int64(tensor.layout.shape[0]().value())
-        * Int64(tensor.layout.shape[1]().value())
+    var merged = Int64(tensor.layout.shape[0]().value()) * Int64(
+        tensor.layout.shape[1]().value()
     )
     comptime ResultLayout = RowMajorLayout[
-        *Coord[
-            RuntimeInt[DType.int64], layout._shape_types[layout.rank - 1]
-        ].element_types
+        *Coord[Int64, layout._shape_types[layout.rank - 1]].element_types
     ]
     return rebind[tensor.ViewType[ResultLayout]](
         tensor.reshape(row_major(Coord(merged, tensor.layout.shape[2]())))
@@ -3534,7 +3770,7 @@ comptime LTToTTLayout[lt_layout: _LegacyLayout] = Layout[
 """Derive a TileTensor Layout from a legacy Layout.
 
 Known dimensions become ComptimeInt, UNKNOWN_VALUE dimensions become
-RuntimeInt.  Hierarchical layouts (e.g. from ``tile_to_shape``) are
+Scalar.  Hierarchical layouts (e.g. from ``tile_to_shape``) are
 collapsed via ``product_each`` so each mode becomes a single value.
 
 Parameters:
@@ -3560,13 +3796,21 @@ def lt_to_tt[
     """Convert a LayoutTensor to a TileTensor.
 
     Static dimensions (known at compile time) are preserved as ComptimeInt.
-    Dynamic dimensions (UNKNOWN_VALUE) become RuntimeInt, filled from the
+    Dynamic dimensions (UNKNOWN_VALUE) become Scalar, filled from the
     LayoutTensor's runtime layout.  The address space is preserved from the
     source LayoutTensor.  Works for any flat rank.
 
     By default the TileTensor layout is derived automatically from the
     LayoutTensor's legacy layout.  Pass an explicit ``ResultLayout`` to
     override which dimensions are static vs runtime.
+
+    The result's `linear_idx_type` is the `TileTensor` default
+    (`int32` for SHARED/CONSTANT or small static cosize, `int64`
+    otherwise). This may differ from `lt.linear_idx_type` -- in
+    particular, when the parent `LayoutTensor` has a runtime dimension
+    in GENERIC space, the parent uses `int64` but the converted tile
+    (with all dims static after tiling) defaults to `int32`. To force
+    the result to match `lt.linear_idx_type`, use `lt_to_tt_idx`.
 
     Parameters:
         dtype: Element type of the tensor.
@@ -3605,6 +3849,84 @@ def lt_to_tt[
     ](unsafe_from_address=Int(lt.ptr))
     return TileTensor[
         dtype, ConcLayout, lt.origin, address_space=lt.address_space
+    ](
+        ptr=ptr,
+        layout=ConcLayout(shape_c, stride_c),
+    )
+
+
+@always_inline
+def lt_to_tt_idx[
+    dtype: DType,
+    lt_layout: _LegacyLayout,
+    //,
+    ResultLayout: TensorLayout = LTToTTLayout[lt_layout],
+    linear_idx_type: DType = DType.int64,
+](lt: _LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
+    dtype,
+    Layout[
+        shape_types=ResultLayout._shape_types,
+        stride_types=ResultLayout._stride_types,
+    ],
+    lt.origin,
+    address_space=lt.address_space,
+    linear_idx_type=linear_idx_type,
+]:
+    """Like `lt_to_tt` but with an explicit `linear_idx_type` override.
+
+    Use this variant when the default `TileTensor` index-type heuristic
+    (`int32` for SHARED/CONSTANT or small static cosize, `int64`
+    otherwise) does not match what callers downstream want. The most
+    common reason is preserving `int64` indexing for DRAM tiles derived
+    from a tensor with runtime dimensions: the parent `LayoutTensor`
+    uses `int64` for its address arithmetic, but a tile coming out of
+    `lt_to_tt` (whose own layout is fully static post-tiling) defaults
+    to `int32` -- forcing `_distribute()` to do narrow-then-widen index
+    arithmetic for every offset, which is measurable in tight inner
+    loops.
+
+    Parameters:
+        dtype: Element type of the tensor.
+        lt_layout: The legacy Layout of the LayoutTensor.
+        ResultLayout: The target TileTensor layout type.
+        linear_idx_type: Integer type used for the result's offset
+            arithmetic. Defaults to `DType.int64`.
+
+    Args:
+        lt: The LayoutTensor to convert.
+
+    Returns:
+        A TileTensor with the same data and the requested
+        `linear_idx_type`.
+    """
+    comptime ConcLayout = Layout[
+        shape_types=ResultLayout._shape_types,
+        stride_types=ResultLayout._stride_types,
+    ]
+    comptime rank = ConcLayout.rank
+    var shape_c = Coord[*ConcLayout.shape_types]()
+    var stride_c = Coord[*ConcLayout.stride_types]()
+
+    comptime for i in range(rank):
+        comptime if not shape_c.element_types[i].is_static_value:
+            shape_c[i] = rebind[shape_c.element_types[i]](
+                Scalar[DType.int64](lt.runtime_layout.shape.value[i])
+            )
+
+        comptime if not stride_c.element_types[i].is_static_value:
+            stride_c[i] = rebind[stride_c.element_types[i]](
+                Scalar[DType.int64](lt.runtime_layout.stride.value[i])
+            )
+
+    var ptr = UnsafePointer[
+        Scalar[dtype], lt.origin, address_space=lt.address_space
+    ](unsafe_from_address=Int(lt.ptr))
+    return TileTensor[
+        dtype,
+        ConcLayout,
+        lt.origin,
+        address_space=lt.address_space,
+        linear_idx_type=linear_idx_type,
     ](
         ptr=ptr,
         layout=ConcLayout(shape_c, stride_c),

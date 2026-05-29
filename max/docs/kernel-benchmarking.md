@@ -67,7 +67,7 @@ with `kbench`.
     ```
 
 1. Verify your environment is set up correctly by running the following command
-    from the top-level `modular` directory:
+   from the top-level `modular` directory:
 
     ```bash
     ./bazelw run //max/kernels/benchmarks/autotune:kbench -- --help

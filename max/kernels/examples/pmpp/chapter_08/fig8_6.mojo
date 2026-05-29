@@ -119,7 +119,7 @@ def stencil_3d(
     var grid_dim_z = ceildiv(N, BLOCK_DIM)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[stencil_kernel](
+    ctx.enqueue_function[stencil_kernel](
         d_in,
         d_out,
         N,

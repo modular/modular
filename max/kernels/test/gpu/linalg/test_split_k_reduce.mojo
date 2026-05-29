@@ -41,16 +41,18 @@ def test_split_k_reduce_rank3[
         N,
     )
 
-    var c_host = alloc[Scalar[c_type]](M * N)
-    var c_host_ref = alloc[Scalar[c_type]](M * N)
+    var c_host = ctx.enqueue_create_host_buffer[c_type](M * N)
+    var c_host_ref = ctx.enqueue_create_host_buffer[c_type](M * N)
 
     # Random buffer for host computation.
-    var epilogue_data_host = alloc[Scalar[c_type]](M * N)
-    rand[c_type](epilogue_data_host, M * N)
+    var epilogue_data_host = ctx.enqueue_create_host_buffer[c_type](M * N)
+    rand[c_type](epilogue_data_host.unsafe_ptr(), M * N)
 
     var work_space_size = num_partitions * M * N
-    var work_space_host = alloc[Scalar[work_space_type]](work_space_size)
-    rand[work_space_type](work_space_host, work_space_size)
+    var work_space_host = ctx.enqueue_create_host_buffer[work_space_type](
+        work_space_size
+    )
+    rand[work_space_type](work_space_host.unsafe_ptr(), work_space_size)
 
     # Naive host reduction. The accumulation is in FP32 since CPU may not have
     # native BF16 instructions.
@@ -73,34 +75,35 @@ def test_split_k_reduce_rank3[
     # Create TileTensors
     var c = TileTensor(
         c_device,
-        row_major(Coord(Idx(Int(M)), Idx(Int(N)))),
+        row_major(Coord(Int(M), Int(N))),
     )
     var work_space = TileTensor(
         work_space_device,
-        row_major(Coord(Idx(Int(num_partitions)), Idx(Int(M)), Idx(Int(N)))),
+        row_major(Coord(Int(num_partitions), Int(M), Int(N))),
     )
     var epilogue_buffer = TileTensor(
         epilogue_data_device,
-        row_major(Coord(Idx(Int(M)), Idx(Int(N)))),
+        row_major(Coord(Int(M), Int(N))),
     )
 
     @parameter
     @always_inline
     @__copy_capture(c, epilogue_buffer)
     def epilogue_fn[
-        _dtype: DType, _width: Int, *, alignment: Int = 1
+        _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, _width]) capturing -> None:
         var another_val = rebind[SIMD[_dtype, _width]](
-            epilogue_buffer.load[width=_width](Coord(Idx(idx[0]), Idx(idx[1])))
+            epilogue_buffer.load[width=_width](Coord(idx[0], idx[1]))
         )
         c.store(
-            Coord(Idx(idx[0]), Idx(idx[1])),
+            Coord(idx[0], idx[1]),
             rebind[SIMD[c_type, _width]](val + another_val),
         )
 
     split_k_reduce[elementwise_lambda_fn=epilogue_fn](c, work_space, ctx)
 
     ctx.enqueue_copy(c_host, c_device)
+    ctx.synchronize()
 
     comptime rtol = 1e-4 if c_type == DType.float32 else 1e-2
     for i in range(M * N):
@@ -112,11 +115,6 @@ def test_split_k_reduce_rank3[
                 abs((c_host[i] - c_host_ref[i]) / c_host_ref[i]),
             )
         assert_almost_equal(c_host[i], c_host_ref[i], rtol=rtol)
-
-    c_host.free()
-    c_host_ref.free()
-    epilogue_data_host.free()
-    work_space_host.free()
 
 
 def main() raises:

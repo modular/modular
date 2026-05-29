@@ -26,6 +26,7 @@ from layout import Layout, LayoutTensor, RuntimeLayout
 from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,
+    ScalarArray,
     get_defined_shape,
     int_list_to_tuple,
 )
@@ -41,7 +42,7 @@ def align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
 
 
 def run_reduce[
-    reduce_fn: def[dtype: DType, width: Int](
+    reduce_fn: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
@@ -62,13 +63,10 @@ def run_reduce[
     var cb_in = CacheBustingBuffer[dtype](in_size, align, ctx, cache_busting)
 
     # Allocate & initialize host data
-    var expected_vals = alloc[Scalar[dtype]](out_size, alignment=align)
+    var expected_vals = ScalarArray[dtype](count=out_size, alignment=align)
 
-    var in_host = alloc[Scalar[dtype]](cb_in.alloc_size())
-    var res_host = alloc[Scalar[dtype]](out_size)
-
-    for i in range(cb_in.alloc_size()):
-        in_host[i] = 1
+    var in_host = List(length=cb_in.alloc_size(), fill=Scalar[dtype](1))
+    var res_host = List(length=out_size, fill=Scalar[dtype](0))
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
@@ -86,7 +84,7 @@ def run_reduce[
     @always_inline
     @parameter
     def reduce_wrapper[
-        dtype: DType, width: Int, reduction_idx: Int
+        dtype: DType, width: SIMDSize, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
@@ -95,7 +93,7 @@ def run_reduce[
     @__copy_capture(res_device)
     @parameter
     def output_fn[
-        _dtype: DType, width: Int, _rank: Int
+        _dtype: DType, width: SIMDSize, _rank: Int
     ](
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
@@ -160,15 +158,13 @@ def run_reduce[
     _ = cb_in
     _ = res_device
 
-    in_host.free()
-    res_host.free()
-    expected_vals.free()
+    _ = in_host^
 
 
 @parameter
 def reduce_add[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return x + y
 

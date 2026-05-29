@@ -62,7 +62,7 @@ def _cubic_weight(x: Float32) -> Float32:
 # ---------------------------------------------------------------------------
 
 
-@__name(t"learnable_2d_interp_pos_emb_{dtype}", mangle=True)
+@__name(t"learnable_2d_interp_pos_emb_{dtype}")
 def _gpu_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
@@ -229,7 +229,7 @@ def learnable_2d_interp_pos_emb[
         time_weight.LayoutType,
         ImmutOrigin(time_weight.origin),
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         x.as_immut(),
         weight.as_immut(),

@@ -54,11 +54,11 @@ def main() raises:
     var N_NORMED = 1536
     var N_UNNORMED = N - N_NORMED
 
-    comptime a_shape = row_major(Coord(Idx[1](), Idx[7168]()))
-    comptime b_shape = row_major(Coord(Idx[2112](), Idx[7168]()))
-    comptime normed_shape = row_major(Coord(Idx[1](), Idx[1536]()))
-    var unnormed_shape = row_major(Coord(Idx(1), Idx(N_UNNORMED)))
-    comptime gamma_shape = row_major(Idx[1536]())
+    comptime a_shape = row_major(Coord(Idx[1], Idx[7168]))
+    comptime b_shape = row_major(Coord(Idx[2112], Idx[7168]))
+    comptime normed_shape = row_major(Coord(Idx[1], Idx[1536]))
+    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime gamma_shape = row_major(Idx[1536])
 
     var num_blocks = (N + tile_n - 1) // tile_n
 
@@ -131,8 +131,9 @@ def main() raises:
         )
         ctx.synchronize()
 
-        var trace_host = alloc[Scalar[DType.uint64]](
-            num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK
+        var trace_host = List(
+            length=num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK,
+            fill=Scalar[DType.uint64](0),
         )
         ctx.enqueue_copy(trace_host, trace_buf)
         ctx.synchronize()
@@ -158,5 +159,4 @@ def main() raises:
                 t"{Int(trace_host[base + 9])}"
             )
         print("TRACE_CSV_END")
-
-        trace_host.free()
+        _ = trace_host^

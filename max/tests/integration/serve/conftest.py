@@ -20,18 +20,18 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
-from max.interfaces import (
-    PipelineTask,
-    RequestID,
-    TextGenerationInputs,
-    TextGenerationOutput,
-)
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
     PipelineRuntimeConfig,
+)
+from max.pipelines.modeling.types import (
+    PipelineTask,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
 )
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import Settings
@@ -40,7 +40,6 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.telemetry.common import configure_metrics
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
@@ -61,7 +60,6 @@ def echo_factory():  # noqa: ANN201
 @pytest.fixture
 def mock_pipeline_config() -> PipelineConfig:
     runtime = PipelineRuntimeConfig.model_construct(
-        zmq_endpoint_base=generate_zmq_ipc_path(),
         max_batch_size=1,
     )
     pipeline_config = PipelineConfig.model_construct(

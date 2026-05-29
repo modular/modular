@@ -41,7 +41,7 @@ from std.utils.index import Index
 
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
     dtype, width
 ]
@@ -50,7 +50,7 @@ comptime epilogue_func_type = def[
 @parameter
 @always_inline
 def epilogue_test_fn[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](
     idx: IndexList[2],
     dim_space: IndexList[2],
@@ -112,31 +112,31 @@ def test[
     var c_size = m * n
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[dtype]](a_size)
-    var b_host_ptr = alloc[Scalar[dtype]](b_size)
-    var c_host_ptr = alloc[Scalar[dtype]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(m), Idx[K.value()]())),
+        row_major(Coord(m, Idx[K.value()])),
     )
     var b_host = TileTensor(
         b_host_ptr,
         row_major(
             Coord(
-                Idx[N.value() if transpose_b else K.value()](),
-                Idx[K.value() if transpose_b else N.value()](),
+                Idx[N.value() if transpose_b else K.value()],
+                Idx[K.value() if transpose_b else N.value()],
             )
         ),
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx(m), Idx[N.value()]())),
+        row_major(Coord(m, Idx[N.value()])),
     )
     var c_host_ref = TileTensor(
         c_host_ref_ptr,
-        row_major(Coord(Idx(m), Idx[N.value()]())),
+        row_major(Coord(m, Idx[N.value()])),
     )
 
     # Device allocations
@@ -147,24 +147,24 @@ def test[
 
     var a_device = TileTensor(
         a_device_buffer,
-        row_major(Coord(Idx(m), Idx[K.value()]())),
+        row_major(Coord(m, Idx[K.value()])),
     )
     var b_device = TileTensor(
         b_device_buffer,
         row_major(
             Coord(
-                Idx[N.value() if transpose_b else K.value()](),
-                Idx[K.value() if transpose_b else N.value()](),
+                Idx[N.value() if transpose_b else K.value()],
+                Idx[K.value() if transpose_b else N.value()],
             )
         ),
     )
     var c_device = TileTensor(
         c_device_buffer,
-        row_major(Coord(Idx(m), Idx[N.value()]())),
+        row_major(Coord(m, Idx[N.value()])),
     )
     var c_device_ref = TileTensor(
         c_device_ref_buffer,
-        row_major(Coord(Idx(m), Idx[N.value()]())),
+        row_major(Coord(m, Idx[N.value()])),
     )
 
     # Initialize matmul operands
@@ -192,7 +192,7 @@ def test[
     @__copy_capture(c_device, m, n)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -309,10 +309,6 @@ def test[
             assert_almost_equal(actual, expect, rtol=rtol)
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = a_device_buffer^
     _ = b_device_buffer^
     _ = c_device_buffer^

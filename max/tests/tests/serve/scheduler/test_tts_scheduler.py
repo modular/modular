@@ -23,27 +23,27 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import (
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.pipelines.core import TTSContext
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.lib.audio_generator_pipeline import (
+    AudioGeneratorPipelineType,
+)
+from max.pipelines.modeling.types import (
     AudioGenerationInputs,
     AudioGenerationOutput,
     BatchType,
     GenerationStatus,
-    MAXPushQueue,
     RequestID,
-    SchedulerResult,
     TokenBuffer,
 )
-from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
-from max.pipelines.core import TTSContext
-from max.pipelines.lib.audio_generator_pipeline import (
-    AudioGeneratorPipelineType,
-)
+from max.serve.queue import MAXPushQueue
 from max.serve.scheduler import AudioGenerationScheduler
 from max.serve.scheduler.audio_generation_scheduler import (
     AudioGenerationSchedulerConfig,
     AudioGenerationSchedulerOutput,
 )
+from max.serve.scheduler_result import SchedulerResult
 
 
 def rand(length: int) -> np.ndarray:

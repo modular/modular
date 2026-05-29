@@ -48,11 +48,11 @@ def run_rms_norm_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
 
-    rand[dtype](data_h, rows * cols)
+    rand[dtype](data_h.as_span())
 
     for i in range(cols):
         gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
@@ -83,7 +83,7 @@ def run_rms_norm_gpu[
     @__copy_capture(data_buf)
     @parameter
     def identity_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(Coord(coords))
         data_buf.raw_store[width=width, alignment=alignment](idx, val)
@@ -96,8 +96,8 @@ def run_rms_norm_gpu[
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h + r * cols,
-            row_major(Idx(cols)),
+            data_h.unsafe_ptr() + r * cols,
+            row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
         for c in range(cols):
@@ -107,10 +107,6 @@ def run_rms_norm_gpu[
 
     _ = data_d
     _ = gamma_d
-
-    data_h.free()
-    res.free()
-    gamma_h.free()
 
 
 def main() raises:

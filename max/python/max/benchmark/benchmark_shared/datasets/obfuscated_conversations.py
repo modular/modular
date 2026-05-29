@@ -87,7 +87,7 @@ class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
         for i, conversation_idx in enumerate(conversation_indices):
             item = decoded_lines[conversation_idx]
             prompt = item.messages
-            prompt_len = len(tokenizer(prompt).input_ids)
+            prompt_len = len(tokenizer.encode(prompt))
             sampled_requests.append(
                 SampledRequest(
                     prompt_formatted=prompt,

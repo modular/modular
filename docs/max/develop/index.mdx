@@ -12,16 +12,16 @@ end-to-end inference pipeline.
 
 You'll see two sets of Python imports in this guide.
 
-The fundamentals pages use [`max.experimental`](/max/api/python/experimental),
-an eager, PyTorch-like API that's easy to explore interactively. The
-`max.experimental` name is temporary: these APIs are being validated and will
-move to new namespaces when they graduate.
-
 The model development pages (modules, architectures, pipelines) use
 [`max.graph`](/max/api/python/graph) and [`max.nn`](/max/api/python/nn), the
-stable APIs that all MAX production architectures use today. For more
-information on both programming styles and when to use each, see
-[Eager execution](/max/develop/eager-execution/).
+stable APIs that every MAX production architecture uses today. Start here if
+you're building a model to serve.
+
+The [Eager fundamentals](/max/develop/eager-execution/) section at the end of
+this guide covers [`max.experimental`](/max/api/python/experimental), an
+eager, PyTorch-like API that's useful for interactive exploration but isn't
+ready for production yet. The `max.experimental` name is temporary: these
+APIs will move to new namespaces when they graduate.
 
 ## What you use vs. what you write
 

@@ -43,9 +43,7 @@ from std.sys.info import simd_width_of
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(512))
 )
-@__name(
-    t"dequant_mxfp4_to_fp8_{out_dtype}_{scales_dtype}_{in_dtype}", mangle=True
-)
+@__name(t"dequant_mxfp4_to_fp8_{out_dtype}_{scales_dtype}_{in_dtype}")
 def _dequant_mxfp4_to_fp8_kernel[
     out_dtype: DType,
     scales_dtype: DType,
@@ -88,7 +86,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # Load packed uint8 bytes
                 var packed_byte_col = global_col_idx // 2
                 var packed_bytes = input.load[BYTES_PER_THREAD](
-                    Coord(Idx(global_row_idx), Idx(packed_byte_col))
+                    Coord(global_row_idx, packed_byte_col)
                 )
 
                 # Unpack to float32 via E2M1 lookup table.
@@ -102,7 +100,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # Load the E8M0 scale from 2D layout
                 var scale_col = global_col_idx // SF_VECTOR_SIZE
                 var scale_e8m0 = rebind[Scalar[scales_dtype]](
-                    scales.load(Coord(Idx(global_row_idx), Idx(scale_col)))
+                    scales.load(Coord(global_row_idx, scale_col))
                 )
 
                 # Convert E8M0 to float32 using stdlib SIMD cast.
@@ -117,7 +115,7 @@ def _dequant_mxfp4_to_fp8_kernel[
 
                 # Store output
                 output.store[width=ELEMENTS_PER_THREAD](
-                    Coord(Idx(global_row_idx), Idx(global_col_idx)),
+                    Coord(global_row_idx, global_col_idx),
                     out_values,
                 )
 
@@ -211,7 +209,7 @@ def dequant_mxfp4[
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         input_tt,
         scales_tt,

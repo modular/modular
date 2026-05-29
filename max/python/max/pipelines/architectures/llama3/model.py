@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 from max.driver import (
@@ -27,9 +27,9 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -131,6 +131,8 @@ class LlamaModelBase(
 ):
     """Base Llama pipeline model implementation."""
 
+    model_config_cls: ClassVar[type[Any]] = Llama3Config
+
     model: Model
     """Compiled and initialized model ready for inference."""
 
@@ -173,25 +175,6 @@ class LlamaModelBase(
         self._execution_input_buffers: dict[
             tuple[int, int], tuple[Buffer, Buffer, Buffer, Buffer]
         ] = {}
-
-    # TODO(zheng): Remove these wrappers once get_kv_params doesn't have to be
-    # called from PipelineModel's __init__ method.
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Llama3Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Llama3Inputs)

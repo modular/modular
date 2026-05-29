@@ -119,16 +119,14 @@ def execute_kv_cache_ragged_rope[
         Int(total_seq_len) * num_q_heads * head_dim
     )
     var output_device = ctx.enqueue_create_buffer[dtype](len(q_device))
-    var q_layout = row_major(
-        (Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())
-    )
+    var q_layout = row_major((total_seq_len, Idx[num_q_heads], Idx[head_dim]))
     with q_device.map_to_host() as q_host:
         var q_tensor = TileTensor(q_host, q_layout)
         random(q_tensor)
     ctx.enqueue_copy(output_device, q_device)
     var output_device_tensor = TileTensor(
         output_device,
-        row_major(Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]()),
+        row_major(total_seq_len, Idx[num_q_heads], Idx[head_dim]),
     )
 
     var kv_block_shape = IndexList[6](
@@ -215,9 +213,7 @@ def execute_kv_cache_ragged_rope[
                 target="gpu",
             ](
                 TileTensor(q_device, q_layout),
-                TileTensor(
-                    input_row_offsets_device, row_major(Idx(batch_size + 1))
-                ),
+                TileTensor(input_row_offsets_device, row_major(batch_size + 1)),
                 kv_collection_device,
                 TileTensor(freqs_cis_table_device, freqs_cis_table_layout),
                 None,

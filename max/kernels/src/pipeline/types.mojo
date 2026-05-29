@@ -29,16 +29,21 @@ from std.collections import List
 struct ResourceKind(Equatable, ImplicitlyCopyable, Movable, Writable):
     """Hardware resource that an operation occupies.
 
-    From the modulo scheduling framework (GAG96), each operation is assigned to
-    a resource unit with a finite capacity. Two operations on the same resource
-    at the same time slot violate C4 (resource contention). The resource also
-    determines which wait counter tracks the operation:
+    Each operation is assigned to a resource unit with a finite capacity.
+    Two operations on the same resource at the same time slot contend.
+    The resource also determines which wait counter tracks the operation:
 
       GLOBAL_MEM → vmcnt    (buffer_load instructions)
       LDS        → lgkmcnt  (ds_read / LDS instructions)
       MMA_UNIT   → MFMA     (matrix fused multiply-add)
+      VALU       → VALU     (vector ALU: softmax, exp2, reductions)
       SCALAR     → SALU     (barriers, priority hints, fences)
       NONE       → sentinel (no-op / not applicable)
+
+    On CDNA architectures, MMA_UNIT and VALU are independent execution
+    units that can issue simultaneously. The scheduler models this by
+    tracking separate free times for each, allowing MMA and VALU ops
+    to overlap.
     """
 
     var _value: Int
@@ -47,6 +52,8 @@ struct ResourceKind(Equatable, ImplicitlyCopyable, Movable, Writable):
     comptime LDS = Self(1)  # LDS→register loads (tracked by lgkmcnt)
     comptime MMA_UNIT = Self(2)  # MFMA execution unit
     comptime SCALAR = Self(3)  # SALU: barriers, setprio, schedule_barrier
+    comptime VALU = Self(4)  # Vector ALU (parallel with MMA on CDNA)
+    """Vector ALU: parallel with MMA on CDNA architectures."""
     comptime NONE = Self(255)  # No-op sentinel
 
     @always_inline
@@ -57,6 +64,8 @@ struct ResourceKind(Equatable, ImplicitlyCopyable, Movable, Writable):
             writer.write("LDS")
         elif self == Self.MMA_UNIT:
             writer.write("MMA_UNIT")
+        elif self == Self.VALU:
+            writer.write("VALU")
         elif self == Self.SCALAR:
             writer.write("SCALAR")
         else:
@@ -97,12 +106,19 @@ trait ScheduleOps(Equatable):
         ...
 
     comptime BARRIER = Self(128)
+    """Workgroup-wide barrier (e.g. `s_barrier` on AMD)."""
     comptime WAIT_VM = Self(129)
+    """Wait on outstanding global-memory loads (e.g. `s_waitcnt vmcnt`)."""
     comptime WAIT_LGKM = Self(130)
+    """Wait on outstanding LDS / scalar-memory ops (e.g. `s_waitcnt lgkmcnt`)."""
     comptime SET_PRIO = Self(131)
+    """Wave priority hint (e.g. `s_setprio`)."""
     comptime SCHEDULE_BARRIER = Self(132)
+    """LLVM scheduling-barrier hint (`schedule_barrier`)."""
     comptime SCHED_GROUP_BARRIER = Self(133)
+    """LLVM scheduling-group barrier hint (`s_sched_group_barrier`)."""
     comptime NONE = Self(255)
+    """Sentinel value for an absent or unspecified op."""
 
 
 @fieldwise_init
@@ -179,6 +195,8 @@ struct OpRole(Equatable, ImplicitlyCopyable, Movable):
     comptime COMPUTE = Self(3)  # MMA compute
     comptime SYNC = Self(4)  # barrier
     comptime FENCE = Self(5)  # schedule barrier (compiler hint)
+    comptime VALU_COMPUTE = Self(6)  # VALU compute (softmax, exp2, reductions)
+    """Vector ALU compute (softmax, exp2, reductions)."""
     comptime NONE = Self(255)  # sentinel
 
 
@@ -187,17 +205,46 @@ struct OpRole(Equatable, ImplicitlyCopyable, Movable):
 # =============================================================================
 
 
-@fieldwise_init
 struct OpCost(ImplicitlyCopyable, Movable):
     """Hardware cost annotation for a single operation kind.
 
     Maps an operation tag to the hardware resource it occupies, its latency
-    in cycles, and its data-flow role. Provided by a TargetCostModel.
+    in cycles, its data-flow role, and (optionally) the VGPR liveness it
+    induces. Provided by a TargetCostModel.
     """
 
     var resource: ResourceKind
     var latency: Int
     var role: OpRole
+    var vgpr_def: Int
+    """VGPRs this op brings into scope (new live register values)."""
+    var vgpr_kill: Int
+    """VGPRs this op releases (last use of some register buffer)."""
+
+    @always_inline
+    def __init__(
+        out self,
+        resource: ResourceKind,
+        latency: Int,
+        role: OpRole,
+        *,
+        vgpr_def: Int = 0,
+        vgpr_kill: Int = 0,
+    ):
+        """Constructs an `OpCost`.
+
+        Args:
+            resource: Hardware execution unit.
+            latency: Latency in cycles.
+            role: Pipeline data-flow role.
+            vgpr_def: VGPRs the op brings into scope.
+            vgpr_kill: VGPRs the op releases.
+        """
+        self.resource = resource
+        self.latency = latency
+        self.role = role
+        self.vgpr_def = vgpr_def
+        self.vgpr_kill = vgpr_kill
 
     @staticmethod
     def none() -> OpCost:
@@ -260,6 +307,8 @@ struct OpDesc(ImplicitlyCopyable, Movable):
         role: Pipeline data-flow role (GLOBAL_LOAD, FRAGMENT_LOAD, etc.).
         channel: Data path identifier for edge derivation. Ops on the same
             channel share a buffer (e.g., 0=A matrix, 1=B matrix). -1 = none.
+        vgpr_def: VGPRs this op brings into scope (new live register values).
+        vgpr_kill: VGPRs this op releases (last use of some register buffer).
     """
 
     var tag: Int
@@ -273,6 +322,10 @@ struct OpDesc(ImplicitlyCopyable, Movable):
     var latency: Int
     var role: OpRole
     var channel: Int
+    var vgpr_def: Int
+    """VGPRs this op brings into scope (new live register values)."""
+    var vgpr_kill: Int
+    """VGPRs this op releases (last use of some register buffer)."""
 
     @always_inline
     def __init__(
@@ -289,6 +342,8 @@ struct OpDesc(ImplicitlyCopyable, Movable):
         latency: Int = 0,
         role: OpRole = OpRole.NONE,
         channel: Int = -1,
+        vgpr_def: Int = 0,
+        vgpr_kill: Int = 0,
     ):
         self.tag = tag
         self.stage = stage
@@ -301,6 +356,8 @@ struct OpDesc(ImplicitlyCopyable, Movable):
         self.latency = latency
         self.role = role
         self.channel = channel
+        self.vgpr_def = vgpr_def
+        self.vgpr_kill = vgpr_kill
 
     @always_inline
     def is_present(self) -> Bool:
@@ -324,6 +381,8 @@ struct OpDesc(ImplicitlyCopyable, Movable):
         vm_cost: Int = 0,
         lgkm_cost: Int = 0,
         wait_value: Int = 0,
+        vgpr_def: Int = 0,
+        vgpr_kill: Int = 0,
     ) -> OpDesc:
         """Construct an OpDesc with all metadata inline.
 
@@ -343,6 +402,8 @@ struct OpDesc(ImplicitlyCopyable, Movable):
             latency=latency,
             role=role,
             channel=channel,
+            vgpr_def=vgpr_def,
+            vgpr_kill=vgpr_kill,
         )
 
     # --- Logical op factory (for use with TargetCostModel) ---
@@ -478,6 +539,8 @@ def annotate_ops(
             op.resource = cost.resource
             op.latency = cost.latency
             op.role = cost.role
+            op.vgpr_def = cost.vgpr_def
+            op.vgpr_kill = cost.vgpr_kill
         result.append(op)
     return result^
 

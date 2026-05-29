@@ -12,10 +12,44 @@
 # ===----------------------------------------------------------------------=== #
 
 import json
+import uuid
+from typing import Any
+from unittest.mock import patch
 
 import pytest
-from max.interfaces import ParsedToolCall, ParsedToolResponse
+from llguidance import LLMatcher, LLTokenizer
+from llguidance._tokenizer import TokenizerWrapper
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
+from max.pipelines.lib.tool_parsing import StreamingToolCallState
+from max.pipelines.modeling.types import (
+    ParsedToolCall,
+    ParsedToolCallDelta,
+    ParsedToolResponse,
+)
+
+
+class _MinimalTokenizer:
+    """Minimal byte tokenizer for grammar compilation validation tests.
+
+    Maps each byte value to a token ID, providing a 256-token vocabulary
+    sufficient for testing grammar compilation without loading a real model.
+    """
+
+    eos_token_id: int = 0
+    bos_token_id: int | None = None
+    tokens: list[bytes] = [bytes([i]) for i in range(256)]
+
+    def __call__(self, s: bytes | str) -> list[int]:
+        if isinstance(s, str):
+            s = s.encode("utf-8")
+        return list(s)
+
+
+@pytest.fixture(scope="module")
+def ll_tokenizer() -> LLTokenizer:
+    """Create a minimal LLTokenizer for grammar validation tests."""
+    wrapper = TokenizerWrapper(_MinimalTokenizer())
+    return LLTokenizer(wrapper, n_vocab=256)
 
 
 def test_single_tool_call_parsing() -> None:
@@ -36,7 +70,7 @@ def test_single_tool_call_parsing() -> None:
 
     tool_call = result.tool_calls[0]
     assert isinstance(tool_call, ParsedToolCall)
-    assert tool_call.id.startswith("call_")
+    assert tool_call.id.startswith("get_weather:")
     assert tool_call.name == "get_weather"
     assert json.loads(tool_call.arguments) == {
         "location": "New York",
@@ -133,7 +167,7 @@ def test_function_id_without_prefix() -> None:
     assert len(result.tool_calls) == 1
     tool_call = result.tool_calls[0]
     assert tool_call.name == "search"
-    assert "_2" in tool_call.id  # Index should be in the ID
+    assert tool_call.id.startswith("search:")
 
 
 def test_function_id_without_index() -> None:
@@ -151,7 +185,7 @@ def test_function_id_without_index() -> None:
     assert len(result.tool_calls) == 1
     tool_call = result.tool_calls[0]
     assert tool_call.name == "calculate"
-    assert tool_call.id.startswith("call_")
+    assert tool_call.id.startswith("calculate:")
 
 
 def test_plain_function_name() -> None:
@@ -277,11 +311,7 @@ def test_tool_call_id_format() -> None:
     result = parser.parse_complete(response)
     tool_call_id = result.tool_calls[0].id
 
-    # Should start with "call_"
-    assert tool_call_id.startswith("call_")
-
-    # Should contain the index
-    assert "_5" in tool_call_id
+    assert tool_call_id.startswith("test:")
 
 
 def test_response_structure() -> None:
@@ -304,7 +334,7 @@ def test_response_structure() -> None:
     tool_call = result.tool_calls[0]
     assert isinstance(tool_call, ParsedToolCall)
     assert tool_call.name == "calculate"
-    assert tool_call.id.startswith("call_")
+    assert tool_call.id.startswith("calculate:")
 
 
 def test_whitespace_handling() -> None:
@@ -332,29 +362,258 @@ def test_whitespace_handling() -> None:
 
 
 def test_reset_clears_buffer() -> None:
-    """Test that reset() clears the internal buffer."""
+    """Test that reset() clears the internal buffer and streaming state."""
+
     parser = KimiToolParser()
 
     # Simulate accumulating some data
     parser._buffer = "some accumulated data"
+    parser._state.sent_content_idx = 10
+    parser._state.tool_calls.append(StreamingToolCallState())
 
     parser.reset()
 
     assert parser._buffer == ""
+    assert parser._state.sent_content_idx == 0
+    assert len(parser._state.tool_calls) == 0
 
 
 def test_parse_delta_accumulates() -> None:
     """Test that parse_delta accumulates tokens in buffer."""
     parser = KimiToolParser()
 
-    # Note: parse_delta is a stub that returns None
-    # but should accumulate tokens
+    # parse_delta should accumulate tokens; before any section marker lands,
+    # result is None
     result1 = parser.parse_delta("<|tool_calls")
-    result2 = parser.parse_delta("_section_begin|>")
-
     assert result1 is None
-    assert result2 is None
+
+    # Once the section-begin marker is complete, returns [] (not None) so the
+    # streaming path knows to suppress structural tokens even with no deltas yet
+    result2 = parser.parse_delta("_section_begin|>")
+    assert result2 == []
     assert parser._buffer == "<|tool_calls_section_begin|>"
+
+
+def test_parse_delta_returns_empty_list_inside_tool_section() -> None:
+    """Test that parse_delta returns [] (not None) inside the tool-calls section.
+
+    [] signals the caller to suppress raw structural tokens from being emitted
+    as content, even when there are no tool-call deltas ready to stream yet.
+    """
+    parser = KimiToolParser()
+
+    # Tokens that don't start/complete a section marker and have no sendable
+    # content return None (more context needed before anything can be emitted)
+    result_pre = parser.parse_delta("<|tool_calls")
+    assert result_pre is None
+
+    # Once the section-begin marker completes, returns [] even with no deltas
+    result_in_section = parser.parse_delta("_section_begin|>")
+    assert result_in_section == []
+
+    # Structural tokens mid-section also return [] while parsing
+    result_mid = parser.parse_delta("<|tool_call_begin|>")
+    assert result_mid == []
+
+
+def test_parse_delta_single_tool_call_streaming() -> None:
+    """Test streaming a single tool call token by token."""
+    fixed_uuid = uuid.UUID("12345678-1234-5678-9abc-def012345678")
+    with patch(
+        "max.pipelines.architectures.kimik2_5.tool_parser.uuid.uuid4",
+        return_value=fixed_uuid,
+    ):
+        parser = KimiToolParser()
+
+        # Simulate streaming a complete tool call
+        chunks = [
+            "<|tool_calls_section_begin|>",
+            "<|tool_call_begin|>",
+            "functions.get_weather:0",
+            "<|tool_call_argument_begin|>",
+            '{"loc',
+            'ation": "',
+            'New York"}',
+            "<|tool_call_end|>",
+            "<|tool_calls_section_end|>",
+        ]
+
+        all_deltas: list[ParsedToolCallDelta] = []
+        for chunk in chunks:
+            result = parser.parse_delta(chunk)
+            if result:
+                all_deltas.extend(result)
+
+        assert all_deltas == [
+            ParsedToolCallDelta(
+                index=0,
+                id="get_weather:12345678",
+                name="get_weather",
+            ),
+            ParsedToolCallDelta(index=0, arguments='{"loc'),
+            ParsedToolCallDelta(index=0, arguments='ation": "'),
+            ParsedToolCallDelta(index=0, arguments='New York"}'),
+        ]
+
+
+def test_parse_delta_multiple_tool_calls_streaming() -> None:
+    """Test streaming multiple tool calls."""
+
+    uuid_first = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    uuid_second = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    with patch(
+        "max.pipelines.architectures.kimik2_5.tool_parser.uuid.uuid4",
+        side_effect=[uuid_first, uuid_second],
+    ):
+        parser = KimiToolParser()
+
+        # Complete response with two tool calls
+        response = """<|tool_calls_section_begin|>
+<|tool_call_begin|>functions.get_weather:0<|tool_call_argument_begin|>
+{"location": "NYC"}
+<|tool_call_end|>
+<|tool_call_begin|>functions.get_time:1<|tool_call_argument_begin|>
+{"zone": "EST"}
+<|tool_call_end|>
+<|tool_calls_section_end|>"""
+
+        result = parser.parse_delta(response)
+
+        assert result == [
+            ParsedToolCallDelta(
+                index=0,
+                id="get_weather:11111111",
+                name="get_weather",
+            ),
+            ParsedToolCallDelta(
+                index=0,
+                arguments='\n{"location": "NYC"}\n',
+            ),
+            ParsedToolCallDelta(
+                index=1,
+                id="get_time:22222222",
+                name="get_time",
+            ),
+            ParsedToolCallDelta(
+                index=1,
+                arguments='\n{"zone": "EST"}\n',
+            ),
+        ]
+
+
+def test_parse_delta_with_content_before_tools() -> None:
+    """Test streaming when there's content before tool calls section."""
+    fixed_uuid = uuid.UUID("12345678-1234-5678-9abc-def012345678")
+    with patch(
+        "max.pipelines.architectures.kimik2_5.tool_parser.uuid.uuid4",
+        return_value=fixed_uuid,
+    ):
+        parser = KimiToolParser()
+
+        # Stream content then tool call
+        chunks = [
+            "I'll check the weather for you.\n\n",
+            "<|tool_calls_section_begin|>",
+            "<|tool_call_begin|>functions.get_weather:0<|tool_call_argument_begin|>",
+            '{"location": "Boston"}',
+            "<|tool_call_end|>",
+            "<|tool_calls_section_end|>",
+        ]
+
+        all_deltas: list[ParsedToolCallDelta] = []
+        for chunk in chunks:
+            result = parser.parse_delta(chunk)
+            if result:
+                all_deltas.extend(result)
+
+        assert all_deltas == [
+            ParsedToolCallDelta(
+                index=0,
+                content="I'll check the weather for you.\n\n",
+            ),
+            ParsedToolCallDelta(
+                index=0,
+                id="get_weather:12345678",
+                name="get_weather",
+            ),
+            ParsedToolCallDelta(
+                index=0,
+                arguments='{"location": "Boston"}',
+            ),
+        ]
+
+
+def test_parse_delta_argument_diffing() -> None:
+    """Test that argument deltas are properly diffed."""
+
+    parser = KimiToolParser()
+
+    # Start the tool call
+    parser.parse_delta("<|tool_calls_section_begin|>")
+    parser.parse_delta(
+        "<|tool_call_begin|>functions.test:0<|tool_call_argument_begin|>"
+    )
+
+    # Send arguments in small chunks
+    result1 = parser.parse_delta('{"key')
+    result2 = parser.parse_delta('": "val')
+    result3 = parser.parse_delta('ue"}')
+
+    # Each result should only contain the new portion
+    all_args = []
+    for r in [result1, result2, result3]:
+        if r:
+            for delta in r:
+                if delta.arguments:
+                    all_args.append(delta.arguments)
+
+    # Concatenated should form the full arguments
+    full = "".join(all_args)
+    assert '{"key": "value"}' in full or full == '{"key": "value"}'
+
+
+def test_parse_delta_reset_clears_state() -> None:
+    """Test that reset() clears all streaming state."""
+    parser = KimiToolParser()
+
+    # Accumulate some state
+    parser.parse_delta("<|tool_calls_section_begin|>")
+    parser.parse_delta(
+        "<|tool_call_begin|>functions.test:0<|tool_call_argument_begin|>"
+    )
+    parser.parse_delta('{"key": "value"}')
+
+    # Verify state exists
+    assert parser._buffer != ""
+    assert len(parser._state.tool_calls) > 0
+
+    # Reset
+    parser.reset()
+
+    # Verify state is cleared
+    assert parser._buffer == ""
+    assert len(parser._state.tool_calls) == 0
+    assert parser._state.sent_content_idx == 0
+
+
+def test_parse_delta_partial_marker_handling() -> None:
+    """Test that partial markers at buffer end are held back."""
+    parser = KimiToolParser()
+
+    # Send content that ends with partial marker
+    result1 = parser.parse_delta("Hello world<|tool")
+
+    # Should not emit the partial marker as content
+    if result1:
+        for delta in result1:
+            if delta.content:
+                assert "<|tool" not in delta.content
+
+    # Complete the marker
+    parser.parse_delta("_calls_section_begin|>")
+
+    # Buffer should now contain the complete marker
+    assert "<|tool_calls_section_begin|>" in parser._buffer
 
 
 def test_multiple_tool_calls_same_function() -> None:
@@ -412,3 +671,366 @@ def test_special_characters_in_arguments() -> None:
     assert len(result.tool_calls) == 1
     parsed_args = json.loads(result.tool_calls[0].arguments)
     assert parsed_args == special_args
+
+
+def _tools(*names: str) -> list[dict[str, Any]]:
+    """Build a minimal OpenAI-style tools list from function names."""
+    return [{"type": "function", "function": {"name": n}} for n in names]
+
+
+def test_generate_tool_call_grammar_with_tool_names(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test generating a regex grammar for constrained decoding with specific tools."""
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather", "search")
+    )
+
+    # Verify the grammar is a non-empty string
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_generate_tool_call_grammar_without_tool_names(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test generating a regex grammar that accepts any valid identifier."""
+    grammar = KimiToolParser.generate_tool_call_grammar(tools=None)
+
+    # Verify the grammar is a non-empty string
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_generate_tool_call_grammar_escapes_special_chars(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test that special regex characters in tool names are escaped."""
+    # Tool names with regex special characters
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather.v2", "search+plus", "tool[0]")
+    )
+
+    # Should not raise and should produce valid grammar
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_generate_tool_call_grammar_with_response_format_schema(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test generating a combined grammar with tools and response_format_schema."""
+    response_format_schema = {
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string"},
+            "confidence": {"type": "number"},
+        },
+        "required": ["answer"],
+    }
+
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather", "search"),
+        response_format_schema=response_format_schema,
+    )
+
+    # Verify the grammar is a non-empty string
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+
+    # Combined grammar should contain alternation syntax (Lark format)
+    # It should reference both tool_calls and json_response
+    assert "tool_calls" in grammar
+    assert "json_response" in grammar
+    assert "%json" in grammar  # JSON schema embedding
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_generate_tool_call_grammar_combined_accepts_json_object_type(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test combined grammar with json_object type (any valid JSON)."""
+    # json_object mode uses a permissive schema
+    response_format_schema = {"type": "object"}
+
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("calculate"),
+        response_format_schema=response_format_schema,
+    )
+
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+    assert "json_response" in grammar
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_generate_tool_call_grammar_no_schema_returns_regex_grammar(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test that without response_format_schema, we get regex-only grammar."""
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"),
+        response_format_schema=None,
+    )
+
+    # Without schema, should return grammar from grammar_from_regex()
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+    # The regex grammar should NOT contain JSON schema embedding
+    assert "%json" not in grammar
+    # Should contain the tool call pattern
+    assert "tool_calls_section_begin" in grammar
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_grammar_caps_to_single_section(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Matcher accepts one full section and rejects a second section-begin.
+
+    With ``_MAX_TOOL_CALL_SECTIONS == 1`` the outer ``{1,1}`` quantifier
+    leaves the matcher in a terminal state after the first
+    ``<|tool_calls_section_end|>``, so any subsequent
+    ``<|tool_calls_section_begin|>`` must be refused. This guards against
+    silently lifting the cap: bumping ``_MAX_TOOL_CALL_SECTIONS`` re-enables
+    multi-section emissions, but in ``tool_choice=auto`` the matcher must
+    also support re-entering grammar enforcement on the second
+    section-begin — verify that path before raising the constant.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather")
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+
+    first_section = (
+        "<|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.get_weather:0"
+        "<|tool_call_argument_begin|>"
+        '{"location": "NYC"}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+    second_section_begin = "<|tool_calls_section_begin|>"
+    first_tokens = list(first_section.encode("utf-8"))
+    second_tokens = list(second_section_begin.encode("utf-8"))
+
+    consumed_first = matcher.try_consume_tokens(first_tokens)
+    assert consumed_first == len(first_tokens), (
+        f"matcher should accept the first section in full but rejected at "
+        f"offset {consumed_first} of {len(first_tokens)}; "
+        f"matcher error: {matcher.get_error()}"
+    )
+
+    consumed_second = matcher.try_consume_tokens(second_tokens)
+    assert consumed_second == 0, (
+        f"matcher should reject a second section-begin after the first "
+        f"section closes but accepted {consumed_second} of "
+        f"{len(second_tokens)} bytes"
+    )
+
+
+def test_grammar_accepts_unbounded_argument_body(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Argument body has no length cap; matcher must accept >8192 chars.
+
+    Regression for the removal of ``_MAX_TOOL_CALL_ARGUMENT_CHARS``.
+    The old grammar capped the JSON body at 8192 chars with
+    ``\\{[^<]{0,8192}\\}``, which silently truncated legitimate large
+    arguments (file blobs, embedded documents, search-result payloads)
+    by forcing the matcher to require ``}`` once the count was hit.
+    The current grammar uses ``\\{[^<]*\\}`` so only ``max_tokens`` /
+    context bounds the body.
+
+    Feeds a synthetic tool call whose ``content`` field contains
+    ~10 KB of ASCII filler — well past the old cap — and verifies the
+    matcher consumes every token. Tokens come from the same byte-level
+    ``_MinimalTokenizer`` the fixture wraps, so this routes through the
+    same encoding path real serving uses (just with a 256-token vocab
+    instead of Kimi's full vocab).
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("echo_document")
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+
+    # ~10 KB filler, deliberately past the old 8192 cap and free of
+    # ``<`` so the regex character class ``[^<]`` accepts every byte.
+    filler = ("abcdefghijklmnopqrstuvwxyz0123456789 " * 300)[:10_000]
+    assert len(filler) > 8192
+    assert "<" not in filler
+
+    tool_call = (
+        "<|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.echo_document:0"
+        "<|tool_call_argument_begin|>"
+        f'{{"content": "{filler}"}}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    tokens = _MinimalTokenizer()(tool_call)
+    # Feed in chunks rather than one call so a partial reject is
+    # localisable to the surrounding context (the old cap would refuse
+    # somewhere deep inside the filler, not at the boundary tags).
+    chunk = 64
+    consumed = 0
+    for start in range(0, len(tokens), chunk):
+        batch = tokens[start : start + chunk]
+        n = matcher.try_consume_tokens(batch)
+        if n != len(batch):
+            raise AssertionError(
+                f"matcher rejected token at offset {start + n} of "
+                f"{len(tokens)} (consumed {consumed + n} so far); "
+                f"context={tool_call[max(0, start + n - 20) : start + n + 20]!r}"
+            )
+        consumed += n
+
+    assert consumed == len(tokens)
+
+
+def test_grammar_accepts_less_than_inside_json_strings(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Grammar accepts ``<`` inside JSON string values.
+
+    Tool arguments often contain code snippets with comparisons like
+    ``if (x < y)``, HTML/XML markup, JSX templates, or git diffs with
+    conflict markers (``<<<<<<< HEAD``). The body regex must allow
+    ``<`` inside quoted strings while still rejecting it outside strings
+    where it signals the start of a structural tag like
+    ``<|tool_call_end|>``.
+
+    Tests several realistic payloads containing ``<`` in string values:
+    code comparisons, HTML content, and git diff markers.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("write_file")
+    )
+
+    # Test cases with < in various contexts inside JSON strings
+    test_payloads = [
+        # Code with comparison operators
+        '{"content": "if (x < y) { return x; }"}',
+        # HTML/XML content
+        '{"content": "<html><body><p>Hello</p></body></html>"}',
+        # JSX template
+        '{"content": "const App = () => <div><span>Hi</span></div>;"}',
+        # Git diff conflict markers
+        '{"content": "<<<<<<< HEAD\\nold code\\n=======\\nnew code\\n>>>>>>> branch"}',
+        # Multiple < in different string fields
+        '{"code": "a < b", "html": "<p>text</p>", "note": "x<y<z"}',
+        # Escaped quotes with <
+        '{"content": "She said \\"x < y\\" loudly"}',
+        # Nested objects with < in values
+        '{"outer": {"inner": "a < b"}, "list": ["<item>", "<other>"]}',
+    ]
+
+    for payload in test_payloads:
+        matcher = LLMatcher(ll_tokenizer, grammar)
+        tool_call = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.write_file:0"
+            "<|tool_call_argument_begin|>"
+            f"{payload}"
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+
+        tokens = _MinimalTokenizer()(tool_call)
+        consumed = matcher.try_consume_tokens(tokens)
+
+        assert consumed == len(tokens), (
+            f"matcher rejected payload at offset {consumed} of {len(tokens)}; "
+            f"payload={payload!r}; "
+            f"context around rejection={tool_call[max(0, consumed - 20) : consumed + 20]!r}"
+        )
+
+
+def test_grammar_rejects_less_than_outside_json_strings(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Grammar rejects ``<`` outside JSON string values.
+
+    The ``<`` character outside of quoted strings signals the start of a
+    structural tag like ``<|tool_call_end|>``. The grammar must reject
+    such payloads to ensure proper tag detection. This is the "bad case"
+    that the JSON-string-aware pattern is designed to catch.
+
+    Tests several malformed payloads where ``<`` appears outside strings:
+    bare ``<`` in JSON structure, ``<`` as object key prefix, etc.
+    """
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("write_file")
+    )
+
+    # Test cases with < OUTSIDE of JSON strings — these should be rejected
+    # because < outside strings signals a structural tag.
+    # Each payload is syntactically structured to have < appear in a
+    # position where it's NOT inside a quoted string value.
+    bad_payloads = [
+        # Bare < where a value should be
+        '{"value": <}',
+        # < between number tokens (not in a string)
+        '{"a": 1, <"b": 2}',
+        # < as the start of what looks like a tag outside any string
+        '{"done": true}<',
+    ]
+
+    for payload in bad_payloads:
+        matcher = LLMatcher(ll_tokenizer, grammar)
+        tool_call = (
+            "<|tool_calls_section_begin|>"
+            "<|tool_call_begin|>functions.write_file:0"
+            "<|tool_call_argument_begin|>"
+            f"{payload}"
+            "<|tool_call_end|>"
+            "<|tool_calls_section_end|>"
+        )
+
+        tokens = _MinimalTokenizer()(tool_call)
+        consumed = matcher.try_consume_tokens(tokens)
+
+        # The matcher should NOT consume all tokens — it should reject
+        # somewhere before or at the problematic <
+        assert consumed < len(tokens), (
+            f"matcher should have rejected payload with < outside string "
+            f"but accepted all {len(tokens)} tokens; payload={payload!r}"
+        )
+
+
+def test_parser_handles_json_content_when_no_tool_calls() -> None:
+    """Test that parser returns content as-is when no tool call markers present."""
+    parser = KimiToolParser()
+
+    # This is what the model would output when choosing JSON content
+    # instead of tool calls (with combined grammar)
+    json_response = '{"answer": "The weather is sunny", "confidence": 0.95}'
+
+    result = parser.parse_complete(json_response)
+
+    # No tool calls should be parsed
+    assert len(result.tool_calls) == 0
+    # Content should be returned as-is
+    assert result.content == json_response

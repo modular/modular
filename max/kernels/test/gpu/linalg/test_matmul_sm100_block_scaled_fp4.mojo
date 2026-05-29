@@ -99,23 +99,23 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE} alpha={alpha}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
     var b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value // 2]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * (KType.static_value // 2)
     var b_size = Int(n.value()) * (KType.static_value // 2)
     var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -129,29 +129,33 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        a_scales_total
+    )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        b_scales_total
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
@@ -174,12 +178,12 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     if simple_init():
         for m in range(Int(m.value())):
             for k in range(Int(k.value()) // 2):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
+                comptime assert a_host.flat_rank == 2
+                a_host[m, k] = UInt8(m).cast[a_type]()
         for n in range(Int(n.value())):
             for k in range(Int(k.value()) // 2):
-                comptime assert b_host.flat_rank >= 2
-                b_host[(Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
+                comptime assert b_host.flat_rank == 2
+                b_host[n, k] = UInt8(n).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
         rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
@@ -264,7 +268,7 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     @__copy_capture(c_device_lt)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -340,12 +344,6 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -453,9 +451,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(1000)),
-                        Idx(1024),
-                        Idx[1024 + 32](),
+                        Int(1000),
+                        Idx[1024],
+                        Idx[1024 + 32],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -474,9 +472,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(500)),
-                        Idx(2048),
-                        Idx(4096),
+                        Int(500),
+                        Idx[2048],
+                        Idx[4096],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -494,9 +492,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(777)),
-                        Idx(2560),
-                        Idx(8192),
+                        Int(777),
+                        Idx[2560],
+                        Idx[8192],
                         alpha=0.225,
                     )
 
@@ -515,9 +513,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(1)),
-                        Idx(576),
-                        Idx(7168),
+                        Int(1),
+                        Idx[576],
+                        Idx[7168],
                         alpha=0.5,
                     )
 
@@ -539,9 +537,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     ](
                         ctx,
-                        Idx(Int(16)),
-                        Idx(1024),
-                        Idx(1024 + 32),
+                        Int(16),
+                        Idx[1024],
+                        Idx[1024 + 32],
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -560,9 +558,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(100)),
-                        Idx(2560),
-                        Idx(8192),
+                        Int(100),
+                        Idx[2560],
+                        Idx[8192],
                     )
 
         # Llama 3.1 405B TP8 shape tests (matching tuning configs)
@@ -591,9 +589,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                 num_clc_pipeline_stages=0,
             ](
                 ctx,
-                Idx(Int(128)),
-                Idx[n_val](),
-                Idx[16384](),
+                Int(128),
+                Idx[n_val],
+                Idx[16384],
             )
 
         # cluster(2,1,1), accum_stages=2, N=7168, K=16384
@@ -615,9 +613,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
             num_clc_pipeline_stages=0,
         ](
             ctx,
-            Idx(Int(128)),
-            Idx[7168](),
-            Idx[16384](),
+            Int(128),
+            Idx[7168],
+            Idx[16384],
         )
 
         # cluster(2,1,1), accum_stages=4, N=16384
@@ -640,9 +638,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                 num_clc_pipeline_stages=0,
             ](
                 ctx,
-                Idx(Int(128)),
-                Idx[16384](),
-                Idx[k_val](),
+                Int(128),
+                Idx[16384],
+                Idx[k_val],
             )
 
         # Epilogue fusion tests: verify TileWriter's elementwise_lambda_fn path.
@@ -668,9 +666,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                     normal_epilogue=True,
                 ](
                     ctx,
-                    Idx(Int(16)),
-                    Idx(1024),
-                    Idx[1024 + 32](),
+                    Int(16),
+                    Idx[1024],
+                    Idx[1024 + 32],
                 )
 
         # swapAB + epilogue fusion
@@ -692,9 +690,9 @@ def run_matmul_sm100_block_scaled_fp4_suite[
             normal_epilogue=True,
         ](
             ctx,
-            Idx(Int(16)),
-            Idx(1024),
-            Idx[1024 + 32](),
+            Int(16),
+            Idx[1024],
+            Idx[1024 + 32],
         )
 
 

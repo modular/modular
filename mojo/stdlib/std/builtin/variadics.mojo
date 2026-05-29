@@ -20,6 +20,7 @@ from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames
 from std.sys.intrinsics import _type_is_eq_parse_time
 from std.builtin.globals import global_constant
+from std.reflection.traits import AllWritable
 
 
 struct _MLIR:
@@ -65,21 +66,21 @@ struct TypeList[
 
     Examples:
 
-    ```text
+    ```mojo
     from std.builtin.variadics import TypeList
     from std.sys.intrinsics import _type_is_eq
     from std.testing import assert_equal
 
     # Create a type list
-    comptime tl = TypeList[Trait=AnyType, Int, String, Float64]()
+    comptime tl = TypeList.of[Trait=AnyType, Int, String, Float64]()
 
-    def main():
+    def main() raises:
         # Query size
         assert_equal(tl.size, 3)
 
         # Check membership
-        comptime assert tl.contains[Int]
-        comptime assert not tl.contains[Bool]
+        comptime assert tl.contains[Int]()
+        comptime assert not tl.contains[Bool]()
 
         # Index into the list
         comptime assert _type_is_eq[tl[0], Int]()
@@ -689,7 +690,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         var total = 0
 
         # Can use regular for loop because args is a ParameterList
-        for i in range(len(args)):
+        comptime for i in range(args.size):
             total += args[i]  # All elements are Int, so uniform access
 
         return total
@@ -976,9 +977,10 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             Self._AllSatisfiesReducer[predicate, ...],
         ]
 
+    # FIXME(MOCO-3855): Add decl-where `where conforms_to(Self.type, Equatable)`
     comptime _ContainsValuePredicate[
         search_value: Self.type,
-        element_value: Self.type where conforms_to(Self.type, Equatable),
+        element_value: Self.type,
     ] = trait_downcast[Equatable](search_value) == trait_downcast[Equatable](
         element_value
     )
@@ -1220,8 +1222,7 @@ struct VariadicList[
                 Int(0)._int_mlir_index(),
             )
         ).bitcast[Self._EltPointerType]()
-        var size_tmp = size  # FIXME: Weird MLIR syntax error?
-        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size_tmp))
+        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size))
 
     # The destructor for this type is trivial if not an "owned" list.
     comptime __del__is_trivial: Bool = not Self.is_owned
@@ -1250,14 +1251,15 @@ struct VariadicList[
                     TDestructible
                 ]().destroy_pointee()
 
-    def consume_elements[
-        elt_handler: def(idx: Int, var elt: Self.element_type) capturing
-    ](deinit self):
+    def consume_elements(
+        deinit self,
+        elt_handler: Some[def(idx: Int, var elt: Self.element_type)],
+    ):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic lists.
 
-        Parameters:
+        Args:
             elt_handler: A function that will be called for each element of the
                          list.
         """
@@ -1503,19 +1505,13 @@ struct VariadicPack[
 
         comptime if Self.is_owned:
             comptime for i in reversed(range(Self.__len__())):
-                # FIXME(MOCO-2953):
-                #   Due to a compiler limitation, we can't use
-                #   conforms_to() here, meaning the `trait_downcast` below
-                #   could fail with a worse elaboration error than we'd get from
-                #   _constrained_conforms_to.
-                #
-                # comptime element_type = Self.element_types[i]
-                # _constrained_conforms_to[
-                #     conforms_to(element_type, ImplicitlyDestructible),
-                #     Parent=Self,
-                #     Element=element_type,
-                #     ParentConformsTo="ImplicitlyDestructible",
-                # ]()
+                comptime element_type = Self.element_types[i]
+                _constrained_conforms_to[
+                    conforms_to(element_type, ImplicitlyDestructible),
+                    Parent=Self,
+                    Element=element_type,
+                    ParentConformsTo="ImplicitlyDestructible",
+                ]()
 
                 # Safety: We own the elements in this pack.
                 UnsafePointer(
@@ -1607,19 +1603,21 @@ struct VariadicPack[
         `, 0: index>: `,
         _MLIR.KGENParamListType[__mlir_type.`!kgen.type`],
     ]
-    """Use variadic_ptr_map to construct the type list of the !kgen.pack that
+    """Use variadic_ptr_map to construct the type list of the !kgen.struct that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
     references.
     """
     comptime _kgen_pack_with_pointer_type = __mlir_type[
-        `!kgen.pack<:param_list<type> `, Self._variadic_pointer_types, `>`
+        `!kgen.struct<:param_list<type> `,
+        Self._variadic_pointer_types,
+        ` isParamPack>`,
     ]
-    """This is the !kgen.pack type with pointer elements."""
+    """This is the !kgen.struct type with pointer elements."""
 
     @doc_hidden
     @always_inline("nodebug")
     def get_as_kgen_pack(self) -> Self._kgen_pack_with_pointer_type:
-        """This rebinds `in_pack` to the equivalent `!kgen.pack` with kgen
+        """This rebinds `in_pack` to the equivalent `!kgen.struct` with kgen
         pointers."""
         return rebind[Self._kgen_pack_with_pointer_type](self._value)
 
@@ -1631,11 +1629,11 @@ struct VariadicPack[
         _MLIR.KGENParamListType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
-        `!kgen.pack<:param_list<type> `,
+        `!kgen.struct<:param_list<type> `,
         Self._variadic_with_pointers_removed,
-        `>`,
+        ` isParamPack>`,
     ]
-    """This is the `!kgen.pack` type that happens if one loads all the elements
+    """This is the `!kgen.struct` type that happens if one loads all the elements
     of the pack.
     """
 
@@ -1646,7 +1644,7 @@ struct VariadicPack[
     def get_loaded_kgen_pack(self) -> Self._loaded_kgen_pack_type:
         """This returns the stored KGEN pack after loading all of the elements.
         """
-        return __mlir_op.`kgen.pack.load`(self.get_as_kgen_pack())
+        return __mlir_op.`kgen.struct.load_indirect`(self.get_as_kgen_pack())
 
     def _write_to[
         O1: ImmutOrigin,
@@ -1655,12 +1653,12 @@ struct VariadicPack[
         *,
         is_repr: Bool = False,
     ](
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
         start: StringSlice[O1] = StaticString(""),
         end: StringSlice[O2] = StaticString(""),
         sep: StringSlice[O3] = StaticString(", "),
-    ):
+    ) where AllWritable[*Self.element_types]:
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
 
@@ -1687,16 +1685,16 @@ struct VariadicPack[
                 writer.write_string(sep)
 
             comptime if is_repr:
-                self[i].write_repr_to(writer)
+                trait_downcast[Writable](self[i]).write_repr_to(writer)
             else:
-                self[i].write_to(writer)
+                trait_downcast[Writable](self[i]).write_to(writer)
         writer.write_string(end)
 
     @no_inline
     def write_to(
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
-    ):
+    ) where AllWritable[*Self.element_types]:
         """Writes the elements of this pack to a writer.
 
         Args:
@@ -1710,9 +1708,9 @@ struct VariadicPack[
 
     @no_inline
     def write_repr_to(
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
-    ):
+    ) where AllWritable[*Self.element_types]:
         """Writes the repr of the elements of this pack to a writer.
 
         Args:

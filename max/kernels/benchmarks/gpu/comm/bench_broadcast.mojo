@@ -170,7 +170,7 @@ def bench_broadcast[
             )
 
     # Create and initialize host buffer for root with position-based values
-    var host_buffer = alloc[Scalar[dtype]](cb_in.alloc_size())
+    var host_buffer = List(length=cb_in.alloc_size(), fill=Scalar[dtype](0))
     for i in range(cb_in.alloc_size() // cb_in.stride):
         for j in range(length):
             host_buffer[i * cb_in.stride + j] = _input_value[dtype](root, j)
@@ -180,7 +180,7 @@ def bench_broadcast[
 
     # Create TileTensor wrappers for outputs
     comptime OutputTileType = TileTensor[
-        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+        dtype, type_of(row_major(length)), MutAnyOrigin
     ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
@@ -189,13 +189,13 @@ def bench_broadcast[
         for i in range(ngpus):
             # out_multicast_ptr is set when use_multimem == True
             out_tiles[i] = OutputTileType(
-                out_multicast_ptr.unsafe_value(), row_major(Idx(length))
+                out_multicast_ptr.unsafe_value(), row_major(length)
             )
             list_of_ctx[i].synchronize()
     else:
         for i in range(ngpus):
             out_tiles[i] = OutputTileType(
-                out_bufs_list[i].unsafe_ptr(), row_major(Idx(length))
+                out_bufs_list[i].unsafe_ptr(), row_major(length)
             )
             # Ensure setup has propagated.
             list_of_ctx[i].synchronize()
@@ -222,7 +222,7 @@ def bench_broadcast[
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             var in_tile = TileTensor(
-                cb_in.offset_ptr(cache_iter), row_major(Idx(length))
+                cb_in.offset_ptr(cache_iter), row_major(length)
             ).as_immut()
 
             # Run broadcast - root's input goes to all outputs
@@ -285,7 +285,7 @@ def bench_broadcast[
 
     # Create input tile for verification (no cache offset)
     var in_tile_verify = TileTensor(
-        cb_in.device_buffer(), row_major(Idx(length))
+        cb_in.device_buffer(), row_major(length)
     ).as_immut()
 
     # Run one broadcast for verification
@@ -324,9 +324,9 @@ def bench_broadcast[
                 raise Error("Verification failed")
 
     # Cleanup
-    host_buffer.free()
     _ = signal_buffers^
     _ = cb_in^
+    _ = host_buffer^
 
 
 def main() raises:

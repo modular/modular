@@ -25,6 +25,7 @@ specialized memory. Most code should prefer higher-level collections and
 automatic memory management.
 """
 
+from .alloc import alloc, free, Layout
 from .arc_pointer import ArcPointer
 from .memory import (
     memcmp,
@@ -33,6 +34,9 @@ from .memory import (
     memset,
     memset_zero,
     destroy_n,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
     uninit_copy_n,
     uninit_move_n,
     forget_deinit,

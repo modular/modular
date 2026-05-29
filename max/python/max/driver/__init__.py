@@ -13,7 +13,9 @@
 
 from max._core import __version__
 from max._core.driver import (
+    CompletionFlag,
     DeviceEvent,
+    __unsafe_pack_py_host_func,
     enable_all_peer_access,
     get_virtual_device_api,
     get_virtual_device_count,
@@ -28,6 +30,7 @@ from max._core_types.driver import DLPackArray
 from .buffer import Buffer, DevicePinnedBuffer, load_max_buffer
 from .driver import (
     CPU,
+    NPU,
     Accelerator,
     Device,
     DeviceSpec,
@@ -47,8 +50,10 @@ del buffer  # type: ignore
 
 __all__ = [
     "CPU",
+    "NPU",
     "Accelerator",
     "Buffer",
+    "CompletionFlag",
     "DLPackArray",
     "Device",
     "DeviceEvent",

@@ -38,6 +38,7 @@ from std.utils.static_tuple import StaticTuple
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
+    expect_bytes_pred,
     SharedMemPointer,
     MBarType,
 )
@@ -80,16 +81,16 @@ struct MLA_SM100_Decode_KV_BF16[
     comptime kv_type = Self.KVLUTType.dtype
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9
-    comptime NumQKBlocks = Self.config.padded_q_depth // Self.config.BN
+    comptime NumQKBlocks = Self.config.padded_q_depth // Self.config.BN_QK
     # 512 / 64 = 8
-    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN
+    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN_QK
     # 64 * 64 = 4096
-    comptime BlockElems = Self.config.BM * Self.config.BN
+    comptime BlockElems = Self.config.BM * Self.config.BN_QK
     # 2 bytes for float16
     comptime bytes_per_element = size_of[Self.q_type]()
     # the stage element is the same for both K and V
     comptime KVStageElems = Self.NumQKBlocks * Self.BlockElems
-    comptime output_tile_width = (Self.config.BN // 2) * (
+    comptime output_tile_width = (Self.config.BN_QK // 2) * (
         4 // size_of[Self.output_type]()
     )
     comptime UMMAQKTSS = DecodeSM100QKTSS[
@@ -170,25 +171,25 @@ struct MLA_SM100_Decode_KV_BF16[
     @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__name(
         t"sm100_mla_decode_kv_bf16_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
     )
     def kernel(
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BK=Self.config.BK_QK,  # tile_n =576
             swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
-            BN=Self.config.BK1,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BN=Self.config.BK_PV,  # tile_m =64
+            BK=Self.config.BK_QK,  # tile_n =576
         ],
         o_tma: QOTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
-            BK=Self.config.BN,
+            # Per-warp output stripe (= BN_PV/4), not BN_QK.
+            BK=Self.config.BN_PV // 4,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         kv_lut: Self.KVLUTType,
@@ -205,6 +206,16 @@ struct MLA_SM100_Decode_KV_BF16[
             MutAnyOrigin,
         ],
     ):
+        # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
+        # (MLA_SM100_Decode_QKV_FP8).  Reject it here at comptime.
+        comptime _mask_type_name: String = Self.MaskType.get_type_name()
+        comptime assert (
+            _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
+        ), (
+            "MLA_SM100_Decode_KV_BF16 only supports NullMask and CausalMask."
+            " Sliding window is supported only by MLA_SM100_Decode_QKV_FP8"
+            " (native FP8)."
+        )
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
         comptime num_reg_other = 112
@@ -368,7 +379,7 @@ struct MLA_SM100_Decode_KV_BF16[
         )  # corr_done uses 19..22
         mbar_base = corr_done_bars.end()  # barrier total [23]
         # We need (num_out_stages * 2) more barriers for the out pipeline.
-        # num_out_stages = (Depth/BN) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
+        # num_out_stages = (Depth/BN_QK) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
             num_out_stages=OutPipeType.num_out_stages,
@@ -490,14 +501,14 @@ struct MLA_SM100_Decode_KV_BF16[
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BK=Self.config.BK_QK,  # tile_n =576
             swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
-            BN=Self.config.BK1,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BN=Self.config.BK_PV,  # tile_m =64
+            BK=Self.config.BK_QK,  # tile_n =576
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
@@ -523,8 +534,13 @@ struct MLA_SM100_Decode_KV_BF16[
             return
 
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
+
+        # Alignment of `kv_row` produced by mask-driven iteration.
+        comptime base_alignment: Int = Self.MaskType.start_column_alignment[
+            Self.config.BM, Self.config.BN_QK, Self.KVLUTType.page_size
+        ]()
 
         var kv_prod = DecodeKVProducer[Self.kv_type, Self.config](
             kv_pipeline, kv_smem
@@ -537,38 +553,43 @@ struct MLA_SM100_Decode_KV_BF16[
         # Clamp kv_row to prevent OOB lookup_table access on the last tile.
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var kv_gmem_row: UInt32 = kv_lut.row_idx(
+        var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
             UInt32(offset_position.batch_idx), kv_row
         )
+        # this is the total bytes expected to be transferred to the mbar for Q and K0
+        expect_bytes_pred(
+            mbar_q,
+            Int32(
+                Self.config.BM * Self.config.q_depth * size_of[Self.q_type]()
+            ),
+            elect_mask,
+        )
         if is_leader:
-            # this is the total bytes expected to be transferred to the mbar for Q and K0
-            mbar_q[].expect_bytes(
-                Int32(
-                    Self.config.BM
-                    * Self.config.q_depth
-                    * size_of[Self.q_type]()
-                )
-            )
             Self.Common_MLA_Op.load_q(q_tma, q_smem, mbar_q, 0, row)
 
         var k0_bar: MBarType = kv_prod.producer_mbar[qk_stage=0]()
 
-        if is_leader:
-            k0_bar[].expect_bytes(
-                Int32(
-                    Self.config.BN
-                    * Self.config.q_depth
-                    * size_of[Self.kv_type]()
-                )
-            )
-            var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
-            Self.Common_MLA_Op.load_kv(
-                k_tma, stage_ptr, k0_bar, 0, Int(kv_gmem_row)
-            )
+        expect_bytes_pred(
+            k0_bar,
+            Int32(
+                Self.config.BN_QK
+                * Self.config.q_depth
+                * size_of[Self.kv_type]()
+            ),
+            elect_mask,
+        )
+        var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
+        paged_rows.tma_copy_k[needs_partial=False](
+            k_tma,
+            stage_ptr,
+            k0_bar[],
+            kv_head_idx=UInt32(0),
+            elect=elect_mask,
+        )
 
         kv_prod.commit_step()
 
-        kv_row += UInt32(Self.config.BN)
+        kv_row += UInt32(Self.config.BN_QK)
 
         var tile_idx: Int = 1
         while tile_idx < num_k_tiles:
@@ -576,23 +597,28 @@ struct MLA_SM100_Decode_KV_BF16[
             var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var kv_gmem_row: UInt32 = kv_lut.row_idx(
+            var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
                 UInt32(offset_position.batch_idx), kv_row
             )
 
-            if is_leader:
-                k_mbar[].expect_bytes(
-                    Int32(
-                        Self.config.BN
-                        * Self.config.q_depth
-                        * size_of[Self.kv_type]()
-                    )
-                )
-                Self.Common_MLA_Op.load_kv(
-                    k_tma, stage_ptr, k_mbar, 0, Int(kv_gmem_row)
-                )
+            expect_bytes_pred(
+                k_mbar,
+                Int32(
+                    Self.config.BN_QK
+                    * Self.config.q_depth
+                    * size_of[Self.kv_type]()
+                ),
+                elect_mask,
+            )
+            paged_rows.tma_copy_k[needs_partial=False](
+                k_tma,
+                stage_ptr,
+                k_mbar[],
+                kv_head_idx=UInt32(0),
+                elect=elect_mask,
+            )
 
-            kv_row += UInt32(Self.config.BN)
+            kv_row += UInt32(Self.config.BN_QK)
             kv_prod.commit_step()
             tile_idx += 1
 
@@ -674,7 +700,7 @@ struct MLA_SM100_Decode_KV_BF16[
         var elect_mask = elect()
 
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         # Early exit if there are no K tiles
@@ -746,7 +772,7 @@ struct MLA_SM100_Decode_KV_BF16[
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         # Early exit if there are no K tiles
@@ -763,7 +789,7 @@ struct MLA_SM100_Decode_KV_BF16[
         var p_smem_base = kv_smem + Self.NumVOBlocks * Self.BlockElems
         var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem_base)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_smem)
-        comptime block_step = Self.config.MMA_PV_N // Self.config.BN
+        comptime block_step = Self.config.MMA_PV_N // Self.config.BN_QK
         comptime stage_stride_in_bytes = Self.KVStageElems * Self.bytes_per_element
         comptime block_stride_in_bytes = Self.BlockElems * Self.bytes_per_element
 
@@ -783,7 +809,7 @@ struct MLA_SM100_Decode_KV_BF16[
                     b=v_descriptor
                     + v_slot_index * UInt32(stage_stride_in_bytes)
                     + UInt32(block * block_stride_in_bytes),
-                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN // 2),
+                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN_QK // 2),
                     c_scale=c_scale,
                     elect=elect_mask,
                 )

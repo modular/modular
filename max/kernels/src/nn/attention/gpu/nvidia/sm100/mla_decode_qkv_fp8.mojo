@@ -59,6 +59,7 @@ from std.utils.static_tuple import StaticTuple
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
+    expect_bytes_pred,
     SharedMemPointer,
     MBarType,
 )
@@ -97,16 +98,22 @@ struct MLA_SM100_Decode_QKV_FP8[
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
+    # This is used when speculative decoding is enabled.
+    fold_q: Bool = False,
+    # number of q_tokens folded into
+    # the BM=64 M tile under `fold_q=True`. Default 1.
+    # Only used inside `comptime if Self.fold_q`
+    q_len_fold: Int = 1,
 ](TrivialRegisterPassable):
     comptime kv_type = Self.KVLUTType.dtype  # float8_e4m3fn
     comptime fp8_type = DType.float8_e4m3fn
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9
-    comptime NumQKBlocks = Self.config.padded_q_depth // Self.config.BN
+    comptime NumQKBlocks = Self.config.padded_q_depth // Self.config.BN_QK
     # 512 / 64 = 8
-    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN
+    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN_QK
     # 64 * 64 = 4096
-    comptime BlockElems = Self.config.BM * Self.config.BN
+    comptime BlockElems = Self.config.BM * Self.config.BN_QK
     # FP8: 1 byte per element for all SMEM operands (Q, K, V, P)
     comptime fp8_bytes_per_element = size_of[Self.fp8_type]()
     # BF16: 2 bytes per element for output/accumulator
@@ -115,7 +122,7 @@ struct MLA_SM100_Decode_QKV_FP8[
     comptime KVStageElems = Self.NumQKBlocks * Self.BlockElems
     # P stage element count (FP8): 1 block * 4096 elems = 4096
     comptime PStageElems = Self.BlockElems
-    comptime output_tile_width = (Self.config.BN // 2) * (
+    comptime output_tile_width = (Self.config.BN_QK // 2) * (
         4 // size_of[Self.output_type]()
     )
 
@@ -148,6 +155,37 @@ struct MLA_SM100_Decode_QKV_FP8[
     comptime num_stages = Self.config.num_kv_stages
 
     # --------------------------------------------------------------------------
+    # Sliding-window k-tile skip (only callable when MaskType is
+    # SlidingWindowCausalMask).  All warpgroups call this with the same
+    # `offset_position` to avoid barriers deadlock.
+    #
+    # For SlidingWindowCausalMask with window_size W:
+    #   global_lo = max(cache_len + 1 - W, 0)   # 0-based key index
+    #   local_lo  = max(global_lo - kv_start_row, 0)
+    #   tile_skip = local_lo // BN_QK
+    # --------------------------------------------------------------------------
+    @staticmethod
+    @always_inline
+    def sliding_window_tile_skip(
+        offset_position: OffsetPosition[
+            Self.config,
+            Self.KVLUTType,
+            Self.ragged,
+            Self._is_cache_length_accurate,
+            Self.ValidLengthType,
+            Self.config.decoding_warp_split_k,
+        ],
+    ) -> Int:
+        comptime _W: Int = Int(
+            Self.MaskType.mask_strategies[Self.config.BM, Self.config.BN_QK]()[
+                0
+            ]._upper_triangular_window_size
+        )
+        var global_lo = max(offset_position.cache_len() + 1 - _W, 0)
+        var local_lo = max(global_lo - offset_position.kv_start_row, 0)
+        return local_lo // Self.config.BN_QK
+
+    # --------------------------------------------------------------------------
     # Main kernel function — 3 Warpgroups, 384 threads
     # --------------------------------------------------------------------------
     #    Softmax WG (warps 0-3), Correction WG (warps 4-7),
@@ -177,26 +215,26 @@ struct MLA_SM100_Decode_QKV_FP8[
     )
     @__name(
         t"sm100_mla_decode_qkv_fp8_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
     )
     def kernel(
         # Q TMA is FP8 with SWIZZLE_64B (same as KV)
         q_tma: QOTMATile[
             dtype=Self.kv_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BK=Self.config.BK_QK,  # tile_n =576
             swizzle_mode=Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
-            BN=Self.config.BK1,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BN=Self.config.BK_PV,  # tile_m =64
+            BK=Self.config.BK_QK,  # tile_n =576
         ],
         o_tma: QOTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
-            BK=Self.config.BN,
+            # Per-warp output stripe (= BN_PV/4), not BN_QK.
+            BK=Self.config.BN_PV // 4,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         kv_lut: Self.KVLUTType,
@@ -213,6 +251,19 @@ struct MLA_SM100_Decode_QKV_FP8[
             MutAnyOrigin,
         ],
     ):
+        # MaskType assertion: native FP8 backend supports NullMask, CausalMask,
+        # and SlidingWindowCausalMask.  Sliding window support is exclusive to
+        # this backend.
+        comptime _mask_type_name: String = Self.MaskType.get_type_name()
+        comptime assert (
+            _mask_type_name == "NullMask"
+            or _mask_type_name == "CausalMask"
+            or _mask_type_name == "SlidingWindowCausalMask"
+        ), (
+            "MLA_SM100_Decode_QKV_FP8 supports NullMask, CausalMask, and"
+            " SlidingWindowCausalMask only."
+        )
+
         # Extract scalar launch args from the stable device buffer.
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
@@ -249,22 +300,24 @@ struct MLA_SM100_Decode_QKV_FP8[
         # Early exit for split-K: CTAs with no work
         comptime if Self.config.decoding_warp_split_k:
             if offset_position.num_keys_this_split == 0:
-                Self.Common_MLA_Op.pdl_early_exit(
-                    offset_position.split_idx,
-                    offset_position.batch_idx,
-                    offset_position.max_seq_len,
-                    offset_position.out_row_offset,
-                    batch_size,
-                    lse_accum_split_ptr,
-                    o_tma,
-                )
-                return
-
-        # Early exit for ragged: skip blocks beyond actual sequence length
-        comptime if Self.ragged:
-            if block_idx.y >= offset_position.seq_len:
-                comptime if Self.config.decoding_warp_split_k:
-                    Self.Common_MLA_Op.pdl_early_exit(
+                comptime if Self.fold_q:
+                    # Fold owns all q_len_fold LSE slots; emit -inf per slot.
+                    # pass explicit seq_idx=q_local so each
+                    # slot's LSE is written; otherwise q_local>=1 slots stay
+                    # uninitialized and poison the combine kernel.
+                    comptime for q_local in range(Self.q_len_fold):
+                        Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
+                            offset_position.split_idx,
+                            offset_position.batch_idx,
+                            offset_position.max_seq_len,
+                            offset_position.out_row_offset_at(q_local),
+                            batch_size,
+                            lse_accum_split_ptr,
+                            o_tma,
+                            seq_idx_fold=UInt32(q_local),
+                        )
+                else:
+                    Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
                         offset_position.split_idx,
                         offset_position.batch_idx,
                         offset_position.max_seq_len,
@@ -273,6 +326,77 @@ struct MLA_SM100_Decode_QKV_FP8[
                         lse_accum_split_ptr,
                         o_tma,
                     )
+                return
+
+        # Sliding-window split-K: a CTA whose entire split lies BELOW the
+        # per-row lower bound (causal_limit - W) has nothing to compute and
+        # must take the same -inf-LSE early-exit path as `num_keys_this_split
+        # == 0`.  Comptime-gated so non-sliding builds compile to byte-
+        # identical PTX.
+        comptime _sliding_window_mask: Bool = (
+            Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
+        )
+        comptime if _sliding_window_mask and Self.config.decoding_warp_split_k:
+            var _num_k_tiles_total = ceildiv(
+                offset_position.num_keys_this_split, Self.config.BN_QK
+            )
+            var _tile_skip = Self.sliding_window_tile_skip(offset_position)
+            if _tile_skip >= _num_k_tiles_total:
+                comptime if Self.fold_q:
+                    comptime for q_local in range(Self.q_len_fold):
+                        Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
+                            offset_position.split_idx,
+                            offset_position.batch_idx,
+                            offset_position.max_seq_len,
+                            offset_position.out_row_offset_at(q_local),
+                            batch_size,
+                            lse_accum_split_ptr,
+                            o_tma,
+                            seq_idx_fold=UInt32(q_local),
+                        )
+                else:
+                    Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
+                        offset_position.split_idx,
+                        offset_position.batch_idx,
+                        offset_position.max_seq_len,
+                        offset_position.out_row_offset,
+                        batch_size,
+                        lse_accum_split_ptr,
+                        o_tma,
+                    )
+                return
+
+        # Early exit for ragged: skip blocks beyond actual sequence length
+        comptime if Self.ragged:
+            if block_idx.y >= offset_position.seq_len:
+                comptime if Self.config.decoding_warp_split_k:
+                    comptime if Self.fold_q:
+                        # Fold: under seq_len==0 emit -inf for every slot.
+                        # Per-q_local ragged fill for 0 < seq_len < q_len_fold
+                        # is deferred to A3 (LSE ragged fix).
+                        comptime for q_local in range(Self.q_len_fold):
+                            Self.Common_MLA_Op.pdl_early_exit[
+                                fold_q=Self.fold_q
+                            ](
+                                offset_position.split_idx,
+                                offset_position.batch_idx,
+                                offset_position.max_seq_len,
+                                offset_position.out_row_offset_at(q_local),
+                                batch_size,
+                                lse_accum_split_ptr,
+                                o_tma,
+                                seq_idx_fold=UInt32(q_local),
+                            )
+                    else:
+                        Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
+                            offset_position.split_idx,
+                            offset_position.batch_idx,
+                            offset_position.max_seq_len,
+                            offset_position.out_row_offset,
+                            batch_size,
+                            lse_accum_split_ptr,
+                            o_tma,
+                        )
 
                 return
 
@@ -392,6 +516,8 @@ struct MLA_SM100_Decode_QKV_FP8[
             Self.Common_MLA_Op.Softmax[
                 native_fp8=True,
                 num_sp_stages=Self.num_stages,
+                fold_q=Self.fold_q,
+                q_len_fold=Self.q_len_fold,
             ](
                 ptr_tmem_addr[0],
                 s_bars,
@@ -453,9 +579,9 @@ struct MLA_SM100_Decode_QKV_FP8[
                     offset_position,
                 )
             elif warp_idx == 11:
-                Self.Common_MLA_Op.store(
-                    out_pipeline, out_smem, o_tma, offset_position
-                )
+                Self.Common_MLA_Op.store[
+                    fold_q=Self.fold_q, q_len_fold=Self.q_len_fold
+                ](out_pipeline, out_smem, o_tma, offset_position)
         barrier()
 
         # PDL: Signal that this CTA is done
@@ -477,14 +603,14 @@ struct MLA_SM100_Decode_QKV_FP8[
         q_tma: QOTMATile[
             dtype=Self.kv_type,
             BM=Self.config.BM,
-            BK=Self.config.BK0,
+            BK=Self.config.BK_QK,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
-            BN=Self.config.BK1,
-            BK=Self.config.BK0,
+            BN=Self.config.BK_PV,
+            BK=Self.config.BK_QK,
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
@@ -509,8 +635,26 @@ struct MLA_SM100_Decode_QKV_FP8[
             return
 
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
+
+        # Alignment of `kv_row` produced by mask-driven iteration.
+        comptime base_alignment: Int = Self.MaskType.start_column_alignment[
+            Self.config.BM, Self.config.BN_QK, Self.KVLUTType.page_size
+        ]()
+
+        # Sliding-window early exit + leading-tile skip (comptime-gated;
+        # entire block compiles away for non-sliding masks).
+        comptime _sliding_window_mask: Bool = (
+            Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
+        )
+        # Lives only inside the comptime SW block.
+        var _tile_skip: Int = 0
+        comptime if _sliding_window_mask:
+            _tile_skip = Self.sliding_window_tile_skip(offset_position)
+            if _tile_skip >= num_k_tiles:
+                return
+            num_k_tiles -= _tile_skip
 
         var kv_prod = DecodeKVProducer[Self.kv_type, Self.config](
             kv_pipeline, kv_smem.bitcast[Scalar[Self.kv_type]]()
@@ -519,21 +663,26 @@ struct MLA_SM100_Decode_QKV_FP8[
         var is_leader = elect_mask != 0
         var row: Int = offset_position.q_row_offset
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
+        # Advance the starting KV row past skipped sliding-window tiles.
+        comptime if _sliding_window_mask:
+            kv_row += UInt32(_tile_skip * Self.config.BN_QK)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var kv_gmem_row: UInt32 = kv_lut.row_idx(
+        var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
             UInt32(offset_position.batch_idx), kv_row
         )
 
         # Load Q via TMA as FP8 (no conversion needed)
+        expect_bytes_pred(
+            mbar_q,
+            Int32(
+                Self.config.BM
+                * Self.config.q_depth
+                * Self.fp8_bytes_per_element
+            ),
+            elect_mask,
+        )
         if is_leader:
-            mbar_q[].expect_bytes(
-                Int32(
-                    Self.config.BM
-                    * Self.config.q_depth
-                    * Self.fp8_bytes_per_element
-                )
-            )
             # Q TMA: load FP8 Q directly into q_smem
             comptime q_elems = type_of(q_tma).tile_shape[0] * type_of(
                 q_tma
@@ -549,20 +698,25 @@ struct MLA_SM100_Decode_QKV_FP8[
 
         # Load first KV tile (FP8)
         var k0_bar: MBarType = kv_prod.producer_mbar[qk_stage=0]()
-        if is_leader:
-            k0_bar[].expect_bytes(
-                Int32(
-                    Self.config.BN
-                    * Self.config.q_depth
-                    * Self.fp8_bytes_per_element
-                )
-            )
-            var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
-            Self.Common_MLA_Op.load_kv(
-                k_tma, stage_ptr, k0_bar, 0, Int(kv_gmem_row)
-            )
+        expect_bytes_pred(
+            k0_bar,
+            Int32(
+                Self.config.BN_QK
+                * Self.config.q_depth
+                * Self.fp8_bytes_per_element
+            ),
+            elect_mask,
+        )
+        var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
+        paged_rows.tma_copy_k[needs_partial=False](
+            k_tma,
+            stage_ptr,
+            k0_bar[],
+            kv_head_idx=UInt32(0),
+            elect=elect_mask,
+        )
         kv_prod.commit_step()
-        kv_row += UInt32(Self.config.BN)
+        kv_row += UInt32(Self.config.BN_QK)
 
         # Wait for Q TMA to complete. Q arrives as FP8, ready for MMA.
         mbar_q[].wait(0)
@@ -574,23 +728,28 @@ struct MLA_SM100_Decode_QKV_FP8[
             var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var kv_gmem_row: UInt32 = kv_lut.row_idx(
+            var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
                 UInt32(offset_position.batch_idx), kv_row
             )
 
-            if is_leader:
-                k_mbar[].expect_bytes(
-                    Int32(
-                        Self.config.BN
-                        * Self.config.q_depth
-                        * Self.fp8_bytes_per_element
-                    )
-                )
-                Self.Common_MLA_Op.load_kv(
-                    k_tma, stage_ptr, k_mbar, 0, Int(kv_gmem_row)
-                )
+            expect_bytes_pred(
+                k_mbar,
+                Int32(
+                    Self.config.BN_QK
+                    * Self.config.q_depth
+                    * Self.fp8_bytes_per_element
+                ),
+                elect_mask,
+            )
+            paged_rows.tma_copy_k[needs_partial=False](
+                k_tma,
+                stage_ptr,
+                k_mbar[],
+                kv_head_idx=UInt32(0),
+                elect=elect_mask,
+            )
 
-            kv_row += UInt32(Self.config.BN)
+            kv_row += UInt32(Self.config.BN_QK)
             kv_prod.commit_step()
             tile_idx += 1
 
@@ -628,11 +787,23 @@ struct MLA_SM100_Decode_QKV_FP8[
         var elect_mask = elect()
 
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         if num_k_tiles == 0:
             return
+
+        # Sliding-window early exit + leading-tile skip (comptime-gated;
+        # entire block compiles away for non-sliding masks).  Must match
+        # `load` exactly so consumer iterations equal producer iterations.
+        comptime _sliding_window_mask: Bool = (
+            Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
+        )
+        comptime if _sliding_window_mask:
+            var _tile_skip = Self.sliding_window_tile_skip(offset_position)
+            if _tile_skip >= num_k_tiles:
+                return
+            num_k_tiles -= _tile_skip
 
         var kv_cons = DecodeKVConsumer[Self.fp8_type, Self.config](
             kv_pipeline, kv_smem
@@ -707,11 +878,23 @@ struct MLA_SM100_Decode_QKV_FP8[
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         if num_k_tiles == 0:
             return
+
+        # Sliding-window early exit + leading-tile skip (comptime-gated;
+        # entire block compiles away for non-sliding masks).  Must match
+        # `load` exactly so consumer iterations equal producer iterations.
+        comptime _sliding_window_mask: Bool = (
+            Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
+        )
+        comptime if _sliding_window_mask:
+            var _tile_skip = Self.sliding_window_tile_skip(offset_position)
+            if _tile_skip >= num_k_tiles:
+                return
+            num_k_tiles -= _tile_skip
 
         comptime s_stride = UInt32(Self.config.TMEM_S1 - Self.config.TMEM_S0)
         var kv_cons = DecodeKVConsumer[Self.fp8_type, Self.config](
@@ -725,7 +908,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem)
         # V descriptor: points to the KV SMEM (V data is first 512 cols of KV)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_smem)
-        comptime block_step = Self.config.MMA_PV_N // Self.config.BN
+        comptime block_step = Self.config.MMA_PV_N // Self.config.BN_QK
         # FP8: 1 byte per element
         comptime kv_stage_stride_in_bytes = Self.KVStageElems * Self.fp8_bytes_per_element
         comptime p_stage_stride_in_bytes = Self.PStageElems * Self.fp8_bytes_per_element
@@ -747,7 +930,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                     b=v_descriptor
                     + v_slot_index * UInt32(kv_stage_stride_in_bytes)
                     + UInt32(block * block_stride_in_bytes),
-                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN // 2),
+                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN_QK // 2),
                     c_scale=c_scale,
                     elect=elect_mask,
                 )

@@ -287,7 +287,7 @@ def conv2d_fprop[
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     # Launch kernel with im2col TMA
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         act_tma_op,
         filter_tma_op,
         out_tma_op,
@@ -523,7 +523,7 @@ def conv2d_fprop_with_residual[
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     # Launch kernel with residual
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         act_tma_op,
         filter_tma_op,
         out_tma_op,

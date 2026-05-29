@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import reduce
 from operator import mul
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
@@ -31,25 +31,59 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 from .data_parallelism_utils import split_into_groups
 from .input_types import KVCacheInputs, KVCacheInputsPerDevice
 
+# Mirror of max.pipelines.speculative.config.SpeculativeMethod. Defined
+# inline rather than imported because max.pipelines.speculative depends
+# on max.nn (BUILD.bazel), so importing back would create a circular
+# bazel dependency. The two definitions are structurally identical
+# Literals, so mypy treats them as the same type at use sites.
+SpeculativeMethod = Literal["standalone", "eagle", "mtp", "dflash"]
+
 logger = logging.getLogger("max.pipelines")
 
 
 class KVConnectorType(str, Enum):
-    """Type of KV cache connector to use."""
+    """Identifies which off-device backing store the KV cache uses.
+
+    Set on :attr:`KVCacheParams.kv_connector` to control whether evicted
+    cache pages stay on device only, spill to host memory, tier across host
+    and disk, or route through a distributed block store.
+    """
 
     null = "null"
+    """No off-device backing store. Pages live on device only."""
+
     local = "local"
+    """Spills evicted pages to host memory.
+
+    Requires ``enable_prefix_caching`` and ``host_kvcache_swap_space_gb``
+    to be set on :class:`KVCacheParams`.
+    """
+
     tiered = "tiered"
-    lmcache = "lmcache"
+    """Tiers evicted pages across host memory and disk.
+
+    Requires ``enable_prefix_caching``, ``host_kvcache_swap_space_gb``,
+    and a ``disk_offload_dir`` on the connector config.
+    """
+
     dkv = "dkv"
+    """Routes pages through a distributed KV block store.
+
+    Requires a ``block_store_endpoint`` on the connector config.
+    """
 
 
 @dataclass
 class KVCacheBuffer:
     """This is a collection of the KVCache buffers.
 
-    There are two types of supported buffers today: values and scales.
+    There are three types of supported buffers: values, scales, and staging.
     The scales are optional and used for FP8 quantization.
+    The staging buffer is optional and used for the fp8-KV dequant-staging
+    path (``mo.mha.ragged.paged.fp8_kv``): a pre-allocated bf16 scratch
+    buffer of shape ``[num_blocks, 2, 1, page_size, num_heads, head_dim]``
+    (one layer only) so that the MOGG op does not need to call
+    ``enqueue_create_buffer`` inside a CUDA graph capture region.
 
     The length of the list of buffers correspond to the tensor parallel degree
     where each buffer in the list corresponds to a single TP shard.
@@ -60,6 +94,7 @@ class KVCacheBuffer:
     total_num_pages: int
     values: list[Buffer]
     scales: list[Buffer] | None = None
+    staging: list[Buffer] | None = None
 
     def __post_init__(self) -> None:
         if self.total_num_pages <= 0:
@@ -68,72 +103,46 @@ class KVCacheBuffer:
         if len(self.values) == 0:
             raise ValueError("List of values must be non-empty")
 
-        if self.scales is None:
-            return
+        if self.scales is not None:
+            if len(self.scales) != len(self.values):
+                raise ValueError("Scales must be the same length as values")
 
-        if len(self.scales) != len(self.values):
-            raise ValueError("Scales must be the same length as values")
+            for value, scale in zip(self.values, self.scales, strict=True):
+                if value.device != scale.device:
+                    raise ValueError(
+                        "Corresponding values and scales must be on the same device"
+                    )
+                if isinstance(value, DevicePinnedBuffer) != isinstance(
+                    scale, DevicePinnedBuffer
+                ):
+                    raise ValueError(
+                        "Corresponding values and scales must be either both pinned or both non-pinned"
+                    )
 
-        for value, scale in zip(self.values, self.scales, strict=True):
-            if value.device != scale.device:
-                raise ValueError(
-                    "Corresponding values and scales must be on the same device"
-                )
-            if isinstance(value, DevicePinnedBuffer) != isinstance(
-                scale, DevicePinnedBuffer
-            ):
-                raise ValueError(
-                    "Corresponding values and scales must be either both pinned or both non-pinned"
-                )
+        if self.staging is not None:
+            if len(self.staging) != len(self.values):
+                raise ValueError("Staging must be the same length as values")
 
-    def allocate_host_offload_buffer(
-        self, total_num_host_pages: int
-    ) -> KVCacheBuffer:
-        """Allocates a KVCacheBuffer for host offloading.
-
-        The allocated buffer will have the same characteristics as the original
-        buffer, apart from the total_num_pages and the location. The host offload
-        buffer will be allocated on DevicePinnedBuffer for fast transfer speeds.
-        """
-        if any(
-            buffer.device.is_host or isinstance(buffer, DevicePinnedBuffer)
-            for buffer in self.all_buffers
-        ):
-            raise ValueError(
-                "KVCacheBuffer is on the CPU. Unable to allocate host offload buffer for already-on-CPU buffers."
-            )
-
-        return KVCacheBuffer(
-            total_num_pages=self.total_num_pages,
-            values=[
-                DevicePinnedBuffer(
-                    shape=[total_num_host_pages, *value.shape[1:]],
-                    dtype=value.dtype,
-                    device=value.device,
-                )
-                for value in self.values
-            ],
-            scales=[
-                DevicePinnedBuffer(
-                    shape=[total_num_host_pages, *scale.shape[1:]],
-                    dtype=scale.dtype,
-                    device=scale.device,
-                )
-                for scale in self.scales
-            ]
-            if self.scales is not None
-            else None,
-        )
+            for value, stg in zip(self.values, self.staging, strict=True):
+                if value.device != stg.device:
+                    raise ValueError(
+                        "Corresponding values and staging must be on the same device"
+                    )
 
     @property
     def all_buffers(self) -> list[Buffer]:
-        """Returns all value and scale buffers in a single flat list.
+        """Returns all value, scale, and staging buffers in a single flat list.
 
         Returns:
             A list containing every value buffer followed by every scale
-            buffer (if scales are present).
+            buffer (if scales are present) and every staging buffer (if
+            staging is present).
         """
-        return [*self.values, *(self.scales if self.scales is not None else [])]
+        return [
+            *self.values,
+            *(self.scales if self.scales is not None else []),
+            *(self.staging if self.staging is not None else []),
+        ]
 
 
 @dataclass
@@ -159,7 +168,19 @@ class KVCacheParamInterface(Protocol):
     n_devices: int
     kv_connector: KVConnectorType | None
     host_kvcache_swap_space_gb: float | None
-    num_eagle_speculative_tokens: int = 0
+    speculative_method: SpeculativeMethod | None = None
+    num_draft_tokens: int = 0
+
+    @property
+    def num_draft_tokens_per_step(self) -> int:
+        """Number of draft tokens written per draft forward.
+
+        One for autoregressive drafts (``eagle``, ``mtp``, ``standalone``);
+        equal to ``num_draft_tokens`` for block drafts (``dflash``).
+        """
+        if self.speculative_method == "dflash":
+            return self.num_draft_tokens
+        return 1
 
     @property
     def bytes_per_block(self) -> int:
@@ -170,6 +191,16 @@ class KVCacheParamInterface(Protocol):
         self, prefix: str = ""
     ) -> KVCacheInputs[TensorType, BufferType]:
         """Returns the symbolic inputs for the KV cache."""
+        ...
+
+    @property
+    def replicates_kv_across_tp(self) -> bool:
+        """Whether every device holds identical KV state."""
+        ...
+
+    @property
+    def tensor_parallel_degree(self) -> int:
+        """Returns the tensor parallel degree."""
         ...
 
 
@@ -200,7 +231,7 @@ class KVCacheParams(KVCacheParamInterface):
     """Whether to enable prefix caching for efficient reuse of common prompt prefixes."""
 
     kv_connector: KVConnectorType | None = None
-    """Type of KV cache connector to use (null, local, tiered, lmcache)."""
+    """Type of KV cache connector to use (null, local, tiered, dkv)."""
 
     kv_connector_config: Any = None
     """Connector-specific configuration (KVConnectorConfig from the pipelines layer)."""
@@ -237,8 +268,14 @@ class KVCacheParams(KVCacheParamInterface):
     kvcache_quant_config: KVCacheQuantizationConfig | None = None
     """KVCache quantization config. Currently only FP8 quantization supported."""
 
-    num_eagle_speculative_tokens: int = 0
-    """Number of draft tokens to generate for EAGLE speculative decoding."""
+    speculative_method: SpeculativeMethod | None = None
+    """Speculative decoding method propagated from
+    SpeculativeConfig"""
+
+    num_draft_tokens: int = 0
+    """Total draft tokens generated per speculative iteration.
+
+    Zero when no speculative decoding is configured."""
 
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
@@ -378,6 +415,15 @@ class KVCacheParams(KVCacheParamInterface):
         return self.n_devices // self.data_parallel_degree
 
     @property
+    def replicates_kv_across_tp(self) -> bool:
+        """Whether every device holds identical KV state."""
+        return (
+            self.is_mla
+            and self.data_parallel_degree == 1
+            and self.n_devices > 1
+        )
+
+    @property
     def dtype_shorthand(self) -> str:
         """Returns a shorthand textual representation of the data type.
 
@@ -504,7 +550,11 @@ class KVCacheParams(KVCacheParamInterface):
         )
 
     def _get_symbolic_inputs_for_replica(
-        self, devices: Sequence[DeviceRef], replica_idx: int, prefix: str = ""
+        self,
+        devices: Sequence[DeviceRef],
+        replica_idx: int,
+        prefix: str = "",
+        draft_attention_group: KVCacheParams | None = None,
     ) -> list[KVCacheInputsPerDevice[TensorType, BufferType]]:
         """Computes the symbolic inputs for a single replica.
 
@@ -516,6 +566,13 @@ class KVCacheParams(KVCacheParamInterface):
         kv_cache_scale_dtype = DType.float32
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
             kv_cache_scale_dtype = self.kvcache_quant_config.scale_dtype
+
+        draft_params: KVCacheParams | None = (
+            draft_attention_group
+            if draft_attention_group is not None
+            else (self if self.num_draft_tokens > 0 else None)
+        )
+
         return [
             KVCacheInputsPerDevice(
                 kv_blocks=BufferType(
@@ -560,22 +617,29 @@ class KVCacheParams(KVCacheParamInterface):
                 ),
                 draft_attention_dispatch_metadata=TensorType(
                     DType.int64,
-                    shape=[3] if self.is_mla else [4],
-                    device=device if self.is_mla else DeviceRef.CPU(),
+                    shape=[3] if draft_params.is_mla else [4],
+                    device=device if draft_params.is_mla else DeviceRef.CPU(),
                 )
-                if self.num_eagle_speculative_tokens > 0
+                if draft_params is not None
                 else None,
             )
             for device in devices
         ]
 
     def get_symbolic_inputs(
-        self, prefix: str = ""
+        self,
+        prefix: str = "",
+        *,
+        draft_attention_group: KVCacheParams | None = None,
     ) -> KVCacheInputs[TensorType, BufferType]:
         """Computes the symbolic inputs for the KV cache.
 
-        This method returns a list of KVCacheInputs for each replica.
-        This is used when constructing the model graph.
+        Args:
+            prefix: Prefix for dynamic dim names.
+            draft_attention_group: When set, sizes
+                ``draft_attention_dispatch_metadata`` by the drafter's
+                ``is_mla`` rather than ``self``'s. Use for unified spec-dec
+                graphs with asymmetric attention types.
 
         Returns:
             The symbolic inputs for the KV cache.
@@ -589,6 +653,7 @@ class KVCacheParams(KVCacheParamInterface):
                 devices,
                 replica_idx,
                 prefix,
+                draft_attention_group=draft_attention_group,
             )
             input_symbols.extend(symbols)
         return KVCacheInputs(inputs=input_symbols)
@@ -624,7 +689,9 @@ class KVCacheParams(KVCacheParamInterface):
                     scales.append(scale)
 
             kv_cache_buffer = KVCacheBuffer(
-                values=values, scales=scales, total_num_pages=total_num_pages
+                values=values,
+                scales=scales,
+                total_num_pages=total_num_pages,
             )
             kv_cache_buffers.append(kv_cache_buffer)
         return kv_cache_buffers
@@ -647,7 +714,8 @@ class MultiKVCacheParams(KVCacheParamInterface):
     n_devices: int
     kv_connector: KVConnectorType | None
     host_kvcache_swap_space_gb: float | None
-    num_eagle_speculative_tokens: int = 0
+    speculative_method: SpeculativeMethod | None = None
+    num_draft_tokens: int = 0
 
     @classmethod
     def from_params(cls, *params: KVCacheParams) -> MultiKVCacheParams:
@@ -675,7 +743,8 @@ class MultiKVCacheParams(KVCacheParamInterface):
             n_devices=params[0].n_devices,
             kv_connector=params[0].kv_connector,
             host_kvcache_swap_space_gb=params[0].host_kvcache_swap_space_gb,
-            num_eagle_speculative_tokens=params[0].num_eagle_speculative_tokens,
+            speculative_method=params[0].speculative_method,
+            num_draft_tokens=params[0].num_draft_tokens,
         )
 
     def __post_init__(self) -> None:
@@ -717,12 +786,16 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 f"All params must use the same host_kvcache_swap_space_gb, got: {host_kvcache_swap_space_gb}"
             )
 
-        num_eagle_speculative_tokens = {
-            p.num_eagle_speculative_tokens for p in self.params
-        }
-        if len(num_eagle_speculative_tokens) > 1:
+        speculative_methods = {p.speculative_method for p in self.params}
+        if len(speculative_methods) > 1:
             raise ValueError(
-                f"All params must use the same num_eagle_speculative_tokens, got: {num_eagle_speculative_tokens}"
+                f"All params must use the same speculative_method, got: {speculative_methods}"
+            )
+
+        num_draft_tokens_set = {p.num_draft_tokens for p in self.params}
+        if len(num_draft_tokens_set) > 1:
+            raise ValueError(
+                f"All params must use the same num_draft_tokens, got: {num_draft_tokens_set}"
             )
 
     @property
@@ -742,6 +815,16 @@ class MultiKVCacheParams(KVCacheParamInterface):
         for i, p in enumerate(self.params):
             inputs.extend(p.get_symbolic_inputs(f"{prefix}cache{i}_").inputs)
         return KVCacheInputs(inputs=inputs)
+
+    @property
+    def replicates_kv_across_tp(self) -> bool:
+        """Whether every device holds identical KV state."""
+        return self.params[0].replicates_kv_across_tp
+
+    @property
+    def tensor_parallel_degree(self) -> int:
+        """Returns the tensor parallel degree."""
+        return self.params[0].tensor_parallel_degree
 
 
 def compute_num_device_blocks(
@@ -898,7 +981,13 @@ def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
     GiB = 1024 * 1024 * 1024
     host_gb_per_replica = params.host_kvcache_swap_space_gb
     host_bytes_per_replica = host_gb_per_replica * GiB
-    num_host_blocks = int(host_bytes_per_replica // params.bytes_per_block)
+
+    bytes_per_block = params.bytes_per_block
+    if params.replicates_kv_across_tp:
+        # On cpu/disk, we don't need multiple replicas of the same KV state.
+        assert bytes_per_block % params.tensor_parallel_degree == 0
+        bytes_per_block = bytes_per_block // params.tensor_parallel_degree
+    num_host_blocks = int(host_bytes_per_replica // bytes_per_block)
 
     if num_host_blocks == 0:
         raise RuntimeError(

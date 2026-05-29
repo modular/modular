@@ -73,6 +73,7 @@ Devices
    :template: autosummary/class.rst
 
    DeviceKind
+   DevicePlacementPolicy
    DeviceRef
 
 Weights

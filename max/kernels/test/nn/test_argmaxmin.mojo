@@ -478,7 +478,7 @@ def test_argn_parallelize() raises:
     comptime hidden_dim = 16384
 
     comptime input_shape = row_major[batch_size, hidden_dim]()
-    var input_ptr = alloc[Float32](input_shape.product())
+    var input_ptr = List(length=input_shape.product(), fill=Float32(0))
     var input = TileTensor(input_ptr, input_shape)
 
     for i in range(batch_size):
@@ -549,8 +549,7 @@ def test_argn_parallelize() raises:
     print("argmin = ", output[6, 0])
     # CHECK: argmin = 40
     print("argmin = ", output[7, 0])
-
-    input_ptr.free()
+    _ = input_ptr^
 
 
 def main() raises:

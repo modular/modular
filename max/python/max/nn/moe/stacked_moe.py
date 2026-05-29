@@ -84,20 +84,28 @@ class GateUpFormat(Enum):
     """
 
 
-def silu_activation(gate: TensorValue, up: TensorValue) -> TensorValue:
-    """Computes a SiLU gated activation as ``up * silu(gate)``.
+def make_stacked_gated_activation_fn(
+    activation_fn: Callable[[TensorValue], TensorValue],
+) -> Callable[[TensorValue, TensorValue], TensorValue]:
+    """Builds a gated activation for split ``(gate, up)`` projections.
 
-    This is the default activation used by most MoE implementations
-    including Llama4 and Qwen3VL.
+    The returned callable applies ``activation_fn`` to the gate tensor
+    and multiplies with the up tensor:
+    ``activation_fn(gate) * up``.
 
     Args:
-        gate: The gate projection tensor.
-        up: The up projection tensor.
+        activation_fn: Pointwise activation to apply to the gate tensor.
 
     Returns:
-        The element-wise product of ``up`` and ``silu(gate)``.
+        A callable ``(gate, up) -> activated``.
     """
-    return up * ops.silu(gate)
+
+    def _stacked_gated_activation_fn(
+        gate: TensorValue, up: TensorValue
+    ) -> TensorValue:
+        return activation_fn(gate) * up
+
+    return _stacked_gated_activation_fn
 
 
 def _gate_up_scale_sharding_strategy(
@@ -240,7 +248,7 @@ class StackedMoE(Module, Shardable):
             moe_dim=14336,
             gate_cls=GptOssMoEGate,
             gate_up_format=GateUpFormat.INTERLEAVED,
-            activation_fn=my_custom_activation,
+            gated_activation_fn=my_custom_activation,
             has_bias=True,
         )
 
@@ -255,9 +263,10 @@ class StackedMoE(Module, Shardable):
             ``DType.bfloat16``.
         gate_up_format: The format of the combined gate/up weights. Defaults
             to ``GateUpFormat.CONCATENATED``.
-        activation_fn: The activation function taking ``(gate, up)`` and
-            returning the activated output. Defaults to
-            :func:`silu_activation`.
+        gated_activation_fn: Activation applied to the split
+            ``(gate, up)`` projections. ``None`` (default) uses SiLU
+            gating; use :func:`make_stacked_gated_activation_fn` for
+            custom activations.
         has_bias: Whether to include bias for projections. Defaults to
             ``False``.
         has_shared_experts: Whether to use shared experts. Defaults to
@@ -285,9 +294,8 @@ class StackedMoE(Module, Shardable):
         gate_cls: Callable[..., MoEGate],
         dtype: DType = DType.bfloat16,
         gate_up_format: GateUpFormat = GateUpFormat.CONCATENATED,
-        activation_fn: Callable[
-            [TensorValue, TensorValue], TensorValue
-        ] = silu_activation,
+        gated_activation_fn: Callable[[TensorValue, TensorValue], TensorValue]
+        | None = None,
         has_bias: bool = False,
         has_shared_experts: bool = False,
         shared_experts_dim: int = 0,
@@ -304,7 +312,9 @@ class StackedMoE(Module, Shardable):
         self.gate_cls = gate_cls
         self.dtype = dtype
         self.gate_up_format = gate_up_format
-        self.activation_fn = activation_fn
+        self.gated_activation_fn = (
+            gated_activation_fn or make_stacked_gated_activation_fn(ops.silu)
+        )
         self.has_bias = has_bias
         self.has_shared_experts = has_shared_experts
         self.shared_experts_dim = shared_experts_dim
@@ -530,7 +540,7 @@ class StackedMoE(Module, Shardable):
             raise ValueError("Gate+Up output must be BF16 for activation")
 
         gate, up = self._split_gate_up(gate_up_output)
-        return self.activation_fn(gate, up)
+        return self.gated_activation_fn(gate, up)
 
     def _prepare_routing(self, router_idx: TensorValue) -> RoutingInfo:
         """Computes token-to-expert routing indices.
@@ -887,7 +897,7 @@ class StackedMoE(Module, Shardable):
             gate_cls=self.gate_cls,
             dtype=self.dtype,
             gate_up_format=self.gate_up_format,
-            activation_fn=self.activation_fn,
+            gated_activation_fn=self.gated_activation_fn,
             has_bias=self.has_bias,
             has_shared_experts=self.has_shared_experts,
             shared_experts_dim=sharded_shared_dim,

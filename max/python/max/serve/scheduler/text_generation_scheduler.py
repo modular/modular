@@ -16,25 +16,27 @@ import logging
 import os
 import time
 
-from max.interfaces import (
-    MAXPullQueue,
-    MAXPushQueue,
-    Pipeline,
-    RequestID,
-    Scheduler,
-    SchedulerResult,
-    TextGenerationInputs,
-    TextGenerationOutput,
-)
-from max.interfaces.queue import drain_queue
-from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     PipelineConfig,
     TextGenerationPipeline,
 )
+from max.pipelines.modeling.types import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
 from max.profiler import Tracer, traced
+from max.serve.queue import (
+    MAXPullQueue,
+    MAXPushQueue,
+    drain_queue,
+)
+from max.serve.scheduler.interface import Scheduler
+from max.serve.scheduler_result import SchedulerResult
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor

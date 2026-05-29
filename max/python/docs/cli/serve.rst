@@ -1,9 +1,9 @@
 :title: max serve
 
-Launches a model server with an OpenAI-compatible endpoint. Just specify the
+Launches a model server with an OpenAI-compatible endpoint. Specify the
 model as a Hugging Face model ID or a local path.
 
-For example:
+For example, start a server for a Gemma 3 model on the first GPU:
 
 .. code-block:: bash
 
@@ -13,12 +13,49 @@ For example:
       --max-batch-size 8 \
       --device-memory-utilization 0.9
 
-For details about the endpoint APIs provided by the server, see [the MAX REST
-API reference](/max/api/serve).
+The endpoints exposed depend on the value of the ``MAX_SERVE_API_TYPES``
+environment variable (default: ``openai,sagemaker``):
 
-The ``max`` CLI also supports loading custom model architectures through the
-``--custom-architectures`` flag. This allows you to extend MAX's capabilities
-with your own model implementations:
+- ``openai``: ``/v1/completions``, ``/v1/chat/completions``,
+  ``/v1/embeddings``, ``/v1/audio/speech``, ``/v1/models``, ``/v1/health``
+- ``sagemaker``: SageMaker-compatible inference endpoints
+- ``kserve``: KServe-compatible inference endpoints
+- ``responses``: ``/v1/responses`` (required for the ``pixel_generation``
+  task)
+
+The OpenAI routes are always registered when the ``openai`` API type is
+enabled, but each only functions when the model is served with a
+compatible ``--task`` value (for example ``embeddings_generation`` for
+``/v1/embeddings``, or ``audio_generation`` for ``/v1/audio/speech``).
+
+To run inference without an HTTP server, see
+`max generate </max/cli/generate>`_ (text completion) or
+`max encode </max/cli/encode>`_ (embeddings).
+
+For details about the endpoint APIs provided by the server, see [the MAX REST
+API reference](/max/rest-api/).
+
+Running on multiple GPUs
+------------------------
+
+Pass a comma-separated list of GPU IDs to ``--devices``:
+
+.. code-block:: bash
+
+    max serve \
+      --model google/gemma-3-12b-it \
+      --devices=gpu:0,1,2,3 \
+      --max-batch-size 16
+
+``--devices`` is the first-class device selector for ``max serve``.
+Avoid combining it with the shell-level ``CUDA_VISIBLE_DEVICES``
+environment variable — the two are translated independently and
+stacking them can produce wrong device routing under multi-process
+workspaces.
+
+You can extend MAX with your own model implementations by loading custom
+architectures through the ``--custom-architectures`` flag. Each value takes
+the form ``path/to/module:module_name``:
 
 .. code-block:: bash
 
@@ -32,31 +69,10 @@ with your own model implementations:
 
     :::note Custom architectures
 
-    The `--custom-architectures` flag allows you to load custom pipeline
-    architectures from your own Python modules. You can set the `ARCHITECTURES`
-    variable containing the architecture definitions. Each entry in
-    `--custom-architectures` can be specified in two formats:
-
-    - A raw module name; for example: `my_module`.
-    - An import path followed by a colon and the module name; for example: `folder/path/to/import:my_module`.
-
-    The `ARCHITECTURES` variable in your module should be a list of implementations
-    that conform to the
-    [SupportedArchitecture](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture)
-    interface. These will be registered with the MAX pipeline registry automatically.
-
-    :::
-
-
-    :::note Quantization encoding
-
-    When using GGUF models, quantization encoding formats are automatically detected.
-    If no `--quantization-encoding` is specified, MAX Serve automatically detects and
-    uses the first encoding option from the repository. If quantization encoding is
-    provided, it must align with the available encoding options in the repository.
-
-    If the repository contains multiple quantization formats, specify which encoding
-    type you want to use with the `--quantization-encoding` parameter.
+    For a full example using the
+    [`--custom-architectures`](#--custom-architectures-custom_architectures) flag,
+    see [Serve custom model architectures
+    ](/max/develop/serve-custom-model-architectures).
 
     :::
 

@@ -133,7 +133,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
         Examples:
             ```mojo
-            from sys import stdout
+            from std.sys import stdout
 
             # Check if stdout is a terminal
             if stdout.isatty():

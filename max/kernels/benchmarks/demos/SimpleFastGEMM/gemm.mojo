@@ -25,6 +25,7 @@ from linalg.utils import (
 
 
 from layout import TileTensor, Coord, Idx, row_major
+from internal_utils import ScalarArray
 
 comptime dtype = DType.float32
 comptime simd_size = simd_width_of[dtype]()
@@ -42,7 +43,7 @@ comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
 def print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
-    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(n)))
+    var a = TileTensor(a_ptr, row_major(m, n))
     for i in range(m):
         for j in range(n):
             print(a[i, j], end=" ")
@@ -75,9 +76,9 @@ def kernel(
     k: Int,
     kc: Int,
 ):
-    var a = TileTensor(a_ptr, row_major(Idx(MR * k)))
-    var b = TileTensor(b_ptr, row_major(Idx(k * NR)))
-    var c = TileTensor(c_ptr, row_major(Idx(MR * n)))
+    var a = TileTensor(a_ptr, row_major(MR * k))
+    var b = TileTensor(b_ptr, row_major(k * NR))
+    var c = TileTensor(c_ptr, row_major(MR * n))
 
     var c_stack = InlineArray[Scalar[dtype], align_up(MR * NR, alignment)](
         uninitialized=True
@@ -88,10 +89,8 @@ def kernel(
 
     comptime for idx0 in range(MR):
         for idx1 in range(NR2):
-            var cv = c.load[width=simd_size](
-                Coord(Idx(n * idx0 + simd_size * idx1))
-            )
-            c_local.store(Coord(Idx(NR * idx0 + simd_size * idx1)), cv)
+            var cv = c.load[width=simd_size](Coord(n * idx0 + simd_size * idx1))
+            c_local.store(Coord(NR * idx0 + simd_size * idx1), cv)
 
     for pr in range(kc):
         comptime for i in range(NR2):
@@ -103,20 +102,20 @@ def kernel(
             for idx1 in range(NR2):
                 var av = a[idx0 * k + pr].cast[dtype]()
                 var bv = b.load[width=simd_size](
-                    Coord(Idx(NR * pr + simd_size * idx1))
+                    Coord(NR * pr + simd_size * idx1)
                 )
                 var cv = c_local.load[width=simd_size](
-                    Coord(Idx(NR * idx0 + simd_size * idx1))
+                    Coord(NR * idx0 + simd_size * idx1)
                 )
                 cv += av * bv
-                c_local.store(Coord(Idx(NR * idx0 + simd_size * idx1)), cv)
+                c_local.store(Coord(NR * idx0 + simd_size * idx1), cv)
 
     comptime for idx0 in range(MR):
         for idx1 in range(NR2):
             var cv = c_local.load[width=simd_size](
-                Coord(Idx(NR * idx0 + simd_size * idx1))
+                Coord(NR * idx0 + simd_size * idx1)
             )
-            c.store(Coord(Idx(n * idx0 + simd_size * idx1)), cv)
+            c.store(Coord(n * idx0 + simd_size * idx1), cv)
 
 
 def pack_B(
@@ -127,8 +126,8 @@ def pack_B(
     kc: Int,
     nc: Int,
 ):
-    var b = TileTensor(b_ptr, row_major(Idx(k * n)))
-    var bc = TileTensor(b2_ptr, row_major(Idx(k * n)))
+    var b = TileTensor(b_ptr, row_major(k * n))
+    var bc = TileTensor(b2_ptr, row_major(k * n))
     for pr in range(kc):
         for ir in range(nc // NR):
             for v in range(NR):
@@ -194,20 +193,23 @@ def main() raises:
     print("x", end="")
     print(k)
 
-    var a_ptr = alloc[Scalar[dtype]](m * k, alignment=alignment)
-    var b_ptr = alloc[Scalar[dtype]](k * n, alignment=alignment)
-    var b2_ptr = alloc[Scalar[dtype]](k * n, alignment=alignment)
-    var c_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
-    var c2_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
-    var a = TileTensor(a_ptr, row_major(Idx(m * k)))
-    var b = TileTensor(b_ptr, row_major(Idx(k * n)))
-    var b2 = TileTensor(b2_ptr, row_major(Idx(k * n)))
-    var c = TileTensor(c_ptr, row_major(Idx(m * n)))
-    var c2 = TileTensor(c2_ptr, row_major(Idx(m * n)))
+    var a_ptr = ScalarArray[dtype](count=m * k, alignment=alignment)
 
-    var am = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
-    var bm = TileTensor(b_ptr, row_major(Idx(k), Idx(n)))
-    var cm = TileTensor(c_ptr, row_major(Idx(m), Idx(n)))
+    var b_ptr = ScalarArray[dtype](count=k * n, alignment=alignment)
+    var b2_ptr = ScalarArray[dtype](count=k * n, alignment=alignment)
+
+    var c_ptr = ScalarArray[dtype](count=m * n, alignment=alignment)
+    var c2_ptr = ScalarArray[dtype](count=m * n, alignment=alignment)
+
+    var a = TileTensor(a_ptr.unsafe_ptr(), row_major(m * k))
+    var b = TileTensor(b_ptr.unsafe_ptr(), row_major(k * n))
+    var b2 = TileTensor(b2_ptr.unsafe_ptr(), row_major(k * n))
+    var c = TileTensor(c_ptr.unsafe_ptr(), row_major(m * n))
+    var c2 = TileTensor(c2_ptr.unsafe_ptr(), row_major(m * n))
+
+    var am = TileTensor(a_ptr.unsafe_ptr(), row_major(m, k))
+    var bm = TileTensor(b_ptr.unsafe_ptr(), row_major(k, n))
+    var cm = TileTensor(c_ptr.unsafe_ptr(), row_major(m, n))
 
     for i in range(m * k):
         a[i] = Scalar[dtype](i)
@@ -248,8 +250,4 @@ def main() raises:
     print(rpeak, end="")
     print(" measured/peak FLOPS assuming 2.9 GHz")
 
-    a_ptr.free()
-    b_ptr.free()
-    b2_ptr.free()
-    c_ptr.free()
-    c2_ptr.free()
+    _ = (a_ptr^, b_ptr^, b2_ptr^, c_ptr^, c2_ptr^)

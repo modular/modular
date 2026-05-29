@@ -8,105 +8,87 @@ import TabItem from '@theme/TabItem';
 import MDXListing from '@site/src/components/Listing/MDXListing';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
 
-Speculative decoding is an algorithm designed to accelerate the decoding
-process for large language models without sacrificing the quality of the
-generated text or requiring modifications to the models themselves.
+Speculative decoding accelerates LLM token generation without changing the
+model's outputs. A smaller, faster draft step proposes several candidate
+tokens, and the larger target model verifies them in one forward pass. MAX
+accepts the prefix the target agrees with and resamples at the first
+disagreement, so quality matches running the target alone.
 
-This technique employs a smaller, faster **draft model** to generate several
-potential next tokens in parallel, which are then efficiently validated against
-a larger, more powerful target model using a modified rejection sampling
-technique. This leads to reduced overall latency and improved throughput during
-token generation.
-
-By accepting correct predictions and only resampling when necessary, speculative
-decoding achieves a significant speedup in token generation, effectively
-bypassing memory bandwidth limitations often encountered during standard
-autoregressive decoding.
+The speedup comes from batching verification across K candidate positions.
+When the target accepts all K drafts, you get K+1 tokens per step instead
+of one, converting a memory-bandwidth-bound workload into one that better
+uses available compute.
 
 :::caution
 
-Speculative decoding with MAX is still in preview and some aspects may change
-as we refine the implementation. Expect **ongoing** improvements and potential
-adjustments based on feedback and performance optimizations.
+Speculative decoding is in preview. APIs and behavior may change as the
+implementation matures.
 
 :::
 
-## When to use speculative decoding
+:::note
 
-You'll want to use speculative decoding when your primary goal is to accelerate
-the decoding process of large language models and reduce latency. For example,
-if you are using a 405 billion parameter model, you can use speculative
-decoding to reduce latency by using a 135 million parameter draft model.
+We recommend running speculative decoding on an accelerator. For more
+information, see [System
+requirements](/max/packages#system-requirements).
 
-## How speculative decoding works
+:::
 
-By default, speculative decoding is disabled in MAX. It can be enabled using
-the `--draft-model-path` flag. This flag takes a path to a model that will be
-used to generate speculative tokens. This is the model name as it appears on
-Hugging Face or as a path to a local directory containing a model.
+## Supported methods
 
-All model-specific parameters can be prefixed with `--draft-` to configure the
-draft model independently from the main model.
+MAX supports common speculative-decoding methods like EAGLE, EAGLE3, and
+MTP. For experimenting with arbitrary target/draft pairs, use
+`standalone`.
 
-For example:
+| Method             | Draft source                                                           | Supported targets and hardware                                    |
+|--------------------|------------------------------------------------------------------------|-------------------------------------------------------------------|
+| `eagle` / `eagle3` | A trained EAGLE draft that shares the target's embedding and `lm_head` | Llama 3 (1 GPU), Kimi K2.5 (8× B200).                             |
+| `mtp`              | A native multi-token prediction head inside the target checkpoint      | DeepSeek V3 and derivatives (8× B200).                            |
+| `standalone`       | A separate small model you pass with `--draft-model-path`              | Any target with a same-family draft, on any GPU the pair fits on. |
 
-- `--draft-model-path`: Path to the draft model
-- `--draft-quantization-encoding`: Quantization encoding for the draft model
-- `--draft-weight-path`: Path to draft model weights
+## Serve with speculative decoding
 
-The performance of speculative decoding primarily depends on two factors:
+Pick a tab for the method you want to run. Each example starts `max
+serve` with the right target and draft, then sends a chat-completion
+request to the local endpoint from the OpenAI Python client.
 
-- **Acceptance rate**: How often the target model confirms the draft model's
-  predictions.
-- **Token generation pattern**: The system is optimized when more draft tokens
-can be evaluated in a single step of the target model. This is controlled by the
-`--max-num-steps` parameter, which sets the maximum number of tokens the draft
-model generates before verification by the target model.
-
-## Quickstart
-
-You can use speculative decoding with MAX to accelerate model inference by using
-a smaller draft model to predict tokens that are verified by the main model.
-
-Serve your model with MAX and specify the draft model path using the
-`--draft-model-path` flag:
-
-```sh
-max serve --model HuggingFaceTB/SmolLM2-360M-Instruct \
-    --draft-model-path HuggingFaceTB/SmolLM2-135M-Instruct \
-    --device-memory-utilization=0.6 \
-    --max-num-steps=5 \
-    --no-enable-chunked-prefill
-```
-
-The endpoint is ready when you see the URI printed in your terminal:
-
-```output
-Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
-```
-
-Once the model is served, you can make requests to the API endpoints.
-
-<Tabs>
-  <TabItem value="openai" label="Python" default>
-
-To interact with MAX's OpenAI-compatible endpoints, install the OpenAI Python API:
+To call the endpoint, install the OpenAI Python client:
 
 <InstallOpenAI />
 
-Then create a new Python file and import the `openai` package:
+<Tabs>
+  <TabItem value="eagle" label="EAGLE" default>
+
+Serve `Llama 3.1 8B Instruct` with a pretrained EAGLE checkpoint as the
+draft:
+
+```sh
+max serve \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --speculative-method eagle \
+  --draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B \
+  --num-speculative-tokens 2 \
+  --devices gpu
+```
+
+We use `atomicapple0/EAGLE-LLaMA3.1-Instruct-8B` because it ships
+safetensors weights. For the full list of weight formats MAX supports,
+see
+[`WeightsFormat`](/max/api/python/generated/max.graph.weights.WeightsFormat).
+
+Once the server prints `Server ready on http://0.0.0.0:8000`, send a
+chat-completion request:
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8000/v1",  # Your MAX endpoint
-    api_key="EMPTY",  # API key can be any string when using MAX locally
+    base_url="http://localhost:8000/v1",
+    api_key="EMPTY",
 )
 
-# Make a chat completion request
 response = client.chat.completions.create(
-    model="HuggingFaceTB/SmolLM2-360M-Instruct",
+    model="meta-llama/Llama-3.1-8B-Instruct",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "What are the benefits of speculative decoding?"},
@@ -114,47 +96,169 @@ response = client.chat.completions.create(
     max_tokens=500,
 )
 
-# Print the response
 print(response.choices[0].message.content)
 ```
 
   </TabItem>
-  <TabItem value="curl" label="curl">
+  <TabItem value="mtp" label="MTP">
 
-In a new terminal, make a chat completion request using curl:
+Serve `DeepSeek V3` with its built-in MTP head. You don't pass a
+separate draft model because the MTP head already lives in the target
+checkpoint:
 
 ```sh
-curl http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "HuggingFaceTB/SmolLM2-360M-Instruct",
-    "messages": [
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "What are the benefits of speculative decoding?"}
+max serve \
+  --model deepseek-ai/DeepSeek-V3 \
+  --speculative-method mtp \
+  --num-speculative-tokens 2 \
+  --devices gpu:0,1,2,3,4,5,6,7
+```
+
+Once the server prints `Server ready on http://0.0.0.0:8000`, send a
+chat-completion request:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="EMPTY",
+)
+
+response = client.chat.completions.create(
+    model="deepseek-ai/DeepSeek-V3",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What are the benefits of speculative decoding?"},
     ],
-    "max_tokens": 500
-  }'
+    max_tokens=500,
+)
+
+print(response.choices[0].message.content)
+```
+
+  </TabItem>
+  <TabItem value="standalone" label="Standalone">
+
+Serve `Llama 3.1 8B Instruct` with `Llama 3.2 1B Instruct` as the
+draft:
+
+```sh
+max serve \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --speculative-method standalone \
+  --draft-model-path meta-llama/Llama-3.2-1B-Instruct \
+  --num-speculative-tokens 2 \
+  --devices gpu
+```
+
+Once the server prints `Server ready on http://0.0.0.0:8000`, send a
+chat-completion request:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="EMPTY",
+)
+
+response = client.chat.completions.create(
+    model="meta-llama/Llama-3.1-8B-Instruct",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What are the benefits of speculative decoding?"},
+    ],
+    max_tokens=500,
+)
+
+print(response.choices[0].message.content)
 ```
 
   </TabItem>
 </Tabs>
 
-You can also use the `generate` command to generate text:
+## Read the startup architecture name
 
-```sh
-max generate --model HuggingFaceTB/SmolLM2-360M-Instruct \
-    --draft-model-path HuggingFaceTB/SmolLM-135M \
-    --max-length=200 \
-    --prompt="What are the benefits of speculative decoding?" \
-    --device-memory-utilization=0.6 \
-    --devices=gpu \
-    --no-enable-chunked-prefill
+For EAGLE and MTP, MAX reports a unified architecture at startup, for
+example `UnifiedEagleLlama3ForCausalLM` or
+`UnifiedMTPDeepseekV3ForCausalLM`. That's expected: MAX compiles the
+target, draft, and verifier into a single graph. `standalone` runs the
+target and draft as separate models and reports the target's normal
+architecture.
+
+## Monitor acceptance rates
+
+Once you send traffic, the scheduler logs per-batch acceptance stats in
+this format:
+
+```output
+Draft Tokens: 145/160 (90.62%) accepted, Acceptance Len: 1.45 / 2 toks, Per-Pos: [95%, 86%] |
 ```
+
+Each field means:
+
+- **Accepted / generated**: tokens the target confirmed, over tokens the
+  draft proposed.
+- **Acceptance length**: average number of drafted tokens accepted per
+  verification pass. A value of `1.45 / 2` means on average 1.45 of the
+  2 drafted tokens survive verification.
+- **Per-position**: acceptance rate at each draft position, conditional
+  on all earlier positions accepting. Later positions are always rarer.
+
+Low acceptance rates (below roughly 50%) usually mean the draft doesn't
+match the target well. Try a smaller `--num-speculative-tokens` or a
+better-matched draft checkpoint.
+
+## Tune speculative decoding
+
+The following flags control how MAX drafts tokens and how verification
+decides to accept them. The first three map to fields on
+[`SpeculativeConfig`](/max/api/python/generated/max.pipelines.SpeculativeConfig)
+when you configure a pipeline programmatically. The last two live on
+the draft model's config and on `KVCacheConfig`.
+
+- `--num-speculative-tokens`: number of tokens the draft proposes per
+  step. Default is `2`. Larger values raise peak speedup but hurt
+  acceptance at later positions.
+- `--rejection-sampling-strategy`: how the target verifies drafted
+  tokens. Accepts `greedy`, `residual`, `typical-acceptance`, or
+  `logit-comparison`. When unset, EAGLE and MTP default to
+  `typical-acceptance`; `standalone` defaults to `residual`.
+- `--synthetic-acceptance-rate`: benchmarking-only knob that accepts
+  each drafted token with a calibrated probability, ignoring real logits.
+  Use this to model hypothetical speedups without changing the draft.
+- `--draft-devices`: device list for the draft model. Useful when you
+  want the draft and target on different GPUs.
+- `--device-memory-utilization`: fraction of device memory MAX may use.
+  Speculative decoding allocates KV cache for both the target and the
+  draft, so leave more headroom than you would for single-model serving.
+
+For EAGLE and MTP, MAX auto-enables the overlap scheduler and device
+graph capture. Both reduce per-step latency and need no additional
+flags.
+
+## Compatibility and limits
+
+These restrictions apply when speculative decoding is enabled:
+
+- `--max-num-steps` must be `1`. Speculative-decoding pipelines manage
+  multi-step KV allocation internally, and any other value raises a
+  configuration error.
+- `--enable-echo` isn't supported alongside speculative decoding.
+- Structured output (JSON-schema-constrained generation) isn't supported
+  alongside speculative decoding.
+- The target and draft must share the same `max_length`.
+- Repetition, frequency, and presence penalties are disabled when a
+  separate draft model is configured (`--draft-model-path`). That covers
+  EAGLE and `standalone`. MTP keeps the draft head inside the target
+  checkpoint, so it supports penalties.
 
 ## Next steps
 
-Now that you know the basics of speculative decoding, you can get started with
-MAX on GPUs.
+You can combine speculative decoding with prefix caching and with
+disaggregated inference. The following topics go deeper on performance
+and deployment:
 
 export const docs = [
   '../../serve/prefix-caching.mdx',

@@ -21,18 +21,22 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 from max.driver import Buffer
-from max.interfaces.context import GenerationStatus, SamplingParams
-from max.interfaces.eos_tracking import EOSTracker
-from max.interfaces.pipeline_variants.text_generation import (
+from max.pipelines.core.context import TokenBuffer
+from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.modeling.types.context import (
+    GenerationStatus,
+    SamplingParams,
+)
+from max.pipelines.modeling.types.eos_tracking import EOSTracker
+from max.pipelines.modeling.types.pipeline_variants.text_generation import (
+    GrammarEnforcementSnapshot,
     ImageMetadata,
     LogProbabilities,
     SpecDecodingState,
     TextGenerationOutput,
 )
-from max.interfaces.request import RequestID
-from max.pipelines.core.context import TokenBuffer
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.request import RequestID
 
 
 def _make_buffer(rows: int, cols: int = 4) -> Buffer:
@@ -93,6 +97,11 @@ class FakeContext:
         self.tokens: TokenBuffer = _make_token_buffer(
             max(total_length, 1), processed_length
         )
+        self.cached_prefix_length: int | None = None
+        self.in_reasoning_phase: bool = False
+        self.grammar_enforced: bool = False
+        self.tools_forced: bool = False
+        self.requires_structured_output_flag: bool = False
 
     @property
     def request_id(self) -> RequestID:
@@ -148,7 +157,6 @@ class FakeContext:
         self,
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
-        mark_previous_as_processed: bool = True,
     ) -> None:
         pass
 
@@ -170,9 +178,6 @@ class FakeContext:
     ) -> None:
         pass
 
-    def jump_ahead(self, new_token: int) -> None:
-        pass
-
     @property
     def matcher(self) -> Any | None:
         return None
@@ -181,7 +186,41 @@ class FakeContext:
     def json_schema(self) -> str | None:
         return None
 
+    @property
+    def grammar(self) -> str | None:
+        return None
+
     def set_matcher(self, matcher: Any) -> None:
+        pass
+
+    def set_tool_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        pass
+
+    def set_thinking_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        pass
+
+    def update_enforcement_state(self, token: int) -> bool:
+        return False
+
+    def snapshot_grammar_state(self) -> GrammarEnforcementSnapshot:
+        return GrammarEnforcementSnapshot(
+            in_thinking_region=False,
+            grammar_enforced=False,
+            tool_calling_match_buffer=[],
+            thinking_match_buffer=[],
+        )
+
+    def restore_grammar_state(
+        self, snapshot: GrammarEnforcementSnapshot
+    ) -> None:
         pass
 
     @property

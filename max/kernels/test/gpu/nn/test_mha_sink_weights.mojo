@@ -73,23 +73,25 @@ def test[
     var mask_size = num_heads * seq_len * num_keys
 
     # Allocate host memory.
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var mask_ptr = ctx.enqueue_create_host_buffer[mask_type](mask_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+
+    for i in range(o_size):
+        output_ptr[i] = Scalar[qkv_type](0)
 
     # Sink weights: one per attention head, initialized to zeros.
     var sink_size = num_heads
-    var sink_ptr = alloc[Scalar[qkv_type]](sink_size)
-    for i in range(sink_size):
-        sink_ptr.store(i, Scalar[qkv_type](0))
+    var sink_ptr = ctx.enqueue_create_host_buffer[qkv_type](sink_size)
+    sink_ptr.as_span().fill(Scalar[qkv_type](0))
 
     # Initialize Q, K, V with random data.
-    rand[qkv_type](q_ptr, q_size)
-    rand[qkv_type](k_ptr, k_size)
-    rand[qkv_type](v_ptr, v_size)
+    rand(q_ptr.as_span())
+    rand(k_ptr.as_span())
+    rand(v_ptr.as_span())
 
     # Initialize causal mask.
     comptime layout_4d = Layout.row_major[4]()
@@ -127,33 +129,23 @@ def test[
     # Construct device tensors.
     var q_device = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var mask4d = TileTensor(
         mask_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
-        ),
+        row_major((batch_size, num_heads, seq_len, num_keys)),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
@@ -183,9 +175,7 @@ def test[
 
     var output_device_ref = TileTensor(
         output_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     mha_gpu_naive[sink=True](
@@ -207,6 +197,7 @@ def test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+    ctx.synchronize()
     _ = output_ref_device_ptr
 
     # Compare flash_attention[sink=True] vs mha_gpu_naive[sink=True].
@@ -216,12 +207,12 @@ def test[
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
-                var expect = output_ptr.load(
+                var expect = output_ptr[d + depth * (h + s * num_heads)].cast[
+                    DType.float64
+                ]()
+                var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
+                ].cast[DType.float64]()
                 count += 1
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     mismatches += 1
@@ -241,14 +232,6 @@ def test[
     _ = mask_device_ptr
     _ = output_device_ptr
     _ = sink_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    mask_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
-    sink_ptr.free()
 
 
 def main() raises:

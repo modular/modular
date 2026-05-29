@@ -97,10 +97,19 @@ __extension Attention:
         )
 
         # V buffer: depth=128, double-buffered gfx950 style.
+        # FP8 V uses Swizzle(3, 0, 4) (same as K) to eliminate the
+        # ds_read_tr8_b64 bank conflicts inherent to BK=64 row stride
+        # (4 lane-quads per 32-bank LDS row → 4-way conflict). Both the
+        # SubTileLoaderLDS writer and the load_v_fp8_strip reader honor
+        # the same XOR so the data is read back correctly.
+        comptime v_swizzle = (
+            Swizzle(3, 0, 4) if Self.v_t.dtype.is_float8()
+            and Self.mma_shape[0] == 32 else Optional[Swizzle](None)
+        )
         comptime VBufT = KVBuffer[
             kv_t=Self.v_t,
             mma_shape=Self.mma_shape,
-            swizzle=None,
+            swizzle=v_swizzle,
             BN=Self.BN,
             WN=Self.WN,
             BK=Self.BK,
@@ -286,10 +295,13 @@ __extension Attention:
                 _ = k_rope_buffer.load_from_dram[next_slot]()
                 _ = v_buffer.load_from_dram[next_slot]()
 
-            # Online softmax step 0: scale + mask + max + exp(even)
-            self.online_softmax_step_0[0]()
-            # Online softmax step 1: exp(odd) + sum + correction + updates
-            self.online_softmax_step_1[0]()
+            # Online softmax: deferred-scale variant that emits packed FMAs
+            # (`v_pk_fma_f32 score, scale, neg_scaled_max`) instead of the
+            # separate `v_pk_add (score - max)` + `v_pk_mul (* scale)` pair.
+            # Saves ~16 VALU ops per warp per tile and matches aiter's
+            # softmax inner loop.
+            self.online_softmax_step_0_pkfma[0]()
+            self.online_softmax_step_1_pkfma[0]()
 
             # Wait for V loads from current slot before reading.
             comptime if has_next:

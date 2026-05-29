@@ -100,10 +100,33 @@ class BundleType(max._core.Type):
     value.  All elements must be `!mo.tensor` types.  Elements may have
     different devices, shapes, or dtypes.
 
-    Example:
+    The type has two interchangeable surface syntaxes. The verbose form lists
+    each element tensor explicitly and is used when the elements are not
+    uniform:
+
     ```mlir
-    !mo.bundle<[!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>]>
+    !mo.bundle<[!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[4], f32, gpu:1>]>
     ```
+
+    The compact form is used when every element shares the same shape, dtype,
+    device label, and metadata, and the device IDs are strictly ordered and
+    contiguous (`ids[i] == ids[0] + i`). It names the shared attributes once
+    and the device range as `label:firstId-lastId`:
+
+    ```mlir
+    !mo.bundle<[3], f32, gpu:0-1>
+    ```
+
+    A single-element compact bundle omits the range suffix. A single-element
+    bundle on the default host device also omits the device section entirely:
+
+    ```mlir
+    !mo.bundle<[3], f32, gpu:0>   // single element, explicit device
+    !mo.bundle<[3], f32>          // single element, default host device
+    ```
+
+    The compact form is purely syntactic sugar; the stored `elementTypes` are
+    identical regardless of which form is parsed.
     """
 
     def __init__(self, element_types: Sequence[max._core.Type]) -> None: ...
@@ -172,9 +195,9 @@ class TensorType(max._core.Type):
     This type represents the shape and element type of a tensor, an optional
     device ref, and an optional dictionary of metadata (e.g., layout, etc.).
 
-    The `shapeAttr` is one of:
-    1. `KGEN::ParamDeclRefAttr` for a a shape parameter, e.g., `Sh0`.
-    2. `MOSH::ShapeAttr` for a shape of known rank, e.g., `[D0, 42, ?]`.
+    The `shapeAttr` is always a `MOSH::ShapeAttr` (e.g., `[D0, 42, N]`). Rank
+    is statically known; individual dimensions may be concrete integers or
+    parametric.
 
     The element type is an M::DType, with `invalid` denoting an unknown type.
     The type implements a subset of the methods in ShapedTypeInterface.
@@ -185,11 +208,8 @@ class TensorType(max._core.Type):
     ```mlir
     !mo.tensor<[4, 16], f32>           // static shape
     !mo.tensor<[N, N, 6], i32>         // parameterized shape
-    !mo.tensor<[?, ?], i32>            // unknown shape of known rank
-    !mo.tensor<[1, ?, N], i32>         // partially known and parameterized shape
-    !mo.tensor<?, invalid>             // unknown shape of unknown rank
-    !mo.tensor<Sh, invalid>            // shape parameter reference
-    !mo.tensor<[4, 16], f32>    // optional device
+    !mo.tensor<[1, M, N], i32>         // partially known and parameterized shape
+    !mo.tensor<[4, 16], f32, gpu:0>    // optional device
     ```
     """
 
@@ -331,6 +351,12 @@ class IOKindAttr(max._core.Attribute):
     def __init__(self, arg0: Context, arg1: IOKind, /) -> None: ...
     @property
     def value(self) -> IOKind: ...
+
+class MOBundledCollectiveInterface(Protocol):
+    """
+    Marks an op that is a per-launch entry point for a bundled collective and
+    is only valid inside an `mo.parallel` body.
+    """
 
 class MOConditionallyInPlaceInterface(Protocol):
     """
@@ -1400,7 +1426,7 @@ class AssertOp(max._core.Operation):
         location: Location,
         chain: ChainType,
         in_chain: max._core.Value[ChainType],
-        cond: max._core.Value[max._core.dialects.builtin.IntegerType],
+        cond: max._core.Value,
         message: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
@@ -1414,9 +1440,7 @@ class AssertOp(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
     @property
-    def cond(
-        self,
-    ) -> max._core.Value[max._core.dialects.builtin.IntegerType]: ...
+    def cond(self) -> max._core.Value: ...
     @property
     def message(self) -> max._core.dialects.builtin.TypedAttr: ...
     @message.setter
@@ -1926,6 +1950,54 @@ class BufferTransferOp(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
+class BundledAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
+    """
+    Per-device entry point for the fused `allreduce.sum` +
+    residual add + RMS norm + dynamic-scaled FP8 quantize chain, used inside
+    an `mo.parallel` region.  Takes N peer tensor inputs (from
+    `mo.bundled.expand`), N signal buffers (captured from graph scope),
+    per-device residual and gamma tensors, the epsilon / weight offset /
+    scale-upper-bound scalars, and a chain.
+
+    Returns the FP8 quantized output for this device, its scale tensor, the
+    intermediate residual (post-add) tensor, and an output chain.  This is
+    the bundled analog of `mo.distributed.allreduce_add_rms_norm_quant_fp8`.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        out_scale: TensorType,
+        out_residual: TensorType,
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        residual: max._core.Value[TensorType],
+        gamma: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+        scale_ub: max._core.Value[TensorType],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def residual(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    @property
+    def scale_ub(self) -> max._core.Value[TensorType]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+
 class BundledAllreduceSumOp(max._core.Operation):
     """
     Per-device entry point for allreduce sum, used inside an `mo.parallel`
@@ -2159,9 +2231,7 @@ class ConcatOp(max._core.Operation):
     ```mlir
       %arg0: !mo.tensor<[2, 3], f32>
       %arg1: !mo.tensor<[2, 5], f32>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %res = mo.concat[%axis: !mo.tensor<[], si64>](%arg0, %arg1) : (
+      %res = mo.concat[1](%arg0, %arg1) : (
         !mo.tensor<[2, 3], f32>, !mo.tensor<[2, 5], f32>
       ) -> !mo.tensor<[2, 8], f32>
     ```
@@ -2172,12 +2242,14 @@ class ConcatOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: TensorType,
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         inputs: Sequence[max._core.Value[max._core.Type]],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
@@ -3524,7 +3596,7 @@ class FloorOp(max._core.Operation):
 
 class FusedConcatSliceOp(max._core.Operation):
     """
-    This operation peforms two operations at once:
+    This operation performs two operations at once:
     %concat = mo.concat[axis](inputs)
     %slice = mo.slice(%concat)
     And returns both the concat and the slice result.
@@ -3536,14 +3608,16 @@ class FusedConcatSliceOp(max._core.Operation):
         location: Location,
         concat_result: TensorType,
         slice_result: TensorType,
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         inputs: Sequence[max._core.Value[max._core.Type]],
         static_starts: max._core.dialects.builtin.ArrayAttr,
         static_steps: max._core.dialects.builtin.ArrayAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
@@ -3565,6 +3639,61 @@ class FusedConcatSliceOp(max._core.Operation):
     @output_param_decls.setter
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class FusedMatmulAddOp(max._core.Operation):
+    """
+    Computes C = A @ B (optionally transposed) + residual, fusing the matmul
+    and the residual addition into a single kernel call.
+
+    `residual` may be rank-2 (same shape as the output, element-wise add) or
+    rank-1 (broadcast along the row dimension, i.e. a bias vector).
+
+    This operation is currently only lowered for SM100 (B200) targets, where
+    the residual is passed directly to the matmul kernel as an epilogue tensor.
+
+    Example (2-D residual):
+
+    ```mlir
+      %res = mo.matmul_add(%a, %b, %residual) {transpose_b = true} : (
+        !mo.tensor<[4, 512], bf16>,
+        !mo.tensor<[1536, 512], bf16>,
+        !mo.tensor<[4, 1536], bf16>
+      ) -> !mo.tensor<[4, 1536], bf16>
+    ```
+
+    Example (1-D bias broadcast):
+
+    ```mlir
+      %res = mo.matmul_add(%a, %b, %bias) {transpose_b = true} : (
+        !mo.tensor<[4, 512], bf16>,
+        !mo.tensor<[1536, 512], bf16>,
+        !mo.tensor<[1536], bf16>
+      ) -> !mo.tensor<[4, 1536], bf16>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input_a: max._core.Value[TensorType],
+        input_b: max._core.Value[TensorType],
+        residual: max._core.Value[TensorType],
+        transpose_b: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def input_a(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_b(self) -> max._core.Value[TensorType]: ...
+    @property
+    def residual(self) -> max._core.Value[TensorType]: ...
+    @property
+    def transpose_b(self) -> bool: ...
+    @transpose_b.setter
+    def transpose_b(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
 class GatherNdOp(max._core.Operation):
@@ -3879,6 +4008,14 @@ class GuardOp(max._core.Operation):
         chain: max._core.Value[ChainType],
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
     @property
     def chain(self) -> max._core.Value[ChainType]: ...
     @property
@@ -3889,7 +4026,7 @@ class IndexToTensorOp(max._core.Operation):
     Example:
 
     ```mlir
-      %c: index
+      %c: scalar<si64>
       %scalarT = mo.index.to_tensor(%c) -> !mo.tensor<[], si64>
     ```
     """
@@ -3899,12 +4036,10 @@ class IndexToTensorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: TensorType,
-        input: max._core.Value[max._core.dialects.builtin.IntegerType],
+        input: max._core.Value,
     ) -> None: ...
     @property
-    def input(
-        self,
-    ) -> max._core.Value[max._core.dialects.builtin.IntegerType]: ...
+    def input(self) -> max._core.Value: ...
 
 class InvokeShapeFuncOp(max._core.Operation):
     """
@@ -5054,6 +5189,7 @@ class ParallelOp(max._core.Operation):
     ```
     """
 
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
@@ -5062,6 +5198,24 @@ class ParallelOp(max._core.Operation):
         inputs: Sequence[max._core.Value[max._core.Type]],
         buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        result_types: Sequence[max._core.Type],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        buffers: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value,
+        result_types: Sequence[max._core.Type],
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -5109,9 +5263,9 @@ class PowOp(max._core.Operation):
 
 class RandomNormalOp(max._core.Operation):
     """
-    Returns a tensor with shape `shape` populated with random
-      values from a normal distribution, with the mean of the distribution equal
-      to `mean` and the standard deviation equal to `variance`.
+    Returns a tensor with shape `shape` populated with random values from a
+      normal distribution, with the mean of the distribution equal to `mean`
+      and the standard deviation equal to `variance`.
 
     Example:
       ```mlir
@@ -5122,10 +5276,10 @@ class RandomNormalOp(max._core.Operation):
         %variance = mo.constant {
           value = #M.dense_array<0.5> : tensor<1xf32> } : !mo.tensor<[], f32>
         %seed = mo.constant {
-          value = #M.dense_array<1> : tensor<1xsi64> } : !mo.tensor<[], si64>
+          value = #M.dense_array<1> : tensor<1xui64> } : !mo.tensor<[1], ui64>
         %res = mo.random.normal(%size, %mean, %variance, %seed) :
               (!mo.tensor<[4], si64>, !mo.tensor<[], f32>, !mo.tensor<[], f32>,
-              !mo.tensor<[], si64>) -> !mo.tensor<[1, 1, 7, 8], f32>
+              !mo.tensor<[1], ui64>) -> !mo.tensor<[1, 1, 7, 8], f32>
       ```
     """
 
@@ -5171,10 +5325,10 @@ class RandomUniformOp(max._core.Operation):
     %upperBound = mo.constant {
       value = #M.dense_array<0.5> : tensor<1xf32> } : !mo.tensor<[], f32>
     %seed = mo.constant {
-      value = #M.dense_array<1> : tensor<1xsi64> } : !mo.tensor<[], si64>
+      value = #M.dense_array<1> : tensor<1xui64> } : !mo.tensor<[1], ui64>
     %res = mo.random.uniform(%size, %lowerBound, %upperBound, %seed) :
           (!mo.tensor<[4], si64>, !mo.tensor<[], f32>, !mo.tensor<[], f32>,
-          !mo.tensor<[], si64>) -> !mo.tensor<[1, 1, 7, 8], f32>
+          !mo.tensor<[1], ui64>) -> !mo.tensor<[1, 1, 7, 8], f32>
     ```
     """
 
@@ -7161,6 +7315,7 @@ class TanhOp(max._core.Operation):
     def input(self) -> max._core.Value[TensorType]: ...
 
 class TensorBundleOp(max._core.Operation):
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
@@ -7168,16 +7323,31 @@ class TensorBundleOp(max._core.Operation):
         result: BundleType,
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+    ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class TensorUnbundleOp(max._core.Operation):
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         outputs: Sequence[max._core.Type],
         input: max._core.Value[BundleType],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        input: max._core.Value,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[BundleType]: ...

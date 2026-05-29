@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -24,7 +25,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -79,6 +80,8 @@ class Gemma3Model(
     infrastructure, handling model loading, KV cache management, and input preparation
     for inference.
     """
+
+    model_config_cls: ClassVar[type[Any]] = Gemma3Config
 
     model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
@@ -143,40 +146,6 @@ class Gemma3Model(
         if max_seq_len:
             return max_seq_len
         return huggingface_config.max_position_embeddings
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Gets the parameters required to configure the KV cache for Gemma 3.
-
-        Delegates to the :obj:`Gemma3Config.construct_kv_params` static method.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-            pipeline_config: The MAX Engine pipeline configuration.
-            devices: The list of devices the model will run on.
-            kv_cache_config: The MAX Engine KV cache configuration settings
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The desired data type for the KV cache
-                (:obj:`max.dtype.DType`).
-
-        Returns:
-            The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
-        """
-        return Gemma3Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:

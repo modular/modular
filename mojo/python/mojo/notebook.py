@@ -72,13 +72,13 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             ```
 
         - Compile a package for kernel development.
-            The following produces a `kernels.mojopkg` which may be included
+            The following produces a `kernels.mojoc` which may be included
             as custom ops in a graph via the `custom_extensions` mechanism.
 
             ```mojo
-            %%mojo package -o kernels.mojopkg
+            %%mojo precompile -o kernels.mojoc
 
-            from runtime.asyncrt import DeviceContextPtr
+            from gpu.host import DeviceContext
             from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
             @compiler.register("histogram")
@@ -89,7 +89,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
                 ](
                     output: OutputTensor[dtype = DType.int64, rank=1],
                     input: InputTensor[dtype = DType.uint8, rank=1],
-                    ctx: DeviceContextPtr,
+                    ctx: DeviceContext,
                 ) raises:
                     ...
             ```

@@ -13,10 +13,11 @@
 
 """Distributed type descriptors for graph compilation.
 
-* :class:`DistributedTensorType` — symbolic type for a tensor distributed
-  across a device mesh.  Analogous to :class:`~max.graph.TensorType`.
-* :class:`DistributedBufferType` — symbolic type for a mutable buffer
-  distributed across a device mesh.  Analogous to :class:`~max.graph.BufferType`.
+* :class:`DistributedTensorType`: symbolic type for a tensor distributed
+  across a device mesh. Analogous to :class:`~max.graph.TensorType`.
+* :class:`DistributedBufferType`: symbolic type for a mutable buffer
+  distributed across a device mesh. Analogous to
+  :class:`~max.graph.BufferType`.
 """
 
 from __future__ import annotations
@@ -37,9 +38,10 @@ from max.graph import (
 )
 from max.graph.shape import ShapeLike
 
-from .mappings import DeviceMapping
+from .mappings import DeviceMapping, NamedMapping
 from .mesh import DeviceMesh
 from .placements import Placement, Sharded
+from .shapes import sharded_symbolic_dim
 
 T = TypeVar("T", TensorType, BufferType)
 
@@ -47,7 +49,7 @@ T = TypeVar("T", TensorType, BufferType)
 class DistributedType(Generic[T], ABC):
     """Shared state and shard-shape logic for distributed type descriptors.
 
-    Not intended for direct use — see :class:`DistributedTensorType` and
+    Not intended for direct use. See :class:`DistributedTensorType` and
     :class:`DistributedBufferType`.
     """
 
@@ -82,12 +84,13 @@ class DistributedType(Generic[T], ABC):
                         f"with rank {len(self.shape)}."
                     )
 
-    def _local_shard_shape(self) -> Shape:
-        """Computes the local shard shape from the global shape.
+    def _local_shard_shape(self, device_idx: int = 0) -> Shape:
+        """Computes one device's local shard shape from the global shape.
 
-        Static dims are divided evenly. Symbolic dims produce a new
-        :class:`~max.graph.SymbolicDim` named ``"{original}_{axis_name}"``.
-        Algebraic dims use ``dim // mesh_axis_size``.
+        Static dims are divided evenly. Symbolic dims emit per-coord
+        distinct names via :func:`sharded_symbolic_dim` so the graph
+        treats each shard as an independent runtime size. Algebraic
+        dims use ``dim // mesh_axis_size``.
         """
         dims = list(self.shape)
         for mesh_axis, placement in enumerate(self.placements):
@@ -96,7 +99,6 @@ class DistributedType(Generic[T], ABC):
             tensor_axis = placement.axis
             dim = dims[tensor_axis]
             mesh_axis_size = self.mesh.mesh_shape[mesh_axis]
-            axis_name = self.mesh.axis_names[mesh_axis]
 
             if isinstance(dim, StaticDim):
                 size = int(dim)
@@ -104,11 +106,14 @@ class DistributedType(Generic[T], ABC):
                     raise ValueError(
                         f"Static dimension {size} at axis {tensor_axis} is "
                         f"not evenly divisible by mesh axis "
-                        f"{axis_name!r} (size {mesh_axis_size})."
+                        f"{self.mesh.axis_names[mesh_axis]!r} "
+                        f"(size {mesh_axis_size})."
                     )
                 dims[tensor_axis] = StaticDim(size // mesh_axis_size)
             elif isinstance(dim, SymbolicDim):
-                dims[tensor_axis] = SymbolicDim(f"{dim.name}_{axis_name}")
+                dims[tensor_axis] = sharded_symbolic_dim(
+                    dim, self.mesh, mesh_axis, device_idx
+                )
             else:
                 dims[tensor_axis] = dim // mesh_axis_size
         return Shape(dims)
@@ -121,7 +126,7 @@ class DistributedType(Generic[T], ABC):
     @property
     @abstractmethod
     def local_types(self) -> list[T]:
-        """Per-device types in mesh order."""
+        """The per-device types in mesh order."""
         ...
 
 
@@ -147,11 +152,14 @@ class DistributedTensorType(DistributedType[TensorType]):
 
     @property
     def local_types(self) -> list[TensorType]:
-        """Per-device :class:`~max.graph.TensorType` objects in mesh order."""
-        local_shape = self._local_shard_shape()
+        """The per-device :class:`~max.graph.TensorType` objects in mesh order."""
         return [
-            TensorType(self.dtype, local_shape, DeviceRef.from_device(device))
-            for device in self.mesh.devices
+            TensorType(
+                self.dtype,
+                self._local_shard_shape(i),
+                DeviceRef.from_device(device),
+            )
+            for i, device in enumerate(self.mesh.devices)
         ]
 
     def __repr__(self) -> str:
@@ -179,11 +187,14 @@ class DistributedBufferType(DistributedType[BufferType]):
 
     @property
     def local_types(self) -> list[BufferType]:
-        """Per-device :class:`~max.graph.BufferType` objects in mesh order."""
-        local_shape = self._local_shard_shape()
+        """The per-device :class:`~max.graph.BufferType` objects in mesh order."""
         return [
-            BufferType(self.dtype, local_shape, DeviceRef.from_device(device))
-            for device in self.mesh.devices
+            BufferType(
+                self.dtype,
+                self._local_shard_shape(i),
+                DeviceRef.from_device(device),
+            )
+            for i, device in enumerate(self.mesh.devices)
         ]
 
     def __repr__(self) -> str:
@@ -201,20 +212,28 @@ class DistributedBufferType(DistributedType[BufferType]):
 
 
 @dataclass(frozen=True)
-class TensorLayout:
+class TensorLayout(DeviceMapping):
     """Metadata snapshot of a distributed tensor for rule evaluation.
 
-    Bundles the tensor's dtype, shape, and distribution mapping.
-    The mapping stays abstract (DeviceMapping) — rules work with
-    any concrete mapping type (PlacementMapping, NamedMapping, etc.).
+    Bundles the tensor's dtype, shape, and distribution mapping. The mapping
+    stays abstract (:class:`DeviceMapping`) so rules work with any concrete
+    mapping type, such as :class:`PlacementMapping` or :class:`NamedMapping`.
 
-    The shape is a Shape (list[Dim]), supporting both static and
-    symbolic dimensions for graph compilation compatibility.
+    The shape is a :class:`~max.graph.Shape` (``list[Dim]``), supporting both
+    static and symbolic dimensions for graph compilation compatibility.
+
+    This class implements DeviceMapping, so sharding rules can
+    return input TensorLayouts directly.
     """
 
     dtype: DType
+    """The element data type of the tensor."""
+
     shape: Shape
+    """The global shape of the tensor."""
+
     mapping: DeviceMapping
+    """The distribution mapping over the device mesh."""
 
     def __init__(
         self, dtype: DType, shape: ShapeLike, mapping: DeviceMapping
@@ -225,13 +244,39 @@ class TensorLayout:
 
     @property
     def rank(self) -> int:
-        """Number of dimensions."""
+        """The number of dimensions."""
         return len(self.shape)
 
     @property
     def mesh(self) -> DeviceMesh:
-        """The device mesh from the mapping."""
+        """The device mesh derived from the mapping."""
         return self.mapping.mesh
+
+    @property
+    def is_fully_resolved(self) -> bool:
+        """Whether this spec can be used in eager dispatch.
+
+        Returns ``False`` if the spec contains compiler-only annotations
+        (e.g. priorities) that cannot be resolved without a compiler.
+        """
+        return self.mapping.is_fully_resolved
+
+    @property
+    def is_fully_replicated(self) -> bool:
+        """Whether every device holds a complete copy of the tensor.
+
+        Returns ``True`` if no dimension is sharded and there are no
+        pending reductions.
+        """
+        return self.mapping.is_fully_replicated
+
+    def to_placements(self) -> tuple[Placement, ...]:
+        """Converts to mesh-axis-indexed placements for eager dispatch."""
+        return self.mapping.to_placements()
+
+    def to_named_sharding(self, tensor_rank: int) -> NamedMapping:
+        """Converts to tensor-dim-indexed spec for compiler lowering."""
+        return self.mapping.to_named_sharding(tensor_rank)
 
     def __repr__(self) -> str:
         shape_str = ", ".join(str(d) for d in self.shape)

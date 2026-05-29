@@ -14,9 +14,9 @@
 from std.sys.info import simd_width_of
 
 from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from layout._fillers import random
-from std.memory import alloc
 from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu
 from std.testing import assert_almost_equal
 
@@ -32,28 +32,30 @@ def run_rms_norm_fused_residual_add_gpu[
     var rows = shape.flattened_length() // cols
 
     # Allocate host memory
-    var data_heap = alloc[Scalar[dtype]](rows * cols)
+    var data_heap = List(length=rows * cols, fill=Scalar[dtype](0))
     var data_h = TileTensor(data_heap, row_major(Coord(shape)))
-    var unfused_intermediate_heap = alloc[Scalar[dtype]](rows * cols)
+    var unfused_intermediate_heap = List(
+        length=rows * cols, fill=Scalar[dtype](0)
+    )
     var unfused_intermediate_h = TileTensor(
         unfused_intermediate_heap, row_major(Coord(shape))
-    ).fill(0)
-    var result_unfused_heap = alloc[Scalar[dtype]](rows * cols)
+    )
+    var result_unfused_heap = List(length=rows * cols, fill=Scalar[dtype](0))
     var result_unfused_h = TileTensor(
         result_unfused_heap, row_major(Coord(shape))
-    ).fill(0)
-    var result_fused_heap = alloc[Scalar[dtype]](rows * cols)
-    var result_fused_h = TileTensor(
-        result_fused_heap, row_major(Coord(shape))
-    ).fill(0)
-    var residual_fused_output_heap = alloc[Scalar[dtype]](rows * cols)
+    )
+    var result_fused_heap = List(length=rows * cols, fill=Scalar[dtype](0))
+    var result_fused_h = TileTensor(result_fused_heap, row_major(Coord(shape)))
+    var residual_fused_output_heap = List(
+        length=rows * cols, fill=Scalar[dtype](0)
+    )
     var residual_fused_output_h = TileTensor(
         residual_fused_output_heap, row_major(Coord(shape))
-    ).fill(0)
-    var gamma1_heap = alloc[Scalar[dtype]](cols)
-    var gamma1_h = TileTensor(gamma1_heap, row_major(Idx(cols)))
-    var gamma2_heap = alloc[Scalar[dtype]](cols)
-    var gamma2_h = TileTensor(gamma2_heap, row_major(Idx(cols)))
+    )
+    var gamma1_heap = List(length=cols, fill=Scalar[dtype](0))
+    var gamma1_h = TileTensor(gamma1_heap, row_major(cols))
+    var gamma2_heap = List(length=cols, fill=Scalar[dtype](0))
+    var gamma2_h = TileTensor(gamma2_heap, row_major(cols))
 
     # Initialize input data
     random(data_h)
@@ -96,7 +98,7 @@ def run_rms_norm_fused_residual_add_gpu[
     @__copy_capture(result_fused_buf)
     @parameter
     def fused_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = result_fused_buf.layout(Coord(coords))
         result_fused_buf.raw_store[width=width, alignment=alignment](idx, val)
@@ -105,7 +107,7 @@ def run_rms_norm_fused_residual_add_gpu[
     @__copy_capture(residual_fused_output_buf)
     @parameter
     def fused_residual_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = residual_fused_output_buf.layout(Coord(coords))
         residual_fused_output_buf.raw_store[width=width, alignment=alignment](
@@ -134,7 +136,7 @@ def run_rms_norm_fused_residual_add_gpu[
     @__copy_capture(unfused_intermediate_buf)
     @parameter
     def unfused_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = unfused_intermediate_buf.layout(Coord(coords))
         unfused_intermediate_buf.raw_store[width=width, alignment=alignment](
@@ -168,6 +170,7 @@ def run_rms_norm_fused_residual_add_gpu[
 
     elementwise[sum_fn, simd_width_of[dtype](), target="cpu"](
         coord_to_index_list(unfused_intermediate_buf.layout.shape_coord()),
+        DeviceContext(api="cpu"),
     )
 
     @parameter
@@ -184,7 +187,7 @@ def run_rms_norm_fused_residual_add_gpu[
     @__copy_capture(result_unfused_buf)
     @parameter
     def unfused_output2_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = result_unfused_buf.layout(Coord(coords))
         result_unfused_buf.raw_store[width=width, alignment=alignment](idx, val)
@@ -207,13 +210,13 @@ def run_rms_norm_fused_residual_add_gpu[
             unfused_intermediate_h.raw_load(i),
             rtol=rtol,
         )
-    data_heap.free()
-    unfused_intermediate_heap.free()
-    result_unfused_heap.free()
-    result_fused_heap.free()
-    residual_fused_output_heap.free()
-    gamma1_heap.free()
-    gamma2_heap.free()
+    _ = gamma2_heap^
+    _ = gamma1_heap^
+    _ = residual_fused_output_heap^
+    _ = result_fused_heap^
+    _ = result_unfused_heap^
+    _ = unfused_intermediate_heap^
+    _ = data_heap^
 
 
 def main() raises:

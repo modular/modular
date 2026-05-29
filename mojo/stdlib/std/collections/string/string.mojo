@@ -20,6 +20,7 @@ from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
 from std.collections.string.format import _FormatUtils
 from std.collections.string.string_slice import (
     CodepointSliceIter,
+    GraphemeIndicesIter,
     GraphemeSliceIter,
     _to_string_list,
     _unsafe_strlen,
@@ -40,7 +41,8 @@ from std.sys.info import is_32bit
 
 from std.bit import count_leading_zeros
 from std.memory import memcmp, memcpy, memset
-from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
+from std.python import ConvertibleFromPython, PythonObject
+from std.reflection.traits import AllWritable
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -51,7 +53,6 @@ struct String(
     Boolable,
     Comparable,
     ConvertibleFromPython,
-    ConvertibleToPython,
     Defaultable,
     FloatableRaising,
     ImplicitlyCopyable,
@@ -80,7 +81,7 @@ struct String(
     ```
 
     You can convert many Mojo types to a `String` because it's common to
-    implement the [`Writable`](/mojo/std/format/Writable) trait:
+    implement the [`Writable`](/docs/std/format/Writable/) trait:
 
     ```mojo
     var int : Int = 42
@@ -88,7 +89,7 @@ struct String(
     ```
 
     If you have a custom type you want to convert to a string, you can implement
-    the [`Writable`](/mojo/std/format/Writable) trait like this:
+    the [`Writable`](/docs/std/format/Writable/) trait like this:
 
     ```mojo
     @fieldwise_init
@@ -105,7 +106,7 @@ struct String(
 
     However, `print()` doesn't actually specify `String` as its argument type.
     Instead, it accepts any type that conforms to the
-    [`Writable`](/mojo/std/format/Writable) trait (`String` conforms to
+    [`Writable`](/docs/std/format/Writable/) trait (`String` conforms to
     this trait, which is why you can pass it to `print()`). That means it's
     actually more efficient to pass any type that implements `Writable`
     directly to `print()` (instead of first converting it to `String`).
@@ -191,21 +192,21 @@ struct String(
     Related functions:
 
     - String-to-number conversions:
-      [`atof()`](/mojo/std/collections/string/string/atof),
-      [`atol()`](/mojo/std/collections/string/string/atol)).
+      [`atof()`](/docs/std/collections/string/string/atof/),
+      [`atol()`](/docs/std/collections/string/string/atol/)).
     - Character code conversions:
-      [`chr()`](/mojo/std/collections/string/string/chr),
-      [`ord()`](/mojo/std/collections/string/string/ord)).
+      [`chr()`](/docs/std/collections/string/string/chr/),
+      [`ord()`](/docs/std/collections/string/string/ord/)).
     - String formatting:
-      [`format()`](/mojo/std/collections/string/string/String/#format).
+      [`format()`](/docs/std/collections/string/string/String/#format).
 
     Related types:
 
-    - [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice): A non-owning
+    - [`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/): A non-owning
       view of string data, which can be either mutable or immutable.
-    - [`StaticString`](/mojo/std/collections/string/string_slice/#StaticString): An
+    - [`StaticString`](/docs/std/collections/string/string_slice/#StaticString): An
       alias for an immutable constant `StringSlice`.
-    - [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/): A
+    - [`StringLiteral`](/docs/std/builtin/string_literal/StringLiteral/): A
       string literal. String literals are compile-time values.
     """
 
@@ -401,7 +402,7 @@ struct String(
         Examples:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         # Valid UTF-8 sequence
         var fire_emoji_bytes = [Byte(0xF0), 0x9F, 0x94, 0xA5]
@@ -477,6 +478,8 @@ struct String(
         _ = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
         ```
         """
+        comptime assert AllWritable[*Ts]  # satisfy where clause.
+
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
 
@@ -506,6 +509,8 @@ struct String(
         Returns:
             A string formed by formatting the argument sequence.
         """
+        comptime assert AllWritable[*Ts]  # satisfy where clause.
+
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
 
@@ -529,6 +534,8 @@ struct String(
         Args:
             args: Sequence of arguments to write to this Writer.
         """
+        comptime assert AllWritable[*Ts]  # satisfy where clause.
+
         var total_bytes = _TotalWritableBytes()
         total_bytes.size += self.byte_length()
         args._write_to(total_bytes, sep="")
@@ -597,7 +604,13 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
+        self = String(
+            StringSlice(
+                unsafe_from_utf8=CStringSlice(
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.bitcast[Int8]()
+                )
+            )
+        )
 
     def __init__(
         out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8, _]
@@ -612,7 +625,13 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
+        self = String(
+            StringSlice(
+                unsafe_from_utf8=CStringSlice(
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.bitcast[Int8]()
+                )
+            )
+        )
 
     @always_inline("nodebug")
     def __init__(out self, *, copy: Self):
@@ -814,6 +833,53 @@ struct String(
         """
         return StringSlice(self)[byte=byte]
 
+    def __getitem__[
+        I: Indexer, //
+    ](self, *, codepoint: I) -> StringSlice[origin_of(self)]:
+        """Gets the character at the specified position.
+
+        Parameters:
+            I: A type that can be used as an index.
+
+        Args:
+            codepoint: The codepoint index.
+
+        Returns:
+            A `StringSlice` view containing the unicode codepoint at the
+            specified position.
+        """
+        return StringSlice(self)[codepoint=codepoint]
+
+    @always_inline
+    def __getitem__(
+        self, *, codepoint: ContiguousSlice
+    ) -> StringSlice[origin_of(self)]:
+        """Gets a substring at the specified codepoint positions.
+
+        Args:
+            codepoint: A slice that specifies codepoint positions of the new
+                substring.
+
+        Returns:
+            A StringSlice containing the codepoints in the specified range.
+        """
+        return StringSlice(self)[codepoint=codepoint]
+
+    @always_inline
+    def __getitem__(
+        self, *, grapheme: Some[Indexer]
+    ) -> StringSlice[origin_of(self)]:
+        """Gets the character at the specified position.
+
+        Args:
+            grapheme: The grapheme index.
+
+        Returns:
+            A `StringSlice` view containing the unicode grapheme at the
+            specified position.
+        """
+        return StringSlice(self)[grapheme=grapheme]
+
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -994,17 +1060,6 @@ struct String(
         """
         return self
 
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the operation fails.
-        """
-        return PythonObject(self)
-
     def __init__(out self, *, py: PythonObject) raises:
         """Construct a `String` from a PythonObject.
 
@@ -1181,6 +1236,36 @@ struct String(
         """
         return StringSlice(self).graphemes_reversed()
 
+    def grapheme_indices(self) -> GraphemeIndicesIter[origin_of(self)]:
+        """Return an iterator over grapheme clusters paired with their byte
+        offsets.
+
+        Each yielded element is a `Tuple[Int, StringSlice]` where the first
+        element is the byte offset at which the grapheme begins.
+
+        Returns:
+            An iterator yielding `(byte_offset, grapheme)` pairs.
+        """
+        return StringSlice(self).grapheme_indices()
+
+    def split_at_grapheme(
+        self, n: Int
+    ) -> Tuple[
+        StringSlice[ImmutOrigin(origin_of(self))],
+        StringSlice[ImmutOrigin(origin_of(self))],
+    ]:
+        """Split this string at the `n`-th grapheme-cluster boundary.
+
+        Args:
+            n: The grapheme-cluster boundary at which to split. Must be
+                non-negative.
+
+        Returns:
+            A tuple `(prefix, suffix)` of `StringSlice`s. The prefix covers
+            grapheme clusters `[0, n)` and the suffix covers the rest.
+        """
+        return StringSlice(self).split_at_grapheme(n)
+
     def count_graphemes(self) -> Int:
         """Count the number of grapheme clusters in this string.
 
@@ -1267,13 +1352,17 @@ struct String(
             ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
-    def as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
+    def unsafe_as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
         guarantee mutability.
 
         Returns:
             A contiguous slice pointing to the bytes owned by this string.
+
+        Safety:
+            - Any mutation of the byte slice must uphold UTF-8 validity of the
+              overall string.
         """
         return Span[Byte, origin_of(self)](
             ptr=self.unsafe_ptr_mut(), length=self.byte_length()
@@ -1317,7 +1406,7 @@ struct String(
             Query the length of a string, in bytes and Unicode codepoints:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("ನಮಸ್ಕಾರ")
             assert_equal(s.count_codepoints(), 7)
@@ -1328,7 +1417,7 @@ struct String(
             Unicode codepoint length:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("abc")
             assert_equal(s.count_codepoints(), 3)
@@ -1339,7 +1428,7 @@ struct String(
             the length in Unicode codepoints, not grapheme clusters:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("á")
             assert_equal(s.count_codepoints(), 2)
@@ -1786,7 +1875,7 @@ struct String(
         representations of the `args` arguments.
 
         For more information, see the discussion in the
-        [`format` module](/mojo/std/collections/string/format/).
+        [`format` module](/docs/std/collections/string/format/).
 
         Args:
             args: The substitution values.

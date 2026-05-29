@@ -36,18 +36,11 @@ trait Floatable:
     A `Foo` can now be converted to a `Float64`:
 
     ```mojo
-    @fieldwise_init
-    struct Foo(Floatable):
-        var i: Float64
-
-        def __float__(self) -> Float64:
-            return self.i
-
     var f = Float64(Foo(5.5))
     ```
 
     **Note:** If the `__float__()` method can raise an error, use
-    the [`FloatableRaising`](/mojo/std/builtin/floatable/floatableraising)
+    the [`FloatableRaising`](/docs/std/builtin/floatable/FloatableRaising/)
     trait instead.
     """
 

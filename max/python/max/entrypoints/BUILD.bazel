@@ -21,10 +21,11 @@ modular_py_library(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/profiler",
         "//max/python/max/serve",
         "//max/python/max/serve:config",
@@ -56,7 +57,7 @@ modular_py_library(
         "//max/python/max:_core",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve:config",
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines",
         # These all point to the symlinked version of the benchmark directory.
         "//max/python/max/benchmark:benchmark_serving_lib",
@@ -82,47 +83,12 @@ modular_py_binary(
         ":entrypoints",
         "//max/python/max:_core",
         "//max/python/max/benchmark:benchmark_serving_lib",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/serve:config",
         "//max/python/max/serve/telemetry",
         requirement("click"),
         requirement("typing-extensions"),
-    ],
-)
-
-modular_py_binary(
-    name = "pipelines_lmcache",
-    srcs = [
-        "pipelines.py",
-    ],
-    data = [
-        "@nvshmem_prebuilt//:host",
-    ],
-    env = {
-        "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
-        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
-    },
-    ignore_extra_deps = [
-        requirement("lmcache"),
-    ],
-    main = "//max/python/max/entrypoints:pipelines.py",
-    mojo_deps = PROD_MOJOPKGS,
-    target_compatible_with = select({
-        "@//:linux_x86_64": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        ":entrypoints",
-        "//max/python/max:_core",
-        "//max/python/max/benchmark:benchmark_serving_lib",
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines",
-        "//max/python/max/serve:config",
-        "//max/python/max/serve/telemetry",
-        requirement("typing-extensions"),
-        requirement("click"),
-        requirement("lmcache"),
     ],
 )
 

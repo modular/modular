@@ -15,8 +15,8 @@
 
 Two concrete implementations of :class:`DeviceMapping`:
 
-* :class:`PlacementMapping` — mesh-axis-indexed (PyTorch DTensor style).
-* :class:`NamedMapping` — tensor-dim-indexed (JAX PartitionSpec style).
+* :class:`PlacementMapping`: mesh-axis-indexed (PyTorch DTensor style).
+* :class:`NamedMapping`: tensor-dim-indexed (JAX PartitionSpec style).
 """
 
 from __future__ import annotations
@@ -52,12 +52,12 @@ class DeviceMapping(ABC):
     """Abstract base for all sharding specifications.
 
     A ``DeviceMapping`` pairs a :class:`DeviceMesh` with a description of how
-    tensor data is distributed across that mesh.  Two concrete implementations
+    tensor data is distributed across that mesh. Two concrete implementations
     exist:
 
-    * :class:`PlacementMapping` — mesh-axis-indexed, for eager per-op dispatch.
-    * :class:`NamedMapping` — tensor-dim-indexed, for future full-graph
-      sharding search (e.g. a Python-level transform over an op trace).
+    * :class:`PlacementMapping`: mesh-axis-indexed, for eager per-op dispatch.
+    * :class:`NamedMapping`: tensor-dim-indexed, for future full-graph
+      sharding search (for example, a Python-level transform over an op trace).
     """
 
     @property
@@ -72,7 +72,7 @@ class DeviceMapping(ABC):
         """Whether this spec can be used in eager dispatch.
 
         Returns ``False`` if the spec contains compiler-only annotations
-        (e.g. priorities) that cannot be resolved without a compiler.
+        (for example, priorities) that cannot be resolved without a compiler.
         """
         ...
 
@@ -94,8 +94,8 @@ class DeviceMapping(ABC):
 
         Raises:
             ConversionError: If the spec contains features that cannot be
-                represented as placements (e.g. priorities or custom
-                placement types without a standard equivalent).
+                represented as placements (for example, priorities or
+                custom placement types without a standard equivalent).
         """
         ...
 
@@ -104,7 +104,7 @@ class DeviceMapping(ABC):
         """Converts to tensor-dim-indexed spec for compiler lowering.
 
         Args:
-            tensor_rank: Number of dimensions in the tensor.  Required
+            tensor_rank: The number of dimensions in the tensor. Required
                 because the spec must have one entry per tensor dim.
 
         Raises:
@@ -123,7 +123,7 @@ class DeviceMapping(ABC):
 class PlacementMapping(DeviceMapping):
     """Mesh-axis-indexed sharding (PyTorch DTensor style).
 
-    Stores one :class:`Placement` per mesh axis.  Each placement describes
+    Stores one :class:`Placement` per mesh axis. Each placement describes
     what that mesh axis does to the tensor: ``Shard(dim)``, ``Replicate()``,
     or ``Partial(op)``.
 
@@ -247,27 +247,30 @@ class NamedMapping(DeviceMapping):
     Each entry in ``_spec`` corresponds to a tensor dimension and names the
     mesh axis (or axes) that shard it:
 
-    * ``"dp"`` — shard this tensor dim across mesh axis ``"dp"``.
-    * ``("dp", "tp")`` — shard across both axes (multi-axis).
-    * ``None`` — this tensor dim is replicated.
+    * ``"dp"``: shard this tensor dim across mesh axis ``"dp"``.
+    * ``("dp", "tp")``: shard across both axes (multi-axis).
+    * ``None``: this tensor dim is replicated.
+
     Additionally:
 
     * ``_unreduced`` names mesh axes with pending reductions (analogous to
-      ``Partial`` in the placement world).  Contracting a sharded dimension
+      ``Partial`` in the placement world). Contracting a sharded dimension
       produces an unreduced result that needs a collective reduction.
     * ``_priorities`` assigns per-dimension propagation priority for the
-      compiler (e.g. batch parallelism at priority 0, tensor parallelism
-      at priority 1).  Compiler-only — cannot be used in eager mode.
+      compiler (for example, batch parallelism at priority 0, tensor
+      parallelism at priority 1). Compiler-only, and cannot be used in eager
+      mode.
     * ``_memory_kind`` specifies the memory tier for this tensor's shards
-      (e.g. ``"device"``, ``"pinned_host"``).  Mirrors JAX's
+      (for example, ``"device"`` or ``"pinned_host"``). Mirrors JAX's
       ``NamedMapping.memory_kind``.
 
     Args:
         _mesh: The device mesh.
         _spec: One entry per tensor dimension.
-        _unreduced: Mesh axes with pending reductions.
-        _priorities: Per-dimension propagation priority (compiler-only).
-        _memory_kind: Memory tier for shard placement (e.g. ``"device"``).
+        _unreduced: The mesh axes with pending reductions.
+        _priorities: The per-dimension propagation priority (compiler-only).
+        _memory_kind: The memory tier for shard placement (for example,
+            ``"device"``).
     """
 
     _mesh: DeviceMesh
@@ -350,7 +353,7 @@ class NamedMapping(DeviceMapping):
 
     @property
     def memory_kind(self) -> str | None:
-        """Memory tier for shard placement (e.g. ``"device"``)."""
+        """The memory tier for shard placement (for example, ``"device"``)."""
         return self._memory_kind
 
     @property
@@ -368,7 +371,7 @@ class NamedMapping(DeviceMapping):
         """Binds this spec to a mesh, dropping axes not present in the mesh.
 
         Axis names in the spec that don't exist in the mesh are treated as
-        ``None`` (Replicated) — this enables graceful degradation when a
+        ``None`` (Replicated). This enables graceful degradation when a
         model defined for ``("dp", "tp")`` is placed on a TP-only mesh.
 
         Args:
@@ -421,9 +424,10 @@ class NamedMapping(DeviceMapping):
             spec: One entry per tensor dimension.
             mesh: The device mesh. If ``None``, falls back to
                 ``DeviceMesh.default()``.
-            _unreduced: Mesh axes with pending reductions.
-            _priorities: Per-dimension propagation priority (compiler-only).
-            _memory_kind: Memory tier for shard placement.
+            _unreduced: The mesh axes with pending reductions.
+            _priorities: The per-dimension propagation priority
+                (compiler-only).
+            _memory_kind: The memory tier for shard placement.
         """
         if mesh is None:
             mesh = DeviceMesh.default()

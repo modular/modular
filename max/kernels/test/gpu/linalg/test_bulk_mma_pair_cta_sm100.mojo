@@ -811,7 +811,7 @@ def test_bulk_mma_pair_cta[
             a_swizzle=a_swizzle,
             b_swizzle=b_swizzle,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
@@ -844,7 +844,7 @@ def test_bulk_mma_pair_cta[
             a_swizzle=a_swizzle,
             b_swizzle=b_swizzle,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
             c.device_tensor(),

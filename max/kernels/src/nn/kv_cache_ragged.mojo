@@ -34,7 +34,6 @@ from layout import (
     LayoutTensor,
     LTToTTLayout,
     RowMajorLayout,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -71,7 +70,7 @@ from nn.attention.gpu.mla import (
 from quantization.qmatmul import matmul_qint4
 from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList
@@ -103,7 +102,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
     output: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -145,7 +144,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         return _fused_qkv_matmul_kv_cache_ragged[
             kv_collection.CacheType,
@@ -188,7 +187,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     bias: LayoutTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -231,7 +230,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_bias[
             kv_collection.CacheType,
@@ -279,7 +278,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     output: LayoutTensor[
         mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
     bias: OptionalReg[
         LayoutTensor[
             output_dtype,
@@ -349,7 +348,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_scale[
             kv_collection.CacheType,
@@ -397,7 +396,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
     output: LayoutTensor[
         mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -452,7 +451,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_scale_float4[
             kv_collection.CacheType,
@@ -498,7 +497,7 @@ def _fused_qkv_matmul_kv_cache_ragged[
     output: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -524,7 +523,7 @@ def _fused_qkv_matmul_kv_cache_ragged[
         v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     comptime if is_gpu[target]():
-        cuda_ctx = context.get_device_context()
+        cuda_ctx = context
 
     return _fused_qkv_matmul_kv_cache_ragged_impl[
         target=target,
@@ -570,7 +569,7 @@ def _fused_qkv_matmul_kv_cache_ragged_bias[
     bias: LayoutTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -593,7 +592,7 @@ def _fused_qkv_matmul_kv_cache_ragged_bias[
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     comptime if is_gpu[target]():
-        cuda_ctx = context.get_device_context()
+        cuda_ctx = context
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         target=target,
@@ -644,7 +643,7 @@ def _fused_qkv_matmul_kv_cache_ragged_scale[
     output: LayoutTensor[
         mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     bias: OptionalReg[
         LayoutTensor[
             output_dtype,
@@ -685,7 +684,7 @@ def _fused_qkv_matmul_kv_cache_ragged_scale[
         v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     comptime if is_gpu[target]():
-        cuda_ctx = context.get_device_context()
+        cuda_ctx = context
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         scales_granularity_mnk=scales_granularity_mnk, target=target
@@ -735,7 +734,7 @@ def _fused_qkv_matmul_kv_cache_ragged_scale_float4[
     output: LayoutTensor[
         mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -768,7 +767,7 @@ def _fused_qkv_matmul_kv_cache_ragged_scale_float4[
         v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     comptime if is_gpu[target]():
-        cuda_ctx = context.get_device_context()
+        cuda_ctx = context
 
     return _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target
@@ -1487,26 +1486,18 @@ def _matmul_blockwise_scaled_fp8_common[
         dtype: DType,
     ](lt: LayoutTensor[dtype, _, ...]) -> TileTensor[
         dtype,
-        RowMajorLayout[
-            *Coord[
-                RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-            ].element_types
-        ],
+        RowMajorLayout[*Coord[Int64, Int64].element_types],
         lt.origin,
     ]:
         var layout = row_major(
             (
-                RuntimeInt(Scalar[DType.int64](lt.dim(0))),
-                RuntimeInt(Scalar[DType.int64](lt.dim(1))),
+                Int64(lt.dim(0)),
+                Int64(lt.dim(1)),
             )
         )
         return TileTensor[
             dtype,
-            RowMajorLayout[
-                *Coord[
-                    RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-                ].element_types
-            ],
+            RowMajorLayout[*Coord[Int64, Int64].element_types],
             lt.origin,
         ](
             ptr=UnsafePointer[Scalar[dtype], lt.origin](
@@ -1523,12 +1514,7 @@ def _matmul_blockwise_scaled_fp8_common[
     )
     var c_tt = TileTensor(
         scratch_buffer.unsafe_ptr(),
-        layout=row_major(
-            (
-                RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
-                RuntimeInt(Scalar[DType.int64](N)),
-            )
-        ),
+        layout=row_major((Int64(TOTAL_SEQ_LEN), Int64(N))),
     )
 
     blockwise_scaled_fp8_with_epilogue[
@@ -1584,12 +1570,7 @@ def _matmul_blockwise_scaled_fp4_common[
     )
     var c_tt = TileTensor(
         scratch_buffer.unsafe_ptr(),
-        row_major(
-            (
-                RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
-                RuntimeInt(Scalar[DType.int64](N)),
-            )
-        ),
+        row_major((Int64(TOTAL_SEQ_LEN), Int64(N))),
     )
 
     var a_scales_tt = lt_to_tt(input_scale)
@@ -1633,7 +1614,7 @@ def kv_matmul_ragged_paged[
         page_size,
     ],
     layer_idx: UInt32,
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Performs a matmul, writing the output into a mutable ContinuousBatchingKVCacheCollection object.
 
@@ -1669,7 +1650,7 @@ def kv_matmul_ragged_paged[
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         return _matmul_kv_cache_ragged[target=target](
             hidden_state,
@@ -1692,7 +1673,7 @@ def _matmul_kv_cache_ragged[
     weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Helper for performing matmul with custom ContinuousBatchingKVCacheCollection dtypes.
 
@@ -1713,7 +1694,7 @@ def _matmul_kv_cache_ragged[
     v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     comptime if is_gpu[target]():
-        cuda_ctx = context.get_device_context()
+        cuda_ctx = context
 
     _matmul_kv_cache_ragged_impl[target=target](
         hidden_state,
@@ -1851,7 +1832,7 @@ def k_matmul_ragged_paged[
         page_size,
     ],
     layer_idx: UInt32,
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Performs a matmul, writing the output into a mutable PagedKVCacheCollection object.
 
@@ -1885,7 +1866,7 @@ def k_matmul_ragged_paged[
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         return _matmul_k_cache_ragged[target=target](
             hidden_state,
@@ -1911,7 +1892,7 @@ def _matmul_k_cache_ragged[
     weight: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Helper for performing matmul with custom PagedKVCacheCollection dtypes.
 
@@ -1931,7 +1912,7 @@ def _matmul_k_cache_ragged[
     k_cache = kv_collection.get_key_cache(layer_idx_cast)
 
     comptime if is_gpu[target]():
-        cuda_ctx = context.get_device_context()
+        cuda_ctx = context
 
     _matmul_k_cache_ragged_impl[target=target](
         hidden_state,
@@ -2034,7 +2015,7 @@ def k_matmul_ragged_paged_scale[
     ],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Performs a matmul, writing the output into a mutable
     PagedKVCacheCollection object.
@@ -2080,7 +2061,7 @@ def k_matmul_ragged_paged_scale[
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         comptime assert is_gpu[
             target
@@ -2098,7 +2079,7 @@ def k_matmul_ragged_paged_scale[
             input_scale,
             weight_scale,
             k_cache,
-            ctx.get_device_context(),
+            ctx,
         )
 
 
@@ -2233,7 +2214,7 @@ def unfused_qkv_matmul_ragged_paged_gguf_quantized[
     output: LayoutTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Performs a quantized matmul, writing the output into a mutable PagedKVCacheCollection object.
 
@@ -2334,7 +2315,7 @@ def _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
     output: LayoutTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     layer_idx_cast = Int(layer_idx)
     k_cache = kv_collection.get_key_cache(layer_idx_cast)
@@ -2595,7 +2576,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: DeviceContext,
 ) raises:
     """Performs a fused RoPE projection for Q and K projections.
 
@@ -2635,18 +2616,13 @@ def generic_fused_qk_rope_bshd_paged_ragged[
             )
         )
 
-    # Pass device context only on GPU.
-    var dev_ctx = Optional[DeviceContext]() if is_cpu[
-        target
-    ]() else context.get_device_context()
-
     comptime name = "mo.fused_qk_rope.ragged.paged.nhead_" + String(
         kv_collection.kv_params.num_heads
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(context.get_device_context().id()),
+        task_id=Int(context.id()),
     ):
         comptime if has_position_ids:
             fused_qk_rope_ragged[
@@ -2667,7 +2643,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                 ).as_immut(),
                 layer_idx,
                 output,
-                dev_ctx,
+                context,
             )
         else:
             fused_qk_rope_ragged[
@@ -2680,7 +2656,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                 None,
                 layer_idx,
                 output,
-                dev_ctx,
+                context,
             )
 
 
@@ -2709,7 +2685,7 @@ def generic_flash_attention_kv_cache_ragged[
     output: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
 ) raises:
     @always_inline
@@ -2738,7 +2714,7 @@ def generic_flash_attention_kv_cache_ragged[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(context.get_device_context().id()),
+        task_id=Int(context.id()),
     ):
         return _flash_attention_dispatch[
             target=target,
@@ -2775,7 +2751,7 @@ def _flash_attention_dispatch[
     output: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -2815,7 +2791,7 @@ def _flash_attention_dispatch[
                     mask,
                     input_row_offsets,
                     scale,
-                    context.get_device_context(),
+                    context,
                     sink_weights=sink_weights,
                     decode_dispatch_metadata=OptionalReg[
                         MHADecodeDispatchMetadata
@@ -2851,7 +2827,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
     output: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     sink_weights: LayoutTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
@@ -2883,7 +2859,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(context.get_device_context().id()),
+        task_id=Int(context.id()),
     ):
         return _flash_attention_dispatch[
             target=target,
@@ -2916,6 +2892,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
     target: StaticString,
     local_window_size: Int = -1,
     per_token_scale_rope_aware: Bool = False,
+    sparse_mla: Bool = False,
 ](
     q: TileTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -2928,8 +2905,21 @@ def generic_flare_mla_decode_kv_cache_ragged[
     scalar_args_buf: TileTensor[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    indices_stride: Int = 0,
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    extra_k: OptionalReg[collection_t.CacheType] = None,
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_indices_stride: Int = 0,
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
 ) raises:
@@ -2961,13 +2951,14 @@ def generic_flare_mla_decode_kv_cache_ragged[
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(context.get_device_context().id()),
+        task_id=Int(context.id()),
     ):
         return _flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
+            sparse_mla=sparse_mla,
         ](
             q,
             input_row_offsets,
@@ -2978,6 +2969,15 @@ def generic_flare_mla_decode_kv_cache_ragged[
             scalar_args_buf,
             context,
             q_scale_ptr,
+            d_indices,
+            indices_stride,
+            topk_lengths,
+            attn_sink_ptr,
+            extra_k,
+            extra_d_indices,
+            extra_indices_stride,
+            extra_topk_lengths,
+            extra_scales_ptr,
         )
 
 
@@ -2990,6 +2990,7 @@ def _flare_mla_decode_kv_cache_ragged[
     target: StaticString,
     local_window_size: Int = -1,
     per_token_scale_rope_aware: Bool = False,
+    sparse_mla: Bool = False,
 ](
     q: TileTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -3002,9 +3003,22 @@ def _flare_mla_decode_kv_cache_ragged[
     scalar_args_buf: TileTensor[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     # TODO: Must use OptionalReg as Optional does not work with @__copy_capture.
     q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    indices_stride: Int = 0,
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    extra_k: OptionalReg[collection_t.CacheType] = None,
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_indices_stride: Int = 0,
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
 ) raises:
@@ -3022,6 +3036,16 @@ def _flare_mla_decode_kv_cache_ragged[
         context: Pointer containing the runtime context for the target device.
         q_scale_ptr: Per-token Q scale pointer (float32 array, one per Q token).
             Default is null (sigma_Q = 1.0).
+        d_indices: Optional device pointer to packed int32 physical KV row indices
+            for sparse decode (see ``flare_mla_decoding``).
+        indices_stride: Stride between batch rows in ``d_indices`` (e.g. max top-k).
+        topk_lengths: Optional per-batch valid top-k counts.
+        attn_sink_ptr: Optional per-batch attention sink weights.
+        extra_k: Optional second KV cache operand (see ``flare_mla_decoding``).
+        extra_d_indices: Optional extra KV stream sparse indices.
+        extra_indices_stride: Stride for ``extra_d_indices``.
+        extra_topk_lengths: Optional per-batch lengths for extra stream.
+        extra_scales_ptr: Optional extra stream scales.
     """
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
@@ -3037,13 +3061,25 @@ def _flare_mla_decode_kv_cache_ragged[
 
     @parameter
     @always_inline
-    @__copy_capture(k, scalar_args_buf_tt, q_scale_ptr)
+    @__copy_capture(
+        k,
+        scalar_args_buf_tt,
+        q_scale_ptr,
+        d_indices,
+        topk_lengths,
+        attn_sink_ptr,
+        extra_k,
+        extra_d_indices,
+        extra_topk_lengths,
+        extra_scales_ptr,
+    )
     def _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_decoding[
             rank=q.rank,
             config=MHAConfig[q_dtype](_q_num_heads, _q_head_dim),
             ragged=True,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
+            sparse=sparse_mla,
         ](
             output,
             q,
@@ -3051,9 +3087,18 @@ def _flare_mla_decode_kv_cache_ragged[
             mask,
             input_row_offsets,
             scale,
-            context.get_device_context(),
+            context,
             scalar_args_buf=scalar_args_buf_tt,
             q_scale_ptr=q_scale_ptr,
+            d_indices=d_indices,
+            indices_stride=indices_stride,
+            topk_lengths=topk_lengths,
+            attn_sink_ptr=attn_sink_ptr,
+            extra_k=extra_k,
+            extra_d_indices=extra_d_indices,
+            extra_indices_stride=extra_indices_stride,
+            extra_topk_lengths=extra_topk_lengths,
+            extra_scales_ptr=extra_scales_ptr,
         )
 
     dispatch_mask[
@@ -3091,7 +3136,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     @always_inline
     @parameter
@@ -3145,7 +3190,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(context.get_device_context().id()),
+        task_id=Int(context.id()),
     ):
         return _flare_mla_prefill_kv_cache_ragged[
             mask_str=mask_str,
@@ -3194,7 +3239,7 @@ def _flare_mla_prefill_kv_cache_ragged[
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Performs MLA prefill.
 
@@ -3238,7 +3283,7 @@ def _flare_mla_prefill_kv_cache_ragged[
             input_row_offsets,
             buffer_row_offsets,
             scale,
-            context.get_device_context(),
+            context,
             cache_offsets=LayoutTensor[
                 DType.uint32,
                 Layout.row_major(UNKNOWN_VALUE),
@@ -3279,11 +3324,11 @@ def generic_flare_mla_prefill_ragged_paged_plan[
     buffer_lengths: LayoutTensor[
         mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     comptime assert is_gpu[target](), "Planning MLA is only supported on GPU"
 
-    var cuda_ctx = context.get_device_context()
+    var cuda_ctx = context
 
     var layer_idx_cast = Int(layer_idx)
 
@@ -3291,7 +3336,7 @@ def generic_flare_mla_prefill_ragged_paged_plan[
 
     with Trace[TraceLevel.OP, target=target](
         "mo.mla.prefill.ragged.paged.plan",
-        task_id=Int(context.get_device_context().id()),
+        task_id=Int(context.id()),
     ):
         mla_prefill_plan(
             lt_to_tt(buffer_row_offsets),
@@ -3324,10 +3369,10 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     k_buffer: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
-    var cuda_ctx = context.get_device_context()
+    var cuda_ctx = context
 
     var buffer_length_int = Int(buffer_length)
     var layer_idx_cast = Int(layer_idx)
@@ -3336,7 +3381,7 @@ def generic_flare_mla_decompress_k_cache_ragged_paged[
     comptime latent_dim = Int(k_latent_buffer.layout.shape[1])
     var k_latent_tile = TileTensor(
         k_latent_buffer.ptr,
-        row_major(Idx(buffer_length_int), Idx[latent_dim]()),
+        row_major(buffer_length_int, Idx[latent_dim]),
     )
     _k_cache_to_buffer(
         lt_to_tt(buffer_row_offsets_1d),
@@ -3407,7 +3452,7 @@ def _cross_attention_dispatch[
     output: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     sink_weights: OptionalReg[
         LayoutTensor[
             mut=False, dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
@@ -3418,9 +3463,7 @@ def _cross_attention_dispatch[
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
     @parameter
-    @__copy_capture(
-        q, k, v, output, context, q_input_row_offsets, kv_input_row_offsets
-    )
+    @__copy_capture(q, k, v, output, q_input_row_offsets, kv_input_row_offsets)
     def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         comptime if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
@@ -3444,7 +3487,7 @@ def _cross_attention_dispatch[
                 mask,
                 q_input_row_offsets,
                 scale,
-                context.get_device_context(),
+                context,
                 Int(q_max_seq_len),
                 LayoutTensor[
                     kv_input_row_offsets.dtype,
@@ -3491,7 +3534,7 @@ def generic_cross_attention_kv_cache[
     output: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
@@ -3529,7 +3572,7 @@ def generic_cross_attention_kv_cache[
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(context.get_device_context().id()),
+        task_id=Int(context.id()),
     ):
         return _cross_attention_dispatch[
             target=target,
@@ -3567,7 +3610,7 @@ def generic_kv_cache_radd_dispatch[
     ],
     batch_offset: UInt32,
     layer_idx: UInt32,
-    ctx: Optional[DeviceContext],
+    ctx: DeviceContext,
 ) raises:
     comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
 
@@ -3635,20 +3678,18 @@ def generic_kv_cache_radd_dispatch[
         )
 
     comptime if is_gpu[target]():
-        if ctx is None:
-            raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
-            a.runtime_layout.shape.value.canonicalize(), ctx.value()
+            a.runtime_layout.shape.value.canonicalize(), ctx
         )
     else:
         comptime compile_target = _current_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
-            a.runtime_layout.shape.value.canonicalize()
+            a.runtime_layout.shape.value.canonicalize(), ctx
         )
 
 
@@ -3665,7 +3706,7 @@ def kv_cache_store_ragged[
     input_row_offsets: LayoutTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
 ) raises:
     comptime assert input_row_offsets.layout.rank() == 1, (
         "Expected input_row_offsets to be a 1D tensor of shape `(batch_size"
@@ -3697,15 +3738,13 @@ def kv_cache_store_ragged[
         )
 
     comptime if is_gpu[target]():
-        if context is None:
-            raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[
             cache_t.dtype, target=compile_target
         ]()
 
         elementwise[write_to_cache, simd_width, target=target](
-            input_shape, context.value()
+            input_shape, context
         )
     else:
         comptime compile_target = _current_target()
@@ -3731,7 +3770,7 @@ def kv_cache_store_padded[
     valid_lengths: LayoutTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
 ) raises:
     comptime assert (
         valid_lengths.layout.rank() == 1
@@ -3764,15 +3803,13 @@ def kv_cache_store_padded[
         )
 
     comptime if is_gpu[target]():
-        if context is None:
-            raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[
             cache_t.dtype, target=compile_target
         ]()
 
         elementwise[write_to_cache, simd_width, target=target](
-            input_shape, context.value()
+            input_shape, context
         )
     else:
         comptime compile_target = _current_target()
@@ -3808,7 +3845,7 @@ def kv_cache_2m_iadd_dispatch[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     layer_idx: UInt32,
-    ctx: Optional[DeviceContext],
+    ctx: DeviceContext,
 ) raises:
     """
     In-place add to paged KV cache with concatenated K/V layout. This kernel is
@@ -3886,18 +3923,14 @@ def kv_cache_2m_iadd_dispatch[
         )
 
     comptime if is_gpu[target]():
-        if ctx is None:
-            raise Error("ctx is None")
         with Trace[TraceLevel.OP, target=target](
             "kv-cache-2m-iadd",
-            task_id=Int(ctx.value().id()),
+            task_id=Int(ctx.id()),
         ):
             comptime compile_target = get_gpu_target()
             comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-            elementwise[iadd, simd_width, target=target](
-                elementwise_shape, ctx.value()
-            )
+            elementwise[iadd, simd_width, target=target](elementwise_shape, ctx)
     else:
         comptime compile_target = _current_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()

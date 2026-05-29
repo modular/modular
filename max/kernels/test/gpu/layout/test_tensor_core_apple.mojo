@@ -87,7 +87,7 @@ def run_mma_test[
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_kernel[a_dtype, b_dtype, d_dtype]](
+    ctx.enqueue_function[mma_kernel[a_dtype, b_dtype, d_dtype]](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -156,7 +156,7 @@ def run_mma_test_strided(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_strided_kernel](
+    ctx.enqueue_function[mma_strided_kernel](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -260,7 +260,7 @@ def run_mma_test_runtime_transpose(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_rt_transpose_kernel](
+    ctx.enqueue_function[mma_rt_transpose_kernel](
         a_dev,
         b_dev,
         d_ff_dev,

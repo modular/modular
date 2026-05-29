@@ -191,7 +191,7 @@ def main() raises:
         h_flags.free()
 
         # Launch kernel
-        ctx.enqueue_function_experimental[test_interblock_scan](
+        ctx.enqueue_function[test_interblock_scan](
             d_input,
             d_output,
             d_partial_sums,

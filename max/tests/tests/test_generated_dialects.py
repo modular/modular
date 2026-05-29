@@ -21,7 +21,6 @@ from max._core import (
     InsertPoint,
     NamedAttribute,
     OpBuilder,
-    Operation,
     Pass,
     Type,
     lower,
@@ -48,7 +47,7 @@ def test_mosh(mlir_context) -> None:  # noqa: ANN001
 def test_mosh_shapeattr(mlir_context) -> None:  # noqa: ANN001
     shape_type = mosh.ShapeType()
     attr = mosh.ShapeAttr([1, 2, 3], shape_type)
-    dims = list(attr.values)
+    dims = list(kgen.CastToBuiltinAttr(d) for d in attr.values)
     index_type = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
     uint8_type = builtin.IntegerType(8, builtin.SignednessSemantics.unsigned)
     Index = functools.partial(builtin.IntegerAttr, index_type)
@@ -127,6 +126,130 @@ def test_regions_and_blocks(mlir_context) -> None:  # noqa: ANN001
     # check that we can still safely access the block
     ip = block.end
     assert isinstance(ip, InsertPoint)
+
+
+def test_free_standing_block_allocation(mlir_context: mlir.Context) -> None:
+    """A `Block(arg_types, arg_locs)` allocated via the constructor is owned
+    by the Python wrapper. Dropping the wrapper frees the block — we can't
+    directly observe the destructor, but a double-free or leak in the
+    binding would surface under ASAN.
+    """
+    loc = mlir.Location.current
+    assert loc
+    int64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+    block = Block(arg_types=[int64, int64], arg_locs=[loc, loc])
+    args = list(block.arguments)
+    assert len(args) == 2
+    assert all(arg.type == int64 for arg in args)
+    del block  # Python owns; this should free without error.
+
+
+def test_block_append_transfers_ownership(mlir_context: mlir.Context) -> None:
+    """`Region.append` splices the block into the region's intrusive block
+    list and marks the Python wrapper as non-owning. The wrapper remains a
+    valid view: attribute access continues to work both before and after
+    append, and dropping the wrapper does NOT double-free the block.
+    """
+    loc = mlir.Location.current
+    assert loc
+    int64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = mo.GraphOp(builder, loc, "host", [], [], is_subgraph=False)
+    region = graph.regions[0]
+
+    block = Block(arg_types=[int64], arg_locs=[loc])
+    assert len(list(block.arguments)) == 1
+
+    region.append(block)
+
+    # Wrapper is still usable as a non-owning view.
+    assert len(list(block.arguments)) == 1
+
+    # nanobind's instance cache returns the same wrapper for the same C++
+    # pointer, so re-fetching via the region yields the same object.
+    assert region.back is block
+
+
+def test_block_outlives_dropped_region_via_keep_alive(
+    mlir_context: mlir.Context,
+) -> None:
+    """After `Region.append`, the block wrapper holds a `keep_alive` on the
+    region, which transitively keeps the parent op chain alive. So even
+    after callers drop every Python reference to the region, module, and
+    builder, the original block reference remains valid — both the
+    Python wrapper and the underlying MLIR block survive because the
+    wrapper is rooted in the live op tree.
+    """
+    loc = mlir.Location.current
+    assert loc
+    int64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = mo.GraphOp(builder, loc, "host", [], [], is_subgraph=False)
+    region = graph.regions[0]
+    block = Block(arg_types=[int64], arg_locs=[loc])
+    region.append(block)
+
+    del region
+    del graph
+    del builder
+    del module
+
+    assert len(list(block.arguments)) == 1
+
+
+def test_block_append_rejects_already_attached_block(
+    mlir_context: mlir.Context,
+) -> None:
+    """`Region.append` rejects blocks already attached to another region.
+    The underlying `mlir::Region::push_back` is backed by
+    `llvm::iplist::push_back`, which asserts the node isn't already in
+    another list — in debug builds that's a process abort, and in release
+    builds it silently corrupts both intrusive lists. The binding catches
+    the case early and raises ``ValueError`` (nanobind's mapping for
+    ``std::invalid_argument``).
+    """
+    loc = mlir.Location.current
+    assert loc
+    int64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph1 = mo.GraphOp(builder, loc, "host1", [], [], is_subgraph=False)
+    graph2 = mo.GraphOp(builder, loc, "host2", [], [], is_subgraph=False)
+
+    block = Block(arg_types=[int64], arg_locs=[loc])
+    graph1.regions[0].append(block)
+    with pytest.raises(ValueError, match="already attached"):
+        graph2.regions[0].append(block)
+
+
+def test_block_drop_after_append_does_not_double_free(
+    mlir_context: mlir.Context,
+) -> None:
+    """After `Region.append`, the region owns the block (and frees it via
+    the region's destructor / parent op tear-down). Dropping the Python
+    wrapper must NOT also delete the block — otherwise the region
+    destructor would double-free.
+
+    Observed indirectly: this test simply allocates, appends, drops the
+    wrapper, and then lets the parent op chain go out of scope. A
+    double-free would surface under ASAN.
+    """
+    loc = mlir.Location.current
+    assert loc
+    int64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = mo.GraphOp(builder, loc, "host", [], [], is_subgraph=False)
+    region = graph.regions[0]
+    block = Block(arg_types=[int64], arg_locs=[loc])
+    region.append(block)
+    del block  # Wrapper drop must not delete the block (region owns it).
 
 
 def test_block_contents(mlir_context: mlir.Context) -> None:
@@ -321,19 +444,16 @@ def test_discardable_attrs__concurrent_modification(mlir_context) -> None:  # no
 def test_lower_remove_dead_values(mlir_context) -> None:  # noqa: ANN001
     with Graph("empty", input_types=[]) as graph:
         graph.output()
-    module = Operation._from_cmlir(graph._module.operation)
-    assert isinstance(module, builtin.ModuleOp)
-    assert "mo.chain.create()" in str(module)
+    module = graph._module
+    assert "mo.chain.create()" in module.asm()
     lower(module, [builtin.passes.RemoveDeadValuesPass()])
-    assert isinstance(module, builtin.ModuleOp)
-    assert "mo.chain.create()" not in str(module)
+    assert "mo.chain.create()" not in module.asm()
 
 
 def test_lowering_failure_diagnostic(mlir_context) -> None:  # noqa: ANN001
     # graph with no output!
     graph = Graph("empty", input_types=[])
-    module = Operation._from_cmlir(graph._module.operation)
-    assert isinstance(module, builtin.ModuleOp)
+    module = graph._module
     with pytest.raises(Exception):
         module.verify()
     with pytest.raises(Exception):
@@ -361,3 +481,71 @@ def test_get_context_from_cpp(mlir_context) -> None:  # noqa: ANN001
     assert loc
     module = builtin.ModuleOp(loc)
     assert module.context is mlir_context
+
+
+# ===----------------------------------------------------------------------=== #
+# InferTypeOp-overload binding path (codegen'd state population +
+# `finalize_checked`)
+# ===----------------------------------------------------------------------=== #
+
+
+def test_integer_attr_with_index_type(mlir_context) -> None:  # noqa: ANN001
+    """`IntegerAttr` accepts `IndexType` (MLIR's `IndexAttr` pattern)."""
+    index_type = builtin.IndexType()
+    attr = builtin.IntegerAttr(index_type, 5)
+    assert attr.type == index_type
+    assert attr.value == 5
+    # Default value is 0.
+    assert builtin.IntegerAttr(index_type).value == 0
+
+
+def test_infer_type_op_overload_infers_result_type() -> None:
+    """The InferTypeOp overload of an `InferTypeOpAdaptor` op runs
+    `Op::inferReturnTypes` and produces the right result type."""
+    input_type = TensorType(DType.float32, [4], DeviceRef.GPU())
+    with Graph("infer_type_op", input_types=[input_type, input_type]) as graph:
+        with mlir.Location.unknown() as location:
+            builder = OpBuilder(Block._from_cmlir(graph._current_block).end)
+            x, y = graph.inputs
+            params = kgen.ParamDeclArrayAttr([])
+            # The 5-arg form (no `result=`) is the InferTypeOp overload.
+            op = rmo.AddOp(builder, location, x.to_mlir(), y.to_mlir(), params)
+            op.verify()
+            [result] = op.results
+            assert result.type == input_type.to_mlir()
+
+
+def test_infer_type_op_overload_sets_properties() -> None:
+    """The codegen'd state population assigns into `Op::Properties` so
+    `inferReturnTypes` reads attributes that are stored as properties
+    (not in the discardable attribute dict)."""
+    input_type = TensorType(DType.float32, [2, 3], DeviceRef.CPU())
+    output_shape = mosh.ShapeAttr([3, 2], mosh.ShapeType())
+    with Graph("reshape_props", input_types=[input_type]) as graph:
+        with mlir.Location.unknown() as location:
+            builder = OpBuilder(Block._from_cmlir(graph._current_block).end)
+            (x,) = graph.inputs
+            # InferTypeOp overload (no `result=`); the helper must populate
+            # `newShape` in `Properties` for inferReturnTypes to read it.
+            op = rmo.ReshapeOp(builder, location, x.to_mlir(), output_shape)
+            op.verify()
+            assert op.new_shape == output_shape
+            [result] = op.results
+            expected = TensorType(DType.float32, [3, 2], DeviceRef.CPU())
+            assert result.type == expected.to_mlir()
+
+
+def test_infer_type_op_overload_failure_raises_value_error() -> None:
+    """A failing `inferReturnTypes` surfaces as a `ValueError` instead of
+    aborting the interpreter via `report_fatal_error`."""
+    input_type = TensorType(DType.float32, [2, 3], DeviceRef.CPU())
+    # 2x3 has 6 elements; reshape to 3x3 (9 elements) is invalid.
+    bad_shape = mosh.ShapeAttr([3, 3], mosh.ShapeType())
+    with Graph("reshape_bad", input_types=[input_type]) as graph:
+        with mlir.Location.unknown() as location:
+            builder = OpBuilder(Block._from_cmlir(graph._current_block).end)
+            (x,) = graph.inputs
+            with pytest.raises(
+                ValueError, match=r"infer result type.*rmo\.reshape"
+            ):
+                rmo.ReshapeOp(builder, location, x.to_mlir(), bad_shape)

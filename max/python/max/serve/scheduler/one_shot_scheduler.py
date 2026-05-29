@@ -23,18 +23,17 @@ import queue
 from collections.abc import Callable
 from typing import Generic
 
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     BaseContextType,
-    MAXPullQueue,
-    MAXPushQueue,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
     RequestID,
-    Scheduler,
-    SchedulerResult,
 )
 from max.profiler import traced
+from max.serve.queue import MAXPullQueue, MAXPushQueue
+from max.serve.scheduler.interface import Scheduler
+from max.serve.scheduler_result import SchedulerResult
 
 from .base import SchedulerProgress
 

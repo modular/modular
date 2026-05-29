@@ -20,6 +20,7 @@ from std.os import listdir
 ```
 """
 
+from std._plugin import CurrentPlugin
 from std.collections import InlineArray, List
 from std.collections.string.string_slice import _unsafe_strlen
 from std.format.tstring import TString
@@ -148,10 +149,12 @@ struct _DirHandle:
             ref name = ep.unsafe_value().take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
-                ptr=name_ptr,
-                length=Int(
-                    _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
-                ),
+                unsafe_from_utf8=Span(
+                    ptr=name_ptr,
+                    length=Int(
+                        _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
+                    ),
+                )
             )
             if name_str == "." or name_str == "..":
                 continue
@@ -176,10 +179,12 @@ struct _DirHandle:
             ref name = ep.unsafe_value().take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
-                ptr=name_ptr,
-                length=Int(
-                    _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
-                ),
+                unsafe_from_utf8=Span(
+                    ptr=name_ptr,
+                    length=Int(
+                        _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
+                    ),
+                )
             )
             if name_str == "." or name_str == "..":
                 continue
@@ -238,6 +243,10 @@ def abort() -> Never:
     available.
     """
 
+    # Plugin hook may longjmp
+    # if so, the trap below is dead.
+    CurrentPlugin.abort_fn()
+
     __mlir_op.`llvm.intr.trap`()
 
     # We need to satisfy the noreturn checker.
@@ -248,7 +257,11 @@ def abort() -> Never:
 @always_inline
 def _abort_impl[
     *, prefix: StaticString
-](message: Some[Writable], *, location: Optional[SourceLocation] = {}) -> Never:
+](
+    message: Some[Writable],
+    *,
+    location: Optional[SourceLocation] = {},
+) -> Never:
     var loc = location.or_else(call_location[inline_count=2]())
 
     comptime if is_apple_gpu():

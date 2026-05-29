@@ -15,10 +15,17 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorValue,
+    TensorValueLike,
+    Value,
+    ops,
+)
 
 from ..embedding import Embedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
@@ -49,12 +56,128 @@ def forward_sharded_layers(
     return [layer(x) for layer, x in zip(layers, xs, strict=True)]
 
 
+def _call_layer_directly(
+    layer: Module,
+    values: list[Value[Any] | Sequence[Value[Any]]],
+) -> list[TensorValue]:
+    result = layer(*values)
+    if isinstance(result, tuple):
+        return list(result)
+    return result if isinstance(result, list) else [result]
+
+
+def forward_sequential_layers(
+    layers: Sequence[Module],
+    *,
+    inputs_for_layer: Callable[
+        [int, list[TensorValue]],
+        list[Value[Any] | Sequence[Value[Any]]],
+    ],
+    initial_hidden_states: list[TensorValue],
+    on_layer_output: Callable[[int, list[TensorValue]], None] | None = None,
+    subgraph_layer_groups: list[list[int]] | None = None,
+    name_for_subgraph: Callable[
+        [int], str
+    ] = lambda i: f"transformer_block_{i}",
+    weight_prefix_for_layer: Callable[[int], str] | None = None,
+) -> list[TensorValue]:
+    """Forward pass through sequential layers with optional subgraph groups.
+
+    Args:
+        layers: The sequence of layers to forward through.
+        inputs_for_layer: A callable that takes the layer index and previous
+            hidden states and returns a list of values.
+        initial_hidden_states: The hidden states to provide to the first layer.
+        on_layer_output: An optional callable invoked after each layer with
+            the layer index and output hidden states.
+        subgraph_layer_groups: A sequence of layer index groups. Each group is
+            a sequence of layer indices that should share a single compiled
+            subgraph. If `None` or empty, all layers are called directly
+            without subgraphs. Layers not listed in any group also fall through
+            to direct call.
+
+            .. note::
+
+               All layers in a group must share the same operand types.
+               The subgraph signature is fixed at the first layer in
+               the group; other layers calling it with different shapes
+               fail with an MLIR
+               ``Subgraph ... has wrong type for argument`` error.
+               Architectures with per-layer-variable shapes (variable
+               head count, mixed dense and sparse MLP) must group
+               layers by signature.
+        name_for_subgraph: A callable that takes the group index and returns
+            the subgraph name.
+        weight_prefix_for_layer: A callable that takes the layer index and
+            returns the weight prefix string for that layer. Required when using
+            subgraphs.
+
+    Returns:
+        The output hidden states of the last layer.
+    """
+
+    h = initial_hidden_states
+
+    if subgraph_layer_groups is None:
+        for layer_idx, layer in enumerate(layers):
+            values = inputs_for_layer(layer_idx, h)
+            h = _call_layer_directly(layer, values)
+            if on_layer_output is not None:
+                on_layer_output(layer_idx, h)
+        return h
+
+    assert weight_prefix_for_layer is not None, (
+        "`weight_prefix_for_layer` is required when using subgraphs"
+    )
+
+    layer_idx_to_group_idx: dict[int, int] = {}
+    for group_idx, layer_group in enumerate(subgraph_layer_groups):
+        for layer_idx in layer_group:
+            assert layer_idx < len(layers), (
+                f"Layer index {layer_idx} is out of range for {len(layers)} layers"
+            )
+            layer_idx_to_group_idx[layer_idx] = group_idx
+
+    group_idx_to_subgraph: dict[int, Graph] = {}
+    for layer_idx, layer in enumerate(layers):
+        values = inputs_for_layer(layer_idx, h)
+        if layer_idx not in layer_idx_to_group_idx:
+            h = _call_layer_directly(layer, values)
+        else:
+            group_idx = layer_idx_to_group_idx[layer_idx]
+            if group_idx not in group_idx_to_subgraph:
+                group_idx_to_subgraph[group_idx] = layer.build_subgraph(
+                    name=name_for_subgraph(group_idx),
+                    input_types=[
+                        v.type if isinstance(v, Value) else [x.type for x in v]
+                        for v in values
+                    ],
+                    weight_prefix=weight_prefix_for_layer(layer_idx),
+                )
+
+            call_results = ops.call(
+                group_idx_to_subgraph[group_idx],
+                *[
+                    x
+                    for v in values
+                    for x in (v if isinstance(v, list) else [v])
+                ],
+                prefix=weight_prefix_for_layer(layer_idx),
+            )
+            h = [x.tensor for x in call_results]
+
+        if on_layer_output is not None:
+            on_layer_output(layer_idx, h)
+
+    return h
+
+
 def extract_hs(
     return_hidden_states: ReturnHiddenStates,
     last_token_hs_distributed: Sequence[TensorValue],
     all_hs_distributed: Sequence[TensorValue],
     normalizer: Sequence[Callable[[TensorValue], TensorValue]],
-    eagle3_captured_hs: list[list[TensorValue]] | None = None,
+    capture_hidden_states: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Extract hidden states from the model.
 
@@ -66,14 +189,14 @@ def extract_hs(
             entry per device (distinct batch shards in DP, identical
             replicas in TP/single-device).
         normalizer: Per-device normalization functions.
-        eagle3_captured_hs: For ``EAGLE3`` mode, a list of captured hidden
-            states at specific layer indices.  Each entry is a per-device list
-            of tensors. The entries are concatenated along the feature dimension
-            to produce a single fused hidden-state tensor per device.
+        capture_hidden_states: A list of per-layer captured hidden states at specific layer indices.  Each entry is a
+            per-device list of tensors. The entries are concatenated along the
+            feature dimension to produce a single fused hidden-state tensor
+            per device.
 
     Returns:
         Empty tuple for ``NONE``; ``(TensorValue,)`` for ``LAST``; for
-        ``ALL`` / ``ALL_NORMALIZED`` / ``EAGLE3`` the per-device tensors are
+        ``ALL`` / ``ALL_NORMALIZED`` / ``SELECTED_LAYERS`` the per-device tensors are
         returned as positional tuple elements (``N`` entries, one per
         device).
     """
@@ -88,12 +211,14 @@ def extract_hs(
     elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
         norm_hs = forward_sharded_layers(normalizer, all_hs_distributed)
         return tuple(norm_hs)
-    elif return_hidden_states == ReturnHiddenStates.EAGLE3:
-        assert eagle3_captured_hs is not None and len(eagle3_captured_hs) > 0
-        num_devices = len(eagle3_captured_hs[0])
+    elif return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS:
+        assert (
+            capture_hidden_states is not None and len(capture_hidden_states) > 0
+        )
+        num_devices = len(capture_hidden_states[0])
         fused_per_dev = [
             ops.concat(
-                [layer_hs[i] for layer_hs in eagle3_captured_hs],
+                [layer_hs[i] for layer_hs in capture_hidden_states],
                 axis=-1,
             )
             for i in range(num_devices)
@@ -167,7 +292,7 @@ class ReturnHiddenStates(str, Enum):
     LAST_PER_DEVICE = "last_per_device"
     ALL_NORMALIZED = "all_normalized"
     ALL = "all"
-    EAGLE3 = "eagle3"
+    SELECTED_LAYERS = "selected_layers"
 
 
 def logits_postprocess(
@@ -179,6 +304,7 @@ def logits_postprocess(
     return_logits: ReturnLogits,
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     logits_scaling: float = 1.0,
+    capture_hidden_states: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Performs common logits postprocessing for single-device models.
 
@@ -197,12 +323,15 @@ def logits_postprocess(
         logits_scaling: A divisor applied to logits after projection. Logits
             are divided by this value before returning. Defaults to ``1.0``
             (no scaling).
+        capture_hidden_states: For ``SELECTED_LAYERS`` mode, the
+            per-layer captured hidden states gathered during the layer loop.
+            See :func:`extract_hs`.
 
     Returns:
         A tuple of ``(last_logits,)``, optionally extended with
         ``(logits, offsets)`` when returning multiple logits, and further
         extended with hidden states when requested. Hidden-state entries
-        for ``ALL`` / ``ALL_NORMALIZED`` / ``EAGLE3`` modes are returned as
+        for ``ALL`` / ``ALL_NORMALIZED`` / ``SELECTED_LAYERS`` modes are returned as
         a ``list[TensorValue]`` (one entry per device); other entries are
         single ``TensorValue``.
     """
@@ -253,6 +382,7 @@ def logits_postprocess(
         last_token_hs_distributed=[last_h],
         all_hs_distributed=[h],
         normalizer=[norm],
+        capture_hidden_states=capture_hidden_states,
     )
 
     return ret_val
@@ -287,6 +417,7 @@ class LogitsPostprocessMixin:
         h: TensorValue,
         input_row_offsets: TensorValue,
         return_n_logits: TensorValue,
+        capture_hidden_states: list[list[TensorValue]] | None = None,
     ) -> tuple[TensorValue, ...]:
         return logits_postprocess(
             h,
@@ -297,6 +428,7 @@ class LogitsPostprocessMixin:
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
+            capture_hidden_states=capture_hidden_states,
         )
 
 
@@ -324,6 +456,11 @@ class Transformer(LogitsPostprocessMixin, Module):
         logits_scaling: A divisor applied to logits after projection. Logits
             are divided by this value before returning. Defaults to ``1.0``
             (no scaling).
+        target_layer_ids: For ``ReturnHiddenStates.SELECTED_LAYERS`` mode, the
+            zero-based layer indices whose post-block hidden states should be
+            captured and concatenated along the feature dimension. Captures
+            are emitted in increasing layer-index order regardless of how the
+            list is sorted. Defaults to ``None``.
     """
 
     def __init__(
@@ -340,6 +477,7 @@ class Transformer(LogitsPostprocessMixin, Module):
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         embedding_multiplier: float = 1.0,
         logits_scaling: float = 1.0,
+        target_layer_ids: list[int] | None = None,
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -354,6 +492,18 @@ class Transformer(LogitsPostprocessMixin, Module):
         self.return_logits = return_logits
         self.return_hidden_states = return_hidden_states
         self.logits_scaling = logits_scaling
+        self.target_layer_ids: list[int] | None = (
+            list(target_layer_ids) if target_layer_ids else None
+        )
+        if self.target_layer_ids is not None:
+            n_layers = len(layers)
+            for pos, layer_id in enumerate(self.target_layer_ids):
+                if not 0 <= layer_id < n_layers:
+                    raise ValueError(
+                        f"target_layer_ids[{pos}]={layer_id} is out of range "
+                        f"[0, {n_layers}) for a transformer with {n_layers} "
+                        "layers."
+                    )
 
     def _process_hidden_states(
         self,
@@ -363,6 +513,16 @@ class Transformer(LogitsPostprocessMixin, Module):
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         freqs_cis = self.rope.freqs_cis
+
+        capture_layer_set: set[int] | None = None
+        capture_hidden_states: list[list[TensorValue]] | None = None
+        if (
+            self.target_layer_ids is not None
+            and self.return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS
+        ):
+            capture_layer_set = set(self.target_layer_ids)
+            capture_hidden_states = []
+
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
@@ -371,8 +531,19 @@ class Transformer(LogitsPostprocessMixin, Module):
                 freqs_cis=freqs_cis,
                 input_row_offsets=input_row_offsets,
             )
+            if (
+                capture_layer_set is not None
+                and capture_hidden_states is not None
+                and idx in capture_layer_set
+            ):
+                capture_hidden_states.append([h])
 
-        return self._postprocess_logits(h, input_row_offsets, return_n_logits)
+        return self._postprocess_logits(
+            h,
+            input_row_offsets,
+            return_n_logits,
+            capture_hidden_states=capture_hidden_states,
+        )
 
     def __call__(
         self,

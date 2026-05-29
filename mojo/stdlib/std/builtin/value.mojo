@@ -134,7 +134,7 @@ trait Copyable(Movable):
     """
 
 
-trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
+trait ImplicitlyCopyable(Copyable):
     """A marker trait to permit compiler to insert implicit calls to the copy
     constructor in order to make a copy of the object when needed.
 
@@ -197,7 +197,7 @@ def materialize[T: AnyType, //, value: T](out result: T):
     )
 
 
-trait Defaultable(ImplicitlyDestructible):
+trait Defaultable:
     """The `Defaultable` trait describes a type with a default constructor.
 
     Implementing the `Defaultable` trait requires the type to define

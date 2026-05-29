@@ -6,13 +6,12 @@ package(default_visibility = ["//visibility:private"])
 # abort. These use mojo_filecheck_test with expect_crash = True so the test
 # harness verifies the crash output matches the CHECK directives.
 _CRASH_TESTS = [
-    "test_uninit_check_float32_host_poison.mojo",
-    "test_uninit_check_float32_device_poison.mojo",
-    "test_uninit_check_float16_host_poison.mojo",
-    "test_uninit_check_bfloat16_host_poison.mojo",
-    "test_uninit_check_float64_host_poison.mojo",
-    "test_uninit_check_float8_e4m3fn_host_poison.mojo",
-    "test_uninit_check_float8_e5m2_host_poison.mojo",
+    "test_uninit_check_float32_poison.mojo",
+    "test_uninit_check_float16_poison.mojo",
+    "test_uninit_check_bfloat16_poison.mojo",
+    "test_uninit_check_float64_poison.mojo",
+    "test_uninit_check_float8_e4m3fn_poison.mojo",
+    "test_uninit_check_float8_e5m2_poison.mojo",
     "test_uninit_check_simd_vector_poison.mojo",
     "test_uninit_check_masked_load_poison.mojo",
     "test_uninit_check_gather_poison.mojo",

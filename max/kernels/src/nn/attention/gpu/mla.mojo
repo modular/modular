@@ -20,6 +20,7 @@ from std.sys import (
     align_of,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
+    get_defined_int,
     simd_width_of,
     size_of,
     is_nvidia_gpu,
@@ -27,7 +28,10 @@ from std.sys import (
     CompilationTarget,
 )
 
-from nn.attention.gpu.mha import q_num_matrix_view_rows
+from nn.attention.gpu.mha import mha_splitk_reduce, q_num_matrix_view_rows
+from nn.attention.gpu.mha_decode_partition_heuristic import (
+    mha_decoding_num_partitions,
+)
 import std.gpu.primitives.warp as warp
 from std.algorithm.functional import (
     _elementwise_impl_gpu,
@@ -82,6 +86,7 @@ from layout.layout_tensor import (
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from layout.tile_tensor import NullableTileTensor
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -106,7 +111,11 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
 from nn.attention.mha_utils import get_start_and_end_for_partitions
-from nn.softmax import _online_softmax_iter_for_mma_output
+from nn.softmax import (
+    _exp2_concrete,
+    _exp_concrete,
+    _online_softmax_iter_for_mma_output,
+)
 from .amd_structured.mla_decode import Attention
 from .amd_structured.mla_prefill import Attention
 from .nvidia.sm100.mla_prefill import mla_sm100_prefill
@@ -138,6 +147,11 @@ def flare_mla_decoding[
     decoding_warp_split_k: Bool = False,
     per_token_scale_rope_aware: Bool = False,
     sparse: Bool = False,
+    # Sparse-only routing flag: True selects the BF16-rope sparse kernel
+    # (split FP8 nope + BF16 rope). False (default) selects the all-FP8
+    # sparse kernel. This is the production default; True is only used by
+    # internal BF16-rope-kernel tests.
+    rope_aware_kv_sparse: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -274,6 +288,7 @@ def flare_mla_decoding[
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=True,
                 sparse=sparse,
+                rope_aware_kv_sparse=rope_aware_kv_sparse,
             ](
                 output,
                 q,
@@ -311,6 +326,7 @@ def flare_mla_decoding[
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=False,
                 sparse=sparse,
+                rope_aware_kv_sparse=rope_aware_kv_sparse,
             ](
                 output,
                 q,
@@ -378,7 +394,7 @@ def flare_mla_decoding[
         UnsafePointer[
             Scalar[DType.uint32], MutExternalOrigin
         ].unsafe_dangling(),
-        row_major(Coord(Idx(0))),
+        row_major(Coord(Idx[0])),
     )
 
     flare_mla_decoding_dispatch[
@@ -424,6 +440,9 @@ def flare_mla_decoding_dispatch[
     decoding_warp_split_k: Bool = False,
     per_token_scale_rope_aware: Bool = False,
     sparse: Bool = False,
+    # Sparse-only routing flag: True selects the BF16-rope sparse kernel,
+    # False (default) selects the all-FP8 sparse kernel.
+    rope_aware_kv_sparse: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -523,6 +542,7 @@ def flare_mla_decoding_dispatch[
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=per_token_scale_rope_aware,
                 sparse=sparse,
+                rope_aware_kv_sparse=rope_aware_kv_sparse,
             ](
                 q,
                 k,
@@ -577,6 +597,7 @@ def flare_mla_decoding_dispatch[
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=per_token_scale_rope_aware,
                 sparse=sparse,
+                rope_aware_kv_sparse=rope_aware_kv_sparse,
             ](
                 q,
                 k,
@@ -623,99 +644,484 @@ def flare_mla_decoding_dispatch[
         # AMD FP8 MLA decode uses 32x32x64 MMA (depth=576 is not a multiple
         # of 128, so the 16x16x128 path is unusable). That requires BM>=32
         # and BK>=64. BF16 AMD MLA keeps BM=16, BK=32 (16x16x32 MMA).
-        # For amd_fp8 we always use BM=32 even when num_heads<32; the top
-        # num_heads rows of the tile carry real work and the bottom rows
-        # do wasted MMA work (OOB Q reads return 0 via AMD buffer_load).
+        # For amd_fp8, BM=64 packs all 64 q-heads into one block per
+        # (batch, partition), halving K DRAM reads vs BM=32 (which splits
+        # heads across 2 blocks that each re-read the same K tile). The
+        # win is real only when K traffic actually overflows L2 AND the
+        # kernel reaches the bandwidth-bound regime; otherwise BM=64's 2×
+        # per-block compute (more MFMAs, more SMEM round-trip) loses out.
+        # See heuristic dispatch below.
         comptime amd_fp8 = has_amd_gpu_accelerator() and q.dtype.is_float8()
-        comptime preferred_BM = 32 if amd_fp8 else (
-            16 if (not has_enough_smem or has_amd_gpu_accelerator()) else 32
-        )
-        comptime BM = preferred_BM if (
-            amd_fp8 or preferred_BM <= num_heads
-        ) else num_heads
-        comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
-        comptime BK = 64 if (
-            has_nvidia_gpu_accelerator() or amd_fp8
-        ) else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
-        comptime WM = BM
-        comptime WN = 16 if has_nvidia_gpu_accelerator() else 32
-        # num warps in M and N, multiplied by warp size.
-        comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-        comptime accum_type = get_accum_type[q.dtype]()
-        comptime num_pipeline_stages = 6
-        # smem for q
-        var shared_mem_bytes = BM * depth * size_of[q.dtype]()
+        @always_inline
+        @parameter
+        def launch_with_BM[BM: Int]() raises:
+            comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
+            comptime BK = 64 if (
+                has_nvidia_gpu_accelerator() or amd_fp8
+            ) else 32  # 8 mma_tile per row resolves bank conflict on nvidia
+            comptime WM = BM
+            comptime WN = 16 if has_nvidia_gpu_accelerator() else 32
+            # num warps in M and N, multiplied by warp size.
+            comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-        shared_mem_bytes += BN * depth * size_of[k_t.dtype]()
+            comptime accum_type = get_accum_type[q.dtype]()
+            comptime num_pipeline_stages = 6
+            # smem for q
+            var shared_mem_bytes = BM * depth * size_of[q.dtype]()
 
-        comptime num_warps = ceildiv(num_threads, WARP_SIZE)
+            shared_mem_bytes += BN * depth * size_of[k_t.dtype]()
 
-        # smem for p and warp_scratch
-        shared_mem_bytes += (
-            BM * BN * size_of[k_t.dtype]()
-            + 2 * num_warps * BM * size_of[accum_type]()
-        )
+            comptime num_warps = ceildiv(num_threads, WARP_SIZE)
 
-        shared_mem_bytes = (
-            shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
-        )
+            # smem for p and warp_scratch
+            shared_mem_bytes += (
+                BM * BN * size_of[k_t.dtype]()
+                + 2 * num_warps * BM * size_of[accum_type]()
+            )
 
-        comptime num_blocks_y = ceildiv(num_heads, BM)
+            shared_mem_bytes = (
+                shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
+            )
 
-        comptime kernel = mla_decoding[
-            q.dtype,
-            k_t,
-            output.dtype,
-            mask_t,
-            type_of(valid_length).LayoutType,
-            BM=BM,
-            BN=BN,
-            BK=BK,
-            WM=WM,
-            WN=WN,
-            depth=depth,
-            num_heads=num_heads,
-            num_threads=num_threads,
-            num_pipeline_stages=num_pipeline_stages,
-            group=group,
-            ragged=ragged,
-            _use_valid_length=_use_valid_length,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ]
+            comptime num_blocks_y = ceildiv(num_heads, BM)
 
-        var num_partitions_value: Int = 1
-        var q_device = DeviceBuffer[q.dtype](
-            ctx, q.ptr, q.num_elements(), owning=False
-        )
-        var output_device = DeviceBuffer[output.dtype](
-            ctx, output.ptr, output.num_elements(), owning=False
-        )
-        var nullptr_device = DeviceBuffer[accum_type].empty(ctx)
+            comptime depth_v = type_of(output).static_shape[output.rank - 1]
 
-        ctx.enqueue_function[kernel, kernel](
-            q_device,
-            k,
-            output_device,
-            nullptr_device,
-            nullptr_device,
-            scale,
-            batch_size,
-            num_partitions_value,
-            max_cache_valid_length,
-            valid_length,
-            mask_functor,
-            grid_dim=(1, num_blocks_y, batch_size),
-            block_dim=(num_threads, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(
-                    ctx.default_device_info.shared_memory_per_multiprocessor
-                    - 4096
+            comptime kernel = mla_decoding[
+                q.dtype,
+                k_t,
+                output.dtype,
+                mask_t,
+                type_of(valid_length).LayoutType,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                depth=depth,
+                depth_v=depth_v,
+                num_heads=num_heads,
+                num_threads=num_threads,
+                num_pipeline_stages=num_pipeline_stages,
+                group=group,
+                ragged=ragged,
+                _use_valid_length=_use_valid_length,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ]
+
+            # Pick num_partitions for split-K. Only AMD has a tuned heuristic
+            # today; non-SM10x NVIDIA stays at 1 to preserve existing behavior.
+            # Partition count is independent of BM; both BM variants share it.
+            var num_partitions_value: Int
+            if num_partitions:
+                num_partitions_value = num_partitions.value()
+            else:
+                comptime if has_amd_gpu_accelerator():
+                    # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
+                    num_partitions_value = mha_decoding_num_partitions(
+                        batch_size, max_cache_valid_length, num_heads, ctx
+                    )
+                else:
+                    num_partitions_value = 1
+
+            var q_device = DeviceBuffer[q.dtype](
+                ctx, q.ptr, q.num_elements(), owning=False
+            )
+            var output_device = DeviceBuffer[output.dtype](
+                ctx, output.ptr, output.num_elements(), owning=False
+            )
+
+            if num_partitions_value == 1:
+                # Single-partition fast path — no intermediate buffers, no reduce.
+                var nullptr_device = DeviceBuffer[accum_type].empty(ctx)
+                ctx.enqueue_function[kernel](
+                    q_device,
+                    k,
+                    output_device,
+                    nullptr_device,
+                    nullptr_device,
+                    scale,
+                    batch_size,
+                    num_partitions_value,
+                    max_cache_valid_length,
+                    valid_length,
+                    mask_functor,
+                    grid_dim=(1, num_blocks_y, batch_size),
+                    block_dim=(num_threads, 1, 1),
+                    shared_mem_bytes=shared_mem_bytes,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        UInt32(
+                            ctx.default_device_info.shared_memory_per_multiprocessor
+                            - 4096
+                        )
+                    ),
                 )
-            ),
+            else:
+                # Split-K: per-partition output (depth_v) and softmax stats.
+                comptime intermediate_dtype = output.dtype
+
+                var output_intermediate_data = ctx.enqueue_create_buffer[
+                    intermediate_dtype
+                ](num_heads * depth_v * batch_size * num_partitions_value)
+
+                var data_len = num_heads * batch_size * num_partitions_value
+                var exp_sum_qk_max_data = ctx.enqueue_create_buffer[accum_type](
+                    2 * data_len
+                )
+                var exp_sum_device = DeviceBuffer[accum_type](
+                    ctx,
+                    exp_sum_qk_max_data.unsafe_ptr(),
+                    data_len,
+                    owning=False,
+                )
+                var qk_max_device = DeviceBuffer[accum_type](
+                    ctx,
+                    exp_sum_qk_max_data.unsafe_ptr() + data_len,
+                    data_len,
+                    owning=False,
+                )
+
+                ctx.enqueue_function[kernel](
+                    q_device,
+                    k,
+                    output_intermediate_data,
+                    exp_sum_device,
+                    qk_max_device,
+                    scale,
+                    batch_size,
+                    num_partitions_value,
+                    max_cache_valid_length,
+                    valid_length,
+                    mask_functor,
+                    grid_dim=(
+                        num_partitions_value,
+                        num_blocks_y,
+                        batch_size,
+                    ),
+                    block_dim=(num_threads, 1, 1),
+                    shared_mem_bytes=shared_mem_bytes,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        UInt32(
+                            ctx.default_device_info.shared_memory_per_multiprocessor
+                            - 4096
+                        )
+                    ),
+                )
+
+                # AMD softmax always uses exp2; CUDA non-FA3 path uses exp.
+                comptime reduce_use_exp2 = has_amd_gpu_accelerator()
+                comptime if has_amd_gpu_accelerator():
+                    # Defaults tuned for MLA depth=512 on MI355; overridable
+                    # via -D for tuning sweeps.
+                    comptime D_TILES = get_defined_int[
+                        "MODULAR_MLA_REDUCE_DTILES", 4
+                    ]()
+                    comptime W_PARTS = get_defined_int[
+                        "MODULAR_MLA_REDUCE_WPARTS", 8
+                    ]()
+                    # Two specializations: the 64-partition reducer is the
+                    # default and matches the high-occupancy heuristic cap.
+                    # The 128-partition reducer is only dispatched when the
+                    # heuristic returns >64 (low-occupancy shapes like bs=1
+                    # long-context), so the reducer's O(MAX_PARTITIONS) cost
+                    # does not slow the common case.
+                    comptime kernel_reduce_64 = mla_splitk_reduce[
+                        intermediate_dtype,
+                        output.dtype,
+                        depth=depth_v,
+                        num_heads=num_heads,
+                        D_TILES=D_TILES,
+                        W_PARTS=W_PARTS,
+                        MAX_PARTITIONS=64,
+                        use_exp2=reduce_use_exp2,
+                    ]
+                    comptime kernel_reduce_128 = mla_splitk_reduce[
+                        intermediate_dtype,
+                        output.dtype,
+                        depth=depth_v,
+                        num_heads=num_heads,
+                        D_TILES=D_TILES,
+                        W_PARTS=W_PARTS,
+                        MAX_PARTITIONS=128,
+                        use_exp2=reduce_use_exp2,
+                    ]
+                    if num_partitions_value <= 64:
+                        ctx.enqueue_function[kernel_reduce_64](
+                            output_intermediate_data,
+                            output_device,
+                            exp_sum_device,
+                            qk_max_device,
+                            batch_size,
+                            num_partitions_value,
+                            grid_dim=(D_TILES, num_heads, batch_size),
+                            block_dim=(W_PARTS * WARP_SIZE, 1, 1),
+                        )
+                    else:
+                        ctx.enqueue_function[kernel_reduce_128](
+                            output_intermediate_data,
+                            output_device,
+                            exp_sum_device,
+                            qk_max_device,
+                            batch_size,
+                            num_partitions_value,
+                            grid_dim=(D_TILES, num_heads, batch_size),
+                            block_dim=(W_PARTS * WARP_SIZE, 1, 1),
+                        )
+                else:
+                    comptime kernel_reduce = mha_splitk_reduce[
+                        intermediate_dtype,
+                        output.dtype,
+                        depth=depth_v,
+                        num_heads=num_heads,
+                        num_threads=WARP_SIZE,
+                        use_exp2=reduce_use_exp2,
+                    ]
+                    ctx.enqueue_function[kernel_reduce](
+                        output_intermediate_data,
+                        output_device,
+                        exp_sum_device,
+                        qk_max_device,
+                        batch_size,
+                        num_partitions_value,
+                        grid_dim=(1, num_heads, batch_size),
+                        block_dim=(WARP_SIZE, 1, 1),
+                    )
+                _ = exp_sum_qk_max_data^
+                _ = output_intermediate_data^
+
+        # ---- BM dispatch ----
+        # AMD FP8: pick BM=32 vs BM=64 from a runtime predicate. Empirically
+        # (MI355X, num_heads=64, see kern-2876 regression sweep), BM=64 wins
+        # iff BOTH:
+        #   1) cache_len >= 32K  — long enough for the kernel to reach the
+        #      bandwidth-bound regime where K traffic dominates per-block
+        #      compute. Below this, per-block setup/sync of BM=64's 2×
+        #      MFMAs and 2× SMEM round-trip overwhelms the K-traffic savings
+        #      regardless of total bytes (e.g. bs=128 cache=4096 is 302 MB
+        #      yet still regresses -8% under BM=64).
+        #   2) bs * cache_len * depth >= ~0.4 × L2  — total K bytes large
+        #      enough that BM=32's redundant per-block_y K reads actually
+        #      hit DRAM. When K fits in L2, the second block_y's reads are
+        #      L2 hits and BM=32's "doubled" traffic is free.
+        # Together these capture every meaningful win in the sweep
+        # (+14%..+64%) with zero false positives. Thresholds tuned for the
+        # MI355X (256 MB L2); generalizes by physical interpretation.
+        # For num_heads <= 32, BM=32 already covers all heads in one m_mma,
+        # so BM=64 has no head-packing benefit — keep BM=32.
+        comptime if amd_fp8:
+            comptime if num_heads > 32:
+                # MI355X L2 = 256 MB; threshold ≈ 0.4 × L2 = 100 MB leaves
+                # headroom for Q + V + working state in L2.
+                comptime L2_K_BYTES_THRESHOLD = 100 * 1024 * 1024
+                comptime CACHE_LEN_THRESHOLD = 32768
+                var k_bytes_total = batch_size * max_cache_valid_length * depth
+                if (
+                    max_cache_valid_length >= CACHE_LEN_THRESHOLD
+                    and k_bytes_total >= L2_K_BYTES_THRESHOLD
+                ):
+                    launch_with_BM[64]()
+                else:
+                    launch_with_BM[32]()
+            else:
+                launch_with_BM[32]()
+        else:
+            # BF16 AMD or non-AMD: keep original BM choice.
+            comptime preferred_BM_default = (
+                16 if (not has_enough_smem or has_amd_gpu_accelerator()) else 32
+            )
+            comptime BM_default = preferred_BM_default if (
+                preferred_BM_default <= num_heads
+            ) else num_heads
+            launch_with_BM[BM_default]()
+
+
+# Split-K combine for MLA decode. Splits work two ways vs the generic
+# mha_splitk_reduce (1 warp per head, ~25% CU coverage on MI355):
+#   - W_PARTS warps per CTA over the partition axis (in-CU latency hiding)
+#   - D_TILES CTAs per (batch, head) over the depth axis (CU coverage).
+# Depth tiles are disjoint outputs, so no cross-CTA reduction is needed;
+# warp 0 sums per-warp partition partials in SMEM.
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(W_PARTS * WARP_SIZE)
+    )
+)
+@__name(
+    t"mla_splitk_reduce_{intermediate_type}_{output_type}",
+)
+def mla_splitk_reduce[
+    intermediate_type: DType,
+    output_type: DType,
+    depth: Int,
+    num_heads: Int,
+    D_TILES: Int,
+    W_PARTS: Int,
+    MAX_PARTITIONS: Int,
+    use_exp2: Bool = False,
+](
+    intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: UnsafePointer[
+        Scalar[get_accum_type[output_type]()], MutAnyOrigin
+    ],
+    qk_max_ptr: UnsafePointer[
+        Scalar[get_accum_type[output_type]()], MutAnyOrigin
+    ],
+    batch_size: Int,
+    num_partitions: Int,
+):
+    comptime assert depth > 0, "depth must be positive"
+    comptime assert (
+        depth % (D_TILES * WARP_SIZE) == 0
+    ), "depth must be divisible by D_TILES * WARP_SIZE"
+    comptime assert (
+        MAX_PARTITIONS % WARP_SIZE == 0
+    ), "MAX_PARTITIONS must be a multiple of WARP_SIZE"
+    comptime assert (
+        MAX_PARTITIONS % W_PARTS == 0
+    ), "MAX_PARTITIONS must be divisible by W_PARTS"
+    comptime assert (
+        W_PARTS >= 1 and D_TILES >= 1
+    ), "W_PARTS and D_TILES must be positive"
+
+    comptime accum_type = get_accum_type[output_type]()
+    comptime depth_per_cta = depth // D_TILES
+    comptime elems_per_lane = depth_per_cta // WARP_SIZE
+    comptime parts_per_warp = MAX_PARTITIONS // W_PARTS
+    # Per-lane partition stride: when MAX_PARTITIONS > WARP_SIZE the same lane
+    # owns multiple partitions. e.g. MAX_PARTITIONS=128 → each lane handles 2.
+    comptime parts_per_lane = MAX_PARTITIONS // WARP_SIZE
+
+    var qk_max_tt = TileTensor(
+        qk_max_ptr,
+        row_major((num_partitions, batch_size, Idx[num_heads])),
+    )
+    var exp_sum_tt = TileTensor(
+        exp_sum_ptr,
+        row_major((num_partitions, batch_size, Idx[num_heads])),
+    )
+    var intermediate_tt = TileTensor(
+        intermediate_ptr,
+        row_major(
+            (
+                num_partitions,
+                batch_size,
+                Idx[num_heads],
+                Idx[depth],
+            )
+        ),
+    )
+    var output_tt = TileTensor(
+        output_ptr,
+        row_major((batch_size, Idx[num_heads], Idx[depth])),
+    )
+
+    var scales_tt = tt_stack_allocation[
+        dtype=accum_type, address_space=AddressSpace.SHARED
+    ](row_major[MAX_PARTITIONS]())
+    var warp_partial_tt = tt_stack_allocation[
+        dtype=accum_type, address_space=AddressSpace.SHARED
+    ](row_major[W_PARTS, depth_per_cta]())
+
+    var d_tile_idx = block_idx.x
+    var head_idx = block_idx.y
+    var batch_idx = block_idx.z
+    var warp_idx = warp_id()
+    var lane_idx = lane_id()
+    var depth_in_tile = lane_idx * elems_per_lane
+    var depth_global = d_tile_idx * depth_per_cta + depth_in_tile
+
+    # Step 1: warp 0 computes per-partition scales. Each lane owns
+    # `parts_per_lane` partitions strided by WARP_SIZE; `parts_per_lane`
+    # is comptime so the `comptime for` unrolls to the right shape (and
+    # to a single iteration when MAX_PARTITIONS == WARP_SIZE).
+    if warp_idx == 0:
+        comptime exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
+        var lse_lane = SIMD[accum_type, parts_per_lane](
+            min_or_neg_inf[accum_type]()
         )
+        var local_max: Scalar[accum_type] = min_or_neg_inf[accum_type]()
+        comptime for k in range(parts_per_lane):
+            var partition_idx = Int(lane_idx) + k * WARP_SIZE
+            if partition_idx < num_partitions:
+                var v = qk_max_tt[partition_idx, batch_idx, head_idx]
+                lse_lane[k] = v
+                if v > local_max:
+                    local_max = v
+
+        var qk_max_global = warp.max(local_max)
+        # exp_sum == 0 only if every partition had qk_max == -inf;
+        # emit scale=0 instead of NaN so step 2 produces clean zero.
+        if qk_max_global == min_or_neg_inf[accum_type]():
+            qk_max_global = 0
+
+        var rescaled_lane = SIMD[accum_type, parts_per_lane](0)
+        var local_sum: Scalar[accum_type] = 0
+        comptime for k in range(parts_per_lane):
+            var partition_idx = Int(lane_idx) + k * WARP_SIZE
+            if partition_idx < num_partitions:
+                var r = exp_sum_tt[partition_idx, batch_idx, head_idx] * exp_fn(
+                    lse_lane[k] - qk_max_global
+                )
+                rescaled_lane[k] = r
+                local_sum += r
+
+        var exp_sum = warp.sum(local_sum)
+        var inv_global_exp_sum: Scalar[accum_type] = 0
+        if exp_sum > 0:
+            inv_global_exp_sum = Scalar[accum_type](1) / exp_sum
+
+        comptime for k in range(parts_per_lane):
+            var partition_idx = Int(lane_idx) + k * WARP_SIZE
+            if partition_idx < MAX_PARTITIONS:
+                scales_tt[partition_idx] = rescaled_lane[k] * inv_global_exp_sum
+
+    barrier()
+
+    # Step 2: per-warp partition accumulation.
+    var part_start_warp = warp_idx * parts_per_warp
+    var acc = SIMD[accum_type, elems_per_lane](0)
+
+    comptime for k in range(parts_per_warp):
+        var p = part_start_warp + k
+        if p < num_partitions:
+            var scale = scales_tt[p]
+            var x = intermediate_tt.load[width=elems_per_lane](
+                Coord(
+                    p,
+                    batch_idx,
+                    head_idx,
+                    depth_global,
+                )
+            ).cast[accum_type]()
+            # Mask out empty partitions (scale == 0): the producer kernel
+            # leaves their intermediate values undefined.
+            var mask = SIMD[DType.bool, elems_per_lane](fill=scale > 0)
+            var safe = mask.select(x, type_of(x)(0))
+            acc += safe * type_of(safe)(scale)
+
+    # Step 3: cross-warp reduction and output store.
+    comptime if W_PARTS == 1:
+        output_tt.store(
+            Coord(batch_idx, head_idx, depth_global),
+            acc.cast[output_type](),
+        )
+    else:
+        warp_partial_tt.store(Coord(warp_idx, depth_in_tile), acc)
+        barrier()
+
+        if warp_idx == 0:
+            var final_acc = SIMD[accum_type, elems_per_lane](0)
+            comptime for w in range(W_PARTS):
+                final_acc += warp_partial_tt.load[width=elems_per_lane](
+                    Coord(Idx[w], depth_in_tile)
+                )
+            output_tt.store(
+                Coord(batch_idx, head_idx, depth_global),
+                final_acc.cast[output_type](),
+            )
 
 
 @__llvm_metadata(
@@ -723,7 +1129,6 @@ def flare_mla_decoding_dispatch[
 )
 @__name(
     t"mla_decoding_{q_type}_{output_type}_{BM}x{BN}x{BK}_{ragged}_nqh{num_heads}_nkvh{num_heads // group}",
-    mangle=True,
 )
 def mla_decoding[
     q_type: DType,
@@ -737,6 +1142,7 @@ def mla_decoding[
     WM: Int,
     WN: Int,
     depth: Int,
+    depth_v: Int,
     num_heads: Int,
     num_threads: Int,
     num_pipeline_stages: Int,
@@ -764,8 +1170,6 @@ def mla_decoding[
 ):
     var valid_length = valid_length_tt.to_layout_tensor()
     var batch_idx = block_idx.z
-
-    comptime depth_v = depth - 64
 
     # split-k offsets
     var partition_idx = block_idx.x
@@ -854,6 +1258,8 @@ def mla_decoding[
             q_depth=depth,
             output_depth=depth_v,
             mla_mode=True,
+            # K==V in MLA — load once, let PV reuse K's SMEM.
+            mla_kv_alias=True,
         ](
             output_ptr + output_batch_offset,
             q_ptr + q_batch_offset,
@@ -2107,6 +2513,170 @@ def flare_mla_prefill[
         )
 
 
+# entrypoint for paged K_rope (KVCacheT) with per-token Q/K scales,
+# used by tests. Mirrors the contiguous per-token-scale entrypoint
+# above but swaps K_rope from a TileTensor to a paged KVCacheT
+# operand (matching the generic paged entrypoint at ~:1517).
+@always_inline
+def flare_mla_prefill[
+    rank: Int,
+    cache_t: KVCacheT,
+    mask_t: MHAMask,
+    dtype: DType,
+    scale_dtype: DType,
+    //,
+](
+    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    q_nope: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    q_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    q_scale: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
+    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    k_scales: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
+    v: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    k_rope: cache_t,
+    mask_functor: mask_t,
+    valid_length: TileTensor[
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    cache_row_offsets: TileTensor[
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    scale: Float32,
+    ctx: DeviceContext,
+    q_max_seq_len: OptionalReg[Int] = None,
+    cache_offsets: OptionalReg[
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        ]
+    ] = None,
+) raises:
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg(
+                        "q_nope",
+                        coord_to_index_list(q_nope.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "q_rope",
+                        coord_to_index_list(q_rope.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "k",
+                        coord_to_index_list(k.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "v",
+                        coord_to_index_list(v.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
+        "flare_mla_prefill",
+        Trace[
+            TraceLevel.OP, target=ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
+    ):
+        var max_prompt_len: Int
+
+        if q_max_seq_len:
+            max_prompt_len = q_max_seq_len.value()
+        else:
+            max_prompt_len = Int(k_rope.max_prompt_length())
+
+        comptime assert q_scale.rank == 2, (
+            "q_scale must be a per token scale 2D tensor of [batch_size *"
+            " seq_len, 1]"
+        )
+        comptime assert k_scales.rank == 2, (
+            "k_scales must be a per token scale 2D tensor of [batch_size *"
+            " num_keys, 1]"
+        )
+
+        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
+        var k_lt = k.to_layout_tensor()
+        var k_scales_lt = k_scales.to_layout_tensor()
+        var v_lt = v.to_layout_tensor()
+        var q_rope_lt = q_rope.to_layout_tensor()
+        var q_scale_lt = q_scale.to_layout_tensor()
+        var k_operand = RaggedMHAOperand(
+            LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
+                k_lt.ptr,
+                RuntimeLayout[k_lt.layout].row_major(
+                    k_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            LayoutTensor[k_scales_lt.dtype, k_scales_lt.layout, ImmutAnyOrigin](
+                k_scales_lt.ptr,
+                RuntimeLayout[k_scales_lt.layout].row_major(
+                    k_scales_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+
+        var v_operand = RaggedMHAOperand(
+            LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
+                v_lt.ptr,
+                RuntimeLayout[v_lt.layout].row_major(
+                    v_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+        var k_rope_operand = KVCacheMHAOperand(k_rope)
+
+        var batch_size: Int = Int(valid_length.dim[0]()) - 1
+
+        if batch_size == 0 or max_prompt_len == 0:
+            return
+
+        comptime kv_num_heads = cache_t.kv_params.num_heads
+        comptime cache_depth = cache_t.kv_params.head_size
+        comptime q_depth = type_of(q_nope).static_shape[
+            q_nope.rank - 1
+        ] + type_of(q_rope).static_shape[q_rope.rank - 1]
+        comptime num_keys_per_block = 64
+        comptime mha_config = MHAConfig[dtype](
+            type_of(q_nope).static_shape[rank - 2],
+            type_of(k).static_shape[rank - 1],
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
+            algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
+        )
+        mla_sm100_prefill_per_token_scale[
+            config=mha_config,
+            group=mha_config.num_heads // kv_num_heads,
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+            _ndbuffer_mha_operand=False,
+        ](
+            output,
+            q_nope,
+            q_rope_lt,
+            q_scale_lt,
+            k_operand,
+            k_rope_operand,
+            v_operand,
+            mask_functor,
+            valid_length,
+            DynamicInt(max_prompt_len),
+            scale,
+            batch_size,
+            ctx,
+        )
+
+
 @always_inline
 def flare_mla_prefill_dispatch[
     k_t: MHAOperand,
@@ -2236,7 +2806,7 @@ def flare_mla_prefill_dispatch[
             ceildiv(max_prompt_len, BM),
             batch_size,
         )
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             q_device,
             k,
             v,
@@ -2257,7 +2827,7 @@ def flare_mla_prefill_dispatch[
         )
 
 
-@__llvm_metadata(`rocdl.waves_per_eu`=Int(2))
+@__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(2))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())
@@ -2265,7 +2835,6 @@ def flare_mla_prefill_dispatch[
 )
 @__name(
     t"mla_prefill_{q_type}_{output_type}_{q_depth}_{cache_depth}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
-    mangle=True,
 )
 def mla_prefill[
     q_type: DType,
@@ -3202,9 +3771,7 @@ def mla_prefill_plan[
     if batch_size == 0:
         # Fill buffer lengths with 0
         comptime kernel = set_buffer_lengths_to_zero[buffer_lengths.LayoutType,]
-        ctx.enqueue_function[kernel, kernel](
-            buffer_lengths, grid_dim=1, block_dim=1
-        )
+        ctx.enqueue_function[kernel](buffer_lengths, grid_dim=1, block_dim=1)
     else:
         comptime kernel = mla_prefill_plan_kernel[
             buffer_row_offsets.LayoutType,
@@ -3214,7 +3781,7 @@ def mla_prefill_plan[
             cache_t,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             buffer_row_offsets,
             cache_offsets,
             buffer_lengths,
@@ -3227,7 +3794,7 @@ def mla_prefill_plan[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
-@__name(t"mla_prefill_plan", mangle=True)
+@__name(t"mla_prefill_plan")
 def mla_prefill_plan_kernel[
     BufferRowOffsetsLayoutType: TensorLayout,
     CacheOffsetsLayoutType: TensorLayout,
@@ -3402,16 +3969,11 @@ def _k_cache_to_buffer[
 
         buffer.store_linear(idx, cache_val)
 
-    var launch_shape = IndexList[2](
-        Int(length),
-        Int(buffer.dim[1]()),
-    )
+    var launch_shape = Coord(Int(length), Int(buffer.dim[1]()))
     comptime target_simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
-    def copy_fn_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) register_passable:
-        copy_fn[width, rank, alignment](idx)
+    def copy_fn_unified[width: Int, alignment: Int = 1](idx: Coord):
+        copy_fn[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[simd_width=target_simd_width](
         copy_fn_unified, shape=launch_shape, ctx=context

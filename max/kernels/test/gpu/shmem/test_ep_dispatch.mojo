@@ -15,8 +15,6 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun-gpu-per-process %t
 
-from std.collections import OptionalReg
-
 import std.time
 from std.io.io import _printf
 from std.math import sqrt
@@ -97,7 +95,7 @@ def test_dispatch[
     comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
 
     comptime output_tt_layout = row_major(
-        (Idx[max_recv_num_tokens](), Idx[hidden_size]())
+        (Idx[max_recv_num_tokens], Idx[hidden_size])
     )
     comptime token_fmt_type = BF16TokenFormat[
         output_layout=type_of(output_tt_layout), hidden_size, top_k
@@ -160,15 +158,15 @@ def test_dispatch[
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
+        device_topk_buf, row_major(n_tokens_per_rank, Idx[top_k])
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[hidden_size]),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
-        row_major(Idx[max_recv_num_tokens](), Idx[hidden_size]()),
+        row_major(Idx[max_recv_num_tokens], Idx[hidden_size]),
     )
     var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
         device_row_offsets_buf, row_major[n_local_experts + 1]()
@@ -178,7 +176,7 @@ def test_dispatch[
     )
     var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
         device_src_token_info_buf,
-        row_major(Idx[max_recv_num_tokens](), Idx[2]()),
+        row_major(Idx[max_recv_num_tokens], Idx[2]),
     )
 
     var format_handler = token_fmt_type(output_tensor)
@@ -198,7 +196,7 @@ def test_dispatch[
         token_fmt_type,
     ]
 
-    var func = ctx.compile_function[dispatch_async, dispatch_async]()
+    var func = ctx.compile_function[dispatch_async]()
     shmem_module_init(func)
 
     comptime dispatch_wait = dispatch_wait_kernel[
@@ -213,7 +211,7 @@ def test_dispatch[
         type_of(format_handler),
     ]
 
-    var func_wait = ctx.compile_function[dispatch_wait, dispatch_wait]()
+    var func_wait = ctx.compile_function[dispatch_wait]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var dispatch_async_stat_m: Float64 = 0
@@ -260,13 +258,6 @@ def test_dispatch[
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
-            OptionalReg[
-                TileTensor[
-                    input_type,
-                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                    ImmutAnyOrigin,
-                ]
-            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -439,7 +430,7 @@ def test_dispatch[
                         remote_rank_top_k_ids[
                             remote_loc * Int32(top_k) + remote_topk_id
                         ],
-                        curr_expert,
+                        Int32(curr_expert),
                     )
 
                     # check if the received token matches the remote rank's token

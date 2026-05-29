@@ -17,12 +17,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -35,8 +36,8 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     UnifiedEagleOutputs,
 )
+from max.pipelines.lib._hf_config import PretrainedConfig
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
-from max.pipelines.lib.registry import AutoConfig
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model_config import Llama3Config
@@ -59,8 +60,6 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     draft_tokens: Buffer | None = None
     draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
-    """Per-execute int64 scalar seed consumed by the stochastic acceptance
-    sampler (and, when enabled, the synthetic benchmarking sampler)."""
 
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -70,6 +69,31 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     """Per-batch sampling parameters consumed by the stochastic acceptance
     sampler. ``max_k`` and ``min_top_p`` are 0-d CPU scalars; the rest are
     ``[batch_size]`` tensors on the primary device."""
+
+    in_thinking_phase: Buffer | None = None
+    """Per-batch ``bool`` flag set by the pipeline for relaxed acceptance
+    during thinking. Not consumed by the unified_eagle_llama3 graph today,
+    but the field is required to satisfy the ``_UnifiedSpecDecodeInputs`` protocol
+    used by ``OverlapTextGenerationPipeline``."""
+
+    pinned_bitmask: Buffer | None = None
+    """Pinned host bitmask for constrained decoding.
+
+    Shape ``[batch_size, num_speculative_tokens + 1, vocab_size]``.
+    Position i contains the valid-token mask given the FSM state after
+    consuming draft[0:i-1]; position ``num_speculative_tokens`` is for
+    the bonus token. ``None`` when structured output is disabled.
+    """
+
+    wait_payload: Buffer | None = None
+    """CPU ``int64[2]`` payload = ``[flag._unsafe_ptr, 1]`` consumed by
+    the in-graph ``mo.wait_host_value_with_dep`` op. Only set when
+    structured output is enabled."""
+
+    device_bitmask_scratch: Buffer | None = None
+    """Device scratch buffer that receives the in-graph H2D from
+    ``pinned_bitmask``; the acceptance sampler reads from it. Only set
+    when structured output is enabled."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -98,6 +122,19 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
                 self.top_p,
                 self.min_top_p,
             )
+            # Constrained-decoding bitmask inputs are appended only on
+            # the spec-decode path. The bitmask triple's position in the
+            # tuple must match the order in ``input_types()``, which
+            # gates the bitmask inputs on both spec-decode and
+            # ``enable_structured_output``.
+            if self.pinned_bitmask is not None:
+                assert self.wait_payload is not None
+                assert self.device_bitmask_scratch is not None
+                buffers += (
+                    self.pinned_bitmask,
+                    self.wait_payload,
+                    self.device_bitmask_scratch,
+                )
         return buffers
 
 
@@ -122,6 +159,8 @@ class PersistentInputBuffers:
 
 class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
     """Unified EAGLE Llama3: target + draft in one compiled graph."""
+
+    model_config_cls: ClassVar[type[Any]] = Llama3Config
 
     model: Model
 
@@ -158,26 +197,10 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         self._seed_counter = 0
 
     def _next_seed(self) -> Buffer:
-        """Monotonically advancing int64 scalar seed, fresh per execute."""
         self._seed_counter += 1
-        return Buffer.from_numpy(np.array(self._seed_counter, dtype=np.int64))
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Llama3Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
+        return Buffer.from_numpy(
+            np.array([self._seed_counter], dtype=np.uint64)
+        ).to(self.devices[0])
 
     def load_model(self, session: InferenceSession) -> Model:
         with CompilationTimer("unified_eagle_llama3_model") as timer:
@@ -232,6 +255,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
                 target=target_config,
                 draft=draft_config,
                 speculative_config=self.pipeline_config.speculative,
+                enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
             )
 
             nn_model = UnifiedEagleLlama3Module(unified_config)
@@ -360,7 +384,9 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
 
     @classmethod
     def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: PretrainedConfig,
     ) -> int:
         return Llama3Config.calculate_max_seq_len(
             pipeline_config, huggingface_config

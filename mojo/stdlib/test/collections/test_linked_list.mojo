@@ -19,6 +19,7 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
+    MoveOnly,
     check_write_to,
 )
 from std.testing import (
@@ -517,6 +518,25 @@ def test_list_count() raises:
     assert_equal(0, Int(list2.count(1)))
 
 
+def test_index() raises:
+    var l = LinkedList[Int](1, 2, 3, 2, 5)
+    assert_equal(l.index(1), 0)
+    assert_equal(l.index(2), 1)
+    assert_equal(l.index(5), 4)
+
+    # Returns first occurrence
+    assert_equal(l.index(2), 1)
+
+    # Not found raises
+    with assert_raises():
+        _ = l.index(99)
+
+    # Empty list raises
+    var empty = LinkedList[Int]()
+    with assert_raises():
+        _ = empty.index(1)
+
+
 def test_list_contains() raises:
     var x = LinkedList[Int](1, 2, 3)
     assert_false(0 in x)
@@ -719,6 +739,32 @@ def test_linked_list_iter_owned_bounds() raises:
         _ = it.__next__()
 
     assert_equal((0, Optional(0)), it.bounds())
+
+
+def test_linked_list_move_only() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `LinkedList[T: Movable & ImplicitlyDestructible]`.
+    assert_false(conforms_to(LinkedList[MoveOnly[Int]], Copyable))
+
+    var l = LinkedList[MoveOnly[Int]]()
+    l.append(MoveOnly[Int](0))
+    l.append(MoveOnly[Int](1))
+    l.prepend(MoveOnly[Int](-1))
+    assert_equal(len(l), 3)
+    assert_equal(l.get_nth(0), MoveOnly[Int](-1))
+    assert_equal(l.get_nth(1), MoveOnly[Int](0))
+    assert_equal(l.get_nth(2), MoveOnly[Int](1))
+
+    # Methods that take/move don't require `Copyable`.
+    var tail = l.pop()
+    assert_equal(tail, MoveOnly[Int](1))
+    assert_equal(len(l), 2)
+
+    l.insert(0, MoveOnly[Int](42))
+    assert_equal(l.get_nth(0), MoveOnly[Int](42))
+
+    l.clear()
+    assert_equal(len(l), 0)
 
 
 def main() raises:

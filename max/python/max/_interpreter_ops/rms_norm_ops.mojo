@@ -14,17 +14,17 @@
 """Mojo kernel wrappers for rms_norm MO interpreter operations."""
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import IndexList
 from std.math import sqrt
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import ManagedTensorSlice
-from tensor.io_spec import Input
-from compiler_internal import StaticTensorSpec
+
+from extensibility import ManagedTensorSlice
+from extensibility import Input
+from extensibility import StaticTensorSpec
 from nn.normalization import rms_norm as nn_rms_norm
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
@@ -117,7 +117,7 @@ def rms_norm_op[
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     """RMS normalization on a rank-2 normalized tensor.
 
@@ -133,12 +133,12 @@ def rms_norm_op[
         gamma_shape: The gamma shape [feature_dim].
         epsilon: Small constant for numerical stability.
         weight_offset: Value added to weight before multiplication.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var batch_dim = shape[0]
     var feature_dim = shape[1]
 
-    if not ctx:
+    if ctx.api() == "cpu":
         _rms_norm_cpu[dtype](
             out_ptr,
             in_ptr,
@@ -167,7 +167,7 @@ def rms_norm_op[
                 @parameter
                 @__copy_capture(out_ptr, feature_dim)
                 def output_fn[
-                    width: Int, rank: Int, alignment: Int
+                    width: SIMDSize, rank: Int, alignment: Int
                 ](coords: IndexList[rank], val: SIMD[dtype, width]):
                     var c = rebind[IndexList[2]](coords)
                     var flat_idx = c[0] * feature_dim + c[1]
@@ -179,8 +179,6 @@ def rms_norm_op[
                 var gamma_tensor = ManagedTensorSlice[
                     io_spec=Input, static_spec=gamma_spec
                 ](gamma_ptr, gamma_shape)
-
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
 
                 nn_rms_norm[
                     dtype,
@@ -194,7 +192,7 @@ def rms_norm_op[
                     gamma_tensor.to_tile_tensor[DType.int64](),
                     epsilon,
                     weight_offset,
-                    device_ctx,
+                    ctx,
                 )
 
             else:
@@ -222,7 +220,7 @@ def _dispatch_rms_norm[
     weight_offset_buffer: PythonObject,
     in_shape_py: PythonObject,
     rank: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     """Type-specialized RMS norm dispatch helper.
 

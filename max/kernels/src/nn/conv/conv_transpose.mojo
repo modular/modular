@@ -1379,9 +1379,7 @@ def conv_transposed_cpu[
     filter_packed: Bool,
     filter_is_cfrs: Bool,
     lambdas_have_fusion: Bool,
-    elementwise_lambda: def[dtype: DType, rank: Int, width: SIMDSize](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing -> None,
+    elementwise_lambda: elementwise_simd_epilogue_type,
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],

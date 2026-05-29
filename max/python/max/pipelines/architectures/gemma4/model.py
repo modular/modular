@@ -16,22 +16,21 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, Device, DevicePinnedBuffer, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.interfaces import RequestID
-from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
-    IncrementCacheLengthsProcessor,
-)
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
+    IncrementCacheLengthsProcessor,
+)
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -42,6 +41,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -140,6 +140,8 @@ class Gemma3_MultiModalModel(
             execution.
     """
 
+    model_config_cls: ClassVar[type[Any]] = Gemma4ForConditionalGenerationConfig
+
     language_model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
 
@@ -225,24 +227,6 @@ class Gemma3_MultiModalModel(
             pipeline_config, huggingface_config
         )
 
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> MultiKVCacheParams:
-        """Gets the parameters required to configure the KV cache for InternVL."""
-        return Gemma4ForConditionalGenerationConfig.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
-
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.
 
@@ -294,25 +278,28 @@ class Gemma3_MultiModalModel(
         # length, to avoid per-call h2d allocations for image/video scatter.
         self._scatter_buffers: dict[int, tuple[Buffer, list[Buffer]]] = {}
 
-        # Build and compile language model
-        with CompilationTimer("language model") as timer:
-            language_graph, language_weight_dict = self._build_language_graph(
-                model_config, language_weights_dict
-            )
-            timer.mark_build_complete()
-            language_model = session.load(
-                language_graph, weights_registry=language_weight_dict
+        # Build and compile vision + language model together.
+        with CompilationTimer("vision + language model") as timer:
+            module = Module()
+
+            vision_graph, vision_model_state_dict = self._build_vision_graph(
+                model_config, vision_weights_dict, module=module
             )
 
-        # Build and compile vision model
-        with CompilationTimer("vision model") as timer:
-            vision_graph, vision_model_state_dict = self._build_vision_graph(
-                model_config, vision_weights_dict
+            language_graph, language_model_state_dict = (
+                self._build_language_graph(
+                    model_config, language_weights_dict, module=module
+                )
             )
             timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=vision_model_state_dict
-            )
+
+            combined_weights = {
+                **vision_model_state_dict,
+                **language_model_state_dict,
+            }
+            models = session.load_all(module, weights_registry=combined_weights)
+            vision_model = models[vision_graph.name]
+            language_model = models[language_graph.name]
 
         return vision_model, language_model
 
@@ -377,11 +364,13 @@ class Gemma3_MultiModalModel(
         self,
         config: Gemma4ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the language model with our input types and graph"""
         with Graph(
-            getattr(self.huggingface_config, "model_type", "Gemma3"),
+            "gemma4_language",
             input_types=self._language_model_input_types(config),
+            module=module,
         ) as graph:
             language_model = Gemma4TextModel(config)
             language_model.load_state_dict(
@@ -440,6 +429,7 @@ class Gemma3_MultiModalModel(
         self,
         config: Gemma4ForConditionalGenerationConfig,
         state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> tuple[Graph, dict[str, DLPackArray]]:
         """Build the vision model with our input types and graph"""
         vision_model = Gemma4VisionModel(
@@ -452,11 +442,40 @@ class Gemma3_MultiModalModel(
             weight_alignment=1,
             strict=self._strict_state_dict_loading,
         )
-        vision_graph = Graph(
-            getattr(self.huggingface_config, "model_type", "Gemma4"),
-            vision_model,
-            vision_model.input_types(),
-        )
+        with Graph(
+            "gemma4_vision",
+            input_types=vision_model.input_types(),
+            module=module,
+        ) as vision_graph:
+            # Extract inputs
+            all_inputs = vision_graph.inputs
+            n_devices = len(self.devices)
+
+            patches_flat_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            all_inputs = all_inputs[n_devices:]
+
+            pixel_position_ids_list = [
+                inp.tensor for inp in all_inputs[:n_devices]
+            ]
+            all_inputs = all_inputs[n_devices:]
+
+            cu_seqlens_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            all_inputs = all_inputs[n_devices:]
+
+            pool_weights_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            all_inputs = all_inputs[n_devices:]
+
+            max_seq_len = all_inputs[0].tensor
+
+            outputs = vision_model(
+                patches_flat_list,
+                pixel_position_ids_list,
+                cu_seqlens_list,
+                pool_weights_list,
+                max_seq_len,
+            )
+            vision_graph.output(*outputs)
+
         return vision_graph, vision_model.state_dict()
 
     def _run_vision_encoder(self, raw: VisionRawInputs) -> list[Buffer]:

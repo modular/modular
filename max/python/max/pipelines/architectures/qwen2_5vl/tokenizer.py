@@ -21,14 +21,6 @@ from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
-    EOSTracker,
-    ImageMetadata,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
-    TextGenerationRequestTool,
-    TokenBuffer,
-)
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     get_rope_index,
     get_seqlens,
@@ -45,6 +37,14 @@ from max.pipelines.lib import (
     max_tokens_to_generate,
 )
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.modeling.types import (
+    EOSTracker,
+    ImageMetadata,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    TokenBuffer,
+)
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoTokenizer, Qwen2_5_VLConfig
@@ -320,15 +320,29 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
+        **chat_template_options: Any,
     ) -> str:
-        """Apply chat template using tokenizer directly (not processor)."""
+        """Apply chat template using tokenizer directly (not processor).
 
-        messages_dicts = [msg.model_dump() for msg in messages]
+        Args:
+            messages: List of messages for the chat template.
+            tools: Optional tools available for the model to invoke.
+            **chat_template_options: Template options to forward to the Jinja
+                template. Merged with ``add_generation_prompt=True`` default.
+
+        Returns:
+            The templated chat message as a string.
+        """
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **chat_template_options,
+        }
+        messages_dicts = [msg.model_dump(exclude_none=True) for msg in messages]
         templated_message = self.delegate.apply_chat_template(
             messages_dicts,
             tokenize=False,
             tools=tools,
-            add_generation_prompt=True,
+            **chat_template_options,
         )
         assert isinstance(templated_message, str)
         return templated_message
@@ -392,7 +406,11 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             return request.prompt
 
         if request.messages:
-            return self.apply_chat_template(request.messages)
+            return self.apply_chat_template(
+                request.messages,
+                request.tools,
+                **(request.chat_template_options or {}),
+            )
 
         raise ValueError(f"{request} does not provide messages or prompt.")
 
@@ -559,8 +577,8 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
 
         # Handle JSON schema if provided
         json_schema = (
-            json.dumps(request.response_format.get("json_schema", None))
-            if request.response_format
+            json.dumps(request.response_format.json_schema)
+            if request.response_format and request.response_format.json_schema
             else None
         )
 

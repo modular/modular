@@ -75,7 +75,7 @@ def test_grouped_nvfp4_quantization[
     # --- Grouped kernel buffers ---
     var host_input = alloc[Scalar[dtype]](total_tokens * N)
     var host_input_tensor = TileTensor(
-        host_input, row_major(Coord(Idx(total_tokens), Idx[N]()))
+        host_input, row_major(Coord(total_tokens, Idx[N]))
     )
     random(host_input_tensor, min=-1.0, max=1.0)
 
@@ -101,30 +101,30 @@ def test_grouped_nvfp4_quantization[
     ctx.enqueue_copy(dev_expert_ids, expert_ids_host)
     ctx.enqueue_copy(dev_sf_tensor, sf_tensor_host)
 
-    var input_shape = Coord(Idx(total_tokens), Idx[N]())
-    var output_shape = Coord(Idx(total_tokens), Idx[output_N]())
+    var input_shape = Coord(total_tokens, Idx[N])
+    var output_shape = Coord(total_tokens, Idx[output_N])
     var scales_shape = Coord(
-        Idx(total_m_tiles),
-        Idx[K_tiles](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        total_m_tiles,
+        Idx[K_tiles],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var input_tensor = TileTensor(dev_input, row_major(input_shape))
     var output_tensor = TileTensor(dev_output, row_major(output_shape))
     var scales_tensor = TileTensor(dev_scales, row_major(scales_shape))
     var row_offsets_tensor = TileTensor(
-        dev_row_offsets, row_major(Coord(Idx[num_experts + 1]()))
+        dev_row_offsets, row_major(Coord(Idx[num_experts + 1]))
     )
     var scales_offsets_tensor = TileTensor(
-        dev_scales_offsets, row_major(Coord(Idx[num_experts]()))
+        dev_scales_offsets, row_major(Coord(Idx[num_experts]))
     )
     var expert_ids_tensor = TileTensor(
-        dev_expert_ids, row_major(Coord(Idx[num_experts]()))
+        dev_expert_ids, row_major(Coord(Idx[num_experts]))
     )
     var sf_tensor_device = TileTensor(
-        dev_sf_tensor, row_major(Coord(Idx[num_experts]()))
+        dev_sf_tensor, row_major(Coord(Idx[num_experts]))
     )
 
     grouped_quantize_dynamic_scaled_fp4_async(
@@ -162,14 +162,14 @@ def test_grouped_nvfp4_quantization[
 
         ctx.enqueue_copy(ref_input, host_input + row_start * N)
 
-        var ref_input_shape = Coord(Idx(count), Idx[N]())
-        var ref_output_shape = Coord(Idx(count), Idx[output_N]())
+        var ref_input_shape = Coord(count, Idx[N])
+        var ref_output_shape = Coord(count, Idx[output_N])
         var ref_scales_shape = Coord(
-            Idx(m_tiles_i),
-            Idx[K_tiles](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            m_tiles_i,
+            Idx[K_tiles],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
 
         var ref_input_tensor = TileTensor(ref_input, row_major(ref_input_shape))
@@ -207,10 +207,10 @@ def test_grouped_nvfp4_quantization[
         for row_idx in range(count):
             for col_idx in range(0, output_N, SF_VECTOR_SIZE // 2):
                 var vec = grouped_out.load[width=SF_VECTOR_SIZE // 2](
-                    Coord(Idx(row_idx), Idx(col_idx))
+                    Coord(row_idx, col_idx)
                 )
                 var vec_ref = ref_out.load[width=SF_VECTOR_SIZE // 2](
-                    Coord(Idx(row_idx), Idx(col_idx))
+                    Coord(row_idx, col_idx)
                 )
                 var fp32 = cast_uint_to_fp4e2m1[
                     out_dtype=DType.float32, out_width=SF_VECTOR_SIZE
@@ -234,11 +234,11 @@ def test_grouped_nvfp4_quantization[
                     for a1 in range(SF_ATOM_M[1]):
                         for ak in range(SF_ATOM_K):
                             var c = Coord(
-                                Idx(mi),
-                                Idx(ki),
-                                Idx(a0),
-                                Idx(a1),
-                                Idx(ak),
+                                mi,
+                                ki,
+                                a0,
+                                a1,
+                                ak,
                             )
                             assert_equal(
                                 grouped_scales[c].cast[DType.float64](),

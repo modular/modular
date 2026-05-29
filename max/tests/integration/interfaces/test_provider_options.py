@@ -15,10 +15,11 @@
 import json
 
 import pytest
-from max.interfaces.provider_options import (
+from max.pipelines.request.provider_options import (
     ImageProviderOptions,
     MaxProviderOptions,
     ProviderOptions,
+    VideoProviderOptions,
 )
 from pydantic import ValidationError
 
@@ -73,6 +74,21 @@ def test_image_provider_options_frozen() -> None:
 
     with pytest.raises(ValidationError):
         opts.width = 1024  # type: ignore[misc]
+
+
+def test_video_provider_options_guidance_scale() -> None:
+    """VideoProviderOptions exposes guidance_scale inherited from the base."""
+    # Inherits the modality-shared default (3.5) from PixelProviderOptionsBase.
+    opts = VideoProviderOptions()
+    assert opts.guidance_scale == 3.5
+
+    # Accepts explicit values.
+    opts = VideoProviderOptions(guidance_scale=5.0)
+    assert opts.guidance_scale == 5.0
+
+    # Negative values are rejected (ge=0.0).
+    with pytest.raises(ValidationError):
+        VideoProviderOptions(guidance_scale=-1.0)
 
 
 def test_provider_options_empty() -> None:

@@ -172,18 +172,18 @@ def verify_matmul[
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
-        Idx(ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE)),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
-        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)](),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_size = (
@@ -259,7 +259,7 @@ def verify_matmul[
     var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_device,
         c_device_ref,
         c_size,
@@ -271,7 +271,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+    var result_host = List(length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0))
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -289,8 +289,6 @@ def verify_matmul[
         worst_violation = max(worst_violation, result_host[base + 2])
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
-
-    result_host.free()
 
     # Check zero/nonzero expectations
     var c_is_zeros = any_out_nz == 0
@@ -328,6 +326,7 @@ def verify_matmul[
         )
 
     print("\n=== TEST PASSED ===\n")
+    _ = result_host^
 
 
 def _get_run_name[
@@ -426,18 +425,18 @@ def bench_matmul[
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
-        Idx(ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE)),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
-        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)](),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_size = (
@@ -614,8 +613,8 @@ def create_matmul_bench[
     run_benchmark: Bool,
 ) raises:
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
 
     bench_matmul[
@@ -693,11 +692,11 @@ def bench_mxfp4_amd[
     var a_scales_size = M * K_SCALES
     var b_scales_size = N_VAL * K_SCALES
 
-    var a_shape = row_major(Coord(Idx(M), Idx[K_PACKED]()))
-    comptime b_shape = row_major(Coord(Idx[N_VAL](), Idx[K_PACKED]()))
-    var c_shape = row_major(Coord(Idx(M), Idx[N_VAL]()))
-    var sfa_shape = row_major(Coord(Idx(M), Idx[K_SCALES]()))
-    comptime sfb_shape = row_major(Coord(Idx[N_VAL](), Idx[K_SCALES]()))
+    var a_shape = row_major(Coord(M, Idx[K_PACKED]))
+    comptime b_shape = row_major(Coord(Idx[N_VAL], Idx[K_PACKED]))
+    var c_shape = row_major(Coord(M, Idx[N_VAL]))
+    var sfa_shape = row_major(Coord(M, Idx[K_SCALES]))
+    comptime sfb_shape = row_major(Coord(Idx[N_VAL], Idx[K_SCALES]))
 
     comptime simd_size = 4
     var cb_a = CacheBustingBuffer[DType.uint8](a_size, simd_size, ctx)
@@ -801,9 +800,9 @@ def bench_mxfp4_amd[
         M,
         N_VAL,
         K_ELEMS,
-        Coord(Idx(M), Idx[N_VAL]()),
-        Coord(Idx(M), Idx[K_PACKED]()),
-        Coord(Idx[N_VAL](), Idx[K_PACKED]()),
+        Coord(M, Idx[N_VAL]),
+        Coord(M, Idx[K_PACKED]),
+        Coord(Idx[N_VAL], Idx[K_PACKED]),
     )
 
     if run_benchmark:
@@ -845,7 +844,7 @@ def bench_mxfp4_amd[
             comptime verify_kernel = _verify_buffers_gpu[
                 DType.float32, BLOCK_SIZE
             ]
-            ctx.enqueue_function_experimental[verify_kernel](
+            ctx.enqueue_function[verify_kernel](
                 c_tt0.ptr,
                 c_ref_tt.ptr,
                 c_size,
@@ -856,7 +855,9 @@ def bench_mxfp4_amd[
                 block_dim=BLOCK_SIZE,
             )
 
-            var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+            var result_host = List(
+                length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0)
+            )
             ctx.enqueue_copy(result_host, result_device)
             ctx.synchronize()
 
@@ -872,7 +873,6 @@ def bench_mxfp4_amd[
                 worst_violation = max(worst_violation, result_host[base + 2])
                 out_nz = max(out_nz, result_host[base + 3])
                 ref_nz = max(ref_nz, result_host[base + 4])
-            result_host.free()
 
             if init_type != InitializationType.zero:
                 if out_nz == 0:
@@ -899,6 +899,7 @@ def bench_mxfp4_amd[
                 )
 
             print("\n=== MXFP4 verify PASSED ===\n")
+            _ = result_host^
 
 
 def main() raises:
@@ -930,9 +931,9 @@ def main() raises:
             ](
                 ctx,
                 m,
-                Idx(M),
-                Idx[N](),
-                Idx[get_defined_int["K", 2048]()](),
+                M,
+                Idx[N],
+                Idx[get_defined_int["K", 2048]()],
                 init_type,
                 verify,
                 run_benchmark,
@@ -955,9 +956,9 @@ def main() raises:
             ](
                 ctx,
                 m,
-                Idx(M),
-                Idx[N](),
-                Idx[K](),
+                M,
+                Idx[N],
+                Idx[K],
                 init_type,
                 verify,
                 run_benchmark,

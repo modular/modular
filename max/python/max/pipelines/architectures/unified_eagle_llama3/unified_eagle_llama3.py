@@ -31,16 +31,20 @@ from max.graph import (
 from max.nn import ReturnHiddenStates, ReturnLogits
 
 # TODO: rename the kernel at the source
-from max.nn.kernels import eagle_prefill_shift_tokens
+from max.nn.kernels import (
+    eagle_prefill_shift_tokens,
+    inplace_memcpy,
+    wait_host_value_with_dep,
+)
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
     _reshape_target_logits,
 )
-from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
+from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
-    shape_to_scalar,
+    _shape_to_scalar,
 )
 
 from ..eagle_llama3.eagle_llama3 import EagleLlama3
@@ -62,6 +66,27 @@ class UnifiedEagleLlama3Values:
     max_k: TensorValue
     top_p: TensorValue
     min_top_p: TensorValue
+    pinned_bitmask: TensorValue | None = None
+    """Pinned-host bitmask for constrained decoding.
+
+    Shape: ``[batch_size, num_speculative_tokens + 1, vocab_size]``.
+    Position i contains the valid-token mask given the FSM state after
+    consuming draft[0:i-1]; position ``num_speculative_tokens`` is for
+    the bonus token. Read by an in-graph H2D into
+    :attr:`device_bitmask_scratch` after the ``mo.wait_host_value_with_dep``
+    op observes the host callback's release-store of the completion
+    flag. ``None`` when structured output is disabled (graph compiled
+    without the bitmask triple).
+    """
+
+    wait_payload: BufferValue | None = None
+    """CPU ``int64[2]`` payload consumed by
+    ``mo.wait_host_value_with_dep`` (``[CompletionFlag._unsafe_ptr,
+    1]``). Owned by :class:`StructuredOutputOverlapState`."""
+
+    device_bitmask_scratch: BufferValue | None = None
+    """Device scratch buffer that receives the in-graph H2D from
+    :attr:`pinned_bitmask`; the acceptance sampler reads from it."""
 
 
 class UnifiedEagleLlama3(Module):
@@ -91,30 +116,43 @@ class UnifiedEagleLlama3(Module):
         self,
         inputs: Sequence[Value[Any]],
     ) -> UnifiedEagleLlama3Values:
-        (
-            tokens,
-            input_row_offsets,
-            return_n_logits,
-            # target model kvcache inputs
-            target_kv_blocks,
-            cache_lengths,
-            lookup_table,
-            max_lengths,
-            dispatch_metadata,
-            draft_dispatch_metadata,
-            # draft model inputs
-            draft_tokens,
-            # draft kvcache
-            draft_kv_blocks,
-            # stochastic acceptance seed (scalar int64 on CPU)
-            seed,
-            # sampling params for stochastic acceptance
-            temperature,
-            top_k,
-            max_k,
-            top_p,
-            min_top_p,
-        ) = inputs
+        # Use an iterator to consume inputs sequentially, avoiding a hardcoded
+        # count that would break if the kv cache structure changes.
+        it = iter(inputs)
+
+        tokens = next(it)
+        input_row_offsets = next(it)
+        return_n_logits = next(it)
+        # target model kvcache inputs
+        target_kv_blocks = next(it)
+        cache_lengths = next(it)
+        lookup_table = next(it)
+        max_lengths = next(it)
+        dispatch_metadata = next(it)
+        draft_dispatch_metadata = next(it)
+        # draft model inputs
+        draft_tokens = next(it)
+        # draft kvcache
+        draft_kv_blocks = next(it)
+        # stochastic acceptance seed (scalar int64 on CPU)
+        seed = next(it)
+        # sampling params for stochastic acceptance
+        temperature = next(it)
+        top_k = next(it)
+        max_k = next(it)
+        top_p = next(it)
+        min_top_p = next(it)
+        # Optional constrained-decoding bitmask triple (appended when
+        # structured output is enabled). The triple is bound by the
+        # OverlapTextGenerationPipeline from
+        # :class:`StructuredOutputOverlapState`.
+        pinned_bitmask_in: TensorValue | None = None
+        wait_payload_in: BufferValue | None = None
+        device_bitmask_scratch_in: BufferValue | None = None
+        if self.config.enable_structured_output:
+            pinned_bitmask_in = next(it).tensor
+            wait_payload_in = next(it).buffer
+            device_bitmask_scratch_in = next(it).buffer
 
         target_kv_collection = PagedCacheValues(
             kv_blocks=target_kv_blocks.buffer,
@@ -138,6 +176,9 @@ class UnifiedEagleLlama3(Module):
             max_k=max_k.tensor,
             top_p=top_p.tensor,
             min_top_p=min_top_p.tensor,
+            pinned_bitmask=pinned_bitmask_in,
+            wait_payload=wait_payload_in,
+            device_bitmask_scratch=device_bitmask_scratch_in,
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
@@ -145,7 +186,11 @@ class UnifiedEagleLlama3(Module):
 
         Order: tokens, input_row_offsets, return_n_logits, target_kv_cache,
                draft_tokens, draft_kv_blocks, seed, temperature, top_k,
-               max_k, top_p, min_top_p.
+               max_k, top_p, min_top_p[, pinned_bitmask, wait_payload,
+               device_bitmask_scratch].
+
+        The bitmask triple is only included when structured output is
+        enabled via config.enable_structured_output.
         """
         device_ref = self.config.target.devices[0]
 
@@ -184,20 +229,51 @@ class UnifiedEagleLlama3(Module):
             DType.float32, shape=[], device=DeviceRef.CPU()
         )
 
-        return (
+        # Mandatory inputs (must match order in _unflatten_graph_inputs)
+        result: tuple[TensorType | BufferType, ...] = (
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
             *target_kv_flat,
             draft_tokens_type,
             draft_kv_blocks,
-            ops.random.SeedType,
+            TensorType(DType.uint64, shape=["batch_size"], device=device_ref),
             temperature_type,
             top_k_type,
             max_k_type,
             top_p_type,
             min_top_p_type,
         )
+
+        # Optional bitmask triple for structured output. The pinned
+        # bitmask input is declared on the CPU even though the runtime
+        # ``DevicePinnedBuffer``'s ``.device`` is the accelerator: the
+        # engine's input binding requires pinned tensors to land on a
+        # CPU graph input. ``num_bitmask_positions = num_speculative_tokens + 1``;
+        # position ``num_speculative_tokens`` is for the bonus token.
+        if self.config.enable_structured_output:
+            pinned_bitmask_type = TensorType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=DeviceRef.CPU(),
+            )
+            wait_payload_type = BufferType(
+                DType.int64,
+                shape=[2],
+                device=DeviceRef.CPU(),
+            )
+            device_bitmask_scratch_type = BufferType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=device_ref,
+            )
+            result = result + (
+                pinned_bitmask_type,
+                wait_payload_type,
+                device_bitmask_scratch_type,
+            )
+
+        return result
 
     def __call__(
         self,
@@ -249,18 +325,66 @@ class UnifiedEagleLlama3(Module):
 
         hidden_dim = hidden_states.shape[1]
 
+        # Constrained-decoding overlap: gate the model stream on the
+        # async callback's release-store to ``wait_payload``, then
+        # in-graph H2D from pinned host memory to
+        # ``device_bitmask_scratch``. The sampler reads the scratch.
+        # ``device_bitmask_scratch`` is threaded through the wait as a
+        # fake mutable operand so the graph compiler / cuGraph capture
+        # serialises the memcpy after the wait (both ops mutate the
+        # same buffer). The triple is all-or-none.
+        if not (
+            (inputs.pinned_bitmask is None)
+            == (inputs.wait_payload is None)
+            == (inputs.device_bitmask_scratch is None)
+        ):
+            raise ValueError(
+                "pinned_bitmask, wait_payload, and device_bitmask_scratch "
+                "must be either all None or all non-None; got "
+                f"pinned_bitmask={'set' if inputs.pinned_bitmask is not None else 'None'}, "
+                f"wait_payload={'set' if inputs.wait_payload is not None else 'None'}, "
+                f"device_bitmask_scratch={'set' if inputs.device_bitmask_scratch is not None else 'None'}"
+            )
+        effective_bitmasks: TensorValue | None = None
+        if (
+            inputs.pinned_bitmask is not None
+            and inputs.wait_payload is not None
+            and inputs.device_bitmask_scratch is not None
+        ):
+            wait_host_value_with_dep(
+                inputs.wait_payload,
+                inputs.device_bitmask_scratch,
+                device=device,
+            )
+            inplace_memcpy(inputs.device_bitmask_scratch, inputs.pinned_bitmask)
+            # Trim the persistent buffer's worst-case
+            # ``num_speculative_tokens + 1`` rows down to
+            # ``num_steps + 1`` so the acceptance sampler's rebind
+            # to ``num_steps + 1`` lines up. Position ``i`` of the
+            # bitmask holds the FSM state with ``i`` drafts
+            # consumed, so positions ``0..num_steps`` cover the
+            # ``num_steps`` draft-verification slots plus the bonus
+            # slot at index ``num_steps``; the target never emits
+            # logits for the trailing rows this iter.
+            num_steps_plus_one = draft_tokens.shape[1] + 1
+            effective_bitmasks = inputs.device_bitmask_scratch[
+                :, :num_steps_plus_one, :
+            ]
+
         # num_accepted_draft_tokens: [B]     (index of first rejected step, 0..K)
         # recovered                : [B, K]  (target argmax at each draft position)
         # bonus                    : [B, 1]  (target argmax at the +1 position)
+        seed_scalar = inputs.seed[0]
         num_accepted_draft_tokens, recovered, bonus = self.acceptance_sampler(
             draft_tokens,
             logits,
-            seed=inputs.seed,
+            seed=seed_scalar,
             temperature=inputs.temperature,
             top_k=inputs.top_k,
             max_k=inputs.max_k,
             top_p=inputs.top_p,
             min_top_p=inputs.min_top_p,
+            token_bitmasks=effective_bitmasks,
         )
 
         # target_tokens: [B, K+1]
@@ -271,7 +395,7 @@ class UnifiedEagleLlama3(Module):
             batch_dims=1,
         )
 
-        num_draft_sentinel_gpu = shape_to_scalar(draft_tokens.shape[1], device)
+        num_draft_sentinel_gpu = _shape_to_scalar(draft_tokens.shape[1], device)
 
         # Build corrected merged tokens: replace draft tokens with target
         # argmax (recovered). For accepted positions draft == target argmax,

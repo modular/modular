@@ -18,16 +18,16 @@ NotEqual) and the Select (ternary) operation.
 """
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.reflection import get_base_type_name
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import ElementwiseBinaryComparisonOp
-from MOGGKernelAPI.MOGGKernelAPI import (
+from std.reflection import reflect
+
+from extensibility import ElementwiseBinaryComparisonOp
+from elementwise_kernels import (
     Equal,
     Greater,
     GreaterEqual,
@@ -50,7 +50,7 @@ comptime BINARY_COMPARISON_OPS = TypeList.of[
 
 def _is_gpu_allowed_comparison_op[op: ElementwiseBinaryComparisonOp]() -> Bool:
     """Check if a comparison op is allowed on GPU at compile time."""
-    comptime name = get_base_type_name[op]()
+    comptime name = reflect[op].base_name()
     return (
         name == "Equal"
         or name == "Greater"
@@ -74,7 +74,7 @@ def PyInit_elementwise_comparison_ops() -> PythonObject:
         # Binary comparison operations
         comptime for i in range(BINARY_COMPARISON_OPS.size):
             comptime op = BINARY_COMPARISON_OPS[i]
-            comptime name = get_base_type_name[op]()
+            comptime name = reflect[op].base_name()
             comptime docstring = StaticString(
                 "Elementwise " + name + " comparison"
             )
@@ -113,7 +113,7 @@ def bin_comparison_dispatcher[
         out_buffer: The output buffer object.
         lhs_buffer: The left-hand side buffer object.
         rhs_buffer: The right-hand side buffer object.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(lhs_buffer)
     var rhs_dtype = _get_dtype(rhs_buffer)
@@ -247,7 +247,7 @@ def select_dispatcher(
         cond_buffer: Boolean condition buffer.
         true_buffer: Values selected where condition is true.
         false_buffer: Values selected where condition is false.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(true_buffer)
     var false_dtype = _get_dtype(false_buffer)
@@ -400,7 +400,7 @@ def bin_elementwise_comparison_op[
     lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Elementwise comparison: out = lhs op rhs.
 
@@ -414,7 +414,7 @@ def bin_elementwise_comparison_op[
         lhs_ptr: Pointer to the left-hand side buffer data.
         rhs_ptr: Pointer to the right-hand side buffer data.
         size: Number of elements to process.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
 
     @always_inline
@@ -428,17 +428,18 @@ def bin_elementwise_comparison_op[
         )
         out_ptr.store[width=width](i, res.cast[DType.uint8]())
 
-    if not ctx:
-        elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=simd_width_of[dtype]()](
+            IndexList[1](size), ctx
+        )
     else:
         # GPU execution - check GPU availability and op/dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_comparison_op[
                 op
             ]() and dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](size), device_ctx
+                    IndexList[1](size), ctx
                 )
             else:
                 raise Error(
@@ -458,7 +459,7 @@ def select_elementwise_op[
     true_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     false_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Select elementwise operation: out = cond ? true_val : false_val.
 
@@ -471,7 +472,7 @@ def select_elementwise_op[
         true_ptr: Pointer to the true-case buffer data.
         false_ptr: Pointer to the false-case buffer data.
         size: Number of elements to process.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
 
     @always_inline
@@ -486,15 +487,16 @@ def select_elementwise_op[
         var res = Select.elementwise[DType.bool, dtype, width](cond, tc, fc)
         out_ptr.store[width=width](i, res)
 
-    if not ctx:
-        elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=simd_width_of[dtype]()](
+            IndexList[1](size), ctx
+        )
     else:
         # GPU execution
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](size), device_ctx
+                    IndexList[1](size), ctx
                 )
             else:
                 raise Error(

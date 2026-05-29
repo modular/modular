@@ -14,12 +14,27 @@ modular_py_binary(
     data = [
         "@nvshmem_prebuilt//:device",
         "@nvshmem_prebuilt//:host",
-    ],
+    ] + select({
+        # Bundle libubsan as a runfile so kbench can ctypes.CDLL it with
+        # RTLD_GLOBAL before opening user .so's. See _maybe_preload_libubsan
+        # in kbench_model.py and MOTO-1576.
+        "//:ubsan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so"],
+        "//:ubsan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so"],
+        "//conditions:default": [],
+    }),
     env = {
         "KERNEL_BENCHMARKS_ROOT": "$$BUILD_WORKSPACE_DIRECTORY/" + package_name() + "/..",
         "BITCODE_LIBS_PATH": "$(rootpath @nvshmem_prebuilt//:device)",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
-    },
+    } | select({
+        "//:ubsan_linux_aarch64": {
+            "KBENCH_LIBUBSAN_PATH": "$(rootpath @clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so)",
+        },
+        "//:ubsan_linux_x86_64": {
+            "KBENCH_LIBUBSAN_PATH": "$(rootpath @clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so)",
+        },
+        "//conditions:default": {},
+    }),
     imports = ["."],
     main = "kbench.py",
     mojo_deps = [
@@ -29,22 +44,17 @@ modular_py_binary(
         "//max:_curand",
         "//max:_rocblas",
         "//max:comm",
+        "//max:extensibility",
         "//max:internal_utils",
         "//max:kv_cache",
         "//max:layout",
         "//max:linalg",
         "//max:nn",
         "//max:quantization",
-        "//max:register",
         "//max:shmem",
         "@mojo//:std",
     ],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
-    target_compatible_with = select({
-        # FIXME: PAQ-2245
-        "//:ubsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         requirement("click"),
         requirement("numpy"),
@@ -58,6 +68,7 @@ modular_py_binary(
         requirement("torch"),
         requirement("packaging"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
+        "@rules_python//python/runfiles",
     ] + select({
         "//:nvidia_gpu": ["//max/kernels/benchmarks/misc/comparison:bench_baseline_lib"],
         "//conditions:default": [],
@@ -72,13 +83,13 @@ modular_py_binary(
     imports = ["."],
     main = "kprofile.py",
     mojo_deps = [
+        "//max:extensibility",
         "//max:internal_utils",
         "//max:kv_cache",
         "//max:layout",
         "//max:linalg",
         "//max:nn",
         "//max:quantization",
-        "//max:register",
         "@mojo//:std",
     ],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
@@ -96,13 +107,13 @@ modular_py_binary(
     imports = ["."],
     main = "kplot.py",
     mojo_deps = [
+        "//max:extensibility",
         "//max:internal_utils",
         "//max:kv_cache",
         "//max:layout",
         "//max:linalg",
         "//max:nn",
         "//max:quantization",
-        "//max:register",
         "@mojo//:std",
     ],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
@@ -140,35 +151,46 @@ modular_py_test(
     # test_kbench compiles multiple Mojo binaries which can be slow on CI.
     size = "large",
     srcs = glob(["tests/*.py"]),
-    args = [
-        "-n",
-        "auto",
-        "--dist",
-        "loadgroup",
-    ],
     data = glob(["tests/*.csv"]) + [
         "sample.mojo",
         "sample.py",
         "test.yaml",
         "test_python.yaml",
+        "tests/minimal_fixture.mojo",
         "tests/sample_failure.mojo",
         "tests/test_crash.yaml",
+        "tests/test_minimal.yaml",
         "tests/test_timeout.yaml",
-    ],
-    env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"},
-    ignore_extra_deps = [
-        # Used for `-n auto` above
-        requirement("pytest-xdist"),
-    ],
+    ] + select({
+        # See _maybe_preload_libubsan in kbench_model.py and MOTO-1576.
+        "//:ubsan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so"],
+        "//:ubsan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so"],
+        "//conditions:default": [],
+    }),
+    env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"} | select({
+        "//:ubsan_linux_aarch64": {
+            "KBENCH_LIBUBSAN_PATH": "$(rootpath @clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so)",
+        },
+        "//:ubsan_linux_x86_64": {
+            "KBENCH_LIBUBSAN_PATH": "$(rootpath @clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so)",
+        },
+        "//conditions:default": {},
+    }),
     mojo_deps = [
+        "//max:extensibility",
         "//max:internal_utils",
         "//max:kv_cache",
         "//max:layout",
         "//max:linalg",
         "//max:nn",
         "//max:quantization",
-        "//max:register",
         "@mojo//:std",
+    ],
+    per_test_shard_count = {
+        "tests/test_kbench.py": 4,
+    },
+    tags = [
+        "enable-sanitizers",
     ],
     target_compatible_with = select({
         # FIXME
@@ -184,7 +206,6 @@ modular_py_test(
         requirement("numpy"),
         requirement("pandas"),
         requirement("pytest-mock"),
-        requirement("pytest-xdist"),
         requirement("rich"),
     ],
 )

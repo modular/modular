@@ -1,0 +1,26 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "builtin_kernels",
+    srcs = glob(["*.mojo"]),
+    docs_base_path = "kernels",
+    validate_missing_docs = False,
+    deps = [
+        "//max:attention_kernels",
+        "//max:common_kernels",
+        "//max:conv_kernels",
+        "//max:distributed_kernels",
+        "//max:elementwise_kernels",
+        "//max:ep_kernels",
+        "//max:gather_scatter_kernels",
+        "//max:kv_cache_kernels",
+        "//max:linalg_kernels",
+        "//max:logprobs_kernels",
+        "//max:nan_check_kernels",
+        "//max:quantization_kernels",
+        "//max:reductions_kernels",
+        "@mojo//:std",
+    ],
+)

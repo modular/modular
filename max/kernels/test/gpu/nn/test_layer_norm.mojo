@@ -31,10 +31,10 @@ def run_layer_norm_block[
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
-    var beta_h = alloc[Scalar[dtype]](cols)
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var beta_h = ctx.enqueue_create_host_buffer[dtype](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -63,26 +63,28 @@ def run_layer_norm_block[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    def input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
-        return data_buf.raw_load[width=width](idx)
+    def input_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) -> SIMD[dtype, width]:
+        var idx = data_buf.layout(Coord(row, col))
+        return data_buf.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     def gamma_fn[
-        width: Int, rank: Int
+        width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
-        return gamma.raw_load[width=width](idx)
+        var idx = gamma.layout(coords[0])
+        return gamma.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(data_buf)
     @always_inline
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
-        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
+        var idx = data_buf.layout(Coord(row, col))
         data_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
@@ -103,7 +105,7 @@ def run_layer_norm_block[
             gamma_fn,
             output_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             IndexList[2](rows, cols),
             beta,
             epsilon,
@@ -120,8 +122,8 @@ def run_layer_norm_block[
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h + r * cols,
-            row_major(Idx(cols)),
+            data_h.unsafe_ptr() + r * cols,
+            row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
@@ -137,11 +139,6 @@ def run_layer_norm_block[
     _ = gamma_d
     _ = beta_d
 
-    data_h.free()
-    res.free()
-    gamma_h.free()
-    beta_h.free()
-
 
 def run_layer_norm_gpu[
     dtype: DType, rank: Int
@@ -151,10 +148,10 @@ def run_layer_norm_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
-    var beta_h = alloc[Scalar[dtype]](cols)
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var beta_h = ctx.enqueue_create_host_buffer[dtype](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -183,26 +180,26 @@ def run_layer_norm_gpu[
     @always_inline
     @parameter
     def input_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
 
-        return data_buf.raw_load[width=width](idx)
+        return data_buf.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     def gamma_fn[
-        width: Int, rank: Int
+        width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
-        return gamma.raw_load[width=width](idx[0])
+        var idx = gamma.layout(coords[0])
+        return gamma.raw_load[width=width, alignment=alignment](idx[0])
 
     @__copy_capture(data_buf)
     @always_inline
     @parameter
     def output_fn[
-        width: Int, rank_: Int, alignment: Int
+        width: SIMDSize, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(coords))
         data_buf.raw_store[width=width, alignment=alignment](
@@ -215,8 +212,8 @@ def run_layer_norm_gpu[
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h + r * cols,
-            row_major(Idx(cols)),
+            data_h.unsafe_ptr() + r * cols,
+            row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
@@ -232,11 +229,6 @@ def run_layer_norm_gpu[
     _ = gamma_d
     _ = beta_d
 
-    data_h.free()
-    res.free()
-    gamma_h.free()
-    beta_h.free()
-
 
 def run_layer_norm_warp_tiling[
     dtype: DType,
@@ -245,10 +237,10 @@ def run_layer_norm_warp_tiling[
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
-    var beta_h = alloc[Scalar[dtype]](cols)
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var beta_h = ctx.enqueue_create_host_buffer[dtype](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -277,27 +269,29 @@ def run_layer_norm_warp_tiling[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    def input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
+    def input_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) -> SIMD[dtype, width]:
+        var idx = data_buf.layout(Coord(row, col))
 
-        return data_buf.raw_load[width=width](idx)
+        return data_buf.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     def gamma_fn[
-        width: Int, rank: Int
+        width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
-        return gamma.raw_load[width=width](idx)
+        var idx = gamma.layout(coords[0])
+        return gamma.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(data_buf)
     @always_inline
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
-        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
+        var idx = data_buf.layout(Coord(row, col))
         data_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
@@ -317,7 +311,7 @@ def run_layer_norm_warp_tiling[
             gamma_fn,
             output_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             IndexList[2](rows, cols),
             beta,
             epsilon,
@@ -334,8 +328,8 @@ def run_layer_norm_warp_tiling[
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h + r * cols,
-            row_major(Idx(cols)),
+            data_h.unsafe_ptr() + r * cols,
+            row_major(cols),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
@@ -350,11 +344,6 @@ def run_layer_norm_warp_tiling[
     _ = data_d
     _ = gamma_d
     _ = beta_d
-
-    data_h.free()
-    res.free()
-    gamma_h.free()
-    beta_h.free()
 
 
 def main() raises:

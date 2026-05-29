@@ -226,22 +226,45 @@ struct Conv2dConfig[
 
     @staticmethod
     @always_inline
-    def default_bf16() -> Self:
+    def default_bf16[
+        swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    ]() -> Self:
         """Default configuration for BF16 conv2d (VAE-optimized).
 
         Uses 2-SM cluster mode (cta_group=2) with 128×128 block tiles, matching
         the standard SM100 matmul configuration pattern.
 
         For cta_group=2 with MMA_M=256, MMA_N=256:
-        - block_tile_shape = mma_shape // cta_group = (128, 128, 64)
+        - block_tile_shape = mma_shape // cta_group = (128, 128, BK)
         - output_tile_shape = (128, 32) - each output tile is 128 rows × 32 cols
         - cluster_shape[0] = 2 (2 CTAs in M dimension)
 
+        BK is chosen to match the activation/filter swizzle so that the
+        TMA descriptor's inner dim (channels_per_pixel = swizzle_bytes/sizeof)
+        divides BK. This keeps K = C*R*S a whole multiple of BK whenever the
+        dispatch guarantees C*sizeof(act_type) is a multiple of swizzle_bytes.
+
+        Parameters:
+            swizzle: Activation/filter swizzle mode. Defaults to SWIZZLE_128B
+                (inner row = 128 bytes). Use SWIZZLE_64B for C_in where
+                C*sizeof(dtype) is 64B-aligned but not 128B-aligned
+                (e.g. bf16 C_in=96).
+
         Pipeline stages are dynamically computed to maximize SMEM utilization.
         """
+        # BK must be a multiple of channels_per_pixel = swizzle_bytes/sizeof.
+        # Picking BK = channels_per_pixel (one slab per async_copy) keeps the
+        # K-iteration count aligned for any C that meets the swizzle
+        # alignment gate in the dispatch.
+        comptime channels_per_pixel = swizzle.bytes() // size_of[
+            Self.act_type
+        ]()
+        comptime BK = channels_per_pixel * 2 if (
+            swizzle == TensorMapSwizzle.SWIZZLE_128B
+        ) else channels_per_pixel
         var config = Self(
             # 128×128 block tiles with cta_group=2 (mma_shape = 2 * block_tile)
-            block_tile_shape=IndexList[3](128, 128, 64),
+            block_tile_shape=IndexList[3](128, 128, BK),
             mma_shape=IndexList[3](256, 256, 16),
             # Output tile: (128, 32) with SWIZZLE_64B - matches matmul pattern
             output_tile_shape=IndexList[2](128, 32),
@@ -255,8 +278,8 @@ struct Conv2dConfig[
             cluster_shape=IndexList[3](2, 1, 1),
             cta_group=2,
             # Swizzle modes for bank-conflict-free access
-            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
             # c_swizzle=SWIZZLE_64B matches output_tile_n=32 (32*2=64 bytes)
             c_swizzle=TensorMapSwizzle.SWIZZLE_64B,
             # Block swizzle for L2 locality
@@ -270,23 +293,45 @@ struct Conv2dConfig[
 
     @staticmethod
     @always_inline
-    def default_bf16_1sm() -> Self:
+    def default_bf16_1sm[
+        swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+        num_pipeline_stages_override: Int = 0,
+    ]() -> Self:
         """Default configuration for BF16 conv2d using 1-SM mode.
 
         Uses 1-SM mode (cta_group=1) with 128×128 block tiles, matching
         the CUTLASS example configuration.
 
         For cta_group=1 with MMA_M=128, MMA_N=128, MMA_K=16:
-        - block_tile_shape = (128, 128, 64) for tile sizes
+        - block_tile_shape = (128, 128, BK) for tile sizes
         - mma_shape = (128, 128, 16) for MMA instruction shape
         - output_tile_shape = (128, 32) with c_swizzle=SWIZZLE_64B
         - cluster_shape = (1, 1, 1) (single CTA per cluster)
 
-        Pipeline stages are dynamically computed to maximize SMEM utilization.
+        BK is chosen to match the activation/filter swizzle; see
+        `default_bf16` for details.
+
+        Parameters:
+            swizzle: Activation/filter swizzle mode. Defaults to SWIZZLE_128B.
+                Use SWIZZLE_64B for C_in where C*sizeof(dtype) is 64B-aligned
+                but not 128B-aligned (e.g. bf16 C_in=96).
+            num_pipeline_stages_override: If > 0, use this value for
+                num_pipeline_stages instead of the auto-sizer. Used when the
+                auto-sizer over-estimates the stage budget (e.g. at smaller BK
+                it doesn't account for conv-specific SMEM like SourceTiles).
+
+        Pipeline stages are dynamically computed to maximize SMEM utilization
+        unless `num_pipeline_stages_override` is provided.
         """
+        comptime channels_per_pixel = swizzle.bytes() // size_of[
+            Self.act_type
+        ]()
+        comptime BK = channels_per_pixel * 2 if (
+            swizzle == TensorMapSwizzle.SWIZZLE_128B
+        ) else channels_per_pixel
         var config = Self(
             # 128×128 block tiles with cta_group=1
-            block_tile_shape=IndexList[3](128, 128, 64),
+            block_tile_shape=IndexList[3](128, 128, BK),
             # MMA shape: M=128, N=128, K=16 (K is reduction per MMA instruction)
             mma_shape=IndexList[3](128, 128, 16),
             # Output tile: (128, 32) with SWIZZLE_64B
@@ -301,32 +346,44 @@ struct Conv2dConfig[
             cluster_shape=IndexList[3](1, 1, 1),
             cta_group=1,
             # Swizzle modes for bank-conflict-free access
-            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
             # c_swizzle=SWIZZLE_64B matches output_tile_n=32 (32*2=64 bytes)
             c_swizzle=TensorMapSwizzle.SWIZZLE_64B,
             # Block swizzle for L2 locality
             block_swizzle_size=1,
         )
 
-        # Dynamically compute optimal pipeline stages based on SMEM budget
-        config._maximize_pipeline_stages_by_default()
+        comptime if num_pipeline_stages_override > 0:
+            config.num_pipeline_stages = num_pipeline_stages_override
+        else:
+            # Dynamically compute optimal pipeline stages based on SMEM budget
+            config._maximize_pipeline_stages_by_default()
 
         return config^
 
     @staticmethod
     @always_inline
-    def default_fp16() -> Self:
-        """Default configuration for FP16 conv2d."""
+    def default_fp16[
+        swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    ]() -> Self:
+        """Default configuration for FP16 conv2d.
+
+        Parameters:
+            swizzle: Activation/filter swizzle mode. See `default_bf16`.
+        """
         # Same as BF16 for now - inherits dynamic pipeline stages
-        return Self.default_bf16()
+        return Self.default_bf16[swizzle=swizzle]()
 
     def _maximize_pipeline_stages_by_default(mut self):
         """Dynamically compute optimal pipeline stages based on SMEM budget.
 
-        This mirrors MatmulConfig._maximize_pipeline_stages_by_default() since
-        the SMEM layout is identical (activation/filter tiles, output tiles,
-        pipeline barriers, CLC storage).
+        This mirrors MatmulConfig._maximize_pipeline_stages_by_default() with
+        one conv-specific addition: source SMEM for the residual TMA loads.
+        Conv's epi_load warp pre-fetches `num_inner_stages = MMA_N / OutputN`
+        source sub-tiles per work item (see `conv_smem.mojo` SourceTiles),
+        so source SMEM has to be subtracted from the input-pipeline budget
+        or the kernel will overshoot the per-SM limit.
         """
         # B200 has 228KB SMEM per SM; reserve 1KB for misc overhead
         comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -340,6 +397,18 @@ struct Conv2dConfig[
         )
         # Add tmem addr (4 bytes) and tmem dealloc mbar (8 bytes)
         var output_smem_bytes = c_smem_bytes + 12
+
+        # Source SMEM for the residual path. The epilogue-load pipeline
+        # holds one (BM x OutputN) sub-tile per inner epilogue stage; sized
+        # for the worst case (residual enabled) so a single config works for
+        # both the residual and non-residual entry points.
+        var num_inner_stages = self.mma_shape[1] // self.output_tile_shape[1]
+        var source_smem_bytes = (
+            self.output_tile_shape[0]
+            * self.output_tile_shape[1]
+            * num_inner_stages
+            * size_of[Self.out_type]()
+        )
 
         # CLC pipeline: response 128B + clc mbar 16B + clc-load mbar 16B = 160B per stage
         var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
@@ -367,6 +436,7 @@ struct Conv2dConfig[
         self.num_pipeline_stages = (
             b200_smem
             - output_smem_bytes
+            - source_smem_bytes
             - clc_smem_bytes
             - mma_output_smem_bytes
         ) // input_smem_per_stage

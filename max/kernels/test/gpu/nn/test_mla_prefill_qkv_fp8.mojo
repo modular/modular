@@ -76,21 +76,23 @@ def test_prefill[
     var o_size = batch_size * seq_len * num_heads * kv_depth
     var cache_size = batch_size * num_keys * cache_num_heads * cache_depth
 
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var cache_ptr = alloc[Scalar[k_rope_type]](cache_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var cache_ptr = ctx.enqueue_create_host_buffer[k_rope_type](cache_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
 
-    var q_bf16_ptr = alloc[BFloat16](q_size)
-    var k_bf16_ptr = alloc[BFloat16](k_size)
-    var v_bf16_ptr = alloc[BFloat16](v_size)
-    var cache_bf16_ptr = alloc[BFloat16](cache_size)
+    var q_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](q_size)
+    var k_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](k_size)
+    var v_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](v_size)
+    var cache_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        cache_size
+    )
 
-    randn[DType.bfloat16](q_bf16_ptr, q_size)
-    randn[DType.bfloat16](k_bf16_ptr, k_size)
-    randn[DType.bfloat16](v_bf16_ptr, v_size)
-    randn[DType.bfloat16](cache_bf16_ptr, cache_size)
+    randn(q_bf16_ptr.as_span())
+    randn(k_bf16_ptr.as_span())
+    randn(v_bf16_ptr.as_span())
+    randn(cache_bf16_ptr.as_span())
 
     # Scale inputs to [-1, 1] before the fp8 roundtrip.
     # FP8 e4m3fn has uniform 12.5% relative error across all exponent bands,
@@ -120,8 +122,12 @@ def test_prefill[
         cache_bf16_ptr[i] = cache_val.cast[DType.bfloat16]()
 
     # input row offsets and cache row offsets
-    var input_row_offsets = alloc[UInt32](batch_size + 1)
-    var cache_row_offsets = alloc[UInt32](batch_size + 1)
+    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
+    var cache_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -131,36 +137,30 @@ def test_prefill[
     # ragged inputs
     var q = TileTensor(
         q_bf16_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
     var k = TileTensor(
         k_bf16_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var v = TileTensor(
         v_bf16_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var cache = TileTensor(
         cache_bf16_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[cache_num_heads](),
-                Idx[cache_depth](),
+                batch_size,
+                num_keys,
+                Idx[cache_num_heads],
+                Idx[cache_depth],
             )
         ),
     )
     var output = TileTensor(
         output_ptr,
-        row_major(
-            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
     )
 
     # device pointers
@@ -187,44 +187,38 @@ def test_prefill[
     # construct device buffers
     var q_device = TileTensor(
         q_device_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
     )
     var cache_device = TileTensor(
         cache_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[cache_num_heads](),
-                Idx[cache_depth](),
+                batch_size,
+                num_keys,
+                Idx[cache_num_heads],
+                Idx[cache_depth],
             )
         ),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
-        ),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
     )
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
     var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     @parameter
@@ -260,9 +254,13 @@ def test_prefill[
 
     # create reference K and V
     # unlike flare_mla_prefill, K_ref and V_ref each head is of size depth (not kv_depth)
-    var k_ref_ptr = alloc[BFloat16](batch_size * num_keys * num_heads * depth)
-    var v_ref_ptr = alloc[BFloat16](batch_size * num_keys * num_heads * depth)
-    var output_ref_ptr = alloc[Scalar[output_type]](
+    var k_ref_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        batch_size * num_keys * num_heads * depth
+    )
+    var v_ref_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        batch_size * num_keys * num_heads * depth
+    )
+    var output_ref_ptr = ctx.enqueue_create_host_buffer[output_type](
         batch_size * seq_len * num_heads * depth
     )
 
@@ -437,21 +435,6 @@ def test_prefill[
     _ = output_ref_ptr
     _ = input_row_offsets_device_ptr
     _ = cache_row_offsets_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    cache_ptr.free()
-    output_ptr.free()
-    k_ref_ptr.free()
-    v_ref_ptr.free()
-    output_ref_ptr.free()
-    q_bf16_ptr.free()
-    k_bf16_ptr.free()
-    v_bf16_ptr.free()
-    cache_bf16_ptr.free()
-    input_row_offsets.free()
-    cache_row_offsets.free()
 
 
 def test_mla_prefill_qkv_fp8[

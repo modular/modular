@@ -1,6 +1,6 @@
 # Canonicalize APIs around `Int`
 
-**Status**: Partially Implemented.
+**Status**: Implemented.
 
 Author: Laszlo Kindrat
 

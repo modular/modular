@@ -20,7 +20,9 @@ from typing import Any, Generic, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
+from max.pipelines.lib import reasoning
+from max.pipelines.modeling.types import (
     AudioGenerationOutput,
     AudioGenerationRequest,
     BaseContextType,
@@ -34,9 +36,11 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
-from max.pipelines.lib import reasoning
 from max.profiler import Tracer
+from max.serve.pipelines.incremental_detokenizer import (
+    BufferedDetokenizer,
+    create_buffered_detokenizer,
+)
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 from max.serve.worker_interface import ModelWorkerProxy
@@ -68,6 +72,7 @@ class TokenGeneratorOutput:
     token_log_probabilities: list[float] | None = None
     top_log_probabilities: list[dict[str, float]] | None = None
     prompt_token_count: int | None = None
+    cached_token_count: int | None = None
     reasoning_token_count: int | None = None
     stop_sequence: str | None = None
 
@@ -109,16 +114,13 @@ class TokenGeneratorPipeline(
     ) -> None:
         super().__init__(*args, **kwargs)
         self._reasoning_parser_name = reasoning_parser_name
-        self._cached_reasoning_parser: ReasoningParser | None = None
 
     async def _reasoning_parser(self) -> ReasoningParser | None:
         if self._reasoning_parser_name is None:
             return None
-        if self._cached_reasoning_parser is None:
-            self._cached_reasoning_parser = await reasoning.create(
-                self._reasoning_parser_name, self.tokenizer
-            )
-        return self._cached_reasoning_parser
+        return await reasoning.create(
+            self._reasoning_parser_name, self.tokenizer
+        )
 
     async def _top_log_probs(
         self,
@@ -170,6 +172,8 @@ class TokenGeneratorPipeline(
         # This is consistent with vLLM
         # TODO: (MODELS-1115) assume that the reasoning tokens are at the start of the reasoning section
         reasoning_parser = await self._reasoning_parser()
+        if reasoning_parser is not None:
+            reasoning_parser.reset()
         is_still_reasoning = reasoning_parser is not None
 
         try:
@@ -178,12 +182,64 @@ class TokenGeneratorPipeline(
 
             METRICS.input_tokens(context.tokens.prompt_length)
 
+            # Create buffered detokenizers for proper UTF-8 handling.
+            # These handle multi-byte UTF-8 sequences that span multiple tokens,
+            # such as emojis like 😊 which require 4 bytes and may be split
+            # across multiple tokens. Without buffered detokenization, each
+            # token decoded separately would produce replacement characters (�).
+            # See SERVSYS-1032 and MXSERV-61 for details.
+            content_detokenizer: BufferedDetokenizer = (
+                create_buffered_detokenizer(
+                    self.tokenizer,
+                    context.tokens.prompt,
+                    skip_special_tokens=skip_special_tokens,
+                )
+            )
+            reasoning_detokenizer: BufferedDetokenizer = (
+                create_buffered_detokenizer(
+                    self.tokenizer,
+                    context.tokens.prompt,
+                    skip_special_tokens=skip_special_tokens,
+                )
+            )
+
             if is_still_reasoning:
-                # Check if reasoning was disabled in the prompt
+                # Check if reasoning was disabled in the prompt. Use the
+                # parser's prompt-aware decision so multi-turn prompts (which
+                # legitimately contain ``</think>`` from prior assistant
+                # turns) don't false-trigger "reasoning already ended".
                 assert reasoning_parser is not None
-                _, is_still_reasoning = reasoning_parser.stream(
+                is_still_reasoning = reasoning_parser.will_reason_after_prompt(
                     cast(Sequence[int], context.tokens.prompt)
                 )
+
+            # Suppress reasoning classification only when constrained decoding
+            # will actually constrain the model from the first token with no
+            # way to suspend it for reasoning. Two escape hatches keep
+            # reasoning live:
+            #
+            #   1. ``grammar_enforced=False`` on a context that has a grammar
+            #      (tool_choice=auto): the grammar is compiled but the bitmask
+            #      is gated until a tool-call start token is seen, so the model
+            #      can reason freely up to that point.
+            #   2. A configured thinking region (thinking_region_delimiters): GrammarEnforcementState
+            #      suspends grammar during ``<think>...</think>``.
+            #
+            # Note that when reasoning classification is disabled reasoning
+            # tokens are routed to the content field, not reasoning.
+            grammar_will_constrain_from_start = (
+                context.grammar and context.grammar_enforced
+            ) or context.json_schema
+            has_thinking_region = (
+                hasattr(context, "grammar_state")
+                and context.grammar_state.thinking_region_delimiters is not None
+            )
+            if (
+                is_still_reasoning
+                and grammar_will_constrain_from_start
+                and not has_thinking_region
+            ):
+                is_still_reasoning = False
 
             with record_ms(METRICS.output_time):
                 has_stop_sequences = bool(context.eos_tracker.eos_stop_strings)
@@ -199,11 +255,23 @@ class TokenGeneratorPipeline(
                     tokens: list[int] | None = response.tokens
                     token_log_probs = response.log_probabilities
                     reasoning_tokens = None
+                    reasoning_text_formatter = None
 
-                    if is_still_reasoning:
-                        assert reasoning_parser is not None
-                        reasoning_span, is_still_reasoning = (
-                            reasoning_parser.stream(response.tokens)
+                    if reasoning_parser is not None:
+                        # Always run the parser, even when we weren't seeded
+                        # into reasoning. This lets architectures like Gemma 4
+                        # — which can emit ``<|channel>thought\n...<channel|>``
+                        # mid-stream regardless of enable_thinking — detect
+                        # those reasoning sections dynamically rather than
+                        # leaking them as content.
+                        parsed = reasoning_parser.stream(
+                            response.tokens,
+                            is_currently_reasoning=is_still_reasoning,
+                        )
+                        reasoning_span = parsed.span
+                        is_still_reasoning = parsed.is_still_reasoning
+                        reasoning_text_formatter = (
+                            parsed.reasoning_text_formatter
                         )
                         tokens = (
                             reasoning_span.extract_content(response.tokens)
@@ -243,25 +311,26 @@ class TokenGeneratorPipeline(
                     with Tracer(
                         f"tokenizer.decode_chunk({token_count + reasoning_token_count} toks)"
                     ):
+                        # Decode tokens using the buffered detokenizer which
+                        # handles multi-byte UTF-8 sequences across chunks.
                         decoded_tokens = (
-                            None
-                            if tokens is None
-                            else await self.tokenizer.decode(
-                                np.array(tokens),
-                                skip_special_tokens=skip_special_tokens,
-                            )
+                            await content_detokenizer.decode(tokens)
+                            if tokens
+                            else None
+                        )
+                        decoded_reasoning_tokens = (
+                            await reasoning_detokenizer.decode(reasoning_tokens)
+                            if reasoning_tokens
+                            else None
                         )
 
-                        decoded_reasoning_tokens = (
-                            None
-                            if reasoning_tokens is None
-                            else await self.tokenizer.decode(
-                                np.array(reasoning_tokens),
-                                skip_special_tokens=skip_special_tokens,
-                            )
+                    if reasoning_text_formatter and decoded_reasoning_tokens:
+                        decoded_reasoning_tokens = reasoning_text_formatter(
+                            decoded_reasoning_tokens
                         )
 
                     # Check for stop sequences if configured (EOSTracker)
+                    status = response.final_status
                     stop_sequence_match = None
                     if has_stop_sequences and decoded_tokens is not None:
                         with Tracer("eos_tracker.is_eos_from_string"):
@@ -271,6 +340,7 @@ class TokenGeneratorPipeline(
                                     decoded_tokens
                                 )
                             ):
+                                status = GenerationStatus.END_OF_SEQUENCE
                                 self.model_worker.cancel(request.request_id)
 
                     # Collect log probability values if present (still per-token)
@@ -292,7 +362,8 @@ class TokenGeneratorPipeline(
                                 top_token_log_prob_values.extend(top_probs)
 
                     # Record metrics - one TTFT/ITL per chunk
-                    if not first_chunk_yielded:
+                    is_first_chunk = not first_chunk_yielded
+                    if is_first_chunk:
                         METRICS.ttft(itl.elapsed_ms)
                         first_chunk_yielded = True
                     else:
@@ -300,13 +371,16 @@ class TokenGeneratorPipeline(
                     itl.reset()
 
                     yield TokenGeneratorOutput(
-                        status=response.final_status,
+                        status=status,
                         decoded_tokens=decoded_tokens,
                         decoded_reasoning_tokens=decoded_reasoning_tokens,
                         token_count=token_count,
                         token_log_probabilities=token_log_prob_values,
                         top_log_probabilities=top_token_log_prob_values,
                         prompt_token_count=context.tokens.prompt_length,
+                        cached_token_count=response.num_cached_tokens
+                        if is_first_chunk
+                        else None,
                         reasoning_token_count=reasoning_token_count,
                         stop_sequence=stop_sequence_match,
                     )

@@ -62,14 +62,11 @@ modular_py_test(
         "functional/test_*_simulated_cpu.py",
         "module/test_*_simulated_cpu.py",
     ]),
-    args = [
-        "-n",
-        "auto",
-    ],
-    ignore_extra_deps = [
-        requirement("pytest-xdist"),
-    ],
     imports = ["."],
+    per_test_shard_count = {
+        "module/test_compiled_simulated_cpu.py": 9,
+        "module/test_dp_dynamic_simulated_cpu.py": 4,
+    },
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -86,7 +83,6 @@ modular_py_test(
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         requirement("numpy"),
-        requirement("pytest-xdist"),
     ],
 )
 

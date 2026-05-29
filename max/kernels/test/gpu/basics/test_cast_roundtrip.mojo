@@ -35,7 +35,7 @@ def run_vec_add(ctx: DeviceContext) raises:
 
     comptime length = 1024
 
-    var in_host = alloc[Float32](length)
+    var in_host = ctx.enqueue_create_host_buffer[DType.float32](length)
 
     for i in range(length):
         in_host[i] = Float32(i)
@@ -53,7 +53,7 @@ def run_vec_add(ctx: DeviceContext) raises:
     var block_dim = 32
 
     comptime kernel = id
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         in_device,
         out_device,
         length,
@@ -82,8 +82,6 @@ def run_vec_add(ctx: DeviceContext) raises:
                 assert_equal(expected[i], out_host[i])
 
     _ = in_device
-
-    in_host.free()
 
 
 def main() raises:

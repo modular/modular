@@ -13,10 +13,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from max.dtype import DType
 from max.graph import (
     BufferType,
     DeviceRef,
+    ShardingStrategy,
     TensorType,
     TensorValue,
     Weight,
@@ -49,9 +52,6 @@ class Gemma4VisionModel(Module):
     def __init__(
         self, config: Gemma4ForConditionalGenerationConfig, device: DeviceRef
     ) -> None:
-        if len(config.devices) > 1:
-            raise ValueError("Gemma4VisionModel only supports a single device")
-
         super().__init__()
         self.config = config
         self.device = config.devices[0]
@@ -67,10 +67,11 @@ class Gemma4VisionModel(Module):
         # In the reference, the multimodal embedder is in the layer above
         # (Gemma4Model), but the image features includes this projection,
         # so it is included here.
+        vision_dtype = config.unquantized_dtype
         self.embed_vision = Gemma4MultimodalEmbedder(
             vision_config.hidden_size,
             config.text_config.hidden_size,
-            config.dtype,
+            vision_dtype,
             self.device,
             vision_config.rms_norm_eps,
         )
@@ -79,25 +80,56 @@ class Gemma4VisionModel(Module):
         if self.standardize:
             self.std_bias = Weight(
                 "std_bias",
-                config.dtype,
+                vision_dtype,
                 shape=[vision_config.hidden_size],
                 device=self.device,
             )
             self.std_scale = Weight(
                 "std_scale",
-                config.dtype,
+                vision_dtype,
                 shape=[vision_config.hidden_size],
                 device=self.device,
             )
+            self.std_bias.sharding_strategy = ShardingStrategy.replicate(
+                len(config.devices)
+            )
+            self.std_scale.sharding_strategy = ShardingStrategy.replicate(
+                len(config.devices)
+            )
+            self.std_bias_shards = self.std_bias.shard(config.devices)
+            self.std_scale_shards = self.std_scale.shard(config.devices)
+
+        if len(config.devices) > 1:
+            self.patch_embedder.sharding_strategy = ShardingStrategy.replicate(
+                len(config.devices)
+            )
+            self.encoder.sharding_strategy = ShardingStrategy.replicate(
+                len(config.devices)
+            )
+            self.embed_vision.sharding_strategy = ShardingStrategy.replicate(
+                len(config.devices)
+            )
+            self.patch_embedder_shards = self.patch_embedder.shard(
+                config.devices
+            )
+            self.encoder_shards = self.encoder.shard(config.devices)
+            # pooler is stateless so sharding is a no_op
+            self.pooler_shards = [self.pooler] * len(config.devices)
+            self.embed_vision_shards = self.embed_vision.shard(config.devices)
+        else:
+            self.patch_embedder_shards = [self.patch_embedder]
+            self.encoder_shards = [self.encoder]
+            self.pooler_shards = [self.pooler]
+            self.embed_vision_shards = [self.embed_vision]
 
     def __call__(
         self,
-        patches_flat: TensorValue,
-        pixel_position_ids: TensorValue,
-        cu_seqlens: TensorValue,
-        pool_weights: TensorValue,
+        patches_flat: Sequence[TensorValue],
+        pixel_position_ids: Sequence[TensorValue],
+        cu_seqlens: Sequence[TensorValue],
+        pool_weights: Sequence[TensorValue],
         max_seq_len: TensorValue,
-    ) -> TensorValue:
+    ) -> list[TensorValue]:
         """Process packed image patches through the full vision tower.
 
         Args:
@@ -116,26 +148,67 @@ class Gemma4VisionModel(Module):
             Projected image embeddings, shape
             ``[num_images * image_seq_length, text_hidden_size]``.
         """
-        hidden_states = self.patch_embedder(patches_flat, pixel_position_ids)
+        hidden_states_list = [
+            patch_embedder(patches, pixel_positions)
+            for patch_embedder, patches, pixel_positions in zip(
+                self.patch_embedder_shards,
+                patches_flat,
+                pixel_position_ids,
+                strict=True,
+            )
+        ]
 
-        freqs_cis = compute_vision_freqs_cis(
-            pixel_position_ids=pixel_position_ids,
-            head_dim=self.head_dim,
-            ndim=2,
-            theta=self.rope_theta,
-            dtype=DType.bfloat16,
-            device=self.device,
-        )
-        encoded = self.encoder(
-            hidden_states, freqs_cis, cu_seqlens, max_seq_len
-        )
+        freqs_cis_list = [
+            compute_vision_freqs_cis(
+                pixel_position_ids=pos_ids,
+                head_dim=self.head_dim,
+                ndim=2,
+                theta=self.rope_theta,
+                dtype=DType.bfloat16,
+                device=pos_ids.device,  # or hidden_states.device
+            )
+            for pos_ids in pixel_position_ids
+        ]
+        encoded_list = [
+            encoder(
+                hidden_states,
+                freqs_cis,
+                cusl,
+                max_seq_len,
+            )
+            for encoder, hidden_states, freqs_cis, cusl in zip(
+                self.encoder_shards,
+                hidden_states_list,
+                freqs_cis_list,
+                cu_seqlens,
+                strict=True,
+            )
+        ]
 
-        pooled = self.pooler(encoded, pool_weights)
+        pooled_list = [
+            pooler(encoded, pw)
+            for pooler, encoded, pw in zip(
+                self.pooler_shards, encoded_list, pool_weights, strict=True
+            )
+        ]
 
         if self.standardize:
-            pooled = (pooled - self.std_bias) * self.std_scale
+            pooled_list = [
+                (pooled - std_bias) * std_scale
+                for std_bias, std_scale, pooled in zip(
+                    self.std_bias_shards,
+                    self.std_scale_shards,
+                    pooled_list,
+                    strict=False,
+                )
+            ]
 
-        return self.embed_vision(pooled)
+        return [
+            embed_vision(pooled)
+            for embed_vision, pooled in zip(
+                self.embed_vision_shards, pooled_list, strict=False
+            )
+        ]
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
         """Build the input type list for the vision model graph.
@@ -150,36 +223,50 @@ class Gemma4VisionModel(Module):
         """
         vision_config = self.config.vision_config
         patch_dim = 3 * vision_config.patch_size**2
+        devices = self.config.devices
 
-        patches_flat_type = TensorType(
-            DType.bfloat16,
-            shape=["total_patches", patch_dim],
-            device=self.device,
-        )
-        pixel_position_ids_type = TensorType(
-            DType.int32,
-            shape=["total_patches", 2],
-            device=self.device,
-        )
-        cu_seqlens_type = TensorType(
-            DType.uint32,
-            shape=["num_images_plus_1"],
-            device=self.device,
-        )
-        pool_weights_type = TensorType(
-            DType.float32,
-            shape=["num_pooled_tokens", "total_patches"],
-            device=self.device,
-        )
+        patches_flat_types = [
+            TensorType(
+                DType.bfloat16,
+                shape=["total_patches", patch_dim],
+                device=device,
+            )
+            for device in devices
+        ]
+        pixel_position_ids_types = [
+            TensorType(
+                DType.int32,
+                shape=["total_patches", 2],
+                device=device,
+            )
+            for device in devices
+        ]
+        cu_seqlens_types = [
+            TensorType(
+                DType.uint32,
+                shape=["num_images_plus_1"],
+                device=device,
+            )
+            for device in devices
+        ]
+        pool_weights_types = [
+            TensorType(
+                DType.float32,
+                shape=["num_pooled_tokens", "total_patches"],
+                device=device,
+            )
+            for device in devices
+        ]
         max_seq_len_type = TensorType(
             DType.uint32,
             shape=[],
             device=DeviceRef.CPU(),
         )
+
         return (
-            patches_flat_type,
-            pixel_position_ids_type,
-            cu_seqlens_type,
-            pool_weights_type,
+            *patches_flat_types,
+            *pixel_position_ids_types,
+            *cu_seqlens_types,
+            *pool_weights_types,
             max_seq_len_type,
         )

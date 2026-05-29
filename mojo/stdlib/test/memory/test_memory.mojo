@@ -43,7 +43,7 @@ from test_utils import (
 from std.utils.numerics import nan
 
 comptime void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
-comptime int8_pop = __mlir_type.`!pop.scalar<si8>`
+comptime int8_pop = __mlir_type.`!kgen.scalar<si8>`
 
 
 @fieldwise_init

@@ -100,9 +100,11 @@ def test_mxfp4_dequant[
     comptime out_size = num_rows * num_cols
 
     # Allocate and fill host input
-    var in_host = alloc[UInt8](in_size)
-    var scales_host = alloc[UInt8](scales_size)
-    var expected_host = alloc[Scalar[out_dtype]](out_size)
+    var in_host = ctx.enqueue_create_host_buffer[DType.uint8](in_size)
+    var scales_host = ctx.enqueue_create_host_buffer[DType.uint8](scales_size)
+    var expected_host = ctx.enqueue_create_host_buffer[out_dtype](out_size)
+    for i in range(scales_size):
+        scales_host[i] = scale_exp
 
     for row in range(num_rows):
         for col in range(packed_cols):
@@ -110,12 +112,13 @@ def test_mxfp4_dequant[
             var high = UInt8((col * 2 + 1) % 16)
             in_host[row * packed_cols + col] = _pack_fp4_pair(low, high)
 
-    for i in range(scales_size):
-        scales_host[i] = scale_exp
-
     # CPU reference
     _cpu_dequant_mxfp4[out_dtype](
-        expected_host, in_host, scales_host, num_rows, num_cols
+        expected_host.unsafe_ptr(),
+        in_host.unsafe_ptr(),
+        scales_host.unsafe_ptr(),
+        num_rows,
+        num_cols,
     )
 
     # Device buffers
@@ -186,10 +189,6 @@ def test_mxfp4_dequant[
                     exp,
                 )
             num_mismatches += 1
-
-    in_host.free()
-    scales_host.free()
-    expected_host.free()
 
     if num_mismatches > 0:
         print(

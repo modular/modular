@@ -27,8 +27,9 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
+    Coord,
     Idx,
-    RuntimeInt,
+    RowMajorLayout,
     TileTensor,
     row_major as tt_row_major,
 )
@@ -67,11 +68,15 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
+    EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
     b_device: TileTensor,
     ctx: DeviceContext,
+    epilogue_tensor: OptionalReg[
+        TileTensor[config.c_type, EpilogueLayoutType, ImmutAnyOrigin]
+    ] = None,
 ) raises:
     """Internal matmul launch for SM100. Always takes rank-3 TileTensors.
 
@@ -163,8 +168,22 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
+    comptime epilogue_is_1d = config.epilogue_is_1d
+
+    comptime assert not (
+        config.use_tma_epilogue_load
+        and elementwise_compute_lambda_fn is not None
+    ), (
+        "use_tma_epilogue_load is mutually exclusive with"
+        " elementwise_compute_lambda_fn"
+    )
+
     comptime SmemType = B200MatmulSmem[
-        a_type, b_type, c_type, transpose_b, config=config
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,
+        config=config,
     ]
     comptime smem_size = size_of[SmemType]()
 
@@ -236,6 +255,60 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     ](ctx, c_device)
     # fmt: on
 
+    comptime assert (not config.use_tma_epilogue_load) or (
+        config.use_tma_epilogue_load and c_type == DType.bfloat16
+    ), "TMA epilogue load is only supported for bfloat16 output type"
+
+    # Epilogue tensor TMA descriptor (2D only; 1D uses cp.async.bulk).
+    # 2D bias: epilogue tensor is 2D (M, N) in GMEM.
+    #   When AB_swapped, the CTA's M/N swap, so the tile becomes (MMA_N, BM).
+    # When no epilogue tensor or 1D, c_device.ptr is used as a valid placeholder;
+    # the descriptor is never accessed by the kernel.
+    comptime epi_load_tma_tile_rows = MMA_N if config.AB_swapped else BM
+    comptime epi_load_tma_tile_cols = BM if config.AB_swapped else config.output_tile_shape[
+        1
+    ]
+    comptime epi_load_tma_tile_shape = Index(
+        epi_load_tma_tile_rows, epi_load_tma_tile_cols
+    )
+    comptime MutPtr = UnsafePointer[Scalar[c_type], MutAnyOrigin]
+    var epi_load_tma_ptr: MutPtr
+    var epi_load_tma_rows: Int
+    var epi_load_tma_cols: Int
+    comptime if config.use_tma_epilogue_load and not epilogue_is_1d:
+        var epi_tt = epilogue_tensor.value()
+        epi_load_tma_ptr = rebind[MutPtr](epi_tt.ptr)
+        epi_load_tma_rows = Int(epi_tt.dim(0))
+        epi_load_tma_cols = Int(epi_tt.dim(1))
+    else:
+        epi_load_tma_ptr = rebind[MutPtr](c_device.ptr)
+        epi_load_tma_rows = epi_load_tma_tile_rows
+        epi_load_tma_cols = epi_load_tma_tile_cols
+
+    var epi_load_2d = TileTensor(
+        epi_load_tma_ptr,
+        tt_row_major(Coord(IndexList[2](epi_load_tma_rows, epi_load_tma_cols))),
+    )
+    var epi_load_tma_op = create_tma_tile[
+        KernelType.EpilogueLoadTileLayout,
+        KernelType.EpilogueLoadDescLayout,
+        epi_load_tma_tile_shape,
+        swizzle_mode=config.epi_load_swizzle,
+    ](ctx, epi_load_2d)
+
+    # 1D bias: pass raw TileTensor to kernel (cp.async.bulk, no TMA descriptor).
+    # For non-1D, a placeholder dangling pointer is used (never accessed).
+    comptime ImmutPtr = UnsafePointer[Scalar[c_type], ImmutAnyOrigin]
+    var bias_1d_ptr: ImmutPtr
+    comptime if epilogue_is_1d:
+        bias_1d_ptr = rebind[ImmutPtr](epilogue_tensor.value().ptr)
+    else:
+        bias_1d_ptr = rebind[ImmutPtr](c_device.ptr)
+    var bias_1d_tile = KernelType.Bias1DTile(
+        bias_1d_ptr,
+        KernelType.Bias1DTileLayout,
+    )
+
     # Get the kernel entry point from the struct
     comptime kernel = matmul_kernel.run
 
@@ -251,12 +324,6 @@ def _blackwell_matmul_tma_umma_warp_specialized[
         1,
     )
 
-    # TODO: integrate with existing enums
-    comptime load_warps = 1
-    comptime mma_warps = 1
-    comptime scheduler_warps = 1
-    comptime epilogue_warps = 4
-
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     var workspace: Span[UInt64, MutAnyOrigin]
@@ -268,18 +335,17 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     else:
         workspace = {}
 
-    ctx.enqueue_function[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,
+        epi_load_tma_op,
+        bias_1d_tile,
         cluster_dim,
         mnk,
         workspace,
         grid_dim=grid_dim,
-        # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-        block_dim=(
-            32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
-        ),
+        block_dim=KernelType.NUM_THREADS,
         shared_mem_bytes=smem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(b200_smem)
@@ -304,11 +370,15 @@ def blackwell_matmul_tma_umma_warp_specialized[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
+    EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
     b_device: TileTensor,
     ctx: DeviceContext,
+    epilogue_tensor: OptionalReg[
+        TileTensor[config.c_type, EpilogueLayoutType, ImmutAnyOrigin]
+    ] = None,
 ) raises:
     """Public entry point for SM100 matmul (non-batched, rank-2 inputs).
 
@@ -341,14 +411,30 @@ def blackwell_matmul_tma_umma_warp_specialized[
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
             ](c_device, a_device, b_device, ctx)
     else:
-        blackwell_batched_matmul_tma_umma_warp_specialized[
-            transpose_b,
-            config=config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-            max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
-        ](c_device, a_device, b_device, ctx)
+        comptime if config.use_tma_epilogue_load:
+            blackwell_batched_matmul_tma_umma_warp_specialized[
+                transpose_b,
+                config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+                max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            ](
+                c_device,
+                a_device,
+                b_device,
+                ctx,
+                epilogue_tensor=epilogue_tensor,
+            )
+        else:
+            blackwell_batched_matmul_tma_umma_warp_specialized[
+                transpose_b,
+                config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+                max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+            ](c_device, a_device, b_device, ctx)
 
 
 def _blackwell_matmul_tma_umma_warp_specialized_split_k[
@@ -547,9 +633,9 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         reduction_workspace,
         tt_row_major(
             (
-                RuntimeInt(Scalar[DType.int64](num_output_tiles)),
-                Idx[BM](),
-                Idx[MMA_N](),
+                Int64(num_output_tiles),
+                Idx[BM],
+                Idx[MMA_N],
             )
         ),
     )
@@ -563,7 +649,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     else:
         workspace = Span[UInt64, MutAnyOrigin]()
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -608,11 +694,15 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
+    EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
     b_device: TileTensor,
     ctx: DeviceContext,
+    epilogue_tensor: OptionalReg[
+        TileTensor[config.c_type, EpilogueLayoutType, ImmutAnyOrigin]
+    ] = None,
 ) raises:
     """Public entry point for batched SM100 BF16 matmul.
 
@@ -623,6 +713,11 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
     comptime if type_of(c_device).rank == 2:
         comptime if config.AB_swapped:
             comptime new_config = config.swap_AB_type()
+            comptime SwappedEpilogue = OptionalReg[
+                TileTensor[
+                    new_config.c_type, EpilogueLayoutType, ImmutAnyOrigin
+                ]
+            ]
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
                 config=new_config,
@@ -635,6 +730,7 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
                 _to_batched_3d(b_device),
                 _to_batched_3d(a_device),
                 ctx,
+                rebind[SwappedEpilogue](epilogue_tensor),
             )
         else:
             _blackwell_matmul_tma_umma_warp_specialized[
@@ -649,10 +745,16 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
                 _to_batched_3d(a_device),
                 _to_batched_3d(b_device),
                 ctx,
+                epilogue_tensor,
             )
     else:
         comptime if config.AB_swapped:
             comptime new_config = config.swap_AB_type()
+            comptime SwappedEpilogue = OptionalReg[
+                TileTensor[
+                    new_config.c_type, EpilogueLayoutType, ImmutAnyOrigin
+                ]
+            ]
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
                 config=new_config,
@@ -660,7 +762,13 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
-            ](c_device, b_device, a_device, ctx)
+            ](
+                c_device,
+                b_device,
+                a_device,
+                ctx,
+                rebind[SwappedEpilogue](epilogue_tensor),
+            )
         else:
             _blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b,
@@ -669,7 +777,7 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
                 max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
-            ](c_device, a_device, b_device, ctx)
+            ](c_device, a_device, b_device, ctx, epilogue_tensor)
 
 
 def matmul_sm100_fallback[
@@ -738,7 +846,7 @@ def matmul_sm100_fallback[
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]())
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c,

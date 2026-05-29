@@ -19,8 +19,13 @@ from std.utils import StaticTuple
 ```
 """
 
-from std.builtin.device_passable import DevicePassable
-from std.compile import get_type_name
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+from std.memory import (
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+)
+from std.reflection import reflect
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -40,15 +45,15 @@ def _static_tuple_construction_checks[T: _StaticTupleTraits, size: Int]():
       size: The number of elements.
     """
     comptime assert (
-        T.__move_ctor_is_trivial
-        and T.__copy_ctor_is_trivial
-        and T.__del__is_trivial
+        is_trivially_movable[T]()
+        and is_trivially_copyable[T]()
+        and is_trivially_destructible[T]()
     ), String(
         (
             "`StaticTuple` element type must have a trivial move/copy"
             " constructor and destructor: "
         ),
-        get_type_name[T](),
+        reflect[T].name(),
     )
     comptime assert (
         size >= 0
@@ -74,8 +79,10 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     var _mlir_value: Self._mlir_type
     """The underlying storage for the static tuple."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -86,7 +93,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return String(
             "StaticTuple[",
-            get_type_name[Self.element_type](),
+            reflect[Self.element_type].name(),
             ", ",
             Self.size,
             "]",

@@ -31,8 +31,7 @@ def kernel(
 def test_grid_dim(ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size
-    var output_host = alloc[Float32](buffer_size)
-
+    var output_host = ctx.enqueue_create_host_buffer[DType.float32](buffer_size)
     for i in range(buffer_size):
         output_host[i] = -1.0
 
@@ -40,7 +39,7 @@ def test_grid_dim(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(output_buffer, output_host)
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_buffer,
         buffer_size,
         grid_dim=1,
@@ -54,8 +53,6 @@ def test_grid_dim(ctx: DeviceContext) raises:
         assert_equal(
             output_host[i] % Float32(WARP_SIZE), Float32(i % WARP_SIZE)
         )
-
-    output_host.free()
 
 
 def main() raises:

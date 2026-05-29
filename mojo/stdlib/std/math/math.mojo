@@ -205,15 +205,11 @@ def sqrt(x: Int) -> Int:
 
 @always_inline
 def _sqrt_nvvm(x: SIMD, out res: type_of(x)):
-    comptime assert x.dtype in (
-        DType.float32,
-        DType.float64,
-    ), "must be f32 or f64 type"
-    comptime instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype == DType.float32 else "llvm.nvvm.sqrt.approx.d"
+    comptime assert x.dtype == DType.float32, "must be DType.float32"
     res = {}
 
     comptime for i in range(x.size):
-        res[i] = _llvm_unary_fn[instruction](x[i])
+        res[i] = _llvm_unary_fn["llvm.nvvm.sqrt.approx.ftz.f"](x[i])
 
 
 @always_inline
@@ -247,6 +243,9 @@ def sqrt[
     elif is_nvidia_gpu():
         comptime if dtype in (DType.float16, DType.bfloat16):
             return _sqrt_nvvm(x.cast[DType.float32]()).cast[dtype]()
+        comptime assert (
+            dtype != DType.float64
+        ), "DType.float64 is not supported for approx sqrt on NVIDIA GPU"
         return _sqrt_nvvm(x)
     elif is_apple_gpu():
         return _llvm_unary_fn["llvm.air.sqrt"](x)
@@ -951,12 +950,7 @@ def log[
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
         comptime ln2 = 0.69314718055966295651160180568695068359375
-        return (
-            _call_ptx_intrinsic[
-                instruction="lg2.approx.f32", constraints="=f,f"
-            ](x)
-            * ln2
-        )
+        return ln2 * log2(x)
 
     return _log_base[27](x)
 
@@ -991,7 +985,7 @@ def log2[
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
         return _call_ptx_intrinsic[
-            instruction="lg2.approx.f32", constraints="=f,f"
+            instruction="lg2.approx.ftz.f32", constraints="=f,f"
         ](x)
     elif is_amd_gpu() and dtype in (DType.float32, DType.float16):
         return _call_amdgcn_intrinsic[
@@ -1120,6 +1114,9 @@ def tanh[
     Returns:
         The result of the elementwise tanh operation.
     """
+
+    comptime if CurrentPlugin.tanh_fn[dtype, width]:
+        return comptime (CurrentPlugin.tanh_fn[dtype, width].value())(x)
 
     comptime if is_nvidia_gpu():
         comptime instruction = "tanh.approx.f32"
@@ -1761,7 +1758,7 @@ def cos[
     else:
         comptime assert (
             not is_nvidia_gpu() or dtype != DType.float64
-        ), "DType.float64 is not supported on NVIDIA GPU"
+        ), "DType.float64 is not supported for cos on NVIDIA GPU"
         return _llvm_unary_fn["llvm.cos"](x)
 
 
@@ -1804,7 +1801,7 @@ def sin[
     else:
         comptime assert (
             not is_nvidia_gpu() or dtype != DType.float64
-        ), "DType.float64 is not supported on NVIDIA GPU"
+        ), "DType.float64 is not supported for sin on NVIDIA GPU"
         return _llvm_unary_fn["llvm.sin"](x)
 
 
@@ -3851,7 +3848,7 @@ def max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-def max[T: Copyable & Comparable](x: T, *ys: T) -> T:
+def max[T: Copyable & Comparable & ImplicitlyDestructible](x: T, *ys: T) -> T:
     """Gets the maximum value from a sequence of values.
 
     Parameters:
@@ -3919,7 +3916,7 @@ def min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
 
 
 @always_inline
-def min[T: Copyable & Comparable](x: T, *ys: T) -> T:
+def min[T: Copyable & Comparable & ImplicitlyDestructible](x: T, *ys: T) -> T:
     """Gets the minimum value from a sequence of values.
 
     Parameters:

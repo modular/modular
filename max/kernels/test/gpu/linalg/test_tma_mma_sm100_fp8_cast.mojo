@@ -568,7 +568,7 @@ def test_tma_umma_fp8_b[
         b_swizzle=b_swizzle,
         num_threads=block_dim,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b.device_tensor(),
         c.device_tensor(),

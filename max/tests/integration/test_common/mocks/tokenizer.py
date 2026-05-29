@@ -18,12 +18,12 @@ import string
 from collections.abc import Sequence
 
 import numpy as np
-from max.interfaces import (
+from max.pipelines.core import TextContext
+from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TextGenerationRequest,
     TokenBuffer,
 )
-from max.pipelines.core import TextContext
 
 
 class MockTextTokenizer(
@@ -99,8 +99,8 @@ class MockTextTokenizer(
             max_length = self.max_length
 
         json_schema = (
-            json.dumps(request.response_format.get("json_schema", None))
-            if request.response_format
+            json.dumps(request.response_format.json_schema)
+            if request.response_format and request.response_format.json_schema
             else None
         )
 

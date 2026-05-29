@@ -39,6 +39,7 @@ from typing import (
 
 import click
 from max.driver import DeviceSpec
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -49,7 +50,6 @@ from max.pipelines.lib import (
     SamplingConfig,
     SpeculativeConfig,
 )
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from pydantic import BaseModel
 from typing_extensions import ParamSpec
 
@@ -117,7 +117,9 @@ def is_optional(type_hint: type | str | Any) -> bool:
 
 
 def is_flag(field_type: Any) -> bool:
-    return field_type is bool
+    if field_type is bool:
+        return True
+    return is_optional(field_type) and get_interior_type(field_type) is bool
 
 
 def validate_field_type(field_type: Any) -> bool:
@@ -189,13 +191,18 @@ def is_multiple(field_type: Any) -> bool:
     return get_origin(field_type) is list
 
 
-def get_normalized_flag_name(dataclass_field: Any, field_type: Any) -> str:
+def get_normalized_flag_names(
+    dataclass_field: Any, field_type: Any
+) -> tuple[str, ...]:
     normalized_name = dataclass_field.name.lower().replace("_", "-")
 
+    if dataclass_field.name == "model_path":
+        return ("--model", "--model-path", dataclass_field.name)
+
     if is_flag(field_type):
-        return f"--{normalized_name}/--no-{normalized_name}"
-    else:
-        return f"--{normalized_name}"
+        return (f"--{normalized_name}/--no-{normalized_name}",)
+
+    return (f"--{normalized_name}",)
 
 
 def create_click_option(
@@ -208,7 +215,7 @@ def create_click_option(
 
     # Get help field.
     return click.option(
-        get_normalized_flag_name(dataclass_field, field_type),
+        *get_normalized_flag_names(dataclass_field, field_type),
         show_default=False,  # Many strings include default already, and True breaks Sphinx docs
         help=help_text,
         is_flag=is_flag(field_type),
@@ -417,13 +424,13 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         is_flag=False,
         type=DevicesOptionType(),
         show_default=False,
-        default="default",
+        default=None,
         help=(
-            "Whether to run the model on CPU (--devices=cpu), GPU (--devices=gpu)"
-            " or a list of GPUs (--devices=gpu:0,1) etc. An ID value can be"
-            " provided optionally to indicate the device ID to target. If not"
-            " provided, the model will run on the first available GPU (--devices=gpu),"
-            " or CPU if no GPUs are available (--devices=cpu)."
+            "Whether to run the model on CPU (``--devices=cpu``), GPU (``--devices=gpu``),"
+            " every visible GPU (``--devices=gpu:all``), or a list of GPUs"
+            " (``--devices=gpu:0,1``). An ID value can be provided optionally to"
+            " indicate the device ID to target. If not provided, the model or"
+            " config default is used."
         ),
     )
     @click.option(
@@ -431,18 +438,16 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         is_flag=False,
         type=DevicesOptionType(),
         show_default=False,
-        default="default",
+        default=None,
         help=(
-            "Whether to run the model on CPU (--devices=cpu), GPU (--devices=gpu)"
-            " or a list of GPUs (--devices=gpu:0,1) etc. An ID value can be"
-            " provided optionally to indicate the device ID to target. If not"
-            " provided, the model will run on the first available GPU (--devices=gpu),"
-            " or CPU if no GPUs are available (--devices=cpu)."
+            "Devices for the draft model in speculative decoding. "
+            "If not provided, inherits from ``--devices``. "
+            "Accepts the same format as ``--devices``."
         ),
     )
     @functools.wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-        def is_str_or_list_of_int(value: Any) -> TypeGuard[str | list[int]]:
+        def is_device_handle(value: Any) -> TypeGuard[str | list[int]]:
             return isinstance(value, str) or (
                 isinstance(value, list)
                 and all(isinstance(x, int) for x in value)
@@ -451,8 +456,11 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         # Remove the options from kwargs and replace with unified device_specs.
         devices = kwargs.pop("devices")
         draft_devices = kwargs.pop("draft_devices")
-        assert is_str_or_list_of_int(devices)
-        assert is_str_or_list_of_int(draft_devices)
+        assert devices is None or is_device_handle(devices)
+        # Inherit draft_devices from devices if the target devices were explicit.
+        if draft_devices is None and devices is not None:
+            draft_devices = devices
+        assert draft_devices is None or is_device_handle(draft_devices)
 
         # Enable virtual device mode if target is set.
         # This must happen BEFORE calling device_specs() which does validation.
@@ -470,18 +478,24 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
             )
             set_virtual_device_api(api)
             set_virtual_device_target_arch(target_arch)
+            target_devices = [] if devices is None else devices
+            target_draft_devices = (
+                [] if draft_devices is None else draft_devices
+            )
 
             virtual_count = calculate_virtual_device_count_from_cli(
-                devices, draft_devices
+                target_devices, target_draft_devices
             )
             set_virtual_device_count(virtual_count)
 
         # The type ignores are necessary because "devices" is a str, but in
         # device_specs() we accept them as a DeviceHandle.
-        kwargs["device_specs"] = DevicesOptionType.device_specs(devices)  # type: ignore[arg-type]
-        kwargs["draft_device_specs"] = DevicesOptionType.device_specs(
-            draft_devices  # type: ignore[arg-type]
-        )
+        if devices is not None:
+            kwargs["device_specs"] = DevicesOptionType.device_specs(devices)  # type: ignore[arg-type]
+        if draft_devices is not None:
+            kwargs["draft_device_specs"] = DevicesOptionType.device_specs(
+                draft_devices  # type: ignore[arg-type]
+            )
 
         return func(*args, **kwargs)
 

@@ -21,7 +21,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn.kv_cache import KVCacheParams
 from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
@@ -31,6 +30,7 @@ from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
 from max.pipelines.architectures.qwen3vl_moe.nn.text_rotary import (
     Qwen3VLTextRotaryEmbedding,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager, load_kv_manager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.qwen3_vl_moe.configuration_qwen3_vl_moe import (

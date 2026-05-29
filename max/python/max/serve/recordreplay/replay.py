@@ -26,13 +26,9 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any, TextIO
 
-if sys.version_info >= (3, 11):
-    from asyncio import TaskGroup
-else:
-    from taskgroup import TaskGroup
-
 import httpx
 import scipy.special
+from max.support.taskgroups import TaskGroup
 
 from . import schema
 

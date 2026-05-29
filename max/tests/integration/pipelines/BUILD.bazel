@@ -16,8 +16,8 @@ modular_py_test(
     tags = ["manual"],
     deps = [
         "//max/python/max/graph",
-        "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration/test_common:mocks",
     ],
 )
@@ -29,6 +29,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -40,9 +41,9 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
     ],
@@ -52,9 +53,13 @@ modular_py_test(
     name = "test_autoconfig_error_propagation",
     size = "small",
     srcs = ["test_autoconfig_error_propagation.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-3860
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -62,8 +67,35 @@ modular_py_test(
     name = "test_model_manifest",
     srcs = ["test_model_manifest.py"],
     deps = [
+        "//max/python/max/graph",
         "//max/python/max/pipelines/lib",
         requirement("msgspec"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_weight_loader",
+    srcs = ["test_weight_loader.py"],
+    deps = [
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipeline_config_model_override",
+    size = "small",
+    srcs = ["test_pipeline_config_model_override.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/pipelines",
     ],
 )
 
@@ -80,6 +112,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("huggingface-hub"),
         requirement("transformers"),
     ],
@@ -96,9 +129,12 @@ modular_py_test(
             "test_device_graph_capture_release.py",
             "test_model_config_encoding_resolution.py",
             "test_model_config_subfolder.py",
+            "test_pipeline_config_model_override.py",
             "test_pipeline_config_resolve.py",
+            "test_structured_output_spec_decode_gpu.py",
             "test_model_manifest.py",
             "test_model_manifest_hf.py",
+            "test_weight_loader.py",
         ],
     ),
     tags = [
@@ -113,10 +149,10 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/support",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
@@ -207,8 +243,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration/test_common:numerics",
         requirement("numpy"),
     ],
@@ -222,6 +258,7 @@ modular_py_test(
         exclude = [
             "test_attention_dispatch_resolver_gpu.py",
             "test_mla_probe_strategy_gpu.py",
+            "test_structured_output_spec_decode_gpu.py",
         ],
     ),
     exec_properties = {
@@ -241,15 +278,46 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:lora_utils",
         "//max/tests/integration/test_common:registry",
         requirement("numpy"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "structured_output",
+    size = "large",
+    srcs = ["test_structured_output_spec_decode_gpu.py"],
+    env_inherit = ["HF_TOKEN"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    ignore_extra_deps = [
+        # Used as a pytest plugin
+        "//max/tests/integration/test_common:registry",
+    ],
+    tags = [
+        "gpu",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common:registry",
+        requirement("numpy"),
     ],
 )

@@ -25,6 +25,7 @@ counted sets, also called bags or multisets, and extend that model by
 supporting negative counts.
 
 """
+from std.builtin.rebind import downcast
 from std.collections.dict import (
     Dict,
     _DictEntryIter,
@@ -40,7 +41,9 @@ from std.utils import Variant
 
 
 @fieldwise_init
-struct Counter[V: KeyElement, H: Hasher = default_hasher](
+struct Counter[
+    V: KeyElement & ImplicitlyDestructible, H: Hasher = default_hasher
+](
     Boolable,
     Copyable,
     Defaultable,
@@ -130,7 +133,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in values:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
-    def __init__(out self, items: List[Self.V, ...]):
+    def __init__(out self, items: List[Self.V]):
         """Create a `Counter` from an input iterable.
 
         Args:
@@ -151,7 +154,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
     @staticmethod
-    def fromkeys(keys: List[Self.V, ...], value: Int) -> Self:
+    def fromkeys(keys: List[Self.V], value: Int) -> Self:
         """Create a new `Counter` from a list of keys and a default value.
 
         Args:
@@ -979,7 +982,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self[item.key] = self.get(item.key, 0) - item.value
 
 
-struct CountTuple[V: KeyElement](Comparable, Copyable):
+struct CountTuple[V: KeyElement & ImplicitlyDestructible](Comparable, Copyable):
     """A tuple representing a value and its count in a `Counter`.
 
     Parameters:

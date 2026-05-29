@@ -19,6 +19,7 @@ input[i0 % d0, i1 % d1, ...] where d_k = in_shape[k].
 CPU-only (mo.tile is MO_HostOnly).
 """
 
+from std.gpu.host import DeviceContext
 from std.os import abort
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
@@ -26,6 +27,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.algorithm.functional import elementwise, IndexList
 
 from op_utils import (
+    _get_ctx,
     _get_dtype,
     _get_shape,
     _make_ptr,
@@ -64,6 +66,7 @@ def tile_op[
     in_strides: InlineArray[Int, MAX_RANK],
     rank: Int,
     total: Int,
+    ctx: DeviceContext,
 ) raises:
     """Copy input into output, tiling (repeating) along every dimension.
 
@@ -82,6 +85,7 @@ def tile_op[
         in_strides: Row-major strides of the input tensor.
         rank: Number of dimensions.
         total: Total number of output elements.
+        ctx: Device context (CPU).
     """
 
     @always_inline
@@ -97,7 +101,7 @@ def tile_op[
             in_flat += (coord % in_shape[d]) * in_strides[d]
         out_ptr[i] = in_ptr[in_flat]
 
-    elementwise[func, simd_width=1](IndexList[1](total))
+    elementwise[func, simd_width=1](IndexList[1](total), ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -116,6 +120,7 @@ struct _TileBody(Dispatchable):
     var i_strides: InlineArray[Int, MAX_RANK]
     var rank: Int
     var total: Int
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         tile_op(
@@ -126,6 +131,7 @@ struct _TileBody(Dispatchable):
             self.i_strides,
             self.rank,
             self.total,
+            self.ctx,
         )
 
 
@@ -151,10 +157,11 @@ def tile_dispatcher(
     var out_addr = Int(py=out_buffer._data_ptr())
     var in_addr = Int(py=in_buffer._data_ptr())
     var total = Int(py=out_buffer.num_elements)
+    var ctx = _get_ctx(device_context_ptr)
 
     dispatch_dtype(
         _TileBody(
-            out_addr, in_addr, in_shape, o_strides, i_strides, rank, total
+            out_addr, in_addr, in_shape, o_strides, i_strides, rank, total, ctx
         ),
         dtype,
     )

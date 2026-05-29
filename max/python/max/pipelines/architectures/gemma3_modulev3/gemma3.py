@@ -50,6 +50,7 @@ class Gemma3TextModel(
     def __init__(self, config: Gemma3Config) -> None:
         super().__init__()
         self.mesh = config.mesh
+        self.dtype = config.dtype
 
         # Use scaling_params for both cases (with and without scaling)
         scaling_params = (
@@ -153,8 +154,12 @@ class Gemma3TextModel(
         return F.cast(self.lm_head(h), DType.float32)
 
     def prepare_freq_cis(self, mesh: DeviceMesh) -> None:
-        self.rope_global.freqs_cis = self.rope_global.freqs_cis.to(mesh)
-        self.rope_local.freqs_cis = self.rope_local.freqs_cis.to(mesh)
+        self.rope_global.freqs_cis = self.rope_global.freqs_cis.cast(
+            self.dtype
+        ).to(mesh)
+        self.rope_local.freqs_cis = self.rope_local.freqs_cis.cast(
+            self.dtype
+        ).to(mesh)
 
     def forward(
         self,

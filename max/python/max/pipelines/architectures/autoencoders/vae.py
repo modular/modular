@@ -13,10 +13,8 @@
 
 from __future__ import annotations
 
-import os
 from itertools import pairwise
 
-from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, Weight, ops
 from max.graph.type import FilterLayout
@@ -29,15 +27,6 @@ from .model_config import AutoencoderKLWanConfig
 CACHE_T = 2
 WAN_DECODER_CACHE_SLOTS = 32
 WAN_ENCODER_CHUNK_SIZE = 4  # Frames per encoder chunk (matching diffusers)
-
-
-def _use_nvidia_fcrs_conv3d(device: DeviceRef | None) -> bool:
-    # Escape hatch for benchmarking the native Mojo conv path against cuDNN.
-    if os.environ.get("MAX_WAN_VAE_DISABLE_CUDNN", "").lower() in ("1", "true"):
-        return False
-    return (
-        device is not None and device.is_gpu() and accelerator_api() == "cuda"
-    )
 
 
 def _zero_cache_for(x: TensorValue) -> TensorValue:
@@ -92,8 +81,7 @@ class CausalConv3d(Module):
     padding parameter supports directly.
 
     Input is permuted from NCDHW to NDHWC before conv, and back after.
-    On NVIDIA GPUs, weights stay in PyTorch FCQRS layout to use the cuDNN
-    3D conv dispatch path. Other backends use MAX's native QRSCF layout.
+    Weights are in MAX's native QRSCF layout.
     """
 
     def __init__(
@@ -106,7 +94,6 @@ class CausalConv3d(Module):
         dtype: DType | None = None,
         device: DeviceRef | None = None,
         has_bias: bool = True,
-        prefer_nvidia_fcrs: bool = True,
     ) -> None:
         super().__init__()
         if isinstance(kernel_size, int):
@@ -127,14 +114,7 @@ class CausalConv3d(Module):
         dev_ref = device if device is not None else DeviceRef.CPU()
         dt = dtype or DType.float32
         d, h, w = kernel_size
-        self._use_nvidia_fcrs = prefer_nvidia_fcrs and _use_nvidia_fcrs_conv3d(
-            dev_ref
-        )
-        filter_shape = (
-            [out_channels, in_channels, d, h, w]
-            if self._use_nvidia_fcrs
-            else [d, h, w, in_channels, out_channels]
-        )
+        filter_shape = [d, h, w, in_channels, out_channels]
         self.filter = Weight("weight", dt, filter_shape, dev_ref)
         self._has_bias = has_bias
         if has_bias:
@@ -148,11 +128,7 @@ class CausalConv3d(Module):
             self.filter,
             stride=self._stride,
             padding=self._padding,
-            filter_layout=(
-                FilterLayout.FCRS
-                if self._use_nvidia_fcrs
-                else FilterLayout.QRSCF
-            ),
+            filter_layout=FilterLayout.QRSCF,
         )
         # NDHWC -> NCDHW
         out = ops.permute(out, [0, 4, 1, 2, 3])
@@ -201,12 +177,7 @@ class CausalConv3dCached(Module):
         dev_ref = device if device is not None else DeviceRef.CPU()
         dt = dtype or DType.float32
         d, h, w = kernel_size
-        self._use_nvidia_fcrs = _use_nvidia_fcrs_conv3d(dev_ref)
-        filter_shape = (
-            [out_channels, in_channels, d, h, w]
-            if self._use_nvidia_fcrs
-            else [d, h, w, in_channels, out_channels]
-        )
+        filter_shape = [d, h, w, in_channels, out_channels]
         self.filter = Weight("weight", dt, filter_shape, dev_ref)
         self._has_bias = has_bias
         if has_bias:
@@ -229,11 +200,7 @@ class CausalConv3dCached(Module):
             self.filter,
             stride=self._stride,
             padding=self._padding,
-            filter_layout=(
-                FilterLayout.FCRS
-                if self._use_nvidia_fcrs
-                else FilterLayout.QRSCF
-            ),
+            filter_layout=FilterLayout.QRSCF,
         )
         # NDHWC -> NCDHW
         out = ops.permute(out, [0, 4, 1, 2, 3])
@@ -271,8 +238,7 @@ class Conv2dPermuted(Module):
     """2D convolution with NCHW input.
 
     Input is permuted from NCHW to NHWC before conv, and back after.
-    On NVIDIA GPUs, weights stay in PyTorch FCRS layout to use the cuDNN
-    2D conv dispatch path. Other backends use MAX's native RSCF layout.
+    Weights are in MAX's native RSCF layout.
     """
 
     def __init__(
@@ -285,7 +251,6 @@ class Conv2dPermuted(Module):
         dtype: DType | None = None,
         device: DeviceRef | None = None,
         has_bias: bool = True,
-        prefer_nvidia_fcrs: bool = True,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
@@ -301,14 +266,7 @@ class Conv2dPermuted(Module):
 
         dev_ref = device if device is not None else DeviceRef.CPU()
         dt = dtype or DType.float32
-        self._use_nvidia_fcrs = prefer_nvidia_fcrs and _use_nvidia_fcrs_conv3d(
-            dev_ref
-        )
-        filter_shape = (
-            [out_channels, in_channels, kernel_size, kernel_size]
-            if self._use_nvidia_fcrs
-            else [kernel_size, kernel_size, in_channels, out_channels]
-        )
+        filter_shape = [kernel_size, kernel_size, in_channels, out_channels]
         self.filter = Weight("weight", dt, filter_shape, dev_ref)
         self._has_bias = has_bias
         if has_bias:
@@ -322,11 +280,7 @@ class Conv2dPermuted(Module):
             self.filter,
             stride=self._stride,
             padding=self._padding,
-            filter_layout=(
-                FilterLayout.FCRS
-                if self._use_nvidia_fcrs
-                else FilterLayout.RSCF
-            ),
+            filter_layout=FilterLayout.RSCF,
         )
         # NHWC -> NCHW
         out = ops.permute(out, [0, 3, 1, 2])
@@ -399,7 +353,6 @@ class ResidualBlock(Module):
         out_dim: int,
         dtype: DType | None = None,
         device: DeviceRef | None = None,
-        prefer_nvidia_fcrs: bool = True,
     ) -> None:
         super().__init__()
         self.norm1 = RMSNorm(
@@ -416,7 +369,6 @@ class ResidualBlock(Module):
             dtype=dtype,
             device=device,
             has_bias=True,
-            prefer_nvidia_fcrs=prefer_nvidia_fcrs,
         )
         self.norm2 = RMSNorm(
             out_dim,
@@ -432,7 +384,6 @@ class ResidualBlock(Module):
             dtype=dtype,
             device=device,
             has_bias=True,
-            prefer_nvidia_fcrs=prefer_nvidia_fcrs,
         )
         self.conv_shortcut = (
             CausalConv3d(
@@ -443,7 +394,6 @@ class ResidualBlock(Module):
                 dtype=dtype,
                 device=device,
                 has_bias=True,
-                prefer_nvidia_fcrs=prefer_nvidia_fcrs,
             )
             if in_dim != out_dim
             else None
@@ -465,7 +415,18 @@ class AttentionBlock(Module):
 
     Single-head attention matching the diffusers Wan VAE: the full
     channel dim is the head dim, with `scale = 1 / sqrt(dim)`.
+
+    The fused SM100 MHA kernel only supports head_dim in
+    ``_FUSED_MHA_DEPTHS``. When ``dim`` falls outside that set
+    (e.g. dim=384 for the default Wan config), Q/K/V are zero-padded
+    along head_dim up to the next supported depth so the call routes
+    to the fused path; the output is sliced back to ``dim``. Math is
+    identical because zero-padded dims contribute zero to QKᵀ and PV;
+    ``scale`` stays at ``1/sqrt(dim)``. Tracked in KERN-2818 for
+    native head_dim support.
     """
+
+    _FUSED_MHA_DEPTHS: tuple[int, ...] = (64, 72, 80, 96, 128, 256, 512)
 
     def __init__(
         self,
@@ -478,6 +439,9 @@ class AttentionBlock(Module):
         self.num_heads = 1
         self.head_dim = dim
         self.scale = 1.0 / (dim**0.5)
+        self._fa_head_dim = next(
+            (d for d in AttentionBlock._FUSED_MHA_DEPTHS if d >= dim), dim
+        )
         self.norm = RMSNorm(
             dim,
             images=True,
@@ -533,6 +497,13 @@ class AttentionBlock(Module):
         k = ops.reshape(k, [b * t, seq_len, self.num_heads, self.head_dim])
         v = ops.reshape(v, [b * t, seq_len, self.num_heads, self.head_dim])
 
+        pad_amount = self._fa_head_dim - self.head_dim
+        if pad_amount > 0:
+            paddings = [0, 0, 0, 0, 0, 0, 0, pad_amount]
+            q = ops.pad(q, paddings)
+            k = ops.pad(k, paddings)
+            v = ops.pad(v, paddings)
+
         out = flash_attention_gpu(
             q,
             k,
@@ -540,6 +511,9 @@ class AttentionBlock(Module):
             mask_variant=MHAMaskVariant.NULL_MASK,
             scale=self.scale,
         )
+
+        if pad_amount > 0:
+            out = out[:, :, :, : self.head_dim]
 
         # [bt, seq_len, num_heads, head_dim] -> [bt, h, w, c]
         out = ops.reshape(out, [b * t, seq_len, c])
@@ -560,7 +534,6 @@ class MidBlock(Module):
         dim: int,
         dtype: DType | None = None,
         device: DeviceRef | None = None,
-        prefer_nvidia_fcrs: bool = True,
     ) -> None:
         super().__init__()
         self.resnets = LayerList(
@@ -570,14 +543,12 @@ class MidBlock(Module):
                     dim,
                     dtype=dtype,
                     device=device,
-                    prefer_nvidia_fcrs=prefer_nvidia_fcrs,
                 ),
                 ResidualBlock(
                     dim,
                     dim,
                     dtype=dtype,
                     device=device,
-                    prefer_nvidia_fcrs=prefer_nvidia_fcrs,
                 ),
             ]
         )
@@ -1479,7 +1450,6 @@ class DownResample(Module):
         mode: str,
         dtype: DType | None = None,
         device: DeviceRef | None = None,
-        prefer_nvidia_fcrs: bool = True,
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -1515,9 +1485,6 @@ class DownResample(Module):
                 dtype=dtype,
                 device=device,
                 has_bias=True,
-                # Encoder temporal downsample is the only conv pattern that
-                # currently reproduces cuDNN aborts in VAE encode.
-                prefer_nvidia_fcrs=False,
             )
         elif mode != "downsample2d":
             raise ValueError(f"Unsupported DownResample mode: {mode}")
@@ -1605,7 +1572,6 @@ class DownResampleCached(Module):
                 dtype=dtype,
                 device=device,
                 has_bias=True,
-                prefer_nvidia_fcrs=False,
             )
         elif mode != "downsample2d":
             raise ValueError(f"Unsupported DownResampleCached mode: {mode}")
@@ -1741,7 +1707,6 @@ class Encoder3d(Module):
             dtype=dtype,
             device=device,
             has_bias=True,
-            prefer_nvidia_fcrs=False,
         )
 
         # Flat ModuleList matching diffusers weight naming:
@@ -1758,7 +1723,6 @@ class Encoder3d(Module):
                         out_dim,
                         dtype=dtype,
                         device=device,
-                        prefer_nvidia_fcrs=False,
                     )
                 )
             down_flag = i != len(dim_mult) - 1
@@ -1772,7 +1736,6 @@ class Encoder3d(Module):
                         mode=mode,
                         dtype=dtype,
                         device=device,
-                        prefer_nvidia_fcrs=False,
                     )
                 )
 
@@ -1783,7 +1746,6 @@ class Encoder3d(Module):
             final_dim,
             dtype=dtype,
             device=device,
-            prefer_nvidia_fcrs=False,
         )
 
         self.norm_out = RMSNorm(
@@ -1801,7 +1763,6 @@ class Encoder3d(Module):
             dtype=dtype,
             device=device,
             has_bias=True,
-            prefer_nvidia_fcrs=False,
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -2040,7 +2001,6 @@ class VAEEncoder(Module):
             dtype=config.dtype,
             device=config.device,
             has_bias=True,
-            prefer_nvidia_fcrs=False,
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:

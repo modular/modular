@@ -19,6 +19,7 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import MHATileScheduler, SeqInfo
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
     EnableForcedOrdering,
+    SM100_RESERVED_SMEM_BYTES,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SM100TensorAccumulatorSS,
@@ -109,7 +110,9 @@ struct MLAConfig[
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
     comptime rope_mma_dtype_size: Int = size_of[Self.rope_mma_dtype]()
     comptime rope_gmem_dtype_size: Int = size_of[Self.rope_gmem_dtype]()
-    comptime sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
+    comptime sm100_smem_carveout = (
+        B200.shared_memory_per_multiprocessor - SM100_RESERVED_SMEM_BYTES
+    )
     comptime sm100_tmem_cols = 512
     comptime mbar_size = size_of[DType.int64]()
     comptime num_correction_cols = 1
@@ -122,6 +125,13 @@ struct MLAConfig[
         depth: Int,
         page_size: Int,
     ):
+        # DSv3.2 absorbed-MLA dims: KV cache row width is
+        # `kv_lora_rank (512) + qk_rope_head_dim (64) = 576`; the depth-64
+        # RoPE tail participates in QK but not in PV, so
+        # `nope_depth = ov_depth = qk_depth - rope_depth = 512`.
+        comptime rope_depth = 64
+        comptime cache_depth = 576
+
         comptime if Self.qkv_dtype_size == 1:
             self.qkv_swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
         else:
@@ -143,7 +153,7 @@ struct MLAConfig[
             num_q_heads = num_q_heads,
             group = group,
             qk_depth = depth,
-            ov_depth = depth - 64,
+            ov_depth = depth - rope_depth,
             swizzle_mode = self.qkv_swizzle_mode,
             page_size = page_size,
             is_mla = True,
@@ -155,9 +165,9 @@ struct MLAConfig[
         self.BK0 = self.fa4_config.BK0
         self.BK1 = self.fa4_config.BK1
         self.qk_depth = self.fa4_config.qk_depth
-        self.rope_depth = 64
+        self.rope_depth = rope_depth
         self.nope_depth = self.qk_depth - self.rope_depth
-        self.cache_depth = 576
+        self.cache_depth = cache_depth
         self.padded_qk_depth = self.fa4_config.padded_qk_depth
         self.tmem_used = self.fa4_config.tmem_used
         self.num_kv_stages = self.fa4_config.num_kv_stages

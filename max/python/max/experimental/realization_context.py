@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from max import _core, driver, engine
 from max._core.dialects import builtin, rmo
+from max._mlir_context import in_default_mlir_context
 from max.dtype import DType
 from max.experimental import _passes
 from max.experimental import functional as F
@@ -109,10 +110,13 @@ _USE_INTERPRETER_ENV_VAR = "MAX_USE_EAGER_INTERPRETER"
 # Graphs with more ops than this threshold are compiled so the graph
 # compiler can apply fusion.
 # Benchmarks (CPU & A10G GPU, [64,64] f32 tensors) show the interpreter
-# is 7-10x faster than the compiler for up to 10 user-visible ops.
-# 30 dispatchable IR ops covers ~5 user-visible ops.
+# is 7-10x faster than the compiler for up to 10 user-visible ops
+# (~30 dispatchable IR ops). Distributed dispatch and shape-heavy ops
+# routinely produce well beyond 30 IR nodes per single user-visible op,
+# so the threshold is set high enough to keep eager paths on the
+# interpreter rather than falling back to a full compile.
 _INTERPRETER_MAX_OPS_ENV_VAR = "MAX_INTERPRETER_MAX_OPS"
-_DEFAULT_INTERPRETER_MAX_OPS = 30
+_DEFAULT_INTERPRETER_MAX_OPS = 1024
 
 
 def _default_use_interpreter() -> bool:
@@ -145,21 +149,13 @@ def _interpreter_max_ops() -> int:
 
 
 def seed() -> Tensor:
-    """Gets the global random seed tensor.
-
-    Returns the global seed tensor used for random number generation in eager
-    execution mode. Creates the seed tensor on first access, initialized with
-    the dtype, shape, and device specified by :obj:`max.graph.ops.random.SeedType`.
-
-    Returns:
-        Tensor: The global seed tensor for random number generation.
-    """
+    """Gets the global random seed tensor used in eager execution mode."""
     global _SEED
     if _SEED is None:
-        SeedType = ops.random.SeedType
-        shape = [int(d) for d in SeedType.shape]
+        seed_type = ops.random.SeedType(DeviceRef.CPU())
+        shape = [int(d) for d in seed_type.shape]
         seed_data = driver.Buffer(
-            SeedType.dtype, shape, SeedType.device.to_device()
+            seed_type.dtype, shape, seed_type.device.to_device()
         )
         _SEED = Tensor(storage=seed_data)
     return _SEED
@@ -202,7 +198,7 @@ def _cached_signal_buffers(
 ) -> tuple[list[driver.Buffer], list[BufferType]]:
     """Returns (runtime_buffers, buffer_types) for the given GPU device IDs.
 
-    Signal buffers are 513 MB each — far too expensive to re-allocate per
+    Signal buffers are 1025 MB each — far too expensive to re-allocate per
     eager graph.  ``lru_cache`` ensures they are allocated once for each
     unique device set and reused for all subsequent graphs.
 
@@ -210,9 +206,12 @@ def _cached_signal_buffers(
     and avoids mutable module-level state.  In pytest-xdist each worker is
     a separate process, so there are no cross-worker conflicts.
     """
-    # Signal buffers: 1 MB signal + 512 MB communication scratch per GPU.
-    # Must stay in sync with the Mojo ``Signal`` struct size.
-    _NUM_BYTES = (1 + 512) * 1024 * 1024
+    # Signal buffers: 1 MB signal + 256 MB communication scratch per GPU.
+    # Must stay in sync with ``Signals.NUM_BYTES`` in ``max.nn.comm.allreduce``
+    # and the Mojo ``Signal`` struct size. 1 GiB scratch supports
+    # hidden_dim * max_batch_input_tokens * dtype_bytes up to ~1 GiB
+    # (e.g., Kimi-K2.5 at hidden_dim=20480, max_batch_input_tokens=16384).
+    _NUM_BYTES = (1 + 1024) * 1024 * 1024
 
     try:
         driver.enable_all_peer_access()
@@ -277,7 +276,7 @@ def _eager_model_cache_key(
     Returns:
         A tuple of ``(asm_hex_digest, ((resolved_path, content_hash), ...))``.
     """
-    module_asm = graph._module.operation.get_asm(
+    module_asm = graph._module.asm(
         assume_verified=True,
         enable_debug_info=False,
         pretty_debug_info=False,
@@ -304,7 +303,7 @@ def _load_eager_model(graph: Graph) -> engine.Model:
 
     The compiled ``Model`` is keyed by a hash of the graph IR plus the
     resolved kernel library paths and content hashes so that recompiling
-    a ``.mojopkg`` automatically invalidates the cache.
+    a ``.mojoc``/``.mojopkg`` automatically invalidates the cache.
 
     Returns:
         A compiled ``engine.Model`` ready for execution.
@@ -402,13 +401,9 @@ class EagerRealizationContext(RealizationContext):
                 s._graph_value for t in outputs for s in t.local_shards
             ]
             self.graph.output(*flat_values)
-        # Remove dead values and inputs
-        module: builtin.ModuleOp = _core.Operation._from_cmlir(
-            self.graph._module.operation
-        )  # type: ignore
         # Remove sources that no longer exist from the graph
         _core.lower(
-            module,
+            self.graph._module,
             [
                 builtin.passes.RemoveDeadValuesPass(),
                 rmo.passes.LegalizeRMOOps(),
@@ -419,6 +414,8 @@ class EagerRealizationContext(RealizationContext):
         _passes.remove_unused_arguments(self.graph)
         return outputs, self.graph
 
+    # Lazy realize fires after the surrounding `with` exits — re-enter on bg threads.
+    @in_default_mlir_context
     async def realize_all(self) -> list[Tensor]:
         """Compiles and executes the computation graph, realizing all tensors.
 
@@ -584,7 +581,7 @@ class EagerRealizationContext(RealizationContext):
         resulting ``BufferValue`` list so subsequent collectives in the
         same graph reuse the same buffers.
 
-        The runtime ``driver.Buffer`` objects (513 MB each) are allocated
+        The runtime ``driver.Buffer`` objects (1025 MB each) are allocated
         once per device set via :func:`_cached_signal_buffers` and shared
         across all eager contexts to avoid repeated allocation.
 
@@ -605,7 +602,7 @@ class EagerRealizationContext(RealizationContext):
         if len(gpu_ids) < 2:
             return None
 
-        # Get or allocate shared runtime buffers (expensive — 513 MB each).
+        # Get or allocate shared runtime buffers (expensive — 1+256 MB each).
         runtime_bufs, buf_types = _cached_signal_buffers(tuple(gpu_ids))
 
         # Add signal buffer types as new graph inputs (per-graph, cheap).

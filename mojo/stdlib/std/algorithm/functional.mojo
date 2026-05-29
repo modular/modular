@@ -19,14 +19,15 @@ from std.algorithm import map
 ```
 """
 
+from std._plugin import CurrentPlugin
 from std.collections.string.string_slice import get_static_string
-from std.gpu import PDLLevel
 from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.sys.info import CompilationTarget
 
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import Index, IndexList
 
 # Re-export backend-independent implementations.
@@ -60,7 +61,11 @@ from .backend.cpu import (
 )
 
 # Re-export GPU implementations.
-from .backend.gpu import _elementwise_impl_gpu, _stencil_impl_gpu
+from .backend.gpu import (
+    _dual_elementwise_impl_gpu,
+    _elementwise_impl_gpu,
+    _stencil_impl_gpu,
+)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -144,98 +149,7 @@ def elementwise[
     ) capturing[_] -> None,
     simd_width: Int,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    _trace_description: StaticString = "elementwise",
-](shape: Int, ctx: Optional[DeviceContext] = None) raises:
-    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
-    suitable combination of width and indices so as to cover shape. Returns when
-    all sub-tasks have completed.
-
-    Parameters:
-        func: The body function.
-        simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asynchronous calls.
-        target: The target to run on.
-        _trace_description: Description of the trace.
-
-    Args:
-        shape: The shape of the buffer.
-        ctx: The context to execute the work on.
-
-    Raises:
-        If the operation fails.
-    """
-
-    elementwise[
-        func,
-        simd_width=simd_width,
-        use_blocking_impl=use_blocking_impl,
-        target=target,
-        _trace_description=_trace_description,
-    ](Index(shape), ctx)
-
-
-@always_inline
-def elementwise[
-    rank: Int,
-    //,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
-    simd_width: Int,
-    *,
-    use_blocking_impl: Bool = False,
-    target: StaticString = "cpu",
-    _trace_description: StaticString = "elementwise",
-](shape: IndexList[rank, ...], ctx: Optional[DeviceContext] = None) raises:
-    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
-    suitable combination of width and indices so as to cover shape. Returns when
-    all sub-tasks have completed.
-
-    Parameters:
-        rank: The rank of the buffer.
-        func: The body function.
-        simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asynchronous calls.
-        target: The target to run on.
-        _trace_description: Description of the trace.
-
-    Args:
-        shape: The shape of the buffer.
-        ctx: The context to execute the work on.
-
-    Raises:
-        If the operation fails.
-    """
-
-    comptime assert is_cpu[target](), (
-        "the target must be CPU use the elementwise which takes the"
-        " DeviceContext to be able to use the GPU version"
-    )
-
-    def func_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) register_passable {}:
-        func[width, rank, alignment](indices)
-
-    _elementwise_impl_cpu[
-        simd_width=simd_width,
-        use_blocking_impl=use_blocking_impl,
-        trace_description=_trace_description,
-    ](func_unified, shape=shape, ctx=ctx)
-
-
-@always_inline
-def elementwise[
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
-    simd_width: Int,
-    *,
-    use_blocking_impl: Bool = False,
-    target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
 ](shape: Int, context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
@@ -245,9 +159,7 @@ def elementwise[
     Parameters:
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
@@ -261,9 +173,7 @@ def elementwise[
     elementwise[
         func,
         simd_width=simd_width,
-        use_blocking_impl=use_blocking_impl,
         target=target,
-        pdl_level=pdl_level,
         _trace_description=_trace_description,
     ](Index(shape), context)
 
@@ -277,9 +187,7 @@ def elementwise[
     ) capturing[_] -> None,
     simd_width: Int,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
 ](shape: IndexList[rank, ...], context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
@@ -290,9 +198,7 @@ def elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
@@ -305,14 +211,12 @@ def elementwise[
 
     def func_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) register_passable {}:
+    ](indices: IndexList[rank]) {}:
         func[width, rank, alignment](indices)
 
     _elementwise_impl[
         simd_width,
-        use_blocking_impl=use_blocking_impl,
         target=target,
-        pdl_level=pdl_level,
         trace_description=_trace_description,
     ](func_unified, shape, context)
 
@@ -321,82 +225,45 @@ def elementwise[
 def elementwise[
     rank: Int,
     //,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
+    FuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     simd_width: Int,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
-](shape: IndexList[rank, ...], context: DeviceContextPtr) raises:
-    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
-    suitable combination of width and indices so as to cover shape. Returns when
-    all sub-tasks have completed.
+](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext,) raises:
+    """Unified-closure entry point for `elementwise` (DeviceContext).
+
+    Accepts a parametric body (already in
+    unified-closure form, with explicit captures) and dispatches to
+    `_elementwise_impl`. `rank` and `FuncType` are inferred from the
+    runtime `shape` and `func` arguments, so `simd_width` is the only
+    explicit positional parameter — callers can write
+    `elementwise[N](func, shape, ctx)`.
 
     Parameters:
         rank: The rank of the buffer.
-        func: The body function.
+        FuncType: A parametric callable taking
+            `IndexList[rank]` and template parameters `width`, `rank`,
+            `alignment`.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
+        func: The body closure value.
         shape: The shape of the buffer.
         context: The device context to use.
 
     Raises:
         If the operation fails.
     """
-
-    @always_inline
-    @parameter
-    def description_fn() -> String:
-        var shape_str = trace_arg("shape", shape)
-        var vector_width_str = String(t"vector_width={simd_width}")
-        return ";".join(Span([shape_str^, vector_width_str^]))
-
-    # Intern the kind string as a static string so we don't allocate.
-    comptime d = _trace_description
-    comptime desc = String(t"({d})") if d else ""
-    comptime kind = get_static_string["elementwise", desc]()
-
-    with Trace[TraceLevel.OP, target=target](
-        kind,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=get_safe_task_id(context),
-    ):
-        comptime if is_gpu[target]():
-
-            def gpu_func_unified[
-                width: Int, rank: Int, alignment: Int = 1
-            ](indices: IndexList[rank]) register_passable {}:
-                func[width, rank, alignment](indices)
-
-            _elementwise_impl_gpu[
-                simd_width=simd_width,
-                pdl_level=pdl_level,
-                trace_description=kind,
-            ](gpu_func_unified, shape=shape, ctx=context[])
-        else:
-
-            def cpu_func_unified[
-                width: Int, rank: Int, alignment: Int = 1
-            ](indices: IndexList[rank]) register_passable {}:
-                func[width, rank, alignment](indices)
-
-            _elementwise_impl_cpu[
-                simd_width=simd_width,
-                use_blocking_impl=use_blocking_impl,
-                trace_description=_trace_description,
-            ](
-                cpu_func_unified,
-                shape=shape,
-                ctx=context.get_optional_device_context(),
-            )
+    _elementwise_impl[
+        simd_width,
+        target=target,
+        trace_description=_trace_description,
+    ](func, shape, context)
 
 
 @always_inline
@@ -404,14 +271,12 @@ def _elementwise_impl[
     rank: Int,
     //,
     simd_width: Int,
-    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) register_passable -> None,
+    FuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     /,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     trace_description: StaticString = "elementwise",
 ](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext) raises:
     @always_inline
@@ -431,17 +296,157 @@ def _elementwise_impl[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        comptime if is_cpu[target]():
+        comptime if CurrentPlugin._handles_elementwise[target]:
+            return CurrentPlugin.elementwise_fn[target, rank, simd_width](
+                func, shape, context
+            )
+        elif is_cpu[target]():
+
+            @always_inline
+            def func_wrap_cpu[
+                width: Int, alignment: Int = 1
+            ](coords: Coord) {read}:
+                func[width, rank, alignment](
+                    rebind[IndexList[rank]](coord_to_index_list(coords))
+                )
+
             _elementwise_impl_cpu[
                 simd_width=simd_width,
-                use_blocking_impl=use_blocking_impl,
                 trace_description=trace_description,
-            ](func, shape=shape, ctx=Optional(context))
-        else:
+            ](func_wrap_cpu, shape=Coord(shape), ctx=Optional(context))
+        elif is_gpu[target]():
+            var shape_coord = Coord(shape)
+
+            @always_inline
+            def func_wrap[width: Int, alignment: Int = 1](coords: Coord) {read}:
+                func[width, rank, alignment](
+                    rebind[IndexList[rank]](coord_to_index_list(coords))
+                )
+
             _elementwise_impl_gpu[
                 simd_width=simd_width,
                 trace_description=trace_description,
-            ](func, shape=shape, ctx=context)
+            ](func_wrap, shape=shape_coord, ctx=context)
+        else:
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
+            ]()
+
+
+# ===-----------------------------------------------------------------------===#
+# Dual Elementwise (GPU only)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def dual_elementwise[
+    rank: Int,
+    //,
+    func_0: def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) capturing[_] -> None,
+    func_1: def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) capturing[_] -> None,
+    simd_width: Int,
+    *,
+    target: StaticString = "gpu",
+    _trace_description: StaticString = "dual_elementwise",
+](
+    shape_0: IndexList[rank],
+    shape_1: IndexList[rank],
+    context: DeviceContext,
+) raises:
+    """Executes two elementwise functions over their respective shapes in a
+    single GPU kernel launch. Each thread processes elements from both shapes,
+    fusing two independent elementwise passes into one.
+
+    Parameters:
+        rank: The rank of the buffers.
+        func_0: The first body function.
+        func_1: The second body function.
+        simd_width: The SIMD vector width to use.
+        target: The target to run on (must be GPU).
+        _trace_description: Description of the trace.
+
+    Args:
+        shape_0: The shape for the first function.
+        shape_1: The shape for the second function.
+        context: The device context to use.
+
+    Raises:
+        If the operation fails.
+    """
+
+    def func_0_unified[
+        width: Int, rank: Int, alignment: Int = 1
+    ](indices: IndexList[rank]) {}:
+        func_0[width, rank, alignment](indices)
+
+    def func_1_unified[
+        width: Int, rank: Int, alignment: Int = 1
+    ](indices: IndexList[rank]) {}:
+        func_1[width, rank, alignment](indices)
+
+    _dual_elementwise_impl[
+        simd_width,
+        target=target,
+        trace_description=_trace_description,
+    ](func_0_unified, func_1_unified, shape_0, shape_1, context)
+
+
+@always_inline
+def _dual_elementwise_impl[
+    rank: Int,
+    //,
+    simd_width: Int,
+    Func0Type: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+    Func1Type: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+    /,
+    *,
+    target: StaticString = "gpu",
+    trace_description: StaticString = "dual_elementwise",
+](
+    func_0: Func0Type,
+    func_1: Func1Type,
+    shape_0: IndexList[rank],
+    shape_1: IndexList[rank],
+    context: DeviceContext,
+) raises:
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        var s0 = trace_arg("shape_0", shape_0)
+        var s1 = trace_arg("shape_1", shape_1)
+        var vw = String(t"vector_width={simd_width}")
+        return ";".join(Span([s0^, s1^, vw^]))
+
+    comptime d = trace_description
+    comptime desc = String(t"({d})") if d else ""
+    comptime kind = get_static_string["dual_elementwise", desc]()
+
+    with Trace[TraceLevel.OP, target=target](
+        kind,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(context),
+    ):
+        comptime assert is_gpu[
+            target
+        ](), "dual_elementwise only supports GPU target"
+        _dual_elementwise_impl_gpu[
+            simd_width=simd_width,
+            trace_description=kind,
+        ](
+            func_0,
+            func_1,
+            shape_0=shape_0,
+            shape_1=shape_1,
+            ctx=context,
+        )
 
 
 # ===-----------------------------------------------------------------------===#

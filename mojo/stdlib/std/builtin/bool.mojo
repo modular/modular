@@ -20,12 +20,10 @@ from std.hashlib.hasher import Hasher
 
 from std.python import (
     ConvertibleFromPython,
-    ConvertibleToPython,
     Python,
     PythonObject,
 )
 
-from std.builtin.rebind import trait_downcast
 from std.utils._select import _select_register_value as select
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
@@ -34,7 +32,7 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Boolable(ImplicitlyDestructible):
+trait Boolable:
     """The `Boolable` trait describes a type that can be explicitly converted to
     a `Bool` or evaluated as a boolean expression in `if` or `while` conditions.
 
@@ -69,7 +67,6 @@ struct Bool(
     Boolable,
     Comparable,
     ConvertibleFromPython,
-    ConvertibleToPython,
     Defaultable,
     Floatable,
     Hashable,
@@ -127,8 +124,9 @@ struct Bool(
 
     @doc_hidden
     @always_inline("builtin")
-    def __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
-        """Construct a Bool value given a `!pop.scalar<bool>` value.
+    @implicit
+    def __init__(out self, mlir_value: __mlir_type.`!kgen.scalar<bool>`):
+        """Construct a Bool value given a `!kgen.scalar<bool>` value.
 
         Args:
             mlir_value: The initial value.
@@ -458,17 +456,6 @@ struct Bool(
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
 
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the Python runtime is not initialized or conversion fails.
-        """
-        return PythonObject(self)
-
     @doc_hidden
     def __init__(out self, *, py: PythonObject) raises:
         """Construct a `Bool` from a PythonObject.
@@ -507,9 +494,7 @@ def any[
     """
 
     for var item0 in iterable:
-        var item = trait_downcast_var[
-            ImplicitlyDestructible & Boolable & Movable
-        ](item0^)
+        var item = item0^
         if item:
             return True
     return False
@@ -551,9 +536,7 @@ def all[
         `True` if **all** elements in the iterable are truthy, `False` otherwise.
     """
     for var item0 in iterable:
-        var item = trait_downcast_var[
-            ImplicitlyDestructible & Boolable & Movable
-        ](item0^)
+        var item = item0^
         if not item:
             return False
     return True

@@ -177,12 +177,16 @@ def test_mxfp4_matmul[
     comptime a_scales_shape = row_major[M_static, K_SCALES]()
     comptime b_scales_shape = row_major[N_static, K_SCALES]()
 
-    var a_host = alloc[Scalar[input_dtype]](a_size)
-    var b_host = alloc[Scalar[input_dtype]](b_size)
-    var a_scales_host = alloc[Scalar[scales_dtype]](a_scales_size)
-    var b_scales_host = alloc[Scalar[scales_dtype]](b_scales_size)
-    var c_host = alloc[Scalar[output_dtype]](c_size)
-    var c_host_ref = alloc[Scalar[output_dtype]](c_size)
+    var a_host = ctx.enqueue_create_host_buffer[input_dtype](a_size)
+    var b_host = ctx.enqueue_create_host_buffer[input_dtype](b_size)
+    var a_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
+        a_scales_size
+    )
+    var b_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
+        b_scales_size
+    )
+    var c_host = ctx.enqueue_create_host_buffer[output_dtype](c_size)
+    var c_host_ref = ctx.enqueue_create_host_buffer[output_dtype](c_size)
 
     for i in range(a_size):
         a_host[i] = UInt8(random_ui64(0, 255))
@@ -227,7 +231,7 @@ def test_mxfp4_matmul[
         type_of(a_scales_tt).LayoutType,
         type_of(b_scales_tt).LayoutType,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c_tt,
         a_tt,
         b_tt,
@@ -239,7 +243,7 @@ def test_mxfp4_matmul[
 
     # --- Reference ---
     comptime BLOCK_DIM = 32
-    ctx.enqueue_function_experimental[block_scaled_matmul_ref](
+    ctx.enqueue_function[block_scaled_matmul_ref](
         a_dev,
         b_dev,
         a_scales_dev,
@@ -257,21 +261,14 @@ def test_mxfp4_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.unsafe_ptr(),
+        c_host_ref.unsafe_ptr(),
         c_size,
         atol=0.05,
         rtol=0.05,
     )
 
     print("  PASSED")
-
-    a_host.free()
-    b_host.free()
-    a_scales_host.free()
-    b_scales_host.free()
-    c_host.free()
-    c_host_ref.free()
 
 
 def main() raises:

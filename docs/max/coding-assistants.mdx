@@ -4,9 +4,12 @@ sidebar_label: AI coding assistants
 description: Use AI coding assistants such as Cursor, Claude Code, Copilot, and Windsurf with Modular.
 ---
 
-This page describes how you can accelerate your MAX and Mojo development with
+This page describes how you can accelerate your MAX development with
 popular AI coding assistants (Cursor, Claude Code, GitHub Copilot, Windsurf,
-and others) using the following resources:
+and others). Mojo language documentation is hosted separately at
+[mojolang.org](https://mojolang.org); use
+[mojolang.org/llms.txt](https://mojolang.org/llms.txt) for Mojo-specific AI
+context. This page covers resources available on docs.modular.com:
 
 - **Documentation files** (`llms.txt`): Raw text files that AI tools use for
 website navigation hints and direct access to up-to-date API documentation.
@@ -18,7 +21,7 @@ and project structure.
 
 - **Cursor project rules** (`.cursor/rules/`): Modular-specific rules that
 activate based on the files you're editing, providing consistent guidance for
-MAX and Mojo development.
+MAX development (and Mojo when using rules from the Modular repository).
 
 ## Giving our docs to your AI assistant
 
@@ -26,14 +29,21 @@ To improve code quality and accuracy from your AI assistant, add Modular's
 documentation to your AI tool's context. We provide different `llms.txt` files
 that are optimized for different use cases:
 
-- <a href="/llms.txt"><code>llms.txt</code></a> for a list of links with brief
-  descriptions
-- <a href="/llms-full.txt"><code>llms-full.txt</code></a> for comprehensive
-  documentation (requires large context window)
+- <a href="/llms.txt"><code>llms.txt</code></a> for a compact index with links
+  to section-specific files
+- <a href="/llms-max-guides.txt"><code>llms-max-guides.txt</code></a> for MAX
+  development, deployment, and inference guides
 - <a href="/llms-python.txt"><code>llms-python.txt</code></a> for MAX Python
   APIs, pipelines, or graph construction
-- <a href="/llms-mojo.txt"><code>llms-mojo.txt</code></a> for Mojo code, GPU
-  kernels, or MAX library APIs
+- <a href="/llms-kernels.txt"><code>llms-kernels.txt</code></a> for MAX AI
+  kernels API reference (top-level package indexes)
+- <a href="/llms-c-api.txt"><code>llms-c-api.txt</code></a> for MAX C API
+  reference
+- <a href="/llms-glossary.txt"><code>llms-glossary.txt</code></a> for glossary
+  terms
+- <a href="https://mojolang.org/llms.txt"><code>mojolang.org/llms.txt</code></a>
+  for Mojo language documentation (hosted on
+  [mojolang.org](https://mojolang.org), not docs.modular.com)
 
 If you're in Cursor, use the `@` syntax in the chat window to reference
 documentation directly. For example, to insert the MAX Python API documentation,
@@ -85,7 +95,7 @@ file-specific guidance for Mojo and MAX development. See
 
 ## Starting a new project
 
-For your own MAX and Mojo projects, the entirety of our
+For your own MAX projects, the entirety of our
 [`CLAUDE.md`](https://github.com/modular/modular/blob/main/CLAUDE.md) and
 [`AGENTS.md`](https://github.com/modular/modular/blob/main/AGENTS.md)
 files are probably not useful for your own projects because they're specific to
@@ -107,12 +117,15 @@ Here are all the resources we provide for AI assistants.
 Our documentation supports the [llms.txt](https://llmstxt.org/) proposed
 standard, providing LLM-friendly documentation files:
 
-| File                                                           | Description                              | Best for                     |
-|----------------------------------------------------------------|------------------------------------------|------------------------------|
-| <a href="/llms.txt" target="_blank">llms.txt</a>               | Index of links with brief descriptions   | Tools that can follow links  |
-| <a href="/llms-full.txt" target="_blank">llms-full.txt</a>     | All docs in a single file (huge)         | Comprehensive context        |
-| <a href="/llms-python.txt" target="_blank">llms-python.txt</a> | MAX Python APIs                          | Python-based MAX development |
-| <a href="/llms-mojo.txt" target="_blank">llms-mojo.txt</a>     | Mojo stdlib, MAX AI Kernels, MAX library | Mojo and kernel development  |
+| File                                                                              | Description                            | Best for                      |
+|-----------------------------------------------------------------------------------|----------------------------------------|-------------------------------|
+| <a href="/llms.txt" target="_blank">llms.txt</a>                                  | Compact index linking to segment files | Starting point for all agents |
+| <a href="/llms-max-guides.txt" target="_blank">llms-max-guides.txt</a>            | MAX guides (develop, serve, deploy)    | Application development       |
+| <a href="/llms-python.txt" target="_blank">llms-python.txt</a>                    | MAX Python API indexes                 | Python-based MAX development  |
+| <a href="/llms-kernels.txt" target="_blank">llms-kernels.txt</a>                  | MAX AI kernels API (package indexes)   | Kernel and GPU development    |
+| <a href="/llms-c-api.txt" target="_blank">llms-c-api.txt</a>                      | MAX C API reference                    | C API integration             |
+| <a href="/llms-glossary.txt" target="_blank">llms-glossary.txt</a>                | Glossary terms (full content)          | Terminology lookup            |
+| <a href="https://mojolang.org/llms.txt" target="_blank">mojolang.org/llms.txt</a> | Mojo language docs (external)          | Mojo development              |
 
 ### Modular Cursor rules
 

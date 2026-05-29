@@ -95,7 +95,7 @@ def color_to_grayscale(
     var grid_dim_y = ceildiv(height, block_dim_y)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[color_to_grayscale_kernel](
+    ctx.enqueue_function[color_to_grayscale_kernel](
         d_output,
         d_input,
         width,

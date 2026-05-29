@@ -57,7 +57,7 @@ def test_sleep_100ms(ctx: DeviceContext) raises:
     var result_device = ctx.enqueue_create_buffer[DType.uint64](1)
 
     result_host[0] = 0
-    ctx.enqueue_function[sleep_kernel_100ms, sleep_kernel_100ms](
+    ctx.enqueue_function[sleep_kernel_100ms](
         result_device, grid_dim=1, block_dim=1
     )
     ctx.enqueue_copy(result_host, result_device)
@@ -80,7 +80,7 @@ def test_sleep_500us(ctx: DeviceContext) raises:
     var result_device = ctx.enqueue_create_buffer[DType.uint64](1)
 
     result_host[0] = 0
-    ctx.enqueue_function[sleep_kernel_500us, sleep_kernel_500us](
+    ctx.enqueue_function[sleep_kernel_500us](
         result_device, grid_dim=1, block_dim=1
     )
     ctx.enqueue_copy(result_host, result_device)
@@ -102,7 +102,7 @@ def test_sleep_zero(ctx: DeviceContext) raises:
     var result_device = ctx.enqueue_create_buffer[DType.uint64](1)
 
     result_host[0] = 0
-    ctx.enqueue_function[sleep_kernel_zero, sleep_kernel_zero](
+    ctx.enqueue_function[sleep_kernel_zero](
         result_device, grid_dim=1, block_dim=1
     )
     ctx.enqueue_copy(result_host, result_device)
@@ -141,7 +141,7 @@ def test_perf_counter_ns(ctx: DeviceContext) raises:
 
     result_host[0] = 0
     result_host[1] = 0
-    ctx.enqueue_function[perf_counter_kernel, perf_counter_kernel](
+    ctx.enqueue_function[perf_counter_kernel](
         result_device, grid_dim=1, block_dim=1
     )
     ctx.enqueue_copy(result_host, result_device)

@@ -13,8 +13,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
-from itertools import islice
+from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
 from max.dtype import DType
@@ -22,10 +21,8 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     ShardingStrategy,
-    TensorType,
     TensorValue,
     TensorValueLike,
-    Type,
     Value,
     ops,
 )
@@ -40,13 +37,9 @@ from .transformer import (
     ReturnHiddenStates,
     ReturnLogits,
     extract_hs,
+    forward_sequential_layers,
     forward_sharded_layers,
 )
-
-
-def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
-    """Return the next *n* items from *it* as a list."""
-    return list(islice(it, n))
 
 
 # NOTE: This should eventually be deleted once Weight & Linear are refactored to assume
@@ -377,106 +370,33 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
             kv_collection.max_lengths for kv_collection in kv_collections
         ]
 
-        kv_cache_arguments = [
-            kv_blocks,
-            kv_cache_lengths,
-            kv_lookup_table,
-            kv_max_lengths,
-            dispatch_metadata_tensors,
-        ]
-
-        if self.use_subgraphs:
-            subgraph_input_types: Sequence[Type[Any] | list[Type[Any]]] = [
-                TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
-                [hidden.type for hidden in h],
-                [signal_buffer.type for signal_buffer in signal_buffers],
-                [
-                    kv_collection.kv_blocks.type
-                    for kv_collection in kv_collections
-                ],
-                [
-                    kv_collection.cache_lengths.type
-                    for kv_collection in kv_collections
-                ],
-                [
-                    kv_collection.lookup_table.type
-                    for kv_collection in kv_collections
-                ],
-                [
-                    kv_collection.max_lengths.type
-                    for kv_collection in kv_collections
-                ],
-                [metadata.type for metadata in dispatch_metadata_tensors],
-                [freq.type for freq in freqs_cis],
-                [offset.type for offset in input_row_offsets_per_device],
+        def inputs_for_layer(
+            idx: int, h: list[TensorValue]
+        ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            return [
+                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                h,
+                signal_buffers,
+                kv_blocks,
+                kv_cache_lengths,
+                kv_lookup_table,
+                kv_max_lengths,
+                dispatch_metadata_tensors,
+                freqs_cis,
+                input_row_offsets_per_device,
             ]
 
-            # First, we need to build the subgraphs for each layer group.
-            subgraphs = []
-            for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
-                assert len(layer_group) > 0, (
-                    "Subgraph layer groups must contain at least one layer"
-                )
-                subgraph_layer = self.layers[layer_group[0]]
-                assert isinstance(
-                    subgraph_layer, DistributedTransformerBlock
-                ), "Subgraph layer must be a DistributedTransformerBlock"
-                subgraphs.append(
-                    subgraph_layer.build_subgraph(
-                        f"dist_transformer_block_{group_idx}",
-                        subgraph_input_types,
-                        f"layers.{layer_group[0]}.",
-                    )
-                )
+        h = forward_sequential_layers(
+            list(self.layers),
+            inputs_for_layer=inputs_for_layer,
+            weight_prefix_for_layer=lambda i: f"layers.{i}.",
+            subgraph_layer_groups=(
+                self.subgraph_layer_groups if self.use_subgraphs else None
+            ),
+            name_for_subgraph=lambda g: f"dist_transformer_block_{g}",
+            initial_hidden_states=h,
+        )
 
-            # Then, we need to call the subgraphs for each layer group.
-            for idx, layer in enumerate(self.layers):
-                has_subgraph = False
-                for group_idx, layer_group in enumerate(
-                    self.subgraph_layer_groups
-                ):
-                    if idx in layer_group:
-                        has_subgraph = True
-                        h = [
-                            x.tensor
-                            for x in ops.call(
-                                subgraphs[group_idx],
-                                ops.constant(
-                                    idx, DType.uint32, device=DeviceRef.CPU()
-                                ),
-                                *h,
-                                *signal_buffers,
-                                *kv_blocks,
-                                *kv_cache_lengths,
-                                *kv_lookup_table,
-                                *kv_max_lengths,
-                                *dispatch_metadata_tensors,
-                                *freqs_cis,
-                                *input_row_offsets_per_device,
-                                prefix=f"layers.{idx}.",
-                            )
-                        ]
-                        break
-                if not has_subgraph:
-                    # If no subgraph was found, call the layer directly.
-                    h = layer(
-                        ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                        h,
-                        signal_buffers,
-                        *kv_cache_arguments,
-                        freqs_cis=freqs_cis,
-                        input_row_offsets=input_row_offsets_per_device,
-                    )
-        else:
-            for idx, layer in enumerate(self.layers):
-                h = layer(
-                    ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                    h,
-                    signal_buffers,
-                    *kv_cache_arguments,
-                    freqs_cis=freqs_cis,
-                    input_row_offsets=input_row_offsets_per_device,
-                )
         return self._postprocess_logits(
             h, input_row_offsets_per_device, return_n_logits, signal_buffers
         )

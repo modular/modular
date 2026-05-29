@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
     SamplingParams,
@@ -28,13 +28,13 @@ from max.interfaces import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    ProviderOptions,
-)
-from max.interfaces.request import (
+from max.pipelines.request import (
     OpenResponsesRequest,
     OpenResponsesRequestBody,
+)
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
 )
 from max.support import fetch_bytes_from_s3
 
@@ -232,6 +232,10 @@ class MockPixelGenerationRequest:
                     steps=self.num_inference_steps,
                     guidance_scale=self.guidance_scale,
                     true_cfg_scale=self.true_cfg_scale,
+                    # Use PNG (lossless) for verification so MAE/RMSE/SSIM/LPIPS
+                    # compare actual VAE output, not JPEG-compressed bytes.  The
+                    # serving default is still JPEG.
+                    output_format="png",
                 )
             ),
         )
@@ -356,9 +360,9 @@ IDEFICS3_INSTRUCT_REQUESTS = [
 # Default pixel generation prompts
 DEFAULT_PIXEL_GENERATION_PROMPTS = [
     "photography, soft natural textures, highly realistic light, editorial, A black panther stalking through the dense undergrowth of an Indian jungle, early evening with shadows from tall trees, captured with low light photography, high ISO setting to highlight the panther's muscles in motion",
-    "Dramatic news broadcast scene in a Teahupoʻo wave's where a cow surfing, mimicking pro surf rider poses. Yogis laugh and take pictures. The news banner reads: 'COW win Olympics!!'",
+    "A red fox sitting in fresh snow in a winter forest, looking directly at the camera, soft morning light filtering through the trees",
     "Full body shot of a handsome tattooed short dark haired man wearing a jean and a white tee-shirt in 'Chiaroscuro Chronicles', lost in a captivating, slate gray monochromatic realm of masterful lighting and careful shading, emphasizing the emotional depth of the narrative, abrasive authenticity, ambient occlusion",
-    "A beautiful woman in a red dress walking down a street",
+    "A lighthouse on a rocky cliff at sunset with an orange and purple sky, calm ocean in the background, photorealistic",
     'Four elements split into quadrants: top-left shows splashing water forming the word "WATER" on a water background, top-right shows soil forming "EARTH" with planet earth behind, bottom-left shows colorful clouds forming "AIR" at sunset, bottom-right shows fiery lava forming "FIRE" against the sun',
 ]
 
@@ -391,6 +395,57 @@ KIMIK2_5_REQUESTS = [
         prompt=KIMIK2_5_PROMPT,
         images=[KIMIK2_5_IMAGE],
         messages=KIMIK2_5_MESSAGES,
+    ),
+]
+
+# Default negative prompt from the official Wan repo (sample_neg_prompt).
+# The model was trained with this as the "empty" negative; omitting it produces
+# over-saturated, jittery, low-detail output.
+WAN_DEFAULT_NEGATIVE_PROMPT = (
+    "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，"
+    "整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，"
+    "画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，"
+    "静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+)
+
+# Single-frame (1 frame, 20 steps) verification requests for Wan2.1 T2V.
+# Prompts follow the WAN guide formula:
+#   Subject + Scene + Motion + Camera + Atmosphere + Styling
+# Motion is the centerpiece — static/still framing fights the model's T2V
+# prior and produces high-variance outputs, inflating error bounds.
+WAN_PIXEL_GENERATION_T2I = [
+    # Slot 0 — fox trotting through autumn forest (natural motion, landscape)
+    MockPixelGenerationRequest.from_prompt(
+        prompt=(
+            "A red fox trots steadily along a leaf-covered path through an"
+            " autumn forest at dawn, its tail swaying gently with each"
+            " stride. Camera tracks smoothly alongside at ground level,"
+            " keeping pace with the fox. Soft amber light filters through"
+            " the canopy, mist rising between the trees. Cinematic nature"
+            " documentary style."
+        ),
+        negative_prompt=WAN_DEFAULT_NEGATIVE_PROMPT,
+        height=720,
+        width=1280,
+        num_inference_steps=20,
+        guidance_scale=5.0,
+        seed=42,
+    ),
+    # Slot 1 — man pausing at flower stall (human motion, portrait)
+    MockPixelGenerationRequest.from_prompt(
+        prompt=(
+            "An elderly man strolls slowly through a quiet Kyoto side street"
+            " at dusk and stops at a small flower stall, reaching out to"
+            " touch a white chrysanthemum. Camera dollies in gently from a"
+            " medium shot to a close-up on his hand. Warm lantern light,"
+            " subtle film grain, contemplative mood."
+        ),
+        negative_prompt=WAN_DEFAULT_NEGATIVE_PROMPT,
+        height=1280,
+        width=720,
+        num_inference_steps=20,
+        guidance_scale=5.0,
+        seed=42,
     ),
 ]
 

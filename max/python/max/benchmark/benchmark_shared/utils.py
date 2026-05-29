@@ -16,32 +16,139 @@
 from __future__ import annotations
 
 import resource
+import time
+import urllib.error
+import urllib.request
 from collections.abc import Callable
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import numpy as np
+from huggingface_hub import HfApi
 from transformers import (
+    AutoConfig,
     AutoTokenizer,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
 
 
+def deadline_remaining_s(end_time_ns: int | None) -> float | None:
+    """Return seconds until a perf_counter_ns deadline, or None if unbounded."""
+    if end_time_ns is None:
+        return None
+    return max(0.0, (end_time_ns - time.perf_counter_ns()) / 1e9)
+
+
+def exceeds_deadline(seconds: float, deadline_ns: int | None) -> bool:
+    """Return True if sleeping ``seconds`` would land past ``deadline_ns``."""
+    if deadline_ns is None:
+        return False
+    return time.perf_counter_ns() + int(seconds * 1e9) > deadline_ns
+
+
+def wait_for_server_ready(
+    host: str,
+    port: int,
+    path: str = "health",
+    *,
+    timeout_s: int = 120 * 60,
+    interval_s: float = 5.0,
+    backend: str,
+) -> float:
+    """Polls ``http://<host>:<port>/<path>`` until it responds with HTTP 200.
+
+    Always attempts at least one request, even when ``timeout_s == 0``, so
+    standalone callers get a fast error on misconfigured ``host``/``port``.
+    Returns the elapsed seconds; raises :class:`RuntimeError` on timeout.
+    Stdlib-only so both the orchestrator (``benchmark.py``) and the load
+    generator (``benchmark_serving.py``) can share one implementation.
+
+    When *backend* is ``"mcloud"``, the server is externally managed and
+    assumed ready, so the function returns ``0.0`` immediately.
+    """
+    # TODO: remove once BENTO-168 is fixed
+    if backend == "mcloud":
+        return 0.0
+    url = f"http://{host}:{port}/{path}"
+    start = time.monotonic()
+    deadline = start + timeout_s
+    while True:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                if resp.status == 200:
+                    return time.monotonic() - start
+        except (urllib.error.URLError, ConnectionError, OSError):
+            pass
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"Server at {url} not ready after {timeout_s}s")
+        time.sleep(interval_s)
+
+
+def resolve_revision(pretrained_model_name_or_path: str) -> str | None:
+    """Resolve the HuggingFace Hub commit SHA for a repo id.
+
+    Returns ``None`` for local paths, private/gated repos without auth, and
+    other lookup failures so callers fall back to revision-less loading.
+    Used to pin worker tokenizer loads to a specific snapshot so they hit
+    the local cache without re-checking the Hub on every spawn.
+    """
+    try:
+        return HfApi().model_info(pretrained_model_name_or_path).sha
+    except Exception:
+        return None
+
+
 def get_tokenizer(
     pretrained_model_name_or_path: str,
+    *,
+    revision: str | None,
     model_max_length: int | None = None,
     trust_remote_code: bool = False,
 ) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
-    """Load a tokenizer for a benchmark model."""
-    tokenizer_kwargs: dict[str, bool | int] = {
+    """Load a tokenizer for a benchmark model.
+
+    ``revision`` is explicit; callers should resolve it once via
+    :func:`resolve_revision` (or reuse a previously resolved value) so that
+    repeated loads across worker processes hit the same cached snapshot.
+    """
+    tokenizer_kwargs: dict[str, bool | int | str | None] = {
         "trust_remote_code": trust_remote_code,
+        "revision": revision,
     }
     if model_max_length is not None:
         tokenizer_kwargs["model_max_length"] = model_max_length
-    return AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path,
-        **tokenizer_kwargs,
+    tokenizer = AutoTokenizer.from_pretrained(
+        pretrained_model_name_or_path, **tokenizer_kwargs
     )
+    # Stash the resolved revision so downstream consumers (e.g. the worker
+    # tokenizer pool) can pin worker loads to the same snapshot without
+    # re-resolving against the Hub. Transformers does not expose this on
+    # the tokenizer instance itself.
+    tokenizer._resolved_revision = revision
+    try:
+        config = AutoConfig.from_pretrained(
+            pretrained_model_name_or_path,
+            trust_remote_code=trust_remote_code,
+            revision=revision,
+        )
+        architectures = getattr(config, "architectures", None) or []
+    except (ValueError, OSError) as exc:
+        print(
+            f"Warning: AutoConfig.from_pretrained failed for "
+            f"{pretrained_model_name_or_path!r}: {exc}. "
+            "Skipping architecture-specific tokenizer overrides."
+        )
+        architectures = []
+    if "KimiK25ForConditionalGeneration" in architectures:
+        original_encode = tokenizer.encode
+
+        def encode(text: Any, *args: Any, **kwargs: Any) -> list[int]:
+            kwargs.pop("add_special_tokens", None)
+            kwargs["allow_special_tokens"] = True
+            return original_encode(text, *args, **kwargs)
+
+        tokenizer.encode = encode
+    return tokenizer
 
 
 # from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283

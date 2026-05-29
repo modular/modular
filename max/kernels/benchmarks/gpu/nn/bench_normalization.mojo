@@ -29,10 +29,9 @@ def bench_layer_norm_gpu[
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
-    var beta_h = alloc[Scalar[dtype]](cols)
+    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
+    var beta_h = List(length=cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         var val = Scalar[dtype](random_float64(0, 100).cast[dtype]())
@@ -61,27 +60,27 @@ def bench_layer_norm_gpu[
     @always_inline
     @parameter
     def input_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
 
-        return data_buf.raw_load[width=width](idx)
+        return data_buf.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     def gamma_fn[
-        width: Int, rank: Int
+        width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
+        var idx = gamma.layout(coords[0])
 
-        return gamma.raw_load[width=width](idx)
+        return gamma.raw_load[width=width, alignment=alignment](idx)
 
     @always_inline
     @__copy_capture(beta)
     @parameter
     def output_fn[
-        width: Int, rank_: Int, alignment: Int
+        width: SIMDSize, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(Coord(coords))
 
@@ -109,11 +108,9 @@ def bench_layer_norm_gpu[
     _ = data_d
     _ = gamma_d
     _ = beta_d
-
-    data_h.free()
-    res.free()
-    gamma_h.free()
-    beta_h.free()
+    _ = data_h^
+    _ = gamma_h^
+    _ = beta_h^
 
 
 def bench_rms_norm_gpu[
@@ -122,9 +119,8 @@ def bench_rms_norm_gpu[
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
+    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         var val = Scalar[dtype](random_float64(0, 100).cast[dtype]())
@@ -160,7 +156,7 @@ def bench_rms_norm_gpu[
     @__copy_capture(data_buf)
     @parameter
     def identity_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(Coord(coords))
         data_buf.raw_store[width=width, alignment=alignment](idx, val)
@@ -186,10 +182,8 @@ def bench_rms_norm_gpu[
 
     _ = data_d
     _ = gamma_d
-
-    data_h.free()
-    res.free()
-    gamma_h.free()
+    _ = data_h^
+    _ = gamma_h^
 
 
 def main() raises:

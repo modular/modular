@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler_internal as compiler
+import extensibility as compiler
+from std.gpu.host import DeviceContext
 from std.gpu.host.device_context import DeviceExternalFunction
 from std.os import abort, getenv
-from tensor import (
+from extensibility import (
     foreach,
     DynamicTensor,
     VariadicTensors,
@@ -22,12 +23,11 @@ from tensor import (
     OutputTensor,
     InputVariadicTensors,
 )
-from tensor import OutputVariadicTensors
-from tensor.managed_tensor_slice import (
+from extensibility import OutputVariadicTensors
+from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 from std.utils.index import IndexList
-from std.runtime.asyncrt import DeviceContextPtr
 
 
 @compiler.register("my_add")
@@ -54,7 +54,7 @@ struct OpWidthDeviceContext:
     def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ):
         output[0] = x[0]
 
@@ -247,10 +247,10 @@ struct ExternalCubinVecAdd:
         output: OutputTensor[rank=1, ...],
         lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx.get_device_context()
+        gpu_ctx = ctx
 
         with open(getenv("CUBIN_PATH"), "r") as file:
             cubin_data = file.read_bytes()
@@ -295,15 +295,13 @@ struct IntentionalGpuCrash:
     ](
         output: OutputTensor[rank=1, ...],
         x: InputTensor[dtype=output.dtype, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx.get_device_context()
+        gpu_ctx = ctx
 
         def crash_kernel():
             abort()
 
-        gpu_ctx.enqueue_function_experimental[crash_kernel](
-            grid_dim=(1,), block_dim=(1,)
-        )
+        gpu_ctx.enqueue_function[crash_kernel](grid_dim=(1,), block_dim=(1,))
         gpu_ctx.synchronize()

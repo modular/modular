@@ -4,6 +4,7 @@ package(default_visibility = ["//visibility:private"])
 
 _LIT_TESTS = [
     "test_sin_cos_f64.mojo",
+    "test_sqrt_f64.mojo",
 ]
 
 [

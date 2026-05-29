@@ -118,7 +118,7 @@ def matmul_tiled(
     var grid_dim_y = ceildiv(width, TILE_WIDTH)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[matrix_mul_tiled_kernel](
+    ctx.enqueue_function[matrix_mul_tiled_kernel](
         d_a,
         d_b,
         d_c,

@@ -13,6 +13,7 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = [
+            "test_encoder.py",  # MODELS-1411
             "test_vision_processor.py",
             "test_vision_transformer_eval.py",
         ],
@@ -40,6 +41,29 @@ modular_py_test(
     ],
 )
 
+# MODELS-1411
+modular_py_test(
+    name = "test_encoder",
+    srcs = [
+        "conftest.py",
+        "test_encoder.py",
+    ],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
 modular_py_test(
     name = "test_vision_processor",
     srcs = ["test_vision_processor.py"],
@@ -49,6 +73,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
         requirement("av"),
         requirement("numpy"),
         requirement("pillow"),

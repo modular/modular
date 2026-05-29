@@ -15,6 +15,7 @@ from std.math import erf, exp, tanh
 from std.sys.info import simd_width_of
 
 from std.algorithm import elementwise
+from std.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 from std.testing import TestSuite
 
@@ -22,10 +23,11 @@ from std.utils.index import IndexList
 
 
 def test_elementwise_1d() raises:
+    var ctx = DeviceContext(api="cpu")
     comptime num_elements = 64
-    var ptr = alloc[Float32](num_elements)
+    var data = List(length=num_elements, fill=Float32(0))
 
-    var vector = Span(ptr=ptr, length=num_elements)
+    var vector = Span(data)
 
     for i in range(len(vector)):
         vector[i] = Float32(i)
@@ -41,12 +43,10 @@ def test_elementwise_1d() raises:
         vector.unsafe_ptr().store[width=simd_width](idx[0], val)
 
     elementwise[func, simd_width_of[DType.float32]()](
-        IndexList[1](num_elements)
+        IndexList[1](num_elements), ctx
     )
 
     assert_almost_equal(vector[0], 2.051446)
-
-    ptr.free()
 
 
 def main() raises:

@@ -51,23 +51,23 @@ def test_matmul_sm100_fallback[
     BK: Int = 64,
     use_epilogue: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType,) raises:
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = Int(n.value()) * Int(k.value())
     var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
@@ -119,7 +119,7 @@ def test_matmul_sm100_fallback[
     @__copy_capture(c_tensor_lt)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -189,10 +189,6 @@ def test_matmul_sm100_fallback[
         rtol=rtol,
     )
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -220,9 +216,9 @@ def main() raises:
                     BK=BK,
                 ](
                     ctx,
-                    Idx(Int(200)),
-                    Idx(128),
-                    Idx(128),
+                    Int(200),
+                    Idx[128],
+                    Idx[128],
                 )
                 test_matmul_sm100_fallback[
                     dtype,
@@ -235,9 +231,9 @@ def main() raises:
                     use_epilogue=True,
                 ](
                     ctx,
-                    Idx(Int(128)),
-                    Idx(128),
-                    Idx(128),
+                    Int(128),
+                    Idx[128],
+                    Idx[128],
                 )
 
                 test_matmul_sm100_fallback[
@@ -250,9 +246,9 @@ def main() raises:
                     BK=BK,
                 ](
                     ctx,
-                    Idx(Int(400)),
-                    Idx(128),
-                    Idx(128),
+                    Int(400),
+                    Idx[128],
+                    Idx[128],
                 )
 
                 test_matmul_sm100_fallback[
@@ -265,9 +261,9 @@ def main() raises:
                     BK=BK,
                 ](
                     ctx,
-                    Idx(Int(1024)),
-                    Idx(2048),
-                    Idx(2048),
+                    Int(1024),
+                    Idx[2048],
+                    Idx[2048],
                 )
 
                 comptime BK_list: List[Int] = [BK, BK * 2]
@@ -282,9 +278,9 @@ def main() raises:
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(1024)),
-                        Idx(2048),
-                        Idx(2048),
+                        Int(1024),
+                        Idx[2048],
+                        Idx[2048],
                     )
 
                     test_matmul_sm100_fallback[
@@ -296,9 +292,9 @@ def main() raises:
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(1024),
-                        Idx(2048),
-                        Idx(2048),
+                        Idx[1024],
+                        Idx[2048],
+                        Idx[2048],
                     )
 
                     test_matmul_sm100_fallback[
@@ -310,9 +306,9 @@ def main() raises:
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(100)),
-                        Idx(512),
-                        Idx(256),
+                        Int(100),
+                        Idx[512],
+                        Idx[256],
                     )
 
                     test_matmul_sm100_fallback[
@@ -324,9 +320,9 @@ def main() raises:
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(99)),
-                        Idx(1024),
-                        Idx(1024),
+                        Int(99),
+                        Idx[1024],
+                        Idx[1024],
                     )
 
                     test_matmul_sm100_fallback[
@@ -338,7 +334,7 @@ def main() raises:
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(201)),
-                        Idx(2048),
-                        Idx(256),
+                        Int(201),
+                        Idx[2048],
+                        Idx[256],
                     )

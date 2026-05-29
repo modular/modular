@@ -148,7 +148,7 @@ def main() raises:
         ctx.enqueue_copy(d_output, h_output)
 
         # Launch kernel (multiple blocks)
-        ctx.enqueue_function_experimental[reduce_kernel](
+        ctx.enqueue_function[reduce_kernel](
             d_input,
             d_output,
             UInt32(N),

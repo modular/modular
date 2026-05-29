@@ -404,6 +404,50 @@ When your architecture requires multiple custom components (custom attention,
 MoE routing, a non-standard transformer block), implement each in a separate
 file in `layers/` rather than putting everything in `model.py`.
 
+## Expose the architecture
+
+<!-- rumdl-disable MD013 -->
+The `arch.py` file ties the rest of the package together. It should include one
+or more
+[`SupportedArchitecture`](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)
+instances that point MAX at your config class, model class, weight
+adapters, and more:
+<!-- rumdl-enable MD013 -->
+
+```python title="arch.py"
+qwen2_arch = SupportedArchitecture(
+    name="Qwen2ForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    pipeline_model=Qwen2Model,
+    config=Qwen2Config,
+    supported_encodings={"float32", "bfloat16"},
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
+    # ... tokenizer, context_type, default_weights_format, ...
+)
+```
+
+After you create a `SupportedArchitecture` instance, expose it through your
+package's `__init__.py` so MAX can register it when serving:
+
+```python title="__init__.py"
+from .arch import qwen2_arch
+
+ARCHITECTURES = [qwen2_arch]
+```
+
+Most packages expose a single architecture, but you can list more than one
+when:
+
+- There are multiple tasks for the same model. The registry allows entries that
+share a name as long as their task differs (for example, a text generation
+architecture and an embedding architecture for the same model).
+
+- There are multiple Hugging Face class names. A single package with related
+variants whose `config.json` covers a model family might register entries for
+several `architectures[0]` strings.
+
 ## Next steps
 
 With your architecture implemented, see [Serve custom model

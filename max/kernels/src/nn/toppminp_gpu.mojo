@@ -38,9 +38,7 @@ comptime DEBUG_FILE = False
 comptime SEED = 42
 
 
-@__name(
-    t"topk_wrapper_no_shmem_{input_type}_{index_type}_{is_top_p}", mangle=True
-)
+@__name(t"topk_wrapper_no_shmem_{input_type}_{index_type}_{is_top_p}")
 def topk_wrapper_no_shmem[
     input_type: DType,
     index_type: DType,
@@ -104,7 +102,7 @@ def topk_wrapper_no_shmem[
             partial.p = -1
 
 
-@__name(t"topk_wrapper_{input_type}_{index_type}_{is_top_p}", mangle=True)
+@__name(t"topk_wrapper_{input_type}_{index_type}_{is_top_p}")
 def topk_wrapper[
     input_type: DType,
     index_type: DType,
@@ -305,7 +303,7 @@ def normalize(
 
 
 @always_inline
-@__name(t"radix_sort_pairs_{dtype}_{out_idx_type}_{ascending}", mangle=True)
+@__name(t"radix_sort_pairs_{dtype}_{out_idx_type}_{ascending}")
 def radix_sort_pairs_kernel[
     dtype: DType,
     out_idx_type: DType,
@@ -608,7 +606,7 @@ def run_radix_sort_pairs_gpu[
             dtype, out_idx_type, current_bit, ascending, BLOCK_SIZE
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             keys.current(ctx),
             keys.alternate(ctx),
             key_ids.current(ctx),
@@ -623,7 +621,7 @@ def run_radix_sort_pairs_gpu[
 
 
 @always_inline
-@__name(t"topp_minp_sampling_{dtype}_{out_idx_type}_{is_top_p}", mangle=True)
+@__name(t"topp_minp_sampling_{dtype}_{out_idx_type}_{is_top_p}")
 def topp_minp_sampling_kernel[
     dtype: DType,
     out_idx_type: DType,
@@ -813,7 +811,7 @@ def _topp_minp_sampling_gpu[
     var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
     var input_probs = TileTensor(
         probs_buf,
-        row_major(Idx(batch_size), Idx(vocab_size)),
+        row_major(batch_size, vocab_size),
     )
 
     _softmax_gpu[
@@ -842,7 +840,7 @@ def _topp_minp_sampling_gpu[
             _test_sort=_test_sort,
         ]
 
-        ctx.enqueue_function[topk_kernel, topk_kernel](
+        ctx.enqueue_function[topk_kernel](
             K,
             vocab_size,
             num_blocks_per_input,
@@ -863,7 +861,7 @@ def _topp_minp_sampling_gpu[
             _test_sort=_test_sort,
         ]
 
-        ctx.enqueue_function[topk_kernel, topk_kernel](
+        ctx.enqueue_function[topk_kernel](
             K,
             vocab_size,
             num_blocks_per_input,
@@ -914,7 +912,7 @@ def _topp_minp_sampling_gpu[
     comptime topp_minp_kernel = topp_minp_sampling_kernel[
         dtype, out_idx_type, is_top_p
     ]
-    ctx.enqueue_function[topp_minp_kernel, topp_minp_kernel](
+    ctx.enqueue_function[topp_minp_kernel](
         p_thresholds.to_device_buffer(ctx),
         probs_buf,
         ids_buf,

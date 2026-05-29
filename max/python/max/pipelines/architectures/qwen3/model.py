@@ -16,34 +16,32 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 from max._core.engine import Model
 from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph
+from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
+from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
-    KVCacheConfig,
     ModelInputs,
-    PipelineConfig,
 )
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
 )
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.support.algorithm import flatten2d
-from transformers import AutoConfig
 from typing_extensions import override
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
@@ -99,27 +97,12 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     ColumnParallelLinear always require signal buffers for allreduce.
     """
 
+    model_config_cls: ClassVar[type[Any]] = Qwen3Config
+
     model: Model
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Qwen3Config.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
 
     def _create_ep_config(
         self,
@@ -146,10 +129,11 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         config = self.huggingface_config
         n_nodes = ep_size // n_devices
         data_parallel_degree = self.pipeline_config.model.data_parallel_degree
-        attn_tp_size = ep_size // data_parallel_degree
 
-        ep_max_rank_send_tokens = (
-            self.pipeline_config.runtime.max_batch_input_tokens // attn_tp_size
+        ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
+            max_batch_input_tokens=self.pipeline_config.runtime.max_batch_input_tokens,
+            ep_size=ep_size,
+            data_parallel_degree=data_parallel_degree,
         )
 
         encoding = self.pipeline_config.model.quantization_encoding

@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""AMD RDNA GPU attention kernels for Wave32 WMMA operations.
+"""TileTensor-native attention kernels for AMD RDNA3+ (gfx11xx/gfx12xx).
 
-Includes MHA prefill/decode, MMA primitives, and buffer management
-for RDNA consumer GPUs (Radeon RX 7000/8000 series).
+Wave32 with 16x16x16 WMMA. 16-element A/B fragments per lane (full K),
+8-element C/D fragments per lane. Supports MHA prefill and decode.
 """

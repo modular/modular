@@ -69,18 +69,18 @@ def test_scaled_mxfp8_cublaslt[
     var c_shape = Coord(m, n)
 
     var a_scales_shape = Coord(
-        Idx(ceildiv(M, SF_MN_GROUP_SIZE)),
-        Idx(ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(M, SF_MN_GROUP_SIZE),
+        ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
-        Idx(ceildiv(N, SF_MN_GROUP_SIZE)),
-        Idx(ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        ceildiv(N, SF_MN_GROUP_SIZE),
+        ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_size = (
@@ -98,8 +98,12 @@ def test_scaled_mxfp8_cublaslt[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
-    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        a_scales_size
+    )
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        b_scales_size
+    )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
@@ -108,8 +112,8 @@ def test_scaled_mxfp8_cublaslt[
     var b_size = N * K
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[input_type]](a_size)
-    var b_host_ptr = alloc[Scalar[input_type]](b_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](b_size)
     var c_host_ptr = alloc[Scalar[output_type]](c_size)
     var c_host_ref_ptr = alloc[Scalar[output_type]](c_size)
 
@@ -164,8 +168,8 @@ def test_scaled_mxfp8_cublaslt[
                     b_scales_host_tt, idx0, idx1, Scalar[scales_type](0.0)
                 )
 
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
+    rand(a_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -218,12 +222,6 @@ def test_scaled_mxfp8_cublaslt[
         rtol=0.01,
     )
 
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-
 
 def main() raises:
     with DeviceContext() as ctx:
@@ -231,46 +229,46 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(128), Idx[128](), Idx[128]())
+        ](ctx, Idx[128], Idx[128], Idx[128])
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(256), Idx[256](), Idx[256]())
+        ](ctx, Idx[256], Idx[256], Idx[256])
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(128), Idx[3 * 128](), Idx[256]())
+        ](ctx, Idx[128], Idx[3 * 128], Idx[256])
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(3 * 128), Idx[128](), Idx[3 * 128]())
+        ](ctx, 3 * 128, Idx[128], Idx[3 * 128])
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(2560), Idx[4096](), Idx[1024]())
+        ](ctx, Idx[2560], Idx[4096], Idx[1024])
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(1000), Idx[4096](), Idx[1024]())
+        ](ctx, Idx[1000], Idx[4096], Idx[1024])
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(1000), Idx[4096 + 64](), Idx[1024]())
+        ](ctx, Idx[1000], Idx[4096 + 64], Idx[1024])
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(1000), Idx[4096 + 64](), Idx[1024 + 64]())
+        ](ctx, Idx[1000], Idx[4096 + 64], Idx[1024 + 64])

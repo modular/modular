@@ -35,7 +35,7 @@ def _fill[
     value: Scalar[dtype],
     count: Int,
 ):
-    _ = TileTensor(dst, row_major(Idx(count))).fill(value)
+    _ = TileTensor(dst, row_major(count)).fill(value)
 
 
 # TODO: could this be deleted? maybe replaced with faster collapsed loop.

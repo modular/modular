@@ -20,12 +20,13 @@ from std.memory import OwnedPointer
 """
 
 from std.builtin.constrained import _constrained_conforms_to
-from std.builtin.rebind import downcast, trait_downcast
+from std.builtin.rebind import downcast
 from std.format._utils import (
     Repr,
     FormatStruct,
     TypeNames,
 )
+from std.memory.alloc import alloc, free, Layout
 
 
 struct OwnedPointer[T: AnyType](
@@ -40,7 +41,7 @@ struct OwnedPointer[T: AnyType](
     may exist.
 
     For a comparison with other pointer types, see [Intro to
-    pointers](/mojo/manual/pointers/) in the Mojo Manual.
+    pointers](/docs/manual/pointers/) in the Mojo Manual.
 
     Parameters:
         T: The type to be stored in the `OwnedPointer`.
@@ -61,7 +62,7 @@ struct OwnedPointer[T: AnyType](
         Args:
             value: The value to move into the `OwnedPointer`.
         """
-        self._inner = alloc[_T](1)
+        self._inner = alloc(Layout[_T].single())
         self._inner.init_pointee_move(value^)
 
     def __init__[_T: Copyable](out self: OwnedPointer[_T], *, copy_value: _T):
@@ -74,7 +75,7 @@ struct OwnedPointer[T: AnyType](
         Args:
             copy_value: The value to explicitly copy into the `OwnedPointer`.
         """
-        self._inner = alloc[_T](1)
+        self._inner = alloc(Layout[_T].single())
         self._inner.init_pointee_copy(copy_value)
 
     def __init__[
@@ -89,7 +90,7 @@ struct OwnedPointer[T: AnyType](
         Args:
             value: The value to copy into the `OwnedPointer`.
         """
-        self._inner = alloc[_T](1)
+        self._inner = alloc(Layout[_T].single())
         self._inner.init_pointee_copy(value)
 
     def __init__[
@@ -159,7 +160,7 @@ struct OwnedPointer[T: AnyType](
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
         self._inner.bitcast[TDestructible]().destroy_pointee()
-        self._inner.free()
+        free(self._inner, Layout[Self.T].single())
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -214,7 +215,7 @@ struct OwnedPointer[T: AnyType](
             The data that is (was) backing the `OwnedPointer`.
         """
         var r = self._inner.take_pointee()
-        self._inner.free()
+        free(self._inner, Layout[_T].single())
         return r^
 
     def steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
@@ -246,7 +247,7 @@ struct OwnedPointer[T: AnyType](
         Constraints:
             `T` must conform to Writable.
         """
-        trait_downcast[Writable](self[]).write_to(writer)
+        self[].write_to(writer)
 
     def write_repr_to(
         self, mut writer: Some[Writer]
@@ -261,4 +262,4 @@ struct OwnedPointer[T: AnyType](
         """
         FormatStruct(writer, "OwnedPointer").params(
             TypeNames[Self.T](),
-        ).fields(Repr(trait_downcast[Writable](self[])))
+        ).fields(Repr(self[]))

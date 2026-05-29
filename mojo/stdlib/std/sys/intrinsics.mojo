@@ -158,7 +158,7 @@ def gather[
         SIMD[dtype, size]._mlir_type,
     ](
         UnsafePointer(to=base).bitcast[
-            __mlir_type[`!pop.simd<`, size._mlir_value, `, address>`],
+            __mlir_type[`!kgen.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
         mask,
@@ -246,7 +246,7 @@ def scatter[
     llvm_intrinsic["llvm.masked.scatter", NoneType](
         value,
         UnsafePointer(to=base).bitcast[
-            __mlir_type[`!pop.simd<`, size._mlir_value, `, address>`],
+            __mlir_type[`!kgen.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
         mask,
@@ -672,6 +672,16 @@ def strided_load[
     comptime if simd_width == 1:
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
 
+    comptime if is_apple_gpu():
+        # The `gather` path below would erase address space via
+        # `Int(addr)`; on Apple AIR the resulting GENERIC load silently
+        # reads zero (MOCO-3762).
+        var result = SIMD[dtype, simd_width]()
+        comptime for i in range(simd_width):
+            if mask[i]:
+                result[i] = (addr + i * stride).load[invariant=invariant]()
+        return result
+
     var offset = (
         SIMD[DType.int, simd_width](Int(addr))
         + SIMD[DType.int, simd_width](stride * size_of[dtype]())
@@ -781,7 +791,9 @@ def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 
 
 struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a.values, `>`]
+    comptime _mlir_type = __mlir_type[
+        `!kgen.struct<`, ~Self.a.values, ` isParamPack>`
+    ]
 
     var _mlir_value: Self._mlir_type
 
@@ -795,7 +807,7 @@ struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index=i._int_mlir_index()](
+        return __mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](
             self._mlir_value
         )
 

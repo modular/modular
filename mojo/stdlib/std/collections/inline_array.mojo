@@ -33,14 +33,24 @@ var filled = InlineArray[Int, 5](fill=42)
 """
 
 import std.math
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
 from std.builtin.constrained import _constrained_conforms_to
 from std.collections import check_bounds
-from std.compile import get_type_name
 import std.format._utils as fmt
+from std.reflection import reflect
 from std.hashlib.hasher import Hasher
-from std.memory import UnsafeMaybeUninit, uninit_move_n
+from std.memory import (
+    UnsafeMaybeUninit,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+    uninit_move_n,
+)
+from std.memory.unsafe_maybe_uninit import (
+    _is_trivially_copyable,
+    _is_trivially_movable,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Array
@@ -178,7 +188,7 @@ struct _InlineArrayIterOwned[T: Copyable, size: Int](
 
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        comptime if not TDestructible.__del__is_trivial:
+        comptime if not is_trivially_destructible[TDestructible]():
             for i in range(idx, Self.size):
                 (array.unsafe_ptr() + i).bitcast[
                     TDestructible
@@ -204,10 +214,12 @@ struct _InlineArrayIterOwned[T: Copyable, size: Int](
         return (remaining, {remaining})
 
 
-struct InlineArray[ElementType: Copyable, size: Int](
+struct InlineArray[ElementType: Movable, size: Int](
     Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
-    DevicePassable,
+    DevicePassable where conforms_to(
+        ElementType, DevicePassable
+    ) and conforms_to(ElementType, Copyable),
     Equatable where conforms_to(ElementType, Equatable),
     Hashable where conforms_to(ElementType, Hashable),
     ImplicitlyCopyable where conforms_to(ElementType, ImplicitlyCopyable),
@@ -223,11 +235,13 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     InlineArray provides a fixed-size array implementation with compile-time
     size checking. The array size is determined at compile time and cannot be
-    changed. Elements must implement the `Copyable` trait.
+    changed.
 
     Parameters:
         ElementType: The type of the elements in the array. Must implement
-            `Copyable` trait.
+            `Movable`. Copy construction, `fill=` construction, and iteration
+            additionally require `Copyable` and are enforced via conditional
+            `where` clauses.
         size: The size of the array. Must be a positive integer constant.
 
     Examples:
@@ -244,11 +258,15 @@ struct InlineArray[ElementType: Copyable, size: Int](
     ```
     """
 
-    comptime __del__is_trivial: Bool = downcast[
-        Self.ElementType, ImplicitlyDestructible
-    ].__del__is_trivial
-    comptime __copy_ctor_is_trivial: Bool = Self.ElementType.__copy_ctor_is_trivial
-    comptime __move_ctor_is_trivial: Bool = Self.ElementType.__move_ctor_is_trivial
+    comptime __del__is_trivial: Bool = is_trivially_destructible[
+        downcast[Self.ElementType, ImplicitlyDestructible]
+    ]()
+    comptime __copy_ctor_is_trivial: Bool = _is_trivially_copyable[
+        Self.ElementType
+    ]()
+    comptime __move_ctor_is_trivial: Bool = _is_trivially_movable[
+        Self.ElementType
+    ]()
 
     # Fields
     comptime type = __mlir_type[
@@ -265,7 +283,10 @@ struct InlineArray[ElementType: Copyable, size: Int](
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _InlineArrayIter[
-        Self.ElementType, Self.size, iterable_origin, True
+        downcast[Self.ElementType, Copyable],
+        Self.size,
+        iterable_origin,
+        True,
     ]
     """The iterator type for this array.
 
@@ -275,18 +296,23 @@ struct InlineArray[ElementType: Copyable, size: Int](
     """
 
     comptime IteratorOwnedType: Iterator = _InlineArrayIterOwned[
-        Self.ElementType, Self.size
+        downcast[Self.ElementType, Copyable], Self.size
     ]
     """The owned iterator type for this array."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ) where conforms_to(Self.ElementType, DevicePassable) and conforms_to(
+        Self.ElementType, Copyable
+    ):
         """Convert the host type object to a device_type and store it at the
         target address.
 
         Args:
+            encoder: Target specific device type encoder.
             target: The target address to store the device type.
         """
-        target.bitcast[Self.device_type]()[] = self.copy()
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -297,7 +323,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """
         return String(
             "InlineArray[",
-            get_type_name[Self.ElementType](),
+            reflect[Self.ElementType].name(),
             ", ",
             Self.size,
             "]",
@@ -375,7 +401,9 @@ struct InlineArray[ElementType: Copyable, size: Int](
     @always_inline
     def __init__[
         batch_size: SIMDSize = 64
-    ](out self, *, fill: Self.ElementType):
+    ](out self, *, fill: Self.ElementType) where conforms_to(
+        Self.ElementType, Copyable
+    ):
         """Constructs an array where each element is initialized to the supplied
         value.
 
@@ -410,11 +438,15 @@ struct InlineArray[ElementType: Copyable, size: Int](
             runtime performance.
         """
         _inline_array_construction_checks[Self.size]()
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        self = Self(uninitialized=True)
 
         comptime unroll_end = std.math.align_down(Self.size, batch_size)
 
-        var ptr = self.unsafe_ptr()
+        var base = self.unsafe_ptr()
+        comptime CopyablePointerType = UnsafePointer[
+            downcast[Self.ElementType, Copyable], origin_of(base)
+        ]
+        var ptr = rebind[CopyablePointerType](base)
 
         for _ in range(0, unroll_end, batch_size):
             comptime for _ in range(batch_size):
@@ -426,7 +458,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
-            ptr == self.unsafe_ptr() + Self.size,
+            ptr == rebind[CopyablePointerType](base + Self.size),
             "error during `InlineArray` initialization , please file a bug",
             " report.",
         )
@@ -457,23 +489,22 @@ struct InlineArray[ElementType: Copyable, size: Int](
             len(elems),
         )
         _inline_array_construction_checks[Self.size]()
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-
+        self = Self(uninitialized=True)
         var ptr = self.unsafe_ptr()
 
         # Move each element into the array storage.
         comptime for i in range(Self.size):
             # Safety: We own the elements in the variadic list.
-            ptr.init_pointee_move_from(
-                UnsafePointer(to=elems[i]).unsafe_mut_cast[True]()
-            )
+            ptr.init_pointee_move_from(UnsafePointer(to=elems[i]))
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
         # FIXME: Why doesn't consume_elements work here?
         elems^._annihilate()
 
-    def __init__(out self, *, copy: Self):
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.ElementType, Copyable):
         """Copy constructs the array from another array.
 
         Args:
@@ -487,13 +518,26 @@ struct InlineArray[ElementType: Copyable, size: Int](
         ```
         """
 
-        comptime if Self.ElementType.__copy_ctor_is_trivial:
+        # TODO(MOCO-4058): The `where conforms_to(Self.ElementType, Copyable)`
+        # clause above should make the downcasts below redundant, but the
+        # compiler does not narrow `Self.ElementType`'s bound from `Movable`
+        # to `Copyable` when resolving downstream parametric overloads (e.g.
+        # `UnsafePointer.init_pointee_copy[T: Copyable]`). Drop the downcasts
+        # once the compiler propagates `where`-clause evidence.
+        comptime if is_trivially_copyable[
+            downcast[Self.ElementType, Copyable]
+        ]():
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
+            var base = self.unsafe_ptr()
+            comptime CopyablePointerType = UnsafePointer[
+                downcast[Self.ElementType, Copyable], origin_of(base)
+            ]
             for idx in range(Self.size):
-                var ptr = self.unsafe_ptr() + idx
-                ptr.init_pointee_copy(copy.unsafe_get(idx))
+                rebind[CopyablePointerType](base + idx).init_pointee_copy(
+                    copy.unsafe_get(idx)
+                )
 
     def __init__(out self, *, deinit take: Self):
         """Move constructs the array from another array.
@@ -505,7 +549,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Moves the elements from the source array into this array.
         """
 
-        comptime if Self.ElementType.__move_ctor_is_trivial:
+        comptime if is_trivially_movable[Self.ElementType]():
             self._array = take._array
         else:
             self = Self(uninitialized=True)
@@ -526,7 +570,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Self.ElementType, ImplicitlyDestructible
         ]
 
-        comptime if not TDestructible.__del__is_trivial:
+        comptime if not is_trivially_destructible[TDestructible]():
             comptime for idx in range(Self.size):
                 var ptr = self.unsafe_ptr() + idx
                 ptr.bitcast[TDestructible]().destroy_pointee()
@@ -582,7 +626,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     @always_inline
     def __getitem_param__[
-        idx: Some[Indexer]
+        idx: Some[Indexer & ImplicitlyDestructible]
     ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
@@ -652,9 +696,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             True if all elements are equal, False otherwise.
         """
         comptime for i in range(Self.size):
-            if trait_downcast[Equatable](self.unsafe_get(i)) != trait_downcast[
-                Equatable
-            ](other.unsafe_get(i)):
+            if self.unsafe_get(i) != other.unsafe_get(i):
                 return False
         return True
 
@@ -671,9 +713,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             True if any elements are not equal, False otherwise.
         """
         comptime for i in range(Self.size):
-            if trait_downcast[Equatable](self.unsafe_get(i)) != trait_downcast[
-                Equatable
-            ](other.unsafe_get(i)):
+            if self.unsafe_get(i) != other.unsafe_get(i):
                 return True
         return False
 
@@ -689,7 +729,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             hasher: The hasher instance.
         """
         comptime for i in range(Self.size):
-            trait_downcast[Hashable](self.unsafe_get(i)).__hash__(hasher)
+            self.unsafe_get(i).__hash__(hasher)
 
     # ===------------------------------------------------------------------===#
     # Methods
@@ -794,9 +834,8 @@ struct InlineArray[ElementType: Copyable, size: Int](
             element for equality with the given value. The element type must
             implement the `Equatable` trait to support equality comparison.
         """
-        ref rhs = trait_downcast[Equatable](value)
         comptime for i in range(Self.size):
-            if trait_downcast[Equatable](self[i]) == rhs:
+            if self[i] == value:
                 return True
         return False
 
@@ -855,7 +894,15 @@ struct InlineArray[ElementType: Copyable, size: Int](
         Returns:
             An iterator that owns the array's elements.
         """
-        return Self.IteratorOwnedType(self^)
+        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
+        comptime assert conforms_to(
+            Self.ElementType, Copyable
+        ), "InlineArray iteration requires the element to be `Copyable`."
+        return Self.IteratorOwnedType(
+            rebind_var[
+                InlineArray[downcast[Self.ElementType, Copyable], Self.size]
+            ](self^)
+        )
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the array, returning immutable references.
@@ -863,11 +910,30 @@ struct InlineArray[ElementType: Copyable, size: Int](
         Returns:
             An iterator of immutable references to the array elements.
         """
-        return {0, Pointer(to=self)}
+        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
+        comptime assert conforms_to(
+            Self.ElementType, Copyable
+        ), "InlineArray iteration requires the element to be `Copyable`."
+        return {
+            0,
+            rebind[
+                Pointer[
+                    InlineArray[
+                        downcast[Self.ElementType, Copyable], Self.size
+                    ],
+                    origin_of(self),
+                ]
+            ](Pointer(to=self)),
+        }
 
     def __reversed__(
         ref self,
-    ) -> _InlineArrayIter[Self.ElementType, Self.size, origin_of(self), False]:
+    ) -> _InlineArrayIter[
+        downcast[Self.ElementType, Copyable],
+        Self.size,
+        origin_of(self),
+        False,
+    ]:
         """Iterate over elements of the array in reverse order, returning
         immutable references.
 
@@ -875,4 +941,18 @@ struct InlineArray[ElementType: Copyable, size: Int](
             An iterator of immutable references to the array elements in reverse
             order.
         """
-        return _InlineArrayIter[forward=False](Self.size, Pointer(to=self))
+        # TODO(MSTDL-2390): Remove `Copyable` constraint once we have better iter traits.
+        comptime assert conforms_to(
+            Self.ElementType, Copyable
+        ), "InlineArray iteration requires the element to be `Copyable`."
+        return _InlineArrayIter[forward=False](
+            Self.size,
+            rebind[
+                Pointer[
+                    InlineArray[
+                        downcast[Self.ElementType, Copyable], Self.size
+                    ],
+                    origin_of(self),
+                ]
+            ](Pointer(to=self)),
+        )

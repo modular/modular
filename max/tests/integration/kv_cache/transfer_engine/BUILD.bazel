@@ -18,7 +18,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -37,7 +37,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -56,7 +56,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -71,7 +71,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -80,6 +80,7 @@ _4X_GPU_TESTS = [
     "test_send_recv_multi_tensor_threaded_gpu.py",
     "test_send_recv_multi_tensor_multi_process_gpu.py",
     "test_send_recv_dp2_tp2_gpu.py",
+    "test_send_recv_heterogeneous_mla_gpu.py",
 ]
 
 modular_py_test(
@@ -104,7 +105,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -125,7 +126,7 @@ modular_py_test(
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )

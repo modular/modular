@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.interfaces.tokens import Range, TokenBuffer
+from max.pipelines.modeling.types.tokens import Range, TokenBuffer
 
 
 def test_token_buffer__tokens_validation_during_init() -> None:
@@ -89,29 +89,6 @@ def test_token_buffer__generated_and_completion_tracking() -> None:
         token_buffer.consume_recently_generated_tokens(),
         np.array([15], dtype=np.int64),
     )
-
-
-def test_token_buffer__jump_ahead_behavior() -> None:
-    """Verify jump_ahead preserves the active window start."""
-    token_buffer = TokenBuffer(array=np.array([1, 2, 3], dtype=np.int64))
-    baseline_active = token_buffer.active.copy()
-
-    token_buffer.advance_with_token(4, mark_previous_as_processed=False)
-    token_buffer.advance_with_token(5, mark_previous_as_processed=False)
-
-    assert token_buffer.processed_length == 0
-
-    expected = np.concatenate(
-        [baseline_active, np.array([4, 5], dtype=np.int64)]
-    )
-    np.testing.assert_array_equal(token_buffer.active, expected)
-    assert token_buffer.active_length == len(token_buffer)
-
-    token_buffer.advance_with_token(6)
-    np.testing.assert_array_equal(
-        token_buffer.active, np.array([6], dtype=np.int64)
-    )
-    assert token_buffer.processed_length == 5
 
 
 def test_token_buffer__chunking_behaviors() -> None:

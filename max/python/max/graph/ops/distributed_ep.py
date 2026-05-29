@@ -106,9 +106,7 @@ def dispatch_bf16(
 
     graph = Graph.current
     devices = [t.device for t in input_tokens]
-    in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
-    )
+    in_chain = graph.device_chains.merge_for(devices)
 
     *results, out_chain = graph._add_op_generated(
         mo.DistributedEpDispatchOp,
@@ -186,9 +184,7 @@ def dispatch_fp8(
 
     graph = Graph.current
     devices = [t.device for t in input_tokens]
-    in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
-    )
+    in_chain = graph.device_chains.merge_for(devices)
 
     *results, out_chain = graph._add_op_generated(
         mo.DistributedEpDispatchFp8Op,
@@ -270,9 +266,7 @@ def dispatch_nvfp4(
 
     graph = Graph.current
     devices = [t.device for t in input_tokens]
-    in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
-    )
+    in_chain = graph.device_chains.merge_for(devices)
 
     *results, out_chain = graph._add_op_generated(
         mo.DistributedEpDispatchNvfp4Op,
@@ -352,9 +346,7 @@ def dispatch_mxfp4(
 
     graph = Graph.current
     devices = [t.device for t in input_tokens]
-    in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
-    )
+    in_chain = graph.device_chains.merge_for(devices)
 
     *results, out_chain = graph._add_op_generated(
         mo.DistributedEpDispatchMxfp4Op,
@@ -442,9 +434,7 @@ def combine(
 
     graph = Graph.current
     devices = [t.device for t in input_tokens]
-    in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
-    )
+    in_chain = graph.device_chains.merge_for(devices)
 
     *results, out_chain = graph._add_op_generated(
         mo.DistributedEpCombineOp,

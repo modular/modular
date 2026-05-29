@@ -273,6 +273,31 @@ MODULAR_API_EXPORT void M_debugVerifyReplayModelSync(
     const uint64_t *graphKeys, size_t numGraphKeys,
     M_AsyncTensor *const *inputs, size_t numInputs, M_Status *status);
 
+/// Releases previously captured device graphs identified by graph keys.
+///
+/// Drops the runtime-side reference for each key. Once any in-flight replay
+/// completes, the underlying device graph and its captured-time working
+/// memory are freed. Releasing a key that was never captured is a no-op for
+/// that key.
+///
+/// The caller remains responsible for freeing the output `M_AsyncTensor`s
+/// previously returned by `M_captureModelSync()` for these keys; their
+/// device memory is not reclaimed until those tensors are also released.
+///
+/// @param context The runtime context, from `M_newRuntimeContext()`.
+/// @param initializedModel The model containing the captured graphs, from
+///   `M_initModel()`.
+/// @param graphKeys Array of `uint64_t` graph keys. Pass one key to broadcast
+///   to all devices, or one key per device, matching the form used at
+///   `M_captureModelSync()`.
+/// @param numGraphKeys Number of graph keys in the array.
+/// @param status The status used to report errors in the case of failures.
+MODULAR_API_EXPORT void M_releaseCapturedGraphs(const M_RuntimeContext *context,
+                                                M_AsyncModel *initializedModel,
+                                                const uint64_t *graphKeys,
+                                                size_t numGraphKeys,
+                                                M_Status *status);
+
 /// Deallocates the memory for the model.  No-op if `model` is `NULL`.
 ///
 /// @param model The model to deallocate.

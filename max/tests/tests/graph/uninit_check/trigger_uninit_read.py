@@ -17,9 +17,10 @@ Used as a subprocess by test_uninit_check_e2e.py.  When
 MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK=true is set (or the
 `max-debug.uninitialized-read-check` Config key is set),
 InferenceSession enables the debug allocator (which poisons device memory
-with canonical qNaN) and the MOJO_STDLIB_SIMD_UNINIT_CHECK define.  The
-custom kernel's execute method reads from the output tensor before
-writing, hitting the allocator-poisoned memory and triggering the abort.
+with the largest-finite bit pattern) and the MOJO_STDLIB_SIMD_UNINIT_CHECK
+define.  The custom kernel's execute method reads from the output tensor
+before writing, hitting the allocator-poisoned memory and triggering the
+abort.
 
 Expects the UNINIT_OPS_PATH environment variable to point to the
 compiled read_uninit_op Mojo package.

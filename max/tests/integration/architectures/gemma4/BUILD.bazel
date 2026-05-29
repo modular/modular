@@ -18,12 +18,16 @@ modular_py_test(
         ["**/test_*.py"],
         exclude = [
             "test_image_processor.py",
+            "test_reasoning.py",
             "test_tokenizer.py",
             "test_tool_parser.py",
             "test_video_processor.py",
             "test_vision_rotary_embedding.py",
         ],
-    ) + ["conftest.py"],
+    ) + [
+        "_attention_helpers.py",
+        "conftest.py",
+    ],
     data = [
         "//max/tests/integration/architectures/gemma4/testdata",
     ],
@@ -46,9 +50,9 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/kv_cache",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
         requirement("numpy"),
         requirement("torch"),
@@ -80,9 +84,9 @@ modular_py_test(
     name = "test_tokenizer",
     srcs = ["test_tokenizer.py"],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("pillow"),
         requirement("pytest-asyncio"),
@@ -91,17 +95,32 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_reasoning",
+    srcs = ["test_reasoning.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/modeling",
+        requirement("llguidance"),
     ],
 )
 
 modular_py_test(
     name = "test_video_processor",
     srcs = ["test_video_processor.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/pipelines/architectures",
         requirement("av"),
@@ -112,8 +131,6 @@ modular_py_test(
 modular_py_test(
     name = "test_vision_rotary_embedding",
     srcs = ["test_vision_rotary_embedding.py"],
-    gpu_constraints = ["//:has_gpu"],
-    tags = ["gpu"],
     # TODO(MODELS-1371): `test_compute_vision_freqs_cis_matches_hf_reference`
     # hangs for >10 minutes on remote macOS workers.
     target_compatible_with = select({

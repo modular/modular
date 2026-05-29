@@ -84,10 +84,15 @@ class Signals:
     synchronization, and to hold intermediate communication results.
     """
 
-    NUM_BYTES = (1 + 512) * 1024 * 1024
+    NUM_BYTES = (1 + 256) * 1024 * 1024
     """The size of the signal buffers used for communication in allreduce."""
     # NOTE: ``NUM_BYTES`` must stay in sync with the size of the ``Signal``
     # Mojo struct + the size of the intermediate buffer for communication.
+    # Breakdown: 1 MB for the Signal struct + 1024 MB scratch. The 1024 MB
+    # scratch sizes the allgather intermediate that holds
+    # ``hidden_dim * max_batch_input_tokens * dtype_bytes`` per peer; 1 GiB
+    # gives ~60% headroom over Kimi-K2.5 (hidden_dim=20480,
+    # max_batch_input_tokens=16384, bf16 → 640 MiB).
 
     devices: list[DeviceRef]
     """List of graph devices that these signals communicate between."""

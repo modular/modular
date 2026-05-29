@@ -249,7 +249,7 @@ def gpt_model(device: Device):  # noqa: ANN201
             vocab_size=50257,
             context_length=1024,
             qkv_bias=True,
-        ).to(device=device)
+        ).to(target=device)
 
     yield model
 

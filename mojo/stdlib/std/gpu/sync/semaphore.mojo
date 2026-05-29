@@ -17,20 +17,20 @@ The Semaphore struct enables inter-CTA (Cooperative Thread Array) synchronizatio
 by providing atomic operations and memory barriers. It uses NVIDIA-specific intrinsics
 to implement efficient thread synchronization.
 
-Example:
+Examples:
 
-    ```text
+    ```mojo
     from std.gpu import Semaphore
 
-    var lock = UnsafePointer[Int32](...)
-    var thread_id = 0
-    var sem = Semaphore(lock, thread_id)
+    def semaphore(lock: UnsafePointer[mut=True, Int32, ...]):
+        var thread_id = 0
+        var sem = Semaphore(lock, thread_id)
 
-    # Wait for a specific state
-    sem.wait(0)
+        # Wait for a specific state
+        sem.wait(0)
 
-    # Release the semaphore
-    sem.release(1)
+        # Release the semaphore
+        sem.release(1)
     ```
 """
 

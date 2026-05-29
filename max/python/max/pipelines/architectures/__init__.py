@@ -38,15 +38,15 @@ def register_all_models() -> None:
     from .deepseekV3 import deepseekV3_arch
     from .deepseekV3_2 import deepseekV3_2_arch
     from .deepseekV3_nextn import deepseekV3_nextn_arch
-    from .eagle_llama3 import eagle_llama_arch
+    from .dflash_llama3 import dflash_llama_arch
+    from .eagle3_deepseekV3 import (
+        eagle3_deepseekV3_arch,
+        eagle3_mha_deepseekV3_arch,
+    )
+    from .eagle_llama3 import eagle3_llama_arch, eagle_llama_arch
     from .exaone import exaone_arch
     from .exaone_modulev3 import exaone_modulev3_arch
-    from .flux1_modulev3 import flux1_arch, flux1_modulev3_arch
     from .flux2 import flux2_arch, flux2_klein_arch
-    from .flux2_modulev3 import (
-        flux2_klein_modulev3_arch,
-        flux2_modulev3_arch,
-    )
     from .gemma3 import gemma3_arch
     from .gemma3_modulev3 import gemma3_modulev3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
@@ -59,7 +59,13 @@ def register_all_models() -> None:
     from .idefics3 import idefics3_arch
     from .idefics3_modulev3 import idefics3_modulev3_arch
     from .internvl import internvl_arch
-    from .kimik2_5 import eagle3_kimik25_arch, kimik2_5_arch, kimivl_arch
+    from .kimik2_5 import (
+        eagle3_kimik25_arch,
+        eagle3_mha_kimik25_arch,
+        kimik2_5_arch,
+        kimivl_arch,
+    )
+    from .lfm2 import lfm2_arch
     from .llama3 import llama_arch
     from .llama3_modulev3 import llama_modulev3_arch
     from .mamba import mamba_arch
@@ -80,11 +86,14 @@ def register_all_models() -> None:
     from .qwen2 import qwen2_arch
     from .qwen2_5vl import qwen2_5_vl_arch
     from .qwen3 import qwen3_arch, qwen3_moe_arch
+    from .qwen3_5 import qwen3_5_arch
     from .qwen3_embedding import qwen3_embedding_arch
     from .qwen3_embedding_modulev3 import qwen3_embedding_modulev3_arch
     from .qwen3vl_moe import qwen3vl_arch, qwen3vl_moe_arch
     from .qwen_image import qwen_image_arch
     from .qwen_image_edit import qwen_image_edit_arch, qwen_image_edit_plus_arch
+    from .step3p5 import step3p5_arch
+    from .unified_dflash_llama3 import unified_dflash_llama3_arch
     from .unified_eagle_llama3 import unified_eagle_llama3_arch
     from .unified_mtp_deepseekV3 import unified_mtp_deepseekV3_arch
     from .wan import wan_arch, wan_i2v_arch
@@ -97,13 +106,13 @@ def register_all_models() -> None:
         deepseekV3_arch,
         deepseekV3_2_arch,
         deepseekV3_nextn_arch,
+        dflash_llama_arch,
+        eagle3_deepseekV3_arch,
+        eagle3_mha_deepseekV3_arch,
+        eagle3_llama_arch,
         eagle_llama_arch,
-        flux1_arch,
-        flux1_modulev3_arch,
         flux2_arch,
         flux2_klein_arch,
-        flux2_modulev3_arch,
-        flux2_klein_modulev3_arch,
         gemma3_arch,
         gemma3_modulev3_arch,
         gemma3_multimodal_arch,
@@ -117,10 +126,12 @@ def register_all_models() -> None:
         idefics3_arch,
         idefics3_modulev3_arch,
         eagle3_kimik25_arch,
+        eagle3_mha_kimik25_arch,
         kimik2_5_arch,
         kimivl_arch,
         llama_arch,
         llama_modulev3_arch,
+        lfm2_arch,
         mamba_arch,
         minimax_m2_arch,
         bert_arch,
@@ -141,6 +152,7 @@ def register_all_models() -> None:
         qwen2_5_vl_arch,
         qwen3_arch,
         qwen3_moe_arch,
+        qwen3_5_arch,
         qwen3_embedding_arch,
         qwen3_embedding_modulev3_arch,
         qwen3vl_arch,
@@ -148,6 +160,8 @@ def register_all_models() -> None:
         qwen_image_arch,
         qwen_image_edit_arch,
         qwen_image_edit_plus_arch,
+        step3p5_arch,
+        unified_dflash_llama3_arch,
         unified_eagle_llama3_arch,
         unified_mtp_deepseekV3_arch,
         wan_arch,
@@ -157,6 +171,12 @@ def register_all_models() -> None:
 
     for arch in architectures:
         PIPELINE_REGISTRY.register(arch)
+
+    # Optional: pull in private tool parsers.
+    try:
+        import tool_parsers  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        pass
 
     _MODELS_ALREADY_REGISTERED = True
 

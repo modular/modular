@@ -511,7 +511,7 @@ def test_tma_umma_pair_cta[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c.device_tensor(),

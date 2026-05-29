@@ -20,6 +20,8 @@ import builtins
 from max.experimental.sharding.mappings import PlacementMapping
 from max.experimental.sharding.placements import Partial, Placement, Sharded
 from max.experimental.sharding.types import TensorLayout
+from max.graph.dim import DimLike
+from max.graph.shape import ShapeLike
 
 from ._common import RuleSignature, resolve_partials_mapping
 
@@ -38,9 +40,9 @@ def _reject_axes(
 
 def band_part_rule(
     x: TensorLayout,
-    num_lower: object = -1,
-    num_upper: object = -1,
-    exclude: object = False,
+    num_lower: int | None = None,
+    num_upper: int | None = None,
+    exclude: bool = False,
 ) -> RuleSignature:
     """band_part is linear. Rejects sharding on last 2 axes (matrix dims)."""
     bad = {builtins.max(0, x.rank - 2), x.rank - 1}
@@ -49,18 +51,18 @@ def band_part_rule(
 
 
 def fold_rule(
-    x: TensorLayout,
-    output_size: tuple[int, int],
-    kernel_size: tuple[int, int],
-    stride: object = 1,
-    dilation: object = 1,
-    padding: object = 0,
+    input: TensorLayout,
+    output_size: tuple[DimLike, DimLike],
+    kernel_size: tuple[DimLike, DimLike],
+    stride: int | tuple[int, int] = 1,
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
 ) -> RuleSignature:
     """Fold is linear. Rejects sharding on axes 1, 2."""
-    _reject_axes(x.mapping.to_placements(), {1, 2}, "fold")
+    _reject_axes(input.mapping.to_placements(), {1, 2}, "fold")
     return (
-        (x.mapping, output_size, kernel_size, stride, dilation, padding),
-        (x.mapping,),
+        (input.mapping, output_size, kernel_size, stride, dilation, padding),
+        (input.mapping,),
     )
 
 
@@ -71,30 +73,50 @@ def as_interleaved_complex_rule(x: TensorLayout) -> RuleSignature:
     return (s,), (s,)
 
 
-def resize_rule(x: TensorLayout, size: object, *extra: object) -> RuleSignature:
-    """Resize is linear. Only batch-dim sharding allowed."""
+def resize_rule(
+    input: TensorLayout, size: ShapeLike, *extra: object
+) -> RuleSignature:
+    """Resize is linear. Only batch-dim sharding allowed.
+
+    Shared by ``ops.resize``, ``ops.resize_nearest``, ``ops.resize_bicubic``;
+    their trailing args differ, hence ``*extra``.
+    """
     _reject_axes(
-        x.mapping.to_placements(), set(builtins.range(1, x.rank)), "resize"
+        input.mapping.to_placements(),
+        set(builtins.range(1, input.rank)),
+        "resize",
     )
-    return (x.mapping, size, *extra), (x.mapping,)
+    return (input.mapping, size, *extra), (input.mapping,)
 
 
 def resize_linear_rule(
-    x: TensorLayout, size: object, *extra: object
+    input: TensorLayout,
+    size: ShapeLike,
+    coordinate_transform_mode: int = 0,
+    antialias: bool = False,
 ) -> RuleSignature:
-    """resize_linear is linear. Only batch-dim sharding allowed."""
+    """Resize_linear is linear. Only batch-dim sharding allowed."""
     _reject_axes(
-        x.mapping.to_placements(),
-        set(builtins.range(1, x.rank)),
+        input.mapping.to_placements(),
+        set(builtins.range(1, input.rank)),
         "resize_linear",
     )
-    return (x.mapping, size, *extra), (x.mapping,)
+    return (
+        input.mapping,
+        size,
+        coordinate_transform_mode,
+        antialias,
+    ), (input.mapping,)
 
 
-def irfft_rule(x: TensorLayout, *extra: object) -> RuleSignature:
-    """Irfft is linear. Rejects sharding on last axis."""
-    _reject_axes(x.mapping.to_placements(), {x.rank - 1}, "irfft")
-    return (x.mapping, *extra), (x.mapping,)
+def irfft_rule(input_tensor: TensorLayout, *extra: object) -> RuleSignature:
+    """Sharding rule for irfft. Rejects sharding on the last (FFT) axis."""
+    _reject_axes(
+        input_tensor.mapping.to_placements(),
+        {input_tensor.rank - 1},
+        "irfft",
+    )
+    return (input_tensor.mapping, *extra), (input_tensor.mapping,)
 
 
 def reject_distributed_rule(

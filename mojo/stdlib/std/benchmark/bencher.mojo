@@ -437,7 +437,7 @@ struct BenchConfig(Copyable):
 
 
 @fieldwise_init
-struct BenchId:
+struct BenchId(Copyable, Equatable, Hashable, Writable):
     """Defines a benchmark Id struct to identify and represent a particular benchmark execution.
     """
 
@@ -573,7 +573,7 @@ struct Bench(Writable):
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function_experimental[example_kernel](
+            ctx.enqueue_function[example_kernel](
                 grid_dim=shape[0], block_dim=shape[1]
             )
 
@@ -1648,6 +1648,35 @@ struct Bencher(RegisterPassable):
             abort(String(e))
 
     def iter_custom[
+        FuncType: def(DeviceContext) raises -> None,
+    ](mut self, ref func: FuncType, ctx: DeviceContext):
+        """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
+
+        Parameters:
+            FuncType: The target GPU kernel launch closure type.
+
+        Args:
+            func: The closure carrying the captured state of the kernel launch.
+            ctx: The GPU DeviceContext for launching kernel.
+
+        Notes:
+
+        This overload is intentionally separate from the parametric
+        `iter_custom[kernel_launch_fn](ctx)` form. Nested launch closures that
+        capture benchmark-local state are closure values, and the current
+        closure typing rules do not let those values compose with a
+        `def(DeviceContext) raises capturing[_]` compile-time parameter while
+        preserving their capture object. This value-taking overload forwards
+        the closure to `DeviceContext.execution_time()` so `FuncType` carries
+        the captured state.
+        """
+
+        try:
+            self.elapsed = ctx.execution_time(func, self.num_iters)
+        except e:
+            abort(String(e))
+
+    def iter_custom[
         kernel_launch_fn: def(DeviceContext, Int) raises capturing[_] -> None
     ](mut self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
@@ -1662,6 +1691,35 @@ struct Bencher(RegisterPassable):
             self.elapsed = ctx.execution_time_iter[kernel_launch_fn](
                 self.num_iters
             )
+        except e:
+            abort(String(e))
+
+    def iter_custom[
+        FuncType: def(DeviceContext, Int) raises -> None,
+    ](mut self, ref func: FuncType, ctx: DeviceContext):
+        """Times a target GPU closure with custom number of iterations via DeviceContext ctx.
+
+        Parameters:
+            FuncType: The target GPU kernel launch closure type.
+
+        Args:
+            func: The closure carrying the captured state of the kernel launch.
+            ctx: The GPU DeviceContext for launching kernel.
+
+        Notes:
+
+        This overload is intentionally separate from the parametric
+        `iter_custom[kernel_launch_fn](ctx)` form. Nested launch closures that
+        capture benchmark-local state are closure values, and the current
+        closure typing rules do not let those values compose with a
+        `def(DeviceContext, Int) raises capturing[_]` compile-time parameter
+        while preserving their capture object. This value-taking overload
+        forwards the closure to `DeviceContext.execution_time_iter()` so
+        `FuncType` carries the captured state.
+        """
+
+        try:
+            self.elapsed = ctx.execution_time_iter(func, self.num_iters)
         except e:
             abort(String(e))
 

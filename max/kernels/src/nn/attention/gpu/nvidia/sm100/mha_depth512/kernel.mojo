@@ -52,6 +52,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     MBarType,
     elect,
+    kv_sub_tile_rows,
 )
 from nn.attention.gpu.nvidia.sm90.attention import (
     get_seq_info,
@@ -111,6 +112,8 @@ struct SM100MHADepth512[
     comptime PairBM_mask: Int = Self.BM_eff * 2
     comptime ragged = not Self.ValidLengthType.is_null
     comptime page_size = Self.KVLUTType.page_size
+    comptime k_sub_BN: Int = kv_sub_tile_rows(Self.BN // 2, Self.page_size)
+    comptime v_sub_BN: Int = kv_sub_tile_rows(Self.config.BK1, Self.page_size)
 
     comptime SmemType = Depth512AttentionSMem[Self.config]
 
@@ -135,10 +138,9 @@ struct SM100MHADepth512[
         )
     )
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
-    @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__name(
         t"sm100_mha_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
     )
     def kernel(
         q_tma_op: QTMATile[
@@ -154,13 +156,13 @@ struct SM100MHADepth512[
         k_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BN=Self.config.BN // 2,
+            BN=Self.k_sub_BN,
             BK=Self.config.BK0,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BN=Self.config.BK1,
+            BN=Self.v_sub_BN,
             BK=Self.config.v_cols_per_cta,
         ],
         ragged_tma_store: RaggedTMA3DTile[
@@ -198,6 +200,13 @@ struct SM100MHADepth512[
 
         var smem = Self.SmemType()
 
+        # Per-warpgroup register allocation.  Depth-512 widens the per-WG
+        # working set vs the depth ≤ 128 path (see `kernel.mojo`), so the
+        # softmax (256) and correction (184) WGs get more registers than
+        # the 192/88 split there; MMA + load warps run lean at "other"
+        # (64), and the spare warps drop to the floor (24).  Sum must fit
+        # in the SM register budget; bump together if a path starts
+        # spilling.
         comptime num_reg_softmax = 256
         comptime num_reg_correction = 184
         comptime num_reg_other = 64
@@ -213,7 +222,8 @@ struct SM100MHADepth512[
         elif warp_idx == 1:
             # TMEM allocation (pair-CTA cooperative).
             tcgen05_alloc[Int32(Self.cta_group)](
-                smem.tmem_addr_ptr(), UInt32(512)
+                smem.tmem_addr_ptr(),
+                UInt32(Self.config.sm100_tmem_cols),
             )
         elif warp_idx == 2:
             e = elect()
@@ -338,7 +348,9 @@ struct SM100MHADepth512[
             if not seq_info.is_valid():
                 var tmem_addr = smem.tmem_addr_ptr()[]
                 tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                tcgen05_dealloc[Int32(Self.cta_group)](tmem_addr, UInt32(512))
+                tcgen05_dealloc[Int32(Self.cta_group)](
+                    tmem_addr, UInt32(Self.config.sm100_tmem_cols)
+                )
                 return
             var pos: PositionSummary = PositionSummary.create[
                 ragged=Self.ragged,
@@ -386,29 +398,60 @@ struct SM100MHADepth512[
                 kv_input_row_offsets,
                 max_seq_len,
             )
-            depth512_load[
-                Self.KVLUTType,
-                Self.MaskType,
-                Self.qkv_type,
-                Self.config,
-                Self.ValidLengthType,
-                Self._is_cache_length_accurate,
-                Self.MaxSeqLenType,
-            ](
-                smem,
-                pos.score_row,
-                pos.num_keys,
-                seq_info,
-                max_seq_len,
-                mask,
-                q_tma_op,
-                k_tma_op,
-                v_tma_op,
-                kv_lut,
-            )
+            # Hoist the pair-CTA rank branch to dispatch to two
+            # comptime specializations of `depth512_load` (is_leader=
+            # True for the even CTA, False for the odd one). Mirrors
+            # the pattern at `sm100/kernel.mojo:447-483`.
+            if cta_rank == UInt32(0):
+                depth512_load[
+                    Self.KVLUTType,
+                    Self.MaskType,
+                    Self.qkv_type,
+                    Self.config,
+                    Self.ValidLengthType,
+                    Self._is_cache_length_accurate,
+                    Self.MaxSeqLenType,
+                    is_leader=True,
+                ](
+                    smem,
+                    pos.score_row,
+                    pos.num_keys,
+                    seq_info,
+                    max_seq_len,
+                    mask,
+                    q_tma_op,
+                    k_tma_op,
+                    v_tma_op,
+                    kv_lut,
+                )
+            else:
+                depth512_load[
+                    Self.KVLUTType,
+                    Self.MaskType,
+                    Self.qkv_type,
+                    Self.config,
+                    Self.ValidLengthType,
+                    Self._is_cache_length_accurate,
+                    Self.MaxSeqLenType,
+                    is_leader=False,
+                ](
+                    smem,
+                    pos.score_row,
+                    pos.num_keys,
+                    seq_info,
+                    max_seq_len,
+                    mask,
+                    q_tma_op,
+                    k_tma_op,
+                    v_tma_op,
+                    kv_lut,
+                )
 
         else:
-            # Spare warps 10-11 (no-op).
+            # Spare warps 10-11 (no-op).  24 is the floor for
+            # `setmaxnreg.dec` on SM90+ — drop these warps' allocation
+            # to the minimum so the active WGs claim their share of the
+            # SM register file.
             warpgroup_reg_dealloc[24]()
 
     @staticmethod

@@ -23,12 +23,12 @@ family.
    pipelines.architectures.deepseekV3
    pipelines.architectures.deepseekV3_2
    pipelines.architectures.deepseekV3_nextn
+   pipelines.architectures.dflash_llama3
+   pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
    pipelines.architectures.exaone
    pipelines.architectures.exaone_modulev3
-   pipelines.architectures.flux1_modulev3
    pipelines.architectures.flux2
-   pipelines.architectures.flux2_modulev3
    pipelines.architectures.gemma3
    pipelines.architectures.gemma3_modulev3
    pipelines.architectures.gemma3multimodal
@@ -42,6 +42,7 @@ family.
    pipelines.architectures.idefics3_modulev3
    pipelines.architectures.internvl
    pipelines.architectures.kimik2_5
+   pipelines.architectures.lfm2
    pipelines.architectures.llama3
    pipelines.architectures.llama3_modulev3
    pipelines.architectures.mamba
@@ -62,11 +63,14 @@ family.
    pipelines.architectures.qwen2
    pipelines.architectures.qwen2_5vl
    pipelines.architectures.qwen3
+   pipelines.architectures.qwen3_5
    pipelines.architectures.qwen3_embedding
    pipelines.architectures.qwen3_embedding_modulev3
    pipelines.architectures.qwen3vl_moe
    pipelines.architectures.qwen_image
    pipelines.architectures.qwen_image_edit
+   pipelines.architectures.step3p5
+   pipelines.architectures.unified_dflash_llama3
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.wan
@@ -82,6 +86,8 @@ Text generation
    ~max.pipelines.architectures.deepseekV3
    ~max.pipelines.architectures.deepseekV3_2
    ~max.pipelines.architectures.deepseekV3_nextn
+   ~max.pipelines.architectures.dflash_llama3
+   ~max.pipelines.architectures.eagle3_deepseekV3
    ~max.pipelines.architectures.eagle_llama3
    ~max.pipelines.architectures.exaone
    ~max.pipelines.architectures.exaone_modulev3
@@ -98,6 +104,7 @@ Text generation
    ~max.pipelines.architectures.idefics3_modulev3
    ~max.pipelines.architectures.internvl
    ~max.pipelines.architectures.kimik2_5
+   ~max.pipelines.architectures.lfm2
    ~max.pipelines.architectures.llama3
    ~max.pipelines.architectures.llama3_modulev3
    ~max.pipelines.architectures.mamba
@@ -116,7 +123,10 @@ Text generation
    ~max.pipelines.architectures.qwen2
    ~max.pipelines.architectures.qwen2_5vl
    ~max.pipelines.architectures.qwen3
+   ~max.pipelines.architectures.qwen3_5
    ~max.pipelines.architectures.qwen3vl_moe
+   ~max.pipelines.architectures.step3p5
+   ~max.pipelines.architectures.unified_dflash_llama3
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3
 
@@ -138,9 +148,7 @@ Image generation
 .. autosummary::
    :nosignatures:
 
-   ~max.pipelines.architectures.flux1_modulev3
    ~max.pipelines.architectures.flux2
-   ~max.pipelines.architectures.flux2_modulev3
    ~max.pipelines.architectures.qwen_image
    ~max.pipelines.architectures.qwen_image_edit
    ~max.pipelines.architectures.wan

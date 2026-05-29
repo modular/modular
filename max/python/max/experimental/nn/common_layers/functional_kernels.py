@@ -14,36 +14,96 @@
 """Functional wrappers for MAX kernel operations used in attention layers."""
 
 import functools
+import inspect
+from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
 from max.experimental import functional as F
+from max.experimental.functional.utils import collect_tensors
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import (
     DeviceMesh,
     Placement,
     PlacementMapping,
     Replicated,
-    Sharded,
+    global_shape_from_local,
 )
+from max.experimental.sharding.rules import RuleSignature
+from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
+from max.nn.kernels import (
+    flare_mla_prefill_plan as _flare_mla_prefill_plan,
+)
 from max.nn.kernels import (
     flash_attention_ragged as _flash_attention_ragged,
 )
 from max.nn.kernels import (
     grouped_matmul_ragged as _grouped_matmul_ragged,
 )
-from max.nn.kernels import moe_create_indices as _moe_create_indices
-from max.nn.kernels import rms_norm_key_cache as _rms_norm_key_cache
+from max.nn.kernels import (
+    mla_decode_graph as _mla_decode_graph,
+)
+from max.nn.kernels import (
+    mla_prefill_decode_graph as _mla_prefill_decode_graph,
+)
+from max.nn.kernels import (
+    mla_prefill_graph as _mla_prefill_graph,
+)
+from max.nn.kernels import (
+    moe_create_indices as _moe_create_indices,
+)
+from max.nn.kernels import (
+    rms_norm_key_cache as _rms_norm_key_cache,
+)
 from max.nn.kernels import (
     rope_split_store_ragged as _rope_split_store_ragged,
 )
 
-grouped_matmul_ragged = F.functional(_grouped_matmul_ragged)
-moe_create_indices = F.functional(_moe_create_indices)
+# Define placement for independent tensors, representing a bundle of tensors
+# on different devices, with the same shape and dtype, but will not have the
+# same values.
+# This placement uses "replicated" operation semantics, but they are not really
+# replicated.
+Independent = Replicated
+
+
+def grouped_matmul_ragged_rule(
+    hidden_states: TensorLayout,
+    weight: TensorLayout,
+    expert_start_indices: TensorLayout,
+    expert_ids: TensorLayout,
+    expert_usage_stats_host: TensorLayout,
+) -> RuleSignature:
+    return (
+        (
+            hidden_states,
+            weight,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats_host,
+        ),
+        (weight.mapping,),
+    )
+
+
+grouped_matmul_ragged = F.functional(
+    _grouped_matmul_ragged, rule=grouped_matmul_ragged_rule
+)
+
+
+def _moe_create_indices_rule(lhs: TensorLayout, *args: object) -> RuleSignature:
+    mesh = lhs.mapping.mesh
+    return ((lhs, *args), (PlacementMapping(mesh, (Independent(),)),))
+
+
+moe_create_indices = F.functional(
+    _moe_create_indices, rule=_moe_create_indices_rule
+)
 
 inplace_custom = F.functional(ops.inplace_custom)
+shard_and_stack = F.functional(ops.shard_and_stack)
 
 
 # ─── KVCache Operations ─────────────────────────────────────
@@ -51,38 +111,102 @@ inplace_custom = F.functional(ops.inplace_custom)
 
 def _wrap_kvcache_op(
     op: Callable[..., Any],
-    output_sharded_axis: int | None = None,
+    return_input_sharding: str | None = None,
 ) -> Callable[..., Any]:
     """Wraps a kernel op to dispatch per-device on distributed inputs.
 
     Args:
         op: The underlying kernel function.
-        output_sharded_axis: If set, the output tensor's axis that is
-            sharded across devices (e.g. 1 for column-parallel QKV).
-            If ``None``, the output uses a Replicated placement.
+        return_input_sharding: The name of a tensor arg in `op`. If set, the
+          sharding of the output tensor is set to the sharding of the input
+          tensor at this arg.
     """
+    sig = inspect.signature(op)
+    if (
+        return_input_sharding is not None
+        and return_input_sharding not in sig.parameters
+    ):
+        raise ValueError(
+            f"Input tensor arg {return_input_sharding} not found in {op.__name__}"
+        )
 
     @functools.wraps(op)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
-        results: list[Any] = []
+        results: dict[int, list[Any]] = defaultdict(list)
         for a, kw in _loop_distributed_args(args, kwargs):
-            results.append(op(*a, **kw))
-
-        if results[0] is None:
-            return None
-        if isinstance(results[0], TensorValue):
-            mesh = _find_mesh(*args, **kwargs)
-            placements: tuple[Placement, ...]
-            if output_sharded_axis is not None:
-                placements = (Sharded(output_sharded_axis),)
+            output = op(*a, **kw)
+            if isinstance(output, TensorValue):
+                results[0].append(output)
+            elif isinstance(output, (list, tuple)):
+                for i, result in enumerate(output):
+                    results[i].append(result)
+            elif output is None:
+                continue
             else:
-                placements = (Replicated(),)
-            return Tensor.from_shard_values(
-                results, PlacementMapping(mesh, placements)
-            )
-        raise TypeError(f"Unexpected result type: {type(results[0])}")
+                raise TypeError(
+                    f"Unexpected result type {type(output)} from {op.__name__}"
+                )
+
+        if not results:
+            return None
+
+        tensor_results: list[Tensor] = []
+        mapping = _get_mapping(
+            op.__name__, sig, return_input_sharding, args, kwargs
+        )
+        reference_tensors = collect_tensors((*args, *kwargs.values()))
+        for i in range(len(results)):
+            result = results[i]
+            if isinstance(result, (TensorValue, list, tuple)):
+                shards = (
+                    [result]
+                    if isinstance(result, TensorValue)
+                    else list(result)
+                )
+                global_shape = global_shape_from_local(
+                    [list(s.shape) for s in shards],
+                    mapping.mesh,
+                    mapping.to_placements(),
+                    reference_tensors,
+                )
+                tensor_results.append(
+                    Tensor.from_shard_values(
+                        result, mapping, global_shape=global_shape
+                    )
+                )
+            else:
+                raise TypeError(f"Unexpected result type: {type(results[0])}")
+        if len(tensor_results) == 1:
+            return tensor_results[0]
+        else:
+            return tensor_results
 
     return wrapped
+
+
+def _get_mapping(
+    op_name: str,
+    sig: inspect.Signature,
+    return_input_sharding: str | None,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> PlacementMapping:
+    placements: tuple[Placement, ...]
+    if return_input_sharding is not None:
+        # Get the input specified by return_input_sharding from args and kwargs.
+        bound_args = sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+        input_sharding = bound_args.arguments[return_input_sharding]
+        if not isinstance(input_sharding, Tensor):
+            raise ValueError(
+                f"Input tensor arg {return_input_sharding} passed to {op_name} must be a Tensor"
+            )
+        mesh = input_sharding.mesh
+        placements = input_sharding.placements
+    else:
+        mesh = _find_mesh(*args, **kwargs)
+        placements = tuple(Independent() for _ in range(mesh.ndim))
+    return PlacementMapping(mesh, placements)
 
 
 def _find_mesh(*args: Any, **kwargs: Any) -> DeviceMesh:
@@ -138,14 +262,13 @@ def _loop_distributed_args(
     ]
 
 
-flash_attention_ragged = _wrap_kvcache_op(
-    _flash_attention_ragged, output_sharded_axis=1
-)
-rope_split_store_ragged = _wrap_kvcache_op(
-    _rope_split_store_ragged, output_sharded_axis=1
-)
-# In-place op, returns None.
+flash_attention_ragged = _wrap_kvcache_op(_flash_attention_ragged, "input")
+rope_split_store_ragged = _wrap_kvcache_op(_rope_split_store_ragged, "qkv")
 rms_norm_key_cache = _wrap_kvcache_op(_rms_norm_key_cache)
+flare_mla_prefill_plan = _wrap_kvcache_op(_flare_mla_prefill_plan)
+mla_prefill_graph = _wrap_kvcache_op(_mla_prefill_graph, "q")
+mla_decode_graph = _wrap_kvcache_op(_mla_decode_graph, "q")
+mla_prefill_decode_graph = _wrap_kvcache_op(_mla_prefill_decode_graph, "q")
 
 
 __all__ = [

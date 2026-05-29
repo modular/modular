@@ -17,48 +17,43 @@ OPS = [file.removesuffix(".mojo") for file in glob(["*_ops.mojo"])]
 # as much of the compilation as possible.
 EXTRA_DEPS = {
     "data_movement_ops": [
-        "//max:tensor",
+        "//max:extensibility",
+        "//max:gather_scatter_kernels",
         "//max:layout",
-        "//max:MOGGKernelAPI",
-        "//max:compiler_internal",
     ],
     "elementwise_binary_ops": [
-        "//max:MOGGKernelAPI",
-        "//max:tensor",
+        "//max:elementwise_kernels",
+        "//max:extensibility",
     ],
     "elementwise_cast_ops": [
-        "//max:MOGGKernelAPI",
-        "//max:tensor",
+        "//max:elementwise_kernels",
+        "//max:extensibility",
     ],
     "elementwise_comparison_ops": [
-        "//max:MOGGKernelAPI",
-        "//max:tensor",
+        "//max:elementwise_kernels",
+        "//max:extensibility",
     ],
     "elementwise_unary_ops": [
-        "//max:tensor",
-        "//max:MOGGKernelAPI",
+        "//max:elementwise_kernels",
+        "//max:extensibility",
     ],
     "group_norm_ops": [
-        "//max:tensor",
+        "//max:extensibility",
         "//max:nn",
-        "//max:compiler_internal",
     ],
     "layer_norm_ops": [
         "//max:nn",
-        "//max:tensor",
-        "//max:compiler_internal",
+        "//max:extensibility",
     ],
     "matmul_ops": [
-        "//max:compiler_internal",
-        "//max:linalg",
-        "//max:MOGGKernelAPI",
+        "//max:extensibility",
         "//max:layout",
-        "//max:tensor",
+        "//max:linalg",
+        "//max:linalg_kernels",
     ],
     "misc_ops": [
-        "//max:MOGGKernelAPI",
-        "//max:tensor",
-        "//max:compiler_internal",
+        "//max:common_kernels",
+        "//max:extensibility",
     ],
     "resize_ops": [
         "//max:nn",
@@ -66,8 +61,7 @@ EXTRA_DEPS = {
     ],
     "rms_norm_ops": [
         "//max:nn",
-        "//max:tensor",
-        "//max:compiler_internal",
+        "//max:extensibility",
     ],
     "softmax_ops": [
         "//max:nn",
@@ -109,7 +103,7 @@ modular_py_library(
     data = select({
         "@platforms//os:macos": [
             ":_mojo_srcs",
-            "//max:MOGGKernelAPI",
+            "//max:builtin_kernels",
             "@mojo//:std",
         ],
         "//conditions:default": _SHARED_LIBS,

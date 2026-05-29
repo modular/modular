@@ -54,10 +54,11 @@ trait PipelineSchedule:
       - config(): pipeline structure (depth, MMA grid, etc.)
       - build_body(): the pipelined loop body
 
-    3 optional methods have defaults:
+    4 optional methods have defaults:
       - derive_edges(): dependency edges (default: inferred from ops + config)
       - schedule_config(): tuning knobs (default: ScheduleConfig())
       - transform_kernel(): post-process kernel entries (default: identity)
+      - bootstrap_frags(): post-prologue frag-loads (default: empty)
 
     The framework owns all phase derivation (prologue, kernel, epilogue,
     kernel deps). For single-buffer (depth<2): default functions + optional
@@ -96,6 +97,68 @@ trait PipelineSchedule:
         """
         return ker.copy()
 
+    def build_explicit_blocks(
+        self,
+        body: List[OpDesc],
+        program: PipelineProgram,
+    ) -> List[List[OpDesc]]:
+        """Returns optional per-block explicit op lists, bypassing
+        `MMABlockSpec.expand`'s flag-driven template.
+
+        Return one `List[OpDesc]` per block (in block order). Empty
+        entries fall back to the template; non-empty entries are
+        emitted verbatim by `PipelineProgram.expand_to_list`.
+
+        Called after the framework has populated `program.blocks`
+        (frag/load/mma grouping + wait derivation) so the schedule
+        can read out the analyzed block structure when constructing
+        its explicit op lists.
+
+        Use when a schedule's emission shape can't be expressed cleanly
+        via the existing flag set (`global_before_frag`,
+        `barrier_before_pre_ops`, `wrap_waits_with_sched_barrier`,
+        etc.). The schedule constructs the exact op sequence it wants;
+        the framework consumes it without templated reordering.
+
+        Default: empty list (= every block uses the flag-driven
+        template, current behaviour).
+
+        Args:
+            body: Loop body op list, as produced by `build_body`.
+            program: The framework-built `PipelineProgram` whose blocks
+                have already been populated with frag/load/mma analysis.
+
+        Returns:
+            One `List[OpDesc]` per program block, or an empty list to
+            fall back entirely to the template path.
+        """
+        return List[List[OpDesc]]()
+
+    def bootstrap_frags(self) -> List[OpDesc]:
+        """Returns optional fragment loads to issue at the prologue tail.
+
+        Each bootstrap frag is emitted by the framework as
+        `wait_vm(N) + barrier + frag` where `N` partial-drains the
+        vmcnt down to leave exactly the prefetch this frag depends on
+        completed (and the rest in flight). The i-th bootstrap frag
+        targets the i-th prefetch in prologue order; per-frag drain
+        values are derived from cumulative prefetch `vm_cost`.
+
+        Use for kernels whose first main-loop iter expects same-stage
+        leading-quadrant frags pre-loaded — e.g. cross-stage rotation
+        patterns where the body's sub=0 frags read the *cross* stage,
+        so the same-stage versions need explicit bootstrap.
+
+        Only fires when `ScheduleConfig.partial_prologue_drain=True`.
+
+        Default: empty (no bootstrap).
+
+        Returns:
+            Fragment-load ops emitted at the prologue tail, in prologue
+            order.
+        """
+        return List[OpDesc]()
+
 
 struct ScheduleCompiler(Movable):
     """Generic pipeline schedule compiler.
@@ -133,7 +196,7 @@ struct ScheduleCompiler(Movable):
             frag_order=FragOrder(b_before_a=False),
             m_mmas=0,
             n_mmas=0,
-            num_halves=0,
+            num_partitions=0,
             mma_serial=False,
             mma_latency=0,
             vm_per_load_a=0,
@@ -168,8 +231,25 @@ struct ScheduleCompiler(Movable):
         if self.config.depth >= 2:
             # Double-buffer: build program once, derive all phases from it.
             var sched = schedule.schedule_config()
-            var program = build_kernel_program(self.body, self.config, sched)
-            self.prologue = derive_prologue_from_program(program, self.config)
+            var program = build_kernel_program(
+                self.body, self.config, sched, self.edges
+            )
+            # Schedule may override per-block emission via `build_explicit_blocks`.
+            # Empty entries fall back to the flag-driven template; non-empty
+            # entries are emitted verbatim by `PipelineProgram.expand_to_list`.
+            var explicit = schedule.build_explicit_blocks(self.body, program)
+            if len(explicit) > 0:
+                debug_assert(
+                    len(explicit) == len(program.blocks),
+                    (
+                        "build_explicit_blocks must return one entry per"
+                        " program block"
+                    ),
+                )
+                program.explicit_blocks = explicit^
+            self.prologue = derive_prologue_from_program(
+                program, self.config, sched, schedule.bootstrap_frags()
+            )
             self.kernel = program.expand_to_list(Phase.KERNEL)
             self.epilogue = derive_epilogue_from_program(program, self.config)
             self.kernel_deps = default_kernel_deps_double_buffer(

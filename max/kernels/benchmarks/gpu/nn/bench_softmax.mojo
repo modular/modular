@@ -20,7 +20,7 @@ from std.sys import (
 )
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, TileTensor, row_major
 from nn.softmax import softmax, softmax_with_temperature
@@ -34,7 +34,7 @@ def bench_softmax_gpu[
     comptime cols = shape[rank - 1]
     comptime total = shape.flattened_length()
 
-    var data_h = alloc[Scalar[dtype]](total)
+    var data_h = List(length=total, fill=Scalar[dtype](0))
 
     for i in range(total):
         data_h[i] = Scalar[dtype](random_float64(-1, 1).cast[dtype]())
@@ -47,15 +47,32 @@ def bench_softmax_gpu[
 
     ctx.enqueue_copy(data_d, data_h)
 
+    # The no-lambda `softmax` overload defaults to target="cpu".
+    @parameter
+    @__copy_capture(data_buf)
+    def input_fn[
+        _simd_width: Int, _rank: Int
+    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
+        return data_buf.load_linear[width=_simd_width, alignment=1](coords)
+
     @always_inline
-    @__copy_capture(shape, data_buf, out_buf)
+    @__copy_capture(shape, out_buf)
     @parameter
     def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            softmax[dtype, simd_width_of[dtype](), rank](
-                data_buf, out_buf, rank - 1
+            softmax[
+                dtype,
+                simd_width_of[dtype, target=get_gpu_target()](),
+                rank,
+                input_fn,
+                target="gpu",
+            ](
+                rebind[IndexList[rank]](shape),
+                out_buf,
+                rank - 1,
+                ctx,
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -68,8 +85,7 @@ def bench_softmax_gpu[
 
     _ = data_d
     _ = out_d
-
-    data_h.free()
+    _ = data_h^
 
 
 def bench_softmax_with_temperature_gpu[
@@ -83,7 +99,7 @@ def bench_softmax_with_temperature_gpu[
     comptime total = shape.flattened_length()
     comptime rows = shape[0]
 
-    var data_h = alloc[Scalar[dtype]](total)
+    var data_h = List(length=total, fill=Scalar[dtype](0))
     for i in range(total):
         data_h[i] = Scalar[dtype](random_float64(-1, 1).cast[dtype]())
 
@@ -119,8 +135,7 @@ def bench_softmax_with_temperature_gpu[
 
     _ = data_d
     _ = out_d
-
-    data_h.free()
+    _ = data_h^
 
 
 def main() raises:
@@ -137,7 +152,7 @@ def main() raises:
             bench_softmax_with_temperature_gpu[dtype, shape](
                 ctx, m, "softmax_with_temperature_gpu", temperature
             )
-        elif len(shape) == 3:
+        else:
             bench_softmax_gpu[dtype, shape](ctx, m, "softmax_gpu")
 
     m.dump_report()

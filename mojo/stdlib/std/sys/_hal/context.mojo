@@ -16,9 +16,6 @@ from .plugin import (
     RawDriver,
     OutParam,
     ContextHandle,
-    DeviceHandle,
-    QueueHandle,
-    EventHandle,
     FunctionHandle,
     MemoryHandle,
     RuntimeBundleHandle,
@@ -30,34 +27,27 @@ from .plugin import (
 )
 
 from .device import DeviceSpec
+from .stream import Stream
 
 from .status import STATUS_SUCCESS, HALError
 
 from std.memory import (
     ImmutPointer,
-    MutPointer,
     ArcPointer,
-    OpaquePointer,
     UnsafePointer,
     UnsafeMaybeUninit,
 )
+from std.memory.arc_pointer import WeakPointer
 
-from std.compile import (
-    CompiledFunctionInfo,
-)
+from std.compile import CompiledFunctionInfo
 
-from std.compile.compile import (
-    _Info,
-    _get_emission_kind_id,
-)
-
-from std.ffi import CStringSlice
+from std.compile.compile import _Info, _get_emission_kind_id
 
 from std.reflection import get_linkage_name
 
 from std.collections.string.string_slice import _get_kgen_string
 
-from std.sys.info import CompilationTarget, is_triple, _TargetType
+from std.sys.info import is_triple, _TargetType
 
 
 #
@@ -71,7 +61,7 @@ def _bundle_file_type[target: _TargetType]() -> StaticString:
 
 
 @fieldwise_init
-struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
+struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
     """A context loaded on a specific device.
 
     Represents a runtime handle to an initialized
@@ -83,28 +73,29 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
     a Context.
 
     Parameters:
-        device_origin: The origin of the parent Device pointer.
         device_spec: The compilation target this context is set up for.
     """
 
     var _handle: ContextHandle
-    var _device: MutPointer[
-        Device[Self.device_origin, Self.device_spec], Self.device_origin
-    ]
-    var _raw: MutPointer[RawDriver, Self.device_origin]
+    var _device: ArcPointer[Device[Self.device_spec]]
+    var _raw: ArcPointer[RawDriver]
+    var _self_ref: WeakPointer[Self]
 
-    def __init__[
-        o1: MutOrigin, o2: MutOrigin
-    ](
-        out self: Context[origin_of(o1, o2), Self.device_spec],
-        ref[o1] device: Device[o2, Self.device_spec],
+    @staticmethod
+    def _create(
+        out _self: ArcPointer[Self], device: Device[Self.device_spec]
     ) raises HALError:
-        # This is a horrible hack that should be revisited as soon as
-        # we can express subtyping relations between origins and/or
-        # inferred/unbound inner origin params for arguments.
-        # See MOCO-3661, MOCO-3326.
-        self._device = rebind[type_of(self._device)](Pointer(to=device))
-        self._raw = rebind[type_of(self._raw)](device._raw)
+        _self = ArcPointer(Self(device))
+        _self[]._self_ref = WeakPointer(downgrade=_self)
+
+    @doc_hidden
+    def __init__(
+        out self: Self,
+        ref device: Device[Self.device_spec],
+    ) raises HALError:
+        self._device = device._self_ref.try_upgrade().value()
+        self._raw = device._raw
+        self._self_ref = WeakPointer[Self]()
 
         ref raw = self._raw[]
 
@@ -124,10 +115,16 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
 
         self._handle = context_handle_uninit.unsafe_assume_init_ref()
 
+    def __del__(deinit self):
+        try:
+            self._raw[].destroy_context(self._handle)
+        except e:
+            print("warning: destroy_context failed:", e)
+
     def _compile_inner[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
-    ](mut self) raises -> CompiledFunctionInfo[
+    ](self) raises -> CompiledFunctionInfo[
         fn_type, func, Self.device_spec.target.value
     ]:
         comptime target = Self.device_spec.target.value
@@ -158,7 +155,10 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
     def compile[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
-    ](mut self) raises -> Tuple[RuntimeBundle, String]:
+    ](self) raises -> Tuple[
+        RuntimeBundle,
+        CompiledFunctionInfo[fn_type, func, Self.device_spec.target.value],
+    ]:
         var compiled_info = self._compile_inner[fn_type, func]()
 
         # Build the M_driver_static_bundle from the compiled object code.
@@ -206,8 +206,10 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
         return (
             RuntimeBundle(
                 _handle=runtime_bundle.unsafe_assume_init_ref(),
+                _context_handle=self._handle,
+                _raw=self._raw,
             ),
-            compiled_info.function_name,
+            compiled_info,
         )
 
     # ===-------------------------------------------------------------------===#
@@ -215,27 +217,40 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
     # ===-------------------------------------------------------------------===#
 
     def create_queue(
-        mut self,
-    ) raises HALError -> Queue[
-        origin_of(self, Self.device_origin), Self.device_spec
-    ]:
-        return Queue[origin_of(self, Self.device_origin), Self.device_spec](
-            self
-        )
+        self,
+    ) raises HALError -> ArcPointer[Queue[Self.device_spec]]:
+        return Queue[Self.device_spec]._create(self)
+
+    # ===-------------------------------------------------------------------===#
+    # Stream operations
+    # ===-------------------------------------------------------------------===#
+
+    def create_stream(
+        self,
+    ) raises HALError -> ArcPointer[Stream[Self.device_spec]]:
+        return Stream[Self.device_spec]._create(self)
 
     # ===-------------------------------------------------------------------===#
     # Memory operations
     # ===-------------------------------------------------------------------===#
 
-    def alloc_sync(mut self, byte_size: UInt64) raises HALError -> Buffer:
+    def alloc_sync(self, byte_size: UInt64) raises HALError -> Buffer:
         return Buffer(
             self._raw[].alloc_sync(self._handle, byte_size), byte_size
         )
 
-    def free_sync(mut self, var mem: Buffer) raises HALError:
+    def free_sync(self, var mem: Buffer) raises HALError:
         self._raw[].free_sync(self._handle, mem._handle)
 
-    def memory_get_address(mut self, mem: Buffer) raises HALError -> UInt64:
+    def alloc_host_pinned(self, byte_size: UInt64) raises HALError -> Buffer:
+        return Buffer(
+            self._raw[].alloc_pinned(self._handle, byte_size), byte_size
+        )
+
+    def free_host_pinned(self, var mem: Buffer) raises HALError:
+        self._raw[].free_pinned(self._handle, mem._handle)
+
+    def memory_get_address(self, mem: Buffer) raises HALError -> UInt64:
         """Get the GPU address of a device memory allocation."""
         return self._raw[].get_memory_property["address", UInt64](mem._handle)
 
@@ -244,11 +259,11 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
     # ===-------------------------------------------------------------------===#
 
     def load_function(
-        mut self, bundle: RuntimeBundle, var name: String
+        self, bundle: RuntimeBundle, var name: String
     ) raises HALError -> FunctionHandle:
         return self._raw[].load_function(self._handle, bundle._handle, name)
 
-    def unload_function(mut self, func: FunctionHandle) raises HALError:
+    def unload_function(self, func: FunctionHandle) raises HALError:
         self._raw[].unload_function(self._handle, func)
 
 
@@ -259,16 +274,23 @@ struct Buffer(Movable):
     Tracks the allocation mode and byte size.
     """
 
+    # TODO(Sawyer): decide Buffer ownership. Currently leaks unless the user
+    # calls `Context.free_sync`. Either give Buffer a destructor (requires
+    # carrying `ContextHandle` + `ArcPointer[RawDriver]`) or document it as a
+    # non-owning view and remove `Movable`.
+
     var _handle: MemoryHandle
     var byte_size: UInt64
-
-
-struct Event:
-    """A synchronisation event."""
-
-    var _handle: EventHandle
 
 
 @fieldwise_init
 struct RuntimeBundle(Movable):
     var _handle: RuntimeBundleHandle
+    var _context_handle: ContextHandle
+    var _raw: ArcPointer[RawDriver]
+
+    def __del__(deinit self):
+        try:
+            self._raw[].unload_bundle(self._context_handle, self._handle)
+        except e:
+            print("warning: unload_bundle failed:", e)

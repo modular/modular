@@ -7,7 +7,14 @@ load(
 package(default_visibility = ["//max:consumers"])
 
 _AMD_GPU_BENCHMARKS = [
+    "bench_amd_matmul.mojo",
     "bench_pingpong_matmul.mojo",
+]
+
+# 4-wave FP8 matmul is MI355X-specific (CDNA4 16x16x128 FP8 MFMA +
+# HK chiplet/L2 swizzle); other AMD parts can't compile or run it.
+_MI355_GPU_BENCHMARKS = [
+    "bench_4wave_matmul.mojo",
 ]
 
 _SM100_GPU_BENCHMARKS = [
@@ -38,6 +45,31 @@ _SM100_GPU_BENCHMARKS = [
         targets = [src.split(".")[0]],
     )
     for src in _AMD_GPU_BENCHMARKS
+]
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        enable_assertions = False,
+        target_compatible_with = ["//:mi355_gpu"],
+        deps = [
+            "//max:internal_utils",
+            "//max:layout",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for src in _MI355_GPU_BENCHMARKS
+]
+
+[
+    build_test(
+        name = src + ".test",
+        tags = ["gpu"],
+        targets = [src.split(".")[0]],
+    )
+    for src in _MI355_GPU_BENCHMARKS
 ]
 
 [

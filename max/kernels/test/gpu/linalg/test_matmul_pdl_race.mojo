@@ -88,17 +88,15 @@ def run_pdl_race_test[
         num_iters,
     )
 
-    # Allocate host buffers
-    var a_host = alloc[Scalar[dtype]](M * K)
-    var b_host = alloc[Scalar[dtype]](K * N)
-    var result_host = alloc[Scalar[dtype]](M * N)
-
-    # Initialize A with 1.0, B with 1.0
-    # Result should be K (sum of K products of 1.0 * 1.0)
+    # Allocate host buffers. Initialize A and B with 1.0 so the matmul result
+    # is K (sum of K products of 1.0 * 1.0) for each element of C.
+    var a_host = ctx.enqueue_create_host_buffer[dtype](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[dtype](K * N)
+    var result_host = ctx.enqueue_create_host_buffer[dtype](M * N)
     for i in range(M * K):
-        a_host[i] = 1.0
+        a_host[i] = Scalar[dtype](1.0)
     for i in range(K * N):
-        b_host[i] = 1.0
+        b_host[i] = Scalar[dtype](1.0)
 
     # Expected value: each element of C = K (dot product of K ones)
     var expected_val = Scalar[dtype](K)
@@ -116,15 +114,15 @@ def run_pdl_race_test[
     # Create TileTensors for matmul
     var a_tensor = TileTensor(
         a_device,
-        row_major(Coord(Idx[M](), Idx[K]())),
+        row_major(Coord(Idx[M], Idx[K])),
     )
     var b_tensor = TileTensor(
         b_device,
-        row_major(Coord(Idx[N](), Idx[K]())),
+        row_major(Coord(Idx[N], Idx[K])),
     )
     var c_tensor = TileTensor(
         c_device,
-        row_major(Coord(Idx[M](), Idx[N]())),
+        row_major(Coord(Idx[M], Idx[N])),
     )
 
     # Run multiple iterations to increase chance of catching race
@@ -144,7 +142,7 @@ def run_pdl_race_test[
         var num_threads = 256
         var num_blocks = ceildiv(M * N, num_threads)
         comptime kernel = consumer_kernel[dtype]
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             result_device,
             M * N,
@@ -212,18 +210,9 @@ def run_pdl_race_test[
                     print("  [", i, "] got ", val, " expected ", expected_val)
                     printed += 1
 
-            # Cleanup before raising
-            a_host.free()
-            b_host.free()
-            result_host.free()
             raise Error("PDL race condition detected!")
 
     print("PASS: ", num_iters, " iterations completed without race")
-
-    # Cleanup
-    a_host.free()
-    b_host.free()
-    result_host.free()
 
 
 def main() raises:

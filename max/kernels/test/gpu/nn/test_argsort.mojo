@@ -34,10 +34,10 @@ def test_argsort[
     ascending: Bool = True,
 ](ctx: DeviceContext, N: Int) raises:
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[dtype]](N)
+    var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](N)
     var input_host = TileTensor(
         input_host_ptr,
-        row_major(Idx(N)),
+        row_major(N),
     )
 
     for i in range(N):
@@ -51,11 +51,11 @@ def test_argsort[
     # Create device LayoutTensors
     var device_indices_tensor = TileTensor(
         device_indices,
-        row_major(Idx(N)),
+        row_major(N),
     )
     var device_input_tensor = TileTensor(
         device_input,
-        row_major(Idx(N)),
+        row_major(N),
     )
 
     argsort[ascending=ascending, target="gpu"](
@@ -63,15 +63,15 @@ def test_argsort[
     )
 
     # Copy results back
-    var indices_host_ptr = alloc[Scalar[DType.int64]](N)
+    var indices_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](N)
     ctx.enqueue_copy(indices_host_ptr, device_indices)
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var expected_indices_ptr = alloc[Scalar[DType.int64]](N)
+    var expected_indices_ptr = ctx.enqueue_create_host_buffer[DType.int64](N)
     var expected_indices = TileTensor(
         expected_indices_ptr,
-        row_major(Idx(N)),
+        row_major(N),
     )
     argsort[ascending=ascending](expected_indices, input_host)
 
@@ -85,11 +85,6 @@ def test_argsort[
                 t" position {i}"
             ),
         )
-
-    # Cleanup host memory
-    input_host_ptr.free()
-    indices_host_ptr.free()
-    expected_indices_ptr.free()
 
     # Cleanup device buffers
     _ = device_indices^

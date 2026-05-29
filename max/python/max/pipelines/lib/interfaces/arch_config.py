@@ -35,17 +35,18 @@ from max.driver import load_devices, scan_available_devices
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.kv_cache.cache_params import (
+    KVCacheParamInterface,
+)
 from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.kv_cache_config import KVCacheConfig
+from transformers import AutoConfig
 from typing_extensions import Self, override
-
-from ..config.config_enums import supported_encoding_dtype
-from ..config.kv_cache_config import KVCacheConfig
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
     from max.pipelines.lib.config.model_config import MAXModelConfig
-    from transformers import AutoConfig
 
 
 @runtime_checkable
@@ -104,6 +105,109 @@ class ArchConfigWithKVAndVisionCache(ArchConfigWithKVCache, Protocol):
         The result is ``max_tokens * hidden_size * dtype_bytes``.
         """
         ...
+
+
+class ArchConfigWithStoredKVParams:
+    """Mixin that implements :meth:`get_kv_params` as the ``kv_params`` field.
+
+    Architecture dataclasses that precompute :class:`~max.nn.kv_cache.KVCacheParams`
+    (or another :class:`KVCacheParamInterface`) during ``initialize`` can inherit
+    this mixin together with :class:`ArchConfigWithKVCache` to avoid duplicating
+    the trivial accessor.
+
+    Also provides a default :meth:`construct_kv_params` for the common grouped
+    attention case. Speculative decoding defaults to ``None`` via
+    :meth:`KVCacheConfig.to_params` unless a subclass (e.g. Llama3) passes a
+    nonzero ``num_draft_tokens``. Configs that need a different head/layer
+    mapping or MLA should override ``construct_kv_params``.
+    """
+
+    kv_params: KVCacheParams
+
+    def get_kv_params(self) -> KVCacheParams:
+        """Returns the KV cache parameters computed for this config."""
+        return self.kv_params
+
+    @staticmethod
+    def get_head_dim(huggingface_config: AutoConfig) -> int:
+        """Attention head size from ``head_dim`` or ``hidden_size // num_attention_heads``."""
+        head_dim = getattr(huggingface_config, "head_dim", None)
+        if head_dim is not None:
+            return int(head_dim)
+        return int(
+            huggingface_config.hidden_size
+            // huggingface_config.num_attention_heads
+        )
+
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """Layer count for the decoder stack (override when HF uses a different field)."""
+        return int(huggingface_config.num_hidden_layers)
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Default KV params for standard grouped attention."""
+        return kv_cache_config.to_params(
+            dtype=cache_dtype,
+            n_kv_heads=huggingface_config.num_key_value_heads,
+            head_dim=cls.get_head_dim(huggingface_config),
+            num_layers=cls.get_num_layers(huggingface_config),
+            devices=devices,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        )
+
+
+class ArchConfigWithDecoderSubconfigKVParams:
+    """Mixin for VLMs that embed a language-model arch config.
+
+    Annotate :attr:`llm_config` or :attr:`text_config` with the decoder type;
+    otherwise :class:`ArchConfigWithStoredKVParams` is used (Pixtral). HF
+    subconfig defaults to ``text_config``; override :meth:`construct_kv_params`
+    when the HF key differs (e.g. InternVL ``llm_config``).
+    """
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Delegates to the annotated decoder config class using HF ``text_config``."""
+        decoder_cls = cls.__annotations__.get(
+            "llm_config",
+            cls.__annotations__.get(
+                "text_config", ArchConfigWithStoredKVParams
+            ),
+        )
+        if not isinstance(decoder_cls, type) or not issubclass(
+            decoder_cls, ArchConfigWithStoredKVParams
+        ):
+            decoder_cls = ArchConfigWithStoredKVParams
+
+        hf_text = getattr(huggingface_config, "text_config", None)
+        if hf_text is None:
+            raise ValueError(
+                f"HuggingFace config {type(huggingface_config).__name__} has no "
+                "'text_config' attribute; override construct_kv_params for this "
+                "architecture."
+            )
+        return decoder_cls.construct_kv_params(
+            huggingface_config=hf_text,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
 
 
 def _all_available_devices() -> list[DeviceRef]:

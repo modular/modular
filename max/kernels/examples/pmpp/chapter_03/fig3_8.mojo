@@ -148,7 +148,7 @@ def main() raises:
         var grid_dim_y = ceildiv(m, block_dim_y)
 
         # Launch kernel
-        ctx.enqueue_function_experimental[blur_kernel](
+        ctx.enqueue_function[blur_kernel](
             d_in,
             d_out,
             m,

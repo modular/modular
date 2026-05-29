@@ -34,30 +34,21 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
-def replace_deprecated_model_flag(args: list[str]) -> list[str]:
-    """Replace deprecated --model flag with --model-path.
+def check_model_flag_conflict(args: list[str]) -> None:
+    """Raises if both --model and --model-path are specified.
 
     Raises:
         ValueError: If both --model and --model-path are specified.
     """
-    updated_args: list[str] = []
     saw_model = False
     saw_model_path = False
     for arg in args:
-        if arg == "--model":
+        if arg == "--model" or arg.startswith("--model="):
             saw_model = True
-            updated_args.append("--model-path")
-        elif arg.startswith("--model="):
-            saw_model = True
-            updated_args.append("--model-path" + arg[len("--model") :])
-        else:
-            if arg == "--model-path" or arg.startswith("--model-path="):
-                saw_model_path = True
-            updated_args.append(arg)
-
+        elif arg == "--model-path" or arg.startswith("--model-path="):
+            saw_model_path = True
         if saw_model and saw_model_path:
             raise ValueError("model_path and model cannot both be specified")
-    return updated_args
 
 
 class WithLazyPipelineOptions(click.Command):
@@ -111,14 +102,9 @@ class WithLazyPipelineOptions(click.Command):
         return super().invoke(ctx)
 
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
-        # Accept deprecated --model flag by rewriting it to --model-path.
         self._ensure_options_loaded()
-        updated_args = replace_deprecated_model_flag(args)
-        if updated_args != args:
-            logger.warning(
-                "Deprecated flag --model detected; use --model-path instead."
-            )
-        return super().parse_args(ctx, updated_args)
+        check_model_flag_conflict(args)
+        return super().parse_args(ctx, args)
 
     def get_params(self, ctx: click.Context) -> list[click.Parameter]:
         self._ensure_options_loaded()
@@ -192,7 +178,11 @@ def configure_telemetry(color: str | None = None) -> None:
 
 
 def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
-    @click.option("--port", type=int, help="Port to run the server on.")
+    @click.option(
+        "--port",
+        type=int,
+        help="Port for the HTTP API. Defaults to ``8000``.",
+    )
     @click.option(
         "--headless",
         is_flag=True,
@@ -238,15 +228,18 @@ def cli_serve(
 ) -> None:
     """Start a model serving endpoint for inference.
 
-    This command launches a server that can handle inference requests for the
-    specified model. The server supports various performance optimization
-    options and monitoring capabilities.
+    Loads a model from a Hugging Face model ID or local path and
+    exposes OpenAI-compatible HTTP endpoints for inference requests.
     """
     from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.cli.config import parse_task_flags
     from max.entrypoints.workers import start_workers
-    from max.interfaces import PipelineTask, SamplingParams, SamplingParamsInput
     from max.pipelines import AudioGenerationConfig, PipelineConfig
+    from max.pipelines.modeling.types import (
+        PipelineTask,
+        SamplingParams,
+        SamplingParamsInput,
+    )
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
 
@@ -358,8 +351,8 @@ def cli_pipeline(
     accepting image inputs for multimodal models.
     """
     from max.entrypoints.cli import generate_text_for_pipeline
-    from max.interfaces import SamplingParams, SamplingParamsInput
     from max.pipelines import PipelineConfig
+    from max.pipelines.modeling.types import SamplingParams, SamplingParamsInput
 
     params = SamplingParamsInput(
         top_k=top_k,

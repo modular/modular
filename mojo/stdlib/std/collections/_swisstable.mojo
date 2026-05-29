@@ -24,7 +24,8 @@ or an h2 fingerprint (0x00-0x7F) derived from the top 7 bits of the hash.
 from std.bit import count_trailing_zeros, next_power_of_two
 from std.hashlib import Hasher, default_hasher
 from std.math import ceildiv
-from std.memory import alloc, memcpy, memset, pack_bits
+from std.memory import alloc, free, memcpy, memset, pack_bits
+from std.memory.alloc import Layout
 from std.sys.intrinsics import likely
 
 # ===-----------------------------------------------------------------------===#
@@ -204,13 +205,16 @@ struct Group(Copyable, Movable):
 
 @fieldwise_init
 struct SwissTableEntry[
-    K: KeyElement, V: Copyable & ImplicitlyDestructible, H: Hasher
-](Copyable):
+    K: KeyElement & ImplicitlyDestructible,
+    V: Movable & ImplicitlyDestructible,
+    H: Hasher,
+](Copyable where conforms_to(V, Copyable), Movable):
     """Store a key-value pair entry inside a Swiss Table-based collection.
 
     Parameters:
         K: The key type. Must be `Hashable`, `Equatable`, and `Copyable`.
-        V: The value type.
+        V: The value type. Must be `Movable` and `ImplicitlyDestructible`.
+            `Copyable` is required only for entry copy construction.
         H: The type of the hasher used to hash the key.
     """
 
@@ -255,10 +259,10 @@ struct SwissTableEntry[
 
 
 struct SwissTable[
-    K: KeyElement,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & ImplicitlyDestructible,
+    V: Movable & ImplicitlyDestructible,
     H: Hasher = default_hasher,
-](Copyable, Movable):
+](Copyable where conforms_to(V, Copyable), Movable):
     """Raw Swiss Table providing the hash table core for Dict and HashMap.
 
     This struct manages the control byte array, slot array, probing, and
@@ -267,7 +271,8 @@ struct SwissTable[
 
     Parameters:
         K: The key type. Must be `Hashable`, `Equatable`, and `Copyable`.
-        V: The value type.
+        V: The value type. Must be `Movable` and `ImplicitlyDestructible`.
+            `Copyable` is required only for table copy construction.
         H: The hasher type.
     """
 
@@ -301,14 +306,11 @@ struct SwissTable[
     @always_inline
     def __init__(out self):
         """Initialize an empty Swiss Table."""
-        self._capacity = INITIAL_CAPACITY
-        self._ctrl = alloc[UInt8](self._capacity + GROUP_WIDTH)
-        memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
-        self._slots = alloc[SwissTableEntry[Self.K, Self.V, Self.H]](
-            self._capacity
-        )
+        self._capacity = 0
+        self._ctrl = type_of(self._ctrl).unsafe_dangling()
+        self._slots = type_of(self._slots).unsafe_dangling()
         self._len = 0
-        self._growth_left = self._capacity * 7 // 8
+        self._growth_left = 0
 
     @always_inline
     def __init__(out self, *, capacity: Int):
@@ -320,36 +322,48 @@ struct SwissTable[
         Args:
             capacity: The requested minimum number of slots.
         """
+        if capacity == 0:
+            self = Self()
+            return
+
         self._capacity = max(
             next_power_of_two(ceildiv(capacity * 8, 7)), INITIAL_CAPACITY
         )
-        self._ctrl = alloc[UInt8](self._capacity + GROUP_WIDTH)
+        self._ctrl = alloc(Layout[UInt8](count=self._capacity + GROUP_WIDTH))
         memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
-        self._slots = alloc[SwissTableEntry[Self.K, Self.V, Self.H]](
-            self._capacity
+        self._slots = alloc(
+            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
+                count=self._capacity
+            )
         )
         self._len = 0
         self._growth_left = self._capacity * 7 // 8
 
-    def __init__(out self, *, copy: Self):
+    def __init__(out self, *, copy: Self) where conforms_to(Self.V, Copyable):
         """Copy an existing Swiss Table.
 
         Args:
             copy: The existing table to copy.
         """
+        if copy._capacity == 0:
+            self = Self()
+            return
+
         self._capacity = copy._capacity
         self._len = copy._len
         self._growth_left = copy._growth_left
 
-        self._ctrl = alloc[UInt8](self._capacity + GROUP_WIDTH)
+        self._ctrl = alloc(Layout[UInt8](count=self._capacity + GROUP_WIDTH))
         memcpy(
             dest=self._ctrl,
             src=copy._ctrl,
             count=self._capacity + GROUP_WIDTH,
         )
 
-        self._slots = alloc[SwissTableEntry[Self.K, Self.V, Self.H]](
-            self._capacity
+        self._slots = alloc(
+            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
+                count=self._capacity
+            )
         )
         for i in range(self._capacity):
             if is_occupied(self._ctrl[i]):
@@ -361,8 +375,9 @@ struct SwissTable[
             if is_occupied(self._ctrl[i]):
                 (self._slots + i).destroy_pointee()
 
-        self._ctrl.free()
-        self._slots.free()
+        if self._capacity > 0:
+            free(self._ctrl, {count = self._capacity + GROUP_WIDTH})
+            free(self._slots, {count = self._capacity})
 
     # ===-------------------------------------------------------------------===#
     # Core operations
@@ -399,6 +414,12 @@ struct SwissTable[
             matching slot. If not found, slot_index is the first EMPTY slot
             suitable for insertion.
         """
+        # Lazy state: no buffers allocated yet. Slot index is meaningless but
+        # safe for lookups (callers check `found`). Insert paths must go
+        # through `_ensure_capacity` first, which allocates; callers assert
+        # that invariant after the call.
+        if self._capacity == 0:
+            return (False, 0)
         var h2_val = h2(hash)
         var pos = Int(hash) & (self._capacity - 1)
 
@@ -446,6 +467,11 @@ struct SwissTable[
             determine if the slot is EMPTY or DELETED. Only insertions into
             EMPTY slots should decrement `_growth_left`.
         """
+        # Mirrors find_slot's lazy-state guard; no in-tree callers exercise
+        # this path yet (Dict uses find_slot), but kept for parity with
+        # future unordered consumers of SwissTable.
+        if self._capacity == 0:
+            return (False, 0)
         var h2_val = h2(hash)
         var pos = Int(hash) & (self._capacity - 1)
         var first_deleted = -1
@@ -507,6 +533,9 @@ struct SwissTable[
 
     def clear(mut self):
         """Remove all elements, destroying occupied entries."""
+        if self._capacity == 0:
+            return
+
         for i in range(self._capacity):
             if is_occupied(self._ctrl[i]):
                 (self._slots + i).destroy_pointee()
@@ -547,10 +576,10 @@ struct SwissTable[
         var old_slots = self._slots
         var old_capacity = self._capacity
 
-        self._ctrl = alloc[UInt8](new_capacity + GROUP_WIDTH)
+        self._ctrl = alloc(Layout[UInt8](count=new_capacity + GROUP_WIDTH))
         memset(self._ctrl, CTRL_EMPTY, new_capacity + GROUP_WIDTH)
-        self._slots = alloc[SwissTableEntry[Self.K, Self.V, Self.H]](
-            new_capacity
+        self._slots = alloc(
+            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](count=new_capacity)
         )
         self._capacity = new_capacity
         self._growth_left = new_capacity * 7 // 8 - self._len
@@ -566,8 +595,9 @@ struct SwissTable[
                 (self._slots + new_slot).init_pointee_move(entry^)
                 relocations.append((i, new_slot))
 
-        old_ctrl.free()
-        old_slots.free()
+        if old_capacity > 0:
+            free(old_ctrl, {count = old_capacity + GROUP_WIDTH})
+            free(old_slots, {count = old_capacity})
 
         return relocations^
 
@@ -600,7 +630,7 @@ struct SwissTable[
         )
 
         # Step 3: Relocate entries.
-        var slot_map = alloc[Int32](self._capacity)
+        var slot_map = alloc(Layout[Int32](count=self._capacity))
         for i in range(self._capacity):
             slot_map[i] = Int32(i)
 

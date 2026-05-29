@@ -21,7 +21,7 @@ from internal_utils import (
     int_list_to_tuple,
     CacheBustingBuffer,
 )
-from std.runtime.asyncrt import DeviceContextPtr
+
 from layout import (
     Coord,
     Idx,
@@ -53,8 +53,8 @@ def bench_rms_norm_fused_fp8[
     comptime rows = shape.flattened_length() // cols
 
     # Allocate host memory
-    var data_h = alloc[Scalar[in_dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[in_dtype]](cols)
+    var data_h = List(length=rows * cols, fill=Scalar[in_dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[in_dtype](0))
 
     # Initialize data
     for i in range(rows * cols):
@@ -144,7 +144,7 @@ def bench_rms_norm_fused_fp8[
             @__copy_capture(rms_output_buf_offset)
             @parameter
             def rms_output_fn[
-                width: Int, alignment: Int
+                width: SIMDSize, alignment: Int
             ](coords: IndexList[rank], val: SIMD[in_dtype, width]) -> None:
                 var idx = rms_output_buf_offset.layout(Coord(coords))
                 rms_output_buf_offset.raw_store[
@@ -196,13 +196,13 @@ def bench_rms_norm_fused_fp8[
                 UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
                     cb_fp8_output.offset_ptr(iteration)
                 ),
-                row_major(Coord(Idx(rows), Idx(cols))),
+                row_major(Coord(rows, cols)),
             )
             var scales_tt = TileTensor(
                 UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
                     scales_base_ptr
                 ),
-                row_major(Coord(Idx(1), Idx(rows))),
+                row_major(Coord(Idx[1], rows)),
             )
 
             quantize_dynamic_scaled_fp8[
@@ -272,8 +272,8 @@ def bench_rms_norm_fused_fp8[
                 row_major(Coord(fused_scale_shape)),
             )
 
-            # DeviceContextPtr has an @implicit constructor from DeviceContext
-            var ctx_ptr = DeviceContextPtr(ctx_)
+            # DeviceContext is passed directly
+            var ctx_ptr = ctx_
             rms_norm_fused_fp8[
                 in_dtype,
                 out_dtype,
@@ -341,7 +341,7 @@ def bench_rms_norm_fused_fp8[
     @__copy_capture(rms_output_buf_verify)
     @parameter
     def rms_output_fn_verify[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[in_dtype, width]) -> None:
         var idx = rms_output_buf_verify.layout(Coord(coords))
         rms_output_buf_verify.raw_store[width=width, alignment=alignment](
@@ -368,11 +368,11 @@ def bench_rms_norm_fused_fp8[
 
     var fp8_output_tt_verify = TileTensor(
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fp8_verify_base_ptr),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var scales_tt_verify = TileTensor(
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin](scales_base_ptr),
-        row_major(Coord(Idx(1), Idx(rows))),
+        row_major(Coord(Idx[1], rows)),
     )
 
     quantize_dynamic_scaled_fp8[
@@ -410,7 +410,7 @@ def bench_rms_norm_fused_fp8[
         row_major(Coord(verify_scale_shape)),
     )
 
-    var ctx_ptr_verify = DeviceContextPtr(ctx)
+    var ctx_ptr_verify = ctx
     rms_norm_fused_fp8[
         in_dtype,
         out_dtype,
@@ -431,8 +431,8 @@ def bench_rms_norm_fused_fp8[
     ctx.synchronize()
 
     # Copy results back to host for verification
-    var fp8_output_h = alloc[Scalar[out_dtype]](rows * cols)
-    var fused_output_h = alloc[Scalar[out_dtype]](rows * cols)
+    var fp8_output_h = List(length=rows * cols, fill=Scalar[out_dtype](0))
+    var fused_output_h = List(length=rows * cols, fill=Scalar[out_dtype](0))
 
     ctx.enqueue_copy(fp8_output_h, fp8_verify_d)
     ctx.enqueue_copy(fused_output_h, fused_verify_d)
@@ -528,10 +528,6 @@ def bench_rms_norm_fused_fp8[
             "\nVerification PASSED: All outputs within tolerance",
         )
 
-    # Cleanup
-    fp8_output_h.free()
-    fused_output_h.free()
-
     _ = cb_data
     _ = gamma_d
     _ = cb_rms_output
@@ -541,9 +537,10 @@ def bench_rms_norm_fused_fp8[
     _ = fp8_verify_d
     _ = fused_verify_d
     _ = rms_verify_d
-
-    data_h.free()
-    gamma_h.free()
+    _ = data_h^
+    _ = gamma_h^
+    _ = fp8_output_h^
+    _ = fused_output_h^
 
 
 def main() raises:

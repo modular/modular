@@ -45,7 +45,8 @@ def create_dummy_llama3_config(layers: int) -> Llama3Config:
             num_layers=layers,
             devices=[DeviceRef.GPU(0)],
             data_parallel_degree=1,
-            num_eagle_speculative_tokens=1,
+            speculative_method="eagle",
+            num_draft_tokens=1,
         ),
         attention_multiplier=1.0,
         embedding_multiplier=2.0,
@@ -57,11 +58,14 @@ def create_dummy_llama3_config(layers: int) -> Llama3Config:
     )
 
 
-def create_dummy_eagle_llama3_config() -> UnifiedEagleLlama3Config:
+def create_dummy_eagle_llama3_config(
+    enable_structured_output: bool = False,
+) -> UnifiedEagleLlama3Config:
     return UnifiedEagleLlama3Config(
         target=create_dummy_llama3_config(layers=8),
         draft=create_dummy_llama3_config(layers=1),
         speculative_config=SpeculativeConfig(num_speculative_tokens=1),
+        enable_structured_output=enable_structured_output,
     )
 
 
@@ -91,7 +95,7 @@ def test_graph_construction() -> None:
     #           + target KV (6 fields), + draft_tokens, + draft_kv_blocks,
     #           + rng seed, + sampling params (temperature, top_k, max_k, top_p, min_top_p)
     assert len(input_types) == 17, (
-        f"Expected 17 input types, got {len(input_types)}"
+        f"Expected 18 input types, got {len(input_types)}"
     )
 
     # Smoke test that graph construction (not compilation) works
@@ -102,3 +106,40 @@ def test_graph_construction() -> None:
         outputs = model(inputs)
         assert len(outputs) == 3, f"Expected 3 outputs, got {len(outputs)}"
         graph.output(*outputs)
+
+
+def test_input_types_with_structured_output() -> None:
+    """Test that input types include the bitmask triple when structured
+    output is enabled.
+
+    The overlap path binds three inputs in order: pinned bitmask source,
+    the int64[2] wait payload consumed by ``mo.wait_host_value_with_dep``,
+    and the device-side bitmask scratch destination.
+    """
+    config = create_dummy_eagle_llama3_config(enable_structured_output=True)
+    model = UnifiedEagleLlama3(config)
+
+    # Verify input types include the bitmask triple when structured
+    # output is enabled.
+    input_types = model.input_types()
+    # Expected: 17 mandatory inputs + 3 bitmask (pinned, wait_payload,
+    # device_bitmask_scratch) = 20 total
+    assert len(input_types) == 20, (
+        f"Expected 20 input types (with bitmask triple), got {len(input_types)}"
+    )
+
+    # The trailing three inputs are pinned_bitmask (bool tensor),
+    # wait_payload (int64 buffer), and device_bitmask_scratch (bool
+    # buffer).
+    pinned_type = input_types[-3]
+    payload_type = input_types[-2]
+    scratch_type = input_types[-1]
+    assert pinned_type.dtype.to_numpy() == "bool", (
+        f"Expected pinned bitmask dtype bool, got {pinned_type.dtype}"
+    )
+    assert payload_type.dtype.to_numpy() == "int64", (
+        f"Expected wait_payload dtype int64, got {payload_type.dtype}"
+    )
+    assert scratch_type.dtype.to_numpy() == "bool", (
+        f"Expected device_bitmask_scratch dtype bool, got {scratch_type.dtype}"
+    )

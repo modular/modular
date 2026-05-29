@@ -226,7 +226,7 @@ def main() raises:
     )
     print("Elements per thread: ", elements_per_thread)
 
-    ctx.enqueue_function_experimental[merge_basic_kernel](
+    ctx.enqueue_function[merge_basic_kernel](
         d_A,
         m,
         d_B,

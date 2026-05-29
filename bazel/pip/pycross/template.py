@@ -63,8 +63,8 @@ def targets():
         name = "torch@multiple",
         actual = select({{
             "@@//:use_sglang_setting": ":torch@2.9.1+cu128",
-            "@@//:use_vllm_setting": ":torch@2.10.0+cu128",
-            "@@//:amd_gpu": ":torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
+            "@@//:use_vllm_setting": ":torch@2.11.0+cu128",
+            "@@//:amd_gpu": ":torch@2.10.0+rocm7.2.3.lw.git1a270074",
             "@@//:nvidia_gpu": ":torch@2.10.0+cu128",
             "@platforms//os:macos": ":torch@2.10.0",
             "//conditions:default": ":torch@2.10.0+cpu",
@@ -75,8 +75,8 @@ def targets():
         name = "torchaudio@multiple",
         actual = select({{
             "@@//:use_sglang_setting": ":torchaudio@2.9.1+cu128",
-            "@@//:use_vllm_setting": ":torchaudio@2.10.0+cu128",
-            "@@//:amd_gpu": ":torchaudio@2.10.0+rocm7.1.1.git5047768f",
+            "@@//:use_vllm_setting": ":torchaudio@2.11.0+cu128",
+            "@@//:amd_gpu": ":torchaudio@2.10.0+rocm7.2.3.git5047768f",
             "@@//:nvidia_gpu": ":torchaudio@2.10.0+cu128",
             "@platforms//os:macos": ":torchaudio@2.10.0",
             "@@//:linux_aarch64": ":torchaudio@2.10.0",
@@ -89,8 +89,8 @@ def targets():
         testonly = True,
         actual = select({{
             "@@//:use_sglang_setting": ":torchvision@0.24.1+cu128",
-            "@@//:use_vllm_setting": ":torchvision@0.25.0+cu128",
-            "@@//:amd_gpu": ":torchvision@0.25.0+rocm7.1.1.git82df5f59",
+            "@@//:use_vllm_setting": ":torchvision@0.26.0+cu128",
+            "@@//:amd_gpu": ":torchvision@0.25.0+rocm7.2.3.git82df5f59",
             "@@//:nvidia_gpu": ":torchvision@0.25.0+cu128",
             "@platforms//os:macos": ":torchvision@0.25.0",
             "@@//:linux_aarch64": ":torchvision@0.25.0+cpu",
@@ -103,7 +103,7 @@ def targets():
         testonly = True,
         actual = select({{
             "@@//:use_sglang_setting": ":triton@3.5.1",
-            "@@//:amd_gpu": ":triton@3.6.0+rocm7.1.1.gitba5c1517",
+            "@@//:amd_gpu": ":triton@3.6.0+rocm7.2.3.git4ed88892",
             "//conditions:default": ":triton@3.6.0",
         }}),
     )
@@ -118,6 +118,24 @@ def targets():
     )
 
     native.alias(
+        name = "transformers@multiple",
+        actual = select({{
+            "@@//:use_sglang_setting": ":transformers@5.3.0",
+            "@@//:use_vllm_setting": ":transformers@5.8.0",
+            "//conditions:default": ":transformers@5.2.0",
+        }}),
+    )
+
+    native.alias(
+        name = "tilelang@multiple",
+        testonly = True,
+        actual = select({{
+            "@@//:use_vllm_setting": ":tilelang@0.1.9",
+            "//conditions:default": ":tilelang@0.1.8",
+        }}),
+    )
+
+    native.alias(
         name = "outlines-core@multiple",
         testonly = True,
         target_compatible_with = select({{
@@ -127,7 +145,27 @@ def targets():
         }}),
         actual = select({{
             "@@//:use_sglang_setting": ":outlines-core@0.1.26",
-            "@@//:use_vllm_setting": ":outlines-core@0.2.11",
+            "@@//:use_vllm_setting": ":outlines-core@0.2.14",
+        }}),
+    )
+
+    native.alias(
+        name = "nvidia-cudnn-cu12@multiple",
+        testonly = True,
+        actual = select({{
+            # Uses torch 2.9.1, which uses this version
+            "@@//:use_sglang_setting": ":nvidia-cudnn-cu12@9.10.2.21",
+            "//conditions:default": ":nvidia-cudnn-cu12@9.19.0.56",
+        }}),
+    )
+
+    native.alias(
+        name = "nvidia-nccl-cu12@multiple",
+        testonly = True,
+        actual = select({{
+            # Uses torch 2.9.1, which uses this version
+            "@@//:use_sglang_setting": ":nvidia-nccl-cu12@2.27.5",
+            "//conditions:default": ":nvidia-nccl-cu12@2.28.9",
         }}),
     )
 
@@ -151,7 +189,7 @@ def targets():
     native.alias(
         name = "vllm@multiple",
         testonly = True,
-        actual = ":vllm@0.17.0",
+        actual = ":vllm@0.20.0",
         target_compatible_with = ["@@//:nvidia_gpu"],
     )
 

@@ -197,7 +197,7 @@ def main() raises:
 
         device.enqueue_copy(d_S, h_S)
 
-        device.enqueue_function_experimental[softmax_kernel](
+        device.enqueue_function[softmax_kernel](
             d_S,
             d_D,
             d_P,

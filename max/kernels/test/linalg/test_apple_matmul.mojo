@@ -143,7 +143,7 @@ def test_matmul[
     kernel_type_m: Int,
 ) raises -> Int:
     var c1_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
-    var golden_shape = row_major(Coord(Idx(m), Idx(n)))
+    var golden_shape = row_major(Coord(m, n))
     var golden = TileTensor[element_size=element_size](c1_ptr, golden_shape)
     for i in range(m):
         for j in range(n):
@@ -193,7 +193,7 @@ def test_matmul[
 
     comptime if do_benchmarking:
         var matmul_perf = bench_run[bench_fn_matmul]()
-        std.benchmark.keep(c[0, 0])
+        std.benchmark.keep(c[Coord(Idx[0], Idx[0])])
         print(
             "Apple Matmul GFLOP/s for (M, N, K) = (",
             m,
@@ -256,9 +256,7 @@ def test_matmul[
     var b_ptr = alloc[Scalar[b_type]](k * n, alignment=alignment)
     var b = TileTensor(
         b_ptr,
-        row_major(
-            Coord(Idx(n), Idx(k)) if transpose_b else Coord(Idx(k), Idx(n))
-        ),
+        row_major(Coord(n, k) if transpose_b else Coord(k, n)),
     )
 
     var padded_n_k: IndexList[2]
@@ -284,9 +282,9 @@ def test_matmul[
 
     var bp_ptr = alloc[Scalar[b_type]](padded_k * padded_n, alignment=alignment)
 
-    var bp = TileTensor(bp_ptr, row_major(Idx(padded_k), Idx(padded_n)))
-    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
-    var c = TileTensor(c0_ptr, row_major(Idx(m), Idx(n)))
+    var bp = TileTensor(bp_ptr, row_major(padded_k, padded_n))
+    var a = TileTensor(a_ptr, row_major(m, k))
+    var c = TileTensor(c0_ptr, row_major(m, n))
 
     for i in range(m):
         for p in range(k):
@@ -308,7 +306,7 @@ def test_matmul[
     @always_inline
     @__copy_capture(c)
     def epilogue_fn[
-        _type: DType, width: Int, *, alignment: Int = 1
+        _type: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_type, width]) -> None:
         c.store(Coord(idx), rebind[SIMD[c_type, width]](val + some_constant))
 
@@ -492,7 +490,7 @@ def test_batched_matmul[
     var golden_ptr = alloc[Scalar[c.dtype]](
         batches * m * n, alignment=alignment
     )
-    var golden_shape = row_major(Coord(Idx(batches), Idx(m), Idx(n)))
+    var golden_shape = row_major(Coord(batches, m, n))
     var golden = TileTensor(golden_ptr, golden_shape)
 
     for batch in range(batches):
@@ -516,7 +514,7 @@ def test_batched_matmul[
     @__copy_capture(c)
     def epilogue_fn[
         _type: DType,
-        width: Int,
+        width: SIMDSize,
         rank: Int,
         *,
         alignment: Int = 1,
@@ -546,7 +544,7 @@ def test_batched_matmul[
 
     comptime if do_benchmarking:
         var batched_matmul_perf = bench_run[bench_fn_batched_matmul]()
-        std.benchmark.keep(c[0, 0, 0])
+        std.benchmark.keep(c[Coord(Idx[0], Idx[0], Idx[0])])
         print(
             "Apple Batched Matmul GFLOP/s for (BATCHES, M, N, K) = (",
             batches,
@@ -608,9 +606,9 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     var a_ptr = alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
     var b_ptr = alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
 
-    var c_shape = row_major(Coord(Idx(batch), Idx(m), Idx(n)))
-    var a_shape = row_major(Coord(Idx(batch), Idx(m), Idx(k)))
-    var b_shape = row_major(Coord(Idx(batch), Idx(k), Idx(n)))
+    var c_shape = row_major(Coord(batch, m, n))
+    var a_shape = row_major(Coord(batch, m, k))
+    var b_shape = row_major(Coord(batch, k, n))
     var c = TileTensor(c_ptr, c_shape)
     var a = TileTensor(a_ptr, a_shape)
     var b = TileTensor(b_ptr, b_shape)

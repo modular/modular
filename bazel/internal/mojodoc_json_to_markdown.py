@@ -19,6 +19,21 @@ import sys
 from pathlib import Path
 
 import jinja2
+from mojodoc_api_href import resolve_api_href
+
+
+def _configure_jinja_env(
+    environment: jinja2.Environment,
+    hosted_on_mojolang: bool,
+) -> None:
+    """Attach filters and ``api_href`` used by mojodoc templates."""
+
+    environment.filters["pad_backticks"] = pad_backticks
+
+    def api_href(path: str | None) -> str:
+        return resolve_api_href(path, hosted_on_mojolang=hosted_on_mojolang)
+
+    environment.globals["api_href"] = api_href
 
 
 def addStabilityMarker(mojo_json, mode: str) -> None:  # noqa: ANN001
@@ -222,6 +237,7 @@ def generateMarkdown(
     is_nested=False,  # noqa: ANN001
     namespace=None,  # noqa: ANN001
     show_stability_markers: str = "none",
+    docs_title: str | None = None,
 ) -> None:
     """Generate markdown docs from `mojo doc` JSON data.
 
@@ -244,6 +260,9 @@ def generateMarkdown(
             Affects path generation and namespace handling. Defaults to False.
         namespace: The current namespace path (dot-separated).
             Used to generate fully qualified names and proper cross-references.
+            Defaults to None.
+        docs_title: Custom title for the top-level package index page. Only
+            applied at the root level; nested sub-packages use their own names.
             Defaults to None.
     """
     name = mojo_json["name"]
@@ -277,6 +296,7 @@ def generateMarkdown(
                 is_nested=True,
                 namespace=namespace,
                 show_stability_markers=show_stability_markers,
+                docs_title=docs_title if not is_nested else None,
             )
         return
     else:
@@ -389,8 +409,7 @@ def generateMarkdown(
                 if not package["name"].startswith("_")
             ]
 
-            # We want to display the name of the parent module in the title.
-            mojo_json["name"] = parent_json["name"]
+            mojo_json["name"] = docs_title or parent_json["name"]
         else:
             output = output / Path("index.md")
         mojo_json["slug"] = " "
@@ -437,6 +456,20 @@ def main() -> None:
         help="Show stability markers: 'all' marks every API, "
         "'stable' marks only stable APIs, 'none' hides markers.",
     )
+    parser.add_argument(
+        "--docs-title",
+        default=None,
+        help="Custom title for the top-level package index page.",
+    )
+    parser.add_argument(
+        "--hosted-on-mojolang",
+        action="store_true",
+        default=False,
+        help=(
+            "Generated docs are published on mojolang.org (stdlib/layout). "
+            "Uses root-relative /docs/... links instead of absolute mojolang URLs."
+        ),
+    )
     args = parser.parse_args()
 
     with open(args.filename) as jsonFile:
@@ -448,7 +481,10 @@ def main() -> None:
             trim_blocks=True,
             lstrip_blocks=True,
         )
-        environment.filters["pad_backticks"] = pad_backticks
+        _configure_jinja_env(
+            environment,
+            hosted_on_mojolang=args.hosted_on_mojolang,
+        )
         template = environment.get_template("mojodoc_module.md")
         docJson = json.load(jsonFile)
 
@@ -461,6 +497,7 @@ def main() -> None:
             environment,
             template,
             show_stability_markers=args.show_stability_markers,
+            docs_title=args.docs_title,
         )
         # os.remove(args.filename)
 

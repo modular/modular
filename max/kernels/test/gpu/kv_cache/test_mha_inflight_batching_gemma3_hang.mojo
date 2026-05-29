@@ -22,6 +22,7 @@ combinations of seq_lens and cache_lens trigger the deadlock.
 from std.collections import Set
 from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
+from std.sys.defines import get_defined_int
 from layout._utils import ManagedLayoutTensor
 from std.gpu.host import DeviceContext
 from kv_cache.types import (
@@ -30,6 +31,7 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
+from kv_cache_test_utils import assert_no_nan_inf, padded_lut_cols
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
 from std.utils import IndexList
@@ -39,7 +41,6 @@ def test_paged_ragged_attention[
     num_q_heads: Int,
     dtype: DType,
     kv_params: KVCacheStaticParams,
-    page_size: Int = 256,
 ](
     valid_lengths: List[Int],
     cache_lengths: List[Int],
@@ -48,6 +49,7 @@ def test_paged_ragged_attention[
     num_paged_blocks: Int,
     ctx: DeviceContext,
 ) raises:
+    comptime page_size = get_defined_int["page_size", 256]()
     var batch_size = len(valid_lengths)
 
     var total_length = 0
@@ -119,8 +121,11 @@ def test_paged_ragged_attention[
         kv_params.num_heads,
         kv_params.head_size,
     )
+    # Pad LUT inner dim to honor `PagedKVCache.populate`'s SIMD padding
+    # invariant — see `padded_lut_cols`.
     var paged_lut_shape = IndexList[2](
-        batch_size, ceildiv(max_full_context_length, page_size)
+        batch_size,
+        padded_lut_cols(ceildiv(max_full_context_length, page_size)),
     )
 
     var kv_block_paged_rl = RuntimeLayout[kv_block_6d_layout].row_major(
@@ -205,6 +210,7 @@ def test_paged_ragged_attention[
         ctx,
     )
     ctx.synchronize()
+    assert_no_nan_inf(test_output, "gemma3_hang_output")
     print("  -> OK")
 
 

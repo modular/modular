@@ -21,6 +21,7 @@ from std.memory import stack_allocation
 
 from std.collections.string.string_slice import _get_kgen_string
 from std.sys import align_of, is_gpu
+from std._plugin import CurrentPlugin
 
 
 # TODO(MSTDL-2015): ASAN error when updating to use `UnsafePointer`.
@@ -120,6 +121,11 @@ def stack_allocation[
                     type, MutExternalOrigin, address_space=address_space
                 ]._mlir_type
             ](generic_ptr)
+
+    elif CurrentPlugin.stack_allocation_fn[address_space]:
+        return comptime (
+            CurrentPlugin.stack_allocation_fn[address_space].value()
+        )[count, type, name=name, alignment=alignment]()
 
     # Perform a stack allocation of the requested size, alignment, and type.
     return __mlir_op.`pop.stack_allocation`[

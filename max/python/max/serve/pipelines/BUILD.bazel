@@ -3,19 +3,41 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
-    name = "pipelines",
-    srcs = glob(["*.py"]),
+    name = "incremental_detokenizer",
+    srcs = ["incremental_detokenizer.py"],
+    # tokenizers is a transitive dependency of transformers but doesn't have
+    # an unversioned bazel alias, so we need to ignore its unresolved imports
+    ignore_unresolved_imports = [
+        "tokenizers.Tokenizer",
+        "tokenizers.decoders.DecodeStream",
+    ],
     deps = [
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "pipelines",
+    srcs = glob(
+        ["*.py"],
+        exclude = ["incremental_detokenizer.py"],
+    ),
+    deps = [
+        ":incremental_detokenizer",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/interfaces",
-        "//max/python/max/kv_cache",
+        "//max/python/max/experimental/nn",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         "//max/python/max/profiler",
         "//max/python/max/serve:config",
         "//max/python/max/serve:exceptions",
         "//max/python/max/serve:process_control",
+        "//max/python/max/serve:queue",
         "//max/python/max/serve/scheduler",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve/worker_interface",

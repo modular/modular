@@ -170,10 +170,10 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     comptime N = 1024
     comptime K = 128
 
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
-    var c_host = alloc[Float32](M * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = ctx.enqueue_create_host_buffer[DType.float32](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[DType.float32](K * N)
+    var c_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var c_host_ref = ctx.enqueue_create_host_buffer[DType.float32](M * N)
 
     for i in range(M * K):
         a_host[i] = Float32(i)
@@ -220,7 +220,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         TN,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -232,25 +232,25 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(M))),
+        row_major(Coord(K, M)),
     )
 
     # Naive gemm.
@@ -265,7 +265,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_experimental[gemm_naive](
+    ctx.enqueue_function[gemm_naive](
         c_ref_tt,
         a_tt,
         b_tt,
@@ -290,7 +290,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         @always_inline
         @parameter
         def run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function_experimental[kernel](
+            ctx.enqueue_function[kernel](
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -300,7 +300,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
         # Warmup
         for i in range(nwarmup):
-            ctx.enqueue_function_experimental[kernel](
+            ctx.enqueue_function[kernel](
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -316,11 +316,6 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     _ = c_device_ref
     _ = a_device
     _ = b_device
-
-    c_host.free()
-    c_host_ref.free()
-    a_host.free()
-    b_host.free()
 
 
 def main() raises:

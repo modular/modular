@@ -232,7 +232,7 @@ def main() raises:
 
         # Run Floyd-Warshall algorithm
         for k in range(num_vertices):
-            ctx.enqueue_function_experimental[floyd_warshall_kernel](
+            ctx.enqueue_function[floyd_warshall_kernel](
                 d_dist,
                 num_vertices,
                 k,

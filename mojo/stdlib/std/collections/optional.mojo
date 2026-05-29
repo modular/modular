@@ -36,14 +36,13 @@ from std.os import abort
 
 from std.utils import Variant
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
-from std.compile import get_type_name
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
 from std.memory import UnsafeMaybeUninit
 from std.memory.unsafe_pointer import unsafe_cast
-from std.reflection import call_location
+from std.reflection import call_location, reflect
 from std.sys.intrinsics import _type_is_eq
 from std.utils.variant import _all_trivial_copyinit
 from std.utils._nicheable import (
@@ -371,9 +370,7 @@ struct Optional[T: Movable](
         """
         if self:
             if rhs:
-                return trait_downcast[Equatable](
-                    self.unsafe_value()
-                ) == trait_downcast[Equatable](rhs.unsafe_value())
+                return self.unsafe_value() == rhs.unsafe_value()
             return False
         return not rhs
 
@@ -504,9 +501,9 @@ struct Optional[T: Movable](
     ](self: Self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         if self:
             comptime if is_repr:
-                trait_downcast[Writable](self.value()).write_repr_to(writer)
+                self.value().write_repr_to(writer)
             else:
-                trait_downcast[Writable](self.value()).write_to(writer)
+                self.value().write_to(writer)
         else:
             writer.write_string("None")
 
@@ -553,21 +550,22 @@ struct Optional[T: Movable](
         if self:
             # Tag the hash so that hash(T) != hash(Optional[T](..)).
             hasher.update(UInt8(1))
-            trait_downcast[Hashable](self.value()).__hash__(hasher)
+            self.value().__hash__(hasher)
         else:
             hasher.update(UInt8(0))
 
     def _to_device_type(
-        self, target: MutOpaquePointer[_]
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ) where conforms_to(Self.T, DevicePassable) and conforms_to(
         Self.T, Copyable
     ):
         """Convert to device type and store at the target address.
 
         Args:
+            encoder: Target specific device type encoder.
             target: The target pointer to store the device type.
         """
-        target.bitcast[Self]().init_pointee_copy(self)
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> (
@@ -580,7 +578,7 @@ struct Optional[T: Movable](
         Returns:
             A string representation of the type, e.g. `Optional[Int]`.
         """
-        return String(t"Optional[{get_type_name[Self.T]()}]")
+        return String(t"Optional[{reflect[Self.T].name()}]")
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -723,6 +721,52 @@ struct Optional[T: Movable](
         """
         assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
+
+    def destroy_with[F: def(var Self.T)](deinit self, destroy_func: F):
+        """Destroy the value contained in this `Optional` in-place using a
+        caller-provided destructor function.
+
+        This method can be used to destroy `Optional` values whose element
+        type is not `ImplicitlyDestructible` (for example, types
+        marked `@explicit_destroy`). The `__del__` on `Optional`
+        requires `T: ImplicitlyDestructible`, so explicit-destroy users must
+        destroy an `Optional[T]` through this API instead.
+
+        If `self` is empty, `destroy_func` is not called. Otherwise
+        `destroy_func` is called exactly once on the moved-out value.
+
+        Parameters:
+            F: The type of the caller-provided destructor function.
+
+        Args:
+            destroy_func: Caller-provided destructor function for destroying
+                an instance of `Self.T`. Not called when `self` is empty.
+
+        Examples:
+
+        ```mojo
+        @explicit_destroy
+        @fieldwise_init
+        struct ExplicitDestroy(Movable):
+            var data: Int
+
+            def destroy(deinit self):
+                pass
+
+        var opt = Optional(ExplicitDestroy(5))
+        opt^.destroy_with(ExplicitDestroy.destroy)
+        ```
+        """
+        if self:
+            # SAFETY: We just checked that the `Optional` holds a `T`, so
+            # it's safe to dispatch to `Variant.destroy_with[T]` (it would
+            # otherwise abort).
+            self._value^.destroy_with[Self.T](destroy_func)
+        else:
+            # Retire the empty `Optional` by destroying its `_NoneType`
+            # payload through `Variant.destroy_with`. `_NoneType` is
+            # trivially destructible, so `_NoneType.__del__` is a no-op.
+            self._value^.destroy_with[_NoneType](_NoneType.__del__)
 
     def or_else[
         _T: Movable & ImplicitlyDestructible, //
@@ -1027,8 +1071,10 @@ struct OptionalReg[T: TrivialRegisterPassable](
     comptime device_type: AnyType = Self
     """The device-side type for this optional register."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1037,7 +1083,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         Returns:
             A string representation of the type, e.g. `OptionalReg[Int]`.
         """
-        return String(t"OptionalReg[{get_type_name[Self.T]()}]")
+        return String(t"OptionalReg[{reflect[Self.T].name()}]")
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

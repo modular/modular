@@ -1,0 +1,73 @@
+---
+title: Runtime errors
+description: Capture Mojo stack traces and dump compiler IR to investigate unrecoverable failures in your MAX model.
+---
+
+To help you diagnose runtime errors, MAX includes debugging tools that provide
+Mojo-level stack traces and the compiled graph intermediate representation
+(IR).
+
+## Get Mojo stack traces
+
+A stack trace is the chain of function calls that led to an error. It
+shows you which function raised the error, which function called it,
+which function called that, and so on back to the program's entry
+point. A default Python traceback only covers Python frames, but a MAX
+failure often lives in compiled Mojo code such as a kernel, a standard
+library routine, or the runtime itself. A Mojo-level stack trace
+includes those frames too, which tells you whether the failure is in
+your model code, in a kernel, or somewhere in between.
+
+MAX captures Mojo traces at two different moments.
+
+- `stack-trace-on-error` captures a trace when your code raises a recoverable
+Mojo error that would otherwise surface as a short message.
+
+- `stack-trace-on-crash` captures a trace when the process hits an
+unrecoverable crash such as a segmentation fault, which would otherwise
+terminate without any diagnostic output.
+
+You can enable both:
+
+```bash
+MODULAR_DEBUG=stack-trace-on-error,stack-trace-on-crash max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+```
+
+:::note
+
+The `stack-trace-on-error` and `stack-trace-on-crash` tools only provide stack
+traces for code executing on CPU. They won't do so for code executing on GPU.
+
+:::
+
+## Save intermediate representation
+
+Before MAX runs your graph, the graph compiler lowers it through a
+series of intermediate representations (IRs). An IR is a structured,
+text-based description of your program at a specific point in the
+compilation pipeline, somewhere between your Python source and the
+machine code that runs on your device. Each lowering stage applies
+transformations such as operator fusion, memory planning, or device
+placement, so comparing the IR across stages shows you exactly what the
+compiler did to your model.
+
+When you set `ir-output-dir` to a directory path, MAX writes one file
+per lowering stage to that directory.
+
+```bash
+MODULAR_DEBUG=ir-output-dir=/tmp/ir-dump max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+```
+
+Inspecting these files helps you triage compiler-level issues.
+
+## Next steps
+
+Now that you can capture low-level context for runtime failures, explore
+related debug options to narrow down the root cause:
+
+- [Debug GPU errors](/max/develop/debugging-gpu): When a crash originates
+  in a GPU kernel, enable synchronous dispatch alongside stack traces to
+  pin the failure to the op that caused it.
+- [Debug accuracy issues](/max/develop/debugging-accuracy): When the
+  error mentions NaN, Inf, or uninitialized memory, switch to the
+  accuracy page for the matching checks.

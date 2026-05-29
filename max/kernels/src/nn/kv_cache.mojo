@@ -45,12 +45,11 @@ from nn.attention.mha_utils import (
     dispatch_materialized_mask,
 )
 from nn.normalization import _rms_norm_impl
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils import Index, IndexList
-from tensor import InputTensor
-from tensor.managed_tensor_slice import (
+from extensibility import InputTensor
+from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 
@@ -72,7 +71,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     output: LayoutTensor[mut=True, dtype, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -149,7 +148,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     output: LayoutTensor[mut=True, dtype, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -230,7 +229,7 @@ def _fused_qkv_matmul_kv_cache[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     output: LayoutTensor[mut=True, dtype, ...],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
@@ -253,7 +252,7 @@ def _fused_qkv_matmul_kv_cache[
     var cuda_ctx: Optional[DeviceContext] = None
 
     comptime if is_gpu[target]():
-        cuda_ctx = context.get_device_context()
+        cuda_ctx = context
 
     return _fused_qkv_matmul_kv_cache_impl[target=target](
         hidden_state,
@@ -459,7 +458,7 @@ def generic_fused_qk_rope_bshd_continuous_batch[
     layer_idx: UInt32,
     valid_lengths: TileTensor[DType.uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: DeviceContext,
 ) raises:
     """Performs a fused RoPE projection for Q and K projections.
 
@@ -513,10 +512,6 @@ def generic_fused_qk_rope_bshd_continuous_batch[
             )
         )
 
-    # Pass device context only on GPU.
-    var dev_ctx = Optional[DeviceContext]() if is_cpu[
-        target
-    ]() else context.get_device_context()
     with Trace[TraceLevel.OP, target=target](
         "mo.fused_qk_rope.padded.continuous_batching.nhead_"
         + String(kv_collection.kv_params.num_heads)
@@ -534,7 +529,7 @@ def generic_fused_qk_rope_bshd_continuous_batch[
             layer_idx,
             valid_lengths,
             output,
-            dev_ctx,
+            context,
         )
 
 
@@ -552,7 +547,7 @@ def generic_fused_qk_rope_bshd_paged[
     layer_idx: UInt32,
     valid_lengths: TileTensor[DType.uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: DeviceContext,
 ) raises:
     """Performs a fused RoPE projection for Q and K with paged KV cache.
 
@@ -601,10 +596,6 @@ def generic_fused_qk_rope_bshd_paged[
             )
         )
 
-    # Pass device context only on GPU.
-    var dev_ctx = Optional[DeviceContext]() if is_cpu[
-        target
-    ]() else context.get_device_context()
     with Trace[TraceLevel.OP, target=target](
         "mo.fused_qk_rope.padded.paged.nhead_"
         + String(kv_collection.kv_params.num_heads)
@@ -622,7 +613,7 @@ def generic_fused_qk_rope_bshd_paged[
             layer_idx,
             valid_lengths,
             output,
-            dev_ctx,
+            context,
         )
 
 
@@ -652,7 +643,7 @@ def generic_flash_attention_kv_cache_padded[
     output: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
@@ -727,7 +718,7 @@ def generic_flash_attention_kv_cache_padded_materialized_mask[
     output: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
@@ -803,7 +794,7 @@ def _flash_attention_dispatch[
         address_space=AddressSpace.GENERIC,
         ...,
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
@@ -827,7 +818,7 @@ def _flash_attention_dispatch[
                 mask,
                 valid_lengths,
                 scale,
-                context.get_device_context(),
+                context,
             )
 
     return dispatch_mask[mask_str, _dispatch_flash_attention]()
@@ -854,7 +845,7 @@ def _flash_attention_dispatch_materialized_mask[
     output: LayoutTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
@@ -886,7 +877,7 @@ def _flash_attention_dispatch_materialized_mask[
                     mask,
                     valid_lengths,
                     scale,
-                    context.get_device_context(),
+                    context,
                     sink_weights=sink_weights,
                 )
 
@@ -928,7 +919,7 @@ def rms_norm_kv_cache_ragged_paged[
     layer_idx: UInt32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[DType.uint32, ...],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Performs RMSNorm in place on new entries in the key cache.
 
@@ -1096,7 +1087,7 @@ def rms_norm_value_cache_ragged_paged[
     layer_idx: UInt32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[DType.uint32, ...],
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Performs RMSNorm in place on new entries in the value cache.
 
@@ -1277,7 +1268,7 @@ def print_kv_cache_cont_batch_generic_cpu[
     kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params],
     layer_idx: UInt32,
     is_print_compact: Bool,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
@@ -1309,7 +1300,7 @@ def print_kv_cache_paged_generic_cpu[
     kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
@@ -1340,10 +1331,10 @@ def print_kv_cache_cont_batch_generic_gpu[
     kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params],
     layer_idx: UInt32,
     is_print_compact: Bool,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     # Create host TileTensor copies of device data.
-    var dev_ctx = context.get_device_context()
+    var dev_ctx = context
 
     var n_blocks = kv_collection.blocks.num_elements()
     var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
@@ -1433,10 +1424,10 @@ def print_kv_cache_paged_generic_gpu[
     kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     # Create host TileTensor copies of device data.
-    var dev_ctx = context.get_device_context()
+    var dev_ctx = context
 
     var n_blocks = kv_collection.blocks.num_elements()
     var blocks_ptr = alloc[Scalar[dtype]](n_blocks)

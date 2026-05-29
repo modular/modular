@@ -17,7 +17,10 @@ from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
+from max.pipelines.lib import build_eos_tracker_for_request
+from max.pipelines.modeling.types import (
     GenerationStatus,
     Pipeline,
     PipelineTokenizer,
@@ -29,9 +32,6 @@ from max.interfaces import (
     TokenBuffer,
     TokenSlice,
 )
-from max.kv_cache import DummyKVCache, PagedKVCacheManager
-from max.pipelines.core import TextContext
-from max.pipelines.lib import build_eos_tracker_for_request
 
 
 @dataclass

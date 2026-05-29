@@ -79,7 +79,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         var global_k = global_offset.K + kl
 
         var b_ptr = b_packed.ptr_at_offset(
-            Coord(Idx(n_outer_idx), Idx(kl // 4), Idx(0))
+            Coord(n_outer_idx, kl // 4, Idx[0])
         ).bitcast[Scalar[c_type]]()
 
         comptime if not is_tail:

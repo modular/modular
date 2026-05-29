@@ -27,37 +27,50 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
+from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
-from max.pipelines.lib.hf_utils import is_diffusion_pipeline
-from max.pipelines.lib.interfaces import PipelineModel
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.lib.interfaces import (
+    ArchConfig,
+    ArchConfigWithKVCache,
+    PipelineModel,
+)
 from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
     to_human_readable_bytes,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.lib.pipeline_runtime_config import (
+    DISABLE_PARSER_SENTINEL,
+    PipelineRuntimeConfig,
+)
 from max.pipelines.lib.registry import (
     PIPELINE_REGISTRY,
     SupportedArchitecture,
     get_pipeline_for_task,
 )
 from max.pipelines.lib.sampling import SamplingConfig
+from max.pipelines.modeling.kv_cache_config import (
+    KVCacheConfig,
+    KVConnectorConfig,
+)
+from max.pipelines.modeling.types.task import PipelineTask
+from max.pipelines.modeling.weights.hf_utils import is_diffusion_pipeline
+from max.pipelines.speculative.config import SpeculativeConfig
 from pydantic import (
     ConfigDict,
     Field,
     ModelWrapValidatorHandler,
     PrivateAttr,
+    TypeAdapter,
     field_validator,
     model_validator,
 )
 from typing_extensions import Self, override
 
-from .kv_cache_config import KVCacheConfig, KVConnectorConfig
 from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig, _format_config_entries
 from .profiling_config import ProfilingConfig
-from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -105,33 +118,70 @@ def _strip_default_model_kwargs(
     return non_default
 
 
+# FIXME: This method seems like a major hack...
+# Can this be moved to the KVCacheConfig post init?
+def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
+    """Validates KV connector configuration and applies defaults."""
+    connector = kv.kv_connector
+    if connector is None:
+        return
+
+    # Ensure a config object exists for connectors that need one.
+    cfg = kv.kv_connector_config or KVConnectorConfig()
+
+    if connector == KVConnectorType.tiered:
+        if cfg.disk_offload_dir is None:
+            cfg.disk_offload_dir = tempfile.mkdtemp(prefix="max_kv_tiered_")
+            logger.info(
+                f"Tiered connector: auto-created disk offload dir "
+                f"{cfg.disk_offload_dir}"
+            )
+
+    kv.kv_connector_config = cfg
+
+
 _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "LlamaForCausalLM",
-    "DeepseekV2ForCausalLM",
     "DeepseekV3ForCausalLM",
     "DeepseekV32ForCausalLM",
     "DeepseekV3ForCausalLMNextN",
     "KimiK25ForConditionalGeneration",
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
+    "UnifiedDflashLlama3ForCausalLM",
+    "UnifiedDflashKimiK25ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",
+    "Eagle3DeepseekV3ForCausalLM",
+    "Eagle3MHADeepseekV3ForCausalLM",
+    "Eagle3MHAKimiK25ForCausalLM",
     "MiniMaxM2ForCausalLM",
 )
 
 _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "LlamaForCausalLM",
-    "DeepseekV2ForCausalLM",
     "DeepseekV3ForCausalLM",
     "DeepseekV32ForCausalLM",
     "DeepseekV3ForCausalLMNextN",
     "KimiK25ForConditionalGeneration",
-    "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",
+    "Eagle3DeepseekV3ForCausalLM",
+    "Eagle3MHADeepseekV3ForCausalLM",
+    "Eagle3MHAKimiK25ForCausalLM",
     "MiniMaxM2ForCausalLM",
 )
+
+
+def _is_disable_parser_sentinel(value: str | None) -> bool:
+    """Return ``True`` if ``value`` is the case-insensitive disable sentinel.
+
+    Users can pass the string ``"none"`` (case-insensitive) to
+    ``runtime.reasoning_parser`` or ``runtime.tool_parser`` to explicitly
+    disable the parser, overriding any architecture-declared default.
+    """
+    return isinstance(value, str) and value.lower() == DISABLE_PARSER_SENTINEL
 
 
 class PipelineConfig(ConfigFileModel):
@@ -154,7 +204,7 @@ class PipelineConfig(ConfigFileModel):
     debug_verify_replay: bool = Field(
         default=False,
         description=(
-            "When device_graph_capture is enabled, execute eager launch-trace "
+            "When ``device_graph_capture`` is enabled, execute eager launch-trace "
             "verification before replay. Intended for debugging only."
         ),
     )
@@ -170,8 +220,8 @@ class PipelineConfig(ConfigFileModel):
         default_factory=list,
         description=(
             "Per-component overrides for the ModelManifest, in the format "
-            "'component.field=value'. Applied before resolution. Repeatable. "
-            "Example: 'transformer.quantization_encoding=float4_e2m1fnx2'."
+            "``component.field=value``. Applied before resolution. Repeatable. "
+            "Example: ``transformer.quantization_encoding=float4_e2m1fnx2``."
         ),
     )
     """Per-component model overrides applied before resolution."""
@@ -257,6 +307,26 @@ class PipelineConfig(ConfigFileModel):
     )
     """The model-agnostic runtime settings for pipeline execution."""
 
+    @property
+    def needs_bitmask_constraints(self) -> bool:
+        """Whether constrained decoding can fire and requires the bitmask path.
+
+        True if the user enabled ``--enable-structured-output`` (for
+        user-supplied ``response_format=json_schema``) or a tool parser is
+        configured (tool-call grammars work without the flag — they are
+        server-generated and gated on having a parser that can both produce
+        the grammar and parse the resulting output).
+
+        Drives whether model / sampler graphs are compiled with a bitmask
+        input and whether the D2H pinned buffer is allocated. Distinct from
+        ``sampling.enable_structured_output``, which is the user-facing
+        flag and only gates honoring user-supplied JSON schemas.
+        """
+        return (
+            self.sampling.enable_structured_output
+            or self.runtime.tool_parser is not None
+        )
+
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -272,6 +342,59 @@ class PipelineConfig(ConfigFileModel):
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
         session._use_vendor_ccl(self.runtime.use_vendor_ccl)
+
+    def estimate_signal_buffer_memory(
+        self, arch_config: ArchConfig | None = None
+    ) -> int:
+        """Estimates total signal-buffer memory across all devices.
+
+        Signal buffers are fixed-size (:attr:`~max.nn.comm.allreduce.Signals.NUM_BYTES`)
+        per-GPU allocations used by P2P collectives. Each independent allocation
+        site contributes one set of ``ngpus`` buffers. The base estimate counts
+        the sites visible from :class:`PipelineConfig`:
+
+        - main model graph (multi-GPU only),
+        - :class:`BlockOffloadEngine` for KV-cache offloading, *only* when its
+          ``replicate_kv_across_tp`` path is active (MLA model with DP=1 and
+          multi-device TP). See ``block_copy_engine.py`` / ``transfer_engine.py``.
+
+        Returns 0 for single-device pipelines. Architecture-specific outliers
+        (e.g. always-allreduce mixins, Flux2, multimodal encoders) should
+        override :meth:`~max.pipelines.lib.interfaces.PipelineModel.estimate_signal_buffer_memory`.
+
+        Args:
+            arch_config: Optional architecture config. When provided and it
+                exposes KV params, the BCE term is gated on the actual
+                ``replicates_kv_across_tp`` flag rather than only the
+                ``kv_connector`` setting. Without it, the BCE term is added
+                whenever a connector is configured (conservative).
+
+        Returns:
+            Estimated total signal-buffer memory in bytes (across all devices).
+        """
+        ngpus = len(self.model.device_specs)
+        if ngpus <= 1:
+            return 0
+
+        count_per_gpu = 1  # main model
+        if self.model.kv_cache.kv_connector in {
+            KVConnectorType.tiered,
+            KVConnectorType.local,
+        }:
+            # BlockOffloadEngine only allocates signal buffers when its
+            # broadcast path is active (replicate_kv_across_tp = is_mla AND
+            # dp==1 AND n_devices>1; see block_copy_engine.py:242-306).
+            # Without arch_config we can't tell, so be conservative and add
+            # the set; with arch_config, gate precisely.
+            bce_allocates = True
+            if isinstance(arch_config, ArchConfigWithKVCache):
+                bce_allocates = (
+                    arch_config.get_kv_params().replicates_kv_across_tp
+                )
+            if bce_allocates:
+                count_per_gpu += 1  # BlockOffloadEngine
+
+        return Signals.NUM_BYTES * count_per_gpu * ngpus
 
     @staticmethod
     def _extract_kwargs_for_config(
@@ -363,11 +486,24 @@ class PipelineConfig(ConfigFileModel):
             if key in KVCacheConfig.model_fields:
                 kv_cache_kwargs[key] = unmatched_kwargs.pop(key)
 
+        # Parse --model-override entries once, grouped by target component, so
+        # "main"/"draft" overrides can be folded into the constructor kwargs
+        # below.  HuggingFaceRepo.__post_init__ and the MAXModelConfig
+        # validator eagerly hit HF using the dataclass-default revision, which
+        # fails under HF_HUB_OFFLINE for repos cached only at a pinned SHA.
+        component_overrides: dict[str, dict[str, Any]] = {}
+        for override_str in self.model_override:
+            component, field_name, value = self._parse_model_override(
+                override_str
+            )
+            component_overrides.setdefault(component, {})[field_name] = value
+
         # Only rebuild the manifest when explicit model kwargs were provided
         # in unmatched_kwargs.  When a pre-built ModelManifest was passed via
         # the ``models=`` kwarg, ``model_kwargs`` will be empty and we should
         # not reconstruct the manifest (which would trigger HF validation).
         if model_kwargs:
+            model_kwargs.update(component_overrides.get("main", {}))
             model_path = model_kwargs.pop("model_path", "")
             if model_path:
                 revision = model_kwargs.pop("huggingface_model_revision", None)
@@ -380,6 +516,16 @@ class PipelineConfig(ConfigFileModel):
                     revision=revision,
                     **non_default_kwargs,
                 )
+            elif "main" in self.models:
+                # The main model came from a YAML recipe (or a pre-built
+                # manifest via ``models=``). Still let CLI flags such as
+                # --devices override the recipe so the same YAML can be
+                # reused across different multi-GPU setups.
+                non_default_kwargs = _strip_default_model_kwargs(model_kwargs)
+                if non_default_kwargs:
+                    self.models = self.models.with_override(
+                        "main", **non_default_kwargs
+                    )
 
         # Apply KV cache config to main model
         if kv_cache_kwargs and "main" in self.models:
@@ -393,6 +539,17 @@ class PipelineConfig(ConfigFileModel):
             strip_prefix=True,
         )
         if draft_kwargs.get("model_path", "") != "":
+            # Inherit certain fields from the target model if not explicitly
+            # specified for the draft model. This simplifies CLI usage for
+            # speculative decoding (e.g. --draft-trust-remote-code is not
+            # needed if --trust-remote-code is already set).
+            if "main" in self.models:
+                self._apply_draft_model_defaults(draft_kwargs, self.model)
+
+            # "draft" overrides are applied after inheritance so explicit
+            # user intent wins over copied target-model defaults.
+            draft_kwargs.update(component_overrides.get("draft", {}))
+
             draft_config = MAXModelConfig(**draft_kwargs)
             if kv_cache_kwargs:
                 draft_config.create_kv_cache_config(**kv_cache_kwargs)
@@ -400,64 +557,116 @@ class PipelineConfig(ConfigFileModel):
                 "draft", config=draft_config
             )
 
-        # Apply per-component overrides from --model-override flags
-        if self.model_override:
-            self._apply_model_overrides()
-
-    def _apply_model_overrides(self) -> None:
-        """Apply --model-override entries to the manifest.
-
-        Each entry has the form ``component.field=value``. The value is
-        coerced to the target field's type via Pydantic's TypeAdapter.
-        Overrides are applied sequentially via ``with_override()``.
-        """
-        from pydantic import TypeAdapter
-
-        for override_str in self.model_override:
-            # Parse "component.field=value"
-            dot_pos = override_str.find(".")
-            if dot_pos < 1:
-                raise ValueError(
-                    f"Invalid --model-override format: {override_str!r}. "
-                    f"Expected 'component.field=value'."
-                )
-            eq_pos = override_str.find("=", dot_pos)
-            if eq_pos < dot_pos + 2:
-                raise ValueError(
-                    f"Invalid --model-override format: {override_str!r}. "
-                    f"Expected 'component.field=value'."
-                )
-            component = override_str[:dot_pos]
-            field_name = override_str[dot_pos + 1 : eq_pos]
-            raw_value = override_str[eq_pos + 1 :]
-
-            if field_name not in MAXModelConfig.model_fields:
-                raise ValueError(
-                    f"Unknown MAXModelConfig field: {field_name!r}. "
-                    f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
-                )
-
+        # Apply parsed overrides via with_override.  This is idempotent for
+        # "main"/"draft" fields already folded into kwargs above, and is the
+        # only path that runs when a pre-built manifest was passed via
+        # ``models=``.
+        for component, fields in component_overrides.items():
             if component not in self.models:
                 raise ValueError(
                     f"Component {component!r} not found in manifest. "
                     f"Available: {list(self.models.keys())}"
                 )
+            self.models = self.models.with_override(component, **fields)
 
-            # Coerce value using the field's type annotation.
-            # For compound types (list, dict) the raw CLI string is JSON,
-            # so we attempt json.loads first before falling back to the
-            # raw string for scalar fields.
-            field_info = MAXModelConfig.model_fields[field_name]
-            adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
-            try:
-                parsed_value = json.loads(raw_value)
-            except (json.JSONDecodeError, ValueError):
-                parsed_value = raw_value
-            value = adapter.validate_python(parsed_value)
+    @staticmethod
+    def _apply_draft_model_defaults(
+        draft_kwargs: dict[str, Any], target_model: MAXModelConfig
+    ) -> None:
+        """Inherit certain fields from the target model for the draft model.
 
-            self.models = self.models.with_override(
-                component, **{field_name: value}
+        When running speculative decoding, the draft model typically shares
+        configuration with the target model (same devices, same trust settings,
+        same parallelism). This method copies these fields from the target
+        model config into the draft kwargs if they weren't explicitly specified.
+
+        Fields inherited:
+        - ``trust_remote_code``: If the target model requires custom code,
+          the draft model (from the same model family) likely does too.
+        - ``device_specs``: The draft model runs on the same devices as the
+          target model.
+        - ``data_parallel_degree``: Both models use the same parallelism.
+
+        Note: ``quantization_encoding`` is NOT inherited because draft models
+        (especially EAGLE3) often use bfloat16 regardless of the target model's
+        quantization. The draft model should auto-detect its encoding from its
+        weights.
+
+        Args:
+            draft_kwargs: The draft model kwargs dict (modified in place).
+            target_model: The target model configuration to inherit from.
+        """
+        # Inherit trust_remote_code if not explicitly specified
+        if "trust_remote_code" not in draft_kwargs:
+            if target_model.trust_remote_code:
+                logger.info(
+                    "Inheriting trust_remote_code=True from target model "
+                    "for draft model"
+                )
+                draft_kwargs["trust_remote_code"] = True
+
+        # Inherit device_specs if not explicitly specified
+        if "device_specs" not in draft_kwargs:
+            logger.info(
+                f"Inheriting device_specs={target_model.device_specs} "
+                "from target model for draft model"
             )
+            draft_kwargs["device_specs"] = target_model.device_specs
+
+        # Inherit data_parallel_degree if not explicitly specified
+        if "data_parallel_degree" not in draft_kwargs:
+            if target_model.data_parallel_degree != 1:
+                logger.info(
+                    f"Inheriting data_parallel_degree="
+                    f"{target_model.data_parallel_degree} from target model "
+                    "for draft model"
+                )
+            draft_kwargs["data_parallel_degree"] = (
+                target_model.data_parallel_degree
+            )
+
+    @staticmethod
+    def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
+        """Parse ``component.field=value`` into ``(component, field, value)``.
+
+        The value is coerced to the target field's type via Pydantic's
+        ``TypeAdapter`` (JSON-first, raw-string fallback for scalars).
+
+        Raises:
+            ValueError: if the string is malformed or names an unknown
+                ``MAXModelConfig`` field.
+        """
+        dot_pos = override_str.find(".")
+        if dot_pos < 1:
+            raise ValueError(
+                f"Invalid --model-override format: {override_str!r}. "
+                f"Expected 'component.field=value'."
+            )
+        eq_pos = override_str.find("=", dot_pos)
+        if eq_pos < dot_pos + 2:
+            raise ValueError(
+                f"Invalid --model-override format: {override_str!r}. "
+                f"Expected 'component.field=value'."
+            )
+        component = override_str[:dot_pos]
+        field_name = override_str[dot_pos + 1 : eq_pos]
+        raw_value = override_str[eq_pos + 1 :]
+
+        if field_name not in MAXModelConfig.model_fields:
+            raise ValueError(
+                f"Unknown MAXModelConfig field: {field_name!r}. "
+                f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
+            )
+
+        # For compound types (list, dict) the raw CLI string is JSON, so try
+        # json.loads first; fall back to the raw string for plain scalars.
+        field_info = MAXModelConfig.model_fields[field_name]
+        adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+        try:
+            parsed_value = json.loads(raw_value)
+        except (json.JSONDecodeError, ValueError):
+            parsed_value = raw_value
+        return component, field_name, adapter.validate_python(parsed_value)
 
     def _create_speculative_config_if_needed(
         self, kwargs: dict[str, Any]
@@ -492,6 +701,21 @@ class PipelineConfig(ConfigFileModel):
             if hf_arch == "LlamaForCausalLM":
                 self.draft_model.huggingface_config.architectures[0] = (
                     "LlamaForCausalLMEagle"
+                )
+        # DFlash drafts ship with architectures: ["DFlashDraftModel"],
+        # which isn't registered as a standalone MAX architecture (the draft
+        # is only ever invoked through UnifiedDflashLlama3). Override to
+        # LlamaForCausalLM.
+        if self.speculative.is_dflash() and self.draft_model is not None:
+            if len(self.draft_model.huggingface_config.architectures) != 1:
+                raise ValueError(
+                    f"Expected exactly 1 architecture in draft model config, "
+                    f"got {len(self.draft_model.huggingface_config.architectures)}"
+                )
+            hf_arch = self.draft_model.huggingface_config.architectures[0]
+            if hf_arch == "DFlashDraftModel":
+                self.draft_model.huggingface_config.architectures[0] = (
+                    "LlamaForCausalLM"
                 )
 
     # Explicit type mapping for config classes that are processed from
@@ -573,7 +797,12 @@ class PipelineConfig(ConfigFileModel):
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
-            setattr(self, config_name, config_class(**matched_kwargs))
+            existing = getattr(self, config_name, None)
+            if existing is not None and isinstance(existing, config_class):
+                merged = existing.model_copy(update=matched_kwargs)
+                setattr(self, config_name, merged)
+            else:
+                setattr(self, config_name, config_class(**matched_kwargs))
 
     # This has to be mode="wrap" instead of mode="before" to be able to pass
     # state of self._unmatched_kwargs to be used in the mode="after" validator
@@ -664,7 +893,6 @@ class PipelineConfig(ConfigFileModel):
         delattr(self, "_unmatched_kwargs")
 
         # Process specialized config creation
-        self._create_denoising_cache_config_if_needed(unmatched_kwargs)
         self._create_lora_config_if_needed(unmatched_kwargs)
 
         # Build model manifest from kwargs — must come before sampling
@@ -676,6 +904,11 @@ class PipelineConfig(ConfigFileModel):
         # Process remaining config classes (runtime, sampling, profiling)
         if unmatched_kwargs:
             self._process_remaining_config_classes(unmatched_kwargs)
+
+        # Set denoising_cache on runtime AFTER runtime is constructed by
+        # _process_remaining_config_classes; otherwise the runtime
+        # replacement there clobbers the cache fields set here.
+        self._create_denoising_cache_config_if_needed(unmatched_kwargs)
 
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
@@ -811,23 +1044,72 @@ class PipelineConfig(ConfigFileModel):
         if self.lora and self.lora.enable_lora:
             self.model.validate_lora_compatibility()
 
-        # Override target architecture for unified EAGLE pipeline.
+        # Override target architecture for unified EAGLE / DFlash pipelines.
         if self.speculative:
             target_archs = self.model.huggingface_config.architectures
             if target_archs[0] == "LlamaForCausalLM":
-                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+                if self.speculative.is_dflash():
+                    target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
+                else:
+                    target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
             if target_archs[0] == "DeepseekV3ForCausalLM":
-                target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+                # Choose between MTP (NextN layer baked into target ckpt) and
+                # Eagle3 (separate draft ckpt with arch
+                # ``Eagle3DeepseekV2ForCausalLM``) based on the draft arch.
+                draft_archs = (
+                    self.draft_model.huggingface_config.architectures
+                    if self.draft_model is not None
+                    else None
+                )
+                if draft_archs is None:
+                    target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+                elif (
+                    draft_archs
+                    and draft_archs[0] == "Eagle3DeepseekV2ForCausalLM"
+                ):
+                    target_archs[0] = "Eagle3DeepseekV3ForCausalLM"
+                elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                    target_archs[0] = "Eagle3MHADeepseekV3ForCausalLM"
+                else:
+                    if not draft_archs:
+                        raise ValueError(
+                            "Draft model HF config has empty"
+                            " ``architectures=[]``. Expected"
+                            " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
+                            " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3"
+                            " draft), or no draft model (MTP path)."
+                        )
+                    raise ValueError(
+                        "Unrecognized draft architecture for DeepseekV3"
+                        f" target: {draft_archs[0]!r}. Expected"
+                        " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
+                        " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3 draft),"
+                        " or no draft model (MTP path)."
+                    )
             if target_archs[0] == "KimiK25ForConditionalGeneration":
-                target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
+                draft_archs = (
+                    self.draft_model.huggingface_config.architectures
+                    if self.draft_model is not None
+                    else None
+                )
+                if self.speculative.is_dflash():
+                    # MLA target + DFlash MHA draft.
+                    target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
+                elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                    # MLA target + MHA (Llama-style) Eagle3 draft.
+                    target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
+                else:
+                    # MLA target + MLA Eagle3 draft (existing path).
+                    target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
 
         # Validate KV connector configuration
-        self._validate_kv_connector_config()
+        _resolve_kvconnector_config(self.model.kv_cache)
 
         # By this point, we should have a valid model_path.
 
         if self.draft_model:
             # Joint memory estimation for speculative decoding
+            _resolve_kvconnector_config(self.draft_model.kv_cache)
             self._validate_and_resolve_speculative_memory()
             self._validate_pipeline_config_for_speculative_decoding()
         else:
@@ -837,32 +1119,87 @@ class PipelineConfig(ConfigFileModel):
 
         self._validate_and_resolve_overlap_scheduler()
 
-    def _validate_kv_connector_config(self) -> None:
-        """Validates KV connector configuration and applies defaults."""
-        kv = self.model.kv_cache
-        connector = kv.kv_connector
-        if connector is None:
+        self._resolve_default_reasoning_parser()
+        self._resolve_default_tool_parser()
+
+    def _resolve_default_reasoning_parser(self) -> None:
+        """Apply the architecture's default reasoning parser when unset.
+
+        If the user did not configure ``runtime.reasoning_parser`` and the
+        resolved ``SupportedArchitecture`` declares a default
+        ``reasoning_parser``, use it. Explicit user configuration always wins.
+
+        Passing the case-insensitive sentinel ``"none"`` explicitly disables
+        the reasoning parser; the value is normalized to ``None`` and the
+        architecture default is skipped.
+        """
+        if _is_disable_parser_sentinel(self.runtime.reasoning_parser):
+            self.runtime.reasoning_parser = None
+            logger.info(
+                "Reasoning parser explicitly disabled, skipping architecture default."
+            )
             return
 
-        # Ensure a config object exists for connectors that need one.
-        if kv.kv_connector_config is None:
-            kv.kv_connector_config = KVConnectorConfig()
+        if self.runtime.reasoning_parser is not None:
+            return
 
-        cfg = kv.kv_connector_config
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            architecture_name=self.models.main_architecture_name,
+            prefer_module_v3=self.runtime.prefer_module_v3,
+        )
+        if arch is None or arch.reasoning_parser is None:
+            return
 
-        if connector == KVConnectorType.tiered:
-            if cfg.disk_offload_dir is None:
-                cfg.disk_offload_dir = tempfile.mkdtemp(prefix="max_kv_tiered_")
-                logger.info(
-                    f"Tiered connector: auto-created disk offload dir "
-                    f"{cfg.disk_offload_dir}"
-                )
+        self.runtime.reasoning_parser = arch.reasoning_parser
+        logger.info(
+            "Defaulting reasoning parser to %r for architecture %s. "
+            "Override with --reasoning-parser, or pass "
+            "--reasoning-parser=none to disable.",
+            arch.reasoning_parser,
+            arch.name,
+        )
 
-        if connector == KVConnectorType.lmcache:
-            if not kv.enable_prefix_caching:
-                raise ValueError(
-                    "LMCache connector requires enable_prefix_caching=True"
-                )
+    def _resolve_default_tool_parser(self) -> None:
+        """Apply the architecture's default tool parser when unset.
+
+        If the user did not configure ``runtime.tool_parser`` and the
+        resolved ``SupportedArchitecture`` declares a default
+        ``tool_parser``, use it. Explicit user configuration always wins.
+
+        Passing the case-insensitive sentinel ``"none"`` explicitly disables
+        the tool parser; the value is normalized to ``None`` and the
+        architecture default is skipped.
+        """
+        if _is_disable_parser_sentinel(self.runtime.tool_parser):
+            self.runtime.tool_parser = None
+            logger.info(
+                "Tool parser explicitly disabled, skipping architecture default.",
+            )
+            return
+
+        if self.runtime.tool_parser is not None:
+            return
+
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            architecture_name=self.models.main_architecture_name,
+            prefer_module_v3=self.runtime.prefer_module_v3,
+        )
+        if arch is None or arch.tool_parser is None:
+            return
+
+        if callable(arch.tool_parser):
+            parser_name = arch.tool_parser(self.model.huggingface_model_repo)
+        else:
+            parser_name = arch.tool_parser
+
+        self.runtime.tool_parser = parser_name
+        logger.info(
+            "Defaulting tool parser to %r for architecture %s. "
+            "Override with --tool-parser, or pass --tool-parser=none "
+            "to disable.",
+            parser_name,
+            arch.name,
+        )
 
     def _validate_and_resolve_overlap_scheduler(self) -> None:
         arch: SupportedArchitecture | None = None
@@ -877,7 +1214,7 @@ class PipelineConfig(ConfigFileModel):
                 and arch is not None
                 and arch.name in _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
                 and max_batch_size is not None
-                and accelerator_api() == "cuda"
+                and accelerator_api() in ("cuda", "hip")
                 and self._is_eligible_for_overlap_serve_optimizations()
                 # Device graph capture is not supported for prefill-only workers.
                 and self.runtime.pipeline_role != "prefill_only"
@@ -1083,11 +1420,6 @@ class PipelineConfig(ConfigFileModel):
                 "enable_echo not currently supported with speculative decoding enabled"
             )
 
-        if self.sampling.enable_structured_output:
-            raise ValueError(
-                "structured outputs not currently supported with speculative decoding enabled"
-            )
-
     def _validate_and_resolve_architecture(
         self, model_config: MAXModelConfig
     ) -> SupportedArchitecture:
@@ -1160,14 +1492,6 @@ class PipelineConfig(ConfigFileModel):
                     "LoRA is currently not supported with the number of devices > 1."
                 )
 
-        # TODO(E2EOPT-28): remove this constraint.
-        # Gemma has a MHA head size of 256.
-        # This requires a kv cache page size of at least 256.
-        if "Gemma3" in arch.name or "Gemma4" in arch.name:
-            model_config.kv_cache.kv_cache_page_size = max(
-                model_config.kv_cache.kv_cache_page_size, 256
-            )
-
         model_config.validate_multi_gpu_supported(
             multi_gpu_supported=arch.multi_gpu_supported
         )
@@ -1211,17 +1535,10 @@ class PipelineConfig(ConfigFileModel):
 
         target_arch = self._validate_and_resolve_architecture(self.model)
 
-        if (
-            self.draft_model.quantization_encoding is None
-            and self.model.quantization_encoding is not None
-        ):
-            logger.info(
-                f"draft_quantization_encoding not specified, defaulting to"
-                f" target model encoding: {self.model.quantization_encoding}"
-            )
-            self.draft_model.quantization_encoding = (
-                self.model.quantization_encoding
-            )
+        # Note: quantization_encoding is NOT inherited from the target model.
+        # Draft models (especially EAGLE3) typically use bfloat16 regardless
+        # of the target model's quantization. The draft model auto-detects
+        # its encoding from its weights during architecture resolution.
 
         draft_arch = self._validate_and_resolve_architecture(self.draft_model)
 
@@ -1288,6 +1605,9 @@ class PipelineConfig(ConfigFileModel):
         activation_size = arch.pipeline_model.estimate_activation_memory(
             self, model_config.huggingface_config
         )
+        signal_buffer_size = arch.pipeline_model.estimate_signal_buffer_memory(
+            self, arch_config
+        )
 
         MemoryEstimator.estimate_memory_footprint(
             self,
@@ -1296,6 +1616,7 @@ class PipelineConfig(ConfigFileModel):
             devices,
             weights_size,
             activation_size,
+            signal_buffer_size,
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
@@ -1304,6 +1625,7 @@ class PipelineConfig(ConfigFileModel):
             model_config,
             devices,
             arch_config,
+            signal_buffer_size,
         ):
             if self.model.max_length is None:
                 self.model.max_length = clamped_max_seq_len
@@ -1404,6 +1726,38 @@ class PipelineConfig(ConfigFileModel):
             logger.info(line)
         logger.info("")
 
+        # Denoising cache details for diffusion pipelines.
+        if arch.task == PipelineTask.PIXEL_GENERATION:
+            cache = self.runtime.denoising_cache
+            cache_entries: list[tuple[str, Any]] = [
+                ("first_block_caching", cache.first_block_caching),
+                ("taylorseer", cache.taylorseer),
+                (
+                    "taylorseer_cache_interval",
+                    cache.taylorseer_cache_interval
+                    if cache.taylorseer_cache_interval is not None
+                    else "model-default",
+                ),
+                (
+                    "taylorseer_warmup_steps",
+                    cache.taylorseer_warmup_steps
+                    if cache.taylorseer_warmup_steps is not None
+                    else "model-default",
+                ),
+                (
+                    "taylorseer_max_order",
+                    cache.taylorseer_max_order
+                    if cache.taylorseer_max_order is not None
+                    else "model-default",
+                ),
+            ]
+
+            logger.info("Denoising Cache")
+            logger.info("=" * 60)
+            for line in _format_config_entries(cache_entries):
+                logger.info(line)
+            logger.info("")
+
     def log_basic_config(self) -> None:
         """Log minimal pipeline configuration information.
 
@@ -1431,8 +1785,6 @@ class PipelineConfig(ConfigFileModel):
         pipeline_class = get_pipeline_for_task(task, self)
 
         # Get reserved memory info from KVCache config (only for tasks that use KV cache)
-        from max.interfaces.task import PipelineTask
-
         kv_cache_tasks = {
             PipelineTask.TEXT_GENERATION,
             PipelineTask.AUDIO_GENERATION,
@@ -1477,6 +1829,24 @@ class PipelineConfig(ConfigFileModel):
         config_entries.append(
             ("device_graph_capture", self.runtime.device_graph_capture)
         )
+
+        if self.speculative is not None:
+            config_entries.append(
+                ("speculative_method", self.speculative.speculative_method)
+            )
+            config_entries.append(
+                (
+                    "num_speculative_tokens",
+                    self.speculative.num_speculative_tokens,
+                )
+            )
+            if self.speculative.use_relaxed_acceptance_for_thinking:
+                config_entries.append(
+                    ("relaxed_topk", self.speculative.relaxed_topk)
+                )
+                config_entries.append(
+                    ("relaxed_delta", self.speculative.relaxed_delta)
+                )
 
         logger.info("")
         logger.info("=" * 60)

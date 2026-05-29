@@ -42,6 +42,7 @@ from .fp4_utils import (
     cast_float_to_fp4e2m1_amd,
     cast_fp32_to_fp4e2m1,
     cast_f4e2m1x2_to_fp16x2,
+    compute_mxfp4_even_scale,
     SF_ATOM_M,
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
@@ -199,7 +200,7 @@ def quantize_dynamic_scaled_fp4fp8[
         num_max_threads=num_max_threads,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         scales,
         input,
@@ -208,7 +209,7 @@ def quantize_dynamic_scaled_fp4fp8[
         tensor_sf,
         block_dim=block_dim,
         grid_dim=grid_dim,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -420,7 +421,7 @@ def block_scales_interleave_fp4[
         num_max_threads=num_max_threads,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         input_scales,
         output_scales,
         block_dim=block_dim,
@@ -431,9 +432,7 @@ def block_scales_interleave_fp4[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
-@__name(
-    t"block_scales_interleave_fp4_{scales_dtype}_{SF_VECTOR_SIZE}", mangle=True
-)
+@__name(t"block_scales_interleave_fp4_{scales_dtype}_{SF_VECTOR_SIZE}")
 def block_scales_interleave_fp4_kernel[
     scales_dtype: DType,
     input_scales_layout: Layout,
@@ -609,7 +608,7 @@ def naive_block_scaled_matmul[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c,
         a,
         b,
@@ -621,7 +620,7 @@ def naive_block_scaled_matmul[
     )
 
 
-@__name(t"naive_block_scaled_matmul", mangle=True)
+@__name(t"naive_block_scaled_matmul")
 def naive_block_scaled_matmul_kernel[
     c_type: DType,
     a_type: DType,
@@ -727,7 +726,7 @@ def naive_block_scaled_matmul_kernel[
 @__llvm_arg_metadata(input_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(output_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
-@__name("quantize_dynamic_scaled_async_fp4_kernel", mangle=True)
+@__name("quantize_dynamic_scaled_async_fp4_kernel")
 def quantize_dynamic_scaled_async_fp4_kernel[
     input_dtype: DType,
     input_tile_rank: Int,
@@ -1129,7 +1128,7 @@ def quantize_dynamic_scaled_fp4_async[
         NUM_PIPELINES_STAGES=NUM_PIPELINES_STAGES,
     ]
 
-    ctx.enqueue_function[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         input_tma_op,
         output_tma_op,
         scales_tma_op,
@@ -1144,7 +1143,7 @@ def quantize_dynamic_scaled_fp4_async[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1152,7 +1151,7 @@ def quantize_dynamic_scaled_fp4_async[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 @__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
-@__name("grouped_quantize_dynamic_scaled_async_fp4_kernel", mangle=True)
+@__name("grouped_quantize_dynamic_scaled_async_fp4_kernel")
 def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     output_dtype: DType,
     scales_dtype: DType,
@@ -1252,7 +1251,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         row_major(Coord(scales_tile_shape)),
     )
 
-    # We can safetly prefetch the row_offsets and scales_offsets before
+    # We can safely prefetch the row_offsets and scales_offsets before
     # `wait_on_dependent_grids()`.
     with PDL():
         if scale_tile_idx >= expert_tiles_start + expert_num_tiles:
@@ -1284,7 +1283,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             if is_valid:
                 var global_row = token_start + local_row
                 input_vector = input_tensor.load[width=ELEMENTS_PER_THREAD](
-                    (Idx(global_row), Idx(input_col))
+                    (global_row, input_col)
                 )
 
             var thread_max = abs(input_vector).reduce_max()
@@ -1323,9 +1322,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
                     output_vector = rebind[SIMD[output_dtype, OUTPUT_WIDTH]](
                         input_f32.cast[output_dtype]()
                     )
-                output_tensor.store(
-                    (Idx(global_row), Idx(output_col)), output_vector
-                )
+                output_tensor.store((global_row, output_col), output_vector)
 
             if col_thread_idx % NUM_THREADS_PER_SF == 0:
                 var sf_group = col_thread_idx // NUM_THREADS_PER_SF
@@ -1427,7 +1424,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         sf_tensor.LayoutType,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output_tensor,
         scales_tma_op,
         input_tensor,
@@ -1441,7 +1438,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
             1,
         ),
         block_dim=(128,),
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1610,7 +1607,7 @@ def block_scaled_matmul[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.OFF,
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](
@@ -1706,7 +1703,7 @@ def block_scaled_matmul[
     @always_inline
     @__copy_capture(c)
     def compute_lambda_wrapper[
-        _dtype: DType, _width: Int, *, alignment: Int = 1
+        _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[_dtype, _width]):
         comptime if elementwise_compute_lambda_fn:
             comptime compute_lambda = elementwise_compute_lambda_fn.value()
@@ -1789,31 +1786,6 @@ def block_scaled_matmul[
         else:
             raise Error("Heuristic and outliers dispatch failed")
 
-    comptime DeepSeek_NK = [
-        Index(7168, 16384),
-        # Index(4096, 7168),
-        # Index(7168, 2048),
-    ]
-
-    comptime Llama_NK_256 = [
-        Index(16384, 2048),
-    ]
-
-    comptime Llama_405B_NK = [
-        Index(2304, 16384),
-        Index(16384, 2048),
-        Index(6656, 16384),
-        Index(13312, 16384),
-        Index(16384, 6656),
-    ]
-
-    comptime Kimi_NK = [
-        Index(7168, 8192),
-        Index(7168, 2048),
-        Index(7168, 18432),
-        Index(4096, 7168),
-    ]
-
     @always_inline
     @parameter
     def description_fn() -> String:
@@ -1845,88 +1817,29 @@ def block_scaled_matmul[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(ctx),
     ):
-        comptime if static_NK in DeepSeek_NK:
-            if m == 1:
-                var status = heuristic_and_outliers_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-
-                if status == DISPATCH_HIT:
-                    return
-
-        comptime if static_NK in Llama_NK_256:
-            if m > 1 and m <= 256:
-                var status = heuristic_and_outliers_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-
-                if status == DISPATCH_HIT:
-                    return
-
-        comptime if static_NK in Llama_405B_NK:
-            if m == 1:
-                var status = heuristic_and_outliers_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-
-                if status == DISPATCH_HIT:
-                    return
-
-        comptime if static_NK in Kimi_NK:
-            if m <= 128:
-                var status = heuristic_and_outliers_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-                if status == DISPATCH_HIT:
-                    return
+        # For these large-N shapes on B200, Mojo also wins at M=256.
+        comptime is_widened_shape = (
+            static_K == 7168 and static_N in (18432, 36864)
+        )
+        comptime mojo_m_cap = 256 if is_widened_shape else 128
+        if m <= mojo_m_cap:
+            var status = heuristic_and_outliers_dispatch[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](
+                c_device,
+                a_device,
+                b_device,
+                a_scales,
+                b_scales,
+                tensor_sf,
+                ctx,
+            )
+            if status == DISPATCH_HIT:
+                return
 
         # vendor matmul only supports epilogue lambda, so we wrap it around an epilogue lambda instead.
         block_scaled_matmul_with_epilogue[
@@ -2111,7 +2024,7 @@ def block_scales_interleave[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
-@__name("quantize_mxfp4_amd_kernel", mangle=True)
+@__name("quantize_mxfp4_amd_kernel")
 def _quantize_mxfp4_amd_kernel[
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
@@ -2148,7 +2061,7 @@ def _quantize_mxfp4_amd_kernel[
 
             # 1. Load 8x BF16.
             var input_vector = input.load[ELEMENTS_PER_THREAD](
-                Coord(Idx(global_row_idx), Idx(global_col_idx))
+                Coord(global_row_idx, global_col_idx)
             )
 
             # 2. Find per-thread max absolute value.
@@ -2161,17 +2074,9 @@ def _quantize_mxfp4_amd_kernel[
 
             var group_max = thread_max.cast[DType.float32]()
 
-            # 4. Derive E8M0 scale: round (max / 6.0) up to next power of two.
-            var raw_scale = group_max * recip(Float32(6.0))
-            var e8m0_scale = raw_scale.cast[DType.float8_e8m0fnu]()
+            # 4. Derive E8M0 scale with MXFP4 even-mode rounding.
+            var e8m0_scale = compute_mxfp4_even_scale(group_max)
             var scale_f32 = e8m0_scale.cast[DType.float32]()
-
-            # When all inputs are zero, avoid dividing by zero in the
-            # hardware intrinsic by using scale=1.0 (produces zero nibbles).
-            # Store e8m0=0 so dequant multiplies by 0, returning zeros.
-            if group_max == 0:
-                scale_f32 = Float32(1.0)
-                e8m0_scale = Scalar[DType.float8_e8m0fnu](0)
 
             # 5. Pack 8 BF16 -> 8 FP4 nibbles using AMD hardware intrinsic.
             var packed = cast_float_to_fp4e2m1_amd(
@@ -2181,16 +2086,14 @@ def _quantize_mxfp4_amd_kernel[
             # 6. Store packed output.
             var packed_bytes = bitcast[DType.uint8, 4](packed)
             output.store[width=4](
-                Coord(Idx(global_row_idx), Idx(col_thread_idx * 4)),
+                Coord(global_row_idx, col_thread_idx * 4),
                 packed_bytes,
             )
 
             # 7. First thread in the 4-thread group stores the scale.
             if global_col_idx % SF_VECTOR_SIZE == 0:
                 var scale_col = global_col_idx // SF_VECTOR_SIZE
-                scales.store(
-                    Coord(Idx(global_row_idx), Idx(scale_col)), e8m0_scale
-                )
+                scales.store(Coord(global_row_idx, scale_col), e8m0_scale)
 
 
 @always_inline
@@ -2272,7 +2175,7 @@ def quantize_mxfp4_amd[
         num_max_threads=num_max_threads,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output_tile,
         scales_tile,
         input_tt,
@@ -2283,7 +2186,7 @@ def quantize_mxfp4_amd[
     )
 
 
-@__name("quantize_dynamic_block_scaled_mxfp4_kernel", mangle=True)
+@__name("quantize_dynamic_block_scaled_mxfp4_kernel")
 def quantize_dynamic_block_scaled_mxfp4_kernel[
     in_dtype: DType,
     *,
@@ -2304,8 +2207,8 @@ def quantize_dynamic_block_scaled_mxfp4_kernel[
     var thread_max = abs(loaded_vec).reduce_max().cast[DType.float32]()
     var group_max = warp.lane_group_max[num_lanes=threads_per_group](thread_max)
 
-    var scale_factor = group_max * recip(Float32(6.0))
-    var fp8_scale_factor = scale_factor.cast[DType.float8_e8m0fnu]()
+    var fp8_scale_factor = compute_mxfp4_even_scale(group_max)
+    var scale_f32 = fp8_scale_factor.cast[DType.float32]()
 
     if thread_idx.x % threads_per_group == 0:
         output_scales_ptr[n // MXFP4_SF_VECTOR_SIZE] = fp8_scale_factor
@@ -2313,9 +2216,7 @@ def quantize_dynamic_block_scaled_mxfp4_kernel[
     output_ptr.store[alignment=4](
         n // 2,
         bitcast[DType.uint8, 4](
-            cast_float_to_fp4e2m1_amd(
-                loaded_vec, fp8_scale_factor.cast[DType.float32]()
-            )
+            cast_float_to_fp4e2m1_amd(loaded_vec, scale_f32)
         ),
     )
 
@@ -2348,7 +2249,7 @@ def quantize_dynamic_block_scaled_mxfp4[
             elements_per_thread=elements_per_thread,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             output.ptr,
             output_scales.ptr,
             input.ptr,
@@ -2436,7 +2337,7 @@ def _mxfp4_dotprod_block_size(static_N: Int) -> Int:
     return target_block_size if (static_N % target_block_size) == 0 else 1
 
 
-@__name("matmul_dynamic_block_scaled_mxfp4_kernel", mangle=True)
+@__name("matmul_dynamic_block_scaled_mxfp4_kernel")
 def matmul_dynamic_block_scaled_mxfp4_kernel[
     out_dtype: DType, BLOCK_N: Int
 ](
@@ -2496,7 +2397,7 @@ def matmul_dynamic_block_scaled_mxfp4[
             out_dtype, BLOCK_N
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c.ptr,
             a.ptr,
             b.ptr,
@@ -2510,7 +2411,7 @@ def matmul_dynamic_block_scaled_mxfp4[
         )
 
 
-@__name("grouped_matmul_block_scaled_mxfp4_kernel", mangle=True)
+@__name("grouped_matmul_block_scaled_mxfp4_kernel")
 def grouped_matmul_block_scaled_mxfp4_kernel[
     out_dtype: DType, BLOCK_N: Int
 ](
@@ -2586,7 +2487,7 @@ def grouped_matmul_block_scaled_mxfp4[
             out_dtype, BLOCK_N
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c.ptr,
             a.ptr,
             b.ptr,

@@ -20,7 +20,7 @@ low-level memory operations, interfacing with C code, and building custom data
 structures.
 """
 
-from std.sys import align_of, is_gpu, is_nvidia_gpu, size_of
+from std.sys import align_of, is_apple_gpu, is_gpu, is_nvidia_gpu, size_of
 from std.sys.intrinsics import (
     gather,
     scatter,
@@ -29,14 +29,14 @@ from std.sys.intrinsics import (
     unlikely,
 )
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
 from std.builtin.format_int import _write_int
 from std.builtin.simd import _simd_construction_checks
 from std.collections import OptionalReg
-from std.compile import get_type_name
 from std.format._utils import FormatStruct, Named, TypeNames
-from std.memory import memcpy
+from std.reflection import reflect
+from std.memory import is_trivially_movable, memcpy
 from std.memory.memory import _free, _malloc
 from std.memory import UnsafeMaybeUninit
 from std.memory._poison import _check_not_poison, _check_not_poison_masked
@@ -111,18 +111,6 @@ struct _UnsafePointerNicheStorage[
             .bitcast[UnsafeMaybeUninit[U]]()
             .unsafe_origin_cast[origin_of(self)]()
         )
-
-
-@always_inline("nodebug")
-@doc_hidden
-def pointer_offset[
-    T: AnyType, origin: Origin, address_space: AddressSpace, //
-](
-    pointer: OptionalReg[UnsafePointer[T, origin, address_space=address_space]],
-    idx: Some[Indexer],
-) -> type_of(pointer):
-    var offset = UnsafePointer(to=pointer).bitcast[type_of(pointer).T]()[] + idx
-    return UnsafePointer(to=offset).bitcast[type_of(pointer)]()[]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -230,7 +218,7 @@ def alloc[
     ```
     """
     comptime size_of_t = size_of[type]()
-    comptime type_name = get_type_name[type]()
+    comptime type_name = reflect[type].name()
     comptime assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
@@ -394,9 +382,9 @@ struct UnsafePointer[
       Use these to manage lifecycles when working with uninitialized memory.
 
     For more information see [Unsafe
-    pointers](/mojo/manual/pointers/unsafe-pointers) in the Mojo Manual. For a
+    pointers](/docs/manual/pointers/unsafe-pointers) in the Mojo Manual. For a
     comparison with other pointer types, see [Intro to
-    pointers](/mojo/manual/pointers/).
+    pointers](/docs/manual/pointers/).
 
     Examples:
 
@@ -452,11 +440,13 @@ struct UnsafePointer[
     is no overhead compared to a raw pointer.
 
     ```mojo
+    from std.random import random_float64
+
     # A field that may or may not point to a heap-allocated Int.
     var maybe_ptr: Optional[UnsafePointer[Int, MutExternalOrigin]] = None
 
     # Maybe populate it later.
-    if some_condition():
+    if random_float64() > 0.5:
         maybe_ptr = alloc[Int](1)
 
     # Check for absence, then unwrap to use the pointer.
@@ -513,30 +503,6 @@ struct UnsafePointer[
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
-    @deprecated(
-        "UnsafePointer() no longer constructs a null pointer. To model a"
-        " null pointer use `Optional[UnsafePointer[...]]`, which stores"
-        " the null address as its niche value and lets you check for absence"
-        " with `== None` / `!= None`. If you need a non-null sentinel for"
-        " delayed initialization (e.g. a buffer that will be allocated later),"
-        " use `UnsafePointer.unsafe_dangling()` instead."
-    )
-    def __init__(out self):
-        """Create a null pointer.
-
-        Deprecated: `UnsafePointer` is non-null by design. To model a
-        nullable pointer use `Optional[UnsafePointer[...]]`. If you need a
-        non-null sentinel for delayed initialization, use
-        `UnsafePointer.unsafe_dangling()` instead.
-        """
-        self = Self(_unsafe_null=())
-
-    @always_inline("nodebug")
-    @doc_hidden
-    def __init__(out self, *, _unsafe_null: ()):
-        self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
-
     @doc_hidden
     @always_inline("builtin")
     @implicit
@@ -566,6 +532,22 @@ struct UnsafePointer[
             size_of[type_of(self)]() == size_of[Int]()
         ), "Pointer/Int size mismatch"
         self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
+
+    @always_inline
+    @doc_hidden
+    def __init__(out self, *, unsafe_from_address: IntLiteral):
+        """Create a pointer from a raw address.
+
+        This checks at compile time if the address is invalid and emits a compilation error.
+        """
+        comptime assert type_of(unsafe_from_address)() != 0, (
+            "UnsafePointer is non-nullable. To construct a null pointer, use"
+            " Optional[UnsafePointer] to model nullability."
+        )
+        comptime assert (
+            type_of(unsafe_from_address)() > 0
+        ), "UnsafePointer's address cannot be negative."
+        self = Self(unsafe_from_address=Int(unsafe_from_address))
 
     @always_inline("nodebug")
     def __init__(
@@ -1086,12 +1068,12 @@ struct UnsafePointer[
                 Self._UnsafePointerType._OriginCastType[ImmutExternalOrigin],
             ]().contains[T]()
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
         """
-        # TODO: Allow the low-level DeviceContext implementation to intercept
-        # these translations.
-        target.bitcast[Self.device_type]()[] = self.address
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1106,7 +1088,7 @@ struct UnsafePointer[
         """
         return String(
             "UnsafePointer[",
-            get_type_name[Self.type](),
+            reflect[Self.type].name(),
             ", mut=",
             Self.mut,
             ", address_space=",
@@ -1168,7 +1150,7 @@ struct UnsafePointer[
               of `T`.
         """
 
-        comptime if U.__move_ctor_is_trivial:
+        comptime if is_trivially_movable[U]():
             # If `moveinit` is trivial, we can avoid the branch introduced from
             # checking if the pointers are equal by using temporary stack
             # values.
@@ -1657,6 +1639,15 @@ struct UnsafePointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
+        comptime if is_apple_gpu():
+            # `Int(self)` would erase the address space; on Apple AIR the
+            # resulting GENERIC load silently reads zero (MOCO-3762).
+            var result = default
+            comptime for i in range(width):
+                if mask[i]:
+                    result[i] = self.load[alignment=alignment](Int(offset[i]))
+            return result
+
         var base = offset.cast[DType.int]().fma(
             SIMD[DType.int, width](size_of[dtype]()),
             SIMD[DType.int, width](Int(self)),
@@ -1712,6 +1703,13 @@ struct UnsafePointer[
         comptime assert (
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
+
+        comptime if is_apple_gpu():
+            # See `gather` for the address-space rationale (MOCO-3762).
+            comptime for i in range(width):
+                if mask[i]:
+                    self.store[alignment=alignment](Int(offset[i]), val[i])
+            return
 
         var base = offset.cast[DType.int]().fma(
             SIMD[DType.int, width](size_of[dtype]()),

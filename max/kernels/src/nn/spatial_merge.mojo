@@ -18,7 +18,7 @@ from layout.tile_layout import Layout
 from std.utils.index import IndexList
 
 
-@__name(t"spatial_merge_{dtype}", mangle=True)
+@__name(t"spatial_merge_{dtype}")
 def spatial_merge_kernel[
     dtype: DType,
     InputLayoutType: TensorLayout,
@@ -90,7 +90,7 @@ def spatial_merge_kernel[
 
     # Create a RuntimeLayout for the patch space [T, H_out, W_out]
     # to convert linear patch_local_idx to (t, ho, wo) coordinates.
-    var patch_space_rt_layout = row_major(Idx(T), Idx(H_out), Idx(W_out))
+    var patch_space_rt_layout = row_major(T, H_out, W_out)
 
     # Convert linear patch index to 3D coordinates (t, ho, wo).
     var patch_coords = patch_space_rt_layout.idx2crd(Int(patch_local_idx))
@@ -131,9 +131,7 @@ def spatial_merge_kernel[
     # Create TileTensor for output: [T, H_out, W_out, C_out].
     # Note: in reality we want 2D flattened to [T * H_out * W_out, C_out], but
     # we use 4D for semantic clarity - internally in memory it is handled correctly.
-    var output_runtime_layout = row_major(
-        (Idx(T), Idx(H_out), Idx(W_out), Idx(C_out))
-    )
+    var output_runtime_layout = row_major((T, H_out, W_out, C_out))
     var output_tensor = TileTensor(
         output.ptr + Int(offset_out * Int64(C_out)),
         output_runtime_layout,
@@ -141,9 +139,7 @@ def spatial_merge_kernel[
 
     # Create layout for the merged channel dimension structure.
     # C_out represents [merge_size, merge_size, hidden_size] flattened row-major.
-    var channel_layout = row_major(
-        (Idx(merge_size), Idx(merge_size), Idx(hidden_size))
-    )
+    var channel_layout = row_major((merge_size, merge_size, hidden_size))
 
     # Copy patch - threads loop over output channels.
     # Each c_out in [0, C_out) corresponds to [merge_size, merge_size, hidden_size]
@@ -156,7 +152,9 @@ def spatial_merge_kernel[
             channel_coords[1].value(),
             channel_coords[2].value(),
         )
-        output_tensor[t, ho, wo, c_out] = input_tensor[ho, dh, wo, dw, c]
+        output_tensor[Coord(t, ho, wo, c_out)] = input_tensor[
+            Coord(ho, dh, wo, dw, c)
+        ]
 
 
 def spatial_merge[
@@ -185,7 +183,7 @@ def spatial_merge[
         ImmutOrigin(grid_thw.origin),
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         input.as_immut(),
         grid_thw.as_immut(),

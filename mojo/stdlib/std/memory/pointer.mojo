@@ -197,7 +197,7 @@ struct Pointer[
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
-    pointers](/mojo/manual/pointers/) in the Mojo Manual.
+    pointers](/docs/manual/pointers/) in the Mojo Manual.
 
     Parameters:
         mut: Whether the pointee data may be mutated through this.
@@ -245,6 +245,23 @@ struct Pointer[
             other: The `Pointer` to cast.
         """
         self = {_mlir_value = other._value}
+
+    @doc_hidden
+    @implicit
+    @always_inline("nodebug")
+    def __init__(
+        out self, other: Pointer[address_space=Self.address_space, ...]
+    ) where Self.origin.contains[other.origin]:
+        """Implicitly cast a pointer with one origin to a another origin when
+        the result origin is a superset.
+
+        Args:
+            other: The `Pointer` to cast.
+
+        Returns:
+            A new Pointer with the same target as self and an ImmutOrigin.
+        """
+        self._value = rebind[Self._mlir_type](other._value)
 
     @doc_hidden
     @always_inline("nodebug")

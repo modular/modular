@@ -102,7 +102,7 @@ def execute_fused_qk_rope_ragged(
     comptime paged_lut_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     # Define TileTensor layouts (compile-time static where possible)
-    var row_offsets_tile_layout = row_major(Idx(batch_size + 1))
+    var row_offsets_tile_layout = row_major(batch_size + 1)
     comptime freqs_tile_layout = row_major[max_seq_len, kv_params.head_size]()
 
     # Create shapes
@@ -188,10 +188,18 @@ def execute_fused_qk_rope_ragged(
     )
 
     # Allocate host pointers for row offsets (need to keep for verification)
-    var true_ce_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
-    var mixed_ce_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
-    var true_ce_cache_lengths_host_ptr = alloc[UInt32](batch_size)
-    var mixed_ce_cache_lengths_host_ptr = alloc[UInt32](batch_size)
+    var true_ce_row_offsets_host_ptr = ctx.enqueue_create_host_buffer[
+        DType.uint32
+    ](batch_size + 1)
+    var mixed_ce_row_offsets_host_ptr = ctx.enqueue_create_host_buffer[
+        DType.uint32
+    ](batch_size + 1)
+    var true_ce_cache_lengths_host_ptr = ctx.enqueue_create_host_buffer[
+        DType.uint32
+    ](batch_size)
+    var mixed_ce_cache_lengths_host_ptr = ctx.enqueue_create_host_buffer[
+        DType.uint32
+    ](batch_size)
 
     # Initialize row offsets and cache lengths
     var true_ce_offset = 0
@@ -282,11 +290,11 @@ def execute_fused_qk_rope_ragged(
     # Initialize KV blocks with random data using regular host memory
     # (not host-pinned memory via map_to_host) to avoid exhausting
     # the limited host-pinned memory buffer cache
-    var kv_block_host_ptr = alloc[Scalar[dtype]](
+    var kv_block_host_ptr = ctx.enqueue_create_host_buffer[dtype](
         kv_block_shape.flattened_length()
     )
     var kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
-        kv_block_host_ptr, kv_block_runtime_layout
+        kv_block_host_ptr.unsafe_ptr(), kv_block_runtime_layout
     )
     random(kv_block_host_tensor)
     ctx.enqueue_copy(true_ce_kv_block_device, kv_block_host_ptr)
@@ -320,9 +328,9 @@ def execute_fused_qk_rope_ragged(
         true_ce_q_ragged_device,
         row_major(
             (
-                Idx(true_ce_total_length),
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                true_ce_total_length,
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -330,9 +338,9 @@ def execute_fused_qk_rope_ragged(
         mixed_ce_q_ragged_device,
         row_major(
             (
-                Idx(mixed_ce_total_length),
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                mixed_ce_total_length,
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -340,9 +348,9 @@ def execute_fused_qk_rope_ragged(
         true_ce_output_device,
         row_major(
             (
-                Idx(true_ce_total_length),
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                true_ce_total_length,
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -350,9 +358,9 @@ def execute_fused_qk_rope_ragged(
         mixed_ce_output_device,
         row_major(
             (
-                Idx(mixed_ce_total_length),
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                mixed_ce_total_length,
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -494,24 +502,26 @@ def execute_fused_qk_rope_ragged(
 
     # Copy KV blocks back to host for K comparison
     ctx.enqueue_copy(kv_block_host_ptr, true_ce_kv_block_device)
-    var mixed_kv_block_host_ptr = alloc[Scalar[dtype]](
+    var mixed_kv_block_host_ptr = ctx.enqueue_create_host_buffer[dtype](
         kv_block_shape.flattened_length()
     )
     ctx.enqueue_copy(mixed_kv_block_host_ptr, mixed_ce_kv_block_device)
 
     # Also need paged_lut on host for K cache comparison
-    var paged_lut_host_ptr = alloc[UInt32](paged_lut_shape.flattened_length())
+    var paged_lut_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        paged_lut_shape.flattened_length()
+    )
     ctx.enqueue_copy(paged_lut_host_ptr, paged_lut_device)
     ctx.synchronize()
 
     var true_ce_kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
-        kv_block_host_ptr, kv_block_runtime_layout
+        kv_block_host_ptr.unsafe_ptr(), kv_block_runtime_layout
     )
     var mixed_ce_kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
-        mixed_kv_block_host_ptr, kv_block_runtime_layout
+        mixed_kv_block_host_ptr.unsafe_ptr(), kv_block_runtime_layout
     )
     var paged_lut_host_tensor = LayoutTensor[DType.uint32, paged_lut_layout](
-        paged_lut_host_ptr, paged_lut_runtime_layout
+        paged_lut_host_ptr.unsafe_ptr(), paged_lut_runtime_layout
     )
 
     var true_ce_k_cache_collection_host = PagedKVCacheCollection[
@@ -525,7 +535,7 @@ def execute_fused_qk_rope_ragged(
             ),
         ),
         LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            true_ce_cache_lengths_host_ptr,
+            true_ce_cache_lengths_host_ptr.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 true_ce_cache_lengths_shape
             ),
@@ -552,7 +562,7 @@ def execute_fused_qk_rope_ragged(
             ),
         ),
         LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            mixed_ce_cache_lengths_host_ptr,
+            mixed_ce_cache_lengths_host_ptr.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 mixed_ce_cache_lengths_shape
             ),
@@ -589,15 +599,6 @@ def execute_fused_qk_rope_ragged(
                             head_dim,
                         ),
                     )
-
-    # Free host pointers
-    true_ce_row_offsets_host_ptr.free()
-    mixed_ce_row_offsets_host_ptr.free()
-    true_ce_cache_lengths_host_ptr.free()
-    mixed_ce_cache_lengths_host_ptr.free()
-    kv_block_host_ptr.free()
-    mixed_kv_block_host_ptr.free()
-    paged_lut_host_ptr.free()
 
     # Explicitly free device buffers to return memory to the buffer cache
     _ = true_ce_row_offsets_device^
@@ -755,11 +756,11 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     ].row_major(q_ragged_64_shape)
 
     # Allocate host pointer for q_ragged (needed for verification)
-    var q_ragged_host_ptr = alloc[Scalar[dtype]](
+    var q_ragged_host_ptr = ctx.enqueue_create_host_buffer[dtype](
         q_ragged_shape.flattened_length()
     )
     var q_ragged_host_tensor = LayoutTensor[dtype, q_ragged_layout](
-        q_ragged_host_ptr, q_ragged_runtime_layout
+        q_ragged_host_ptr.unsafe_ptr(), q_ragged_runtime_layout
     )
     random(q_ragged_host_tensor)
     ctx.enqueue_copy(q_ragged_device, q_ragged_host_ptr)
@@ -782,16 +783,16 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                 )
                 memcpy(
                     dest=q_ragged_64_tensor.ptr + dest_offset,
-                    src=q_ragged_host_ptr + src_offset,
+                    src=q_ragged_host_ptr.unsafe_ptr() + src_offset,
                     count=rope_dim,
                 )
 
     # Allocate host pointer for kv_block (needed for verification)
-    var kv_block_host_ptr = alloc[Scalar[dtype]](
+    var kv_block_host_ptr = ctx.enqueue_create_host_buffer[dtype](
         kv_block_shape.flattened_length()
     )
     var kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
-        kv_block_host_ptr, kv_block_runtime_layout
+        kv_block_host_ptr.unsafe_ptr(), kv_block_runtime_layout
     )
     random(kv_block_host_tensor)
     ctx.enqueue_copy(kv_block_device, kv_block_host_ptr)
@@ -850,7 +851,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                             )
                             memcpy(
                                 dest=kv_block_64_tensor.ptr + dest_offset,
-                                src=kv_block_host_ptr + src_offset,
+                                src=kv_block_host_ptr.unsafe_ptr() + src_offset,
                                 count=rope_dim,
                             )
 
@@ -1018,21 +1019,21 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                         )
 
     # Verify KV cache
-    var kv_block_out_host_ptr = alloc[Scalar[dtype]](
+    var kv_block_out_host_ptr = ctx.enqueue_create_host_buffer[dtype](
         kv_block_shape.flattened_length()
     )
     ctx.enqueue_copy(kv_block_out_host_ptr, kv_block_device)
-    var kv_block_64_out_host_ptr = alloc[Scalar[dtype]](
+    var kv_block_64_out_host_ptr = ctx.enqueue_create_host_buffer[dtype](
         kv_block_64_shape.flattened_length()
     )
     ctx.enqueue_copy(kv_block_64_out_host_ptr, kv_block_device_64)
     ctx.synchronize()
 
     var kv_block_out_tensor = LayoutTensor[dtype, kv_block_layout](
-        kv_block_out_host_ptr, kv_block_runtime_layout
+        kv_block_out_host_ptr.unsafe_ptr(), kv_block_runtime_layout
     )
     var kv_block_64_out_tensor = LayoutTensor[dtype, kv_block_64_layout](
-        kv_block_64_out_host_ptr, kv_block_64_runtime_layout
+        kv_block_64_out_host_ptr.unsafe_ptr(), kv_block_64_runtime_layout
     )
 
     for page_idx in range(num_paged_blocks):
@@ -1086,12 +1087,6 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                                         head_dim_idx,
                                     ],
                                 )
-
-    # Free host pointers
-    q_ragged_host_ptr.free()
-    kv_block_host_ptr.free()
-    kv_block_out_host_ptr.free()
-    kv_block_64_out_host_ptr.free()
 
     # Explicitly free device buffers to return memory to the buffer cache
     _ = q_ragged_device^

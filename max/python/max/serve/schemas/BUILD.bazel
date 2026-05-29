@@ -6,8 +6,8 @@ modular_py_library(
     name = "schemas",
     srcs = glob(["*.py"]),
     deps = [
+        requirement("openai"),
         requirement("pydantic"),
-        requirement("typing-extensions"),
     ],
 )
 
@@ -16,6 +16,6 @@ pkg_files(
     srcs = [
         "openai-docs.yaml",
     ],
-    prefix = "max/api",
+    prefix = "static",
     strip_prefix = strip_prefix.from_pkg(""),
 )

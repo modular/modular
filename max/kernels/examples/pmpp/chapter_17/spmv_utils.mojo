@@ -13,7 +13,7 @@
 
 from std.random import random_float64, seed
 from std.collections import List
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 struct COOMatrix(DevicePassable, TrivialRegisterPassable):
@@ -25,8 +25,10 @@ struct COOMatrix(DevicePassable, TrivialRegisterPassable):
     var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
     var value: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -58,8 +60,10 @@ struct CSRMatrix(DevicePassable, TrivialRegisterPassable):
     var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
     var value: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -90,8 +94,10 @@ struct ELLMatrix(DevicePassable, TrivialRegisterPassable):
     var colIdx: UnsafePointer[UInt32, MutAnyOrigin]
     var value: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -121,8 +127,10 @@ struct CSCMatrix(DevicePassable, TrivialRegisterPassable):
     var rowIdxs: UnsafePointer[UInt32, MutAnyOrigin]
     var values: UnsafePointer[Float32, MutAnyOrigin]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

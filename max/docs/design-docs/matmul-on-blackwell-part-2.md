@@ -129,7 +129,7 @@ write_c_tile_to_global_memory()   # store C tile from registers to gmem
 
 We will store our `B` matrix in its transposed form to ensure coalesced layout
 when accessing. This can be done via a
-[Layout](https://docs.modular.com/mojo/kernels/layout/layout/) transform:
+[Layout](https://docs.modular.com/mojo/layout/layout/) transform:
 
 ```mojo
 alias a_layout = Layout.row_major(M, K)
@@ -147,12 +147,12 @@ a specialized hardware unit that transfers data between the GPU’s global memor
 (GMEM) and shared memory (SMEM) asynchronously.
 
 To use the TMA, we need to first create a [tensor
-tile](https://docs.modular.com/mojo/kernels/layout/tma_async/create_tma_tile)
+tile](https://docs.modular.com/mojo/layout/tma_async/create_tma_tile)
 on the host and pass it to the kernel. The tensor map is a 128B data chunk
 encoding the input tensor's shape, the stride, and the global memory address.
 (The tensor map can also encode a *swizzling pattern*, an optimization we’ll
 discuss a little later.) You can easily create a TMA tile in Mojo using the
-provided [APIs](https://docs.modular.com/mojo/kernels/layout/tma_async/):
+provided [APIs](https://docs.modular.com/mojo/layout/tma_async/):
 
 ```mojo
 # Rank 2 matrix
@@ -339,9 +339,9 @@ store matmul results which has a few issues:
 1. Register space is scarce, with only 64k registers per SM. Thus there was a
    contention between the Tensor Cores and the general purpose ALUs.
 2. Registers are thread-private while MMAs were wrap-level operations in pre
-    Blackwell GPUs. Thus the warps launching an MMA operation needed to wait
-    for its completion and continue tasks that depended on the MMA result e.g.
-        epilogue.
+   Blackwell GPUs. Thus the warps launching an MMA operation needed to wait
+   for its completion and continue tasks that depended on the MMA result e.g.
+   epilogue.
 
 TMEM addresses these issues, separating the concerns between the registers
 used by the ALU from the ones required by the Tensor Cores.

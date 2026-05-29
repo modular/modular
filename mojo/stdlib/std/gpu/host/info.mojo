@@ -762,9 +762,9 @@ def _get_dgx_spark_target() -> _TargetType:
     """
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_121", `,
-        `features = "+ptx88,+sm_121", `,
-        `tune_cpu = "sm_121", `,
+        `arch = "sm_121a", `,
+        `features = "+ptx88,+sm_121a", `,
+        `tune_cpu = "sm_121a", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
@@ -2246,6 +2246,58 @@ def is_cpu(target: StringSlice) -> Bool:
     return target == "cpu"
 
 
+def is_npu[target: StringSlice]() -> Bool:
+    """Checks if the target is an NPU (compile-time version).
+
+    Parameters:
+        target: Target string to check.
+
+    Returns:
+        True if the target is an NPU, False otherwise.
+    """
+    return is_npu(target)
+
+
+def is_npu(target: StringSlice) -> Bool:
+    """Checks if the target is an NPU (runtime version).
+
+    Args:
+        target: Target string to check.
+
+    Returns:
+        True if the target is an NPU, False otherwise.
+    """
+    return target == "npu"
+
+
+def is_accelerator[target: StringSlice]() -> Bool:
+    """Checks if the target is an accelerator (compile-time version).
+
+    True for any non-CPU compute target -- GPUs and NPUs alike.
+
+    Parameters:
+        target: Target string to check.
+
+    Returns:
+        True if the target is a GPU or NPU, False otherwise.
+    """
+    return is_accelerator(target)
+
+
+def is_accelerator(target: StringSlice) -> Bool:
+    """Checks if the target is an accelerator (runtime version).
+
+    True for any non-CPU compute target -- GPUs and NPUs alike.
+
+    Args:
+        target: Target string to check.
+
+    Returns:
+        True if the target is a GPU or NPU, False otherwise.
+    """
+    return is_gpu(target) or is_npu(target)
+
+
 def is_valid_target[target: StringSlice]() -> Bool:
     """Checks if the target is valid (compile-time version).
 
@@ -2253,7 +2305,7 @@ def is_valid_target[target: StringSlice]() -> Bool:
         target: Target string to check.
 
     Returns:
-        True if the target is valid (CPU or GPU), False otherwise.
+        True if the target is valid (CPU, GPU, or NPU), False otherwise.
     """
     return is_valid_target(target)
 
@@ -2265,6 +2317,6 @@ def is_valid_target(target: StringSlice) -> Bool:
         target: Target string to check.
 
     Returns:
-        True if the target is valid (CPU or GPU), False otherwise.
+        True if the target is valid (CPU, GPU, or NPU), False otherwise.
     """
-    return is_gpu(target) or is_cpu(target)
+    return is_cpu(target) or is_accelerator(target)

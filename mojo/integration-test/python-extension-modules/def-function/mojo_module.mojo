@@ -15,6 +15,7 @@ from std.collections import OwnedKwargsDict
 from std.os import abort
 
 from std.python import Python, PythonObject
+from std.python._cpython import PyObjectPtr, Py_ssize_t
 from std.python.bindings import PythonModuleBuilder
 
 
@@ -28,6 +29,8 @@ def PyInit_mojo_module() -> PythonObject:
         b.def_function[takes_one_raises_returns]("takes_one_raises_returns")
         b.def_function[takes_two_raises_returns]("takes_two_raises_returns")
         b.def_function[takes_three_raises_returns]("takes_three_raises_returns")
+        b.def_function[takes_seven_raises_returns]("takes_seven_raises_returns")
+        b.def_function[takes_eight_raises_returns]("takes_eight_raises_returns")
 
         # def_function with return, not raising
         b.def_function[takes_zero_returns]("takes_zero_returns")
@@ -50,6 +53,9 @@ def PyInit_mojo_module() -> PythonObject:
         # kwargs test functions
         b.def_function[sum_kwargs_ints]("sum_kwargs_ints")
         b.def_function[sum_pos_arg_and_kwargs]("sum_pos_arg_and_kwargs")
+
+        # Direct METH_FASTCALL registration via def_py_c_function overload.
+        b.def_py_c_function(fastcall_concat, "fastcall_concat")
 
         return b.finalize()
     except e:
@@ -88,6 +94,37 @@ def takes_three_raises_returns(
     if a != PythonObject("foo"):
         raise Error("first input must be 'foo'")
     return a + b + c
+
+
+@export
+def takes_seven_raises_returns(
+    a: PythonObject,
+    b: PythonObject,
+    c: PythonObject,
+    d: PythonObject,
+    e: PythonObject,
+    f: PythonObject,
+    g: PythonObject,
+) raises -> PythonObject:
+    if a != PythonObject("foo"):
+        raise Error("first input must be 'foo'")
+    return a + b + c + d + e + f + g
+
+
+@export
+def takes_eight_raises_returns(
+    a: PythonObject,
+    b: PythonObject,
+    c: PythonObject,
+    d: PythonObject,
+    e: PythonObject,
+    f: PythonObject,
+    g: PythonObject,
+    h: PythonObject,
+) raises -> PythonObject:
+    if a != PythonObject("foo"):
+        raise Error("first input must be 'foo'")
+    return a + b + c + d + e + f + g + h
 
 
 @export
@@ -215,3 +252,29 @@ def sum_pos_arg_and_kwargs(
     arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
 ) raises -> PythonObject:
     return PythonObject(Int(py=arg1) + Int(py=sum_kwargs_ints(kwargs)))
+
+
+def fastcall_concat(
+    py_self: PyObjectPtr,
+    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    nargs: Py_ssize_t,
+) abi("C") -> PyObjectPtr:
+    """Hand-written METH_FASTCALL wrapper that concatenates `nargs` strings.
+
+    Exercises the `def_py_c_function(PyCFunctionFast, ...)` overload directly:
+    CPython hands us a borrowed `PyObject *const *` array plus the arg count,
+    we read each argument out of the array without any tuple packing.
+    """
+    try:
+        var result = PythonObject("")
+        for i in range(Int(nargs)):
+            result = result + PythonObject(from_borrowed=args[i])
+        return result.steal_data()
+    except e:
+        ref cpy = Python().cpython()
+        var error_message = String(e)
+        var error_type = cpy.get_error_global("PyExc_Exception")
+        cpy.PyErr_SetString(
+            error_type, error_message.as_c_string_slice().unsafe_ptr()
+        )
+        return PyObjectPtr()

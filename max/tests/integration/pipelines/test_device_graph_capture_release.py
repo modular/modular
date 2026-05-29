@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import cast
@@ -51,6 +51,7 @@ class OutputAllocatingModel:
         self._device = CPU()
         self._output_bytes = output_bytes
         self.input_devices = [self._device]
+        self.released_graph_keys: list[int] = []
 
     def capture(self, graph_key: int, *buffers: Buffer) -> list[Buffer]:
         del graph_key, buffers
@@ -67,6 +68,12 @@ class OutputAllocatingModel:
     def debug_verify_replay(self, graph_key: int, *buffers: Buffer) -> None:
         del graph_key, buffers
         raise AssertionError("debug_verify_replay is not used in warmup")
+
+    def release_captured_graph(self, graph_keys: int | Sequence[int]) -> None:
+        # Mirrors the engine API surface. ``ServeGraphCaptureRunner`` only
+        # forwards a single packed int; we record exactly that for assertions.
+        assert isinstance(graph_keys, int)
+        self.released_graph_keys.append(graph_keys)
 
 
 def _make_kv_per_device() -> KVCacheInputsPerDevice[Buffer, Buffer]:
@@ -134,3 +141,50 @@ def test_warmup_pre_ready_releases_capture_outputs(
     ]
     for _inputs, outputs in runner.graph_entries.values():
         assert outputs.logits.num_elements == output_bytes
+
+
+def test_release_graph_drops_entry_and_forwards_to_model(
+    host_memory_manager_config: None,
+) -> None:
+    del host_memory_manager_config
+
+    output_bytes = 48 * MiB
+    model = OutputAllocatingModel(output_bytes)
+    kv_params = SimpleNamespace(
+        devices=[DeviceRef.CPU()],
+        is_mla=False,
+        n_kv_heads_per_device=1,
+        num_q_heads_per_device=1,
+        is_fp8_kv_dtype=False,
+        data_parallel_degree=1,
+    )
+    runner = ServeGraphCaptureRunner(
+        model=cast(Model, model),
+        execute_model=lambda model_inputs: ModelOutputs(
+            logits=Buffer.zeros((1,), dtype=DType.float32)
+        ),
+        session=cast(InferenceSession, object()),
+        kv_params=cast(KVCacheParams, kv_params),
+        warmup_model_inputs=_warmup_model_inputs,
+        max_cache_length_upper_bound=1,
+        max_batch_size=2,
+    )
+
+    runner.warmup_pre_ready()
+
+    captured_keys = sorted(runner.graph_entries)
+    assert captured_keys == [(1, 1, 1, 0), (2, 1, 1, 0)]
+
+    target = captured_keys[0]
+    runner.release_graph(target)
+
+    assert target not in runner.graph_entries
+    assert sorted(runner.graph_entries) == [(2, 1, 1, 0)]
+    assert len(model.released_graph_keys) == 1
+
+    # Releasing the same key again is idempotent at the runner level and still
+    # forwards to the model (engine-side release is also a no-op for unknown
+    # keys, so this is safe).
+    runner.release_graph(target)
+    assert sorted(runner.graph_entries) == [(2, 1, 1, 0)]
+    assert len(model.released_graph_keys) == 2

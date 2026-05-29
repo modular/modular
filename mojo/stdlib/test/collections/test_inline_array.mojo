@@ -15,8 +15,19 @@ from std.sys.info import size_of
 
 from std.compile import compile_info
 from std.hashlib import hash
-from std.memory import UnsafeMaybeUninit
-from test_utils import CopyCounter, DelRecorder, MoveCounter, check_write_to
+from std.memory import (
+    UnsafeMaybeUninit,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+)
+from test_utils import (
+    CopyCounter,
+    DelRecorder,
+    MoveCounter,
+    MoveOnly,
+    check_write_to,
+)
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 
@@ -371,13 +382,13 @@ def test_write_repr_to() raises:
 
 
 def test_inline_array_triviality() raises:
-    assert_true(InlineArray[Int, 1].__del__is_trivial)
-    assert_true(InlineArray[Int, 1].__copy_ctor_is_trivial)
-    assert_true(InlineArray[Int, 1].__move_ctor_is_trivial)
+    assert_true(is_trivially_destructible[InlineArray[Int, 1]]())
+    assert_true(is_trivially_copyable[InlineArray[Int, 1]]())
+    assert_true(is_trivially_movable[InlineArray[Int, 1]]())
 
-    assert_false(InlineArray[String, 1].__del__is_trivial)
-    assert_false(InlineArray[String, 1].__copy_ctor_is_trivial)
-    assert_true(InlineArray[String, 1].__move_ctor_is_trivial)
+    assert_false(is_trivially_destructible[InlineArray[String, 1]]())
+    assert_false(is_trivially_copyable[InlineArray[String, 1]]())
+    assert_true(is_trivially_movable[InlineArray[String, 1]]())
 
 
 def _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
@@ -552,6 +563,25 @@ def test_inline_array_iter_owned_bounds() raises:
     assert_equal(it.bounds()[0], 1)
     _ = it.__next__()
     assert_equal(it.bounds()[0], 0)
+
+
+def test_inline_array_move_only() raises:
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `InlineArray[T: Movable, size]`.
+    assert_false(conforms_to(InlineArray[MoveOnly[Int], 2], Copyable))
+
+    var arr: InlineArray[MoveOnly[Int], 3] = [
+        MoveOnly[Int](0),
+        MoveOnly[Int](1),
+        MoveOnly[Int](2),
+    ]
+    assert_equal(arr[0], MoveOnly[Int](0))
+    assert_equal(arr[1], MoveOnly[Int](1))
+    assert_equal(arr[2], MoveOnly[Int](2))
+    assert_equal(len(arr), 3)
+
+    # `unsafe_get` is a non-copying accessor.
+    assert_equal(arr.unsafe_get(2), MoveOnly[Int](2))
 
 
 def main() raises:

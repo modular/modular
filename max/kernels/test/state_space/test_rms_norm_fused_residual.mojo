@@ -23,7 +23,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.memory import alloc
 from std.random import Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_cpu
 from std.testing import TestSuite, assert_almost_equal
@@ -57,11 +56,11 @@ def run_rms_norm_fused_residual_cpu[
     var rows = shape.flattened_length() // cols
 
     # Allocate memory
-    var input_ptr = alloc[Scalar[dtype]](rows * cols)
-    var residual_ptr = alloc[Scalar[dtype]](rows * cols)
-    var output_ptr = alloc[Scalar[dtype]](rows * cols)
-    var residual_output_ptr = alloc[Scalar[dtype]](rows * cols)
-    var gamma_ptr = alloc[Scalar[dtype]](cols)
+    var input_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var residual_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var output_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var residual_output_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_ptr = List(length=cols, fill=Scalar[dtype](0))
 
     # Initialize input data
     for i in range(rows * cols):
@@ -75,23 +74,23 @@ def run_rms_norm_fused_residual_cpu[
     # Create tensors
     comptime layout_nd = Layout.row_major[rank]()
 
-    var input_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
+    var input_tensor = LayoutTensor[dtype, layout_nd, _](
         input_ptr,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var residual_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
+    var residual_tensor = LayoutTensor[dtype, layout_nd, _](
         residual_ptr,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var output_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
+    var output_tensor = LayoutTensor[dtype, layout_nd, _](
         output_ptr,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var residual_output_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
+    var residual_output_tensor = LayoutTensor[dtype, layout_nd, _](
         residual_output_ptr,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var gamma_tensor = TileTensor(gamma_ptr, row_major(Idx(cols)))
+    var gamma_tensor = TileTensor(gamma_ptr, row_major(cols))
 
     var epsilon = Scalar[dtype](1e-5)
     var weight_offset = Scalar[dtype](0.0)
@@ -120,7 +119,7 @@ def run_rms_norm_fused_residual_cpu[
     @always_inline
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_tensor.store[width=width](coords, val)
 
@@ -128,7 +127,7 @@ def run_rms_norm_fused_residual_cpu[
     @always_inline
     @parameter
     def residual_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         residual_output_tensor.store[width=width](coords, val)
 
@@ -175,7 +174,7 @@ def run_rms_norm_fused_residual_cpu[
     # Verify results
     for r in range(rows):
         # Compute expected residual output: dropout(input) + residual
-        var sum_ptr = alloc[Scalar[dtype]](cols)
+        var sum_ptr = List(length=cols, fill=Scalar[dtype](0))
         for c in range(cols):
             var idx = r * cols + c
             var input_val = input_ptr[idx]
@@ -199,7 +198,7 @@ def run_rms_norm_fused_residual_cpu[
             assert_almost_equal(sum_ptr[c], residual_output_ptr[idx], rtol=rtol)
 
         # Compute RMS of the sum
-        var rms_val = compute_rms_ref(sum_ptr, cols, epsilon)
+        var rms_val = compute_rms_ref(sum_ptr.unsafe_ptr(), cols, epsilon)
 
         # Verify normalized output
         for c in range(cols):
@@ -209,15 +208,6 @@ def run_rms_norm_fused_residual_cpu[
                 gamma_ptr[c] + weight_offset
             )
             assert_almost_equal(expected_norm, output_ptr[idx], rtol=rtol)
-
-        sum_ptr.free()
-
-    # Cleanup
-    input_ptr.free()
-    residual_ptr.free()
-    output_ptr.free()
-    residual_output_ptr.free()
-    gamma_ptr.free()
 
 
 def test_rms_norm_fused_residual_float32_2d() raises:

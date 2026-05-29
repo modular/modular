@@ -19,11 +19,11 @@ Provides compiler-registered operations for causal 1D convolution:
 
 from std.math import ceildiv
 
-import compiler_internal as compiler
+import extensibility as compiler
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from std.memory import memcpy
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
@@ -33,7 +33,7 @@ from state_space.causal_conv1d import (
 )
 
 from std.utils.index import IndexList
-from tensor import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 
 # ============================================================================
@@ -71,7 +71,7 @@ struct CausalConv1D[activation: StaticString]:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         if rank != 3:
             raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
@@ -128,10 +128,10 @@ struct CausalConv1D[activation: StaticString]:
                 out_l_stride,
                 bias_stride,
                 silu_activation,
-                ctx.get_optional_device_context(),
+                Optional[DeviceContext](ctx),
             )
         elif is_gpu[target]():
-            var gpu_ctx: DeviceContext = ctx.get_device_context()
+            var gpu_ctx: DeviceContext = ctx
             comptime kNThreads = 128
             comptime kNElts = 4
             if width == 1:
@@ -149,20 +149,7 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
@@ -207,20 +194,7 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
@@ -265,20 +239,7 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
@@ -323,20 +284,7 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
@@ -425,7 +373,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
         conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         if rank != 3:
             raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
@@ -505,7 +453,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 silu_activation,
             )
         elif is_gpu[target]():
-            var gpu_ctx: DeviceContext = ctx.get_device_context()
+            var gpu_ctx: DeviceContext = ctx
             gpu_ctx.enqueue_copy(CS.ptr, CS_IN.ptr, total_state_elements)
             comptime kNThreads = 128
             var compiled_func = gpu_ctx.compile_function[
@@ -521,20 +469,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
                     W.LayoutType,
                     O.LayoutType,
                     B.LayoutType,
-                ],
-                causal_conv1d_update_gpu[
-                    X.dtype,
-                    CS.dtype,
-                    W.dtype,
-                    O.dtype,
-                    B.dtype,
-                    kNThreads,
-                    X.LayoutType,
-                    CS.LayoutType,
-                    W.LayoutType,
-                    O.LayoutType,
-                    B.LayoutType,
-                ],
+                ]
             ]()
             var silu_activation_int8 = Int8(silu_activation)
             gpu_ctx.enqueue_function(

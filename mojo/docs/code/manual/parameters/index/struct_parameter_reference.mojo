@@ -12,6 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
+struct Circle[radius: Float64]:
+    comptime pi = 3.14159265359
+    comptime circumference = 2 * Self.pi * Self.radius
+
+
 # start-reference-parameter-on-type
 def on_type():
     print(SIMD[DType.float32, 2].size)  # prints 2
@@ -26,6 +31,15 @@ def on_instance():
     _ = x
 
 
+def slice_example():
+    # start-simd-slice-example
+    var m = SIMD[DType.int32, 4](1, 3, 5, 7)
+    var n = m.slice[2]()
+    print(n)  # prints [1, 3]
+    # end-simd-slice-example
+
+
 def main():
     on_type()
     on_instance()
+    slice_example()

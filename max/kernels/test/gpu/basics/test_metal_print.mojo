@@ -22,7 +22,7 @@ def test_metal_print_basic() raises:
         print("Hello from Metal GPU")
 
     with DeviceContext() as ctx:
-        ctx.enqueue_function_experimental[do_print](grid_dim=1, block_dim=1)
+        ctx.enqueue_function[do_print](grid_dim=1, block_dim=1)
         ctx.synchronize()
 
     # CHECK: Hello from Metal GPU
@@ -36,9 +36,7 @@ def test_metal_print_int() raises:
         print("x =", x)
 
     with DeviceContext() as ctx:
-        ctx.enqueue_function_experimental[do_print](
-            Int(42), grid_dim=1, block_dim=1
-        )
+        ctx.enqueue_function[do_print](Int(42), grid_dim=1, block_dim=1)
         ctx.synchronize()
 
     # CHECK: x = 42
@@ -53,9 +51,7 @@ def test_metal_print_float32() raises:
         print("y =", y)
 
     with DeviceContext() as ctx:
-        ctx.enqueue_function_experimental[do_print](
-            Float32(3.14), grid_dim=1, block_dim=1
-        )
+        ctx.enqueue_function[do_print](Float32(3.14), grid_dim=1, block_dim=1)
         ctx.synchronize()
 
     # CHECK: y = 3.14{{[0-9]*}}
@@ -69,7 +65,7 @@ def test_metal_print_empty() raises:
         print("")
 
     with DeviceContext() as ctx:
-        ctx.enqueue_function_experimental[do_print](grid_dim=1, block_dim=1)
+        ctx.enqueue_function[do_print](grid_dim=1, block_dim=1)
         ctx.synchronize()
 
 

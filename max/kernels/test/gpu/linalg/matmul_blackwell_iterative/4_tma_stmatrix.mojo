@@ -475,7 +475,7 @@ def blackwell_kernel_4[
         num_threads=block_dim,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -579,9 +579,9 @@ def test_blackwell_kernel_4[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
@@ -695,10 +695,6 @@ def test_blackwell_kernel_4[
             atol=0.0001,
             rtol=rtol,
         )
-
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
 
 
 def main() raises:

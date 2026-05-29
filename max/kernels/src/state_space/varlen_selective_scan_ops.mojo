@@ -19,10 +19,11 @@ This module registers operations for variable-length selective scan:
 
 from std.math import ceildiv
 
-import compiler_internal as compiler
+import extensibility as compiler
+from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, OutputTensor
+
+from extensibility import InputTensor, OutputTensor
 from std.utils.index import IndexList
 
 from state_space.varlen_selective_scan import (
@@ -89,7 +90,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
         cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         var dim = u.dim_size(0)
         var dstate = A.dim_size(1)
@@ -183,7 +184,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_strides,
                     ssm_states_strides,
                     out_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
             elif dstate == 8:
                 varlen_selective_scan_fwd_cpu[
@@ -252,10 +253,10 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_strides,
                     ssm_states_strides,
                     out_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx.get_device_context()
+            var gpu_ctx = ctx
             comptime BLOCK_SIZE = 128
             var num_dim_blocks = ceildiv(dim, BLOCK_SIZE)
 
@@ -278,24 +279,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
-                    ],
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -349,24 +333,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
-                    ],
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -420,24 +387,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
-                    ],
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -538,7 +488,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         z: InputTensor[dtype=dtype, rank=3, ...],
         dt_bias: InputTensor[dtype=dtype, rank=2, ...],
         state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) capturing raises:
         var batch = x.dim_size(0)
         var nheads = x.dim_size(1)
@@ -647,7 +597,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     out_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
             elif dstate == 8:
                 varlen_selective_state_update_cpu[
@@ -716,10 +666,10 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     out_strides,
-                    ctx.get_optional_device_context(),
+                    Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx.get_device_context()
+            var gpu_ctx = ctx
             comptime BLOCK_SIZE_M = 4
             var total_threads = batch * nheads * ceildiv(dim, BLOCK_SIZE_M)
 
@@ -740,22 +690,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
-                    ],
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -808,22 +743,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
-                    ],
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -876,22 +796,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
-                    ],
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,

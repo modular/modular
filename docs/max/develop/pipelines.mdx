@@ -3,8 +3,6 @@ title: Model pipeline
 description: Learn how to integrate your model into a pipeline for serving with MAX.
 ---
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
-
 When you build models in MAX, whether it's a GPT, Llama, or a
 custom architecture, you're creating the layers, attention mechanisms, and
 forward pass logic that define how the model processes inputs. But to actually
@@ -42,7 +40,7 @@ production infrastructure—batching, caching, compilation, and serving.
 
 Before diving into pipeline components, it's helpful to understand the two
 foundational packages that pipelines build on: [`max.nn`](/max/api/python/nn)
-and [`max.kv_cache`](/max/api/python/kv_cache).
+and [`max.pipelines.kv_cache`](/max/api/python/pipelines.kv_cache).
 
 ### Neural network module
 
@@ -119,9 +117,9 @@ parameters to a different device with a single call.
 
 ### KV cache module
 
-The [`max.kv_cache`](/max/api/python/kv_cache) package provides cache management
-for transformer inference. The main component is
-[`PagedKVCacheManager`](/max/api/python/generated/max.kv_cache.PagedKVCacheManager),
+The [`max.pipelines.kv_cache`](/max/api/python/pipelines.kv_cache) package
+provides cache management for transformer inference. The main component is
+[`PagedKVCacheManager`](/max/api/python/generated/max.pipelines.kv_cache.PagedKVCacheManager),
 which handles memory allocation for key-value pairs across generation steps.
 
 For most use cases, you don't interact with the cache manager directly. The
@@ -177,7 +175,7 @@ and a ready-to-use pipeline instance.
 
 ```python
 import asyncio
-from max.interfaces import RequestID, TextGenerationInputs, TextGenerationRequest
+from max.pipelines.modeling.types import RequestID, TextGenerationInputs, TextGenerationRequest
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
 
@@ -255,25 +253,26 @@ the specific components that make up the pipeline system.
 
 ### Top-level interfaces
 
-The [`max.interfaces`](/max/api/python/interfaces) package defines the contracts
-that all pipeline components must implement. These abstractions enable MAX to
-work uniformly across different model architectures and tasks.
+The [`max.pipelines.modeling.types`](/max/api/python/pipelines.modeling.types)
+package defines the contracts that all pipeline components must implement. These
+abstractions enable MAX to work uniformly across different model architectures
+and tasks.
 
 The key interfaces are:
 
-- [`Pipeline`](/max/api/python/generated/max.interfaces.Pipeline): Abstract
-  base class for all pipelines. Defines `execute()` and `release()` methods that
-  all pipeline implementations must provide.
+- [`Pipeline`](/max/api/python/generated/max.pipelines.modeling.types.Pipeline):
+  Abstract base class for all pipelines. Defines `execute()` and `release()`
+  methods that all pipeline implementations must provide.
 
-- [`PipelineInputs`](/max/api/python/generated/max.interfaces.PipelineInputs):
+- [`PipelineInputs`](/max/api/python/generated/max.pipelines.modeling.types.PipelineInputs):
   Base class for inputs to a pipeline, such as text generation requests or
   embeddings requests.
 
-- [`PipelineOutput`](/max/api/python/generated/max.interfaces.PipelineOutput):
+- [`PipelineOutput`](/max/api/python/generated/max.pipelines.modeling.types.PipelineOutput):
   Protocol for pipeline outputs. Must implement `is_done` to signal when
   generation is complete.
 
-- [`PipelineTokenizer`](/max/api/python/generated/max.interfaces.PipelineTokenizer):
+- [`PipelineTokenizer`](/max/api/python/generated/max.pipelines.modeling.types.PipelineTokenizer):
   Interface for tokenizers that convert between text and token IDs, and create
   context objects for requests.
 
@@ -283,9 +282,9 @@ The key interfaces are:
   architectures must implement.
 
 These interfaces are task-agnostic. Specialized variants like
-[`TextGenerationInputs`](/max/api/python/generated/max.interfaces.TextGenerationInputs)
+[`TextGenerationInputs`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationInputs)
 and
-[`TextGenerationOutput`](/max/api/python/generated/max.interfaces.TextGenerationOutput)
+[`TextGenerationOutput`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationOutput)
 extend them for specific use cases.
 
 ### Pipeline registry
@@ -342,7 +341,7 @@ Here's how you define an architecture:
 
 ```python
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
@@ -510,76 +509,6 @@ inputs:
 - **KV cache manager** owns the allocation and lifecycle of cached key-value
   pairs across all requests. The pipeline uses the cache manager but doesn't
   own it.
-
-## Custom architecture registration
-
-Now let's see how you can extend MAX with your own model architectures. MAX
-uses a convention-based registration system. When you point MAX at a custom
-architecture directory, it imports the module and looks for an `ARCHITECTURES`
-list to register.
-
-### Custom architecture structure
-
-A custom architecture directory typically contains these files:
-
-```text
-my_model/
-├── __init__.py           # Exports ARCHITECTURES list
-├── arch.py               # Defines SupportedArchitecture config
-├── model.py              # Implements PipelineModel subclass with model architecture
-├── model_config.py       # (Optional) Custom model configuration
-└── weight_adapters.py    # (Optional) Functions to convert weight formats
-```
-
-The `__init__.py` file exports an `ARCHITECTURES` list that MAX discovers:
-
-```python
-# my_model/__init__.py
-from .arch import my_arch
-
-ARCHITECTURES = [my_arch]
-```
-
-The `arch.py` file defines the architecture configuration:
-
-```python
-# my_model/arch.py
-from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
-from .model import MyModel
-
-my_arch = SupportedArchitecture(
-    name="MyModelForCausalLM",  # Must match HuggingFace config
-    task=PipelineTask.TEXT_GENERATION,
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-    },
-    pipeline_model=MyModel,
-    tokenizer=TextTokenizer,
-    default_weights_format=WeightsFormat.safetensors,
-)
-```
-
-### Load custom architectures
-
-Use the `--custom-architectures` flag to load your architecture:
-
-```bash
-max serve --custom-architectures ./my_model --model path/to/weights
-```
-
-MAX imports your module, finds the `ARCHITECTURES` list, and registers each
-architecture with `PIPELINE_REGISTRY`. Your custom architecture then overrides
-any built-in architecture with the same name.
-
-For a complete working example, see the
-[custom-models example](https://github.com/modular/modular/tree/main/max/examples/custom-models)
-in the Modular repository.
 
 ## Configuration flow
 

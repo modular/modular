@@ -16,7 +16,7 @@ import logging
 import os
 import signal
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from subprocess import Popen, TimeoutExpired
@@ -30,7 +30,7 @@ def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
 
-def _server_is_ready() -> bool:
+def _default_server_is_ready() -> bool:
     try:
         return (
             requests.get("http://127.0.0.1:8000/health", timeout=1).status_code
@@ -68,8 +68,25 @@ class RunningServer:
 
 @contextmanager
 def start_server(
-    cmd: list[str], timeout: int
+    cmd: list[str],
+    timeout: int,
+    *,
+    readiness_probe: Callable[[], bool] | None = None,
+    poll_interval: float = 0.5,
+    cwd: str | os.PathLike[str] | None = None,
 ) -> Generator[RunningServer, None, None]:
+    """Spawn the server command and wait until it accepts requests.
+
+    Args:
+        cmd: Argv to spawn (e.g. ``[python, -m, max..., serve, ...]``).
+        timeout: Seconds to wait for ``readiness_probe`` to succeed.
+        readiness_probe: Callable returning True once the server is ready.
+            Defaults to a GET on ``http://127.0.0.1:8000/health``.
+        poll_interval: Seconds between readiness checks.
+        cwd: Working directory for the spawned process. Required when
+            ``cmd`` references workspace-relative paths (e.g. ``./bazelw``).
+    """
+    probe = readiness_probe or _default_server_is_ready
     env = os.environ.copy()
 
     if not _inside_bazel():
@@ -80,15 +97,15 @@ def start_server(
         env["PATH"] = f"{venv_bin}:{prev_path}" if prev_path else venv_bin
 
     start = time.monotonic()
-    proc = Popen(cmd, start_new_session=True, env=env)
+    proc = Popen(cmd, start_new_session=True, env=env, cwd=cwd)
     try:
         deadline = start + timeout
         while time.monotonic() < deadline:
-            if _server_is_ready():
+            if probe():
                 break
             if proc.poll() is not None:
                 raise RuntimeError("Server process terminated unexpectedly")
-            time.sleep(0.5)
+            time.sleep(poll_interval)
         else:
             raise TimeoutError(f"Server did not start in {timeout} seconds")
         yield RunningServer(proc, time.monotonic() - start)

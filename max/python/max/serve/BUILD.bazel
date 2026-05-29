@@ -16,14 +16,27 @@ modular_py_library(
     name = "process_control",
     srcs = ["process_control.py"],
     deps = [
-        requirement("taskgroup"),  # only for python < 3.11
-        requirement("exceptiongroup"),  # only for python < 3.11
+        "//max/python/max/support:taskgroups",
     ],
 )
 
 modular_py_library(
     name = "exceptions",
     srcs = ["exceptions.py"],
+)
+
+modular_py_library(
+    name = "queue",
+    srcs = ["queue.py"],
+)
+
+modular_py_library(
+    name = "scheduler_result",
+    srcs = ["scheduler_result.py"],
+    deps = [
+        "//max/python/max/pipelines/modeling",
+        requirement("msgspec"),
+    ],
 )
 
 modular_py_library(
@@ -35,13 +48,16 @@ modular_py_library(
             "config.py",
             "debug.py",
             "exceptions.py",
+            "queue.py",
+            "scheduler_result.py",
         ],
     ),
     deps = [
         ":config",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/serve/media",
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/recordreplay",
         "//max/python/max/serve/router",

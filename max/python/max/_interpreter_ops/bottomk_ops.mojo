@@ -24,13 +24,13 @@ accepted but currently ignored since the implementation always sorts.
 """
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from op_utils import (
     _get_dtype,
@@ -70,7 +70,7 @@ def bottomk_op[
     dim1: Int,
     dim2: Int,
     k: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Select the bottom-k smallest values and their indices along the axis dim.
 
@@ -90,7 +90,7 @@ def bottomk_op[
         dim1: Size of the bottom-k axis.
         dim2: Product of dimensions after the bottom-k axis.
         k: Number of bottom elements to select.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = dim0 * dim2
 
@@ -127,13 +127,12 @@ def bottomk_op[
             out_val_ptr[out_base + ki * dim2] = best_val
             out_idx_ptr[out_base + ki * dim2] = best_idx
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -160,7 +159,7 @@ struct _BottomKBody(Dispatchable):
     var dim1: Int
     var dim2: Int
     var k: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         comptime if t.is_numeric():
@@ -192,7 +191,7 @@ def bottomk_dispatcher(
         out_idx_buffer: Output indices buffer (int64).
         in_buffer: Input data buffer.
         params: Python tuple (dim0, dim1, dim2, k).
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
     var out_val_addr = Int(py=out_val_buffer._data_ptr())

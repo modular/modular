@@ -38,6 +38,25 @@ from std.memory import Span
 
 
 # ===----------------------------------------------------------------------=== #
+# ASCII fast-path helpers
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def _is_safe_ascii_for_grapheme(b: Byte) -> Bool:
+    """Return `True` if byte `b` is in the safe-ASCII range for grapheme
+    iteration.
+
+    Safe-ASCII bytes (U+0020..U+007E, printable ASCII excluding DEL) all
+    have `GBP_OTHER`. A safe-ASCII byte is always its own grapheme
+    cluster when the previous codepoint's GBP is not `PREPEND` and the
+    next codepoint (if any) is also safe-ASCII — GB9/GB9a/GB9b only
+    trigger with non-ASCII GBPs.
+    """
+    return b >= 0x20 and b <= 0x7E
+
+
+# ===----------------------------------------------------------------------=== #
 # Grapheme Break Property enum constants
 # ===----------------------------------------------------------------------=== #
 
@@ -194,6 +213,22 @@ struct _GraphemeBreakState(ImplicitlyCopyable):
         self.in_ext_pict_seq = False
         self.seen_incb_linker = False
         self.in_incb_conjunct = False
+
+
+@always_inline
+def _reset_grapheme_state_to_other(mut state: _GraphemeBreakState):
+    """Mutate `state` to the configuration after consuming an `Other`
+    codepoint.
+
+    Shared by the ASCII fast paths. After consuming a safe-ASCII byte,
+    `prev_gbp` is `Other`, there is no in-progress RI/ZWJ/InCB sequence,
+    and the state is ready to decide the next grapheme boundary.
+    """
+    state.prev_gbp = GBP_OTHER
+    state.ri_count_is_odd = False
+    state.in_ext_pict_seq = False
+    state.in_incb_conjunct = False
+    state.seen_incb_linker = False
 
 
 @always_inline

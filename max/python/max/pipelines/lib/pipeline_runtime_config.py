@@ -18,14 +18,17 @@ from __future__ import annotations
 import os
 
 from max.config import ConfigFileModel
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.modeling.config_enums import PipelineRole
 from pydantic import Field, PrivateAttr
-
-from .config.config_enums import PipelineRole
-from .interfaces.cache_mixin import DenoisingCacheConfig
 
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
+
+# Sentinel value users can pass to ``reasoning_parser`` / ``tool_parser`` to
+# explicitly disable the parser, overriding any architecture default. The value
+# is matched case-insensitively (e.g. ``"none"``, ``"None"``, ``"NONE"``).
+DISABLE_PARSER_SENTINEL = "none"
 
 
 class PipelineRuntimeConfig(ConfigFileModel):
@@ -47,8 +50,8 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default=None,
         description=(
             "Maximum batch size to execute with the model. When not specified "
-            "(None), this value is determined dynamically. For server launches, "
-            "set this higher based on server capacity."
+            "(``None``), this value is determined dynamically. For server "
+            "launches, set this higher based on server capacity."
         ),
     )
 
@@ -56,7 +59,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default=None,
         description=(
             "Maximum number of requests in decode queue. By default, this is "
-            "max_batch_size."
+            "``max_batch_size``."
         ),
     )
 
@@ -66,7 +69,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Soft floor on the decode batch size. If the TG batch size is "
             "larger, the scheduler continues TG batches; if it falls below, the "
             "scheduler prioritizes CE. This is not a strict minimum. By "
-            "default, this is max_queue_size_tg. Experimental for the TTS "
+            "default, this is ``max_queue_size_tg``. Experimental for the TTS "
             "scheduler."
         ),
     )
@@ -76,6 +79,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "The expert parallelism size. Needs to be 1 (no expert parallelism) "
             "or the total number of GPUs across nodes."
+        ),
+    )
+
+    ep_use_allreduce: bool = Field(
+        default=False,
+        description=(
+            "Whether to use allreduce for the cross-device communication in "
+            "expert parallelism."
         ),
     )
 
@@ -100,7 +111,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default=True,
         description=(
             "Enable chunked prefill to split context encoding requests into "
-            "multiple chunks based on max_batch_input_tokens."
+            "multiple chunks based on ``max_batch_input_tokens``."
         ),
     )
 
@@ -115,9 +126,10 @@ class PipelineRuntimeConfig(ConfigFileModel):
     max_num_steps: int = Field(
         default=-1,
         description=(
-            "The number of steps to run for multi-step scheduling. -1 specifies "
-            "a default value based on configuration and platform. Ignored for "
-            "models which are not auto-regressive (for example, embedding models)."
+            "The number of steps to run for multi-step scheduling. ``-1`` "
+            "specifies a default value based on configuration and platform. "
+            "Ignored for models which are not auto-regressive (for example, "
+            "embedding models)."
         ),
     )
 
@@ -132,7 +144,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     use_experimental_kernels: str = Field(
         default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false"),
         description=(
-            "Enables using experimental mojo kernels with max serve. The "
+            "Enables using experimental Mojo kernels with ``max serve``. The "
             "kernels could be unstable or incorrect."
         ),
     )
@@ -140,8 +152,9 @@ class PipelineRuntimeConfig(ConfigFileModel):
     use_vendor_blas: str = Field(
         default=os.environ.get("MAX_SERVE_USE_VENDOR_BLAS", "false"),
         description=(
-            "Enables using vendor BLAS libraries (cublas/hipblas/etc) with max "
-            "serve. Currently, this just replaces matmul calls."
+            "Enables using vendor BLAS libraries (``cublas``, ``hipblas``, "
+            "etc.) with ``max serve``. Currently, this just replaces "
+            "``matmul`` calls."
         ),
     )
 
@@ -156,19 +169,11 @@ class PipelineRuntimeConfig(ConfigFileModel):
     custom_architectures: list[str] = Field(
         default_factory=list,
         description=(
-            "Custom architecture implementations to register. Each input can "
-            "either be a raw module name or an import path followed by a colon "
-            "and the module name. Each module must expose an ARCHITECTURES list "
-            "of architectures to register."
-        ),
-    )
-
-    zmq_endpoint_base: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description=(
-            "Prefix for ZMQ endpoints used for IPC. This ensures unique "
-            "endpoints across MAX Serve instances on the same host. Example: "
-            'lora_request_zmq_endpoint = f"{zmq_endpoint_base}-lora_request".'
+            "Custom architecture implementations to register. Each input is "
+            "either a path to a single custom-architecture module directory "
+            "or an ``IMPORT_PATH:MODULE_NAME`` colon-form. Each module must "
+            "expose a top-level ``ARCHITECTURES`` list of "
+            "``SupportedArchitecture`` instances."
         ),
     )
 
@@ -181,17 +186,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default=None,
         description=(
             "Ensures the sum of page-aligned context lengths in a batch does "
-            "not exceed max_batch_total_tokens. Alignment uses the KV cache "
-            "page size. If None, the sum is not limited."
+            "not exceed ``max_batch_total_tokens``. Alignment uses the KV "
+            "cache page size. If ``None``, the sum is not limited."
         ),
     )
 
     device_graph_capture: bool | None = Field(
         default=None,
         description=(
-            "Enable device graph capture/replay for graph execution. "
+            "Enable device graph capture and replay for graph execution. "
             "If unset, automatically enabled for some selected architectures. "
-            "Set to False (--no-device-graph-capture) to explicitly disable."
+            "Use ``--no-device-graph-capture`` to explicitly "
+            "disable."
         ),
     )
 
@@ -219,9 +225,23 @@ class PipelineRuntimeConfig(ConfigFileModel):
         else None,
         description=(
             "Seconds of no-batch-activity after which the decode worker exits "
-            "to trigger a pod restart. None (the default) disables the "
-            "watchdog. Set via MODULAR_DECODE_STALL_TIMEOUT_S env var or "
-            "directly in config."
+            "to trigger a pod restart. ``None`` (the default) disables the "
+            "watchdog. Set with the ``MODULAR_DECODE_STALL_TIMEOUT_S`` environment "
+            "variable."
+        ),
+    )
+
+    decode_request_ttl_s: float | None = Field(
+        default=float(os.environ["MODULAR_DECODE_REQUEST_TTL_S"])
+        if "MODULAR_DECODE_REQUEST_TTL_S" in os.environ
+        else None,
+        description=(
+            "Per-request TTL in seconds for the decode-side ``prefill_reqs`` "
+            "and ``inflight_transfers`` dicts. Entries older than this are "
+            "evicted individually (KV blocks released, failure surfaced to "
+            "the client) before the stall watchdog fires. ``None`` (the "
+            "default) disables eviction. Set with the "
+            "``MODULAR_DECODE_REQUEST_TTL_S`` environment variable."
         ),
     )
 
@@ -232,7 +252,28 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "to run alongside GPU execution. This helps improve GPU utilization. "
             "This is an experimental feature which may crash and burn. "
             "This feature will be enabled by default for some selected architectures. "
-            "You can forcibly disable this by setting --no-enable-overlap-scheduler --force."
+            "You can forcibly disable this by setting "
+            "``--no-enable-overlap-scheduler --force``."
+        ),
+    )
+
+    allow_unsupported_logprobs: bool = Field(
+        default=False,
+        description=(
+            "When ``True``, OpenAI-compatible requests that ask for "
+            "``logprobs`` against a runtime configuration that cannot honor "
+            "them will raise a warning, and served as if ``logprobs`` were not "
+            "requested. Each response chunk carries ``logprobs: null``. "
+            "When ``False`` (default), such requests are rejected with a 400."
+        ),
+    )
+
+    allow_extra_request_fields: bool = Field(
+        default=False,
+        description=(
+            "When ``True``, unknown top-level fields on OpenAI-compatible "
+            "request bodies are dropped with a warning before pydantic "
+            " validation, instead of producing a 400."
         ),
     )
 
@@ -249,8 +290,45 @@ class PipelineRuntimeConfig(ConfigFileModel):
     reasoning_parser: str | None = Field(
         default=None,
         description=(
-            "Name of the reasoning output parser. The parser extracts thinking blocks to "
-            "populate the 'reasoning' field in chat completion responses."
+            "Name of the reasoning output parser. The parser extracts "
+            "thinking blocks to populate the ``reasoning`` field in chat "
+            "completion responses. When unset, the server applies the "
+            "architecture's default reasoning parser, if any. Pass "
+            '``"none"`` (case-insensitive) to explicitly disable reasoning '
+            "parsing even when the architecture declares a default."
+        ),
+    )
+
+    tool_parser: str | None = Field(
+        default=None,
+        description=(
+            "Name of the tool call parser. The parser extracts tool calls "
+            "from model output in chat completion responses. When unset, "
+            "the server applies the architecture's default tool parser, "
+            'if any. Pass ``"none"`` (case-insensitive) to explicitly '
+            "disable tool parsing even when the architecture declares a "
+            "default."
+        ),
+    )
+
+    temperature: float | None = Field(
+        default=None,
+        description=(
+            "Default sampling temperature. Controls randomness of token selection—"
+            "higher values (e.g. 1.0) produce more random outputs, lower values "
+            "(e.g. 0.2) produce more deterministic outputs. When set, this "
+            "server-level default applies to all requests that do not explicitly "
+            "provide ``temperature``."
+        ),
+    )
+
+    thinking_temperature: float | None = Field(
+        default=None,
+        description=(
+            "Default temperature override for tokens inside ``<think>...</think>`` "
+            "blocks. When set, this server-level default applies to all requests "
+            "that do not explicitly provide ``thinking_temperature``. Requires "
+            "a reasoning parser to be configured; ignored otherwise."
         ),
     )
 
@@ -266,8 +344,8 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "Maximum number of images cached in the vision encoder cache. "
             "Each entry stores the vision encoder output for one image, "
-            "avoiding re-encoding across chunks and requests. Set to 0 to "
-            "disable caching. Only used by VLMs."
+            "avoiding re-encoding across chunks and requests. Set to ``0`` "
+            "to disable caching. Only used by VLMs."
         ),
     )
 
@@ -275,7 +353,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default_factory=DenoisingCacheConfig,
         description=(
             "Cache configuration for diffusion model denoising "
-            "(FBCache, TaylorSeer, TeaCache)."
+            "(FBCache, TaylorSeer)."
         ),
     )
 

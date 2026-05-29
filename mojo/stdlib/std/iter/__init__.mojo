@@ -54,6 +54,9 @@ for squared in map[square](values):
 """
 
 from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.rebind import downcast
+from std.sys.intrinsics import _type_is_eq_parse_time
+
 
 from std.builtin.variadics import TypeList
 from std.reflection.traits import AllImplicitlyDestructible, AllCopyable
@@ -179,6 +182,48 @@ trait Iterator(ImplicitlyDestructible, Movable):
         """
         return (0, None)
 
+    def nth(var self, n: Int) -> Optional[Self.Element]:
+        """Advances the iterator by `n` elements (destroying them) and returns
+        the next element, or `None` if the iterator is exhausted first.
+
+        Args:
+            n: The 0-indexed position of the element to return. Must be
+                non-negative.
+
+        Returns:
+            The element at index `n`, or `None` if the iterator has fewer than
+            `n + 1` remaining elements.
+
+        Constraints:
+            `Self.Element` must conform to `ImplicitlyDestructible` so the
+            intermediate elements can be discarded.
+
+        Examples:
+
+        ```mojo
+        var l = [10, 20, 30, 40]
+        print(iter(l).nth(0).value())   # 10
+        print(iter(l).nth(3).value())   # 40
+        var missing = iter(l).nth(10)   # None
+        ```
+        """
+        comptime assert conforms_to(Self.Element, ImplicitlyDestructible)
+        debug_assert[assert_mode="safe"](n >= 0, "nth: n must be non-negative")
+        try:
+            for _ in range(n):
+                # `Self.Element` is only declared `Movable` on the trait, so a
+                # bare `_ = self.__next__()` won't type-check. Funnel the
+                # discard through the conformance we asserted above. Drop
+                # this workaround once MOCO-3947 lets us put the bound in a
+                # `where` clause on the method.
+                var elem = self.__next__()
+                _ = rebind_var[
+                    downcast[Self.Element, Movable & ImplicitlyDestructible]
+                ](elem^)
+            return self.__next__()
+        except StopIteration:
+            return None
+
 
 @always_inline
 def iter(
@@ -232,6 +277,55 @@ def next[
         StopIteration: If the iterator is exhausted.
     """
     return iterator.__next__()
+
+
+# ===-----------------------------------------------------------------------===#
+# empty
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _Empty[T: Movable](
+    ImplicitlyCopyable,
+    Iterable,
+    IterableOwned,
+    Iterator,
+):
+
+    """Iterator that yields nothing."""
+
+    comptime Element = Self.T
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    comptime IteratorOwnedType: Iterator = Self
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        raise StopIteration()
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        return Tuple(0, Optional(0))
+
+
+@always_inline
+def empty[T: Movable]() -> _Empty[T]:
+    """Creates an iterator that yields nothing.
+
+    Parameters:
+        T: Type of the iterator's notional elements.
+
+    Returns:
+        An iterator that yields nothing.
+    """
+    return _Empty[T]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -407,12 +501,9 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
                     type_of(res[i]), ImplicitlyDestructible
                 )
                 if i < initialized:
-                    UnsafePointer(
-                        to=trait_downcast[ImplicitlyDestructible](res[i])
-                    ).destroy_pointee()
+                    UnsafePointer(to=res[i]).destroy_pointee()
 
             std.memory.forget_deinit(res^)
-
             raise StopIteration
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
@@ -734,6 +825,136 @@ def peekable(
         A peekable iterator.
     """
     return {iter(iterable^)}
+
+
+# ===-----------------------------------------------------------------------===#
+# chain
+# ===-----------------------------------------------------------------------===#
+
+comptime _all_yield_same_ref_condition[
+    T0: Movable, origin: Origin, T: Iterable
+] = _type_is_eq_parse_time[T.IteratorType[origin].Element, T0]()
+
+comptime _all_yield_same_ref[
+    origin: Origin, *Ts: Iterable
+]: Bool = Ts.all_satisfies[
+    _all_yield_same_ref_condition[Ts[0].IteratorType[origin].Element, origin, _]
+]()
+
+comptime _all_yield_same_owned_condition[
+    T0: Movable, T: IterableOwned
+] = _type_is_eq_parse_time[T.IteratorOwnedType.Element, T0]()
+
+comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all_satisfies[
+    _all_yield_same_owned_condition[Ts[0].IteratorOwnedType.Element, _]
+]()
+
+
+struct _ChainedIterator[*Ts: Iterator](
+    Copyable where AllCopyable[*Ts],
+    Iterable where AllCopyable[*Ts],
+    IterableOwned,
+    Iterator,
+):
+    comptime _Iterators = Tuple[*Self.Ts]
+    var _idx: Int
+    var _iterators: Self._Iterators
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
+    comptime Element = Self.Ts[0].Element
+
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[*Self.Ts]:
+        return self.copy()
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime for i in range(Self._Iterators.__len__()):
+            if self._idx <= i:
+                try:
+                    return rebind_var[Self.Element](next(self._iterators[i]))
+                except:
+                    self._idx += 1
+        raise StopIteration()
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var final_lb = 0
+        var final_ub = Optional(0)
+        comptime for i in range(Self._Iterators.__len__()):
+            if self._idx > i:
+                continue
+
+            var lb, ub = self._iterators[i].bounds()
+            final_lb = final_lb + min(lb, Int.MAX - final_lb)
+            if final_ub and ub:
+                final_ub = final_ub.unsafe_value() + min(
+                    ub.unsafe_value(), Int.MAX - final_ub.unsafe_value()
+                )
+            else:
+                final_ub = None
+        return final_lb, final_ub
+
+
+def chain[
+    *Ts: Iterable
+](
+    *iterables: *Ts,
+    out res: _ChainedIterator[*_iterable_to_iterator[iterables.origin, *Ts]],
+) where _all_yield_same_ref[iterables.origin, *Ts]:
+    """Chain multiple iterables that return the same type.
+
+    Parameters:
+        Ts: The iterator types.
+
+    Args:
+        iterables: The iterables.
+
+    Returns:
+        The chained iterator.
+    """
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
+    res._idx = 0
+
+    comptime for i in range(res._Iterators.__len__()):
+        UnsafePointer(to=res._iterators[i]).init_pointee_move(
+            rebind_var[type_of(res._iterators[i])](iter(iterables[i]))
+        )
+
+
+def chain[
+    *Ts: IterableOwned
+](
+    var *iterables: *Ts,
+    out res: _ChainedIterator[*_iterable_owned_to_iterator[*Ts]],
+) where _all_yield_same_owned[*Ts]:
+    """Chain multiple iterables that return the same type.
+
+    Parameters:
+        Ts: The iterator types.
+
+    Args:
+        iterables: The iterables.
+
+    Returns:
+        The chained iterator.
+    """
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
+    res._idx = 0
+
+    @parameter
+    def init_elt[idx: Int](var elt: iterables.element_types[idx]):
+        UnsafePointer(to=res._iterators[idx]).init_pointee_move(
+            rebind_var[type_of(res._iterators[idx])](iter(elt^))
+        )
+
+    iterables^.consume_elements[init_elt]()
 
 
 # ===-----------------------------------------------------------------------===#

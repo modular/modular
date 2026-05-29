@@ -17,14 +17,15 @@ from std.utils.numerics import get_accum_type
 
 from std.benchmark import *
 from std.benchmark import keep
-from layout import Coord, RuntimeInt, TileTensor, row_major
+from internal_utils import ScalarArray
+from layout import Coord, TileTensor, row_major
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
 from std.testing import assert_almost_equal
 
 
-def _ri(v: Int) -> RuntimeInt[DType.int64]:
-    return RuntimeInt[DType.int64](Int64(v))
+def _ri(v: Int) -> Int64:
+    return Int64(v)
 
 
 def gemm_naive(a: TileTensor, b: TileTensor, c: TileTensor[mut=True, ...]):
@@ -37,9 +38,7 @@ def gemm_naive(a: TileTensor, b: TileTensor, c: TileTensor[mut=True, ...]):
 
     comptime acc_type = get_accum_type[c.dtype]()
 
-    var accum = alloc[Scalar[acc_type]](m * n)
-    for idx in range(m * n):
-        accum[idx] = Scalar[acc_type](0)
+    var accum = List(length=m * n, fill=Scalar[acc_type](0))
 
     for i in range(m):
         for p in range(k):
@@ -50,14 +49,13 @@ def gemm_naive(a: TileTensor, b: TileTensor, c: TileTensor[mut=True, ...]):
 
     for idx in range(m * n):
         c.ptr[idx] = accum[idx].cast[c.dtype]()
-    accum.free()
 
 
 def verify(a: TileTensor, b: TileTensor, c: TileTensor):
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
 
-    var c_ref_ptr = alloc[Scalar[c.dtype]](m * n)
+    var c_ref_ptr = List(length=m * n, fill=Scalar[c.dtype](0))
     var c_ref = TileTensor(c_ref_ptr, row_major(Coord(_ri(m), _ri(n))))
     gemm_naive(a, b, c_ref)
 
@@ -69,7 +67,6 @@ def verify(a: TileTensor, b: TileTensor, c: TileTensor):
                 )
             except e:
                 abort(String(e))
-    c_ref_ptr.free()
 
 
 def bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
@@ -92,14 +89,20 @@ def bench_matmul[
     comptime c_type = spec.static_info.c_type
     comptime b_packed = spec.static_info.b_packed
     comptime alignment = 64
-    var a_ptr = alloc[Scalar[a_type],](spec.m * spec.k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type],](spec.k * spec.n, alignment=alignment)
-    var c_ptr = alloc[Scalar[c_type],](spec.m * spec.n, alignment=alignment)
-    var a = TileTensor(a_ptr, row_major(Coord(_ri(spec.m), _ri(spec.k))))
-    var b = TileTensor(b_ptr, row_major(Coord(_ri(spec.k), _ri(spec.n))))
-    var c = TileTensor(c_ptr, row_major(Coord(_ri(spec.m), _ri(spec.n))))
-    rand[a_type](a_ptr, spec.m * spec.k)
-    rand[b_type](b_ptr, spec.k * spec.n)
+    var a_ptr = ScalarArray[a_type](count=spec.m * spec.k, alignment=alignment)
+    var b_ptr = ScalarArray[b_type](count=spec.k * spec.n, alignment=alignment)
+    var c_ptr = ScalarArray[c_type](count=spec.m * spec.n, alignment=alignment)
+    var a = TileTensor(
+        a_ptr.unsafe_ptr(), row_major(Coord(_ri(spec.m), _ri(spec.k)))
+    )
+    var b = TileTensor(
+        b_ptr.unsafe_ptr(), row_major(Coord(_ri(spec.k), _ri(spec.n)))
+    )
+    var c = TileTensor(
+        c_ptr.unsafe_ptr(), row_major(Coord(_ri(spec.m), _ri(spec.n)))
+    )
+    rand(a_ptr.as_span())
+    rand(b_ptr.as_span())
     _ = c.fill(Scalar[c_type](0))
 
     var padded_n_k = pack_matmul_b_shape_func[a_type, c_type, False](b)
@@ -107,10 +110,12 @@ def bench_matmul[
     var padded_n = padded_n_k[1] if b_packed else spec.n
     var padded_k = padded_n_k[0] if b_packed else spec.k
 
-    var bp_ptr = alloc[Scalar[b_type],](
-        padded_k * padded_n, alignment=alignment
+    var bp_ptr = ScalarArray[b_type](
+        count=padded_k * padded_n, alignment=alignment
     )
-    var bp = TileTensor(bp_ptr, row_major(Coord(_ri(padded_k), _ri(padded_n))))
+    var bp = TileTensor(
+        bp_ptr.unsafe_ptr(), row_major(Coord(_ri(padded_k), _ri(padded_n)))
+    )
 
     if b_packed:
         pack_b_ndbuffer[a_type, c_type](b, bp)
@@ -123,16 +128,13 @@ def bench_matmul[
             transpose_b=False,
             b_packed=b_packed,
             saturated_vnni=False,
-        ](c, a, bp if b_packed else b)
+        ](c, a, bp.as_any_origin() if b_packed else b.as_any_origin())
         keep(c.ptr)
 
     bencher.iter[bench_fn]()
     verify(a, b, c)
 
-    a_ptr.free()
-    b_ptr.free()
-    bp_ptr.free()
-    c_ptr.free()
+    _ = bp_ptr^
 
 
 @fieldwise_init

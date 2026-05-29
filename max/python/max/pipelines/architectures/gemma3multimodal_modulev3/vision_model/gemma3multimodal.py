@@ -21,47 +21,16 @@ from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.norm.layer_norm import LayerNorm
-from max.experimental.sharding import PlacementMapping
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.gemma3 import Gemma3TextModel
-from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .embedding import Gemma3VisionEmbeddings
 from .encoding import Gemma3VisionEncoder
 from .projection import Gemma3MultiModalProjector
-
-
-# TODO: This function uses a custom op, once we have better dispatch support for
-# custom ops, we can rewrite this.
-def merge_multimodal_embeddings_distributed(
-    inputs_embeds: Tensor,
-    image_embeddings: Tensor,
-    image_token_indices: Tensor,
-) -> Tensor:
-    """Merge multimodal embeddings distributedly."""
-    mesh = inputs_embeds.mesh
-    n = mesh.num_devices
-    embed_shards = inputs_embeds.local_shards
-    img_shards = image_embeddings.local_shards
-    idx_shards = image_token_indices.local_shards
-
-    merged_shards = []
-    for i in range(n):
-        merged_value = merge_multimodal_embeddings(
-            inputs_embeds=TensorValue(embed_shards[i]),
-            multimodal_embeddings=TensorValue(img_shards[i]),
-            image_token_indices=TensorValue(idx_shards[i]),
-        )
-        merged_shards.append(merged_value)
-
-    return Tensor.from_shard_values(
-        tuple(merged_shards),
-        PlacementMapping(mesh, inputs_embeds.placements),
-    )
 
 
 class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
@@ -108,7 +77,7 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         self.language_model.prepare_freq_cis(tokens.mesh)
 
         # Merge image embeddings at pre-computed token positions.
-        merged = merge_multimodal_embeddings_distributed(
+        merged = F_merge_multimodal_embeddings(
             inputs_embeds, image_embeddings, image_token_indices
         )
 

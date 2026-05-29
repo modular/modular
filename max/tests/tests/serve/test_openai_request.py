@@ -165,3 +165,251 @@ async def test_openai_extract_image_from_requests() -> None:
     assert messages[0].content[2].type == "image"
     assert images[0] == AnyUrl(request_images["smily_b64"])
     assert images[1] == AnyUrl(request_images["mountain_url"])
+
+
+async def test_openai_user_message_with_null_content() -> None:
+    """Test that user messages with null content are accepted and handled."""
+    # Test with explicit null content
+    user_message_null_content = {
+        "role": "user",
+        "content": None,
+    }
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [user_message_null_content]}
+    )
+    settings = Settings()
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, False, settings
+    )
+    assert len(messages) == 1
+    assert messages[0].role == "user"
+    assert messages[0].content == ""
+
+    # Test with missing content field (should default to None)
+    user_message_no_content = {
+        "role": "user",
+    }
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [user_message_no_content]}
+    )
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, False, settings
+    )
+    assert len(messages) == 1
+    assert messages[0].role == "user"
+    assert messages[0].content == ""
+
+
+def test_openai_chat_completion_accepts_prompt_tokens() -> None:
+    """Schema must accept ``prompt_tokens`` (orchestrator pre-tokenized input).
+
+    The Mammoth orchestrator tokenizes incoming requests once and forwards
+    the integer token IDs to MAX Serve under the ``prompt_tokens`` field,
+    bypassing re-tokenization. Regression coverage for SERVSYS-1239: the
+    schema rewrite in #84789 dropped this MAX-only field, causing
+    ``CreateChatCompletionRequest.model_validate_json`` to fail with
+    ``ValidationError: prompt_tokens - Extra inputs are not permitted``.
+    """
+    body = (
+        '{"model":"test","ignore_eos":true,"max_tokens":4,'
+        '"messages":[{"role":"user","content":"hi"}],'
+        '"prompt_tokens":[101,202,303]}'
+    )
+    request = CreateChatCompletionRequest.model_validate_json(body)
+    assert request.prompt_tokens == [101, 202, 303]
+
+
+async def test_openai_parse_forwards_tool_call_metadata() -> None:
+    """Multi-turn tool-use messages must keep ``tool_calls`` and ``tool_call_id``.
+
+    The router previously dropped these fields when building the internal
+    ``TextGenerationRequestMessage`` list, so the chat-templated prompt
+    rendered with an empty ``<think>`` block and a bare ``## Return of``
+    header instead of the originating function name (for example Kimi-K2).
+    """
+    request_data = {
+        "model": "test",
+        "messages": [
+            {"role": "user", "content": "search for cats"},
+            {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "I'll call the search tool.",
+                "tool_calls": [
+                    {
+                        "id": "call_9e53d2d2_0",
+                        "type": "function",
+                        "function": {
+                            "name": "search",
+                            "arguments": '{"q":"cats"}',
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_9e53d2d2_0",
+                "content": "1. fluffy cat\n2. orange cat",
+            },
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    settings = Settings()
+
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, wrap_content=False, settings=settings
+    )
+
+    assert len(messages) == 3
+    assert messages[0].role == "user"
+    assert messages[0].tool_calls is None
+    assert messages[0].tool_call_id is None
+
+    assert messages[1].role == "assistant"
+    assert messages[1].tool_calls is not None
+    assert len(messages[1].tool_calls) == 1
+    assert messages[1].tool_calls[0]["id"] == "call_9e53d2d2_0"
+    assert messages[1].tool_calls[0]["function"]["name"] == "search"
+    # ``function.arguments`` is decoded from the OpenAI JSON-string wire
+    # format into a mapping so tool-use chat templates can iterate it.
+    assert messages[1].tool_calls[0]["function"]["arguments"] == {"q": "cats"}
+    assert messages[1].reasoning_content == "I'll call the search tool."
+
+    assert messages[2].role == "tool"
+    assert messages[2].tool_call_id == "call_9e53d2d2_0"
+    assert messages[2].content == "1. fluffy cat\n2. orange cat"
+
+
+async def test_openai_parse_drops_empty_tool_calls() -> None:
+    """Empty assistant ``tool_calls`` lists must be dropped (vLLM parity).
+
+    Some clients echo back ``"tool_calls": []`` on assistant turns even
+    when the assistant did not call any tools. Letting an empty list reach
+    the chat template causes tool-use branches to fire with no entries,
+    which renders broken multi-turn prompts.
+    """
+    request_data = {
+        "model": "test",
+        "messages": [
+            {
+                "role": "assistant",
+                "content": "ok",
+                "tool_calls": [],
+            },
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    settings = Settings()
+
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, wrap_content=False, settings=settings
+    )
+
+    assert len(messages) == 1
+    assert messages[0].role == "assistant"
+    assert messages[0].tool_calls is None
+    assert messages[0].content == "ok"
+
+
+async def test_openai_parse_coerces_empty_tool_call_arguments() -> None:
+    """Empty or missing ``function.arguments`` are coerced to ``{}``.
+
+    Mirrors vLLM's ``_postprocess_messages``: clients that send no-arg
+    tool calls (for example a ``get_time()`` invocation) emit
+    ``"arguments": ""`` over the wire. Chat templates that iterate the
+    mapping must see an empty dict, not the empty string.
+    """
+    request_data = {
+        "model": "test",
+        "messages": [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_time", "arguments": ""},
+                    },
+                    {
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {"name": "get_date"},
+                    },
+                ],
+            },
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    settings = Settings()
+
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, wrap_content=False, settings=settings
+    )
+
+    assert len(messages) == 1
+    assert messages[0].tool_calls is not None
+    assert len(messages[0].tool_calls) == 2
+    assert messages[0].tool_calls[0]["function"]["arguments"] == {}
+    assert messages[0].tool_calls[1]["function"]["arguments"] == {}
+
+
+def test_openai_chat_completion_accepts_explicit_null_tool_choice() -> None:
+    """Schema must accept ``"tool_choice": null`` from OpenAI-compatible clients.
+
+    OpenAI's ``ChatCompletionToolChoiceOptionParam`` is a non-Optional union
+    of ``Literal["none","auto","required"]`` and tool-choice objects;
+    omission is expressed via ``NotRequired`` on the TypedDict. Some clients
+    (LangChain, certain JS SDKs, anything that serializes a dataclass with
+    a ``None`` field) explicitly emit ``"tool_choice": null`` instead of
+    omitting the key, which must be treated as equivalent to omission.
+    """
+    body = {
+        "model": "test",
+        "messages": [{"role": "user", "content": "hi"}],
+        "tool_choice": None,
+    }
+    request = CreateChatCompletionRequest.model_validate(body)
+    assert request.tool_choice is None
+
+
+def test_openai_user_message_content_nullable_schema() -> None:
+    """Test that the CreateChatCompletionRequest schema accepts null user content."""
+    # Test with explicit null content in user message
+    request_data = {
+        "model": "test",
+        "messages": [{"role": "user", "content": None}],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    assert len(request.messages) == 1
+    assert request.messages[0]["role"] == "user"
+    assert request.messages[0].get("content") is None
+
+    # Test with omitted content field
+    request_data_no_content = {
+        "model": "test",
+        "messages": [{"role": "user"}],
+    }
+    request = CreateChatCompletionRequest.model_validate(
+        request_data_no_content
+    )
+    assert len(request.messages) == 1
+    assert request.messages[0]["role"] == "user"
+    assert request.messages[0].get("content") is None
+
+    # Test mixed messages with null user content
+    request_data_mixed = {
+        "model": "test",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": None},
+            {"role": "assistant", "content": "How can I help you?"},
+            {"role": "user", "content": "Hello!"},
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data_mixed)
+    assert len(request.messages) == 4
+    assert request.messages[0]["content"] == "You are a helpful assistant."
+    assert request.messages[1].get("content") is None
+    assert request.messages[2]["content"] == "How can I help you?"
+    assert request.messages[3]["content"] == "Hello!"

@@ -7,10 +7,9 @@ bazel_dep(name = "curl", version = "8.12.0")
 bazel_dep(name = "gazelle", version = "0.50.0")
 bazel_dep(name = "google_benchmark", version = "1.9.4")
 bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
-bazel_dep(name = "imgui", version = "1.91.8")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
-bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_cc", version = "0.2.18")
 bazel_dep(name = "rules_mojo", version = "0.6.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -24,23 +23,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-gkappMvXTJYRANGySlRe8ASrcDXHEagi5Xf0RWVcse0=",
-    strip_prefix = "rules_mojo-ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f",
+    integrity = "sha256-U1nZFqGyqmfDV7ifCB79d1ctwQ6lRY35ecckbpUX/Fc=",
+    strip_prefix = "rules_mojo-be8b3078e2a4fb36356bc2c29e906b0ca253c0f8",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f.tar.gz",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_cc",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazelbuild/rules_cc/pull/527
-        "//bazel/public-patches:rules_cc_textual_hdrs.patch",
-        # https://github.com/bazelbuild/rules_cc/pull/578
-        "//bazel/public-patches:rules_cc_private_api.patch",
-        # https://github.com/bazelbuild/rules_cc/pull/675
-        "//bazel/public-patches:rules_cc_set_soname.patch",
+        "https://github.com/modular/rules_mojo/archive/be8b3078e2a4fb36356bc2c29e906b0ca253c0f8.tar.gz",
     ],
 )
 
@@ -78,6 +64,8 @@ single_version_override(
     module_name = "rules_pycross",
     patch_strip = 1,
     patches = [
+        # https://github.com/jvolkman/rules_pycross/pull/219
+        "//bazel/public-patches:rules_pycross_exports.patch",
         # TODO: Remove when 3.8 is no longer pulled in transitively
         "//bazel/public-patches:rules_pycross_versions.patch",
     ],
@@ -108,6 +96,8 @@ single_version_override(
         "//bazel/public-patches:grpc-no-macos-x86.patch",
         # TODO: Drop when logspew is fixed
         "//bazel/public-patches:grpc-warnings.patch",
+        # TODO: Drop when this is in a release: https://github.com/grpc/grpc/commit/a1e64a2ed6a81c2f51b65c4d28b265db5892dfec
+        "//bazel/public-patches:grpc-loads.patch",
     ],
     version = "1.76.0.bcr.1",
 )
@@ -197,7 +187,7 @@ http_archive(
 
 package(default_visibility = ["//visibility:public"])
 
-# This is the device-side bitcode that is linked into shmem.mojopkg.
+# This is the device-side bitcode that is linked into shmem.mojoc.
 filegroup(
     name = "device",
     srcs = ["lib/librocshmem_device.bc"],
@@ -229,7 +219,7 @@ http_archive(
     build_file_content = """
 package(default_visibility = ["//visibility:public"])
 
-# This is the device-side bitcode that is linked into shmem.mojopkg.
+# This is the device-side bitcode that is linked into shmem.mojoc.
 filegroup(
     name = "device",
     srcs = ["lib/libnvshmem_device.bc"],
@@ -280,6 +270,7 @@ mojo.gpu_toolchains(
         "RTX 4070 Ti": "",
         "RTX 4080 SUPER": "",
         "RTX 4090": "rtx4090",
+        "NVIDIA GeForce RTX 5060 Ti": "rtx5060ti",
         "NVIDIA GeForce RTX 3090": "rtx3090",
         "NVIDIA GeForce GTX 1080 Ti": "gtx1080ti",
         "NVIDIA GeForce GTX 1060": "gtx1060",
@@ -296,10 +287,10 @@ mojo.gpu_toolchains(
         "AMD Radeon Pro W7900": "W7900",
         "Phoenix3": "780M",
         "Strix Halo": "strixhalo",
-        "Metal 1": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
-        "Metal 2": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
-        "Metal 3": "metal3",  # macOS 15
-        "Metal 4": "metal4",  # macOS 26
+        "Metal 1": "",  # M1. Officially is not supported
+        "Metal 2": "metal2",  # M2 + macOS 15
+        "Metal 3": "metal3",  # M3 + macOS 15
+        "Metal 4": "metal4",  # M4 + macOS 26
     },
     # GPU name -> target accelerator
     supported_gpus = {
@@ -323,10 +314,12 @@ mojo.gpu_toolchains(
         "gtx1080ti": "nvidia:sm_61",
         "gtx1060": "nvidia:sm_61",
         "rtx4090": "nvidia:sm_89",
+        "rtx5060ti": "nvidia:sm_120a",
         "rtx5090": "nvidia:sm_120a",
         "gb10": "nvidia:sm_121",
         "rx6900xt": "amdgpu:gfx1030",
         "strixhalo": "amdgpu:gfx1151",
+        "metal2": "metal:2",
         "metal3": "metal:3",
         "metal4": "metal:4",
     },
@@ -384,23 +377,29 @@ archive_override(
 
 http_archive(
     name = "clang-linux-x86_64",
-    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
-    sha256 = "4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/20.1.8/4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651/llvm-linux-x86_64.tar.xz",
+    # Override adds: include_dir (directory rule), resource_directory_filegroup,
+    # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
+    build_file = "//bazel/public-patches:clang.BUILD",
+    sha256 = "2b3ce493f43c2206275ac34cdfd9d42450bccd79ce725df570bfdc4b7674e29b",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/22.1.4/2b3ce493f43c2206275ac34cdfd9d42450bccd79ce725df570bfdc4b7674e29b/llvm-linux-x86_64.tar.xz",
 )
 
 http_archive(
     name = "clang-linux-aarch64",
-    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
-    sha256 = "5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/20.1.8/5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189/llvm-linux-aarch64.tar.xz",
+    # Override adds: include_dir (directory rule), resource_directory_filegroup,
+    # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
+    build_file = "//bazel/public-patches:clang.BUILD",
+    sha256 = "474ff5052ccff6c676ad43f48da1385822bc8ec0120caaacd891c21d813475ab",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/22.1.4/474ff5052ccff6c676ad43f48da1385822bc8ec0120caaacd891c21d813475ab/llvm-linux-aarch64.tar.xz",
 )
 
 http_archive(
     name = "clang-macos",
-    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
-    sha256 = "a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/20.1.8/a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8/llvm-macos.tar.xz",
+    # Override adds: include_dir (directory rule), resource_directory_filegroup,
+    # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
+    build_file = "//bazel/public-patches:clang.BUILD",
+    sha256 = "ea118e41dfffd5027b378ec932fff70a06be1ab054ffbdaf8209f64579aeee1c",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/22.1.4/ea118e41dfffd5027b378ec932fff70a06be1ab054ffbdaf8209f64579aeee1c/llvm-macos.tar.xz",
 )
 
 SHELLCHECK_VERSION = "v0.11.0"
@@ -495,27 +494,6 @@ http_archive(
     url = "https://github.com/scottamain/sphinx-click/archive/7c1a85c2667ed8b3b4060e94ce07456e5fa4fef6.tar.gz",
 )
 
-# VLLM still requires transformers v4, so we pull this separately and manually add it when it's used.
-# Note this means two transformers within the same venv, this is just a temporary hack until upstream updates to v5.
-http_file(
-    name = "transformers_v4_wheel",
-    downloaded_file_path = "transformers-4.57.6-py3-none-any.whl",
-    sha256 = "4c9e9de11333ddfe5114bc872c9f370509198acf0b87a832a0ab9458e2bd0550",
-    urls = [
-        "https://files.pythonhosted.org/packages/03/b8/e484ef633af3887baeeb4b6ad12743363af7cce68ae51e938e00aaa0529d/transformers-4.57.6-py3-none-any.whl",
-    ],
-)
-
-# Similar to above, transitive dep of transformers v4 vs v5
-http_file(
-    name = "huggingface_hub_v0_wheel",
-    downloaded_file_path = "huggingface_hub-0.36.2-py3-none-any.whl",
-    sha256 = "48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270",
-    urls = [
-        "https://files.pythonhosted.org/packages/a8/af/48ac8483240de756d2438c380746e7130d1c6f75802ef22f3c6d49982787/huggingface_hub-0.36.2-py3-none-any.whl",
-    ],
-)
-
 # Intersphinx object inventory for Python
 http_archive(
     name = "python-objects-inv",
@@ -542,7 +520,8 @@ filegroup(
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/numpy-objects-inv/2.4/0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245/numpy-objects-inv.tar.gz",
 )
 
-RUMDL_VERSION = "0.1.62"
+# Also update rev in /.pre-commit-config.yaml when changing this.
+RUMDL_VERSION = "0.1.95"
 
 [
     http_archive(
@@ -557,9 +536,9 @@ RUMDL_VERSION = "0.1.62"
         ],
     )
     for arch, sha in [
-        ("x86_64-unknown-linux-musl", "sha256-Se09mqkYH02VKDhOyKhp1DM5E9OBnsmbvO4TWpmnJOQ="),
-        ("aarch64-unknown-linux-musl", "sha256-fRBlBoF6IYiYR7CIIKCvNHjFFvKpBoeWdRx5MV0qQ/4="),
-        ("aarch64-apple-darwin", "sha256-kzo6eHzmTy+IDbxXihO9UD7yLS1fn6oxqR9R5V72NZk="),
+        ("x86_64-unknown-linux-musl", "sha256-kLVHpNYAZpiTQHJpT2oJpnDGKJAEZo5xOG7l/7qRizU="),
+        ("aarch64-unknown-linux-musl", "sha256-D6eFYz126SIA0sThoEot9KJiAgj1xIUwfc/aCxjJpxs="),
+        ("aarch64-apple-darwin", "sha256-zzNLRkJuqQH6pAi+/dZMSB0zY4BXiySnfGqJXqybpNA="),
     ]
 ]
 
@@ -825,6 +804,11 @@ LOGIT_VERIFICATION_GOLDENS = [
         "name": "black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz",
         "sha256": "11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/black-forest-labs_FLUX.2-dev-i2i_golden/1/11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd/black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz",
+    },
+    {
+        "name": "black-forest-labs_FLUX.2-klein-4B_golden.tar.gz",
+        "sha256": "5b646894a0ed1765d717c8d37b44a4a7fda24fec68d50f45c837295eaad468d8",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/black-forest-labs_FLUX.2-klein-4B_golden/1/5b646894a0ed1765d717c8d37b44a4a7fda24fec68d50f45c837295eaad468d8/black-forest-labs_FLUX.2-klein-4B_golden.tar.gz",
     },
 ]
 

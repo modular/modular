@@ -42,9 +42,9 @@ def test_barrier[dtype: DType](ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size
     comptime constant_add: Scalar[dtype] = 42
-    var input_host = alloc[Scalar[dtype]](buffer_size)
-    var output_host = alloc[Scalar[dtype]](buffer_size)
-    var shared_host = alloc[Scalar[dtype]](buffer_size)
+    var input_host = ctx.enqueue_create_host_buffer[dtype](buffer_size)
+    var output_host = ctx.enqueue_create_host_buffer[dtype](buffer_size)
+    var shared_host = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
     for i in range(buffer_size):
         input_host[i] = Scalar[dtype](i) + constant_add
@@ -59,7 +59,7 @@ def test_barrier[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_buffer, output_host)
     ctx.enqueue_copy(shared_buffer, shared_host)
 
-    ctx.enqueue_function_experimental[kernel[dtype]](
+    ctx.enqueue_function[kernel[dtype]](
         input_buffer,
         output_buffer,
         shared_buffer,
@@ -78,10 +78,6 @@ def test_barrier[dtype: DType](ctx: DeviceContext) raises:
 
     _ = input_buffer
     _ = shared_buffer
-
-    input_host.free()
-    output_host.free()
-    shared_host.free()
 
 
 def main() raises:

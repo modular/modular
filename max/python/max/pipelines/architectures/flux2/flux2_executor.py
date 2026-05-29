@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, fields, replace
 from typing import Any, ClassVar
 
@@ -24,16 +25,17 @@ from max.driver import Buffer, Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.tensor import Tensor
+from max.graph import Module as GraphModule
 from max.pipelines.core import PixelContext
+from max.pipelines.diffusion.cache import DenoisingCacheConfig, TaylorSeerCache
 from max.pipelines.lib import float32_array_to_buffer
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.denoising_cache import TaylorSeerCache
-from max.pipelines.lib.interfaces import TensorStruct
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.profiler import traced
+from max.pipelines.modeling.base import TensorStruct
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.profiler import Tracer, traced
 from typing_extensions import Self
 
 from .components import (
@@ -65,7 +67,6 @@ class Flux2ExecutorInputs(TensorStruct):
 
         inputs = Flux2ExecutorInputs(tokens=..., latents=..., ...)
         inputs = inputs.with_image(image_tensor)
-        inputs = inputs.with_residual_threshold(threshold_tensor)
     """
 
     # -- Core (always present) ------------------------------------------------
@@ -120,10 +121,6 @@ class Flux2ExecutorInputs(TensorStruct):
     """Input image for image-to-image generation, shape ``(H, W, C)`` uint8.
     ``None`` when running in text-to-image mode."""
 
-    residual_threshold: Buffer | None = None
-    """Scalar float32 threshold for FBCache residual gating.
-    ``None`` when first-block caching is not enabled."""
-
     # -- Device transfer -------------------------------------------------------
 
     _CPU_FIELDS: ClassVar[frozenset[str]] = frozenset(
@@ -154,10 +151,6 @@ class Flux2ExecutorInputs(TensorStruct):
     def with_image(self, input_image: Buffer) -> Self:
         """Enable image-to-image mode with the given input image."""
         return replace(self, input_image=input_image)
-
-    def with_residual_threshold(self, residual_threshold: Buffer) -> Self:
-        """Enable FBCache with a per-request residual threshold."""
-        return replace(self, residual_threshold=residual_threshold)
 
 
 @dataclass(frozen=True)
@@ -221,10 +214,6 @@ class Flux2Executor(
     default_num_inference_steps: int = 28
     """Default number of denoising steps when the user does not specify one."""
 
-    # Default residual threshold when FBCache is enabled but the request
-    # does not specify one.
-    _DEFAULT_RESIDUAL_THRESHOLD: float = 0.06
-
     # Fallback VAE scale factor when not derivable from the manifest.
     _DEFAULT_VAE_SCALE_FACTOR: int = 8
 
@@ -238,7 +227,7 @@ class Flux2Executor(
         self._session = session
         self._runtime_config = runtime_config
 
-        # Cache configuration (TaylorSeer / FBCache / TeaCache).
+        # Cache configuration (TaylorSeer).
         self._cache_config: DenoisingCacheConfig = (
             runtime_config.denoising_cache
         )
@@ -256,7 +245,6 @@ class Flux2Executor(
             if block_out_channels
             else self._DEFAULT_VAE_SCALE_FACTOR
         )
-        self._default_residual_threshold = self._DEFAULT_RESIDUAL_THRESHOLD
 
         # Extract transformer config for helper methods.
         transformer_config = manifest["transformer"]
@@ -272,10 +260,21 @@ class Flux2Executor(
         )[0]
         self._in_channels: int = 128  # Flux2 in_channels (pre-patchify: 32)
 
-        # Build and store all compiled graphs.
-        self.text_encoder = TextEncoder(manifest, session)
-        self.image_encoder = ImageEncoder(manifest, session)
-        self.decoder = VaeDecoder(manifest, session)
+        # Build all FLUX2 component graphs into one shared Module so we
+        # can compile them together via session.load_all in a single
+        # parallel compile pass (MODELS-1440).  Each component records its
+        # graph + weights on itself; the executor merges them below.
+        self._graphs_module = GraphModule()
+
+        self.text_encoder = TextEncoder(
+            manifest, session, graphs_module=self._graphs_module
+        )
+        self.image_encoder = ImageEncoder(
+            manifest, session, graphs_module=self._graphs_module
+        )
+        self.decoder = VaeDecoder(
+            manifest, session, graphs_module=self._graphs_module
+        )
 
         # Conditionally build fused OR split denoise graphs.
         self._denoise_compute: DenoiseCompute | None
@@ -291,10 +290,74 @@ class Flux2Executor(
                 self._cache_config.taylorseer_max_order,
             )
             self.denoiser = None
-            self._denoise_compute = DenoiseCompute(manifest, session)
-            self._denoise_predict = DenoisePredict(
-                manifest, session, self._model_dtype, self._model_device
+            self._denoise_compute = DenoiseCompute(
+                manifest, session, graphs_module=self._graphs_module
             )
+            self._denoise_predict = DenoisePredict(
+                manifest,
+                session,
+                self._model_dtype,
+                self._model_device,
+                graphs_module=self._graphs_module,
+            )
+        else:
+            self.denoiser = Denoiser(
+                manifest, session, graphs_module=self._graphs_module
+            )
+            self._denoise_compute = None
+            self._denoise_predict = None
+
+        # Compile every component graph in one load_all.  Each
+        # CompiledComponent recorded its graph and weights_registry on
+        # itself during construction; we merge those registries here
+        # (asserting no key collisions) and resolve back to per-component
+        # Models via _attach_compiled_model below.
+        components: list[CompiledComponent] = [
+            self.text_encoder,
+            self.image_encoder,
+            self.decoder,
+        ]
+        if self.denoiser is not None:
+            components.append(self.denoiser)
+        else:
+            assert self._denoise_compute is not None
+            assert self._denoise_predict is not None
+            components.extend([self._denoise_compute, self._denoise_predict])
+
+        combined_registry: dict[str, Any] = {}
+        for component in components:
+            for key, value in component._pending_weights.items():
+                if key in combined_registry:
+                    raise RuntimeError(
+                        f"FLUX2 load_all: weight key {key!r} appears in "
+                        f"multiple components; rename one to disambiguate."
+                    )
+                combined_registry[key] = value
+
+        graph_names = [c._pending_graph_name for c in components]
+        logger.info(
+            "Compiling FLUX2 graphs via session.load_all (%d graphs: %s)...",
+            len(graph_names),
+            ", ".join(repr(n) for n in graph_names if n is not None),
+        )
+        t0 = time.perf_counter()
+        with Tracer("Flux2Executor.compile_load_all"):
+            models = session.load_all(
+                self._graphs_module, weights_registry=combined_registry
+            )
+        elapsed = time.perf_counter() - t0
+        logger.info(
+            "Compiled FLUX2 graphs via session.load_all (%d graphs) in %.2fs",
+            len(models),
+            elapsed,
+        )
+
+        for component in components:
+            component._attach_compiled_model(models)
+
+        # TaylorSeer cache compiles its own internal helper graphs and
+        # stays outside the shared load_all (no significant compile cost).
+        if self._cache_config.taylorseer:
             self._taylor_cache = TaylorSeerCache(
                 config=self._cache_config,
                 dtype=self._model_dtype,
@@ -302,9 +365,6 @@ class Flux2Executor(
                 session=session,
             )
         else:
-            self.denoiser = Denoiser(manifest, session)
-            self._denoise_compute = None
-            self._denoise_predict = None
             self._taylor_cache = None
 
     # -- PipelineExecutor interface -------------------------------------------
@@ -373,12 +433,6 @@ class Flux2Executor(
         if context.input_image is not None:
             input_image = Buffer.from_dlpack(context.input_image)
 
-        residual_threshold: Buffer | None = None
-        if context.residual_threshold is not None:
-            residual_threshold = Buffer.from_dlpack(
-                np.array(context.residual_threshold, dtype=np.float32)
-            )
-
         return Flux2ExecutorInputs(
             tokens=tokens,
             text_ids=text_ids,
@@ -395,7 +449,6 @@ class Flux2Executor(
             num_inference_steps=num_inference_steps,
             num_images_per_prompt=num_images_per_prompt,
             input_image=input_image,
-            residual_threshold=residual_threshold,
         )
 
     @traced(message="execute")
@@ -435,7 +488,6 @@ class Flux2Executor(
             dts=inputs.dts,
             guidance=inputs.guidance,
             num_inference_steps=inputs.num_inference_steps,
-            residual_threshold=inputs.residual_threshold,
         )
 
         # 4) Decode final latents into images (Graph 4).
@@ -580,7 +632,6 @@ class Flux2Executor(
         dts: Buffer,
         guidance: Buffer,
         num_inference_steps: Buffer,
-        residual_threshold: Buffer | None,
     ) -> Buffer:
         """Orchestrate the N-step denoising loop.
 
@@ -611,8 +662,6 @@ class Flux2Executor(
             dts: Precomputed step deltas, shape ``(num_steps,)`` (float32).
             guidance: Guidance scale, shape ``(B,)``.
             num_inference_steps: 1-element int64 tensor.
-            residual_threshold: FBCache residual threshold scalar, or
-                ``None`` when first-block caching is disabled.
 
         Returns:
             Final denoised latents, shape ``(B, seq, C)``.

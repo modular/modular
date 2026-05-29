@@ -24,9 +24,11 @@ from std.reflection.type_info import _unqualified_type_name
 from std.sys import align_of, size_of
 from std.sys.info import is_gpu
 from std.sys.defines import get_defined_int
+from std.ffi import CStringSlice
 
 from std.bit import byte_swap
 from std.memory import Span, bitcast, memcpy
+from std.reflection.traits import AllWritable
 
 
 def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
@@ -149,6 +151,7 @@ def write_sequence_to[
         end: The ending delimiter.
         sep: The separator between items (default: `", "`).
     """
+    comptime assert AllWritable[*Ts]  # satisfy where clause.
     args._write_to(writer, start=start, end=end, sep=sep)
 
 
@@ -342,6 +345,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Returns:
             A reference to this `FormatStruct` instance for method chaining.
         """
+        comptime assert AllWritable[*Ts]  # satisfy where clause.
         args._write_to(self._writer[], start="[", end="]")
         return self
 
@@ -359,6 +363,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Args:
             args: The field values to write.
         """
+        comptime assert AllWritable[*Ts]  # satisfy where clause.
         args._write_to(self._writer[], start="(", end=")")
 
     # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
@@ -443,7 +448,9 @@ struct _WriteBufferHeap(Writable, Writer):
             StringSlice(unsafe_from_utf8=Span(ptr=self._data, length=self._pos))
         )
 
-    def nul_terminate(mut self):
+    def nul_terminate(
+        mut self,
+    ) -> CStringSlice[origin_of(self).unsafe_mut_cast[False]()]:
         if self._pos + 1 > HEAP_BUFFER_BYTES:
             _printf[
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
@@ -452,6 +459,12 @@ struct _WriteBufferHeap(Writable, Writer):
             abort()
         self._data[self._pos] = 0
         self._pos += 1
+
+        return CStringSlice(
+            unsafe_from_ptr=self._data.bitcast[Int8]()
+            .as_immutable()
+            .unsafe_origin_cast[origin_of(self).unsafe_mut_cast[False]()]()
+        )
 
     def as_string_slice[
         mut: Bool, origin: Origin[mut=mut], //
@@ -581,11 +594,11 @@ def _hex_digits_to_hex_chars(
         comptime S = StringSlice[origin_of(items)]
         var ptr = items.unsafe_ptr()
         ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
-        assert_equal("0001f525", S(ptr=ptr, length=8))
+        assert_equal("0001f525", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
         ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
-        assert_equal("4f60", S(ptr=ptr, length=4))
+        assert_equal("4f60", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
         ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
-        assert_equal("d6", S(ptr=ptr, length=2))
+        assert_equal("d6", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
     ```
     """
     comptime size = size_of[decimal.dtype]()

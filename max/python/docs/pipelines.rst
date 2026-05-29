@@ -120,6 +120,13 @@ Utilities
    supported_encoding_supported_on
    upper_bounded_default
 
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   ADAPTER_CONFIG_FILE
+
 Submodules
 ----------
 
@@ -128,6 +135,7 @@ Submodules
 
    pipelines.architectures
    pipelines.core
+   pipelines.kv_cache
    pipelines.lib
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities

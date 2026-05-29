@@ -123,7 +123,7 @@ def main() raises:
         var grid_dim_y = ceildiv(Width, block_dim_y)
 
         # Launch kernel
-        ctx.enqueue_function_experimental[matrix_mul_kernel](
+        ctx.enqueue_function[matrix_mul_kernel](
             A_d,
             B_d,
             C_d,

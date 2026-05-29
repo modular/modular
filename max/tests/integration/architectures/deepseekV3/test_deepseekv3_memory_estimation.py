@@ -51,6 +51,7 @@ def mock_pipeline_config(
     pipeline_config.runtime.ep_size = NUM_RANKS
     pipeline_config.runtime.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK
     pipeline_config.runtime.device_graph_capture = False
+    pipeline_config.runtime.ep_use_allreduce = False
     pipeline_config.speculative = None
 
     return pipeline_config

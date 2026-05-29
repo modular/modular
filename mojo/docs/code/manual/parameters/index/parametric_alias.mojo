@@ -15,10 +15,11 @@ from std.testing import assert_true
 
 def main() raises:
     # start-basic-example
-    comptime addOne[x: Int]: Int = x + 1
-    comptime nine = addOne[8]
-    assert_true(nine == 9)
+    comptime AddOne[a: Int]: Int = a + 1
+
+    comptime nine = AddOne[8]
     # end-basic-example
+    assert_true(nine == 9)
 
     # start-function-example
     def add_one(a: Int) -> Int:

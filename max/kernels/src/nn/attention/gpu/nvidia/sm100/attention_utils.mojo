@@ -25,6 +25,7 @@ from std.math import ceildiv, exp2, align_up, iota
 from std.math.constants import log2e
 from std.sys import size_of
 from std.sys._assembly import inlined_assembly
+from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -54,9 +55,22 @@ from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.mha_mask import MHAMask, MASK_VALUE, MaskStrategy
+from nn.attention.mha_operand import (
+    MHAOperand,
+    PagedRowIndices,
+    kv_sub_tile_rows,
+    kv_num_sub_tiles,
+)
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
+
+
+# IEEE-754 FP32 exponent bias.  Clamping `exp2` inputs at
+# `-FP32_EXP_BIAS` keeps the result within FP32's representable range
+# (the smallest normal positive float32 is `2^-126`, and going much
+# more negative just underflows to zero).
+comptime FP32_EXP_BIAS = 127
 
 
 # TileTensor-based aliases for storage (native types)
@@ -96,6 +110,10 @@ comptime SharedMemPointer[type: AnyType] = UnsafePointer[
     type, MutAnyOrigin, address_space=AddressSpace.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
+
+
+# PagedRowIndices, kv_sub_tile_rows, kv_num_sub_tiles are now defined in
+# nn.attention.mha_operand and re-exported via the import above.
 
 
 def extract_power_of_two(N: Int, i: Int) -> Int:
@@ -1061,7 +1079,9 @@ def elect() -> Int32:
 
 @always_inline
 def llvm_opaque_tid() -> UInt32:
-    return inlined_assembly["mov.u32 $0, %tid.x;", UInt32, constraints="=r"]()
+    return llvm_intrinsic[
+        "llvm.nvvm.read.ptx.sreg.tid.x", UInt32, has_side_effect=True
+    ]()
 
 
 @always_inline
@@ -1171,11 +1191,15 @@ def exp2_emulation[
 ](x: SIMD[DType.float32, 2]) -> SIMD[DType.float32, 2]:
     comptime if use_exp2_emulation:
         comptime fp32_round_int = SIMD[DType.float32, 2]((1 << 23) + (1 << 22))
-        clamped = max(x, -127)
+        clamped = max(x, -FP32_EXP_BIAS)
         # We want to round down here, so that the fractional part is in [0, 1)
         rounded = add_ftz_rm(clamped, fp32_round_int)
         rounded_back = sub_ftz(rounded, fp32_round_int)
         frac = sub_ftz(clamped, rounded_back)
+        # Degree-3 polynomial approximation of `2^x` on `x ∈ [0, 1)`.
+        # Coefficients lifted from Tri Dao's FlashAttention-3
+        # `exp2_emulated` (Dao-AILab/flash-attention, `flash_fwd_kernel*`)
+        # — fit by minimax over the unit interval.
         # Tri Dao assumes x <= 127.0 and y <= 127.0
         frac_ex2 = fma_ftz(
             fma_ftz(
@@ -1237,6 +1261,47 @@ def elect_mma_arrive[
         NoneType,
         constraints="r, r",
     ](Int32(Int(mbar_ptr)), elect)
+
+
+@always_inline
+def expect_bytes_pred(
+    mbar_ptr: UnsafePointer[address_space=AddressSpace.SHARED, ...],
+    bytes: Int32,
+    pred: Int32,
+):
+    """Issue `mbarrier.arrive.expect_tx.shared::cta.b64` predicated on
+    `pred != 0`.
+
+    Equivalent to:
+
+        if pred != 0:
+            mbar_ptr[].expect_bytes(bytes)
+
+    but folds the runtime branch into a single PTX `@%p` predicate
+    on the `mbarrier.arrive.expect_tx` instruction — no Mojo-level
+    `if`, no SASS branch, no warp divergence.
+
+    Args:
+        mbar_ptr: Pointer to the shared-memory mbarrier (8-byte slot).
+        bytes: Expected transaction byte count for this barrier.
+        pred: Runtime predicate (typically the result of `elect()` or
+            an `elect()`-derived `elect_mask`); the PTX instruction is
+            skipped when this is 0.
+    """
+
+    comptime type = mbar_ptr.type
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+
+    inlined_assembly[
+        """{
+        .reg .pred %p;
+        .reg .b64 %state;
+        setp.ne.s32 %p, $2, 0;
+        @%p mbarrier.arrive.expect_tx.shared::cta.b64 %state, [$0], $1;
+        }""",
+        NoneType,
+        constraints="r,r,r",
+    ](Int32(Int(mbar_ptr)), bytes, pred)
 
 
 @always_inline
@@ -1964,12 +2029,19 @@ def apply_mask[
     comptime if (
         MaskStrategy.LOWER_TRIANGULAR in mask_strategy
         or MaskStrategy.UPPER_TRIANGULAR in mask_strategy
+        or (
+            MaskStrategy.OUT_OF_BOUNDS in mask_strategy
+            and MaskStrategy.COMPUTED not in mask_strategy
+        )
     ):
         comptime num_batches = BN // 32
         comptime assert (BN % 32) == 0
 
         # when score_row == kv_tile_start_row, 1 is valid
         var n_valid: Int32 = max(1 + score_row - kv_tile_start_row, 0)
+        # OOB counter: number of in-bound columns (score_col < num_keys)
+        # remaining from the start of the current batch.
+        var n_valid_oob: Int32 = max(num_keys - kv_tile_start_row, 0)
 
         comptime for batch in range(num_batches):
             var mask_bits: UInt32 = 0xFFFF_FFFF
@@ -2007,6 +2079,16 @@ def apply_mask[
                     < 32 else 0
                 ) if mask_off_count > 0 else mask_bits
 
+            comptime if MaskStrategy.OUT_OF_BOUNDS in mask_strategy:
+                # Bit i (0..31) of this batch corresponds to global column
+                # `kv_tile_start_row + 32*batch + i`. It is in-bounds iff
+                # that column is `< num_keys`, i.e. iff `i < n_valid_oob`.
+                # When `n_valid_oob >= 32`, all 32 columns are in-bound and
+                # the AND is a no-op.
+                mask_bits = (
+                    mask_bits & ((UInt32(1) << UInt32(n_valid_oob)) - UInt32(1))
+                ) if n_valid_oob < 32 else mask_bits
+
             comptime for n in range(32 // simd_size):
                 comptime frag_col_simd = n + 32 * batch // simd_size
                 comptime frag_col = frag_col_simd * simd_size
@@ -2026,23 +2108,16 @@ def apply_mask[
                     var val: Float32 = s[i]
                     s[i] = val if in_bound else MASK_VALUE
 
-                var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
-                var result = apply_oob_mask[
-                    mask_strategy=mask_strategy,
-                    apply_log2e_after_mask=MaskType.apply_log2e_after_mask,
-                ](
-                    s,
-                    prompt_idx=prompt_idx,
-                    q_head_idx=q_head_idx,
-                    kv_tile_start_row=kv_tile_start_row,
-                    max_seq_len=max_seq_len,
-                    num_keys=num_keys,
-                    score_row=score_row,
-                    score_col=score_col,
-                )
-                srow[frag_col] = result[0]
-                srow[frag_col + 1] = result[1]
+                # OOB is now folded into `mask_bits` above (when applicable),
+                # so we only need the optional log2e multiply that
+                # `apply_oob_mask` would otherwise perform.
+                comptime if MaskType.apply_log2e_after_mask:
+                    s = mul_ftz(s, log2e)
+
+                srow[frag_col] = s[0]
+                srow[frag_col + 1] = s[1]
             n_valid = max(n_valid - 32, 0)
+            n_valid_oob = max(n_valid_oob - 32, 0)
 
     else:
         comptime block_size = BN // simd_size

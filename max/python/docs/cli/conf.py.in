@@ -22,5 +22,10 @@ markdown_meta_front_matter = True
 markdown_meta_wrapper_class = "sphinx-docs cli-docs"
 markdown_field_definition_lists = True
 
+# Keep ASCII apostrophes/quotes in flag help text. Click descriptions are
+# parsed verbatim by docs consumers and copy-pasted into shells; smart quotes
+# break grep and copy-paste fidelity.
+smartquotes = False
+
 # templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]

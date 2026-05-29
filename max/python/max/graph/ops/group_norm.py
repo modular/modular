@@ -28,25 +28,53 @@ def group_norm(
     num_groups: int,
     epsilon: float,
 ) -> TensorValue:
-    """Performs group normalization.
+    """Computes group normalization over the channel axis of ``input``.
 
-    Divides channels into groups and computes normalization statistics
-    within each group. Useful for small batch sizes where batch
+    Splits the channel axis (axis 1) of ``input`` into ``num_groups``
+    groups, computes the mean and variance within each group, and
+    normalizes. ``gamma`` and ``beta`` then apply a per-channel affine
+    transform. Useful when the batch axis is small enough that batch
     normalization is unstable.
 
+    For example:
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType, ops
+
+        with Graph(
+            "gn",
+            input_types=[
+                TensorType(DType.float32, ("batch", 128, 32, 32), DeviceRef.GPU()),
+                TensorType(DType.float32, (128,), DeviceRef.GPU()),
+                TensorType(DType.float32, (128,), DeviceRef.GPU()),
+            ],
+        ) as g:
+            x, gamma, beta = g.inputs
+            y = ops.group_norm(
+                x.tensor, gamma.tensor, beta.tensor,
+                num_groups=32, epsilon=1e-5,
+            )
+            g.output(y)
+
     Args:
-        input: The input tensor of shape ``[N, C, ...]`` to normalize.
-        gamma: The scale parameter of shape ``[C]``.
-        beta: The bias parameter of shape ``[C]``.
-        num_groups: The number of groups to divide the channels into.
-        epsilon: A small value added to the denominator for numerical
-            stability.
+        input: The tensor to normalize, of shape
+            ``(batch, channels, ...)``.
+        gamma: The per-channel scale applied after normalization. A 1-D
+            tensor whose length matches the channel axis of ``input``.
+        beta: The per-channel bias added after scaling. A 1-D tensor with
+            the same shape as ``gamma``.
+        num_groups: The number of groups to split the channel axis into.
+            Must divide the channel size evenly.
+        epsilon: A small positive constant added to the variance for
+            numerical stability.
 
     Returns:
-        A normalized tensor with the same shape as ``input``.
+        A tensor with the same shape and dtype as ``input``.
 
     Raises:
-        ValueError: If the input tensor has fewer than 2 dimensions.
+        ValueError: If ``input`` has fewer than 2 dimensions.
     """
     input = TensorValue(input)
     gamma = TensorValue(gamma)

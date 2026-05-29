@@ -239,7 +239,7 @@ def main() raises:
             ")...",
         )
 
-        ctx.enqueue_function_experimental[mm_tiled_kernel](
+        ctx.enqueue_function[mm_tiled_kernel](
             d_A,
             d_B,
             d_C,

@@ -8,6 +8,29 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_incremental_detokenizer",
+    size = "medium",
+    srcs = [
+        "test_incremental_detokenizer.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_TELEMETRY_ENABLED": "true",
+    },
+    env_inherit = ["HF_TOKEN"],
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/serve/pipelines:incremental_detokenizer",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "tests",
     size = "large",
     srcs = [
@@ -60,15 +83,48 @@ modular_py_test(
         "MODULAR_TELEMETRY_ENABLED": "true",
     },
     env_inherit = ["HF_TOKEN"],
+    # Removed in PR #85020 once `_class_name` population is fixed and these
+    # deps become load-bearing at runtime.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("jinja2"),
+    ],
     tags = [
         "manual",
         "no-sandbox",
         "requires-network",
     ],
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
+        requirement("jinja2"),
         requirement("numpy"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tiktoken_structured_output_compatibility",
+    size = "medium",
+    srcs = [
+        "test_tiktoken_structured_output_compatibility.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_TELEMETRY_ENABLED": "true",
+    },
+    env_inherit = ["HF_TOKEN"],
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("llguidance"),
+        requirement("transformers"),
     ],
 )

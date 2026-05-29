@@ -24,6 +24,7 @@ from std.sys.intrinsics import (
 from std.gpu.primitives.id import lane_id
 from std.memory import Span
 from std.memory.unsafe_pointer import _Null
+from std.os import abort
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -618,6 +619,9 @@ struct header_t(TrivialRegisterPassable):
 @fieldwise_init
 struct Payload(TrivialRegisterPassable):
     var _handle: UnsafePointer[payload_t, MutExternalOrigin]
+
+    def __getitem__(self, idx0: Int, idx1: Int) -> UInt64:
+        abort("shouldn't load from this")
 
     @always_inline
     def __setitem__(mut self, idx0: Int, idx1: Int, value: UInt64):

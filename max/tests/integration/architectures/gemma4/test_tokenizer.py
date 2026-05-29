@@ -16,21 +16,24 @@
 from __future__ import annotations
 
 import io
+import json
 from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 import pytest
-from max.interfaces import (
-    ImageContentPart,
-    RequestID,
-    TextContentPart,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
-    VideoContentPart,
-)
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.architectures.gemma4.video_processor import VideoMetadata
 from max.pipelines.lib import KVCacheConfig
+from max.pipelines.modeling.types import (
+    ImageContentPart,
+    RequestID,
+    SamplingParams,
+    TextContentPart,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationResponseFormat,
+    VideoContentPart,
+)
 from PIL import Image
 from pytest_mock import MockerFixture
 
@@ -159,6 +162,104 @@ async def test_text_only_smoke(
     assert len(context.video_token_ranges) == 0
     # All token_type_ids should be 0 (text)
     assert np.all(context.mm_token_type_ids == 0)
+
+
+@pytest.mark.asyncio
+async def test_response_format_without_json_schema_key(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """``response_format`` without a ``json_schema`` value must yield
+    ``json_schema=None`` on the context.
+    """
+    delegate = _make_mock_delegate()
+    text_tokens = np.array([2, 100, 200, 300, 3], dtype=np.int64)
+    delegate.return_value = {"input_ids": [text_tokens.tolist()]}
+    delegate.apply_chat_template.return_value = "Hello world"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    request = TextGenerationRequest(
+        messages=[
+            TextGenerationRequestMessage(role="user", content="Hello world")
+        ],
+        request_id=RequestID("test-rf-no-schema"),
+        model_name="test-model",
+        response_format=TextGenerationResponseFormat(type="json_object"),
+    )
+
+    context = await tokenizer.new_context(request)
+
+    assert context.json_schema is None
+
+
+@pytest.mark.asyncio
+async def test_response_format_with_json_schema_key(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """When ``response_format`` carries a real schema, it is serialized
+    onto the context for the grammar compiler."""
+    delegate = _make_mock_delegate()
+    text_tokens = np.array([2, 100, 200, 300, 3], dtype=np.int64)
+    delegate.return_value = {"input_ids": [text_tokens.tolist()]}
+    delegate.apply_chat_template.return_value = "Hello world"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    schema = {
+        "type": "object",
+        "properties": {"x": {"type": "integer"}},
+        "required": ["x"],
+    }
+    request = TextGenerationRequest(
+        messages=[
+            TextGenerationRequestMessage(role="user", content="Hello world")
+        ],
+        request_id=RequestID("test-rf-with-schema"),
+        model_name="test-model",
+        response_format=TextGenerationResponseFormat(
+            type="json_schema",
+            grammar=None,
+            json_schema=schema,
+            grammar_enforced=False,
+            tools_forced=False,
+        ),
+    )
+
+    context = await tokenizer.new_context(request)
+
+    assert context.json_schema is not None
+    assert json.loads(context.json_schema) == schema
+
+
+@pytest.mark.asyncio
+async def test_no_response_format(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """Default request with no ``response_format`` yields ``json_schema=None``."""
+    delegate = _make_mock_delegate()
+    text_tokens = np.array([2, 100, 200, 300, 3], dtype=np.int64)
+    delegate.return_value = {"input_ids": [text_tokens.tolist()]}
+    delegate.apply_chat_template.return_value = "Hello world"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    request = TextGenerationRequest(
+        messages=[
+            TextGenerationRequestMessage(role="user", content="Hello world")
+        ],
+        request_id=RequestID("test-no-rf"),
+        model_name="test-model",
+    )
+
+    context = await tokenizer.new_context(request)
+
+    assert context.json_schema is None
 
 
 @pytest.mark.asyncio
@@ -457,3 +558,108 @@ async def test_text_only_no_images_or_videos(
     assert len(context.video_frame_patches) == 0
     assert len(context.video_frame_pos_ids) == 0
     assert len(context.video_token_ranges) == 0
+
+
+@pytest.mark.asyncio
+async def test_structured_output_json_schema(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """Request with json_schema response_format sets context.json_schema."""
+    delegate = _make_mock_delegate()
+    delegate.return_value = {"input_ids": [[2, 100, 200, 3]]}
+    delegate.apply_chat_template.return_value = "Extract name and age"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    schema = {
+        "title": "Person",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+        },
+        "required": ["name", "age"],
+    }
+    request = TextGenerationRequest(
+        messages=[
+            TextGenerationRequestMessage(
+                role="user", content="Extract name and age"
+            )
+        ],
+        request_id=RequestID("test-json-schema"),
+        model_name="test-model",
+        sampling_params=SamplingParams(max_new_tokens=50),
+        response_format=TextGenerationResponseFormat(
+            type="json_schema",
+            json_schema=schema,
+            grammar=None,
+        ),
+    )
+
+    context = await tokenizer.new_context(request)
+
+    assert context.json_schema is not None
+    parsed = json.loads(context.json_schema)
+    assert parsed["title"] == "Person"
+    assert "name" in parsed["properties"]
+    assert context.grammar is None
+
+
+@pytest.mark.asyncio
+async def test_structured_output_grammar(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """Request with grammar response_format sets context.grammar."""
+    delegate = _make_mock_delegate()
+    delegate.return_value = {"input_ids": [[2, 100, 200, 3]]}
+    delegate.apply_chat_template.return_value = "Generate output"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    test_grammar = r'start: "yes" | "no"'
+    request = TextGenerationRequest(
+        messages=[
+            TextGenerationRequestMessage(role="user", content="Generate output")
+        ],
+        request_id=RequestID("test-grammar"),
+        model_name="test-model",
+        sampling_params=SamplingParams(max_new_tokens=10),
+        response_format=TextGenerationResponseFormat(
+            type="grammar",
+            json_schema={},
+            grammar=test_grammar,
+        ),
+    )
+
+    context = await tokenizer.new_context(request)
+
+    assert context.grammar == test_grammar
+
+
+@pytest.mark.asyncio
+async def test_no_response_format_no_grammar(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """Request without response_format has None for json_schema and grammar."""
+    delegate = _make_mock_delegate()
+    delegate.return_value = {"input_ids": [[2, 100, 200, 3]]}
+    delegate.apply_chat_template.return_value = "Hello"
+    _patch_tokenizer_deps(mocker, delegate)
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+    request = TextGenerationRequest(
+        messages=[TextGenerationRequestMessage(role="user", content="Hello")],
+        request_id=RequestID("test-no-fmt"),
+        model_name="test-model",
+    )
+
+    context = await tokenizer.new_context(request)
+
+    assert context.json_schema is None
+    assert context.grammar is None

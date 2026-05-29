@@ -26,23 +26,19 @@ modular_py_test(
             "conftest.py",
             "test_flashinfer_fp4_gemm.py",
             "test_functional_custom_gpu.py",
+            "test_philox_torch_divergence.py",
         ],
     ),
-    args = [
-        "-n",
-        "auto",
-    ],
     data = [
         "//max/tests/integration/Inputs/kernel_verification_ops",
     ],
     env = {
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
-    ignore_extra_deps = [
-        # Used for parallel testing
-        requirement("pytest-xdist"),
-    ],
     imports = ["."],
+    per_test_shard_count = {
+        "test_functional_other.py": 8,
+    },
     target_compatible_with = select({
         # Takes too long, this is mostly just testing plumbing into other code so low value.
         "//:asan": ["@platforms//:incompatible"],
@@ -60,7 +56,6 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
-        requirement("pytest-xdist"),
     ],
 )
 
@@ -93,6 +88,25 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/dtype",
         "//max/python/max/experimental/nn",
+    ],
+)
+
+modular_py_test(
+    name = "test_philox_torch_divergence",
+    size = "small",
+    srcs = ["test_philox_torch_divergence.py"],
+    imports = ["."],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        requirement("torch"),
     ],
 )
 

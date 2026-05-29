@@ -18,12 +18,12 @@ import logging
 import os
 
 import uvloop
-from max.interfaces import PipelineTask
 from max.pipelines import (
     PIPELINE_REGISTRY,
     AudioGenerationConfig,
     PipelineConfig,
 )
+from max.pipelines.modeling.types import PipelineTask
 from max.profiler import Tracer
 from max.serve.api_server import (
     ServingTokenGeneratorSettings,
@@ -83,6 +83,8 @@ def serve_api_server_and_model_worker(
         tokenizer=tokenizer,
         pipeline_task=pipeline_task,
         reasoning_parser_name=pipeline_config.runtime.reasoning_parser,
+        temperature=pipeline_config.runtime.temperature,
+        thinking_temperature=pipeline_config.runtime.thinking_temperature,
     )
 
     # Initialize and serve webserver.

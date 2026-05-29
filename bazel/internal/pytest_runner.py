@@ -165,6 +165,16 @@ fi
         f"junit_suite_name={os.environ['TEST_TARGET']}",
     ]
 
+    if total_shards := os.environ.get("TEST_TOTAL_SHARDS"):
+        Path(os.environ["TEST_SHARD_STATUS_FILE"]).touch()
+        shard_id = os.environ["TEST_SHARD_INDEX"]
+        pytest_args.extend(
+            [
+                f"--shard-id={shard_id}",
+                f"--num-shards={total_shards}",
+            ]
+        )
+
     if importlib.util.find_spec("pytest_asyncio"):
         pytest_args.append("--asyncio-mode=auto")
 

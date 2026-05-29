@@ -303,7 +303,7 @@ def main() raises:
         h_flags.free()
 
         # Launch kernel
-        ctx.enqueue_function_experimental[scan_kernel](
+        ctx.enqueue_function[scan_kernel](
             d_input,
             d_output,
             d_block_counter,

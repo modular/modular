@@ -29,12 +29,15 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from typing import Any
 
-from max.interfaces import (
-    ParsedToolCall,
-    ParsedToolCallDelta,
-    ParsedToolResponse,
+from llguidance import LLMatcher
+from max.pipelines.lib.tool_parsing import (
+    StructuralTagToolParser,
+    names_from_tools,
+    register,
 )
+from max.pipelines.modeling.types import ParsedToolCall
 
 # Structural tags used by Kimi K2.5
 TOOL_CALLS_SECTION_BEGIN = "<|tool_calls_section_begin|>"
@@ -43,7 +46,27 @@ TOOL_CALL_BEGIN = "<|tool_call_begin|>"
 TOOL_CALL_END = "<|tool_call_end|>"
 TOOL_CALL_ARGUMENT_BEGIN = "<|tool_call_argument_begin|>"
 
-# Regex pattern for extracting individual tool calls
+# Bounds on the constrained-decoding grammar quantifiers. Without these,
+# a model can spin emitting digits in the call index or an unbounded
+# number of back-to-back calls, holding a GPU slot until ``max_tokens``.
+# The argument body is intentionally unbounded — tool arguments can be
+# arbitrarily large (e.g. code blobs, embedded documents, search-result
+# payloads being re-emitted) and a fixed cap would silently drop them.
+# The ``max_tokens`` ceiling is the only meaningful upper bound there.
+_MAX_TOOL_CALL_INDEX_DIGITS = 8  # up to 99_999_999 tool calls per turn
+_MAX_TOOL_CALLS_PER_SECTION = 64
+_MAX_TOOL_CALL_SECTIONS = 1
+
+# JSON string pattern for the tool-call body regex. Matches a complete
+# JSON string including proper escape-sequence handling: any character
+# except quote/backslash, or a backslash followed by any character.
+# This allows ``<`` inside strings (e.g. ``"if (x < y)"`` or HTML/XML)
+# while still rejecting ``<`` outside strings where it signals the
+# closing structural tag ``<|tool_call_end|>``.
+_JSON_STRING_PATTERN = r'"(?:[^"\\]|\\.)*"'
+
+# Regex for one ``<|tool_call_begin|>...<|tool_call_end|>`` body. The
+# function id and arguments are captured; the call markers are anchored.
 _TOOL_CALL_PATTERN = re.compile(
     rf"{re.escape(TOOL_CALL_BEGIN)}"
     rf"(?P<function_id>[^\n<]+)"
@@ -55,120 +78,178 @@ _TOOL_CALL_PATTERN = re.compile(
 
 
 def _parse_function_id(function_id: str) -> tuple[str, str]:
-    """Parses a Kimi function ID into (name, call_id).
+    """Parses a Kimi function ID into ``(name, call_id)``.
 
-    Kimi function IDs have the format: functions.{name}:{idx}
-    Some IDs may lack the "functions." prefix (e.g., "search:2").
-
-    Args:
-        function_id: The raw function ID string.
-
-    Returns:
-        A tuple of (function_name, call_id).
+    Kimi function IDs have the format ``functions.{name}:{idx}``. Some
+    IDs may lack the ``functions.`` prefix (for example, ``search:2``)
+    or the index suffix. The call id always begins with ``call_`` and
+    includes the index when one is present, matching the OpenAI-style
+    tool id with a stable suffix per call.
     """
     function_id = function_id.strip()
 
-    # Try standard format: functions.{name}:{idx}
+    # Standard form: functions.{name}:{idx}
     if "." in function_id:
         try:
-            # Split on first '.' to get past "functions" prefix
             _, rest = function_id.split(".", 1)
-            # Split on ':' to separate name from index
             if ":" in rest:
-                name, idx = rest.rsplit(":", 1)
+                name, _ = rest.rsplit(":", 1)
             else:
                 name = rest
-                idx = "0"
             short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-            return name, f"call_{short_uuid}_{idx}"
+            return name, f"{name}:{short_uuid}"
         except (ValueError, IndexError):
             pass
 
-    # Fallback for non-prefixed IDs like "search:2"
+    # Fallback for non-prefixed ids like "search:2"
     if ":" in function_id:
-        name, idx = function_id.rsplit(":", 1)
+        name, _ = function_id.rsplit(":", 1)
         short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-        return name, f"call_{short_uuid}_{idx}"
+        return name, f"{name}:{short_uuid}"
 
-    # Last resort: use whole string as name
     short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-    return function_id, f"call_{short_uuid}"
+    return function_id, f"{function_id}:{short_uuid}"
 
 
-class KimiToolParser:
+@register("kimik2_5")
+class KimiToolParser(StructuralTagToolParser):
     """Parses Kimi K2.5-style tool calls from model responses.
 
-    Kimi K2.5 uses structural tags to delimit tool calls rather than
-    relying on JSON extraction from free-form text.
+    Kimi K2.5 wraps tool calls in section/call markers and embeds the
+    function name as a compound ``functions.{name}:{idx}`` identifier
+    before a dedicated argument-begin marker. Arguments are raw JSON,
+    which the base class can diff directly.
     """
 
-    def __init__(self) -> None:
-        self._buffer: str = ""
+    SECTION_BEGIN = TOOL_CALLS_SECTION_BEGIN
+    SECTION_END = TOOL_CALLS_SECTION_END
+    CALL_BEGIN = TOOL_CALL_BEGIN
+    CALL_END = TOOL_CALL_END
 
-    def parse_complete(self, response: str) -> ParsedToolResponse:
-        """Parses a complete response into tool calls."""
+    def _parse_complete_section(
+        self, tool_section: str
+    ) -> list[ParsedToolCall]:
         tool_calls: list[ParsedToolCall] = []
-
-        # Check if response contains tool calls section
-        if TOOL_CALLS_SECTION_BEGIN not in response:
-            # No tool calls in response
-            return ParsedToolResponse(content=response, tool_calls=[])
-
-        # Extract content before tool calls section (if any)
-        content_before: str | None = None
-        section_start_idx = response.find(TOOL_CALLS_SECTION_BEGIN)
-        if section_start_idx > 0:
-            content_before = response[:section_start_idx].strip() or None
-
-        # Extract the tool calls section
-        section_end_idx = response.find(TOOL_CALLS_SECTION_END)
-        if section_end_idx == -1:
-            section_end_idx = len(response)
-
-        tool_section = response[
-            section_start_idx + len(TOOL_CALLS_SECTION_BEGIN) : section_end_idx
-        ]
-
-        # Parse individual tool calls
         for match in _TOOL_CALL_PATTERN.finditer(tool_section):
             function_id = match.group("function_id")
             arguments_str = match.group("arguments").strip()
 
             name, call_id = _parse_function_id(function_id)
+            if not name:
+                continue
 
-            # Validate arguments is valid JSON
             try:
-                # Parse and re-serialize to ensure valid JSON
                 args_obj = json.loads(arguments_str)
                 arguments_json = json.dumps(args_obj)
             except json.JSONDecodeError:
-                # If not valid JSON, use as-is (may fail downstream)
+                # Pass through to surface upstream rather than dropping.
                 arguments_json = arguments_str
 
-            tool_call = ParsedToolCall(
-                id=call_id,
-                name=name,
-                arguments=arguments_json,
+            tool_calls.append(
+                ParsedToolCall(id=call_id, name=name, arguments=arguments_json)
             )
-            tool_calls.append(tool_call)
+        return tool_calls
 
-        if not tool_calls:
-            raise ValueError(
-                f"Tool calls section found but no valid tool calls parsed from: {tool_section}"
-            )
+    def _split_tool_call_body(
+        self, body: str, is_complete: bool
+    ) -> tuple[str | None, str | None]:
+        """Splits ``functions.foo:0<|tool_call_argument_begin|>{...}``."""
+        arg_pos = body.find(TOOL_CALL_ARGUMENT_BEGIN)
+        if arg_pos == -1:
+            return None, None
+        header = body[:arg_pos].strip()
+        args = body[arg_pos + len(TOOL_CALL_ARGUMENT_BEGIN) :]
+        return header, args
 
-        return ParsedToolResponse(content=content_before, tool_calls=tool_calls)
+    def _extract_tool_id_and_name(
+        self, header: str
+    ) -> tuple[str | None, str | None]:
+        """Parses Kimi's ``functions.{name}:{idx}`` header.
 
-    def parse_delta(self, delta: str) -> list[ParsedToolCallDelta] | None:
-        """Parses incremental deltas for streaming tool calls.
-
-        Note: Streaming tool call parsing for Kimi is not yet implemented.
-        This method accumulates tokens but does not emit chunks.
+        Delegates to :func:`_parse_function_id`, which handles all known
+        Kimi header formats and always returns a valid (name, id) pair
+        for non-empty input. Returns ``(None, None)`` only when the
+        header is empty.
         """
-        self._buffer += delta
-        # TODO(SERVOPT-1180): Implement streaming delta parsing
-        return None
+        if not header:
+            return None, None
+        tool_name, tool_id = _parse_function_id(header)
+        return tool_id, tool_name
 
-    def reset(self) -> None:
-        """Resets internal state for a new streaming session."""
-        self._buffer = ""
+    # ----- Constrained decoding grammar (Kimi-specific) -----------------
+
+    @staticmethod
+    def _build_tool_call_regex(tool_names: list[str] | None = None) -> str:
+        """Builds the regex pattern for Kimi tool calls.
+
+        The count-style fields (call index digits, calls per section,
+        sections per response, function-name fallback length) are
+        bounded so a model cannot hold a GPU slot until ``max_tokens``
+        by spinning inside them; see the ``_MAX_TOOL_CALL_*`` constants
+        for the limits and rationale. The argument body quantifier is
+        intentionally unbounded — real tool arguments can be
+        arbitrarily large (code blobs, embedded documents, search-
+        result payloads being re-emitted), and ``max_tokens`` is the
+        only meaningful upper bound there. Real argument validation
+        still happens at parse time; the regex only enforces structural
+        framing.
+
+        The body pattern is JSON-string-aware: ``<`` is allowed inside
+        quoted strings (e.g. ``"if (x < y)"`` or HTML/XML content) but
+        rejected outside strings where it would signal the start of a
+        structural tag like ``<|tool_call_end|>``. This enables tool
+        arguments containing code comparisons, markup, or git diffs
+        without triggering premature tag detection.
+
+        With ``_MAX_TOOL_CALL_SECTIONS == 1`` the outer ``{1,1}``
+        quantifier is a structural no-op kept for readability. Bumping
+        it re-enables multiple back-to-back sections (Kimi emits these
+        when interleaving thinking with batches of calls).
+        """
+        if tool_names is not None:
+            escaped_names = [re.escape(name) for name in tool_names]
+            func_name_pattern = "(" + "|".join(escaped_names) + ")"
+        else:
+            # Fallback for the no-menu case: cap the name length so a
+            # spinning model can't pad the identifier forever.
+            func_name_pattern = r"[a-zA-Z0-9_-]{1,128}"
+
+        single_section = (
+            rf"{re.escape(TOOL_CALLS_SECTION_BEGIN)}"
+            r"("
+            rf"{re.escape(TOOL_CALL_BEGIN)}"
+            rf"functions\.{func_name_pattern}:[0-9]{{1,{_MAX_TOOL_CALL_INDEX_DIGITS}}}"
+            rf"{re.escape(TOOL_CALL_ARGUMENT_BEGIN)}"
+            rf"\{{(?:[^\"<]|{_JSON_STRING_PATTERN})*\}}"
+            rf"{re.escape(TOOL_CALL_END)}"
+            rf"){{1,{_MAX_TOOL_CALLS_PER_SECTION}}}"
+            rf"{re.escape(TOOL_CALLS_SECTION_END)}"
+        )
+        return rf"({single_section}){{1,{_MAX_TOOL_CALL_SECTIONS}}}"
+
+    @staticmethod
+    def generate_tool_call_grammar(
+        response_format_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Generates a grammar for constrained decoding of Kimi tool calls.
+
+        When ``response_format_schema`` is provided, returns a combined
+        Lark grammar that accepts either tool calls or JSON content
+        matching the schema (the model's first tokens select the branch).
+        """
+        tool_names = names_from_tools(tools)
+        tool_call_regex = KimiToolParser._build_tool_call_regex(tool_names)
+
+        if response_format_schema is None:
+            return LLMatcher.grammar_from_regex(tool_call_regex)
+
+        schema_str = json.dumps(response_format_schema)
+        combined_grammar = f"""
+start: tool_calls | json_response
+tool_calls: TOOL_CALL_PATTERN
+TOOL_CALL_PATTERN: /{tool_call_regex}/
+json_response: %json {schema_str}
+"""
+        return combined_grammar

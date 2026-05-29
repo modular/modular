@@ -19,7 +19,7 @@ from std.sys.info import (
     simd_width_of,
 )
 
-from compiler_internal import register
+from extensibility import register
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -60,8 +60,8 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+
+from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils import StaticTuple
 from std.utils.index import Index, IndexList
@@ -88,7 +88,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
         b: InputTensor[dtype=DType.float16, rank=2, ...],
         perform_validation: Bool,
         # the context is needed for some GPU calls
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
@@ -96,7 +96,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             a_layout = a.to_layout_tensor()
             b_layout = b.to_layout_tensor()
 
-            gpu_ctx = ctx.get_device_context()
+            gpu_ctx = ctx
 
             var b_ptr_to_use: UnsafePointer[Float16, MutAnyOrigin]
 
@@ -172,7 +172,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[native_kernel, native_kernel](
+                    gpu_ctx.enqueue_function[native_kernel](
                         a_layout,
                         b_layout,
                         out_layout,
@@ -204,9 +204,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[
-                        basic_shared_mem_kernel, basic_shared_mem_kernel
-                    ](
+                    gpu_ctx.enqueue_function[basic_shared_mem_kernel](
                         a_layout,
                         b_layout,
                         out_layout,
@@ -242,9 +240,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[
-                        multi_block_tiled_kernel, multi_block_tiled_kernel
-                    ](
+                    gpu_ctx.enqueue_function[multi_block_tiled_kernel](
                         a_layout,
                         b_layout,
                         out_layout,
@@ -280,9 +276,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[
-                        scheduler_hints_kernel, scheduler_hints_kernel
-                    ](
+                    gpu_ctx.enqueue_function[scheduler_hints_kernel](
                         a_layout,
                         b_layout,
                         out_layout,
@@ -318,9 +312,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[
-                        double_buffer_kernel, double_buffer_kernel
-                    ](
+                    gpu_ctx.enqueue_function[double_buffer_kernel](
                         a_layout,
                         b_layout,
                         out_layout,
@@ -359,9 +351,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[
-                        mma_tile_buffers_kernel, mma_tile_buffers_kernel
-                    ](
+                    gpu_ctx.enqueue_function[mma_tile_buffers_kernel](
                         a_layout,
                         b_layout_transposed,
                         out_layout,
@@ -405,9 +395,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     MMA_K,
                 ]
 
-                gpu_ctx.enqueue_function[
-                    naive_tensor_kernel, naive_tensor_kernel
-                ](
+                gpu_ctx.enqueue_function[naive_tensor_kernel](
                     a_layout,
                     b_layout,
                     reference,

@@ -15,7 +15,6 @@ from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
 
-from layout.coord import RuntimeInt
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
 from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -78,7 +77,7 @@ from std.algorithm import vectorize
 #     C[a_offsets[i]:a_offsets[i+1], :] = A[a_offsets[i]:a_offsets[i+1], :] @ B[expert_ids[i], :, :].T
 
 
-@__name(t"naive_grouped_matmul_kernel_{c_type}_{a_type}_{b_type}", mangle=True)
+@__name(t"naive_grouped_matmul_kernel_{c_type}_{a_type}_{b_type}")
 def naive_grouped_matmul_kernel[
     c_type: DType,
     a_type: DType,
@@ -165,14 +164,14 @@ def naive_epilogue[
     var N = Int(c.dim[1]())
     comptime simd_size = simd_width_of[c_type]()
     var block_dim = (128 // simd_size, simd_size, 1)
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c,
         grid_dim=(ceildiv(N, block_dim[0]), ceildiv(M, block_dim[1]), 1),
         block_dim=block_dim,
     )
 
 
-@__name(t"naive_epilogue_kernel_{c_type}", mangle=True)
+@__name(t"naive_epilogue_kernel_{c_type}")
 def naive_epilogue_kernel[
     c_type: DType,
     CLayout: TensorLayout,
@@ -210,7 +209,6 @@ def naive_epilogue_kernel[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__name(
     t"grouped_matmul_kernel_sm100_{a_type}_{b_type}_{c_type}_t{num_threads}",
-    mangle=True,
 )
 def grouped_matmul_kernel_sm100[
     a_type: DType,
@@ -622,7 +620,7 @@ def grouped_matmul_sm100[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         a_offsets,
@@ -696,8 +694,8 @@ def grouped_matmul_amd_kernel_launcher[
     # Only perform matmul if expert_id is not -1
     # AMD matmul kernel performs the epilogue function
     if expert_id != -1:
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx[N]())))
-        var a_tile = TileTensor(a_ptr, row_major(Coord(Idx(Int(M)), Idx[K]())))
+        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
+        var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[K])))
         var b_tile = TileTensor(b_ptr, row_major[N, K]())
         AMDMatmul[
             a_type,
@@ -712,7 +710,7 @@ def grouped_matmul_amd_kernel_launcher[
 
     # Perform the epilogue function separately if expert_id is -1
     else:
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx[N]())))
+        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
         _ = c_tile.fill(0.0)
 
         comptime if elementwise_lambda_fn:
@@ -897,6 +895,9 @@ def grouped_matmul_amd[
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
     comptime assert b.flat_rank == 3, "b must be rank 3"
 
+    if num_active_experts == 0 or max_num_tokens_per_expert == 0:
+        return
+
     comptime num_experts = b.static_shape[0]
     comptime N = b.static_shape[1]
     comptime K = b.static_shape[2]
@@ -942,7 +943,7 @@ def grouped_matmul_amd[
             config,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c,
             a,
             b_2d,
@@ -1192,7 +1193,7 @@ def naive_grouped_matmul[
         type_of(expert_ids).LayoutType,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c,
         a.as_immut(),
         b.as_immut(),
@@ -1241,8 +1242,8 @@ def grouped_matmul_vendor[
     comptime a_type = a.dtype
     comptime b_type = b.dtype
 
-    def _ri(v: Int) -> RuntimeInt[DType.int64]:
-        return RuntimeInt[DType.int64](Int64(v))
+    def _ri(v: Int) -> Int64:
+        return Int64(v)
 
     # Extract dimensions from TileTensors directly.
     var c_N = Int(c.dim[1]())

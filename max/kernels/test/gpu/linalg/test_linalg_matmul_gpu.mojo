@@ -68,18 +68,22 @@ def matmul_test_case[
     var mat_c_dev = ctx.enqueue_create_buffer[dtype](Int(shape_c.product()))
     var mat_c_tensor = TileTensor(mat_c_dev, row_major(shape_c))
 
-    var mat_a_host = TileTensor(
-        alloc[Scalar[dtype]](Int(shape_a.product())), row_major(shape_a)
+    var mat_a_host_buf = ctx.enqueue_create_host_buffer[dtype](
+        Int(shape_a.product())
     )
-    var mat_b_host = TileTensor(
-        alloc[Scalar[dtype]](Int(shape_b.product())), row_major(shape_b)
+    var mat_a_host = TileTensor(mat_a_host_buf, row_major(shape_a))
+    var mat_b_host_buf = ctx.enqueue_create_host_buffer[dtype](
+        Int(shape_b.product())
     )
-    var mat_c_host = TileTensor(
-        alloc[Scalar[dtype]](Int(shape_c.product())), row_major(shape_c)
+    var mat_b_host = TileTensor(mat_b_host_buf, row_major(shape_b))
+    var mat_c_host_buf = ctx.enqueue_create_host_buffer[dtype](
+        Int(shape_c.product())
     )
-    var mat_c_ref_host = TileTensor(
-        alloc[Scalar[dtype]](Int(shape_c.product())), row_major(shape_c)
+    var mat_c_host = TileTensor(mat_c_host_buf, row_major(shape_c))
+    var mat_c_ref_host_buf = ctx.enqueue_create_host_buffer[dtype](
+        Int(shape_c.product())
     )
+    var mat_c_ref_host = TileTensor(mat_c_ref_host_buf, row_major(shape_c))
 
     _linspace_fill(mat_a_host)
     _linspace_fill(mat_b_host)
@@ -98,15 +102,13 @@ def matmul_test_case[
     # support applying the epilogue on the final result.
     matmul(mat_c_ref_host, mat_a_host, mat_b_host)
 
+    comptime assert type_of(shape_c[0]).DTYPE.is_integral()
+    comptime assert type_of(shape_c[1]).DTYPE.is_integral()
+
     for m in range(shape_c[0].value()):
         for n in range(shape_c[1].value()):
             comptime assert mat_c_ref_host.flat_rank == 2
             assert_almost_equal(mat_c_ref_host[m, n], mat_c_host[m, n])
-
-    mat_a_host.ptr.free()
-    mat_b_host.ptr.free()
-    mat_c_host.ptr.free()
-    mat_c_ref_host.ptr.free()
 
 
 def create_matmul_test_case[
@@ -117,9 +119,5 @@ def create_matmul_test_case[
 
 def main() raises:
     with DeviceContext() as ctx:
-        create_matmul_test_case[DType.float32](
-            ctx, Idx(Int(8)), Idx[8](), Idx[4]()
-        )
-        create_matmul_test_case[DType.float32](
-            ctx, Idx(Int(16)), Idx[16](), Idx[8]()
-        )
+        create_matmul_test_case[DType.float32](ctx, Int(8), Idx[8], Idx[4])
+        create_matmul_test_case[DType.float32](ctx, Int(16), Idx[16], Idx[8])

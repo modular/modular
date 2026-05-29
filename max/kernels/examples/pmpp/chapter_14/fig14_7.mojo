@@ -226,7 +226,7 @@ def main() raises:
 
     for iter in range(num_bits):
         # Extract bits
-        ctx.enqueue_function_experimental[radix_sort_iter](
+        ctx.enqueue_function[radix_sort_iter](
             current_input,
             current_output,
             d_bits,
@@ -254,7 +254,7 @@ def main() raises:
         ctx.synchronize()
 
         # Scatter based on scan results
-        ctx.enqueue_function_experimental[radix_scatter](
+        ctx.enqueue_function[radix_scatter](
             current_input,
             current_output,
             d_bits,

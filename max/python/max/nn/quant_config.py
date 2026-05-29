@@ -244,17 +244,44 @@ class QuantConfig:
     embedding_output_dtype: DType | None = None
     """The :class:`~max.dtype.DType` of the output from the embedding layer."""
 
+    shared_experts_weight_dtype: DType | None = None
+    """Weight storage dtype for MoE shared-expert MLPs when they differ from routed experts.
+
+    When ``None``, shared experts use the same dtype and quantization as routed experts.
+    When set (e.g. :class:`~max.dtype.DType.bfloat16` for mixed Kimi K2.6 NVFP4
+    checkpoints), shared-expert linears omit ``quant_config`` while routed experts
+    remain quantized.
+    """
+
     bias_dtype: DType | None = None
     """The :class:`~max.dtype.DType` of bias weights."""
 
     can_use_fused_mlp: bool = False
     """Whether the quantization scales can be used with fused MLP operations."""
 
+    can_use_fused_swiglu_nvfp4: bool = False
+    """Whether to use the fused NVFP4 grouped matmul + SwiGLU + NVFP4 quant
+    SM100 kernel for the MoE gate/up projection. When ``True``, the MoE layer
+    pre-permutes ``gate_up_proj`` and its scales on the N axis
+    (``sigma(2i)=i, sigma(2i+1)=D+i``) and dispatches the internal
+    ``_grouped_matmul_swiglu_nvfp4`` kernel wrapper. Defaults to ``False``
+    so the chained (matmul -> BF16 -> SwiGLU+quant) path is unchanged."""
+
     scales_pre_interleaved: bool = False
     """Whether weight scales in the checkpoint are already stored in the 5D
     TCGEN-interleaved layout expected by the FP4 matmul kernel (NVFP4 only).
     Note that scales in the 5D TCGEN-interleaved layout are typically flattened
     to 2D ``[M, K//16]`` in the checkpoint."""
+
+    mxfp4_preshuffled_b: bool = False
+    """Whether MXFP4 weight ``B`` is preshuffled into the 5D layout that the
+    AMD preb kernel reads (produced by ``Shuffler.preshuffle_b_5d``). When
+    True, ``MoEQuantized`` dispatches the grouped matmul to the
+    ``mxfp4_grouped_matmul_amd_preb`` kernel variant; when False (default)
+    it dispatches to the dense row-major ``mxfp4_grouped_matmul_amd``
+    kernel. Must be set in lockstep with the weight loader actually
+    applying the preshuffle (e.g. Kimi K2.5's
+    ``weight_adapters.py:_shuffle_group``)."""
 
     @property
     def scales_granularity_mnk(self) -> tuple[int, int, int]:
@@ -321,6 +348,19 @@ class QuantConfig:
     def is_fp4(self) -> bool:
         """``True`` if this config represents any FP4 variant (NVFP4 or MXFP4)."""
         return self.is_nvfp4 or self.is_mxfp4
+
+    def shared_experts_dtype(self, routed_weight_dtype: DType) -> DType:
+        """Resolve weight dtype for MoE shared-expert MLPs."""
+        if self.shared_experts_weight_dtype is not None:
+            return self.shared_experts_weight_dtype
+        return routed_weight_dtype
+
+    def shared_experts_use_quant(self, routed_weight_dtype: DType) -> bool:
+        """Whether shared experts use the same quantized weights as routed experts."""
+        return (
+            self.shared_experts_dtype(routed_weight_dtype)
+            == routed_weight_dtype
+        )
 
     def quantized_scales_type(
         self, quantized_shape: Shape, device_ref: DeviceRef

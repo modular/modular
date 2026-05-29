@@ -36,6 +36,17 @@ from max.nn.quant_config import (
 from transformers import AutoConfig
 
 
+def _get_num_hidden_layers(huggingface_config: AutoConfig) -> int:
+    """Retrieve the number of hidden layers from the HuggingFace configuration.
+
+    If the model is multi-modal, the number of hidden layers is taken from the text_config.
+    """
+    if hasattr(huggingface_config, "text_config"):
+        return huggingface_config.text_config.num_hidden_layers
+    else:
+        return huggingface_config.num_hidden_layers
+
+
 def _quantized_layers_and_embedding_dtype(
     huggingface_config: AutoConfig,
     ignored_modules: set[str],
@@ -48,11 +59,7 @@ def _quantized_layers_and_embedding_dtype(
     # TODO: For llama3, the layer name re-mapping is not applied to the `ignore`
     # list in quantization config, hence the two prefixes are needed here.
     """
-    # Handle multimodal configs where num_hidden_layers is in text_config
-    if hasattr(huggingface_config, "text_config"):
-        num_hidden_layers = huggingface_config.text_config.num_hidden_layers
-    else:
-        num_hidden_layers = huggingface_config.num_hidden_layers
+    num_hidden_layers = _get_num_hidden_layers(huggingface_config)
     mlp_quantized_layers: set[int] = set()
     attn_quantized_layers: set[int] = set()
 
@@ -453,10 +460,7 @@ def _parse_blockscaled_fp8_config(
 
     # All layers use FP8 in this format (e.g. Qwen3-30B-A3B FP8, DeepSeekV3).
     # modules_to_not_convert only lists layernorms and router gate, not linear layers.
-    if hasattr(huggingface_config, "text_config"):
-        num_hidden_layers = huggingface_config.text_config.num_hidden_layers
-    else:
-        num_hidden_layers = huggingface_config.num_hidden_layers
+    num_hidden_layers = _get_num_hidden_layers(huggingface_config)
     all_layers = set(range(num_hidden_layers))
 
     return QuantConfig(
@@ -645,7 +649,8 @@ def _parse_modelopt_float4_config(
     bias_dtype = _bias_dtype(state_dict)
 
     # All layers use float4 in modelopt NVFP4 checkpoints.
-    all_layers = set(range(huggingface_config.num_hidden_layers))
+    num_hidden_layers = _get_num_hidden_layers(huggingface_config)
+    all_layers = set(range(num_hidden_layers))
 
     return QuantConfig(
         input_scale=input_spec,
@@ -703,11 +708,7 @@ def _parse_mxfp4_config(
 
     bias_dtype = _bias_dtype(state_dict)
 
-    # Handle multimodal configs
-    if hasattr(huggingface_config, "text_config"):
-        num_hidden_layers = huggingface_config.text_config.num_hidden_layers
-    else:
-        num_hidden_layers = huggingface_config.num_hidden_layers
+    num_hidden_layers = _get_num_hidden_layers(huggingface_config)
     all_layers = set(range(num_hidden_layers))
 
     # MXFP4 only quantizes MoE expert weights; attention stays BF16.
@@ -833,5 +834,16 @@ def parse_quant_config(
                 "Fused MLP is not supported for this model. "
                 "This may impact performance."
             )
+        # Default-on for NVFP4: the SM100 fused SwiGLU+NVFP4 grouped matmul
+        # kernel folds the MoE gate/up matmul + SwiGLU + NVFP4 quant into a
+        # single launch, saving one BF16 HBM round trip per MoE layer.
+        # Process-time kill-switch: ``MAX_DISABLE_FUSED_SWIGLU_NVFP4=1``.
+        # The kill-switch flips the QuantConfig flag so the model's
+        # ``gate_up_proj`` and ``gate_up_proj_scales`` properties (which
+        # gate the sigma-permutation on this flag) stay byte-equal to the
+        # historical chained-kernel path.
+        config.can_use_fused_swiglu_nvfp4 = bool(config.is_nvfp4) and (
+            os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1"
+        )
 
     return config

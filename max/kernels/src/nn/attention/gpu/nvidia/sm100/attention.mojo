@@ -26,6 +26,11 @@ comptime EnableForcedOrdering = get_defined_bool[
 ]()
 comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
 
+# Bytes per CTA in shared memory that the CUDA runtime reserves for
+# its own use; subtracted from `B200.shared_memory_per_multiprocessor`
+# to get the usable smem budget for SM100 attention kernels.
+comptime SM100_RESERVED_SMEM_BYTES = 1024
+
 
 struct FA4Config[
     qkv_dtype: DType,
@@ -69,7 +74,9 @@ struct FA4Config[
     comptime scale_dtype_size: Int = size_of[Self.scale_dtype]()
 
     comptime MMA_K: Int = 16 if Self.qkv_dtype.is_half_float() else 32
-    comptime sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
+    comptime sm100_smem_carveout = (
+        B200.shared_memory_per_multiprocessor - SM100_RESERVED_SMEM_BYTES
+    )
     comptime sm100_tmem_cols = 512
     comptime mbar_size = size_of[DType.int64]()
     comptime num_correction_cols = 1
@@ -192,8 +199,14 @@ struct FA4Config[
                 Self.MMA_K,
             ),
         )
-        # TODO : delete this as soon as we define splitting BN across the pages
-        if page_size % self.BN != 0:
+        # page_size == 0 means non-paged (no constraint).
+        # page_size >= BN: page contains full tile (page_size % BN == 0).
+        # page_size < BN: tile spans multiple pages (BN % page_size == 0).
+        if (
+            page_size != 0
+            and page_size % self.BN != 0
+            and self.BN % page_size != 0
+        ):
             self.BN = prev_power_of_two(self.BN)
         self.TMEM_S1 = Self.TMEM_S0 + self.BN
         self.TMEM_P0 = Self.TMEM_S0

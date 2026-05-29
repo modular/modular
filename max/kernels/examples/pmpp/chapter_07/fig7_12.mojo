@@ -134,7 +134,7 @@ def convolution_tiled_2d_const_mem(
     var grid_dim_y = ceildiv(height, OUT_TILE_DIM)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[convolution_tiled_2D_const_mem_kernel](
+    ctx.enqueue_function[convolution_tiled_2D_const_mem_kernel](
         d_in,
         d_filter,
         d_out,

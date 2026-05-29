@@ -20,16 +20,16 @@ IsInf).
 """
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.reflection import get_base_type_name
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import ElementwiseUnaryOp, ElementwiseUnaryMixedOp
-from MOGGKernelAPI.MOGGKernelAPI import (
+from std.reflection import reflect
+
+from extensibility import ElementwiseUnaryOp, ElementwiseUnaryMixedOp
+from elementwise_kernels import (
     Negative,
     Abs,
     ReLU,
@@ -88,7 +88,7 @@ comptime UNARY_PREDICATE_OPS = TypeList.of[
 
 def _is_gpu_allowed_unary_op[op: ElementwiseUnaryOp]() -> Bool:
     """Check if a unary op is allowed on GPU at compile time."""
-    comptime name = get_base_type_name[op]()
+    comptime name = reflect[op].base_name()
     # Basic ops, float ops, and boolean ops that work on GPU
     # Note: ATanh, Log1p, Erf use libm and don't work on GPU
     return (
@@ -112,7 +112,7 @@ def _is_gpu_allowed_unary_op[op: ElementwiseUnaryOp]() -> Bool:
 
 def _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
     """Check if a mixed-type unary op is allowed on GPU at compile time."""
-    comptime name = get_base_type_name[op]()
+    comptime name = reflect[op].base_name()
     return name == "IsNan" or name == "IsInf"
 
 
@@ -131,7 +131,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
         # Unary elementwise operations
         comptime for i in range(UNARY_ELEMENTWISE_OPS.size):
             comptime op = UNARY_ELEMENTWISE_OPS[i]
-            comptime name = get_base_type_name[op]()
+            comptime name = reflect[op].base_name()
             comptime docstring = StaticString("Elementwise " + name)
             b.def_function[unary_elementwise_dispatcher[op]](
                 name, docstring=docstring
@@ -140,7 +140,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
         # Unary float-only operations
         comptime for i in range(UNARY_FLOAT_ONLY_OPS.size):
             comptime op = UNARY_FLOAT_ONLY_OPS[i]
-            comptime name = get_base_type_name[op]()
+            comptime name = reflect[op].base_name()
             comptime docstring = StaticString(
                 "Elementwise " + name + " (float only)"
             )
@@ -156,7 +156,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
         # Unary predicate operations (float -> bool)
         comptime for i in range(UNARY_PREDICATE_OPS.size):
             comptime op = UNARY_PREDICATE_OPS[i]
-            comptime name = get_base_type_name[op]()
+            comptime name = reflect[op].base_name()
             comptime docstring = StaticString(
                 "Elementwise " + name + " predicate (float -> bool)"
             )
@@ -186,7 +186,7 @@ def unary_elementwise_dispatcher[
     Args:
         out_buffer: The output buffer object.
         in_buffer: The input buffer object.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
     var size = _get_size(out_buffer)
@@ -330,7 +330,7 @@ def unary_bool_dispatcher[
     Args:
         out_buffer: The output buffer object.
         in_buffer: The input buffer object.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
 
@@ -359,7 +359,7 @@ def unary_predicate_dispatcher[
     Args:
         out_buffer: The output buffer object (uint8/bool).
         in_buffer: The input buffer object (float).
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
     var out_ptr = _get_buffer_ptr[DType.bool](out_buffer)
@@ -412,7 +412,7 @@ def unary_elementwise_op[
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Elementwise unary operation: out = op(input).
 
@@ -424,7 +424,7 @@ def unary_elementwise_op[
         out_ptr: Pointer to the output buffer data.
         in_ptr: Pointer to the input buffer data.
         size: Number of elements to process.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
 
     @always_inline
@@ -436,17 +436,18 @@ def unary_elementwise_op[
         var res = op.elementwise(in_ptr.load[width=width](i))
         out_ptr.store[width=width](i, res)
 
-    if not ctx:
-        elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=simd_width_of[dtype]()](
+            IndexList[1](size), ctx
+        )
     else:
         # GPU execution - check GPU availability and op/dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_unary_op[
                 op
             ]() and dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](size), device_ctx
+                    IndexList[1](size), ctx
                 )
             else:
                 raise Error(
@@ -464,7 +465,7 @@ def unary_mixed_op[
     out_ptr: UnsafePointer[Scalar[out_dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Elementwise unary mixed-type operation: out = op(input).
 
@@ -477,7 +478,7 @@ def unary_mixed_op[
         out_ptr: Pointer to the output buffer data.
         in_ptr: Pointer to the input buffer data.
         size: Number of elements to process.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
 
     @always_inline
@@ -491,17 +492,18 @@ def unary_mixed_op[
         )
         out_ptr.store[width=width](i, res)
 
-    if not ctx:
-        elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=simd_width_of[dtype]()](
+            IndexList[1](size), ctx
+        )
     else:
         # GPU execution - check GPU availability and op/dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_mixed_unary_op[
                 op
             ]() and dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](size), device_ctx
+                    IndexList[1](size), ctx
                 )
             else:
                 raise Error(

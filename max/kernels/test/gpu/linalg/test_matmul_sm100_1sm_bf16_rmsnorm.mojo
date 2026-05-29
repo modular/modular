@@ -24,7 +24,6 @@ from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 from linalg.utils import elementwise_epilogue_type
 
 from internal_utils import assert_almost_equal
@@ -76,29 +75,29 @@ def test_rmsnorm_then_matmul[
     )
 
     # --- Shapes ---
-    var ak_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var ak_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = M * K
     var b_size = N * K
     var c_size = M * N
 
     # --- Host allocations ---
-    var a_raw_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var gamma_host_ptr = alloc[Scalar[a_type]](K)
-    var c_vendor_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_ours_host_ptr = alloc[Scalar[c_type]](c_size)
+    var a_raw_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var gamma_host_ptr = ctx.enqueue_create_host_buffer[a_type](K)
+    var c_vendor_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_ours_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     # Random A and B; gamma[i] = (i + K) / K
-    rand(a_raw_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
+    rand(a_raw_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
     for i in range(K):
         gamma_host_ptr[i] = (Float64(i + K) / Float64(K)).cast[a_type]()
 
@@ -111,7 +110,7 @@ def test_rmsnorm_then_matmul[
 
     var gamma_device = ctx.enqueue_create_buffer[a_type](K)
     var gamma_tensor = TileTensor(
-        gamma_device, row_major(Idx[KType.static_value]())
+        gamma_device, row_major(Idx[KType.static_value])
     )
 
     # Separate normalized-A buffers — one per launch, intentionally independent
@@ -154,7 +153,7 @@ def test_rmsnorm_then_matmul[
     @__copy_capture(a_normed_vendor_tensor)
     @parameter
     def output_fn_vendor[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[2], val: SIMD[a_type, width]) -> None:
         a_normed_vendor_tensor.raw_store[width=width, alignment=alignment](
             a_normed_vendor_tensor.layout(Coord(coords)), val
@@ -180,7 +179,7 @@ def test_rmsnorm_then_matmul[
     @__copy_capture(a_normed_ours_tensor)
     @parameter
     def output_fn_ours[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[2], val: SIMD[a_type, width]) -> None:
         a_normed_ours_tensor.raw_store[width=width, alignment=alignment](
             a_normed_ours_tensor.layout(Coord(coords)), val
@@ -207,7 +206,7 @@ def test_rmsnorm_then_matmul[
     @__copy_capture(c_ours_tensor)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -239,8 +238,8 @@ def test_rmsnorm_then_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_ours_host_ptr,
-        c_vendor_host_ptr,
+        c_ours_host_ptr.unsafe_ptr(),
+        c_vendor_host_ptr.unsafe_ptr(),
         c_size,
         atol=0.0001,
         rtol=1e-2,
@@ -248,11 +247,6 @@ def test_rmsnorm_then_matmul[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_raw_host_ptr.free()
-    b_host_ptr.free()
-    gamma_host_ptr.free()
-    c_vendor_host_ptr.free()
-    c_ours_host_ptr.free()
     _ = a_raw_device^
     _ = b_device^
     _ = gamma_device^
@@ -284,9 +278,9 @@ def main() raises:
                 swapAB=True,
             ](
                 ctx,
-                Idx(Int(m)),
-                Idx[4096](),
-                Idx[4096](),
+                Int(m),
+                Idx[4096],
+                Idx[4096],
             )
 
             test_rmsnorm_then_matmul[
@@ -303,9 +297,9 @@ def main() raises:
                 swapAB=True,
             ](
                 ctx,
-                Idx(Int(m)),
-                Idx[8192](),
-                Idx[7168](),
+                Int(m),
+                Idx[8192],
+                Idx[7168],
             )
 
         # PDL prefetch tests: same small-M shapes with swapAB=True,
@@ -327,9 +321,9 @@ def main() raises:
                 prefetch_tiles_n=2,
             ](
                 ctx,
-                Idx(Int(m)),
-                Idx[4096](),
-                Idx[4096](),
+                Int(m),
+                Idx[4096],
+                Idx[4096],
             )
 
             test_rmsnorm_then_matmul[
@@ -348,7 +342,7 @@ def main() raises:
                 prefetch_tiles_n=2,
             ](
                 ctx,
-                Idx(Int(m)),
-                Idx[8192](),
-                Idx[7168](),
+                Int(m),
+                Idx[8192],
+                Idx[7168],
             )

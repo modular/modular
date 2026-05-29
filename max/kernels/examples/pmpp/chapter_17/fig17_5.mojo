@@ -109,7 +109,7 @@ def main() raises:
     var blockSize = 256
     var numBlocks = (numNonzeros + blockSize - 1) // blockSize
 
-    ctx.enqueue_function_experimental[spmv_coo_kernel](
+    ctx.enqueue_function[spmv_coo_kernel](
         d_cooMatrix,
         d_x_buf,
         d_y_buf,

@@ -41,7 +41,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.utils import elementwise_epilogue_type
 
 from std.utils import Index, IndexList
@@ -91,7 +91,7 @@ def _get_run_name[
 
 
 comptime epilogue_func_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
@@ -106,7 +106,7 @@ def test_epilogue[
 @parameter
 def add_two[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     *,
     alignment: Int = 1,
 ](val: SIMD[dtype, width],) -> SIMD[dtype, width]:
@@ -186,8 +186,8 @@ def bench_grouped_matmul[
         sep="",
     )
 
-    def _ri(v: Int) -> RuntimeInt[DType.int64]:
-        return RuntimeInt[DType.int64](Int64(v))
+    def _ri(v: Int) -> Int64:
+        return Int64(v)
 
     # Define shapes and sizes
     # For fp4, data is stored as uint8 (2 fp4 values per byte), so K dimension is halved
@@ -197,13 +197,18 @@ def bench_grouped_matmul[
     var b_size = num_experts * N * packed_K
 
     # Host allocations
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var a_scale_offsets_ptr = alloc[Scalar[DType.uint32]](num_active_experts)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host_ptr = List(
+        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    )
+    var a_scale_offsets_ptr = List(
+        length=num_active_experts, fill=Scalar[DType.uint32](0)
+    )
+    var expert_ids_host_ptr = List(
+        length=num_active_experts, fill=Scalar[DType.int32](0)
+    )
 
     # Setup offsets and expert ids
     a_scale_dim0 = 0
-    a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
         var num_tokens = num_tokens_by_expert[i]
         a_scale_offsets_ptr[i] = UInt32(
@@ -239,15 +244,15 @@ def bench_grouped_matmul[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(_ri(total_num_tokens), Idx[packed_K]())),
+        row_major(Coord(_ri(total_num_tokens), Idx[packed_K])),
     ).as_any_origin()
     var b_dev = TileTensor(
         b_dev_buffer,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
     ).as_any_origin()
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(_ri(total_num_tokens), Idx[N]())),
+        row_major(Coord(_ri(total_num_tokens), Idx[N])),
     ).as_any_origin()
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
@@ -270,7 +275,7 @@ def bench_grouped_matmul[
     @__copy_capture(c_dev)
     @parameter
     def epilogue_fn[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 
@@ -342,11 +347,11 @@ def bench_grouped_matmul[
             a_scales_dev_buffer,
             row_major(
                 Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Int64(a_scale_dim0),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()
@@ -354,12 +359,12 @@ def bench_grouped_matmul[
             b_scales_dev_buffer,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[num_experts],
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()
@@ -367,7 +372,9 @@ def bench_grouped_matmul[
         var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
             num_experts
         )
-        var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
+        var expert_scales_host_ptr = List(
+            length=num_experts, fill=Scalar[DType.float32](0)
+        )
         for i in range(num_experts):
             expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(
                 num_experts
@@ -375,11 +382,7 @@ def bench_grouped_matmul[
         ctx.enqueue_copy(expert_scales_dev_buffer, expert_scales_host_ptr)
         var expert_scales_tt = TileTensor(
             expert_scales_dev_buffer,
-            row_major(
-                Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
-                )
-            ),
+            row_major(Coord(Int64(num_experts))),
         ).as_any_origin()
 
         @parameter
@@ -457,7 +460,7 @@ def bench_grouped_matmul[
         _ = b_scales_dev_buffer^
         _ = a_scale_offsets_dev_buffer^
         _ = expert_scales_dev_buffer^
-        expert_scales_host_ptr.free()
+        _ = expert_scales_host_ptr^
 
     elif in_type == DType.float8_e4m3fn:
         comptime assert (
@@ -479,15 +482,15 @@ def bench_grouped_matmul[
 
         var a_scales_dev = TileTensor(
             a_scales_dev_buffer,
-            row_major(Coord(Idx[K // BLOCK_SCALE_K](), _ri(total_num_tokens))),
+            row_major(Coord(Idx[K // BLOCK_SCALE_K], _ri(total_num_tokens))),
         ).as_any_origin()
         var b_scales_dev = TileTensor(
             b_scales_dev_buffer,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[N // BLOCK_SCALE_K](),
-                    Idx[K // BLOCK_SCALE_K](),
+                    Idx[num_experts],
+                    Idx[N // BLOCK_SCALE_K],
+                    Idx[K // BLOCK_SCALE_K],
                 )
             ),
         ).as_any_origin()
@@ -641,17 +644,15 @@ def bench_grouped_matmul[
             ],
         )
 
-    # Cleanup host pointers
-    a_offsets_host_ptr.free()
-    a_scale_offsets_ptr.free()
-    expert_ids_host_ptr.free()
-
     # Consume device buffers
     _ = a_dev_buffer^
     _ = b_dev_buffer^
     _ = c_dev_buffer^
     _ = a_offsets_dev_buffer^
     _ = expert_ids_dev_buffer^
+    _ = expert_ids_host_ptr^
+    _ = a_scale_offsets_ptr^
+    _ = a_offsets_host_ptr^
 
 
 def create_grouped_matmul_bench[

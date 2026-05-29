@@ -64,18 +64,23 @@ class MemoryEstimator:
 
     @classmethod
     def static_memory_size(
-        cls, model_weights_size: int, activation_memory_size: int
+        cls,
+        model_weights_size: int,
+        activation_memory_size: int,
+        signal_buffer_size: int = 0,
     ) -> int:
-        """Calculates static memory usage: model weights plus activations.
+        """Calculates static memory usage: model weights plus activations plus signal buffers.
 
         Args:
             model_weights_size: Size of model weights.
             activation_memory_size: Size of activation memory.
+            signal_buffer_size: Size of P2P signal buffers (fixed-size
+                allocations used by collective comm kernels). Defaults to 0.
 
         Returns:
             Total static memory usage in bytes.
         """
-        return model_weights_size + activation_memory_size
+        return model_weights_size + activation_memory_size + signal_buffer_size
 
     @classmethod
     def available_kv_cache_memory(
@@ -84,14 +89,16 @@ class MemoryEstimator:
         activation_memory_size: int,
         model_config: MAXModelConfig,
         devices: list[Device],
+        signal_buffer_size: int = 0,
     ) -> int:
-        """Estimates available KV cache memory after model weights and activations.
+        """Estimates available KV cache memory after model weights, activations, and signal buffers.
 
         Args:
             model_weights_size: Size of model weights.
             activation_memory_size: Size of activation memory.
             model_config: The model configuration.
             devices: The list of devices on which the model will run.
+            signal_buffer_size: Size of P2P signal buffers. Defaults to 0.
 
         Returns:
             Available KV cache memory in bytes.
@@ -101,7 +108,11 @@ class MemoryEstimator:
                 cls.free_memory(devices)
                 * model_config.kv_cache.device_memory_utilization
             )
-            - cls.static_memory_size(model_weights_size, activation_memory_size)
+            - cls.static_memory_size(
+                model_weights_size,
+                activation_memory_size,
+                signal_buffer_size,
+            )
         )
 
     @classmethod
@@ -112,6 +123,7 @@ class MemoryEstimator:
         model_config: MAXModelConfig,
         devices: list[Device],
         arch_config: ArchConfig,
+        signal_buffer_size: int = 0,
     ) -> int | None:
         """Computes the hard upper bound on tokens for a single request.
 
@@ -153,6 +165,7 @@ class MemoryEstimator:
                 activation_memory_size,
                 model_config,
                 devices,
+                signal_buffer_size,
             )
         return compute_max_seq_len_fitting_in_cache(
             params=params,
@@ -168,6 +181,7 @@ class MemoryEstimator:
         devices: list[Device],
         model_weights_size: int,
         activation_memory_size: int,
+        signal_buffer_size: int = 0,
     ) -> None:
         """Estimates memory footprint and validates ``max_length``/``max_batch_size`` fit."""
         is_draft_model = (
@@ -207,15 +221,18 @@ class MemoryEstimator:
                 model_config.max_length = arch_config.get_max_seq_len()
             return
 
-        # Total static memory requirement (weights + activations)
-        static_memory_size = model_weights_size + activation_memory_size
+        # Total static memory requirement (weights + activations + signal buffers)
+        static_memory_size = (
+            model_weights_size + activation_memory_size + signal_buffer_size
+        )
 
         if static_memory_size > free_memory:
             error_msg = f"Model size exceeds available memory ({to_human_readable_bytes(static_memory_size)} > {to_human_readable_bytes(free_memory)}). "
-            if activation_memory_size > 0:
+            if activation_memory_size > 0 or signal_buffer_size > 0:
                 error_msg += (
                     f"Model weights: {to_human_readable_bytes(model_weights_size)}, "
-                    f"Activation memory: {to_human_readable_bytes(activation_memory_size)}. "
+                    f"Activation memory: {to_human_readable_bytes(activation_memory_size)}, "
+                    f"Signal buffers: {to_human_readable_bytes(signal_buffer_size)}. "
                 )
             error_msg += "Try running a smaller model, using a smaller precision, or using a device with more memory."
             raise RuntimeError(error_msg)
@@ -228,10 +245,18 @@ class MemoryEstimator:
 
         if available_kv_cache_memory <= 0:
             raise RuntimeError(
-                f"The model {to_human_readable_bytes(model_weights_size)} and activations "
-                f"{to_human_readable_bytes(activation_memory_size)} don't leave room for KV cache. "
+                f"The model {to_human_readable_bytes(model_weights_size)}, activations "
+                f"{to_human_readable_bytes(activation_memory_size)}, and signal buffers "
+                f"{to_human_readable_bytes(signal_buffer_size)} don't leave room for KV cache. "
                 f"Try running a smaller model, using a smaller precision, or using a device with more memory."
             )
+
+        # KV cache is one buffer per device; budget can't exceed the
+        # per-allocation cap (Metal's maxBufferLength).
+        available_kv_cache_memory = min(
+            available_kv_cache_memory,
+            sum(d.max_single_alloc_size for d in devices),
+        )
 
         vision_cache_bytes = cls._reserve_vision_cache_memory(
             pipeline_config,

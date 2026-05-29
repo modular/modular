@@ -108,7 +108,7 @@ def main() raises:
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single block)
-        ctx.enqueue_function_experimental[shared_memory_sum_reduction_kernel](
+        ctx.enqueue_function[shared_memory_sum_reduction_kernel](
             d_input,
             d_output,
             grid_dim=(1, 1, 1),

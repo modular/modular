@@ -20,10 +20,15 @@ from std.memory import Span
 ```
 """
 from std.builtin.builtin_slice import ContiguousSlice
-from std.reflection import call_location
+from std.reflection import call_location, reflect
 from std.bit.mask import splat
 from std.bit import pop_count
-from std.memory import pack_bits, uninit_copy_n
+from std.memory import (
+    is_trivially_copyable,
+    is_trivially_destructible,
+    pack_bits,
+    uninit_copy_n,
+)
 from std.collections import check_bounds
 from std.builtin.rebind import downcast
 from std.sys import align_of
@@ -31,8 +36,7 @@ from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
 from std.hashlib import Hasher
-from std.builtin.device_passable import DevicePassable
-from std.compile import get_type_name
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 import std.format._utils as fmt
 
 
@@ -179,9 +183,11 @@ struct Span[
     comptime device_type: AnyType = Self
     """The device-side type for this `Span`."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -194,7 +200,7 @@ struct Span[
         """
         return String(
             "Span[",
-            get_type_name[Self.T](),
+            reflect[Self.T].name(),
             "]",
         )
 
@@ -237,7 +243,7 @@ struct Span[
     @always_inline
     @implicit
     def __init__(
-        out self, ref[Self.origin] list: List[downcast[Self.T, Copyable]]
+        out self, ref[Self.origin] list: List[downcast[Self.T, Movable]]
     ):
         """Construct a `Span` from a `List`.
 
@@ -431,9 +437,7 @@ struct Span[
             otherwise.
         """
         for i in range(len(self)):
-            if trait_downcast[Equatable](self[i]) == trait_downcast[Equatable](
-                value
-            ):
+            if self[i] == value:
                 return True
         return False
 
@@ -492,7 +496,7 @@ struct Span[
         """
         hasher._update_with_simd(Int64(len(self)))
         for i in range(len(self)):
-            trait_downcast[Hashable](self[i]).__hash__(hasher)
+            self[i].__hash__(hasher)
 
     # ===------------------------------------------------------------------===#
     # Methods
@@ -571,7 +575,9 @@ struct Span[
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than destroy_n + uninit_copy_n, which would be two
         # passes over memory with worse cache locality.
-        comptime if _T.__copy_ctor_is_trivial and _T.__del__is_trivial:
+        comptime if is_trivially_copyable[_T]() and is_trivially_destructible[
+            _T
+        ]():
             uninit_copy_n[overlapping=False](
                 dest=self.unsafe_ptr(),
                 src=other.unsafe_ptr(),
@@ -863,7 +869,7 @@ struct Span[
         """
 
         comptime simdwidth = simd_width_of[dtype]()
-        var ptr = self.unsafe_ptr()
+        var ptr = self.unsafe_ptr().as_immutable()
         var length = len(self)
         var count = 0
 
@@ -915,7 +921,7 @@ struct Span[
         var length = UInt(len(self))
         var value = needle - Scalar[dtype](1)  # just to make it different
         while length > 0:
-            var half = length >> UInt(Int(length > 1))
+            var half = length >> 1 if length > 1 else length
             length -= half
             value = self.unsafe_get(cursor + half - 1)
             cursor += UInt(splat(value < needle)) & half

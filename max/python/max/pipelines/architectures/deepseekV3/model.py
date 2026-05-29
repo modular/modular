@@ -17,32 +17,34 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, ops
+from max.graph import Graph, ops
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import estimate_ep_memory_usage
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.comm.ep.ep_config import (
+    calculate_ep_max_tokens_per_rank,
+    estimate_ep_memory_usage,
+)
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
-    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.config.config_enums import (
+from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.lib.utils import compute_data_parallel_splits
+from max.pipelines.modeling.config_enums import (
     is_float4_encoding,
     supported_encoding_dtype,
 )
-from max.pipelines.lib.quant import parse_quant_config
-from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
@@ -89,6 +91,8 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
 
+    model_config_cls: ClassVar[type[Any]] = DeepseekV3Config
+
     _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 
     @staticmethod
@@ -120,20 +124,15 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         return supported_encoding_dtype(draft_encoding)
 
     @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParamInterface:
-        return DeepseekV3Config.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
+    def _ep_max_rank_send_tokens_for_pipeline(
+        cls, pipeline_config: PipelineConfig
+    ) -> int:
+        """Upper bound on EP dispatch tokens held on one rank for this pipeline."""
+        return calculate_ep_max_tokens_per_rank(
+            max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+            ep_size=pipeline_config.runtime.ep_size,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            use_allreduce=pipeline_config.runtime.ep_use_allreduce,
         )
 
     def _create_model_config(
@@ -172,26 +171,22 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         else:
             if ep_size % len(self.devices) != 0:
                 raise ValueError(
-                    "If you are running with expert parallelism, ep_size must"
-                    " be set to the total number of GPUs across nodes."
+                    f"ep_size={ep_size} is not divisible by the number of GPUs"
+                    f" on this node ({len(self.devices)}). ep_size must equal"
+                    f" n_gpus_per_node * n_nodes. For a single-node deployment"
+                    f" set ep_size={len(self.devices)}."
                 )
-            n_nodes = ep_size // len(self.devices)
-
-            # With a mixed TP-attention + EP-MoE strategy, the attention output
-            # will be scattered across ranks, so each rank will only send a
-            # subset of the tokens.
-            attn_tp_size = ep_size // data_parallel_degree
-
             # TODO: Support TP attention for FP8 Deepseek-V3 models.
             if quant_config is not None and not quant_config.is_nvfp4:
-                if attn_tp_size > 1:
+                if ep_size > data_parallel_degree:
                     raise ValueError(
                         "TP attention is not supported for FP8 Deepseek-V3 models."
                     )
 
+            n_nodes = ep_size // len(self.devices)
+
             ep_max_rank_send_tokens = (
-                self.pipeline_config.runtime.max_batch_input_tokens
-                // attn_tp_size
+                self._ep_max_rank_send_tokens_for_pipeline(self.pipeline_config)
             )
 
             ep_kwargs: dict[str, Any] = dict(
@@ -204,6 +199,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_quant_config=None,
+                use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
             )
 
             if config.n_shared_experts == 1:
@@ -412,15 +408,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
 
-            # With a mixed TP-attention + EP-MoE strategy, the attention output
-            # will be scattered across ranks, so each rank will only send a
-            # subset of the tokens.
-            attn_tp_size = (
-                pipeline_config.runtime.ep_size
-                // pipeline_config.model.data_parallel_degree
-            )
-            ep_max_rank_send_tokens = (
-                pipeline_config.runtime.max_batch_input_tokens // attn_tp_size
+            ep_max_rank_send_tokens = cls._ep_max_rank_send_tokens_for_pipeline(
+                pipeline_config
             )
 
             # Calculate the maximum number of tokens a rank may receive during
@@ -431,6 +420,15 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 pipeline_config.runtime.ep_size
                 * huggingface_config.num_experts_per_tok,
             )
+
+            if pipeline_config.runtime.ep_use_allreduce:
+                max_recv_tokens_per_rank = (
+                    pipeline_config.runtime.max_batch_input_tokens
+                    * min(
+                        huggingface_config.n_routed_experts // n_gpus_per_node,
+                        huggingface_config.num_experts_per_tok,
+                    )
+                )
 
             # The maximal activation memory usage happens at the second
             # grouped_matmul in the MoE layer. The input for that matmul would
@@ -472,6 +470,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 n_nodes=n_nodes,
                 n_gpus_per_node=n_gpus_per_node,
                 top_k=huggingface_config.num_experts_per_tok,
+                use_allreduce=pipeline_config.runtime.ep_use_allreduce,
             )
             ep_buffer_memory = per_device_ep_memory * n_gpus_per_node
 

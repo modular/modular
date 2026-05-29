@@ -26,19 +26,40 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.graph.weights import WeightsFormat, weights_format
-from max.interfaces import SamplingParamsGenerationConfigDefaults
+from max.graph.weights import (
+    WeightsFormat,
+    load_weights,
+    weights_format,
+)
 from max.nn.kv_cache.cache_params import KVConnectorType
-from max.pipelines.lib.device_specs import coerce_device_specs_input
-from max.pipelines.lib.hf_utils import (
+from max.pipelines.lib._hf_config import load_huggingface_config
+from max.pipelines.lib.device_specs import (
+    _default_device_specs,
+    coerce_device_specs_input,
+)
+from max.pipelines.lib.memory_estimation import to_human_readable_bytes
+from max.pipelines.lib.weight_loader import (
+    WeightLoader,
+    _loader_over_weights,
+    dict_loader,
+)
+from max.pipelines.modeling.config_enums import (
+    RopeType,
+    SupportedEncoding,
+    parse_supported_encoding_from_file_name,
+    supported_encoding_quantization,
+    supported_encoding_supported_devices,
+    supported_encoding_supported_on,
+)
+from max.pipelines.modeling.kv_cache_config import KVCacheConfig
+from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
+from max.pipelines.modeling.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
-from max.pipelines.lib.memory_estimation import to_human_readable_bytes
-from max.pipelines.lib.registry import PIPELINE_REGISTRY
-from max.pipelines.lib.weight_path_parser import WeightPathParser
+from max.pipelines.modeling.weights.weight_path_parser import WeightPathParser
 from pydantic import (
     ConfigDict,
     Field,
@@ -49,18 +70,7 @@ from pydantic import (
 from transformers import PretrainedConfig
 from transformers.generation import GenerationConfig
 
-from .config_enums import (
-    RopeType,
-    SupportedEncoding,
-    parse_supported_encoding_from_file_name,
-    supported_encoding_quantization,
-    supported_encoding_supported_devices,
-    supported_encoding_supported_on,
-)
-from .kv_cache_config import KVCacheConfig
-
 logger = logging.getLogger("max.pipelines")
-
 
 # Encodings that can be casted to/from each other.
 # We currently only support float32 <-> bfloat16 weight type casting.
@@ -113,7 +123,7 @@ class MAXModelConfig(MAXModelConfigBase):
         default=None,
         description=(
             "Maximum sequence length the model can process. If not specified, "
-            "defaults to the model's max_position_embeddings. May be clamped "
+            "defaults to the model's ``max_position_embeddings``. May be clamped "
             "during resolution based on available memory."
         ),
     )
@@ -133,8 +143,8 @@ class MAXModelConfig(MAXModelConfigBase):
     model_path: str = Field(
         default="",
         description=(
-            "The repository ID of a Hugging Face model to use. "
-            "The `--model` option also works as an alias."
+            "Accepts either a Hugging Face repository ID "
+            "or a local path to the model."
         ),
     )
     """The repository ID of a Hugging Face model to use."""
@@ -143,21 +153,29 @@ class MAXModelConfig(MAXModelConfigBase):
         default=None,
         description=(
             "Optional override for client-facing model name. Defaults to "
-            "model_path."
+            "``model_path``."
         ),
     )
     """An optional override for the client-facing model name."""
 
     weight_path: list[Path] = Field(
         default_factory=list,
-        description="Optional path or url of the model weights to use.",
+        description=(
+            "Optional path or URL of the model weights to use. "
+            "Overrides default weight discovery."
+        ),
     )
     """The path or URL of the model weights to use."""
 
     # TODO(zheng): Move this under QuantizationConfig.
     quantization_encoding: SupportedEncoding | None = Field(
         default=None,
-        description="Weight encoding type.",
+        description=(
+            "Weight encoding type. For GGUF models, the encoding is "
+            "auto-detected from the repository when unset; if set, it must "
+            "match an available encoding. When the repository contains "
+            "multiple quantization formats, set this to choose one."
+        ),
     )
     """The weight encoding type."""
 
@@ -182,24 +200,24 @@ class MAXModelConfig(MAXModelConfigBase):
     trust_remote_code: bool = Field(
         default=False,
         description=(
-            "Whether or not to allow for custom modelling files on Hugging Face."
+            "Whether or not to allow for custom modeling files on Hugging Face."
         ),
     )
-    """Whether to allow custom modelling files from Hugging Face."""
+    """Whether to allow custom modeling files from Hugging Face."""
 
     subfolder: str | None = Field(
         default=None,
         description=(
             "Subdirectory within the HuggingFace repo to load config and "
-            "weights from (e.g., 'vae', 'text_encoder'). When set, "
-            "config.json and weights are resolved from "
-            "{model_path}/{subfolder}/."
+            "weights from (for example, ``vae`` or ``text_encoder``). When set, "
+            "``config.json`` and weights are resolved from "
+            "``{model_path}/{subfolder}/``."
         ),
     )
     """Subdirectory within the HuggingFace repo to load config and weights from."""
 
     device_specs: list[DeviceSpec] = Field(
-        default_factory=scan_available_devices,
+        default_factory=_default_device_specs,
         description=(
             "Devices to run inference upon. This option should not be used "
             "directly via the CLI entrypoint."
@@ -225,7 +243,7 @@ class MAXModelConfig(MAXModelConfigBase):
         default_factory=dict,
         description=(
             "Model-specific vision configuration overrides. For example, for "
-            'InternVL: {"max_dynamic_patch": 24}.'
+            'InternVL: ``{"max_dynamic_patch": 24}``.'
         ),
     )
     """Model-specific vision configuration overrides."""
@@ -233,11 +251,22 @@ class MAXModelConfig(MAXModelConfigBase):
     rope_type: RopeType | None = Field(
         default=None,
         description=(
-            "Force using a specific rope type: none, normal, or neox. Only "
-            "matters for GGUF weights."
+            "Force using a specific rope type. Only matters for GGUF weights."
         ),
     )
     """The RoPE type to use, forced regardless of model defaults."""
+
+    sliding_window: int | None = Field(
+        default=None,
+        description=(
+            "If set, overrides the model's attention to use a "
+            "sliding-window causal mask of this many tokens. ``None`` "
+            "(the default) defers to the HuggingFace config's "
+            "``sliding_window`` field, or full causal attention if the "
+            "model doesn't advertise one."
+        ),
+    )
+    """Override the attention sliding-window size in tokens."""
 
     enable_echo: bool = Field(
         default=False,
@@ -251,14 +280,14 @@ class MAXModelConfig(MAXModelConfigBase):
             "Optional custom chat template to override the one shipped with the "
             "Hugging Face model config. If a path is provided, the file is read "
             "during config resolution and the content stored as a string. If "
-            "None, the model's default chat template is used."
+            "``None``, the model's default chat template is used."
         ),
     )
     """An optional custom chat template to override the one shipped with the model."""
 
     kv_cache: KVCacheConfig = Field(
         default_factory=KVCacheConfig,
-        description="The KVCache config.",
+        description="The ``KVCacheConfig`` instance.",
     )
     """The KV cache configuration."""
 
@@ -848,13 +877,11 @@ class MAXModelConfig(MAXModelConfigBase):
                 model repo/subfolder.
         """
         # Note: For multiprocessing, __getstate__ clears _huggingface_config
-        # before pickling. Each worker process will reload the config fresh,
-        # which properly handles trust_remote_code dynamic class loading.
+        # before pickling. Each worker process reloads fresh, which correctly
+        # handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
-            self._huggingface_config = (
-                PIPELINE_REGISTRY.get_active_huggingface_config(
-                    huggingface_repo=self.huggingface_model_repo,
-                )
+            self._huggingface_config = load_huggingface_config(
+                self.huggingface_model_repo
             )
         return self._huggingface_config
 
@@ -1366,6 +1393,32 @@ class MAXModelConfig(MAXModelConfigBase):
         else:
             local_path = Path(weight_repo.repo_id)
             return [local_path / x for x in self.weight_path]
+
+    def loader(self) -> WeightLoader:
+        """Returns a :class:`WeightLoader` over this config's weights.
+
+        The loader's namespace is the raw parameter names from the source
+        files (un-prefixed). Pass this directly to a single-model
+        pipeline's Module tree; for multi-component pipelines, use
+        :meth:`~max.pipelines.lib.model_manifest.ModelManifest.loader`
+        which exposes the role-prefixed union across configs.
+
+        Resolution is lazy: the safetensors mmap stays cold for
+        parameters the Module never asks for. Inherits the HuggingFace
+        download side-effect from :meth:`resolved_weight_paths` for
+        online repos.
+
+        Returns an empty loader when there are no weight paths -- common
+        for components in a diffusion manifest that are config-only
+        (for example, the scheduler).
+
+        Returns:
+            A :class:`WeightLoader` over this config's source namespace.
+        """
+        paths = self.resolved_weight_paths()
+        if not paths:
+            return dict_loader({})
+        return _loader_over_weights(load_weights(paths))
 
     @property
     def default_device_spec(self) -> DeviceSpec:

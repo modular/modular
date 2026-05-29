@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from .context import (
+    GrammarEnforcementState,
     PixelContext,
     SpecDecodingState,
+    StructuredOutputRegionDelimiters,
     TextAndVisionContext,
     TextContext,
     TTSContext,
@@ -28,19 +30,19 @@ from .context_validators import (
     validate_vision_position_ids,
 )
 from .pixel_context_validators import (
-    validate_flux1_max_pixel_area,
     validate_flux2_max_pixel_area,
     validate_wan_max_pixel_area,
 )
 
 __all__ = [
+    "GrammarEnforcementState",
     "PixelContext",
     "SpecDecodingState",
+    "StructuredOutputRegionDelimiters",
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",
     "validate_aspect_ratio_args",
-    "validate_flux1_max_pixel_area",
     "validate_flux2_max_pixel_area",
     "validate_image_grid_thw_args",
     "validate_image_shape_5d",

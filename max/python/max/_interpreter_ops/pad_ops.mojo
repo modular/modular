@@ -30,13 +30,13 @@ Coordinate mapping (per output element, per axis):
 """
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from op_utils import (
     _get_dtype,
@@ -90,7 +90,7 @@ def pad_constant_op[
     in_strides: InlineArray[Int, MAX_RANK],
     rank: Int,
     total: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Fill output with input values inside the content region, constant outside.
 
@@ -113,7 +113,7 @@ def pad_constant_op[
         in_strides: Row-major strides of the input tensor.
         rank: Number of tensor dimensions.
         total: Total number of output elements.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
 
     @always_inline
@@ -148,13 +148,12 @@ def pad_constant_op[
         else:
             out_ptr[i] = constant
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -178,6 +177,7 @@ def pad_reflect_op[
     in_strides: InlineArray[Int, MAX_RANK],
     rank: Int,
     total: Int,
+    ctx: DeviceContext,
 ) raises:
     """Fill output by reflecting input values about the content-region edges.
 
@@ -199,6 +199,7 @@ def pad_reflect_op[
         in_strides: Row-major strides of the input tensor.
         rank: Number of tensor dimensions.
         total: Total number of output elements.
+        ctx: Device context (CPU).
     """
 
     @always_inline
@@ -229,7 +230,7 @@ def pad_reflect_op[
             in_flat += input_coord * in_strides[d]
         out_ptr[i] = in_ptr[in_flat]
 
-    elementwise[func, simd_width=1](IndexList[1](total))
+    elementwise[func, simd_width=1](IndexList[1](total), ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -250,6 +251,7 @@ def pad_repeat_op[
     in_strides: InlineArray[Int, MAX_RANK],
     rank: Int,
     total: Int,
+    ctx: DeviceContext,
 ) raises:
     """Fill output by repeating the nearest edge value of the input.
 
@@ -270,6 +272,7 @@ def pad_repeat_op[
         in_strides: Row-major strides of the input tensor.
         rank: Number of tensor dimensions.
         total: Total number of output elements.
+        ctx: Device context (CPU).
     """
 
     @always_inline
@@ -297,7 +300,7 @@ def pad_repeat_op[
             in_flat += input_coord * in_strides[d]
         out_ptr[i] = in_ptr[in_flat]
 
-    elementwise[func, simd_width=1](IndexList[1](total))
+    elementwise[func, simd_width=1](IndexList[1](total), ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -341,7 +344,7 @@ struct _PadConstantBody(Dispatchable):
     var in_strides: InlineArray[Int, MAX_RANK]
     var rank: Int
     var total: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         var constant = _make_ptr[t](self.const_addr)[0]
@@ -374,7 +377,7 @@ def pad_constant_dispatcher(
         params: Python tuple
             (paddings, out_shape, in_shape, out_strides, in_strides, rank,
              total, const_addr).
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
     var rank = Int(py=params[5])
@@ -425,6 +428,7 @@ struct _PadReflectBody(Dispatchable):
     var in_strides: InlineArray[Int, MAX_RANK]
     var rank: Int
     var total: Int
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         pad_reflect_op(
@@ -437,6 +441,7 @@ struct _PadReflectBody(Dispatchable):
             self.in_strides,
             self.rank,
             self.total,
+            self.ctx,
         )
 
 
@@ -454,7 +459,7 @@ def pad_reflect_dispatcher(
         params: Python tuple
             (paddings, out_shape, in_shape, out_strides, in_strides, rank,
              total).
-        device_context_ptr: Unused (CPU-only op).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
     var rank = Int(py=params[5])
@@ -466,6 +471,7 @@ def pad_reflect_dispatcher(
     var total = Int(py=params[6])
     var out_addr = Int(py=out_buffer._data_ptr())
     var in_addr = Int(py=in_buffer._data_ptr())
+    var ctx = _get_ctx(device_context_ptr)
 
     dispatch_dtype(
         _PadReflectBody(
@@ -478,6 +484,7 @@ def pad_reflect_dispatcher(
             in_strides,
             rank,
             total,
+            ctx,
         ),
         dtype,
     )
@@ -501,6 +508,7 @@ struct _PadRepeatBody(Dispatchable):
     var in_strides: InlineArray[Int, MAX_RANK]
     var rank: Int
     var total: Int
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         pad_repeat_op(
@@ -513,6 +521,7 @@ struct _PadRepeatBody(Dispatchable):
             self.in_strides,
             self.rank,
             self.total,
+            self.ctx,
         )
 
 
@@ -530,7 +539,7 @@ def pad_repeat_dispatcher(
         params: Python tuple
             (paddings, out_shape, in_shape, out_strides, in_strides, rank,
              total).
-        device_context_ptr: Unused (CPU-only op).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
     var rank = Int(py=params[5])
@@ -542,6 +551,7 @@ def pad_repeat_dispatcher(
     var total = Int(py=params[6])
     var out_addr = Int(py=out_buffer._data_ptr())
     var in_addr = Int(py=in_buffer._data_ptr())
+    var ctx = _get_ctx(device_context_ptr)
 
     dispatch_dtype(
         _PadRepeatBody(
@@ -554,6 +564,7 @@ def pad_repeat_dispatcher(
             in_strides,
             rank,
             total,
+            ctx,
         ),
         dtype,
     )

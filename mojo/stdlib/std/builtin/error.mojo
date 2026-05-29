@@ -20,10 +20,10 @@ from std.format._utils import FormatStruct
 from std.memory import (
     ArcPointer,
     OwnedPointer,
-    alloc,
     memcpy,
 )
-from std.ffi import external_call
+from std.memory.alloc import alloc, Layout
+from std.ffi import CStringSlice, external_call
 import std.format._utils as fmt
 from std.sys import is_gpu
 from std.sys.info import size_of, align_of
@@ -74,7 +74,7 @@ struct StackTrace(Copyable, Movable, Writable):
         # Copy the null-terminated string
         var src_ptr = copy._data.unsafe_ptr()
         var str_len = Int(_unsafe_strlen(src_ptr))
-        var new_ptr = alloc[UInt8](str_len + 1)
+        var new_ptr = alloc(Layout[UInt8](count=str_len + 1))
         memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
 
@@ -130,7 +130,11 @@ struct StackTrace(Copyable, Movable, Writable):
             writer: The object to write to.
         """
         writer.write_string(
-            StringSlice(unsafe_from_utf8_ptr=self._data.unsafe_ptr())
+            StringSlice(
+                unsafe_from_utf8=CStringSlice(
+                    unsafe_from_ptr=self._data.unsafe_ptr().bitcast[Int8]()
+                )
+            )
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -197,17 +201,7 @@ struct Error(
         self._error = String(value)
         self._stack_trace = StackTrace.collect_if_enabled(0)
 
-    @no_inline
     @implicit
-    def __init__(out self, value: Some[Writable]):
-        """Construct an Error object from a Writable argument.
-
-        Args:
-            value: The Writable argument to store in the error message.
-        """
-        self._error = String(value)
-        self._stack_trace = StackTrace.collect_if_enabled(0)
-
     @no_inline
     def __init__[*Ts: Writable](out self, *args: *Ts):
         """Construct an Error by concatenating a sequence of Writable arguments.

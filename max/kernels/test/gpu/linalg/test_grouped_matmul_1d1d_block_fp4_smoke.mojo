@@ -21,7 +21,7 @@ from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -77,9 +77,15 @@ def _test_grouped_1d1d_block_fp4_impl[
     var total_tokens = num_active_experts * tokens_per_expert
 
     # Offsets and expert IDs
-    var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var a_scale_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts)
-    var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_active_experts + 1
+    )
+    var a_scale_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_active_experts
+    )
+    var expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+        num_active_experts
+    )
 
     var a_scale_dim0 = 0
     a_offsets_host[0] = 0
@@ -92,10 +98,12 @@ def _test_grouped_1d1d_block_fp4_impl[
         expert_ids_host[i] = Int32(i)
 
     # Host-side data init (rand for uint8 produces proper [0, 255] values)
-    var a_host = alloc[Scalar[a_type]](total_tokens * packed_K)
-    var b_host = alloc[Scalar[b_type]](num_experts * N * packed_K)
-    rand(a_host, total_tokens * packed_K, min=0, max=255)
-    rand(b_host, num_experts * N * packed_K, min=0, max=255)
+    var a_host = ctx.enqueue_create_host_buffer[a_type](total_tokens * packed_K)
+    var b_host = ctx.enqueue_create_host_buffer[b_type](
+        num_experts * N * packed_K
+    )
+    rand(a_host.unsafe_ptr(), total_tokens * packed_K, min=0, max=255)
+    rand(b_host.unsafe_ptr(), num_experts * N * packed_K, min=0, max=255)
 
     # Scale factors
     comptime k_groups = ceildiv(K, sf_vector_size * SF_ATOM_K)
@@ -111,10 +119,10 @@ def _test_grouped_1d1d_block_fp4_impl[
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
-    var a_sf_host = alloc[Scalar[sf_dtype]](a_sf_size)
-    var b_sf_host = alloc[Scalar[sf_dtype]](b_sf_size)
-    rand(a_sf_host, a_sf_size)
-    rand(b_sf_host, b_sf_size)
+    var a_sf_host = ctx.enqueue_create_host_buffer[sf_dtype](a_sf_size)
+    var b_sf_host = ctx.enqueue_create_host_buffer[sf_dtype](b_sf_size)
+    rand(a_sf_host.unsafe_ptr(), a_sf_size)
+    rand(b_sf_host.unsafe_ptr(), b_sf_size)
 
     # Device buffers
     var a_buf = ctx.enqueue_create_buffer[a_type](total_tokens * packed_K)
@@ -139,7 +147,7 @@ def _test_grouped_1d1d_block_fp4_impl[
 
     # Expert scales
     var es_buf = ctx.enqueue_create_buffer[DType.float32](num_experts)
-    var es_host = alloc[Scalar[DType.float32]](num_experts)
+    var es_host = ctx.enqueue_create_host_buffer[DType.float32](num_experts)
     for i in range(num_experts):
         es_host[i] = 1.0
     ctx.enqueue_copy(es_buf, es_host)
@@ -147,44 +155,32 @@ def _test_grouped_1d1d_block_fp4_impl[
     # Construct TileTensors directly from pointers and layouts
     var a_tt = TileTensor(
         a_buf,
-        row_major(Coord(Idx(Int(total_tokens)), Idx[packed_K]())),
+        row_major(Coord(Int(total_tokens), Idx[packed_K])),
     )
     var b_tt = TileTensor(
         b_buf,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
     )
     var c_tt = TileTensor(
         c_buf,
-        row_major(Coord(Idx(Int(total_tokens)), Idx[N]())),
+        row_major(Coord(Int(total_tokens), Idx[N])),
     )
     var a_offsets_tt = TileTensor(
         a_off_buf,
-        row_major(
-            Idx(
-                Int(num_active_experts + 1),
-            )
-        ),
+        row_major((Int(num_active_experts + 1),)),
     )
     var a_scale_offsets_tt = TileTensor(
         a_soff_buf,
-        row_major(
-            Idx(
-                Int(num_active_experts),
-            )
-        ),
+        row_major((Int(num_active_experts),)),
     )
     var expert_ids_tt = TileTensor(
         eid_buf,
-        row_major(
-            Idx(
-                Int(num_active_experts),
-            )
-        ),
+        row_major((Int(num_active_experts),)),
     )
     var expert_scales_tt = TileTensor(
         es_buf,
         row_major(
-            Idx[num_experts](),
+            Idx[num_experts],
         ),
     )
 
@@ -193,11 +189,11 @@ def _test_grouped_1d1d_block_fp4_impl[
         a_sf_buf,
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Int64(a_scale_dim0),
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -205,12 +201,12 @@ def _test_grouped_1d1d_block_fp4_impl[
         b_sf_buf,
         row_major(
             Coord(
-                Idx[num_experts](),
-                Idx[n_groups](),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[num_experts],
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -249,14 +245,6 @@ def _test_grouped_1d1d_block_fp4_impl[
 
     print("    PASSED")
 
-    a_host.free()
-    b_host.free()
-    a_sf_host.free()
-    b_sf_host.free()
-    a_offsets_host.free()
-    a_scale_offsets_host.free()
-    expert_ids_host.free()
-    es_host.free()
     _ = a_buf^
     _ = b_buf^
     _ = c_buf^
@@ -313,9 +301,15 @@ def _test_grouped_1d1d_mixed_experts[
         mma_n,
     )
 
-    var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var a_scale_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts)
-    var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_active_experts + 1
+    )
+    var a_scale_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_active_experts
+    )
+    var expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+        num_active_experts
+    )
 
     var a_scale_dim0 = 0
     a_offsets_host[0] = 0
@@ -328,10 +322,12 @@ def _test_grouped_1d1d_mixed_experts[
         a_scale_dim0 += ceildiv(tpe, SF_MN_GROUP_SIZE)
         expert_ids_host[i] = Int32(i)
 
-    var a_host = alloc[Scalar[a_type]](total_tokens * packed_K)
-    var b_host = alloc[Scalar[b_type]](num_experts * N * packed_K)
-    rand(a_host, total_tokens * packed_K, min=0, max=255)
-    rand(b_host, num_experts * N * packed_K, min=0, max=255)
+    var a_host = ctx.enqueue_create_host_buffer[a_type](total_tokens * packed_K)
+    var b_host = ctx.enqueue_create_host_buffer[b_type](
+        num_experts * N * packed_K
+    )
+    rand(a_host.unsafe_ptr(), total_tokens * packed_K, min=0, max=255)
+    rand(b_host.unsafe_ptr(), num_experts * N * packed_K, min=0, max=255)
 
     comptime k_groups = ceildiv(K, sf_vector_size * SF_ATOM_K)
     comptime n_groups = ceildiv(N, SF_MN_GROUP_SIZE)
@@ -346,10 +342,10 @@ def _test_grouped_1d1d_mixed_experts[
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
-    var a_sf_host = alloc[Scalar[sf_dtype]](a_sf_size)
-    var b_sf_host = alloc[Scalar[sf_dtype]](b_sf_size)
-    rand(a_sf_host, a_sf_size)
-    rand(b_sf_host, b_sf_size)
+    var a_sf_host = ctx.enqueue_create_host_buffer[sf_dtype](a_sf_size)
+    var b_sf_host = ctx.enqueue_create_host_buffer[sf_dtype](b_sf_size)
+    rand(a_sf_host.unsafe_ptr(), a_sf_size)
+    rand(b_sf_host.unsafe_ptr(), b_sf_size)
 
     var a_buf = ctx.enqueue_create_buffer[a_type](total_tokens * packed_K)
     var b_buf = ctx.enqueue_create_buffer[b_type](num_experts * N * packed_K)
@@ -371,49 +367,49 @@ def _test_grouped_1d1d_mixed_experts[
     ctx.enqueue_copy(b_sf_buf, b_sf_host)
 
     var es_buf = ctx.enqueue_create_buffer[DType.float32](num_experts)
-    var es_host = alloc[Scalar[DType.float32]](num_experts)
+    var es_host = ctx.enqueue_create_host_buffer[DType.float32](num_experts)
     for i in range(num_experts):
         es_host[i] = 1.0
     ctx.enqueue_copy(es_buf, es_host)
 
     var a_tt = TileTensor(
         a_buf.unsafe_ptr(),
-        row_major(Coord(Idx(Int(total_tokens)), Idx[packed_K]())),
+        row_major(Coord(Int(total_tokens), Idx[packed_K])),
     )
     var b_tt = TileTensor(
         b_buf.unsafe_ptr(),
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
     )
     var c_tt = TileTensor(
         c_buf.unsafe_ptr(),
-        row_major(Coord(Idx(Int(total_tokens)), Idx[N]())),
+        row_major(Coord(Int(total_tokens), Idx[N])),
     )
     var a_offsets_tt = TileTensor(
         a_off_buf.unsafe_ptr(),
-        row_major(Idx(Int(num_active_experts + 1))),
+        row_major(Int(num_active_experts + 1)),
     )
     var a_scale_offsets_tt = TileTensor(
         a_soff_buf.unsafe_ptr(),
-        row_major(Idx(Int(num_active_experts))),
+        row_major(Int(num_active_experts)),
     )
     var expert_ids_tt = TileTensor(
         eid_buf.unsafe_ptr(),
-        row_major(Idx(Int(num_active_experts))),
+        row_major(Int(num_active_experts)),
     )
     var expert_scales_tt = TileTensor(
         es_buf.unsafe_ptr(),
-        row_major(Idx[num_experts]()),
+        row_major(Idx[num_experts]),
     )
 
     var a_scales_tt = TileTensor(
         a_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Int64(a_scale_dim0),
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -421,12 +417,12 @@ def _test_grouped_1d1d_mixed_experts[
         b_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
         row_major(
             Coord(
-                Idx[num_experts](),
-                Idx[n_groups](),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[num_experts],
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -463,14 +459,6 @@ def _test_grouped_1d1d_mixed_experts[
 
     print("    PASSED")
 
-    a_host.free()
-    b_host.free()
-    a_sf_host.free()
-    b_sf_host.free()
-    a_offsets_host.free()
-    a_scale_offsets_host.free()
-    expert_ids_host.free()
-    es_host.free()
     _ = a_buf^
     _ = b_buf^
     _ = c_buf^
@@ -651,11 +639,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
         mma_n: Int = 8,
         AB_swapped: Bool = False,
     ](ctx: DeviceContext, t0: Int, t1: Int, t2: Int, t3: Int) raises:
-        var tpe = alloc[Int](4)
-        tpe[0] = t0
-        tpe[1] = t1
-        tpe[2] = t2
-        tpe[3] = t3
+        var tpe = [t0, t1, t2, t3]
         _test_grouped_1d1d_mixed_experts[
             num_experts,
             N,
@@ -665,8 +649,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
             sf_dtype=sf_dtype,
             sf_vector_size=sf_vector_size,
             scaling_kind=scaling_kind,
-        ](ctx, 4, tpe)
-        tpe.free()
+        ](ctx, 4, tpe.unsafe_ptr())
 
     # experts 0,2: cp.async (gs=4,1); experts 1,3: TMA (gs=256,200)
     mixed4[4, 1024, 1024, 8](ctx, 4, 256, 1, 200)

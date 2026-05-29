@@ -14,13 +14,13 @@
 """Mojo kernel wrappers for gather/scatter MO interpreter operations."""
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import (
@@ -106,7 +106,7 @@ def gather_op[
     axis_size: Int,
     inner_size: Int,
     num_indices: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     var total = outer_size * num_indices * inner_size
     var in_axis_stride = axis_size * inner_size
@@ -132,13 +132,12 @@ def gather_op[
         )
         out_ptr[i] = in_ptr[in_flat]
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -159,7 +158,7 @@ def gather_dispatcher(
         indices_buffer: Indices buffer (int32 or int64).
         params: Python tuple (axis, outer_size, axis_size, inner_size,
             num_indices).
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
     var idx_dtype = _get_dtype(indices_buffer)
@@ -210,7 +209,7 @@ struct _GatherBody[idx_dtype: DType](Dispatchable):
     var axis_size: Int
     var inner_size: Int
     var num_indices: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def __init__(
         out self,
@@ -221,7 +220,7 @@ struct _GatherBody[idx_dtype: DType](Dispatchable):
         axis_size: Int,
         inner_size: Int,
         num_indices: Int,
-        ctx: Optional[OpaquePointer[MutExternalOrigin]],
+        ctx: DeviceContext,
     ):
         self.out_addr = out_addr
         self.in_addr = in_addr
@@ -256,7 +255,7 @@ def _gather_dispatch_integer[
     axis_size: Int,
     inner_size: Int,
     num_indices: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     dispatch_dtype(
         _GatherBody[d](
@@ -298,7 +297,7 @@ def gather_nd_op[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     var total = batch_size * indices_outer_size * suffix_size
     var out_batch_stride = indices_outer_size * suffix_size
@@ -354,13 +353,12 @@ def gather_nd_op[
         in_offset += suffix_idx
         out_ptr[i] = in_ptr[in_offset]
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -381,7 +379,7 @@ def gather_nd_dispatcher(
         indices_buffer: Indices buffer (int32 or int64).
         params: Python tuple (batch_size, indices_outer_size, index_depth,
             suffix_size, input_data_stride, input_inner_shape).
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(in_buffer)
     var idx_dtype = _get_dtype(indices_buffer)
@@ -449,7 +447,7 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
     var suffix_size: Int
     var input_data_stride: Int
     var indexed_strides: InlineArray[Int, MAX_RANK]
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def __init__(
         out self,
@@ -462,7 +460,7 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
         suffix_size: Int,
         input_data_stride: Int,
         indexed_strides: InlineArray[Int, MAX_RANK],
-        ctx: Optional[OpaquePointer[MutExternalOrigin]],
+        ctx: DeviceContext,
     ):
         self.out_addr = out_addr
         self.in_addr = in_addr
@@ -503,7 +501,7 @@ def _gather_nd_dispatch_integer[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     dispatch_dtype(
         _GatherNdBody[d](
@@ -1443,7 +1441,7 @@ def scatter_nd_op[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Scatter updates into output at N-dimensional index positions (overwrite).
 
@@ -1465,7 +1463,7 @@ def scatter_nd_op[
         suffix_size: Product of ``input.shape[index_depth:]``.
         input_data_stride: Total elements per batch element in input.
         indexed_strides: Row-major strides for the indexed prefix of input.
-        ctx: Device context pointer (null for CPU, non-null for GPU).
+        ctx: Device context.
     """
     var total = batch_size * indices_outer_size * suffix_size
     var in_batch_stride = indices_outer_size * suffix_size
@@ -1516,13 +1514,12 @@ def scatter_nd_op[
         out_offset += suffix_idx
         out_ptr[out_offset] = updates_ptr[i]
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -1543,8 +1540,7 @@ def scatter_nd_dispatcher(
         indices_buffer: Indices buffer (int32 or int64).
         params: Python tuple (batch_size, indices_outer_size, index_depth,
             suffix_size, input_data_stride, input_inner_shape).
-        device_context_ptr: Device context pointer (null for CPU, GPU handle
-            for GPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(updates_buffer)
     var idx_dtype = _get_dtype(indices_buffer)
@@ -1612,7 +1608,7 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
     var suffix_size: Int
     var input_data_stride: Int
     var indexed_strides: InlineArray[Int, MAX_RANK]
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def __init__(
         out self,
@@ -1625,7 +1621,7 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
         suffix_size: Int,
         input_data_stride: Int,
         indexed_strides: InlineArray[Int, MAX_RANK],
-        ctx: Optional[OpaquePointer[MutExternalOrigin]],
+        ctx: DeviceContext,
     ):
         self.out_addr = out_addr
         self.upd_addr = upd_addr
@@ -1666,7 +1662,7 @@ def _scatter_nd_dispatch_integer[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     dispatch_dtype(
         _ScatterNdBody[d](

@@ -37,7 +37,7 @@ from std.gpu import block_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import s_waitcnt
 from std.memory import bitcast
-from std.utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from layout.swizzle import Swizzle
 from nn.attention.mha_mask import TileMaskStatus
@@ -82,6 +82,19 @@ __extension Attention:
         start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
+
+        # Empty partitions (from power-of-two bucketing): reset to
+        # rowsum=0/rowmax=-inf so the reduce masks them via `scale > 0`.
+        # In sink mode, __init__ primes `rowsum=1/rowmax=sink_weight` —
+        # we must override that here or the reduce reads uninitialized
+        # partition outputs with a nonzero scale.
+        if start >= end:
+            _ = self.softmax.rowmax_tensor.fill(
+                min_or_neg_inf[Self.accum_type]()
+            )
+            _ = self.softmax.rowsum_tensor.fill(0)
+            self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
+            return
 
         # K: full BN × depth SMEM, per-warp DMA cooperation, transpose read.
         comptime KBufT = KVBuffer[
@@ -155,10 +168,18 @@ __extension Attention:
             v_col_start, Self.BK
         ) * Self.BN * Self.BK + umod(v_col_start, Self.BK)
 
+        # In mla_kv_alias mode, V reads from K's swizzled SMEM, so V's
+        # `ds_read_tr8_b64` addressing must apply the same swizzle K uses.
+        # `load_v_fp8_strip` consumes this and XORs the byte offset at vec
+        # granularity to land on the writer's permuted slot.
+        comptime v_swizzle = (
+            k_swizzle if Self.mla_kv_alias else Optional[Swizzle](None)
+        )
+
         comptime VBufT = KVBuffer[
             kv_t=Self.v_t,
             mma_shape=Self.mma_shape,
-            swizzle=None,
+            swizzle=v_swizzle,
             BN=Self.BN,
             WN=Self.BN,
             BK=Self.BK,
@@ -183,19 +204,19 @@ __extension Attention:
 
         # Advance iterators and mask tracking to partition start.
         k_buffer.kv_cache_iter.tile_start_row = start
-        v_dma_buffer.kv_cache_iter.tile_start_row = start
+        comptime if not Self.mla_kv_alias:
+            v_dma_buffer.kv_cache_iter.tile_start_row = start
         self.kv_start_row = UInt32(start)
 
-        # Pre-scale Q by (scale * log2e).  Default on for bf16 to avoid
-        # Qwen decode NaN in the `_fma` path.  Disabled for fp8 (quant-
-        # ization back to fp8 loses too much precision → fp8 stays on
-        # `_fma`).  Disabled for depth>128 (LLVM MI Scheduler isReg
-        # assertion in RewriteMFMAFormStage, same crash as prefill).
+        # Pre-scale Q by (scale * log2e).  Default on for bf16: the deferred
+        # `_fma` scaling path can overflow before softmax for large decode
+        # scores (for example Gemma 4's depth=512, scale=1.0 global layers).
+        # Disabled for fp8 because quantizing scaled Q back to fp8 loses too
+        # much precision, so fp8 stays on `_fma`.
         # Sink forces pre-scaling (rowmax in scaled-log2 space).
         comptime prescale_q = (
             get_defined_bool["PRESCALE_Q", True]()
             and not Self.q_type.is_float8()
-            and Self.depth <= 128
         ) or Self.sink
         comptime if prescale_q:
             self.scale_q_buffer()
@@ -267,7 +288,7 @@ __extension Attention:
                 _ = k_buffer.load_from_dram[1 - slot]()
             else:
                 _ = k_buffer.load_from_dram[0]()
-            comptime if not shared_kv:
+            comptime if not shared_kv and not Self.mla_kv_alias:
                 _ = v_dma_buffer.load_from_dram[0]()
 
         @always_inline
@@ -289,6 +310,15 @@ __extension Attention:
                 if tile_status == TileMaskStatus.FULL_MASK:
                     self.kv_start_row += UInt32(Self.BN)
                     self.mask_advance()
+                    # When `shared_kv`, V DMA is deferred to mid-tile (inside
+                    # the non-skipped branch below) and `prefetch_next` only
+                    # advances K's iterator.  Skipped FULL_MASK tiles must
+                    # still advance V's iterator manually, or the first
+                    # PARTIAL_MASK tile (e.g.  SlidingWindow visible window
+                    # after many FULL_MASK tiles) would load V from the
+                    # original start row instead of the current row.
+                    comptime if shared_kv and not Self.mla_kv_alias:
+                        v_dma_buffer.kv_cache_iter.increment()
                     comptime if has_next:
                         prefetch_next[slot]()
                     return
@@ -313,7 +343,7 @@ __extension Attention:
             s_waitcnt[lgkmcnt=0]()
             barrier()
 
-            comptime if shared_kv:
+            comptime if shared_kv and not Self.mla_kv_alias:
                 # K consumed + P synced.  Load V into shared SMEM
                 # (overwrites K).  All warps finished K LDS reads above.
                 _ = v_dma_buffer.load_from_dram[0]()
@@ -343,9 +373,10 @@ __extension Attention:
         var num_tiles = ceildiv(end - start, Self.BN)
 
         # Prologue: load first tile's K (slot 0).  V loaded in parallel
-        # when separate SMEM, or mid-tile when shared.
+        # when separate SMEM, or mid-tile when shared.  In mla_kv_alias
+        # mode, K==V and K's no-swizzle SMEM image already serves PV.
         _ = k_buffer.load_from_dram[0]()
-        comptime if not shared_kv:
+        comptime if not shared_kv and not Self.mla_kv_alias:
             _ = v_dma_buffer.load_from_dram[0]()
 
         comptime if double_buffer_k_only:

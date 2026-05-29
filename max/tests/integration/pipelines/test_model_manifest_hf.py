@@ -25,8 +25,8 @@ import json
 from pathlib import Path
 
 import pytest
-from max.pipelines.lib.hf_utils import HuggingFaceRepo
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 
 # ---------------------------------------------------------------------------
 # Helpers

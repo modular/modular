@@ -27,7 +27,7 @@ from typing import Any
 import max._interpreter_ops as ops
 import numpy as np
 from max import _core, graph
-from max._core.dialects import builtin, mo, mosh
+from max._core.dialects import builtin, kgen, mo, mosh
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 
@@ -1328,6 +1328,10 @@ def _handle_param_to_value(
         if isinstance(value_attr, mosh.ShapeAttr):
             shape_values = []
             for dim_attr in value_attr.values:
+                # Cast simd literal to integer.
+                if isinstance(dim_attr, kgen.SIMDAttr):
+                    dim_attr = kgen.CastToBuiltinAttr(dim_attr)
+
                 if hasattr(dim_attr, "value"):
                     val = dim_attr.value
                     if isinstance(val, int):
@@ -1927,26 +1931,19 @@ def _handle_concat(
     Uses a Mojo memcpy kernel to copy contiguous slices from each input into
     the output buffer, supporting both CPU and GPU.
 
-    The axis operand is the first input (a scalar tensor on CPU), followed
-    by the variadic tensor inputs to concatenate.
-
     Args:
         op: The concat operation.
-        inputs: Input buffers - first is the axis tensor (scalar si64 on CPU),
-            remaining are the tensors to concatenate.
+        inputs: Input buffers to concatenate.
 
     Returns:
         List containing the concatenated tensor buffer.
     """
     target_device = _get_target_device(op)
 
-    # First operand is the axis (scalar tensor on CPU)
-    assert isinstance(inputs[0], Buffer)
-    axis = int(inputs[0].to_numpy().item())
+    axis = op.axis
 
-    # Remaining operands are the tensors to concatenate
     tensor_inputs: list[Buffer] = []
-    for buf in inputs[1:]:
+    for buf in inputs:
         assert isinstance(buf, Buffer)
         tensor_inputs.append(buf)
     assert len(tensor_inputs) >= 1, (
@@ -3632,7 +3629,7 @@ def _handle_pad_reflect(
             len(in_shape),
             total,
         ),
-        None,
+        target_device._device_context_ptr(),
     )
 
     return [output]
@@ -3688,7 +3685,7 @@ def _handle_pad_repeat(
             len(in_shape),
             total,
         ),
-        None,
+        target_device._device_context_ptr(),
     )
 
     return [output]

@@ -27,6 +27,262 @@ from max.mlir import Context, Location
 
 DiagnosticHandler = Callable
 
+class ComputeKind(enum.Enum):
+    addition = 0
+
+    comparison = 1
+
+    division = 2
+
+    multiplication = 3
+
+    multiply_add = 4
+
+    other = 5
+
+class EmitAs(enum.Enum):
+    asm = 0
+
+    llvm = 1
+
+    llvm_opt = 2
+
+    object = 3
+
+    llvm_bitcode = 4
+
+    llvm_opt_bitcode = 5
+
+class ArgConvention(enum.Enum):
+    read = 0
+
+    read_mem = 1
+
+    owned = 2
+
+    owned_in_mem = 3
+
+    deinit_mem = 4
+
+    mut = 5
+
+    ref = 6
+
+    mutref = 7
+
+    byref_result = 8
+
+    byref_error = 9
+
+class ArgConventionAttr(max._core.Attribute):
+    def __init__(self, arg0: Context, arg1: ArgConvention, /) -> None: ...
+    @property
+    def value(self) -> ArgConvention: ...
+
+class ClosureMemoryKind(enum.Enum):
+    escaping = 0
+
+    nonescaping = 1
+
+    trivial = 2
+
+    register_passable = 3
+
+class ClosureMethod(enum.Enum):
+    call = 0
+
+    del_ = 1
+
+    move = 2
+
+    copy = 3
+
+    none = 4
+
+class CmpPredicate(enum.Enum):
+    eq = 0
+
+    ne = 1
+
+    lt = 2
+
+    gt = 3
+
+    le = 4
+
+    ge = 5
+
+class CmpPredicateAttr(max._core.Attribute):
+    def __init__(self, value: CmpPredicate) -> None: ...
+    @property
+    def value(self) -> CmpPredicate: ...
+
+class ExportKind(enum.Enum):
+    not_exported = 0
+
+    exported = 1
+
+class FnEffects(enum.Enum):
+    none = 0
+
+    throws = 1
+
+    async_ = 2
+
+    capturing = 4
+
+    refresult = 32
+
+    cabi = 512
+
+class InlineLevel(enum.Enum):
+    automatic = 0
+
+    always = 1
+
+    always_nodebug = 2
+
+    always_builtin = 3
+
+    never = 4
+
+class InlineLevelAttr(max._core.Attribute):
+    def __init__(self, arg0: Context, arg1: InlineLevel, /) -> None: ...
+    @property
+    def value(self) -> InlineLevel: ...
+
+class POC(enum.Enum):
+    add = 0
+
+    mul = 1
+
+    mul_no_wrap = 2
+
+    and_ = 3
+
+    or_ = 4
+
+    xor = 5
+
+    max = 6
+
+    min = 7
+
+    shl = 8
+
+    shr = 9
+
+    div = 10
+
+    mod = 11
+
+    eq = 12
+
+    lt = 13
+
+    le = 14
+
+    in_ = 15
+
+    cond = 16
+
+    current_target = 17
+
+    target_has_feature = 18
+
+    target_get_field = 19
+
+    accelerator_arch = 20
+
+    cross_compilation = 21
+
+    get_env = 22
+
+    get_sizeof = 23
+
+    get_alignof = 24
+
+    apply = 25
+
+    apply_result_slot = 26
+
+    rebind = 27
+
+    ptr_bitcast = 34
+
+    load_from_mem = 35
+
+    variadic_ptr_map = 36
+
+    variadic_ptrremove_map = 37
+
+    attr_to_str = 39
+
+    data_to_str = 40
+
+    string_address = 41
+
+    str_concat = 42
+
+    function_get_arg_types = 43
+
+    div_s = 44
+
+    div_u = 45
+
+    ceil_div_s = 46
+
+    ceil_div_u = 47
+
+    floor_div_s = 48
+
+    rem_s = 49
+
+    rem_u = 50
+
+class POCAttr(max._core.Attribute):
+    def __init__(self, arg0: Context, arg1: POC, /) -> None: ...
+    @property
+    def value(self) -> POC: ...
+
+class PassingKind(enum.Enum):
+    pos_or_kw = 0
+
+    pos = 1
+
+    kw = 2
+
+    implicit = 3
+
+    inferred = 4
+
+class SugarKind(enum.Enum):
+    aibuiltin = 0
+
+    preserved = 1
+
+    member_alias = 2
+
+    alias = 3
+
+class TailKind(enum.Enum):
+    none = 0
+
+    musttail = 1
+
+    notail = 2
+
+    tail = 3
+
+class VariadicKind(enum.Enum):
+    not_vararg = 0
+
+    pos_vararg = 1
+
+    pack_vararg = 2
+
+    kw_vararg = 3
+
 class FnMetadataAttrInterface(Protocol):
     """
     This interface describes attributes that are attached to a `!kgen.func`
@@ -44,39 +300,7 @@ class FnMetadataAttrInterface(Protocol):
         arg3: FnEffects,
         /,
     ) -> bool: ...
-    def get_with_bound_pos_args(
-        self, arg: int, /
-    ) -> FnMetadataAttrInterface: ...
     def equals(self, arg: FnMetadataAttrInterface, /) -> bool: ...
-
-class GeneratorMetadataAttrInterface(Protocol):
-    """
-    This interface describes attributes that are attached to a GeneratorType,
-    and carries additional metadata about the list. This interface defines the
-    required methods for this metadata attribute, including verification and
-    print hooks.
-    """
-
-    def verify_generator(
-        self,
-        arg0: DiagnosticHandler,
-        arg1: Sequence[max._core.Type],
-        arg2: max._core.Type,
-        /,
-    ) -> bool: ...
-    def get_specialized_metadata(
-        self,
-        arg0: ParameterEvaluator,
-        arg1: max._core._BitVector,
-        arg2: DiagnosticHandler,
-        /,
-    ) -> GeneratorMetadataAttrInterface: ...
-    def prepend_contextual_params_from_ops(
-        self,
-        arg0: Sequence[max._core.dialects.builtin.StringAttr],
-        arg1: Sequence[max._core.Operation],
-        /,
-    ) -> GeneratorMetadataAttrInterface: ...
 
 class IndexRefAttrInterface(Protocol):
     """
@@ -88,15 +312,15 @@ class IndexRefAttrInterface(Protocol):
     For example, these two aliases have equal types:
 
     ```mojo
-    alias A: fn[T: AnyType](x: T)->None = ...
-    alias B: fn[Y: AnyType](x: Y)->None = ...
+    comptime A: def[T: AnyType](x: T)->None = ...
+    comptime B: def[Y: AnyType](x: Y)->None = ...
     ```
 
     ...if those param-refs use indexes instead of names like:
 
     ```mojo
-    alias A: fn[_: AnyType](x: *(0,0))->None = ...
-    alias B: fn[_: AnyType](x: *(0,0))->None = ...
+    comptime A: def[_: AnyType](x: *(0,0))->None = ...
+    comptime B: def[_: AnyType](x: *(0,0))->None = ...
     ```
 
     All types in Mojo use `IndexRefAttrInterface` instead of parameter names.
@@ -177,6 +401,48 @@ class AttrCtorDeferredAttr(max._core.Attribute):
     ) -> None: ...
     @property
     def strings(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+
+class CastFromBuiltinAttr(max._core.Attribute):
+    """
+    The `#kgen.cast_from_builtin` attribute converts a builtin MLIR type to a
+    POP type.
+    """
+
+    @overload
+    def __init__(self, arg: max._core.dialects.builtin.TypedAttr) -> None: ...
+    @overload
+    def __init__(
+        self, arg: max._core.dialects.builtin.TypedAttr, type: SIMDType
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, arg: max._core.dialects.builtin.TypedAttr, type: SIMDType
+    ) -> None: ...
+    @property
+    def arg(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> SIMDType: ...
+
+class CastToBuiltinAttr(max._core.Attribute):
+    """
+    The `#kgen.cast_to_builtin` attribute converts a POP type to a builtin MLIR
+    type.
+    """
+
+    @overload
+    def __init__(self, arg: max._core.dialects.builtin.TypedAttr) -> None: ...
+    @overload
+    def __init__(
+        self, arg: max._core.dialects.builtin.TypedAttr, type: max._core.Type
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, arg: max._core.dialects.builtin.TypedAttr, type: max._core.Type
+    ) -> None: ...
+    @property
+    def arg(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
 
 class ClosureAttr(max._core.Attribute):
     """
@@ -554,7 +820,7 @@ class FuncSymbolAttr(max._core.Attribute):
     match with the FuncType of the given `symbol` after instantiated with the
     `paramValues`.
 
-    TODO: Delete SymbolConstantAttr after fully migrate to FnLiteralType.
+    TODO: Delete SymbolConstantAttr after fully migrate to FuncLiteralType.
     """
 
     @overload
@@ -609,21 +875,21 @@ class GeneratorAttr(max._core.Attribute):
         self,
         input_param_types: Sequence[max._core.Type],
         body: max._core.dialects.builtin.TypedAttr,
-        metadata: GeneratorMetadataAttrInterface = ...,
+        metadata: max._core.Attribute = ...,
     ) -> None: ...
     @overload
     def __init__(
         self,
         body: max._core.dialects.builtin.TypedAttr,
         input_param_types: Sequence[max._core.Type],
-        metadata: GeneratorMetadataAttrInterface,
+        metadata: PogListAttr,
     ) -> None: ...
     @property
     def body(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def input_param_types(self) -> Sequence[max._core.Type]: ...
     @property
-    def metadata(self) -> GeneratorMetadataAttrInterface: ...
+    def metadata(self) -> PogListAttr: ...
 
 class GetBaseTypeNameAttr(max._core.Attribute):
     """
@@ -648,6 +914,76 @@ class GetBaseTypeNameAttr(max._core.Attribute):
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class GetFunctionIsRaisingAttr(max._core.Attribute):
+    """
+    The `#kgen.get_function_is_raising` attribute returns true if the function
+    value's signature declares it as raising (Mojo's `raises` keyword, or any
+    `def`), and false otherwise.
+
+    Example:
+
+    ```mlir
+    #kgen.get_function_is_raising<
+      #kgen.symbol.constant<@my_def> : !kgen.generator<...>
+    > : i1
+    ```
+    """
+
+    def __init__(
+        self,
+        func: max._core.dialects.builtin.TypedAttr,
+        type: max._core.dialects.builtin.IntegerType,
+    ) -> None: ...
+    @property
+    def func(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IntegerType: ...
+
+class GetFunctionParameterCountAttr(max._core.Attribute):
+    """
+    The `#kgen.get_function_parameter_count` attribute returns the number of
+    compile-time parameters declared on a function generator, as an `index`.
+
+    Example:
+
+    ```mlir
+    #kgen.get_function_parameter_count<
+      #kgen.symbol.constant<@my_func> : !kgen.generator<...>
+    > : index
+    ```
+    """
+
+    def __init__(
+        self, func: max._core.dialects.builtin.TypedAttr, type: max._core.Type
+    ) -> None: ...
+    @property
+    def func(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
+class GetFunctionParameterNamesAttr(max._core.Attribute):
+    """
+    The `#kgen.get_function_parameter_names` attribute returns the names of
+    the compile-time parameters declared on a function generator, as a
+    `param_list` of strings, in declaration order.
+
+    Example:
+
+    ```mlir
+    #kgen.get_function_parameter_names<
+      #kgen.symbol.constant<@my_func> : !kgen.generator<...>
+    > : !kgen.param_list<!kgen.string>
+    ```
+    """
+
+    def __init__(
+        self, func: max._core.dialects.builtin.TypedAttr, type: ParamListType
+    ) -> None: ...
+    @property
+    def func(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> ParamListType: ...
 
 class GetLinkageNameAttr(max._core.Attribute):
     """
@@ -991,39 +1327,6 @@ class MemSymbolTripleAttr(max._core.Attribute):
     @property
     def is_move(self) -> max._core.dialects.builtin.UnitAttr: ...
 
-class PackAttr(max._core.Attribute):
-    """
-    The `#kgen.pack` attribute contains a heterogenously typed list of constant
-    elements. It can be used to represent constant pack values, and so is of
-    pack type.
-
-    Example:
-
-    ```mlir
-    // A pack of 3 elements.
-    %0 = kgen.param.constant: !kgen.pack<[i8, ui4, i32]> = <<3, 1, 4>>
-    // An empty pack.
-    %1 = kgen.param.constant: !kgen.pack<[]> = <<>>
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: PackType,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: PackType,
-    ) -> None: ...
-    @property
-    def values(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
-    @property
-    def type(self) -> PackType: ...
-
 class ParamDeclArrayAttr(max._core.Attribute):
     @overload
     def __init__(self, param_decl: ParamDeclAttr) -> None: ...
@@ -1116,10 +1419,10 @@ class ParamIndexRefAttr(max._core.Attribute):
     The latter would appear in something like this:
 
     ```
-    alias bar: fn[
+    comptime bar: def[
       D: DType,
       N: Int,
-      f: fn[Y: AnyType](Y, SIMD[N, D])->None
+      f: def[Y: AnyType](Y, SIMD[N, D])->None
     ](...) = ...
     ```
 
@@ -1130,7 +1433,7 @@ class ParamIndexRefAttr(max._core.Attribute):
 
     ```
     def foo[X: AnyType](x: X):
-        alias zork: def[...(
+        comptime zork: def[...(
           # Cannot have: #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
         )->None = ...
     ```
@@ -1351,6 +1654,121 @@ class ParameterExprArrayAttr(max._core.Attribute):
     @property
     def value(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
 
+class PogListAttr(max._core.Attribute):
+    """
+    The `#kgen.pog_list` attribute contains metadata about an argument or
+    parameter list of a function, including names, passing kinds, default
+    values, and information about variadic arguments.
+    The positional default values correspond to the trailing positional
+    (i.e. pos-only or pos-or-kw) args/params, and the keyword-only default
+    values similarly correspond to the trailing keyword-only args/params.
+
+    This attribute is the `metadata` field of `GeneratorType`.
+
+    Example:
+
+    ```mlir
+    #kgen.pog_list<
+      ["a", "b", "c", "d"],
+      [pos, pos_or_kw, kw, kw],
+    >
+    ```
+
+    The `origVariadicConvention` indicates whether the original argument
+    convention of a VariadicList or VariadicPack, e.g. "mut *args: Int".
+
+    Optional `bodyConstraints` holds constraints that are enforced by the body
+    of the generator type that carries this list as metadata.
+    """
+
+    @overload
+    def __init__(self) -> None: ...
+    @overload
+    def __init__(self, num_pogs: int) -> None: ...
+    @overload
+    def __init__(self, pogs: Sequence[PogMetadataAttr]) -> None: ...
+    @overload
+    def __init__(
+        self, num_pogs: int, body_constraints: Sequence[ConstraintAttr]
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        names: Sequence[max._core.dialects.builtin.StringAttr],
+        passing_kinds: Sequence[PassingKind],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        pogs: Sequence[PogMetadataAttr],
+        body_constraints: Sequence[ConstraintAttr],
+        orig_variadic_convention: ArgConvention,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        names: Sequence[max._core.dialects.builtin.StringAttr],
+        passing_kinds: Sequence[PassingKind],
+        variadics: Sequence[VariadicKind],
+        defaults: Sequence[max._core.dialects.builtin.TypedAttr],
+        orig_variadic_convention: ArgConvention | None,
+        param_constraints: Sequence[Sequence[ConstraintAttr]],
+        body_constraints: Sequence[ConstraintAttr],
+    ) -> None: ...
+    @property
+    def pogs(self) -> Sequence[PogMetadataAttr]: ...
+    @property
+    def body_constraints(self) -> Sequence[ConstraintAttr]: ...
+    @property
+    def orig_variadic_convention(self) -> ArgConvention: ...
+
+class PogMetadataAttr(max._core.Attribute):
+    """
+    The `#kgen.pog_metadata` attribute contains metadata about an argument or
+    parameter of a function, including the name, passing kind, variadicness, the
+    default value (if present) and any constraints on it.
+
+    Example:
+
+    ```mlir
+    #kgen.pog_metadata<"some_keyword_param", pos_or_kw, false, 42, {
+      <1, loc("file.mojo":10:5), "Constraint must hold">
+    }>
+    #kgen.pog_metadata<"some_variadic_param", pos_or_kw, true>
+    ```
+    """
+
+    @overload
+    def __init__(self) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        passing_kind: PassingKind,
+        variadic: VariadicKind = VariadicKind.not_vararg,
+        default_value: max._core.dialects.builtin.TypedAttr = ...,
+        constraints: Sequence[ConstraintAttr] = [],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        passing_kind: PassingKind,
+        variadic: VariadicKind,
+        default_value: max._core.dialects.builtin.TypedAttr,
+        constraints: Sequence[ConstraintAttr],
+    ) -> None: ...
+    @property
+    def name(self) -> max._core.dialects.builtin.StringAttr: ...
+    @property
+    def passing_kind(self) -> PassingKind: ...
+    @property
+    def variadic(self) -> VariadicKind: ...
+    @property
+    def default_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def constraints(self) -> Sequence[ConstraintAttr]: ...
+
 class PreservedAttr(max._core.Attribute):
     """
     The `#kgen.preserved` attribute contains an attribute and isolates it from
@@ -1371,6 +1789,66 @@ class PreservedAttr(max._core.Attribute):
     def __init__(self, value: max._core.Attribute) -> None: ...
     @property
     def value(self) -> max._core.Attribute | None: ...
+
+class SIMDAttr(max._core.Attribute):
+    """
+    The `#kgen.simd` attribute represents a constant SIMD vector value. It
+    contains `N` values of a particular dtype. Only integer, floating point, and
+    bool dtypes are supported.
+
+    Example:
+
+    ```mlir
+    #kgen.simd<1, 2> : !kgen.simd<2, si32>
+    #kgen.simd<1.5, 2.5> : !kgen.simd<2, f64>
+    #kgen.simd<true, false> : !kgen.simd<2, bool>
+    ```
+
+    When all values of the SIMD vector are equal, the attribute has a special
+    splat syntax:
+
+    ```mlir
+    #kgen<simd 0> : !kgen.simd<4, si32>
+    #kgen<simd "1.5"> : !kgen.simd<4, f32>
+    #kgen<simd false> : !kgen.simd<4, bool>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, values: Sequence[_DTypeValue], type: SIMDType
+    ) -> None: ...
+    @overload
+    def __init__(self, value: _DTypeValue, type: SIMDType) -> None: ...
+    @overload
+    def __init__(self, int_val: int, type: SIMDType) -> None: ...
+    @overload
+    def __init__(
+        self, values: Sequence[_DTypeValue], type: SIMDType
+    ) -> None: ...
+    @property
+    def values(self) -> Sequence[_DTypeValue]: ...
+    @property
+    def type(self) -> SIMDType: ...
+
+class SIMDSplatAttr(max._core.Attribute):
+    """
+    The `#kgen.simd_splat` attribute takes a scalar value and replicates it
+    across a SIMD vector.
+    """
+
+    @overload
+    def __init__(
+        self, arg: max._core.dialects.builtin.TypedAttr, type: SIMDType
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, arg: max._core.dialects.builtin.TypedAttr, type: SIMDType
+    ) -> None: ...
+    @property
+    def arg(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> SIMDType: ...
 
 class StructAttr(max._core.Attribute):
     """
@@ -2031,228 +2509,6 @@ class VariantAttr(max._core.Attribute):
     @property
     def type(self) -> VariantType: ...
 
-class ComputeKind(enum.Enum):
-    addition = 0
-
-    comparison = 1
-
-    division = 2
-
-    multiplication = 3
-
-    multiply_add = 4
-
-    other = 5
-
-class EmitAs(enum.Enum):
-    asm = 0
-
-    llvm = 1
-
-    llvm_opt = 2
-
-    object = 3
-
-    llvm_bitcode = 4
-
-    llvm_opt_bitcode = 5
-
-class ArgConvention(enum.Enum):
-    read = 0
-
-    read_mem = 1
-
-    owned = 2
-
-    owned_in_mem = 3
-
-    deinit_mem = 4
-
-    mut = 5
-
-    ref = 6
-
-    mutref = 7
-
-    byref_result = 8
-
-    byref_error = 9
-
-class ArgConventionAttr(max._core.Attribute):
-    def __init__(self, arg0: Context, arg1: ArgConvention, /) -> None: ...
-    @property
-    def value(self) -> ArgConvention: ...
-
-class ClosureMemoryKind(enum.Enum):
-    escaping = 0
-
-    nonescaping = 1
-
-    trivial = 2
-
-    register_passable = 3
-
-class ClosureMethod(enum.Enum):
-    call = 0
-
-    del_ = 1
-
-    move = 2
-
-    copy = 3
-
-    none = 4
-
-class ExportKind(enum.Enum):
-    not_exported = 0
-
-    exported = 1
-
-    c_exported = 2
-
-class FnEffects(enum.Enum):
-    none = 0
-
-    throws = 1
-
-    async_ = 2
-
-    capturing = 4
-
-    refresult = 32
-
-    register_passable = 128
-
-    cabi = 512
-
-class InlineLevel(enum.Enum):
-    automatic = 0
-
-    always = 1
-
-    always_nodebug = 2
-
-    always_builtin = 3
-
-    never = 4
-
-class InlineLevelAttr(max._core.Attribute):
-    def __init__(self, arg0: Context, arg1: InlineLevel, /) -> None: ...
-    @property
-    def value(self) -> InlineLevel: ...
-
-class POC(enum.Enum):
-    add = 0
-
-    mul = 1
-
-    mul_no_wrap = 2
-
-    and_ = 3
-
-    or_ = 4
-
-    xor = 5
-
-    max = 6
-
-    min = 7
-
-    shl = 8
-
-    shr = 9
-
-    div = 10
-
-    mod = 11
-
-    eq = 12
-
-    lt = 13
-
-    le = 14
-
-    in_ = 15
-
-    cond = 16
-
-    current_target = 17
-
-    target_has_feature = 18
-
-    target_get_field = 19
-
-    accelerator_arch = 20
-
-    cross_compilation = 21
-
-    get_env = 22
-
-    get_sizeof = 23
-
-    get_alignof = 24
-
-    apply = 25
-
-    apply_result_slot = 26
-
-    rebind = 27
-
-    ptr_bitcast = 34
-
-    load_from_mem = 35
-
-    variadic_ptr_map = 36
-
-    variadic_ptrremove_map = 37
-
-    attr_to_str = 39
-
-    data_to_str = 40
-
-    string_address = 41
-
-    str_concat = 42
-
-    function_get_arg_types = 43
-
-    div_s = 44
-
-    div_u = 45
-
-    ceil_div_s = 46
-
-    ceil_div_u = 47
-
-    floor_div_s = 48
-
-    rem_s = 49
-
-    rem_u = 50
-
-class POCAttr(max._core.Attribute):
-    def __init__(self, arg0: Context, arg1: POC, /) -> None: ...
-    @property
-    def value(self) -> POC: ...
-
-class SugarKind(enum.Enum):
-    aibuiltin = 0
-
-    preserved = 1
-
-    member_alias = 2
-
-    alias = 3
-
-class TailKind(enum.Enum):
-    none = 0
-
-    musttail = 1
-
-    notail = 2
-
-    tail = 3
-
 class CallIndirectOp(max._core.Operation):
     """
     The `kgen.call_indirect` operation takes an SSA value of `!kgen.generator`
@@ -2368,10 +2624,12 @@ class ClosureInitOp(max._core.Operation):
         inline_level: InlineLevelAttr,
         capture_types: max._core.dialects.builtin.ArrayAttr,
         capture_names: max._core.dialects.builtin.ArrayAttr,
+        type_value: max._core.dialects.builtin.TypedAttr,
         nested_fn_scope: max._core.Attribute,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         hoisted_captures: ParamDeclArrayAttr,
+        linkage_name: LinkageNameAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -2387,6 +2645,7 @@ class ClosureInitOp(max._core.Operation):
         inline_level: InlineLevel,
         capture_types: max._core.dialects.builtin.ArrayAttr,
         capture_names: max._core.dialects.builtin.ArrayAttr,
+        type_value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def func_type_generator(self) -> FuncTypeGeneratorType: ...
@@ -2431,6 +2690,12 @@ class ClosureInitOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.ArrayAttr, /
     ) -> None: ...
     @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @type_value.setter
+    def type_value(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
+    @property
     def nested_fn_scope(self) -> max._core.Attribute | None: ...
     @nested_fn_scope.setter
     def nested_fn_scope(self, arg: max._core.Attribute, /) -> None: ...
@@ -2452,6 +2717,10 @@ class ClosureInitOp(max._core.Operation):
     def hoisted_captures(self) -> Sequence[ParamDeclAttr] | None: ...
     @hoisted_captures.setter
     def hoisted_captures(self, arg: ParamDeclArrayAttr, /) -> None: ...
+    @property
+    def linkage_name(self) -> LinkageNameAttr | None: ...
+    @linkage_name.setter
+    def linkage_name(self, arg: LinkageNameAttr, /) -> None: ...
 
 class CodegenReachableOp(max._core.Operation):
     """
@@ -2583,7 +2852,7 @@ class ConformanceOp(max._core.Operation):
     ```mlir
     kgen.struct.generator @SIMD<type: dtype, size> = ... {
       kgen.conformance @Boolable {
-        kgen.witness @"__bool__" : (!pop.simd<size, type>) -> i1
+        kgen.witness @"__bool__" : (!kgen.simd<size, type>) -> i1
           = @"SIMD::__bool__(::SIMD[$0, $1])"<:dtype type, size>
       }
       ...
@@ -2719,6 +2988,23 @@ class CreateClosureOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        properties: max._core.dialects.builtin.DictionaryAttr = ...,
+        discardable_attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         callee: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
@@ -2768,9 +3054,9 @@ class CreateRegStubOp(max._core.Operation):
     ```mlir
     kgen.create_reg_stub [
       (!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem,
-      !pop.scalar<si16> borrow) -> !kgen.none: @foo] :
+      !kgen.scalar<si16> borrow) -> !kgen.none: @foo] :
       <(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem,
-      !pop.scalar<si16> borrow) -> !kgen.none>
+      !kgen.scalar<si16> borrow) -> !kgen.none>
     ```
     """
 
@@ -2826,6 +3112,7 @@ class DeferredOp(max._core.Operation):
         operands: Sequence[max._core.Value[max._core.Type]],
         op_name: max._core.dialects.builtin.StringAttr,
         op_attrs: max._core.dialects.builtin.DictionaryAttr,
+        op_properties: max._core.Attribute,
     ) -> None: ...
     @property
     def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -2841,6 +3128,10 @@ class DeferredOp(max._core.Operation):
     def op_attrs(
         self, arg: max._core.dialects.builtin.DictionaryAttr, /
     ) -> None: ...
+    @property
+    def op_properties(self) -> max._core.Attribute | None: ...
+    @op_properties.setter
+    def op_properties(self, arg: max._core.Attribute, /) -> None: ...
 
 class ExternGeneratorOp(max._core.Operation):
     """
@@ -2853,7 +3144,7 @@ class ExternGeneratorOp(max._core.Operation):
     Example:
 
     ```mlir
-    kgen.extern.generator @kernel<simd_width>(!pop.simd<simd_width, f32>)
+    kgen.extern.generator @kernel<simd_width>(!kgen.simd<simd_width, f32>)
     ```
     """
 
@@ -3071,6 +3362,7 @@ class GeneratorOp(max._core.Operation):
         linkage_name: LinkageNameAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
+        source_param_list: PogListAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -3164,6 +3456,10 @@ class GeneratorOp(max._core.Operation):
     def _llvm_arg_metadata_array(
         self, arg: max._core.dialects.builtin.ArrayAttr, /
     ) -> None: ...
+    @property
+    def source_param_list(self) -> PogListAttr | None: ...
+    @source_param_list.setter
+    def source_param_list(self, arg: PogListAttr, /) -> None: ...
 
 class IsRunInComptimeInterpreterOp(max._core.Operation):
     """
@@ -3189,175 +3485,6 @@ class IsRunInComptimeInterpreterOp(max._core.Operation):
         result: max._core.dialects.builtin.IntegerType,
     ) -> None: ...
 
-class PackCreateOp(max._core.Operation):
-    """
-    The `kgen.pack.create` operation creates a value of `!kgen.pack` type,
-    populated with the given SSA values.
-
-    Example:
-
-    ```mlir
-    kgen.generator @pack<Ts: param_list<!kgen.type>>(
-      %arg0: f32, %arg1: si8
-    ) {
-      // Create a pack of two elements.
-      %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<[f32, si8]>
-
-      // Create that same pack of two elements, but with a parameterized result.
-      %1 = kgen.pack.create(%arg0 : f32, %arg1 : si8) : !kgen.pack<Ts>
-
-      // Create an empty pack.
-      %2 = kgen.pack.create() : !kgen.pack<[]>
-
-      kgen.return
-    }
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: PackType,
-        elements: Sequence[max._core.Value[max._core.Type]],
-    ) -> None: ...
-    @property
-    def elements(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-
-class PackExtractOp(max._core.Operation):
-    """
-    The `kgen.pack.extract` operation returns the element of a pack at the
-    provided index.  The index must be a parameter of index type.  This
-    operation is resolved post-elaboration when the pack details become known.
-
-    Example:
-
-    ```mlir
-    kgen.generator @pack<Ts: param_list<!kgen.type>, T: type, I: index>(
-      %arg0: !kgen.pack<i32, T>
-      %arg1: Ts,
-    ) {
-      // Get the first element, of type `i32`.
-      %0 = kgen.pack.extract %arg0[0] : <[i32, T]>
-      // Get the second element, of type `!kgen.param<T>`.
-      %1 = kgen.pack.extract %arg0[1] : <[i32, T]>
-
-      // Get the element at an offset `I + 1`.
-      %2 = kgen.pack.extract %arg0[add(I, 1)] : <[i32, T]>
-
-      // Get the element at index 3.
-      %3 = kgen.pack.extract %arg1[3] : <Ts>
-
-      kgen.return
-    }
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: max._core.Type,
-        pack: max._core.Value[PackType],
-        index: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        pack: max._core.Value[PackType],
-        index: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def pack(self) -> max._core.Value[PackType]: ...
-    @property
-    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @index.setter
-    def index(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
-
-class PackGepOp(max._core.Operation):
-    """
-    The `kgen.pack.gep` operation returns a pointer to the element of a pack at
-    the provided index.  The index must be a parameter of index type.  This
-    operation is resolved post-elaboration when the pack details become known.
-    """
-
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: PointerType,
-        pack: max._core.Value[PointerType],
-        index: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        pack: max._core.Value[PointerType],
-        index: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def pack(self) -> max._core.Value[PointerType]: ...
-    @property
-    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @index.setter
-    def index(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
-
-class PackLoadOp(max._core.Operation):
-    """
-    The `kgen.pack.load` operation takes a pack of !kgen.pointer values and
-    loads each one into a pack without the pointer type.  This requires
-    elements with trivially loadable types supported by pop.load.
-    """
-
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: PackType,
-        pack: max._core.Value[PackType],
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        pack: max._core.Value[PackType],
-    ) -> None: ...
-    @property
-    def pack(self) -> max._core.Value[PackType]: ...
-
-class PackSizeOp(max._core.Operation):
-    """
-    The `kgen.pack.size` operation takes an operand with a `!kgen.pack` type and
-    returns the number of elements in the pack.
-
-    Example:
-
-    ```mlir
-    // Get the size of a pack.
-    kgen.pack.size %0 : <Ts>
-    // Get the size of a concrete pack with 2 elements.
-    kgen.pack.size %1 : <[i32, f32]>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: max._core.dialects.builtin.IndexType,
-        operand: max._core.Value[PackType],
-    ) -> None: ...
-    @property
-    def operand(self) -> max._core.Value[PackType]: ...
-
 class ParamApplyOp(max._core.Operation):
     """
     The `kgen.param.apply` operation is a call operation entirely in the
@@ -3371,7 +3498,7 @@ class ParamApplyOp(max._core.Operation):
 
     ```mlir
     kgen.param.declare sw: i1 = <1>
-    kgen.param.apply A = [(i1) -> !pop.simd<8, f32>: callee](sw)
+    kgen.param.apply A = [(i1) -> !kgen.simd<8, f32>: callee](sw)
     ```
     """
 
@@ -3785,16 +3912,16 @@ class RebindOp(max._core.Operation):
 
     ```mlir
     // Rebind a parameterized type to a concrete type.
-    %0 = kgen.rebind %arg0 : !kgen.param<type> to !pop.scalar<f32>
+    %0 = kgen.rebind %arg0 : !kgen.param<type> to !kgen.scalar<f32>
 
     // Rebind between parameter domains.
-    %1 = kgen.rebind %arg1 : !kgen.param<type> to !pop.simd<size, dtype>
+    %1 = kgen.rebind %arg1 : !kgen.param<type> to !kgen.simd<size, dtype>
 
     // Unbind a concrete type to one with a parameter.
-    %2 = kgen.rebind %arg2 : !pop.scalar<f32> to !pop.scalar<dtype>
+    %2 = kgen.rebind %arg2 : !kgen.scalar<f32> to !kgen.scalar<dtype>
 
     // ERROR: Cannot rebind between different concrete types.
-    %3 = kgen.rebind %arg2 : !pop.scalar<f32> to !pop.scalar<si32>
+    %3 = kgen.rebind %arg2 : !kgen.scalar<f32> to !kgen.scalar<si32>
     ```
     """
 
@@ -3930,11 +4057,11 @@ class StructExtractOp(max._core.Operation):
     Example:
 
     ```mlir
-    // Extract the !pop.scalar<f32> at index 0.
+    // Extract the !kgen.scalar<f32> at index 0.
     %0 = kgen.struct.extract %struct[0]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
 
-    // Extract the !pop.scalar<f64> at index 1.
+    // Extract the !kgen.scalar<f64> at index 1.
     %1 = kgen.struct.extract %struct[1]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
 
@@ -3962,6 +4089,23 @@ class StructExtractOp(max._core.Operation):
         location: Location,
         container: max._core.Value[StructType],
         index: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        properties: max._core.dialects.builtin.DictionaryAttr = ...,
+        discardable_attributes: max._core.dialects.builtin.DictionaryAttr = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -4132,6 +4276,10 @@ class StructLoadIndirectOp(max._core.Operation):
     The `kgen.struct.load_indirect` operation takes a struct of !kgen.pointer
     values and loads each one into a struct without the pointer type.  This
     requires elements with trivially loadable types supported by pop.load.
+
+    When the operand struct is a variadic parameter pack (`isParamPack`), the
+    result struct is also marked `isParamPack` so downstream ABI lowering can
+    still recognize a pack.
     """
 
     @overload
@@ -4149,6 +4297,14 @@ class StructLoadIndirectOp(max._core.Operation):
         location: Location,
         struct_value: max._core.Value[StructType],
     ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
     @property
     def struct_value(self) -> max._core.Value[StructType]: ...
 
@@ -4160,11 +4316,11 @@ class StructReplaceOp(max._core.Operation):
     Example:
 
     ```mlir
-    // Insert the !pop.scalar<f32> at index 0.
+    // Insert the !kgen.scalar<f32> at index 0.
     %0 = kgen.struct.replace %f32, %struct[0]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
 
-    // Insert the !pop.scalar<f64> at index 1.
+    // Insert the !kgen.scalar<f64> at index 1.
     %1 = kgen.struct.replace %f64, %struct[1]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
     ```
@@ -4233,7 +4389,7 @@ class VariantCreateOp(max._core.Operation):
 
     // Create a variant of either a scalar float or integer.
     %1 = kgen.param.constant: scalar<f64> = <<"0.0">>
-    %2 = kgen.variant.create %1, 1 : !pop.scalar<f64>
+    %2 = kgen.variant.create %1, 1 : !kgen.scalar<f64>
         -> !kgen.variant<scalar<i64>, scalar<f64>>
     ```
     """
@@ -4287,6 +4443,31 @@ class VariantGetOp(max._core.Operation):
         variant: max._core.Value[VariantType],
         index: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        variant: max._core.Value[VariantType],
+        index: int,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        properties: max._core.dialects.builtin.DictionaryAttr = ...,
+        discardable_attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
     @property
     def variant(self) -> max._core.Value[VariantType]: ...
     @property
@@ -4334,7 +4515,7 @@ class WitnessOp(max._core.Operation):
     ```mlir
     kgen.struct.generator @SIMD<type: dtype, size> = ... {
       kgen.conformance @Boolable {
-        kgen.witness @"__bool__" : (!pop.simd<size, type>) -> i1
+        kgen.witness @"__bool__" : (!kgen.simd<size, type>) -> i1
           = @"SIMD::__bool__(::SIMD[$0, $1])"<:dtype type, size>
       }
       ...
@@ -4370,13 +4551,13 @@ class ParameterScopeTypeInterface(Protocol):
 
     ```mojo
     def foo[T: AnyType]():
-      alias bork: def[
+      comptime bork: def[
         T: AnyType,
         inner_f: def[Y: AnyType](t: T, y: Y) -> None
       ] -> None = ...
     ```
 
-    The `fn` after `bork:` is a `kgen.generator` which is a
+    The `def` after `bork:` is a `kgen.generator` which is a
     `ParameterScopeTypeInterface`.
 
     `ParameterScopeTypeInterface` also causes the `depth` fields of
@@ -4515,6 +4696,7 @@ class FuncType(max._core.Type):
         arg_convs: Sequence[ArgConvention] = [],
         effects: FnEffects = FnEffects.none,
         metadata: max._core.Attribute = ...,
+        arg_list_attrs: max._core.Attribute = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -4523,6 +4705,7 @@ class FuncType(max._core.Type):
         arg_conventions: Sequence[ArgConvention],
         fn_effects: FnEffects,
         metadata: FnMetadataAttrInterface,
+        arg_list_attrs: PogListAttr,
     ) -> None: ...
     @property
     def values(self) -> max._core.dialects.builtin.FunctionType: ...
@@ -4532,6 +4715,8 @@ class FuncType(max._core.Type):
     def fn_effects(self) -> FnEffects: ...
     @property
     def metadata(self) -> FnMetadataAttrInterface: ...
+    @property
+    def arg_list_attrs(self) -> PogListAttr: ...
 
 class GeneratorType(max._core.Type):
     """
@@ -4552,14 +4737,35 @@ class GeneratorType(max._core.Type):
         self,
         input_param_types: Sequence[max._core.Type],
         body: max._core.Type,
-        metadata: GeneratorMetadataAttrInterface,
+        metadata: PogListAttr,
     ) -> None: ...
     @property
     def input_param_types(self) -> Sequence[max._core.Type]: ...
     @property
     def body(self) -> max._core.Type | None: ...
     @property
-    def metadata(self) -> GeneratorMetadataAttrInterface: ...
+    def metadata(self) -> PogListAttr: ...
+
+class MLIRDeferredType(max._core.Type):
+    """
+    A `!kgen.deferred_type` wraps an `#kgen.attr_ctor_deferred` attribute that,
+    once all parameters are concrete, is concatenated into a type string and
+    parsed by the elaborator to produce the actual MLIR type.
+
+    This type is produced by the Mojo parser when `__mlir_deferred_type[...]`
+    is used as a function return type and the type string cannot be parsed at
+    parse time (because it references not-yet-concrete parameters).
+
+    Example:
+
+    ```mlir
+    !kgen.deferred_type<#kgen.attr_ctor_deferred("llvm.array<", ...)>
+    ```
+    """
+
+    def __init__(self, attr: max._core.Attribute) -> None: ...
+    @property
+    def attr(self) -> max._core.Attribute | None: ...
 
 class NeverType(max._core.Type):
     """
@@ -4583,8 +4789,8 @@ class NonStructTypeType(max._core.Type):
     comptime mlir_i1 = __mlir_type.i1
     # type_of(mlir_i1) == !kgen.non_struct_type
 
-    comptime fn_type = fn()->Int
-    # type_of(fn_type) == !kgen.non_struct_type
+    comptime def_type = def()->Int
+    # type_of(def_type) == !kgen.non_struct_type
 
     # Notably:
     # type_of(type_of(mlir_i1)) == !kgen.type
@@ -4600,40 +4806,6 @@ class NoneType(max._core.Type):
     """
 
     def __init__(self) -> None: ...
-
-class PackType(max._core.Type):
-    """
-    A `!kgen.pack` type represents a sequence of heterogeneously typed elements.
-    This type can be used to represent a tuple of 0 or more elements.
-
-    Example:
-
-    ```mlir
-    // A concrete pack type with no element types.
-    !kgen.pack<[]>
-
-    // A concrete pack type with two element types.
-    !kgen.pack<[i32, i64]>
-
-    kgen.generator @pack<Ts: param_list<!kgen.type>, T0: type, T1: type>(
-      // A pack type parameterized on a variadic sequence of elements.
-      %0: !kgen.pack<Ts>,
-      // A pack type parameterized on two element types.
-      %1: !kgen.pack<[T0, T1]>,
-    ) { kgen.return }
-    ```
-    """
-
-    @overload
-    def __init__(
-        self, variadic: max._core.dialects.builtin.TypedAttr
-    ) -> None: ...
-    @overload
-    def __init__(
-        self, variadic: max._core.dialects.builtin.TypedAttr
-    ) -> None: ...
-    @property
-    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class ParamClosureType(max._core.Type):
     """
@@ -4689,35 +4861,6 @@ class ParamClosureType(max._core.Type):
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
 
-class ParamListSplatType(max._core.Type):
-    """
-    The `!kgen.param_list_splat` type represents deferred type that splats
-    element type specified number of times. The type cannot be used standalone
-    and has to be used either within `!kgen.struct` or `!llvm.struct` types.
-
-    ```mlir
-    !kgen.struct<(!kgen.param_list_splat<index, 3>)>
-    !llvm.struct<(!kgen.param_list_splat<index, 5>)>
-    ```
-
-    will be concretized to
-
-    ```mlir
-    !kgen.struct<(index, index, index)>
-    !llvm.struct<(index, index, index, index, index)>
-    ```
-    """
-
-    def __init__(
-        self,
-        element_type: max._core.Type,
-        count: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def element_type(self) -> max._core.Type | None: ...
-    @property
-    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
-
 class ParamListType(max._core.Type):
     """
     The `!kgen.param_list` type represents a homogeneously typed list
@@ -4759,6 +4902,36 @@ class ParamType(max._core.Type):
     ) -> None: ...
     @property
     def param(self) -> max._core.dialects.builtin.TypedAttr: ...
+
+class SIMDType(max._core.Type):
+    """This type is parameterized with a size and a !kgen.dtype type."""
+
+    @overload
+    def __init__(
+        self,
+        size: max._core.dialects.builtin.TypedAttr,
+        dtype: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, size: int, dtype: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, size: max._core.dialects.builtin.TypedAttr, dtype: _KGENDType
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        size: max._core.dialects.builtin.TypedAttr,
+        d_type: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(self, size: int, dtype: _KGENDType) -> None: ...
+    @property
+    def size(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def d_type(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class StringType(max._core.Type):
     """
@@ -4890,6 +5063,7 @@ class StructType(max._core.Type):
         variadic: max._core.dialects.builtin.TypedAttr,
         is_memory_only: max._core.dialects.builtin.TypedAttr = ...,
         min_alignment: max._core.dialects.builtin.TypedAttr = ...,
+        is_param_pack: bool = False,
     ) -> None: ...
     @overload
     def __init__(
@@ -4897,6 +5071,7 @@ class StructType(max._core.Type):
         variadic: max._core.dialects.builtin.TypedAttr,
         is_memory_only: bool,
         min_alignment: max._core.dialects.builtin.TypedAttr = ...,
+        is_param_pack: bool = False,
     ) -> None: ...
     @property
     def element_types_variadic(
@@ -4906,6 +5081,8 @@ class StructType(max._core.Type):
     def is_memory_only(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def min_alignment(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def is_param_pack(self) -> bool: ...
 
 class TargetType(max._core.Type):
     """
@@ -5050,9 +5227,14 @@ class FuncTypeGeneratorType(GeneratorType):
         effects: FnEffects = FnEffects.none,
         fn_metadata: max._core.Attribute = ...,
         gen_metadata: max._core.Attribute = ...,
+        arg_list_attrs: max._core.Attribute = ...,
     ) -> None: ...
 
 class _KGENDType:
+    @staticmethod
+    def get_int(arg0: int, arg1: bool, /) -> _KGENDType: ...
+
+class _DTypeValue:
     pass
 
 class ParamDefValue:

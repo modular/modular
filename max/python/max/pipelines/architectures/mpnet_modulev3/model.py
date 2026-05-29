@@ -35,9 +35,7 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
-from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -45,6 +43,7 @@ from max.pipelines.lib import (
     PipelineModel,
     upper_bounded_default,
 )
+from max.pipelines.modeling.dataprocessing import collate_batch
 from transformers import AutoConfig
 
 from .graph import MPNetModel
@@ -152,49 +151,47 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             "MPNet does not support preparing next tokens inputs."
         )
 
-    def load_model(self) -> Callable[..., list[Tensor]]:
-        with CompilationTimer("model") as timer:
-            if self.adapter:
-                state_dict = self.adapter(dict(self.weights.items()))
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
+    def load_model(self) -> Callable[..., tuple[Tensor, ...]]:
+        if self.adapter:
+            state_dict = self.adapter(dict(self.weights.items()))
+        else:
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
 
-            # Cast weights to match the model's configured dtype (e.g. float32
-            # safetensor weights -> bfloat16 when default_encoding is bfloat16).
-            # V3 compile() requires exact dtype matching unlike V2 load_state_dict.
-            target_dtype = self.dtype
-            cast_state_dict: dict[str, Any] = {}
-            for k, v in state_dict.items():
-                buf = Buffer.from_dlpack(v) if not isinstance(v, Buffer) else v
-                if buf.dtype != target_dtype and buf.dtype.is_float():
-                    buf = cast_tensor_to(buf, target_dtype)
-                cast_state_dict[k] = buf
-            state_dict = cast_state_dict
+        # Cast weights to match the model's configured dtype (e.g. float32
+        # safetensor weights -> bfloat16 when default_encoding is bfloat16).
+        # V3 compile() requires exact dtype matching unlike V2 load_state_dict.
+        target_dtype = self.dtype
+        cast_state_dict: dict[str, Any] = {}
+        for k, v in state_dict.items():
+            buf = Buffer.from_dlpack(v) if not isinstance(v, Buffer) else v
+            if buf.dtype != target_dtype and buf.dtype.is_float():
+                buf = cast_tensor_to(buf, target_dtype)
+            cast_state_dict[k] = buf
+        state_dict = cast_state_dict
 
-            config = MPNetConfig.initialize(self.pipeline_config)
+        config = MPNetConfig.initialize(self.pipeline_config)
 
-            with F.lazy(), default_dtype(target_dtype):
-                nn_model = MPNetModel(config)
-                nn_model.to(self.devices[0])
+        with F.lazy(), default_dtype(target_dtype):
+            nn_model = MPNetModel(config)
+            nn_model.to(self.devices[0])
 
-            device0 = self.devices[0]
-            device_ref = DeviceRef(device0.label, device0.id)
-            input_ids_type = TensorType(
-                DType.int64, shape=["batch_size", "seq_len"], device=device_ref
-            )
-            attention_mask_type = TensorType(
-                DType.float32,
-                shape=["batch_size", "seq_len"],
-                device=device_ref,
-            )
+        device0 = self.devices[0]
+        device_ref = DeviceRef(device0.label, device0.id)
+        input_ids_type = TensorType(
+            DType.int64, shape=["batch_size", "seq_len"], device=device_ref
+        )
+        attention_mask_type = TensorType(
+            DType.float32,
+            shape=["batch_size", "seq_len"],
+            device=device_ref,
+        )
 
-            timer.mark_build_complete()
-            compiled_model = nn_model.compile(
-                input_ids_type,
-                attention_mask_type,
-                weights=state_dict,
-            )
+        compiled_model = nn_model.compile(
+            input_ids_type,
+            attention_mask_type,
+            weights=state_dict,
+        )
 
         return compiled_model

@@ -17,7 +17,7 @@ from std.sys import is_nvidia_gpu
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from std.collections import OptionalReg
 from std.utils.index import IndexList, Index
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 # ===-----------------------------------------------------------------------===#
 # MaskName
@@ -239,6 +239,25 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         """
         ...
 
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        """
+        The largest power of 2, capped at `BN`, that divides every
+        `base_kv_row = start_column + k*BN` produced by BN-stride
+        mask-driven iteration. Callers pass this directly as
+        `base_alignment` to `PagedKVCache.populate`, which uses it to
+        pick the largest legal SIMD chunk for its LUT vector load.
+
+        Implementations must return a value that already divides `BN`
+        (equivalently, the value must equal
+        `gcd(natural_alignment, BN)`). For an implementation whose
+        natural `start_column` alignment is a power of 2 less than or
+        equal to `BN`, this is automatic. An implementation whose
+        natural alignment doesn't divide `BN` must wrap its return in
+        `gcd(..., BN)` itself.
+        """
+        ...
+
     def total_iters[
         BM: Int, BN: Int, page_size: Int
     ](self, row: UInt32, num_cols: UInt32) -> UInt32:
@@ -329,8 +348,10 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -423,6 +444,12 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
         # causal mask is
         return 0
 
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # `start_column` always returns 0, which is divisible by anything;
+        # cap at BN.
+        return BN
+
     @always_inline
     def total_iters[
         BM: Int, BN: Int, page_size: Int
@@ -494,8 +521,10 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -532,6 +561,11 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
     ](self, row: UInt32) -> UInt32:
         return 0
 
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # `start_column` always returns 0; cap at BN.
+        return BN
+
     @always_inline
     def total_iters[
         BM: Int, BN: Int, page_size: Int
@@ -550,7 +584,7 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
 
     @staticmethod
     def count_nonfull_sets(BM: Int, BN: Int) -> Int:
-        return 1
+        return 2
 
     @always_inline
     def masked_set_ends[
@@ -558,19 +592,22 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
     ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
         UInt32, Self.count_nonfull_sets(BM, BN)
     ]:
-        return {self.total_iters[BM, BN, page_size](row, num_cols)}
+        return {
+            num_cols // UInt32(BN),
+            self.total_iters[BM, BN, page_size](row, num_cols),
+        }
 
     @staticmethod
     def nonfull_sets[
         BM: Int, BN: Int
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
-        return {TileMaskStatus.NO_MASK}
+        return {TileMaskStatus.NO_MASK, TileMaskStatus.NO_MASK}
 
     @staticmethod
     def mask_strategies[
         BM: Int, BN: Int
     ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
-        return {MaskStrategy.OUT_OF_BOUNDS}
+        return {MaskStrategy.NO_MASK, MaskStrategy.OUT_OF_BOUNDS}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -607,8 +644,10 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -711,6 +750,11 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         comptime align_to = BN if page_size <= 1 else min(page_size, BN)
         return align_down(col, UInt32(align_to))
 
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # Matches `align_to` in `start_column`.
+        return BN if page_size <= 1 else min(page_size, BN)
+
     @always_inline
     def total_iters[
         BM: Int, BN: Int, page_size: Int
@@ -788,8 +832,10 @@ struct SlidingWindowCausalMask[window_size: Int](
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -919,6 +965,11 @@ struct SlidingWindowCausalMask[window_size: Int](
         # num_keys.
         comptime align_to = BN if page_size <= 1 else min(page_size, BN)
         return align_down(col, UInt32(align_to))
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # Matches `align_to` in `start_column`.
+        return BN if page_size <= 1 else min(page_size, BN)
 
     @always_inline
     def total_iters[
@@ -1050,8 +1101,10 @@ struct CausalPaddingMask[layout_: Layout, origin_: Origin[mut=False]](
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1113,6 +1166,11 @@ struct CausalPaddingMask[layout_: Layout, origin_: Origin[mut=False]](
         BM: Int, BN: Int, page_size: Int
     ](self, row: UInt32) -> UInt32:
         return Self.causal_mask.start_column[BM, BN, page_size](row)
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # Delegates to `CausalMask`, which always returns 0.
+        return CausalMask.start_column_alignment[BM, BN, page_size]()
 
     @always_inline
     def total_iters[
@@ -1212,8 +1270,10 @@ struct MaterializedMask[
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1323,6 +1383,11 @@ struct MaterializedMask[
     ](self, row: UInt32) -> UInt32:
         return naively_get_first_nonempty_mask_col[BM, BN](self, row)
 
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # `naively_get_first_nonempty_mask_col` steps by BN from 0.
+        return BN
+
     @always_inline
     def total_iters[
         BM: Int, BN: Int, page_size: Int
@@ -1378,8 +1443,10 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1426,6 +1493,11 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         BM: Int, BN: Int, page_size: Int
     ](self, row: UInt32) -> UInt32:
         return naively_get_first_nonempty_mask_col[BM, BN](self, row)
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # `naively_get_first_nonempty_mask_col` steps by BN from 0.
+        return BN
 
     @always_inline
     def total_iters[
@@ -1482,8 +1554,10 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1528,6 +1602,11 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         BM: Int, BN: Int, page_size: Int
     ](self, row: UInt32) -> UInt32:
         return naively_get_first_nonempty_mask_col[BM, BN](self, row)
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # `naively_get_first_nonempty_mask_col` steps by BN from 0.
+        return BN
 
     @always_inline
     def total_iters[

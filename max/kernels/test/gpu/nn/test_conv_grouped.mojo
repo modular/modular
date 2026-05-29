@@ -74,19 +74,19 @@ def test_grouped_conv2d[
     )
 
     # Host memory
-    var input_host = alloc[Scalar[dtype]](in_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var out_gpu_host = alloc[Scalar[dtype]](out_size)
-    var out_ref_host = alloc[Scalar[dtype]](out_size)
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var out_gpu_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_ref_host = ctx.enqueue_create_host_buffer[dtype](out_size)
 
-    rand(input_host, in_size)
-    rand(filter_host, filter_size)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     # CPU reference (Naive2dConvolution takes 5D NDHWC shapes with D=1)
     Naive2dConvolution[dtype, dtype, dtype].run(
-        out_ref_host,
-        input_host,
-        filter_host,
+        out_ref_host.unsafe_ptr(),
+        input_host.unsafe_ptr(),
+        filter_host.unsafe_ptr(),
         Index(N, 1, H_out, W_out, C_out),
         Index(N, 1, H, W, C_in),
         Index(1, R, S, C_per_group, C_out),
@@ -106,14 +106,12 @@ def test_grouped_conv2d[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    comptime input_tt_layout = row_major(
-        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
-    )
+    comptime input_tt_layout = row_major((Idx[N], Idx[H], Idx[W], Idx[C_in]))
     comptime filter_tt_layout = row_major(
-        (Idx[R](), Idx[S](), Idx[C_per_group](), Idx[C_out]())
+        (Idx[R], Idx[S], Idx[C_per_group], Idx[C_out])
     )
     comptime output_tt_layout = row_major(
-        (Idx[N](), Idx[H_out](), Idx[W_out](), Idx[C_out]())
+        (Idx[N], Idx[H_out], Idx[W_out], Idx[C_out])
     )
     var input_tt = TileTensor(input_dev, input_tt_layout)
     var filter_tt = TileTensor(filter_dev, filter_tt_layout)
@@ -160,10 +158,6 @@ def test_grouped_conv2d[
     assert_false(errors > 0, "Grouped conv2d GPU output mismatch")
 
     # Cleanup
-    input_host.free()
-    filter_host.free()
-    out_gpu_host.free()
-    out_ref_host.free()
     _ = input_dev^
     _ = filter_dev^
     _ = out_dev^

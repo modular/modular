@@ -148,6 +148,12 @@ def modular_py_binary(
             data = extra_data + data,
             ignore_extra_deps = ignore_extra_deps,
             ignore_unresolved_imports = ignore_unresolved_imports,
+            target_compatible_with = select({
+                # No point in running these, causes "error replanting symlinks" failures
+                "//:asan": ["@platforms//:incompatible"],
+                "//:ubsan": ["@platforms//:incompatible"],
+                "//conditions:default": [],
+            }),
             imports = imports,
             deps = deps,
             tags = ["pydeps"],

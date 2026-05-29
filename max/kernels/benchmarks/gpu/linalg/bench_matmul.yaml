@@ -54,3 +54,19 @@ params:
 - $M: [1, 4, 8, 12, 16, 75, 150, 225, 300, 450, 600, 750, 2048, 4096, 6144, 8192]
   N: 13312
   K: 16384
+
+# SmolLM2-135M shapes - small model regression coverage (B200 dispatch path)
+- $M: [1, 4, 8, 16, 64, 256, 512, 1024, 2048]
+  N: 1536
+  K: 576
+  use_vendor_blas: [True, False]
+
+- $M: [1, 4, 8, 16, 64, 256, 512, 1024, 2048]
+  N: 576
+  K: 1536
+  use_vendor_blas: [True, False]
+
+- $M: [1, 4, 8, 16, 64, 256, 512, 1024, 2048]
+  N: 576
+  K: 576
+  use_vendor_blas: [True, False]

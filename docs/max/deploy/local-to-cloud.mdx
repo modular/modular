@@ -124,7 +124,7 @@ The Los Angeles Dodgers won the 2020 World Series. They defeated the Tampa Bay R
 ```
 
 To learn more about the supported REST body parameters, see our [API reference
-for chat completion](/max/api/serve#operation/createChatCompletion).
+for chat completion](/max/rest-api/#POST/v1/chat/completions).
 
 Now that the model works locally, we'll transition to cloud deployment.
 
@@ -180,9 +180,9 @@ infrastructure is provisioned and configured to prepare for serving requests:
       libraries are installed to enable hardware acceleration for model
       processing.
     - **Docker container initialization**: A Docker container is launched on the
-    VM, where it pulls the necessary images from the Docker Container Registry.
-      This registry serves as a central repository for storing Docker images,
-      making it easy to deploy and update the application.
+  VM, where it pulls the necessary images from the Docker Container Registry.
+  This registry serves as a central repository for storing Docker images,
+  making it easy to deploy and update the application.
 
 Inside the container, MAX is set up alongside the Llama 3 model. This
 setup prepares the environment for serving requests but does not yet expose the
@@ -530,7 +530,7 @@ sudo docker run -d \
   -p 80:8000 \
   --ipc=host \
   modular/max-nvidia-full:latest \
-  --model-path ${HUGGING_FACE_REPO_ID}'
+  --model ${HUGGING_FACE_REPO_ID}'
 
 export STARTUP_SCRIPT=$(echo "$STARTUP_SCRIPT" | base64)
 ```
@@ -641,7 +641,7 @@ sudo docker run -d \
   --device /dev/kfd \
   --device /dev/dri \
   modular/max-amd:latest \
-  --model-path ${HUGGING_FACE_REPO_ID}'
+  --model ${HUGGING_FACE_REPO_ID}'
 
 export STARTUP_SCRIPT=$(echo "$STARTUP_SCRIPT" | base64)
 ```
@@ -857,8 +857,8 @@ echo "Public IP: ${PUBLIC_IP}"
 
     1. Install the required dependencies for the monitoring script:
        - Install
-      [sshpass](https://www.cyberciti.biz/faq/noninteractive-shell-script-ssh-password-provider/)
-      on your local machine to enable automated SSH password authentication
+   [sshpass](https://www.cyberciti.biz/faq/noninteractive-shell-script-ssh-password-provider/)
+   on your local machine to enable automated SSH password authentication
 
     2. Set up and run the monitoring script:
 

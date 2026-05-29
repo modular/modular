@@ -149,7 +149,7 @@ def main() raises:
         ctx.enqueue_copy(d_bins, h_bins)
 
         # Launch kernel
-        ctx.enqueue_function_experimental[histogram_kernel](
+        ctx.enqueue_function[histogram_kernel](
             d_image,
             d_bins,
             width,

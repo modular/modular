@@ -116,7 +116,7 @@ from max.experimental.sharding import (
     Placement,
     PlacementMapping,
     Replicated,
-    Sharded,
+    global_shape_from_local,
     shard_shape,
 )
 from max.experimental.support import contextvar_context, driver_tensor_type
@@ -445,68 +445,59 @@ def defaults_like(like: Tensor | TensorType) -> Generator[None]:
 
 
 class Tensor(DLPackArray, HasTensorValue):
-    """A multi-dimensional array with eager execution and automatic compilation.
+    """A multi-dimensional array of numeric values on a CPU or accelerator device.
 
-    The Tensor class provides a high-level interface for numerical computations
-    with automatic compilation and optimization via the MAX runtime. Operations
-    on tensors execute eagerly while benefiting from lazy evaluation and
-    graph-based optimizations behind the scenes.
+    You can create tensors using:
 
-    **Key Features:**
+    - The :class:`Tensor` constructor.
+    - Factory methods like :meth:`ones`, :meth:`zeros`, or :meth:`arange`.
+    - Other array libraries via :meth:`from_dlpack`.
 
-    - **Eager execution**: Operations execute immediately with automatic compilation.
-    - **Lazy evaluation**: Computation may be deferred until results are needed.
-    - **High performance**: Uses the Mojo compiler and optimized kernels.
-    - **Familiar API**: Supports common array operations and indexing.
-    - **Device flexibility**: Works seamlessly across CPU and accelerators.
-
-    **Creating Tensors:**
-
-    Create tensors using the constructor, factory methods like :meth:`ones`,
-    :meth:`zeros`, :meth:`arange`, or from other array libraries via
-    :meth:`from_dlpack`.
+    Tensors support the DLPack protocol for zero-copy data exchange with
+    NumPy, PyTorch, JAX, and other array libraries.
 
     .. code-block:: python
 
-        from max.experimental import tensor
+        import numpy as np
+        from max.experimental.tensor import Tensor
+        from max.dtype import DType
 
-        # Create tensors from data (like torch.tensor())
-        x = tensor.Tensor([[1.0, 2.0], [3.0, 4.0]])
-        y = tensor.Tensor.zeros((2, 3))
+        # Create from a Python scalar or nested list
+        x = Tensor(42, dtype=DType.int32)
+        y = Tensor([[1.0, 2.0], [3.0, 4.0]])
 
-        # Perform operations
-        result = x + y  # Eager execution with automatic compilation
+        # Create from any DLPack-compatible array; dtype is inherited
+        z = Tensor(np.array([1, 2, 3], dtype=np.int16))
 
-        # Access values
-        print(result.shape)  # (2, 3)
-        print(result.dtype)  # DType.float32
+        # Use factory methods like ones, zeros, arange
+        zeros = Tensor.zeros((2, 3))
 
-    **Implementation Notes:**
+        # Compute with Python operators or the functional API
+        result = y + zeros
+        print(result)
 
-    Tensors use lazy evaluation internally - they don't always hold concrete
-    data in memory. A tensor may be "unrealized" (not yet computed) until its
-    value is actually needed (e.g., when converting to other formats or calling
-    :meth:`item`). This allows the runtime to optimize sequences of
-    operations efficiently.
+    A tensor is either *realized* (backed by a concrete
+    :class:`~max.driver.Buffer` in memory) or *unrealized* (backed by a
+    symbolic graph value). MAX realizes tensors by running pre-compiled Mojo
+    kernels or JIT-compiled graphs.
 
-    Operations on tensors build a computation graph behind the scenes, which is
-    compiled and executed when needed. All illegal operations fail immediately
-    with clear error messages, ensuring a smooth development experience.
-
-    .. note::
-
-      The lazy evaluation model and JIT compilation introduce compilation overhead
-      on first execution of operations. This results in higher latency for
-      interactive operations compared to eager frameworks like NumPy or PyTorch,
-      particularly when materializing tensor values (e.g., printing or converting
-      to other formats). Subsequent operations on similar shapes and dtypes reuse
-      compiled kernels for improved performance.
-
-    **Interoperability:**
-
-    Tensors support the DLPack protocol for zero-copy data exchange with NumPy,
-    PyTorch, JAX, and other array libraries. Use :meth:`from_dlpack` to import
-    arrays and standard DLPack conversion for export.
+    Args:
+        data: The value for the tensor. Can be a scalar number, a nested
+            Python list, or any DLPack-compatible array (NumPy, PyTorch,
+            etc.). If not provided, exactly one of ``storage`` or ``state``
+            must be supplied.
+        dtype: The data type for the tensor elements. For DLPack arrays this
+            defaults to the array's own dtype; passing a conflicting value
+            raises :exc:`ValueError`. For Python scalars and lists, defaults
+            to :obj:`DType.float32` on CPU and :obj:`DType.bfloat16` on
+            accelerators.
+        device: The device where the tensor will be allocated. Defaults to
+            an accelerator if available, otherwise CPU. Only valid when
+            ``data`` is provided.
+        storage: Internal backing buffer for a realized tensor. Mutually
+            exclusive with ``data``.
+        state: Internal realization state for an unrealized tensor. Mutually
+            exclusive with ``data``.
     """
 
     # ─── Internal storage ──────────────────────────────────────────────
@@ -687,51 +678,6 @@ class Tensor(DLPackArray, HasTensorValue):
         storage: driver.Buffer | None = None,
         state: RealizationState | None = None,
     ):
-        """Creates a tensor from data or from internal storage.
-
-        When called with ``data``, constructs a tensor from a scalar, nested
-        list, or DLPack-compatible array (matching PyTorch's ``torch.tensor()``
-        semantics). When called without ``data``, requires exactly one of
-        ``storage`` or ``state`` for internal construction.
-
-        For DLPack-compatible arrays (NumPy, PyTorch, etc.) the array's own
-        ``dtype`` is preserved by default; no silent precision conversion
-        happens.  For Python scalars and nested lists, ``dtype`` defaults to
-        :obj:`DType.float32` on CPU and :obj:`DType.bfloat16` on accelerators.
-
-        .. code-block:: python
-
-            from max.experimental.tensor import Tensor
-            from max.dtype import DType
-
-            # Create from scalar
-            x = Tensor(42, dtype=DType.int32)
-
-            # Create from nested list
-            y = Tensor([[1.0, 2.0], [3.0, 4.0]])
-
-            # Create from NumPy array; dtype is inherited from the array
-            import numpy as np
-            z = Tensor(np.array([1, 2, 3], dtype=np.int16))  # stays int16
-
-        Args:
-            data: The value for the tensor. Can be a scalar number, a nested
-                Python list, or any DLPack-compatible array (NumPy, PyTorch,
-                etc.). If not provided, exactly one of ``storage`` or ``state``
-                must be supplied.
-            dtype: The data type for the tensor elements.  For DLPack arrays
-                this defaults to the array's own dtype; passing a conflicting
-                value raises :exc:`ValueError`.  For Python scalars/lists this
-                defaults to :obj:`DType.float32` on CPU and
-                :obj:`DType.bfloat16` on accelerators.
-            device: The device where the tensor will be allocated. If not
-                specified, defaults to an accelerator if available, otherwise
-                CPU. Only valid when ``data`` is provided.
-            storage: Internal backing buffer for a realized tensor. Mutually
-                exclusive with ``data``.
-            state: Internal realization state for an unrealized tensor. Mutually
-                exclusive with ``data``.
-        """
         if data is not None:
             # __new__ already returned the tensor produced by F.constant;
             # __init__ is invoked on that object but nothing remains to do.
@@ -782,6 +728,7 @@ class Tensor(DLPackArray, HasTensorValue):
         cls,
         shard_values: Sequence[GraphValue],
         mapping: DeviceMapping | None = None,
+        global_shape: ShapeLike | None = None,
     ) -> Tensor:
         """Creates a tensor from one or more per-shard graph values.
 
@@ -796,6 +743,9 @@ class Tensor(DLPackArray, HasTensorValue):
             mapping: Device mapping describing how shards map to mesh
                 devices and their placements. Required when
                 ``len(shard_values) > 1``.
+            global_shape: Optional explicit global shape. Pass this when
+                the caller already knows the logical (un-sharded) shape
+                so :attr:`Tensor.shape` does not have to reconstruct it.
 
         Returns:
             A tensor backed by the provided shard values.
@@ -818,7 +768,7 @@ class Tensor(DLPackArray, HasTensorValue):
                 (shard_values[0],)
             )
         return current_realization_context().create_unrealized(
-            tuple(shard_values), mapping=mapping
+            tuple(shard_values), mapping=mapping, global_shape=global_shape
         )
 
     @classmethod
@@ -1438,22 +1388,18 @@ class Tensor(DLPackArray, HasTensorValue):
         if self._global_shape is not None:
             return self._global_shape
         if self.is_distributed:
-            # Get the shard shape from the first shard.
+            # Reconstruct the global shape from local shard shapes.
             if self._storages is not None:
-                shard_shape = list(self._storages[0].shape)
+                shard_shapes = [list(s.shape) for s in self._storages]
             else:
                 assert self._state is not None
-                sv = self._state.values[0]
-                shard_shape = list(sv.shape)
-            # Scale sharded dims back up by mesh size.
+                shard_shapes = [list(v.shape) for v in self._state.values]
             assert self._mapping is not None
-            _placements = self._mapping.to_placements()
-            _mesh = self._mapping.mesh
-            for ax, p in enumerate(_placements):
-                if isinstance(p, Sharded):
-                    d = p.axis % len(shard_shape)
-                    shard_shape[d] = shard_shape[d] * _mesh.mesh_shape[ax]
-            return graph.Shape(shard_shape)
+            return global_shape_from_local(
+                shard_shapes,
+                self._mapping.mesh,
+                self._mapping.to_placements(),
+            )
         shape = self._backing_value.shape
         return shape if isinstance(shape, graph.Shape) else graph.Shape(shape)
 

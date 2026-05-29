@@ -230,6 +230,7 @@ class LatentAttentionWithRope(Module, Shardable):
                 kv_collection,
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 self.BUFFER_TOK_SIZE,
+                max_chunks=1,  # we only do one-shot prefill now.
             )
         )
 

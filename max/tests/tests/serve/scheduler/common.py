@@ -17,28 +17,28 @@ import queue
 from dataclasses import dataclass
 
 import numpy as np
-from max.driver import CPU, Device
+from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import (
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.modeling.types import (
     BatchType,
     GenerationStatus,
-    MAXPushQueue,
     Pipeline,
     RequestID,
-    SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
-from max.pipelines.core import TextContext
+from max.serve.queue import MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
+from max.serve.scheduler_result import SchedulerResult
 
 
 def rand(length: int) -> np.ndarray:
@@ -74,8 +74,29 @@ def create_kv_cache(
     dp: int = 1,
     device: Device = CPU(),
     num_speculative_tokens: int = 0,
+    is_mla: bool = False,
+    tp_per_replica: int = 1,
 ) -> PagedKVCacheManager:
     dtype = DType.float32
+
+    if tp_per_replica > 1:
+        # Simulate multiple TP shards per replica by allocating distinct
+        # device ids (used to exercise the MLA flatten path).
+        n_devices = dp * tp_per_replica
+        if isinstance(device, CPU):
+            session_devices: list[Device] = [
+                CPU(id=i) for i in range(n_devices)
+            ]
+        elif isinstance(device, Accelerator):
+            session_devices = [Accelerator(id=i) for i in range(n_devices)]
+        else:
+            raise TypeError(
+                f"tp_per_replica > 1 not supported for {type(device).__name__}"
+            )
+        device_refs = [DeviceRef.from_device(d) for d in session_devices]
+    else:
+        device_refs = [DeviceRef.from_device(device) for _ in range(dp)]
+        session_devices = [device]
 
     kv_params = KVCacheParams(
         dtype=dtype,
@@ -87,11 +108,16 @@ def create_kv_cache(
         kv_connector=kv_connector,
         host_kvcache_swap_space_gb=999,
         data_parallel_degree=dp,
-        devices=[DeviceRef.from_device(device) for i in range(dp)],
-        num_eagle_speculative_tokens=num_speculative_tokens,
+        devices=device_refs,
+        speculative_method="eagle" if num_speculative_tokens > 0 else None,
+        num_draft_tokens=num_speculative_tokens,
+        is_mla=is_mla,
+        # num_q_heads must be divisible by the per-replica device count
+        # (TP shards) when MLA is enabled.
+        num_q_heads=tp_per_replica if is_mla else None,
     )
 
-    session = InferenceSession(devices=[device])
+    session = InferenceSession(devices=session_devices)
 
     # CPU swap space is 100x the device cache memory
     num_blocks = num_blocks

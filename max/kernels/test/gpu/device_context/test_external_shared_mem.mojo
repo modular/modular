@@ -29,18 +29,18 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
         barrier()
         data[thread_idx.x] = dynamic_sram[thread_idx.x]
 
-    var res_host_ptr = alloc[Float32](16)
-    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
-
+    var res_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](16)
+    ctx.synchronize()
     for i in range(16):
-        res_host_ptr[i] = 0
+        res_host_ptr[i] = Float32(0)
+    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
 
     ctx.enqueue_copy(res_device, res_host_ptr)
 
     comptime kernel = dynamic_smem_kernel
 
     # 16 KB allocation — valid on all platforms including Metal (32 KB limit).
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         res_device,
         grid_dim=1,
         block_dim=16,
@@ -74,7 +74,6 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
         assert_equal(res_host_ptr[i], expected[i])
 
     _ = res_device
-    res_host_ptr.free()
 
 
 def main() raises:

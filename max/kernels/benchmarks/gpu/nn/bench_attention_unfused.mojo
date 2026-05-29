@@ -44,7 +44,7 @@ from linalg.utils import elementwise_compute_lambda_type
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from nn.softmax import softmax
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from std.utils.index import Index, IndexList
 
@@ -102,18 +102,16 @@ def bench_flash[
     ) raises {read}:
         var q = TileTensor(
             q_ptr,
-            row_major(
-                (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-            ),
+            row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
         )
         var k = TileTensor(
             k_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(num_keys),
-                    Idx[kv_num_heads](),
-                    Idx[depth](),
+                    batch_size,
+                    num_keys,
+                    Idx[kv_num_heads],
+                    Idx[depth],
                 )
             ),
         )
@@ -121,18 +119,16 @@ def bench_flash[
             v_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(num_keys),
-                    Idx[kv_num_heads](),
-                    Idx[depth](),
+                    batch_size,
+                    num_keys,
+                    Idx[kv_num_heads],
+                    Idx[depth],
                 )
             ),
         )
         var output = TileTensor(
             o_ptr,
-            row_major(
-                (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-            ),
+            row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
         )
         flash_attention(output, q, k, v, NullMask(), scale, ctx)
 
@@ -244,18 +240,16 @@ def bench_naive[
     ) raises {read}:
         var q = TileTensor(
             q_ptr,
-            row_major(
-                (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-            ),
+            row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
         )
         var k = TileTensor(
             k_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(num_keys),
-                    Idx[kv_num_heads](),
-                    Idx[depth](),
+                    batch_size,
+                    num_keys,
+                    Idx[kv_num_heads],
+                    Idx[depth],
                 )
             ),
         )
@@ -263,18 +257,16 @@ def bench_naive[
             v_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(num_keys),
-                    Idx[kv_num_heads](),
-                    Idx[depth](),
+                    batch_size,
+                    num_keys,
+                    Idx[kv_num_heads],
+                    Idx[depth],
                 )
             ),
         )
         var output = TileTensor(
             o_ptr,
-            row_major(
-                (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-            ),
+            row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
         )
         mha_gpu_naive(
             q,
@@ -404,7 +396,7 @@ def bench_manual[
     @__copy_capture(scale)
     def scale_compute_lambda[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -429,26 +421,26 @@ def bench_manual[
         for h in range(total_heads):
             var q_2d = TileTensor(
                 q_base + h * seq_len * depth,
-                row_major((Idx(seq_len), Idx[depth]())),
+                row_major((seq_len, Idx[depth])),
             )
             var k_2d = TileTensor(
                 k_base + h * num_keys * depth,
-                row_major((Idx(num_keys), Idx[depth]())),
+                row_major((num_keys, Idx[depth])),
             )
             var s_2d = TileTensor(
                 s_base + h * seq_len * num_keys,
-                row_major((Idx(seq_len), Idx(num_keys))),
+                row_major((seq_len, num_keys)),
             )
             matmul[
                 transpose_b=True,
                 elementwise_compute_lambda_fn=scale_fn,
                 target="gpu",
-            ](s_2d, q_2d, k_2d, DeviceContextPtr(ctx))
+            ](s_2d, q_2d, k_2d, ctx)
 
         # Step 2: softmax over the last axis (num_keys).
         var score_3d = TileTensor(
             s_base,
-            row_major((Idx(total_heads), Idx(seq_len), Idx(num_keys))),
+            row_major((total_heads, seq_len, num_keys)),
         )
 
         @parameter
@@ -462,24 +454,24 @@ def bench_manual[
             Index(total_heads, seq_len, num_keys),
             score_3d,
             2,
-            DeviceContextPtr(ctx),
+            ctx,
         )
 
         # Step 3: Score @ V  (per-head 2D matmul, no epilogue).
         for h in range(total_heads):
             var s_2d = TileTensor(
                 s_base + h * seq_len * num_keys,
-                row_major((Idx(seq_len), Idx(num_keys))),
+                row_major((seq_len, num_keys)),
             )
             var v_2d = TileTensor(
                 v_base + h * num_keys * depth,
-                row_major((Idx(num_keys), Idx[depth]())),
+                row_major((num_keys, Idx[depth])),
             )
             var o_2d = TileTensor(
                 o_base + h * seq_len * depth,
-                row_major((Idx(seq_len), Idx[depth]())),
+                row_major((seq_len, Idx[depth])),
             )
-            matmul[target="gpu"](o_2d, s_2d, v_2d, DeviceContextPtr(ctx))
+            matmul[target="gpu"](o_2d, s_2d, v_2d, ctx)
 
     if bench:
 

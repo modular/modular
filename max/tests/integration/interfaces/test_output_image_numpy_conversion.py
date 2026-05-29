@@ -17,13 +17,13 @@ from io import BytesIO
 
 import numpy as np
 import pytest
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.request import RequestID
-from max.interfaces.request.open_responses import (
+from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.modeling.types.status import GenerationStatus
+from max.pipelines.request import RequestID
+from max.pipelines.request.open_responses import (
     ImageDetail,
     OutputImageContent,
 )
-from max.interfaces.status import GenerationStatus
 
 
 def test_output_image_from_numpy_rgb_uint8() -> None:

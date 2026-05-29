@@ -1181,12 +1181,11 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
     @__name(
-        StaticString(Self.config.get_kernal_name())
+        StaticString(Self.config.get_kernel_name())
         + StaticString(
             "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
             is not None else ""
         ),
-        mangle=True,
     )
     def run(
         # Template tensormaps for SMEM initialization
@@ -1685,11 +1684,10 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
     @__name(
         StaticString(
-            Self.config.get_kernal_name()
+            Self.config.get_kernel_name()
             + "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
             is not None else ""
         ),
-        mangle=True,
     )
     def run_2sm(
         # Template tensormaps for SMEM initialization

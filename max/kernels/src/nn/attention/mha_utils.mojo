@@ -606,6 +606,10 @@ def get_start_and_end_for_partitions[
 ](num_keys: Int, num_partitions: Int, partition_idx: Int) -> Tuple[Int, Int]:
     """Calculate start and end indices for a partition.
 
+    Non-empty partitions are packed at low indices `0..N-1` with
+    `partition_size = max(tile_size, align_up(ceildiv(num_keys, num_partitions),
+    tile_size))`; partitions `>= N` are empty (start == end == num_keys).
+
     Args:
         num_keys: Total number of keys (sequence length).
         num_partitions: Number of partitions to split keys into.
@@ -615,24 +619,14 @@ def get_start_and_end_for_partitions[
         Tuple of (start_idx, end_idx) for the partition, aligned to tile_size.
     """
     var num_keys_per_partition = ceildiv(num_keys, num_partitions)
-
-    # Align start to tile_size
-    var start = align_up(num_keys_per_partition * partition_idx, tile_size)
-    # If start is already beyond num_keys, return empty range
+    var partition_size = max(
+        tile_size, align_up(num_keys_per_partition, tile_size)
+    )
+    var start = partition_idx * partition_size
     if start >= num_keys:
         return (num_keys, num_keys)
-    var next_start = align_up(
-        num_keys_per_partition * (partition_idx + 1), tile_size
-    )
-    var end = min(num_keys, next_start)
+    var end = min(num_keys, start + partition_size)
     return (start, end)
-
-    # ^ may lead to non-uniform distribution of keys across partitions because of alignment requirement,
-    # we may want to use the following instead for non-paged kvcache but then we will have to know which cache is being used.
-    # Keep this here for now, can remove it later if we are only using paged kvcache.
-    # var start = num_keys_per_partition * partition_idx
-    # var end = min(num_keys, start + num_keys_per_partition)
-    # return (start, end)
 
 
 comptime callback_fn_type = def[mask_t: MHAMask](

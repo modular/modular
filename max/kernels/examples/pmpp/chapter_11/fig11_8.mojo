@@ -108,7 +108,7 @@ def main() raises:
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single warp)
-        ctx.enqueue_function_experimental[test_warp_scan](
+        ctx.enqueue_function[test_warp_scan](
             d_input,
             d_output,
             UInt32(N),

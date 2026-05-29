@@ -37,6 +37,9 @@ from . import (
     graph as graph,
 )
 from . import (
+    mlrt as mlrt,
+)
+from . import (
     nixl as nixl,
 )
 from . import (
@@ -112,6 +115,9 @@ class InsertPoint:
     pass
 
 class Block:
+    def __init__(
+        self, arg_types: Sequence[Type] = [], arg_locs: Sequence[Location] = []
+    ) -> None: ...
     @staticmethod
     def _from_cmlir(arg: max._mlir.ir.Block, /) -> Block: ...
     def __len__(self) -> int: ...
@@ -125,6 +131,8 @@ class Block:
     def erase_argument(self, arg: int, /) -> None: ...
     @property
     def end(self) -> InsertPoint: ...
+    @property
+    def _CAPIPtr(self) -> object: ...
 
 class DiscardableAttributes:
     def __getitem__(self, arg: str, /) -> Attribute: ...
@@ -157,8 +165,16 @@ class Operation:
     def move_after(self, arg: Operation, /) -> None: ...
     @property
     def discardable_attributes(self) -> DiscardableAttributes: ...
-    @property
-    def asm(self) -> str: ...
+    def asm(
+        self,
+        *,
+        enable_debug_info: bool = False,
+        pretty_debug_info: bool = False,
+        print_generic_op_form: bool = False,
+        use_local_scope: bool = False,
+        assume_verified: bool = False,
+        skip_regions: bool = False,
+    ) -> str: ...
     def __repr__(self) -> str: ...
     @property
     def _CAPIPtr(self) -> object: ...
@@ -171,6 +187,7 @@ class Region:
     def front(self) -> Block: ...
     @property
     def back(self) -> Block: ...
+    def append(self, block: Block, /) -> None: ...
 
 class LocationAttr:
     pass
@@ -203,5 +220,6 @@ class OpPassManager:
     pass
 
 def lower(arg0: dialects.builtin.ModuleOp, arg1: Sequence[Pass], /) -> bool: ...
+def parse_module(asm: str, context: Context) -> dialects.builtin.ModuleOp: ...
 
 __version__: str

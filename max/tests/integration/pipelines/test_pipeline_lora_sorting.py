@@ -24,12 +24,6 @@ import pytest
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.interfaces import (
-    RequestID,
-    TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
-)
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext, TTSContext
 from max.pipelines.lib import (
@@ -51,6 +45,12 @@ from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.lib.speech_token_pipeline import (
     SpeechTokenGenerationPipeline,
 )
+from max.pipelines.modeling.types import (
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+    TokenBuffer,
+)
 from transformers import AutoConfig
 
 ContextT = TypeVar("ContextT", TextContext, TTSContext)
@@ -59,18 +59,6 @@ ContextT = TypeVar("ContextT", TextContext, TTSContext)
 class PipelineType(Enum):
     TEXT_GENERATION = "text_generation"
     SPEECH_TOKEN = "speech_token"
-
-
-class MockLoRARequestProcessor:
-    def __init__(
-        self,
-        manager: LoRAManager,
-        zmq_endpoint_base: str,
-    ) -> None:
-        del manager, zmq_endpoint_base
-
-    def process_lora_requests(self) -> None:
-        pass
 
 
 class MockModelInputs(ModelInputs):
@@ -201,6 +189,17 @@ class MockSamplingProcessor:
             return Buffer.from_numpy(tokens.astype(np.int64))
         return Buffer.from_numpy(np.zeros(self._batch_size, dtype=np.int64))
 
+    def logits_for_sampling(
+        self,
+        *,
+        logits: Buffer,
+        next_token_logits: Buffer | None,
+        logit_offsets: Buffer | None,
+    ) -> tuple[Buffer, Buffer | None]:
+        if next_token_logits is None:
+            return logits, logit_offsets
+        return next_token_logits, None
+
 
 def create_context(
     pipeline_type: PipelineType,
@@ -241,19 +240,14 @@ def create_lora_manager(
         lora_paths=[],
     )
 
-    with patch(
-        "max.pipelines.lib.lora.LoRARequestProcessor",
-        MockLoRARequestProcessor,
-    ):
-        manager = LoRAManager(
-            config=config,
-            base_model_path=base_model_path,
-            base_dtype=DType.float32,
-            n_heads=32,
-            n_kv_heads=8,
-            head_dim=128,
-            zmq_endpoint_base="fake",
-        )
+    manager = LoRAManager(
+        config=config,
+        base_model_path=base_model_path,
+        base_dtype=DType.float32,
+        n_heads=32,
+        n_kv_heads=8,
+        head_dim=128,
+    )
 
     for name in lora_names:
         fake_lora = NonCallableMock(spec=LoRAModel)
@@ -308,6 +302,7 @@ def create_pipeline_with_lora(
             self._sampler_with_bitmask = None
             self._kv_manager = MagicMock()
             self._pinned_new_tokens = None
+            self._identity_logit_offsets = None
             self._structured_output = StructuredOutputHelper(enabled=False)
 
         with patch.object(TextGenerationPipeline, "__init__", mock_text_init):

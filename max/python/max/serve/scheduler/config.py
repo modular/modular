@@ -61,6 +61,13 @@ class TokenGenerationSchedulerConfig:
     decode_stall_timeout_s: float | None = None
     """Seconds of no-batch-activity after which the decode worker exits to trigger a pod restart. None disables the watchdog."""
 
+    decode_request_ttl_s: float | None = None
+    """Per-request TTL (seconds) for entries in the decode scheduler's
+    ``prefill_reqs`` and ``inflight_transfers`` dicts. Expired entries are
+    evicted individually (KV blocks released, failure surfaced to the
+    client) so a stuck PD pipeline does not force the stall watchdog to
+    kill the whole engine. ``None`` disables eviction."""
+
     def __post_init__(self) -> None:
         if self.max_batch_size <= 0:
             raise ValueError(
@@ -116,6 +123,7 @@ class TokenGenerationSchedulerConfig:
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             kvcache_ce_watermark=pipeline_config.runtime.kvcache_ce_watermark,
             decode_stall_timeout_s=pipeline_config.runtime.decode_stall_timeout_s,
+            decode_request_ttl_s=pipeline_config.runtime.decode_request_ttl_s,
             num_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative is not None
             else 0,

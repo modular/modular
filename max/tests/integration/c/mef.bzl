@@ -3,17 +3,30 @@
 load("@cfg_workaround.bzl", "TARGET_CONSTRAINTS")
 load("//bazel:api.bzl", "modular_py_binary")
 
-# All transitive mojo dependencies of //max:MOGGKernelAPI
+# All transitive mojo dependencies of //max:kernels
 MOJO_DEPS = [
-    "//max:MOGGKernelAPI",
-    "//max:MOGGPrimitives",
+    "//max:builtin_kernels",
+    "//max:attention_kernels",
+    "//max:common_kernels",
+    "//max:conv_kernels",
+    "//max:distributed_kernels",
+    "//max:elementwise_kernels",
+    "//max:ep_kernels",
+    "//max:gather_scatter_kernels",
+    "//max:kv_cache_kernels",
+    "//max:linalg_kernels",
+    "//max:logprobs_kernels",
+    "//max:nan_check_kernels",
+    "//max:quantization_kernels",
+    "//max:reductions_kernels",
+    "//max:builtin_primitives",
     "//max:_cublas",
     "//max:_cudnn",
     "//max:_cufft",
     "//max:_miopen",
     "//max:_rocblas",
     "//max:comm",
-    "//max:compiler_internal",
+    "//max:extensibility",
     "//max:internal_utils",
     "//max:kv_cache",
     "//max:layout",
@@ -21,10 +34,9 @@ MOJO_DEPS = [
     "//max:nn",
     "//max:pipeline",
     "//max:quantization",
-    "//max:register",
     "//max:shmem",
+    "//max:state_space",
     "//max:structured_kernels",
-    "//max:tensor",
     "//max:weights_registry",
     "@mojo//:std",
 ]

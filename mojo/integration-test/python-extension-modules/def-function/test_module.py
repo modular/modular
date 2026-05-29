@@ -89,6 +89,32 @@ def test_takes_three_raises_returns() -> None:
     _test_takes_three_returns(def_function.takes_three_raises_returns)
 
 
+def test_takes_seven_raises_returns() -> None:
+    with pytest.raises(Exception) as cm:
+        def_function.takes_seven_raises_returns(
+            "quux", "b", "c", "d", "e", "f", "g"
+        )
+    assert cm.value.args == ("first input must be 'foo'",)
+
+    result = def_function.takes_seven_raises_returns(
+        "foo", "b", "c", "d", "e", "f", "g"
+    )
+    assert result == "foobcdefg"
+
+
+def test_takes_eight_raises_returns() -> None:
+    with pytest.raises(Exception) as cm:
+        def_function.takes_eight_raises_returns(
+            "quux", "b", "c", "d", "e", "f", "g", "h"
+        )
+    assert cm.value.args == ("first input must be 'foo'",)
+
+    result = def_function.takes_eight_raises_returns(
+        "foo", "b", "c", "d", "e", "f", "g", "h"
+    )
+    assert result == "foobcdefgh"
+
+
 def _test_takes_zero(fut: Callable[[], None]) -> None:
     setattr(sys.modules[__name__], "s", "just a python string")  # noqa: B010
     fut()
@@ -182,3 +208,21 @@ def test_sum_pos_arg_and_kwargs() -> None:
 
     result = def_function.sum_pos_arg_and_kwargs(100)
     assert result == 100
+
+
+def test_fastcall_concat_direct_overload() -> None:
+    # Exercises the def_py_c_function(PyCFunctionFast, ...) overload: a
+    # hand-written METH_FASTCALL wrapper registered without the
+    # def_function generic dispatch in between. CPython routes the
+    # positional args as a borrowed `PyObject *const *` array plus nargs;
+    # an incorrect calling convention here would corrupt the stack rather
+    # than degrade gracefully, so this end-to-end call is the de facto
+    # proof that the FASTCALL flag was set on the PyMethodDef.
+    assert def_function.fastcall_concat() == ""
+    assert def_function.fastcall_concat("hello") == "hello"
+    assert def_function.fastcall_concat("a", "b", "c") == "abc"
+    # Verify the array index path works at higher arity too.
+    assert (
+        def_function.fastcall_concat("a", "b", "c", "d", "e", "f", "g", "h")
+        == "abcdefgh"
+    )

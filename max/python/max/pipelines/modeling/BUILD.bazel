@@ -1,0 +1,39 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "modeling",
+    srcs = glob(["**/*.py"]),
+    # TODO: pydeps test crashes because modeling/types/ shadows stdlib `types`
+    # module when pydeps adds the library source dir to sys.path.
+    # diffusion depends on modeling at runtime, so modeling cannot depend on
+    # diffusion — TYPE_CHECKING import of DenoisingCacheConfig in
+    # component_model.py cannot be resolved by mypy in isolation.
+    tags = [
+        "no-mypy",
+        "no-pydeps",
+    ],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/config",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/request",
+        "//max/python/max/profiler",
+        requirement("huggingface-hub"),
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("pydantic"),
+        requirement("requests"),
+        requirement("tqdm"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+    ],
+)

@@ -28,7 +28,10 @@ modular_py_test(
         "//max/python/max/entrypoints",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/serve/parser",
         requirement("click"),
         requirement("pyyaml"),
         requirement("pydantic"),
@@ -47,9 +50,14 @@ modular_py_test(
 modular_py_test(
     name = "test_reasoning",
     srcs = ["test_reasoning.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("pytest-asyncio"),
     ],

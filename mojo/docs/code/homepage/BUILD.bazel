@@ -10,8 +10,8 @@ MOJO_SRCS = glob(["*.mojo"])
         srcs = [src],
         target_compatible_with = ["//:has_gpu"],
         deps = [
+            "//max:extensibility",
             "//max:layout",
-            "//max:tensor",
             "@mojo//:std",
             requirement("numpy"),
         ],

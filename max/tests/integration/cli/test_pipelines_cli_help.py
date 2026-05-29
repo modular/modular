@@ -77,3 +77,13 @@ def test_benchmark_subcommand_help() -> None:
     assert "--dataset-path" in result.output
     assert "--num-prompts" in result.output
     assert "--seed" in result.output
+
+
+def test_serve_no_device_graph_capture_flag() -> None:
+    # Regression for #83943: changing the field type of `device_graph_capture`
+    # from `bool` to `bool | None` silently dropped the `--no-device-graph-capture`
+    # form, breaking smoke tests and dataset eval configs that rely on it.
+    runner = CliRunner()
+    result = runner.invoke(pipelines.main, ["serve", "--help"])
+    assert result.exit_code == 0
+    assert "--no-device-graph-capture" in result.output

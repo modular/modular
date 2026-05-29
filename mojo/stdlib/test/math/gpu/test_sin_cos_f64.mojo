@@ -22,12 +22,12 @@ from std.gpu.host.info import _get_h100_target
 
 
 def sin_func(x: Float64) raises -> Float64:
-    # CHECK: constraint failed: DType.float64 is not supported on NVIDIA GPU
+    # CHECK: constraint failed: DType.float64 is not supported for sin on NVIDIA GPU
     return sin(x)
 
 
 def cos_func(x: Float64) raises -> Float64:
-    # CHECK: constraint failed: DType.float64 is not supported on NVIDIA GPU
+    # CHECK: constraint failed: DType.float64 is not supported for cos on NVIDIA GPU
     return cos(x)
 
 

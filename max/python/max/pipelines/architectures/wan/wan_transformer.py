@@ -25,7 +25,7 @@ from max.nn.linear import Linear
 from .embeddings import (
     TimestepEmbedding,
     Timesteps,
-    apply_rotary_emb,
+    apply_rotary_emb_fused,
 )
 from .model_config import WanConfigBase
 
@@ -349,21 +349,9 @@ class WanSelfAttention(Module):
             value, [batch_size, seq_len, self.num_heads, self.head_dim]
         )
 
-        # Apply RoPE (stays in input dtype — no f32 promotion)
-        query = apply_rotary_emb(
-            query,
-            rotary_emb,
-            use_real=True,
-            use_real_unbind_dim=-1,
-            sequence_dim=1,
-        )
-        key = apply_rotary_emb(
-            key,
-            rotary_emb,
-            use_real=True,
-            use_real_unbind_dim=-1,
-            sequence_dim=1,
-        )
+        # Apply RoPE via the fused ragged kernel (eliminates the per-token
+        # fused_concat_inner_most_single_dim that ops.stack lowers to).
+        query, key = apply_rotary_emb_fused(query, key, rotary_emb)
 
         # Flash attention
         scale = 1.0 / (self.head_dim**0.5)
@@ -713,6 +701,26 @@ class WanTransformerPreProcess(Module):
     ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
         # Cast f32 latents to model dtype.
         hidden_states = ops.cast(hidden_states, self._dtype)
+
+        # Broadcast latents/timestep to match encoder_hidden_states' batch
+        # axis. For batched CFG the caller supplies B=1 latents/timestep
+        # with a pre-concatenated [cond; uncond] B=2 text embedding, and
+        # this fold avoids needing a separate pack graph. For non-CFG /
+        # I2V the broadcast is an identity because all three inputs share
+        # the same batch. ``ops.broadcast_to`` is used (not ``ops.tile``)
+        # because tile currently falls back to CPU on GPU graphs.
+        target_batch = encoder_hidden_states.shape[0]
+        hidden_states = ops.broadcast_to(
+            hidden_states,
+            [
+                target_batch,
+                hidden_states.shape[1],
+                hidden_states.shape[2],
+                hidden_states.shape[3],
+                hidden_states.shape[4],
+            ],
+        )
+        timestep = ops.broadcast_to(timestep, [target_batch])
 
         # Concat I2V condition along channel axis if present.
         if i2v_condition is not None:

@@ -13,12 +13,16 @@
 """Defines a Variant type."""
 
 from std.builtin.rebind import downcast
-from std.compile import get_type_name
 from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
-from std.memory import UnsafeMaybeUninit
+from std.memory import (
+    UnsafeMaybeUninit,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+)
 from std.hashlib.hasher import Hasher
 from std.reflection import call_location
 from std.reflection.traits import (
@@ -36,7 +40,6 @@ from ._nicheable import (
     UnsafeCustomNicheStorage,
 )
 from std.os import abort
-from std.reflection import struct_field_count
 from std.sys import align_of, size_of
 from std.sys.intrinsics import _type_is_eq
 from std.utils.type_functions import ConditionalType
@@ -350,9 +353,9 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 
 # TODO(MOCO-3653): size_of[T]() == 0 does not work correctly in some cases when
 # an `Optional` is used as a comptime parameter's field.
-comptime _IsEmptyType[T: AnyType]: Bool = struct_field_count[
+comptime _IsEmptyType[T: AnyType]: Bool = reflect[
     T
-]() == 0 and conforms_to(T, TrivialRegisterPassable)
+].field_count() == 0 and conforms_to(T, TrivialRegisterPassable)
 """True if `T` is a zero-sized, trivially passable type (i.e. carries no state,
 like `NoneType`). Used to identify the "empty" arm of a niche-optimized variant."""
 
@@ -472,7 +475,7 @@ struct Variant[*Ts: Movable](
     comptime Result = Variant[String, Error]
 
     def process_data(data: String) -> Result:
-        if len(data) == 0:
+        if data.byte_length() == 0:
             return Result(Error("Empty data"))
         return Result(String("Processed: ", data))
 
@@ -525,9 +528,9 @@ struct Variant[*Ts: Movable](
 
     comptime _Storage: _VariantStorage = _VariantStorageFor[*Self.Ts]
 
-    comptime __del__is_trivial = Self._Storage.__del__is_trivial
-    comptime __copy_ctor_is_trivial = Self._Storage.__copy_ctor_is_trivial
-    comptime __move_ctor_is_trivial = Self._Storage.__move_ctor_is_trivial
+    comptime __del__is_trivial = is_trivially_destructible[Self._Storage]()
+    comptime __copy_ctor_is_trivial = is_trivially_copyable[Self._Storage]()
+    comptime __move_ctor_is_trivial = is_trivially_movable[Self._Storage]()
 
     # Fields
     var _storage: Self._Storage
@@ -735,15 +738,10 @@ struct Variant[*Ts: Movable](
         Returns:
             The underlying data to be taken out as an owned value.
         """
-        # TODO(MOCO-3336): Remove isa/storage hack.
-        # Explicitly destroyed types don't play nicely with abort
-        var isa = self.isa[T]()
-        var storage = self._storage^
-        if not isa:
-            std.memory.forget_deinit(storage^)
+        if not self.isa[T]():
             abort("taking the wrong type!")
 
-        return storage^.take[T]()
+        return self._storage^.take[T]()
 
     @always_inline
     def unsafe_take[T: Movable](deinit self) -> T:
@@ -902,13 +900,13 @@ struct Variant[*Ts: Movable](
         """
         return Self.Ts.contains[T]()
 
-    # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
-    def destroy_with[T: Movable](deinit self, destroy_func: def(var T) thin):
+    def destroy_with[T: Movable, F: def(var T)](deinit self, destroy_func: F):
         """Destroy a value contained in this Variant in-place using a caller
         provided destructor function.
 
-        This method can be used to destroy linear types in a `Variant` in-place,
-        without requiring that they be `Movable`.
+        This method can be used to destroy types marked `@explicit_destroy`
+        in a `Variant` in-place, without requiring that they be
+        `ImplicitlyDestructible`.
 
         This method will abort if this variant does not current contain an
         element of the specified type `T`.
@@ -916,20 +914,16 @@ struct Variant[*Ts: Movable](
         Parameters:
             T: The element type the variant is expected to currently contain,
                 and which will be destroyed by `destroy_func`.
+            F: The type of the caller-provided destructor function.
 
         Args:
             destroy_func: Caller-provided destructor function for destroying
                 an instance of `T`.
         """
-        # TODO(MOCO-3336): Remove isa/storage hack.
-        # Explicitly destroyed types don't play nicely with abort
-        var isa = self.isa[T]()
-        var storage = self._storage^
-        if not isa:
-            std.memory.forget_deinit(storage^)
+        if not self.isa[T]():
             abort("Variant.destroy_with: wrong variant type")
 
-        destroy_func(storage^.take[T]())
+        destroy_func(self._storage^.take[T]())
 
 
 # ===-------------------------------------------------------------------===#
@@ -956,7 +950,9 @@ def _all_movable[*Ts: AnyType]() -> Bool:
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], ImplicitlyDestructible):
-            if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
+            if not is_trivially_destructible[
+                downcast[Ts[i], ImplicitlyDestructible]
+            ]():
                 return False
         else:
             return False
@@ -966,7 +962,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
+            if not is_trivially_copyable[downcast[Ts[i], Copyable]]():
                 return False
         else:
             return False
@@ -977,7 +973,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
+            if not is_trivially_movable[downcast[Ts[i], Movable]]():
                 return False
         else:
             return False

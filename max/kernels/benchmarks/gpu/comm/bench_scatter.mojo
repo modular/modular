@@ -35,7 +35,7 @@ from comm.sync import enable_p2p
 from comm.scatter import scatter
 from layout import Idx, TileTensor, row_major
 from comm import MAX_GPUS, Signal
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 
 from std.testing import assert_true
@@ -91,26 +91,26 @@ def bench_scatter[
     print("Running " + name)
 
     var num_bytes = num_elems * size_of[dtype]()
-    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     # Create cache-busting input buffers for each DP chunk on GPU 0 (root).
+    # Use a conservative alignment that works across all GPU architectures.
+    comptime alignment = max(16, size_of[dtype]())
     var cb_inputs = List[CacheBustingBuffer[dtype]]()
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
-        capacity=dp_size
-    )
+    var host_buffers = List[List[Scalar[dtype]]](capacity=dp_size)
 
     for dp_idx in range(dp_size):
         cb_inputs.append(
             CacheBustingBuffer[dtype](
                 num_elems,
-                simd_size,
+                alignment,
                 list_of_ctx[0],
                 cache_busting,
             )
         )
 
-        var host_buffer = alloc[Scalar[dtype]](cb_inputs[0].alloc_size())
-        host_buffers.append(host_buffer)
+        var host_buffer = List[Scalar[dtype]](
+            unsafe_uninit_length=cb_inputs[0].alloc_size()
+        )
 
         for i in range(cb_inputs[0].alloc_size() // cb_inputs[0].stride):
             for j in range(num_elems):
@@ -121,6 +121,8 @@ def bench_scatter[
         list_of_ctx[0].enqueue_copy(
             cb_inputs[dp_idx].device_buffer(), host_buffer
         )
+
+        host_buffers.append(host_buffer^)
 
     # Create output device buffers for each GPU.
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -151,21 +153,21 @@ def bench_scatter[
 
     # Build TileTensor arrays for the scatter API.
     comptime InputTileType = TileTensor[
-        dtype, type_of(row_major(Idx(num_elems))), ImmutAnyOrigin
+        dtype, type_of(row_major(num_elems)), ImmutAnyOrigin
     ]
     var tt_in_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
     for dp_idx in range(dp_size):
         tt_in_bufs[dp_idx] = TileTensor(
-            cb_inputs[dp_idx].device_buffer(), row_major(Idx(num_elems))
+            cb_inputs[dp_idx].device_buffer(), row_major(num_elems)
         ).as_immut()
 
     comptime OutputTileType = TileTensor[
-        dtype, type_of(row_major(Idx(num_elems))), MutAnyOrigin
+        dtype, type_of(row_major(num_elems)), MutAnyOrigin
     ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
     for gpu_idx in range(ngpus):
         out_tiles[gpu_idx] = OutputTileType(
-            out_bufs_list[gpu_idx], row_major(Idx(num_elems))
+            out_bufs_list[gpu_idx], row_major(num_elems)
         )
         list_of_ctx[gpu_idx].synchronize()
 
@@ -181,7 +183,7 @@ def bench_scatter[
             comptime for dp_idx in range(dp_size):
                 tt_in_bufs[dp_idx] = TileTensor(
                     cb_inputs[dp_idx].offset_ptr(cache_iter),
-                    row_major(Idx(num_elems)),
+                    row_major(num_elems),
                 ).as_immut()
 
             scatter[ngpus=ngpus, dp_size=dp_size](
@@ -219,7 +221,7 @@ def bench_scatter[
     )
 
     # Copy results back and verify the benchmarked outputs directly.
-    var verify_host = alloc[Scalar[dtype]](num_elems)
+    var verify_host = List(length=num_elems, fill=Scalar[dtype](0))
     for gpu_idx in range(ngpus):
         var dp_idx = gpu_idx // tp_size
         list_of_ctx[gpu_idx].enqueue_copy(verify_host, out_bufs_list[gpu_idx])
@@ -241,11 +243,10 @@ def bench_scatter[
                 raise Error("Verification failed")
 
     # Cleanup.
-    verify_host.free()
-    for i in range(dp_size):
-        host_buffers[i].free()
+    _ = host_buffers^
     _ = signal_buffers^
     _ = cb_inputs^
+    _ = verify_host^
 
 
 def main() raises:

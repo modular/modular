@@ -65,10 +65,12 @@ def _argsort_cpu[
 
     elementwise[
         fill_indices_iota, simd_width_of[indices.dtype](), target="cpu"
-    ](indices.num_elements())
+    ](indices.num_elements(), DeviceContext(api="cpu"))
 
     @parameter
     def cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
+        comptime assert a.dtype.is_integral()
+        comptime assert b.dtype.is_integral()
         comptime if ascending:
             return input[a] < input[b]
         else:
@@ -102,9 +104,7 @@ def _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-@__name(
-    t"bitonic_local_sort_{input_dtype}_{indices_dtype}_{ascending}", mangle=True
-)
+@__name(t"bitonic_local_sort_{input_dtype}_{indices_dtype}_{ascending}")
 def _bitonic_local_sort_kernel[
     input_dtype: DType,
     indices_dtype: DType,
@@ -182,7 +182,6 @@ def _bitonic_local_sort_kernel[
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 @__name(
     t"bitonic_merge_local_{input_dtype}_{indices_dtype}_{ascending}",
-    mangle=True,
 )
 def _bitonic_merge_local_kernel[
     input_dtype: DType,
@@ -293,7 +292,7 @@ def _argsort_gpu_impl[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
-    @__name(t"bitonic_global_step_{ascending}", mangle=True)
+    @__name(t"bitonic_global_step_{ascending}")
     def bitonic_global_step(
         indices_arg: TileTensor[
             indices.dtype, indices.LayoutType, indices.origin
@@ -331,7 +330,7 @@ def _argsort_gpu_impl[
         IndicesLayoutType=indices.LayoutType,
         InputLayoutType=input.LayoutType,
     ]
-    ctx.enqueue_function[local_sort_kernel, local_sort_kernel](
+    ctx.enqueue_function[local_sort_kernel](
         indices,
         input,
         n,
@@ -346,7 +345,7 @@ def _argsort_gpu_impl[
         var j = k // 2
         while j >= BLOCK_SIZE:
             comptime global_step_kernel = bitonic_global_step
-            ctx.enqueue_function[global_step_kernel, global_step_kernel](
+            ctx.enqueue_function[global_step_kernel](
                 indices,
                 input,
                 n,
@@ -365,7 +364,7 @@ def _argsort_gpu_impl[
             IndicesLayoutType=indices.LayoutType,
             InputLayoutType=input.LayoutType,
         ]
-        ctx.enqueue_function[merge_local_kernel, merge_local_kernel](
+        ctx.enqueue_function[merge_local_kernel](
             indices,
             input,
             n,
@@ -402,7 +401,7 @@ def _argsort_gpu[
 
     if n.is_power_of_two():
         var input_copy_buffer = ctx.enqueue_create_buffer[input.dtype](n)
-        var input_copy = TileTensor(input_copy_buffer, row_major(Idx(n)))
+        var input_copy = TileTensor(input_copy_buffer, row_major(n))
 
         # Initialize indices with iota.
         @parameter
@@ -441,16 +440,14 @@ def _argsort_gpu[
     var padded_input_buffer = ctx.enqueue_create_buffer[input.dtype](
         pow_2_length
     )
-    var padded_input = TileTensor(
-        padded_input_buffer, row_major(Idx(pow_2_length))
-    )
+    var padded_input = TileTensor(padded_input_buffer, row_major(pow_2_length))
 
     var padded_indices_buffer = ctx.enqueue_create_buffer[indices.dtype](
         pow_2_length
     )
     var padded_indices = TileTensor(
         padded_indices_buffer,
-        row_major(Idx(pow_2_length)),
+        row_major(pow_2_length),
     )
 
     # Initialize indices with sequential values and copy input data to device

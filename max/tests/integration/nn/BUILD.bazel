@@ -51,18 +51,14 @@ modular_py_test(
             "shared_mlp_impl.py",
         ],
     ),
-    args = [
-        "-n",
-        "auto",
-    ],
-    ignore_extra_deps = [
-        # Used for parallelization (-n auto above)
-        requirement("pytest-xdist"),
-    ],
     imports = ["."],
+    per_test_shard_count = {
+        "test_mlp.py": 20,
+        "test_conv.py": 8,
+    },
     per_test_tags = {
         "test_conv.py": ["skip-external-ci"],
-        "test_mlp.py": ["manual"],
+        "test_mlp.py": ["skip-external-ci"],
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -83,7 +79,6 @@ modular_py_test(
         requirement("torch"),
         requirement("hypothesis"),
         requirement("pytest-mock"),
-        requirement("pytest-xdist"),
     ],
 )
 
@@ -95,11 +90,13 @@ modular_py_test(
         exclude = [
             "*_distributed_gpu.py",
             "test_conv_transpose_gpu.py",
+            "test_grouped_matmul_swiglu_nvfp4_gpu.py",
             "test_linear_fp8_amd_gpu.py",
             "test_lora_kernels_gpu.py",
             "test_mlp_fp4_gpu.py",
             "test_moe_nvfp4_gpu.py",
             "test_sgmv_kernels_gpu.py",
+            "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -115,13 +112,16 @@ modular_py_test(
     ],
     deps = [
         ":shared_conv_impl",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:numerics",
+        requirement("llguidance"),
         requirement("numpy"),
         requirement("torch"),
         requirement("triton"),
@@ -339,6 +339,33 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("hypothesis"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "grouped_matmul_swiglu_nvfp4_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_grouped_matmul_swiglu_nvfp4_gpu.py",
+        "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
         requirement("torch"),
     ],
 )

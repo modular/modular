@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -27,7 +27,32 @@ modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("llguidance"),
+    ],
+)
+
+modular_py_test(
+    name = "test_reasoning",
+    srcs = ["test_reasoning.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tokenizer",
+    srcs = ["test_tokenizer.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/modeling",
     ],
 )

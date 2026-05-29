@@ -186,6 +186,7 @@ class DeepseekV3NextN(Module):
         norm_hidden = forward_sharded_layers(self.hnorm_shards, hidden_states)
         freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
         input_row_offsets_ = list(input_row_offsets)
+        all_logits_input_row_offsets = input_row_offsets_[0]
         if self.use_data_parallel_attention:
             host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
             norm_embed, input_row_offsets_ = split_batch_replicated(
@@ -298,6 +299,7 @@ class DeepseekV3NextN(Module):
         return deepseek_logits_postprocess(
             h=h,
             input_row_offsets=input_row_offsets_,
+            all_logits_input_row_offsets=all_logits_input_row_offsets,
             return_n_logits=return_n_logits,
             norm_shards=self.shared_head_norm_shards,
             lm_head=self.lm_head,

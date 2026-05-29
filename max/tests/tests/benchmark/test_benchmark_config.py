@@ -49,8 +49,8 @@ class TestServingSweepFields:
         assert config.num_iters == 1
         assert config.num_prompts_multiplier is None
         assert config.flush_prefix_cache is True
-        assert config.max_concurrency is None
-        assert config.request_rate == "inf"
+        assert list(config.max_concurrency) == [None]
+        assert list(config.request_rate) == [float("inf")]
 
     def test_sweep_config_field_metadata(self) -> None:
         """Test that sweep-related fields have proper json_schema_extra metadata."""
@@ -273,6 +273,7 @@ class TestServingConfigFileLoading:
 # ===----------------------------------------------------------------------=== #
 
 
+@pytest.mark.usefixtures("offline_dryrun_mocks")
 class TestWorkloadMaxConcurrency:
     """Tests that max-concurrency from a workload YAML is applied correctly."""
 
@@ -284,7 +285,7 @@ class TestWorkloadMaxConcurrency:
         workload.write_text("max-concurrency: 1\nnum-prompts: 10\n")
 
         config = ServingBenchmarkConfig(
-            model="test/model",
+            model="HuggingFaceTB/SmolLM2-135M",
             workload_config=str(workload),
             dry_run=True,
         )
@@ -301,9 +302,9 @@ class TestWorkloadMaxConcurrency:
         workload.write_text("max-concurrency: 1\nnum-prompts: 10\n")
 
         config = ServingBenchmarkConfig(
-            model="test/model",
+            model="HuggingFaceTB/SmolLM2-135M",
             workload_config=str(workload),
-            max_concurrency="4",
+            max_concurrency=[4],
             dry_run=True,
         )
 
@@ -322,7 +323,7 @@ def test_tts_serving_config_defaults() -> None:
     assert config.top_k == 75
     assert config.temperature == 1.1
     assert config.workload_config == "workload.yaml"
-    assert config.seed == 0
+    assert config.seed is None
 
 
 def test_tts_serving_config_requires_workload_config() -> None:

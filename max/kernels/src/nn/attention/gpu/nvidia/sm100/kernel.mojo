@@ -40,6 +40,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SM100TensorAccumulatorTS,
     elect,
     FA4MiscMBars,
+    kv_sub_tile_rows,
 )
 from nn.attention.gpu.nvidia.sm90.attention import (
     get_seq_info,
@@ -191,7 +192,6 @@ struct SM100MHA2Q[
     )
     @__name(
         t"sm100_mha_2q_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
     )
     def kernel(
         q_tma_op: QTMATile[
@@ -207,13 +207,13 @@ struct SM100MHA2Q[
         k_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BN=Self.config.k_rows_per_cta(),
+            BN=kv_sub_tile_rows(Self.config.k_rows_per_cta(), Self.page_size),
             BK=Self.config.BK0,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BN=Self.config.BN,
+            BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
             BK=Self.config.v_cols_per_cta(),
         ],
         ragged_tma_store: RaggedTMA3DTile[
@@ -273,7 +273,12 @@ struct SM100MHA2Q[
         var smem = Self.SmemType()
         var misc_mbars = smem.misc_mbars()
 
-        # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
+        # Per-warpgroup register allocation, mirroring CUTLASS's
+        # `sm100_fmha_fwd_kernel_tma_warpspecialized.hpp`.  Softmax gets
+        # the largest slice (192), correction the next (88), and the
+        # MMA-leader/other path runs lean (40); inactive warps drop to
+        # the minimum (24).  Sum × WG size must stay ≤ the SM register
+        # file; bump together if a path starts spilling.
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 88
         comptime num_reg_other = 40
@@ -290,7 +295,7 @@ struct SM100MHA2Q[
         elif warp_idx == 1:
             tcgen05_alloc[Int32(Self.cta_group)](
                 smem.tmem_addr_ptr(),
-                UInt32(512),
+                UInt32(Self.config.sm100_tmem_cols),
             )
         elif warp_idx == 2:
             e = elect()
@@ -424,25 +429,62 @@ struct SM100MHA2Q[
                         kv_input_row_offsets,
                         max_seq_len,
                     )
-                    fa4_load[
-                        Self.KVLUTType,
-                        Self.MaskType,
-                        Self.config,
-                        Self.ValidLengthType,
-                        Self._is_cache_length_accurate,
-                        Self.MaxSeqLenType,
-                    ](
-                        smem,
-                        pos.score_row,
-                        pos.num_keys,
-                        seq_info,
-                        max_seq_len,
-                        mask,
-                        q_tma_op,
-                        k_tma_op,
-                        v_tma_op,
-                        kv_lut,
-                    )
+                    comptime if not Self.pair_cta:
+                        fa4_load[
+                            Self.config,
+                            ValidLengthType=Self.ValidLengthType,
+                            _is_cache_length_accurate=Self._is_cache_length_accurate,
+                            is_leader=True,
+                        ](
+                            smem,
+                            pos.score_row,
+                            pos.num_keys,
+                            seq_info,
+                            max_seq_len,
+                            mask,
+                            q_tma_op,
+                            k_tma_op,
+                            v_tma_op,
+                            kv_lut,
+                        )
+                    else:
+                        var cta_rank = block_rank_in_cluster() % 2
+                        if cta_rank == 0:
+                            fa4_load[
+                                Self.config,
+                                ValidLengthType=Self.ValidLengthType,
+                                _is_cache_length_accurate=Self._is_cache_length_accurate,
+                                is_leader=True,
+                            ](
+                                smem,
+                                pos.score_row,
+                                pos.num_keys,
+                                seq_info,
+                                max_seq_len,
+                                mask,
+                                q_tma_op,
+                                k_tma_op,
+                                v_tma_op,
+                                kv_lut,
+                            )
+                        else:
+                            fa4_load[
+                                Self.config,
+                                ValidLengthType=Self.ValidLengthType,
+                                _is_cache_length_accurate=Self._is_cache_length_accurate,
+                                is_leader=False,
+                            ](
+                                smem,
+                                pos.score_row,
+                                pos.num_keys,
+                                seq_info,
+                                max_seq_len,
+                                mask,
+                                q_tma_op,
+                                k_tma_op,
+                                v_tma_op,
+                                kv_lut,
+                            )
 
             elif warp_idx == 12:  # Q @ K', P @ V
                 warpgroup_reg_dealloc[num_reg_other]()
@@ -459,7 +501,7 @@ struct SM100MHA2Q[
                         var tmem_addr = smem.tmem_addr_ptr()[]
                         tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
                         tcgen05_dealloc[Int32(Self.cta_group)](
-                            tmem_addr, UInt32(512)
+                            tmem_addr, UInt32(Self.config.sm100_tmem_cols)
                         )
                         return
                 var execute: Bool = seq_info.is_valid()
@@ -484,6 +526,9 @@ struct SM100MHA2Q[
                         mask,
                     )
             else:
+                # 24 is the floor for `setmaxnreg.dec` on SM90+ — drop
+                # this warpgroup's allocation to the minimum so the
+                # active WGs can claim its share of the SM register file.
                 warpgroup_reg_dealloc[24]()
 
         # Pair-CTA: cluster_sync before dealloc so that stmatrix
@@ -496,7 +541,9 @@ struct SM100MHA2Q[
             if warp_idx == 0:
                 var tmem_addr = smem.tmem_addr_ptr()[]
                 tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                tcgen05_dealloc[Int32(Self.cta_group)](tmem_addr, UInt32(512))
+                tcgen05_dealloc[Int32(Self.cta_group)](
+                    tmem_addr, UInt32(Self.config.sm100_tmem_cols)
+                )
 
     @staticmethod
     @always_inline

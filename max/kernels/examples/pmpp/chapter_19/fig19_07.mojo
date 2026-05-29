@@ -148,7 +148,7 @@ def main() raises:
         ", 1)",
     )
 
-    ctx.enqueue_function_experimental[conv_layer_forward_kernel](
+    ctx.enqueue_function[conv_layer_forward_kernel](
         N,
         C,
         H,

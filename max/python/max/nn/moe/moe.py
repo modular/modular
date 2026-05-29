@@ -33,6 +33,48 @@ from ..linear import MLP, Linear
 from ..quant_config import QuantConfig
 
 
+def make_concatenated_gated_activation_fn(
+    activation_fn: Callable[[TensorValue], TensorValue],
+    limit: float | None = None,
+) -> Callable[[TensorValue, int], TensorValue]:
+    """Builds a gated activation for concatenated ``[gate | up]`` projections.
+
+    The returned callable splits ``gate_up`` at ``moe_dim``, applies
+    ``activation_fn`` to the gate half, and multiplies with the up half:
+    ``activation_fn(gate_up[:, :moe_dim]) * gate_up[:, moe_dim:]``.
+
+    When ``limit`` is provided, both halves are clamped to
+    ``[-limit, limit]`` before multiplying.
+    """
+    assert limit is None or limit > 0, (
+        f"limit must be None or positive, got {limit}"
+    )
+
+    if limit is not None:
+
+        def _clamped_concatenated_gated_activation_fn(
+            gate_up: TensorValue, moe_dim: int
+        ) -> TensorValue:
+            gate = activation_fn(gate_up[:, :moe_dim])
+            up = gate_up[:, moe_dim:]
+            lim = ops.constant(limit, gate.dtype, device=gate.device)
+            neg_lim = ops.constant(-limit, up.dtype, device=up.device)
+            gate = ops.min(gate, lim)
+            up = ops.min(ops.max(up, neg_lim), lim)
+            return gate * up
+
+        return _clamped_concatenated_gated_activation_fn
+
+    def _concatenated_gated_activation_fn(
+        gate_up: TensorValue, moe_dim: int
+    ) -> TensorValue:
+        gate = activation_fn(gate_up[:, :moe_dim])
+        up = gate_up[:, moe_dim:]
+        return gate * up
+
+    return _concatenated_gated_activation_fn
+
+
 class MoEGate(Module):
     """Gate module for MoE."""
 
@@ -162,6 +204,19 @@ class MoE(Module, Shardable):
             ``None``.
         quant_config: The scaled quantization configuration. Defaults to
             ``None``.
+        gated_activation_fn: Activation applied to the concatenated
+            ``[gate | up]`` projection. ``None`` (default) uses a fused
+            SiLU kernel; use
+            :func:`make_concatenated_gated_activation_fn` for custom
+            activations.
+        shared_experts_dtype: Weight storage dtype for shared-expert MLPs. When
+            equal to ``dtype`` (routed experts) and ``quant_config`` is set,
+            shared experts use the same quantization as routed experts. When
+            different (e.g. BF16 shared weights with packed NVFP4 routed experts),
+            shared linears omit ``quant_config``. Defaults to ``dtype``.
+        pre_expert_norm_cls: A callable that returns a normalization
+            module to apply before expert computation. Defaults to
+            ``None``.
         is_sharding: Whether the constructor is being called during
             sharding. Defaults to ``False``.
     """
@@ -198,9 +253,12 @@ class MoE(Module, Shardable):
         ep_size: int = 1,
         dtype: DType = DType.bfloat16,
         apply_router_weight_first: bool = False,
-        swiglu_limit: float = 0.0,
+        gated_activation_fn: Callable[[TensorValue, int], TensorValue]
+        | None = None,
+        pre_expert_norm_cls: Callable[[], Module] | None = None,
         ep_batch_manager: EPBatchManager | None = None,
         quant_config: QuantConfig | None = None,
+        shared_experts_dtype: DType | None = None,
         is_sharding: bool = False,
     ):
         super().__init__()
@@ -216,7 +274,11 @@ class MoE(Module, Shardable):
         self.ep_size = ep_size
         self.dtype = dtype
         self.apply_router_weight_first = apply_router_weight_first
-        self.swiglu_limit = swiglu_limit
+        self.gated_activation_fn = gated_activation_fn
+        self.pre_expert_norm_cls = pre_expert_norm_cls
+        self.pre_expert_norm = (
+            pre_expert_norm_cls() if pre_expert_norm_cls else None
+        )
         self.gate = gate_cls(
             devices=devices,
             hidden_dim=hidden_dim,
@@ -226,18 +288,25 @@ class MoE(Module, Shardable):
         )
         self.num_local_experts = num_experts // ep_size
         self.quant_config = quant_config
+        self.shared_experts_dtype = (
+            shared_experts_dtype if shared_experts_dtype is not None else dtype
+        )
 
         if has_shared_experts:
             assert shared_experts_dim > 0, (
                 "shared_experts_dim must be greater than 0"
             )
+            shared_use_quant = (
+                quant_config is not None and self.shared_experts_dtype == dtype
+            )
+            shared_quant = quant_config if shared_use_quant else None
             self.shared_experts = mlp_cls(
-                dtype=dtype,
+                dtype=self.shared_experts_dtype,
                 quantization_encoding=None,
                 hidden_dim=self.hidden_dim,
                 feed_forward_length=self.shared_experts_dim,
                 devices=self.devices,
-                quant_config=self.quant_config,
+                quant_config=shared_quant,
             )
 
         if ep_batch_manager:
@@ -272,6 +341,14 @@ class MoE(Module, Shardable):
             "EPBatchManager must be provided if using expert parallel strategy"
         )
         return self._ep_batch_manager
+
+    @property
+    def _shared_experts_use_quant(self) -> bool:
+        """Whether shared experts use the same quantized weights as routed experts."""
+        return (
+            self.quant_config is not None
+            and self.shared_experts_dtype == self.dtype
+        )
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -351,8 +428,10 @@ class MoE(Module, Shardable):
                 ep_size=self.ep_size,
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
-                swiglu_limit=self.swiglu_limit,
+                gated_activation_fn=self.gated_activation_fn,
+                pre_expert_norm_cls=self.pre_expert_norm_cls,
                 quant_config=self.quant_config,
+                shared_experts_dtype=self.shared_experts_dtype,
                 is_sharding=True,
             )
 
@@ -393,6 +472,19 @@ class MoE(Module, Shardable):
 
         return shards
 
+    def _uses_fused_swiglu_nvfp4_layout(self) -> bool:
+        # True when gate_up weights and scales are sigma-permuted to the
+        # (gate, up) interleaved N-axis layout that the fused
+        # SwiGLU+NVFP4 grouped-matmul kernel consumes. The kernel runs a
+        # fused SiLU so gated_activation_fn must be None, and the layout
+        # only makes sense under expert parallelism.
+        return (
+            self.quant_config is not None
+            and self.quant_config.can_use_fused_swiglu_nvfp4
+            and self._ep_batch_manager is not None
+            and self.gated_activation_fn is None
+        )
+
     @property
     def gate_up_proj(self) -> TensorValue:
         gate_list = [expert.gate_proj.weight for expert in self.experts]
@@ -412,12 +504,13 @@ class MoE(Module, Shardable):
                 self.shared_experts.up_proj.weight,
             ] + up_list
 
+        # Use the actual weight K dimension to support packed formats (e.g. NVFP4).
+        k_dim = gate_list[0].shape[1]
+
         gate_up_list: list[TensorValue] = []
         for tensors in zip(gate_list, up_list, strict=True):
             gate_up_list.extend(tensors)
 
-        # Use the actual weight K dimension to support packed formats (e.g. NVFP4).
-        k_dim = gate_list[0].shape[1]
         if not self.shard_devices:
             shard = ops.stack(gate_up_list, axis=0)
         else:
@@ -427,6 +520,18 @@ class MoE(Module, Shardable):
                 gate_up_list,
                 devices=self.shard_devices,
             )[self.shard_index]
+
+        # The fused SwiGLU+NVFP4 grouped matmul kernel requires the per-expert
+        # N axis to be sigma-permuted: rows 2i = gate row i, rows 2i+1 = up
+        # row i. Reshape the stacked [2E, D, K] tensor to [E, 2, D, K], permute
+        # axes 1 and 2 to [E, D, 2, K], then collapse to [E, 2D, K] — the
+        # innermost rows are now interleaved (g_0, u_0, g_1, u_1, ...). One
+        # bulk permute replaces E per-expert stacks to keep the graph small
+        # and the constant-folding tractable.
+        if self._uses_fused_swiglu_nvfp4_layout():
+            shard = shard.reshape([len(gate_list), 2, -1, k_dim])
+            shard = ops.permute(shard, [0, 2, 1, 3])
+            return shard.reshape([len(gate_list), -1, k_dim])
 
         return shard.reshape([len(gate_list), -1, k_dim])
 
@@ -487,22 +592,12 @@ class MoE(Module, Shardable):
             self.gate_up_proj,
             *expert_inputs[1:],
         )
-        if self.swiglu_limit > 0:
-            gate = ops.silu(gate_up_projs[:, : self.moe_dim])
-            up = gate_up_projs[:, self.moe_dim :]
-            lim = ops.constant(
-                self.swiglu_limit, gate.dtype, device=gate.device
-            )
-            neg_lim = ops.constant(
-                -self.swiglu_limit, up.dtype, device=up.device
-            )
-            gate = ops.min(gate, lim)
-            up = ops.min(ops.max(up, neg_lim), lim)
-            silu_out = gate * up
+        if self.gated_activation_fn is not None:
+            activated = self.gated_activation_fn(gate_up_projs, self.moe_dim)
         else:
-            silu_out = fused_silu(gate_up_projs, expert_inputs[1])
+            activated = fused_silu(gate_up_projs, expert_inputs[1])
         return grouped_matmul_ragged(
-            silu_out,
+            activated,
             self.down_proj,
             *expert_inputs[1:],
         )
@@ -524,6 +619,9 @@ class MoE(Module, Shardable):
 
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
+
+        if self.pre_expert_norm is not None:
+            x = self.pre_expert_norm(x)
 
         router_idx = ops.reshape(
             router_idx, [-1]
@@ -560,18 +658,12 @@ class MoE(Module, Shardable):
             expert_usage_stats.to(DeviceRef.CPU()),
         )
 
-        gate = ops.silu(gate_up_projs[:, : self.moe_dim])
-        up = gate_up_projs[:, self.moe_dim :]
-        if self.swiglu_limit > 0:
-            lim = ops.constant(
-                self.swiglu_limit, gate.dtype, device=gate.device
+        if self.gated_activation_fn is not None:
+            gate_up_projs = self.gated_activation_fn(
+                gate_up_projs, self.moe_dim
             )
-            neg_lim = ops.constant(
-                -self.swiglu_limit, up.dtype, device=up.device
-            )
-            gate = ops.min(gate, lim)
-            up = ops.min(ops.max(up, neg_lim), lim)
-        gate_up_projs = gate * up
+        else:
+            gate_up_projs = fused_silu(gate_up_projs, expert_start_indices)
 
         down_projs = grouped_matmul_ragged(
             gate_up_projs,

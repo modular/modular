@@ -13,6 +13,7 @@
 
 from std.sys import size_of, simd_width_of
 from std.itertools import product
+from std.utils.coord import _coerce_dynamic
 
 from layout import Coord, Idx, TileTensor, row_major
 from layout.coord import DynamicCoord
@@ -30,6 +31,7 @@ from std.gpu.host import (
     DeviceContext,
     DeviceMulticastBuffer,
     get_gpu_target,
+    HostBuffer,
 )
 from std.testing import assert_almost_equal, assert_true
 from std.utils import StaticTuple
@@ -129,9 +131,7 @@ def reducescatter_test[
     # Allocate and initialize buffers (shared across all axis values).
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_in = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
-        capacity=ngpus
-    )
+    var host_in = List[HostBuffer[dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
@@ -149,13 +149,16 @@ def reducescatter_test[
             )
         )
 
-        var h = alloc[Scalar[dtype]](num_elements)
-        host_in.append(h)
+        var h = list_of_ctx[gpu_idx].enqueue_create_host_buffer[dtype](
+            num_elements
+        )
         for j in range(num_elements):
             h[j] = test_value_for_gpu_element[dtype](gpu_idx, j)
 
         if not use_multimem:
             list_of_ctx[gpu_idx].enqueue_copy(in_bufs_list[gpu_idx], h)
+
+        host_in.append(h^)
 
         signal_buffers.append(
             list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
@@ -210,24 +213,24 @@ def reducescatter_test[
     comptime for i in range(ngpus):
         var runtime_shape = shape_type()
         comptime if rank == 1:
-            runtime_shape[0] = rebind[runtime_shape.element_types[0]](
-                Idx(config.rank_num_elements(i))
+            runtime_shape[0] = _coerce_dynamic[runtime_shape.element_types[0]](
+                config.rank_num_elements(i)
             )
         elif rank == 2:
             comptime if axis == 0:
-                runtime_shape[0] = rebind[runtime_shape.element_types[0]](
-                    Idx(config.rank_units(i))
-                )
-                runtime_shape[1] = rebind[runtime_shape.element_types[1]](
-                    Idx(Int(shape[1].value()))
-                )
+                runtime_shape[0] = _coerce_dynamic[
+                    runtime_shape.element_types[0]
+                ](config.rank_units(i))
+                runtime_shape[1] = _coerce_dynamic[
+                    runtime_shape.element_types[1]
+                ](Int(shape[1].value()))
             else:
-                runtime_shape[0] = rebind[runtime_shape.element_types[0]](
-                    Idx(Int(shape[0].value()))
-                )
-                runtime_shape[1] = rebind[runtime_shape.element_types[1]](
-                    Idx(config.rank_units(i) * simd_width)
-                )
+                runtime_shape[0] = _coerce_dynamic[
+                    runtime_shape.element_types[0]
+                ](Int(shape[0].value()))
+                runtime_shape[1] = _coerce_dynamic[
+                    runtime_shape.element_types[1]
+                ](config.rank_units(i) * simd_width)
 
         out_bufs[i] = OutputTileType(
             out_bufs_list[i].unsafe_ptr(),
@@ -240,7 +243,7 @@ def reducescatter_test[
     def outputs_lambda[
         input_index: Int,
         _dtype: DType,
-        _width: Int,
+        _width: SIMDSize,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -271,7 +274,9 @@ def reducescatter_test[
 
         for gpu_idx in range(ngpus):
             var out_len = config.rank_num_elements(gpu_idx)
-            var result_host = alloc[Scalar[dtype]](out_len)
+            var result_host = list_of_ctx[gpu_idx].enqueue_create_host_buffer[
+                dtype
+            ](out_len)
             list_of_ctx[gpu_idx].enqueue_copy(
                 result_host, out_bufs_list[gpu_idx]
             )
@@ -303,14 +308,14 @@ def reducescatter_test[
                     ),
                 )
 
-            result_host.free()
-
     elif rank == 2:
         # --- 2D axis-aware case ---
 
         for gpu_idx in range(ngpus):
             var out_size = config.rank_num_elements(gpu_idx)
-            var result_host = alloc[Scalar[dtype]](out_size)
+            var result_host = list_of_ctx[gpu_idx].enqueue_create_host_buffer[
+                dtype
+            ](out_size)
             list_of_ctx[gpu_idx].enqueue_copy(
                 result_host, out_bufs_list[gpu_idx]
             )
@@ -383,10 +388,7 @@ def reducescatter_test[
                             ),
                         )
 
-            result_host.free()
-
-    comptime for i in range(ngpus):
-        host_in[i].free()
+    _ = host_in^
 
 
 @parameter
@@ -419,7 +421,7 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
                 axis=0,
                 use_custom_epilogue=use_custom_epilogue,
                 use_multimem=use_multimem,
-            ](list_of_ctx, Coord(Idx(length)))
+            ](list_of_ctx, Coord(length))
         except e:
             if (
                 use_multimem
@@ -457,7 +459,7 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
                     axis=axis,
                     use_custom_epilogue=use_custom_epilogue,
                     use_multimem=use_multimem,
-                ](list_of_ctx, Coord((Idx(M), Idx(D))))
+                ](list_of_ctx, Coord(M, D))
             except e:
                 if (
                     use_multimem

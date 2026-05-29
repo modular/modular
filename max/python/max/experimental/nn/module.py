@@ -41,9 +41,12 @@ if TYPE_CHECKING:
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
+from max.experimental.nn._compilation_timer import CompilationTimer
 from max.experimental.nn._compile_utils import (
+    CastRecord,
     InputType,
     _detect_signals,
+    _emit_cast_summary,
     _flatten_input_types,
     _flatten_named_buffers,
     _flatten_outputs,
@@ -57,9 +60,10 @@ from max.experimental.nn._compile_utils import (
     flatten_input_buffers,
 )
 from max.nn.comm.allreduce import Signals
+from max.profiler import Tracer
 
 
-class CompiledModel:
+class CompiledModel(Generic[_P, _R]):
     """Compiled model returned by :meth:`Module.compile`.
 
     Provides two execution paths:
@@ -105,8 +109,13 @@ class CompiledModel:
         """Signal buffers for multi-GPU collectives (empty for single-GPU)."""
         return self._signal_buffers
 
-    def __call__(self, *args: Any) -> Any:
+    def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         """Tensor-in, Tensor-out execution (distributed-aware)."""
+        if kwargs:
+            raise TypeError(
+                "CompiledModel does not accept keyword arguments; "
+                f"got {sorted(kwargs)}."
+            )
         flat_args = flatten_input_buffers(args, self._input_slots)
         flat_args.extend(self._signal_buffers)
         try:
@@ -554,7 +563,11 @@ class Module(Generic[_P, _R]):
         )
 
     def load_state_dict(
-        self, state: Mapping[str, DLPackArray], strict: bool = True
+        self,
+        state: Mapping[str, DLPackArray],
+        strict: bool = True,
+        *,
+        auto_cast: bool = False,
     ) -> None:
         """Loads parameter values from a dictionary into the module hierarchy.
 
@@ -593,35 +606,57 @@ class Module(Generic[_P, _R]):
             }
             model.load_state(lambda name, _: weights[name])
 
+        By default (``auto_cast=False``) any dtype mismatch between the loaded
+        tensor and the parameter raises. When ``auto_cast=True``, loaded
+        weights whose dtype is in the safe-cast set (currently ``float32`` and
+        ``bfloat16``) are automatically cast to the parameter's dtype when
+        shapes match, and a single summary message is logged at ``WARNING``
+        level per call describing how many parameters were cast. Narrowing
+        casts (e.g. ``float32`` -> ``bfloat16``) are flagged in the log
+        message as ``(precision loss)``. Dtype mismatches outside the
+        safe-cast set still raise regardless of ``auto_cast``.
+
         Args:
             state: Dictionary mapping qualified parameter names to tensor values.
                 Keys should match the names from :attr:`Module.parameters` property.
                 Values should be DLPack-compatible arrays or :class:`~max.experimental.tensor.Tensor` objects.
-                Their shapes and dtypes must match the existing parameters with the
-                corresponding name, but they may be on a different device. In the
-                case that the new value has a different device, it will be copied to
-                the same device as the existing value, and the parameter will be set
-                to the new copy.
+                Shapes must match the existing parameters with the corresponding
+                name. Dtypes must match exactly *or* both lie in the safe-cast
+                set above. Values may be on a different device; in that case the
+                tensor is copied to the existing parameter's device.
             strict: If :obj:`True` (default), verify that all keys in ``state``
                 are used (i.e., match actual parameters). If :obj:`False`, silently
                 ignore extra keys that don't match any parameters.
+            auto_cast: If :obj:`True`, permit safe dtype auto-casting between
+                ``float32`` and ``bfloat16`` when shapes match. Defaults to
+                :obj:`False` — dtype mismatches always raise. Pipelines that
+                want to opt in via ``MODULAR_AUTO_CAST_WEIGHTS`` should pass
+                ``auto_cast=max.pipelines.lib.weight_loading.auto_cast_weights_from_env()``.
 
         Raises:
             ValueError: If ``strict=True`` and some weights in ``state`` don't
                 match any model parameters (indicates architecture mismatch or
                 incorrect weight names).
-            ValueError: If a loaded tensor has a different dtype or shape than
-                the existing parameter.
+            ValueError: If a loaded tensor has a different shape than the
+                existing parameter, or a dtype mismatch that is not covered by
+                the safe-cast set (or ``auto_cast=False``).
             KeyError: If a required parameter name in the model is missing from
                 ``state`` (regardless of ``strict`` setting).
         """
         loaded = set()
+        cast_counts: dict[CastRecord, int] = {}
 
         def lookup(name: str, existing: Tensor) -> Tensor:
             loaded.add(name)
-            return _prepare_weight_for_parameter(name, state[name], existing)
+            prepared, cast_record = _prepare_weight_for_parameter(
+                name, state[name], existing, auto_cast=auto_cast
+            )
+            if cast_record is not None:
+                cast_counts[cast_record] = cast_counts.get(cast_record, 0) + 1
+            return prepared
 
         self.apply_to_parameters(lookup)
+        _emit_cast_summary(cast_counts)
 
         if strict and (unloaded := state.keys() - loaded):
             raise ValueError(
@@ -887,7 +922,8 @@ class Module(Generic[_P, _R]):
         *input_types: InputType,
         weights: Mapping[str, DLPackArray] | None = None,
         custom_extensions: Iterable[Path] = (),
-    ) -> CompiledModel:
+        auto_cast: bool = False,
+    ) -> CompiledModel[_P, _R]:
         """Compiles the module to an optimized executable through graph tracing.
 
         This method performs symbolic tracing of the module's ``forward`` method
@@ -973,7 +1009,7 @@ class Module(Generic[_P, _R]):
             module = CustomModule()
             compiled = module.compile(
                 input_type,
-                custom_extensions=[Path("my_ops.mojopkg")],
+                custom_extensions=[Path("my_ops.mojoc")],
             )
 
         Args:
@@ -989,12 +1025,16 @@ class Module(Generic[_P, _R]):
                 of model initialization. If not passed, the model's parameters
                 will be used as the weights.
             custom_extensions: Paths to custom Mojo kernel libraries
-                (``.mojopkg`` files or Mojo source directories) to load into
+                (``.mojoc`` files or Mojo source directories) to load into
                 the graph before tracing. Required when ``forward`` uses
                 :func:`~max.experimental.functional.custom` or
                 :func:`~max.experimental.functional.inplace_custom` with
                 custom kernels, so that kernel signatures are available for
                 validation during graph construction.
+            auto_cast: If :obj:`True`, permit safe dtype auto-casting between
+                ``float32`` and ``bfloat16`` when ``weights`` is provided.
+                Defaults to :obj:`False` — dtype mismatches always raise. See
+                :meth:`load_state_dict` for details.
 
         Returns:
             Callable[..., Any]
@@ -1009,33 +1049,47 @@ class Module(Generic[_P, _R]):
             RuntimeError: If graph construction fails due to incompatible
                 operations or parameter access issues.
         """
-        graph, input_slots, output_slots, unary, signals = self._trace(
-            input_types, custom_extensions=custom_extensions
-        )
+        compile_name = type(self).__name__
+        with (
+            Tracer(f"Module.compile({compile_name})"),
+            CompilationTimer(compile_name) as timer,
+        ):
+            with Tracer("Module.compile.trace"):
+                graph, input_slots, output_slots, unary, signals = self._trace(
+                    input_types, custom_extensions=custom_extensions
+                )
 
-        # Compile the graph with module parameters as weights
-        session = _session()
+            with Tracer("Module.compile.weights_registry"):
+                # Compile the graph with module parameters as weights
+                session = _session()
 
-        # Build weights registry from parameters.
-        if weights is None:
-            weights_registry = _flatten_named_buffers(self.parameters)
-        else:
-            weights_registry = _process_provided_weights(
-                weights, self.parameters
-            )
+                # Build weights registry from parameters.
+                if weights is None:
+                    weights_registry = _flatten_named_buffers(self.parameters)
+                else:
+                    weights_registry = _process_provided_weights(
+                        weights, self.parameters, auto_cast=auto_cast
+                    )
 
-        session_model = session.load(graph, weights_registry=weights_registry)
+            timer.mark_build_complete()
+            with Tracer("Module.compile.session_load"):
+                session_model = session.load(
+                    graph, weights_registry=weights_registry
+                )
 
-        # Allocate signal buffers once for all future invocations.
-        cached_sig_bufs = signals.buffers() if signals is not None else []
+            with Tracer("Module.compile.finalize"):
+                # Allocate signal buffers once for all future invocations.
+                cached_sig_bufs = (
+                    signals.buffers() if signals is not None else []
+                )
 
-        return CompiledModel(
-            engine_model=session_model,
-            input_slots=input_slots,
-            output_slots=output_slots,
-            signal_buffers=cached_sig_bufs,
-            unary=unary,
-        )
+                return CompiledModel(
+                    engine_model=session_model,
+                    input_slots=input_slots,
+                    output_slots=output_slots,
+                    signal_buffers=cached_sig_bufs,
+                    unary=unary,
+                )
 
     def __rich_repr__(self):
         yield from self.children

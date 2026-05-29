@@ -20,7 +20,7 @@ import pytest
 import verify_pipelines
 from click.testing import CliRunner
 
-PIXEL_PIPELINE = "black-forest-labs/FLUX.1-dev-bfloat16"
+PIXEL_PIPELINE = "black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2"
 RUNNER = CliRunner()
 
 

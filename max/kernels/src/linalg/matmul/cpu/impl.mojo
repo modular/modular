@@ -57,7 +57,7 @@ from .vnni import Inner_matmul_vnni
 # - _run_inner_loop_i8mm()
 
 
-trait InnerMatmulKernel(ImplicitlyCopyable):
+trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDestructible):
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -85,12 +85,10 @@ def elementwise_epilogue_c_tile[
 ](
     offset: GemmShape,
     tile_len: GemmShape,
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=False, c_type, address_space=AddressSpace.GENERIC, ...],
 ):
     @always_inline
-    def activation_on_col_chunk[
-        col_chunk_size: Int
-    ](idx_n: Int) {c, offset, tile_len, mut}:
+    def activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) {read}:
         var n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
             var m_coord = idx_m + offset.M
@@ -113,7 +111,11 @@ def tiled_matmul_run[
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
     ElementwiseEpilogueFnType: ImplicitlyCopyable
-    & def(GemmShape, GemmShape) -> None,
+    & def(
+        GemmShape,
+        GemmShape,
+        TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ) -> None,
 ](
     alg: algorithm,
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
@@ -191,7 +193,11 @@ struct TiledMatmul[
     c_origin: MutOrigin,
     algorithm: InnerMatmulKernel,
     ElementwiseEpilogueFnType: ImplicitlyCopyable
-    & def(GemmShape, GemmShape) -> None,
+    & def(
+        GemmShape,
+        GemmShape,
+        TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ) -> None,
 ](ImplicitlyCopyable):
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -292,6 +298,7 @@ struct TiledMatmul[
                     GemmShape(
                         tile_kernel_rows, sub_tile_n_k[0], sub_tile_n_k[1]
                     ),
+                    self.c.as_immut(),
                 )
 
         comptime if Self.kernel_id == InnerKernelID.I8MM:
@@ -412,8 +419,8 @@ def _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = TileTensor(c.ptr, row_major(Coord(Idx(Int(c.dim[0]())))))
-        var rhs = TileTensor(b.ptr, row_major(Coord(Idx(Int(b.dim[0]())))))
+        var out = TileTensor(c.ptr, row_major(Coord(Int(c.dim[0]()))))
+        var rhs = TileTensor(b.ptr, row_major(Coord(Int(b.dim[0]()))))
         gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
             out, a, rhs
         )
@@ -506,7 +513,7 @@ def _matmul_cpu_impl[
                     c,
                     TileTensor(
                         a_packed_ptr.unsafe_value(),
-                        row_major(Coord(Idx(mh), Idx(kh))),
+                        row_major(Coord(mh, kh)),
                     ),
                     b,
                     GemmShape(sub_matmul_config.shape),
@@ -586,13 +593,13 @@ def matmul[
         )
         var scratch = TileTensor(
             scratch_ptr,
-            row_major(Coord(Idx(scratch_m), Idx(scratch_n))),
+            row_major(Coord(scratch_m, scratch_n)),
         )
 
         @parameter
         @always_inline
         def cast_epilogue[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](coord: IndexList[2], val: SIMD[dtype, width]):
             var cast_val = val.cast[c.dtype]()
             comptime if elementwise_lambda_fn:
@@ -711,17 +718,21 @@ def _submatmul_sequential_sync[
 ):
     comptime simd_size = config.simd_size
 
-    def elementwise_closure(offset: GemmShape, shape: GemmShape) {read c}:
+    def elementwise_closure(
+        offset: GemmShape,
+        shape: GemmShape,
+        c_read: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ):
         comptime if elementwise_lambda_fn:
             comptime func = elementwise_lambda_fn.value()
             elementwise_epilogue_c_tile[
                 simd_size,
-                c.dtype,
+                c_read.dtype,
                 func,
             ](
                 offset,
                 shape,
-                c,
+                c_read,
             )
         else:
             pass

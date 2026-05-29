@@ -159,12 +159,11 @@ class Gemma3Attention(Module[..., Tensor]):
         use_local = bool((self.layer_idx + 1) % self.sliding_window_pattern)
         rope = self.rope_local if use_local else self.rope_global
 
-        freqs_cis = F.cast(rope.freqs_cis, qkv.dtype)
         xq = rope_split_store_ragged(
             kv_params=self.kv_params,
             qkv=qkv,
             input_row_offsets=kwargs["input_row_offsets"],
-            freqs_cis=freqs_cis,
+            freqs_cis=rope.freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=per_device_n_heads,

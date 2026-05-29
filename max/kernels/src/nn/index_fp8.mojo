@@ -21,7 +21,8 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
-from layout.layout_tensor import ThreadScope, copy_dram_to_sram
+from layout.tile_io import GenericToSharedTileCopier
+from layout.tile_layout import row_major
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.sync import barrier
@@ -43,7 +44,7 @@ struct IndexSmemStorage[
     var scratch: InlineArray[Scalar[DType.float32], Self.BN * 8]
 
 
-@__name(t"fp8_index_{dtype}", mangle=True)
+@__name(t"fp8_index_{dtype}")
 def fp8_index_kernel[
     dtype: DType,
     OutputLT: TensorLayout,
@@ -71,7 +72,9 @@ def fp8_index_kernel[
     valid_length_tt: TileTensor[DType.uint32, VLLT, ImmutAnyOrigin],
 ):
     # Convert TileTensor inputs to LayoutTensor for internal use,
-    # which relies on LayoutTensor-specific APIs (tile, vectorize, copy_dram_to_sram).
+    # which relies on LayoutTensor-specific APIs (tile, indexing).
+    # The DRAM->SMEM copy itself is now done natively on TileTensor via
+    # GenericToSharedTileCopier from layout.tile_io.
     var output = output_tt.to_layout_tensor()
     var q = q_tt.to_layout_tensor()
     var q_s = q_s_tt.to_layout_tensor()
@@ -184,13 +187,14 @@ def fp8_index_kernel[
     comptime for q_frag_idx in range(num_heads // thread_dim_y):
         q_s_reg_tile[0, q_frag_idx] = q_s_frag[0, q_frag_idx][0]
 
-    copy_dram_to_sram[
-        thread_layout=Layout.row_major(16, 8),
-        thread_scope=ThreadScope.BLOCK,
-        block_dim_count=2,
-    ](
-        q_smem_tile.vectorize[1, simd_width](),
-        q_tile.vectorize[1, simd_width](),
+    var q_smem_tt = TileTensor(
+        q_smem.unsafe_ptr(), row_major[num_heads, depth]()
+    ).vectorize[1, simd_width]()
+    var q_src_tt = TileTensor(q_ptr, row_major[num_heads, depth]()).vectorize[
+        1, simd_width
+    ]()
+    GenericToSharedTileCopier[thread_layout=row_major[16, 8]()]().copy(
+        q_smem_tt, q_src_tt
     )
 
     for i in range(BM // BN):
@@ -349,7 +353,7 @@ def fp8_index[
         _is_cache_length_accurate=True,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         q.as_immut(),
         q_s,
@@ -369,7 +373,7 @@ def fp8_index[
     )
 
 
-@__name(t"fp8_index_matmul_max_{dtype}", mangle=True)
+@__name(t"fp8_index_matmul_max_{dtype}")
 def _index_matmul_max[
     dtype: DType,
     output_layout: Layout,
@@ -440,7 +444,7 @@ def _index_matmul_max[
     o_batch[seq_idx, key_idx, head_idx] = accum
 
 
-@__name(t"fp8_index_reduce_logits", mangle=True)
+@__name(t"fp8_index_reduce_logits")
 def _reduce_logits[
     logits_layout: Layout,
     output_layout: Layout,
@@ -598,7 +602,7 @@ def fp8_index_naive[
         type_of(k_operand),
     ]
 
-    ctx.enqueue_function[mm, mm](
+    ctx.enqueue_function[mm](
         logits_tensor,
         q_lt,
         q_s_lt,
@@ -621,7 +625,7 @@ def fp8_index_naive[
         type_of(k_operand),
     ]
 
-    ctx.enqueue_function[reduce_logits, reduce_logits](
+    ctx.enqueue_function[reduce_logits](
         logits_tensor,
         output_lt,
         k_s_lt,

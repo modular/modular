@@ -13,15 +13,19 @@
 
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
-from collections.abc import Mapping
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
 from typing import Literal
 
 from max.config import ConfigFileModel
-from pydantic import Field
+from pydantic import ConfigDict, Field, field_validator
 
 from .datasets import DatasetMode, DistributionParameter
+from .utils import int_or_none, parse_comma_separated
 
 BaseBackend = Literal[
+    "mcloud",
     "modular",
     "sglang",
     "trtllm",
@@ -29,6 +33,7 @@ BaseBackend = Literal[
 ]
 
 Backend = Literal[
+    "mcloud",
     "modular",
     "modular-chat",
     "sglang",
@@ -45,6 +50,8 @@ Endpoint = Literal[
     "/v2/models/ensemble/generate_stream",
     "/v1/responses",
     "/v1/images/generations",
+    "/v1/videos/sync",
+    "/v1/videos",
 ]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
@@ -60,11 +67,13 @@ BenchmarkTask = Literal[
     "text-generation",
     "text-to-image",
     "image-to-image",
+    "text-to-video",
 ]
 
 PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
     "text-to-image",
     "image-to-image",
+    "text-to-video",
 )
 
 # Default endpoint per backend for pixel generation tasks.
@@ -72,16 +81,41 @@ PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
 # NOTE: Each endpoint value here is coupled to a specific request driver in
 # get_request_driver_class() in request.py. Adding a new backend that reuses
 # an existing endpoint will route to that endpoint's existing driver.
-PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[str, Endpoint] = {
+PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "modular": "/v1/responses",
+    "modular-chat": "/v1/responses",
     "sglang": "/v1/images/generations",
+    "sglang-chat": "/v1/images/generations",
     "vllm": "/v1/chat/completions",
+    "vllm-chat": "/v1/chat/completions",
+}
+
+# Override endpoint per backend for text-to-video tasks. For vllm-omni
+# use the dedicated /v1/videos/sync endpoint.
+VIDEO_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
+    "vllm": "/v1/videos/sync",
+    "vllm-chat": "/v1/videos/sync",
+    "sglang": "/v1/videos",
+    "sglang-chat": "/v1/videos",
 }
 
 # Valid endpoints for pixel generation tasks (union of all backend defaults).
 PIXEL_GENERATION_ENDPOINTS: frozenset[Endpoint] = frozenset(
-    PIXEL_GEN_DEFAULT_ENDPOINT.values()
+    set(PIXEL_GEN_DEFAULT_ENDPOINT.values())
+    | set(VIDEO_GEN_DEFAULT_ENDPOINT.values())
 )
+
+
+def get_pixel_gen_endpoint(backend: Backend, task: BenchmarkTask) -> Endpoint:
+    """Return the pixel-generation endpoint for a given backend and task."""
+    if task == "text-to-video" and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
+        return VIDEO_GEN_DEFAULT_ENDPOINT[backend]
+    if backend in PIXEL_GEN_DEFAULT_ENDPOINT:
+        return PIXEL_GEN_DEFAULT_ENDPOINT[backend]
+    raise ValueError(
+        f"Backend {backend!r} does not have a default"
+        " pixel-generation endpoint."
+    )
 
 
 class HardwareConfig(ConfigFileModel):
@@ -93,6 +127,17 @@ class HardwareConfig(ConfigFileModel):
 
 class SamplingConfig(ConfigFileModel):
     """Configuration class for sampling options."""
+
+    temperature: float | None = Field(default=None)
+    """Sampling temperature. Default: None (use model / pipeline defaults)."""
+
+    thinking_temperature: float | None = Field(default=None)
+    """Sampling temperature override for tokens inside a ``<think>...</think>``
+    block. MAX-only OpenAI extension; other backends will ignore or reject
+    the field. Default: None (request omits the field)."""
+
+    top_p: float | None = Field(default=None)
+    """Nucleus sampling cumulative probability threshold. Default: None (use defaults)."""
 
     top_k: int | None = Field(default=None)
     """Limits the sampling to the K most probable tokens. Default: None (no sampling)."""
@@ -122,7 +167,7 @@ class BenchmarkCommonConfig(ConfigFileModel):
     num_prompts: int | None = None
     """Number of prompts to process."""
 
-    seed: int = 0
+    seed: int | None = None
     """Random seed for reproducibility."""
 
     # Control flags
@@ -194,9 +239,15 @@ class BaseBenchmarkConfig(ConfigFileModel):
         description="Number of prompts to process.",
     )
 
-    seed: int = Field(
-        default=0,
-        description="Random seed for reproducibility.",
+    seed: int | None = Field(
+        default=None,
+        description=(
+            "Random seed for reproducibility. When set, the same seed is used "
+            "for every benchmark iteration instead of drawing a fresh random "
+            "seed per concurrency level. Useful for reproducing a specific "
+            "concurrency level from a prior sweep without re-running the full "
+            "sweep."
+        ),
     )
 
     # Control flags
@@ -224,8 +275,8 @@ class BaseServingBenchmarkConfig(BaseBenchmarkConfig):
     classes. Only holds fields whose type *and* default align across both
     serving codepaths so downstream configs can opt into shared behavior
     without per-codepath overrides. Fields whose semantics diverge (e.g.
-    ``request_rate`` sweep strings vs floats) are intentionally left on the
-    concrete subclasses.
+    ``request_rate`` sweep lists vs scalars on TTS) are intentionally left on
+    the concrete subclasses.
     """
 
     burstiness: float = Field(
@@ -288,6 +339,13 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     - CPU and server stats collection
     """
 
+    # TODO(MXTOOLS-166): The validate_assignment here is only because workload
+    # YAMLs are not themselves parsed with Pydantic, and when we set fields via
+    # _apply_workload_to_config, we rely on re-running the validators.
+    # Workload YAMLs should probably be parsed with Pydantic too, and then
+    # values need not be re-validated, and validate_assignment can be removed.
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     # Backend and API configuration (serving-specific)
     backend: Backend = Field(
         default="modular",
@@ -324,14 +382,18 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     benchmark_task: BenchmarkTask = Field(
         default="text-generation",
-        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image",
+        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video",
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 
     # Request configuration (serving-specific)
-    max_concurrency: str | None = Field(
-        default=None,
-        description="Maximum concurrent requests (optimized for serving benchmarks). Can be a single integer, 'None', or comma-separated string for sweep configs.",
+    max_concurrency: Sequence[int | None] = Field(
+        default=[None],
+        description=(
+            "Maximum concurrent requests per sweep step. Parsed from a single "
+            "value or comma-separated string (e.g. ``1,none,8``); ``none`` means "
+            "unbounded."
+        ),
         json_schema_extra={
             "group": "Request Configuration",
             "group_description": "Parameters controlling request concurrency and processing",
@@ -399,7 +461,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
 
     # Output control (serving-specific extensions)
-    output_lengths: str | None = Field(
+    output_lengths: str | int | None = Field(
         default=None,
         description="Path to YAML file with output lengths or int.",
         json_schema_extra={
@@ -417,6 +479,16 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     temperature: float | None = Field(
         default=None,
         description="Temperature for sampling.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    thinking_temperature: float | None = Field(
+        default=None,
+        description=(
+            "Temperature override for tokens inside a ``<think>...</think>`` "
+            "block. MAX-only OpenAI extension; other backends will ignore or "
+            "reject the field."
+        ),
         json_schema_extra={"group": "Output Control"},
     )
 
@@ -479,10 +551,19 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    num_frames: int | None = Field(
+        default=None,
+        description="Number of frames to generate. Required for text-to-video.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
     # Traffic control (serving-specific)
-    request_rate: str = Field(
-        default="inf",
-        description="Requests per second (finite rate for realistic benchmarking). Can be a single float value or comma-separated string for sweep configs.",
+    request_rate: Sequence[float] = Field(
+        default=[float("inf")],
+        description=(
+            "Requests per second per sweep step. Parsed from a single value or "
+            "comma-separated string (use ``inf`` for unlimited)."
+        ),
         json_schema_extra={
             "group": "Traffic Control",
             "group_description": "Parameters controlling request rate and traffic patterns",
@@ -513,9 +594,15 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    randomize_starting_turn: bool = Field(
+    warmup_to_steady_state: bool = Field(
         default=True,
-        description="Start each multi-turn session at a random turn offset. Prefix turns run densely (no inter-turn delay) to build KV cache context and are excluded from benchmark results.",
+        description="Attempt to start the benchmark in steady state by starting with a later turn distribution. Disable to start every session at turn 0.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_oversample_factor: int = Field(
+        default=8,
+        description="Warmup-candidate pool multiplier (sessions per warmup slot). 0 disables length-biased warmup; 1 = uniform random turn warmup; >=2 = length-biased warmup.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
@@ -620,8 +707,10 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         default=False,
         description=(
             "Send each unique shared prefix once (max_tokens=1) before the"
-            " benchmark run to prime prefix-cache KV entries. Only supported for"
-            " random/synthetic datasets with --random-sys-prompt-ratio > 0."
+            " benchmark run to prime prefix-cache KV entries. Supported for"
+            " random/synthetic datasets, or instruct-coder/agentic-code with"
+            " --fit-distributions; in all cases requires"
+            " --random-sys-prompt-ratio > 0."
         ),
         json_schema_extra={
             "group": "Control Flags",
@@ -661,7 +750,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     dry_run: bool = Field(
         default=False,
-        description="Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed.",
+        description="Build the dataset and print workload stats + warmup-sampling preview, then exit without contacting the server.",
         json_schema_extra={"group": "Control Flags"},
     )
 
@@ -696,10 +785,21 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Result Saving"},
     )
 
+    always_save_result: bool = Field(
+        default=False,
+        description="Save result files even when benchmark validation fails (e.g. some requests errored). The process still exits with code 1 on failure.",
+        json_schema_extra={"group": "Result Saving"},
+    )
+
     metadata: list[str] = Field(
         default_factory=list,
         description="Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes.",
         json_schema_extra={"group": "Result Saving"},
+    )
+
+    server_ready_timeout_s: int = Field(
+        default=0,
+        description="Maximum seconds to wait for the server to become ready (HTTP-poll) after sample generation finishes.",
     )
 
     log_dir: str | None = Field(
@@ -773,6 +873,50 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         description="Maximum concurrent LoRA loading/unloading operations.",
         json_schema_extra={"group": "LoRA Configuration"},
     )
+
+    @field_validator("max_concurrency", mode="before")
+    @classmethod
+    def _parse_max_concurrency_cli_strings(cls, value: object) -> object:
+        """Expand comma-separated CLI/env strings (and cyclopts ``['sweep']``)."""
+        if isinstance(value, int):
+            return [value]
+        if (
+            isinstance(value, list)
+            and len(value) == 1
+            and isinstance(value[0], str)
+        ):
+            value = value[0]
+        if isinstance(value, str):
+            return parse_comma_separated(value, int_or_none)
+        return value
+
+    @field_validator("request_rate", mode="before")
+    @classmethod
+    def _parse_request_rate_cli_strings(cls, value: object) -> object:
+        """Expand comma-separated CLI/env strings (and cyclopts ``['sweep']``)."""
+        if isinstance(value, (int, float)):
+            return [value]
+        if (
+            isinstance(value, list)
+            and len(value) == 1
+            and isinstance(value[0], str)
+        ):
+            value = value[0]
+        if isinstance(value, str):
+            return parse_comma_separated(value, float)
+        return value
+
+    @property
+    def sampling(self) -> SamplingConfig:
+        """OpenAI-style completion sampling from flat ``temperature`` / ``top_p`` / ``top_k`` / ``thinking_temperature``."""
+        # TODO: We should just embed SamplingConfig directly.  This may change
+        # the CLI interface, so we'd need to find all callers to update them.
+        return SamplingConfig(
+            temperature=self.temperature,
+            thinking_temperature=self.thinking_temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -24,13 +24,15 @@ from std.ffi import _Global, _CPointer, c_int
 from std.sys.info import size_of
 
 from std.builtin._startup import _ensure_runtime_init
-from std.reflection import get_type_name
+from std.reflection import reflect
 from std.memory import OpaquePointer, stack_allocation
 from std.python import Python, PythonObject
 from std.python._cpython import (
     GILAcquired,
     Py_TPFLAGS_DEFAULT,
+    Py_ssize_t,
     PyCFunction,
+    PyCFunctionFast,
     PyCFunctionWithKeywords,
     PyMethodDef,
     PyObject,
@@ -114,13 +116,13 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
     #   This should use a unique compiler type ID, not the Python name of this
     #   type.
 
-    comptime type_name = get_type_name[T, qualified_builtins=True]()
+    comptime type_name = reflect[T].name[qualified_builtins=True]()
     if entry := type_dict[].find(type_name):
         return entry.take()
 
     raise Error(
         "No Python type object registered for Mojo type with name: ",
-        get_type_name[T](),
+        reflect[T].name(),
     )
 
 
@@ -167,7 +169,9 @@ struct PyMojoObject[T: ImplicitlyDestructible]:
     """Whether the Mojo value has been initialized."""
 
 
-def _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
+def _tp_dealloc_wrapper[
+    T: ImplicitlyDestructible
+](py_self: PyObjectPtr) abi("C"):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
 
     This function serves as the tp_dealloc slot for Python type objects that
@@ -195,7 +199,7 @@ def _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
 
 def _tp_repr_wrapper[
     T: ImplicitlyDestructible
-](py_self: PyObjectPtr) -> PyObjectPtr:
+](py_self: PyObjectPtr) abi("C") -> PyObjectPtr:
     """Python-compatible wrapper for generating string representation of a
     `PyMojoObject`.
 
@@ -224,7 +228,7 @@ def _tp_repr_wrapper[
         ), "_tp_repr_wrapper requires conformance to Writable."
         trait_downcast[Writable](self.mojo_value).write_repr_to(repr_str)
     else:
-        repr_str = String(t"<uninitialized {get_type_name[T]()}>")
+        repr_str = String(t"<uninitialized {reflect[T].name()}>")
 
     return cpython.PyUnicode_DecodeUTF8(repr_str)
 
@@ -387,6 +391,24 @@ struct PythonModuleBuilder:
 
         self.functions.append(PyMethodDef.function(func, func_name, docstring))
 
+    def def_py_c_function(
+        mut self,
+        func: PyCFunctionFast,
+        func_name: StaticString,
+        docstring: StaticString = "",
+    ):
+        """Declare a binding for a function with `PyCFunctionFast` signature
+        (`METH_FASTCALL`) in the module.
+
+        Args:
+            func: The function to declare a binding for.
+            func_name: The name with which the function will be exposed in the
+                module.
+            docstring: The docstring for the function in the module.
+        """
+
+        self.functions.append(PyMethodDef.function(func, func_name, docstring))
+
     def def_py_function[
         func: PyFunctionRaising
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
@@ -435,9 +457,13 @@ struct PythonModuleBuilder:
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a module-level function.
 
-        Accepts functions with PythonObject arguments (up to 6), can optionally
+        Accepts functions with PythonObject arguments (up to 8), can optionally
         return a PythonObject, and can raise. Functions can also accept keyword
         arguments if their last parameter is OwnedKwargsDict[PythonObject].
+
+        Non-kwargs callables register through CPython's `METH_FASTCALL`
+        calling convention; kwargs-accepting callables use
+        `METH_VARARGS | METH_KEYWORDS`.
 
         Example signatures:
         ```mojo
@@ -461,9 +487,25 @@ struct PythonModuleBuilder:
                 module.
             docstring: The docstring for the function in the module.
         """
-        self._generic_def_py_function[_py_function_wrapper[func]()](
-            func_name, docstring
-        )
+        comptime if func.has_kwargs:
+            # Keyword-accepting functions still go through the
+            # `METH_VARARGS | METH_KEYWORDS` dispatch path. The
+            # corresponding `METH_FASTCALL | METH_KEYWORDS` protocol (with
+            # `kwnames`) is a separate vectorcall shape and is not
+            # implemented here yet.
+            self._generic_def_py_function[_py_kwargs_function_wrapper[func]()](
+                func_name, docstring
+            )
+        else:
+            # Non-kwargs functions register directly as `METH_FASTCALL`,
+            # so CPython never packs the positional arguments into a
+            # tuple and we read them straight out of the `PyObject *const*`
+            # array via `_dispatch_fast`.
+            self.def_py_c_function(
+                _py_function_fastcall_wrapper[func](),
+                func_name,
+                docstring,
+            )
 
     def finalize(mut self) raises -> PythonObject:
         """Finalize the module builder, creating the module object.
@@ -572,7 +614,7 @@ struct PythonTypeBuilder(Copyable):
         b._insert_slot(PyType_Slot.tp_repr(_tp_repr_wrapper[T]))
 
         b.methods = List[PyMethodDef]()
-        b._type_id = get_type_name[T, qualified_builtins=True]()
+        b._type_id = reflect[T].name[qualified_builtins=True]()
 
         return b^
 
@@ -664,7 +706,7 @@ struct PythonTypeBuilder(Copyable):
         self._slots[Int(slot.slot)] = slot.pfunc
 
     def def_init_defaultable[
-        T: Defaultable & Movable,
+        T: Defaultable & Movable & ImplicitlyDestructible,
     ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type which
         initializes the type with a default value.
@@ -798,6 +840,36 @@ struct PythonTypeBuilder(Copyable):
         )
         return self
 
+    def def_py_c_method[
+        static_method: Bool = False
+    ](
+        mut self,
+        method: PyCFunctionFast,
+        method_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> ref[self] Self:
+        """Declare a binding for a method with `PyCFunctionFast` signature
+        (`METH_FASTCALL`) for the type.
+
+        Parameters:
+            static_method: Whether the method is exposed as a staticmethod.
+                Default is False.
+
+        Args:
+            method: The fastcall method to declare a binding for.
+            method_name: The name with which the method will be exposed on the
+                type.
+            docstring: The docstring for the method of the type.
+
+        Returns:
+            The builder with the method binding declared.
+        """
+
+        self.methods.append(
+            PyMethodDef.function[static_method](method, method_name, docstring)
+        )
+        return self
+
     def def_py_method[
         method: PyFunctionRaising, static_method: Bool = False
     ](
@@ -883,6 +955,10 @@ struct PythonTypeBuilder(Copyable):
         Use this when you need generic Python object access. For direct access to the wrapped
         Mojo self type, use the typed self `def_method` overload instead.
 
+        Non-kwargs methods register through CPython's `METH_FASTCALL`
+        calling convention; kwargs-accepting methods use
+        `METH_VARARGS | METH_KEYWORDS`.
+
         Example signatures:
         ```mojo
         from std.python import PythonObject
@@ -905,10 +981,17 @@ struct PythonTypeBuilder(Copyable):
         Returns:
             The builder with the method binding declared.
         """
-
-        return self._generic_def_py_method[
-            _py_function_wrapper[method, is_method=True](), static_method=False
-        ](method_name, docstring)
+        comptime if method.has_kwargs:
+            return self._generic_def_py_method[
+                _py_kwargs_function_wrapper[method, is_method=True](),
+                static_method=False,
+            ](method_name, docstring)
+        else:
+            return self.def_py_c_method[static_method=False](
+                _py_function_fastcall_wrapper[method, is_method=True](),
+                method_name,
+                docstring,
+            )
 
     def def_staticmethod[
         method_type: TrivialRegisterPassable,
@@ -921,8 +1004,12 @@ struct PythonTypeBuilder(Copyable):
     ) -> ref[self] Self:
         """Declare a binding for a static method (no self parameter).
 
-        Accepts functions with PythonObject arguments (up to 6), can optionally
+        Accepts functions with PythonObject arguments (up to 8), can optionally
         return a PythonObject, and can raise.
+
+        Non-kwargs static methods register through CPython's `METH_FASTCALL`
+        calling convention; kwargs-accepting static methods use
+        `METH_VARARGS | METH_KEYWORDS`.
 
         Example signatures:
         ```mojo
@@ -946,10 +1033,16 @@ struct PythonTypeBuilder(Copyable):
         Returns:
             The builder with the method binding declared.
         """
-
-        return self._generic_def_py_method[
-            _py_function_wrapper[method](), static_method=True
-        ](method_name, docstring)
+        comptime if method.has_kwargs:
+            return self._generic_def_py_method[
+                _py_kwargs_function_wrapper[method](), static_method=True
+            ](method_name, docstring)
+        else:
+            return self.def_py_c_method[static_method=True](
+                _py_function_fastcall_wrapper[method](),
+                method_name,
+                docstring,
+            )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -959,7 +1052,7 @@ struct PythonTypeBuilder(Copyable):
 
 def _py_init_function_nonregistered(
     py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
-) -> c_int:
+) abi("C") -> c_int:
     ref cpython = Python().cpython()
     var error_type = cpython.get_error_global("PyExc_TypeError")
     cpython.PyErr_SetString(
@@ -971,8 +1064,8 @@ def _py_init_function_nonregistered(
 
 def _py_new_function_wrapper[
     T: AnyType
-](
-    subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+](subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
+    "C"
 ) -> PyObjectPtr:
     ref cpython = Python().cpython()
 
@@ -990,8 +1083,8 @@ def _py_new_function_wrapper[
 def _py_init_function_wrapper[
     T: Movable & ImplicitlyDestructible,
     init_func: def(out T, args: PythonObject, kwargs: PythonObject) thin raises,
-](
-    py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+](py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
+    "C"
 ) -> c_int:
     """Wrapper function that adapts a Mojo `PyInitFunction` to be callable from
     Python.
@@ -1028,8 +1121,8 @@ def _raising_py_init_wrapper[
 @always_inline
 def _py_c_function_wrapper[
     user_func: GenericPyFunction
-](
-    py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+](py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
+    "C"
 ) -> PyObjectPtr:
     """
     1. Wraps a raw Python C function to convert raw `PyObjectPtr`s to `PythonObject`s.
@@ -1076,32 +1169,40 @@ def _py_c_function_wrapper[
     # SAFETY:
     #   Call the user provided function, and take ownership of the
     #   PyObjectPtr of the returned PythonObject.
+    #
+    # CPython holds the GIL across the lifetime of an extension-function
+    # call (PEP 311; CPython's call protocol always enters with the GIL
+    # held), so we do not acquire it here. Acquiring it would just cost
+    # an extra PyGILState_Ensure/Release round-trip per call.
 
     ref cpython = Python().cpython()
 
-    with GILAcquired(Python(cpython)):
-        try:
-            if user_func.isa[PyFunctionRaising]():
-                return user_func[PyFunctionRaising](py_self, args).steal_data()
-            else:
-                var kwargs = PythonObject(from_borrowed=kwargs_ptr)
-                return user_func[PyFunctionWithKeywordsRaising](
-                    py_self, args, kwargs
-                ).steal_data()
-        except e:
-            var error_message = String(e)
-            var error_type = cpython.get_error_global("PyExc_Exception")
+    try:
+        comptime if user_func.isa[PyFunctionRaising]():
+            return user_func.unsafe_get[PyFunctionRaising]()(
+                py_self, args
+            ).steal_data()
+        elif user_func.isa[PyFunctionWithKeywordsRaising]():
+            var kwargs = PythonObject(from_borrowed=kwargs_ptr)
+            return user_func.unsafe_get[PyFunctionWithKeywordsRaising]()(
+                py_self, args, kwargs
+            ).steal_data()
+        else:
+            comptime assert False, "unknown `GenericPyFunction` variant"
+    except e:
+        var error_message = String(e)
+        var error_type = cpython.get_error_global("PyExc_Exception")
 
-            cpython.PyErr_SetString(
-                error_type, error_message.as_c_string_slice().unsafe_ptr()
-            )
+        cpython.PyErr_SetString(
+            error_type, error_message.as_c_string_slice().unsafe_ptr()
+        )
 
-            # Return a NULL `PyObject*`.
-            return PyObjectPtr()
+        # Return a NULL `PyObject*`.
+        return PyObjectPtr()
 
 
 @always_inline
-def _py_function_wrapper[
+def _py_kwargs_function_wrapper[
     method_type: TrivialRegisterPassable,
     self_type: ImplicitlyDestructible,
     //,
@@ -1109,36 +1210,103 @@ def _py_function_wrapper[
     *,
     is_method: Bool = False,
 ]() -> GenericPyFunction:
-    """Converts a PyObjectFunction to a GenericPyFunction for CPython.
+    """Converts a kwargs-accepting PyObjectFunction to a GenericPyFunction.
 
-    Creates a wrapper that unpacks Python arguments and calls the user's
-    function with the correct arity, handling raises/void normalization.
+    Wraps the user's function in a `METH_VARARGS | METH_KEYWORDS` dispatch
+    shim. Non-kwargs callables go through `_py_function_fastcall_wrapper`
+    (METH_FASTCALL) instead.
     """
+    comptime assert (
+        func.has_kwargs
+    ), "non-kwargs functions should use _py_function_fastcall_wrapper"
     comptime FuncT = type_of(func)
 
-    comptime if func.has_kwargs:
+    @always_inline
+    def wrapper_with_kwargs(
+        mut py_self: PythonObject,
+        mut py_args: PythonObject,
+        mut py_kwargs: PythonObject,
+    ) raises -> PythonObject:
+        var kwargs = FuncT._convert_kwargs(py_kwargs)
+        return FuncT._dispatch_kwargs[is_method](
+            func._func, py_self, py_args, kwargs
+        )
 
-        @always_inline
-        def wrapper_with_kwargs(
-            mut py_self: PythonObject,
-            mut py_args: PythonObject,
-            mut py_kwargs: PythonObject,
-        ) raises -> PythonObject:
-            var kwargs = FuncT._convert_kwargs(py_kwargs)
-            return FuncT._dispatch_kwargs[is_method](
-                func._func, py_self, py_args, kwargs
+    return GenericPyFunction(wrapper_with_kwargs)
+
+
+# ===-----------------------------------------------------------------------===#
+# METH_FASTCALL Wrappers
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def _py_function_fastcall_wrapper[
+    method_type: TrivialRegisterPassable,
+    self_type: ImplicitlyDestructible,
+    //,
+    func: PyObjectFunction[method_type, self_type, has_kwargs=_],
+    *,
+    is_method: Bool = False,
+]() -> PyCFunctionFast:
+    """Build a `METH_FASTCALL`-shaped wrapper around a non-kwargs
+    `PyObjectFunction`.
+
+    CPython will invoke the returned wrapper through the `PyCFunctionFast`
+    calling convention: `self` is a borrowed `PyObject*`, `args` is a
+    borrowed C array of `PyObject*` of length `nargs`, and no tuple is
+    ever constructed for the positional arguments. The wrapper forwards
+    `args` directly to `PyObjectFunction._dispatch_fast`, which reads
+    `args[i]` without going through the tuple-mapping protocol.
+    Exceptions raised by the user function are translated into Python
+    exceptions and signaled by returning a NULL `PyObject*`.
+
+    Parameters:
+        method_type: Inferred from `func`.
+        self_type: Inferred from `func`.
+        func: The wrapped Mojo function being registered with the module
+            or type.
+        is_method: Whether the wrapper is being installed as a method
+            (consumes `py_self` as the receiver) vs a free function
+            (`py_self` is the module).
+
+    Returns:
+        A function value of type `PyCFunctionFast` suitable for passing to
+        `PyMethodDef.function` for `METH_FASTCALL` registration.
+    """
+    comptime assert (
+        not func.has_kwargs
+    ), "fastcall wrapper requires a non-kwargs function"
+    comptime FuncT = type_of(func)
+
+    @always_inline
+    def fastcall(
+        py_self_ptr: PyObjectPtr,
+        args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+        nargs: Py_ssize_t,
+    ) abi("C") -> PyObjectPtr:
+        var py_self = PythonObject(from_borrowed=py_self_ptr)
+        ref cpython = Python().cpython()
+
+        # CPython's vectorcall protocol (PEP 590) guarantees `args` is
+        # non-null for every METH_FASTCALL invocation, including the
+        # `nargs == 0` case (CPython hands the callee a pointer into a
+        # cached empty tuple). `_dispatch_fast` therefore accepts a plain
+        # `UnsafePointer` rather than `OptionalUnsafePointer`.
+        try:
+            return FuncT._dispatch_fast[is_method](
+                func._func, py_self, args, Int(nargs)
+            ).steal_data()
+        except e:
+            var error_message = String(e)
+            var error_type = cpython.get_error_global("PyExc_Exception")
+            cpython.PyErr_SetString(
+                error_type, error_message.as_c_string_slice().unsafe_ptr()
             )
+            # Return a NULL `PyObject*`.
+            return PyObjectPtr()
 
-        return GenericPyFunction(wrapper_with_kwargs)
-    else:
-
-        @always_inline
-        def wrapper(
-            mut py_self: PythonObject, mut py_args: PythonObject
-        ) raises -> PythonObject:
-            return FuncT._dispatch[is_method](func._func, py_self, py_args)
-
-        return GenericPyFunction(wrapper)
+    return fastcall
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1166,7 +1334,21 @@ def check_arguments_arity(
                message follows Python's convention for `TypeError` messages,
                indicating whether too few or too many arguments were provided.
     """
-    # TODO: try to extract the current function name from cpython
+    # This overload (and the `(arity, arg_count)` overload below) exists
+    # because the generic dispatch templates in `_python_func.mojo`
+    # (`_dispatch_kwargs`, `_dispatch_fast`) don't have access to the
+    # registered function name. The wrappers that invoke them
+    # (`_py_kwargs_function_wrapper`, `_py_function_fastcall_wrapper`) decay to
+    # `thin -> ...` C function pointers for CPython's `PyMethodDef`
+    # table, which means they cannot capture any runtime state - so a
+    # runtime `func_name: StringSlice` cannot be threaded down to the
+    # dispatch site. Threading it as a `comptime` parameter would force
+    # `func_name` to be `comptime` on `def_function` / `def_method` /
+    # `def_staticmethod`, a breaking change for thousands of callers.
+    # The fallback name keeps the existing error-message shape; remove
+    # this overload only if/when the language gains runtime-string-to-
+    # `comptime` promotion (or the wrapper closures gain a way to
+    # smuggle state through CPython's call protocol).
     return check_arguments_arity(arity, args, "<mojo function>")
 
 
@@ -1195,8 +1377,53 @@ def check_arguments_arity(
                along with the specific function name.
     """
 
-    var arg_count = len(args)
+    return check_arguments_arity(arity, len(args), func_name)
 
+
+def check_arguments_arity(
+    arity: Int,
+    arg_count: Int,
+) raises:
+    """Validate that the provided argument count matches the expected arity.
+
+    Fastcall-friendly overload: takes the already-known number of positional
+    arguments rather than computing it from a tuple object. Used by the
+    `METH_FASTCALL` dispatch path, which receives `nargs: Py_ssize_t`
+    directly from CPython and never materializes a tuple.
+
+    Args:
+        arity: The expected number of arguments for the function.
+        arg_count: The actual number of arguments passed to the function.
+
+    Raises:
+        If `arg_count` differs from `arity`. The error message follows
+        Python's `TypeError` convention.
+    """
+    # See the `(arity, args: PythonObject)` overload above for why this
+    # no-`func_name` form exists - same `thin` C-function-pointer
+    # constraint applies to the METH_FASTCALL dispatch path.
+    return check_arguments_arity(arity, arg_count, "<mojo function>")
+
+
+def check_arguments_arity(
+    arity: Int,
+    arg_count: Int,
+    func_name: StringSlice,
+) raises:
+    """Validate that the provided argument count matches the expected arity.
+
+    Fastcall-friendly overload that accepts a precomputed arg count and a
+    function name. See the `arg_count`-only overload for the rationale.
+
+    Args:
+        arity: The expected number of arguments for the function.
+        arg_count: The actual number of arguments passed to the function.
+        func_name: The name of the function being called, used in error
+            messages.
+
+    Raises:
+        If `arg_count` differs from `arity`.
+    """
     # The error messages raised below are intended to be similar to the
     # equivalent errors in Python.
     if arg_count != arity:
@@ -1264,7 +1491,7 @@ def _try_convert_arg[
             "() expected argument at position ",
             argidx,
             " to be instance of (or convertible to) Mojo '",
-            get_type_name[T](),
+            reflect[T].name(),
             "'; got '",
             _get_type_name(py_args[argidx]),
             "'. (Note: attempted conversion failed due to: ",

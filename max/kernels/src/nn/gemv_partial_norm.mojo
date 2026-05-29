@@ -37,7 +37,6 @@ values to `normed_output`. The unnormed tail lives as a view into
 expresses this.
 """
 
-from std.builtin.device_passable import DevicePassable
 from std.math import ceildiv, rsqrt
 from std.memory import AddressSpace
 from std.atomic import Atomic, Ordering, fence
@@ -79,6 +78,7 @@ from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu import _matmul_gpu
 from shmem.ep_comm import DEVICE_SCOPE
+from structured_kernels.trace_buf import GmemTrace, NullTrace, TraceBuf
 
 from .normalization import rms_norm_gpu
 
@@ -88,9 +88,10 @@ from .normalization import rms_norm_gpu
 # ===----------------------------------------------------------------------=== #
 #
 # Records per-block timestamps (`global_perf_counter_ns` → PTX
-# `globaltimer`, SM-synchronized) at key phase boundaries. Designed as a
-# trait + two impls so that when tracing is disabled the kernel has
-# ZERO extra kernel arguments and the record() calls fully inline away:
+# `globaltimer`, SM-synchronized) at key phase boundaries. Uses the
+# shared `TraceBuf` trait + `NullTrace` / `GmemTrace` impls from
+# `structured_kernels/trace_buf.mojo` so the no-trace path has ZERO
+# extra kernel arguments and the record() calls fully inline away:
 #
 #   comptime if enable_trace:  -> strips the store body at compile time
 #   TraceBufT: TraceBuf        -> NullTrace (zero-sized) when disabled
@@ -115,100 +116,6 @@ buffer. Only 10 slots are used today (roles 0 through 9); slots 10
 through 15 are reserved for future per-iteration instrumentation."""
 
 
-trait TraceBuf(DevicePassable, TrivialRegisterPassable):
-    """Trace-buffer interface. Implementations: `NullTrace`, `GmemTrace`."""
-
-    def store(self, offset: Int, val: UInt64):
-        """Stores a timestamp at a slot in the trace buffer.
-
-        Args:
-            offset: Slot index (`block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + role`).
-            val: Timestamp value (ns from `global_perf_counter_ns`).
-        """
-        ...
-
-
-struct NullTrace(TraceBuf):
-    """Zero-sized no-op trace buffer. `store` is `pass`; struct has no
-    fields so it contributes 0 kernel-arg bytes when passed as an
-    argument."""
-
-    comptime device_type: AnyType = Self
-    """Device-side type alias. `NullTrace` is trivially device-passable."""
-
-    @always_inline
-    def __init__(out self):
-        """Constructs a zero-sized no-op trace buffer."""
-        pass
-
-    @always_inline
-    def store(self, offset: Int, val: UInt64):
-        """No-op store. The body compiles away entirely.
-
-        Args:
-            offset: Unused.
-            val: Unused.
-        """
-        pass
-
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        pass
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"NullTrace"`.
-        """
-        return "NullTrace"
-
-
-struct GmemTrace(TraceBuf):
-    """HBM-backed trace buffer: `store(offset, ts)` writes `ts` to
-    `ptr[offset]`. 8 bytes of kernel arg."""
-
-    comptime device_type: AnyType = Self
-    """Device-side type alias. `GmemTrace` is trivially device-passable."""
-
-    var ptr: UnsafePointer[UInt64, MutAnyOrigin]
-    """Device pointer to a u64 buffer sized for
-    `num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK` slots."""
-
-    @always_inline
-    def __init__(out self, ptr: UnsafePointer[UInt64, MutAnyOrigin]):
-        """Wraps a device pointer as a trace buffer.
-
-        Args:
-            ptr: Device-side `UnsafePointer[UInt64]` with room for
-                `num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK` slots,
-                zero-initialized on first use.
-        """
-        self.ptr = ptr
-
-    @always_inline
-    def store(self, offset: Int, val: UInt64):
-        """Writes a timestamp into the device-side trace buffer.
-
-        Args:
-            offset: Slot index.
-            val: Timestamp value (ns).
-        """
-        self.ptr.store(offset, val)
-
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"GmemTrace"`.
-        """
-        return "GmemTrace"
-
-
 # ===----------------------------------------------------------------------=== #
 # Fused GEMV + partial RMS norm kernel (M=1)
 # ===----------------------------------------------------------------------=== #
@@ -219,7 +126,6 @@ struct GmemTrace(TraceBuf):
 )
 @__name(
     t"gemv_partial_norm_kernel_{c_type}_{a_type}_{b_type}_{num_threads}_{tile_n}",
-    mangle=True,
 )
 def gemv_partial_norm_kernel[
     c_type: DType,
@@ -354,7 +260,7 @@ def gemv_partial_norm_kernel[
         comptime for i in range(tile_n):
             var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
             var b_vec = vec_weight_tile[i, thread_idx.x]
-            tile_w.store(Coord(Idx(i), Idx(0)), rebind[WeightVecType](b_vec))
+            tile_w.store(Coord(i, Idx[0]), rebind[WeightVecType](b_vec))
 
         var act_vec = act_tile.vectorize[1, simd_width]()[0, thread_idx.x]
         var act_native = rebind[NativeVecType](act_vec)
@@ -491,11 +397,9 @@ def gemv_partial_norm_kernel[
             var gamma_val = SIMD[a_type, simd_width](0)
             if idx < n_normed:
                 vec_data = rebind[CVecType](
-                    normed_output.load[simd_width](Coord(Idx(0), Idx(idx)))
+                    normed_output.load[simd_width](Coord(Idx[0], idx))
                 ).cast[accum_type]()
-                gamma_val = rebind[AVecType](
-                    gamma.load[simd_width](Coord(Idx(idx)))
-                )
+                gamma_val = rebind[AVecType](gamma.load[simd_width](Coord(idx)))
 
             comptime if enable_trace:
                 if tid == 0:
@@ -521,7 +425,7 @@ def gemv_partial_norm_kernel[
             if idx < n_normed:
                 var gamma_accum = gamma_val.cast[accum_type]()
                 var out = (vec_data * norm_factor * gamma_accum).cast[c_type]()
-                normed_output.store[simd_width](Coord(Idx(0), Idx(idx)), out)
+                normed_output.store[simd_width](Coord(Idx[0], idx), out)
 
             comptime if enable_trace:
                 if tid == 0:
@@ -626,7 +530,7 @@ def _gemv_partial_norm_fused[
         enable_trace=enable_trace,
         pdl_level=pdl_level,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         normed_output,
         unnormed_output,
         act,
@@ -686,7 +590,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     var n_normed = Int(gamma.dim[0]())
     var n = Int(weight.dim[0]())
 
-    var y_layout = row_major(Coord(Idx(m), Idx(n)))
+    var y_layout = row_major(Coord(m, n))
     var y = TileTensor[c_type, type_of(y_layout), MutAnyOrigin](
         y_scratch, y_layout
     )
@@ -706,7 +610,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     @__copy_capture(normed_output)
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[2], val: SIMD[c_type, width]) -> None:
         var idx = normed_output.layout(Coord(coords))
         normed_output.ptr.store[width=width, alignment=alignment](idx, val)

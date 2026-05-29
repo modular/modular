@@ -30,9 +30,7 @@ def MOToMOGG(
     TODO: Expand this to also perform lowering search
     """
 
-def AddFallbackShapeFunctions(
-    kernel_library_paths: Sequence[str] = [],
-) -> max._core.Pass:
+def AddFallbackShapeFunctions() -> max._core.Pass:
     """
     This ensures all MO operations will have parameterized outputs by checking
     if they have already been parameterized and if not materializing a fallback
@@ -122,6 +120,21 @@ def ConstantFoldSubgraphTest() -> max._core.Pass:
     ```
     which is the full graph followed by zero or more occurrences of word
     'subgraph' with the values that compose a constant subgraph.
+    """
+
+def CreateParallelFromUnbundle() -> max._core.Pass:
+    """
+    For each `mo.tensor.unbundle` whose N results each have exactly one user
+    and whose user set is structurally identical, creates a new
+    `mo.parallel` region downstream of the unbundle containing a single
+    clone of the consumer.  The new parallel's primary input bundle is
+    built from the unbundle's N results; additional consumer operands
+    whose per-launch values vary are bundled into new inputs.
+
+    The transient `bundle(unbundle(X)...)` introduced as the primary input
+    folds back to `X` via canonicalization, leaving the new region
+    adjacent to the producer for `mo-merge-adjacent-parallels` to match by
+    SSA equality.
     """
 
 def DebugPrintAllTensorsPass() -> max._core.Pass:
@@ -237,6 +250,27 @@ def InvokeShapePackingFunctions(
     calculations.
     """
 
+def MergeAdjacentParallels() -> max._core.Pass:
+    """
+    Peephole merge pass: when an `mo.parallel` `%B` takes as input one or more
+    bundle results of another `mo.parallel` `%A`, fuses them into a single
+    merged parallel.  Shared inputs are short-circuited via A's yield
+    operands; B's body ops are spliced into A's body; A's yield list is
+    extended with B's yield operands.
+
+    Strict buffer and chain rules apply:
+
+      * If both A and B have buffers + chain, the buffer operand lists must
+        be structurally identical, and B's in-chain must be A's out-chain
+        with no other external users.  The merged op inherits A's buffers
+        and in-chain; its out-chain replaces B's out-chain.
+      * If only one side has buffers + chain, the merged op inherits that
+        side's buffers and chain.
+      * Neither: the merged op is chainless.
+
+    Match candidates that fail any of these are left unmerged.
+    """
+
 def MergeDuplicateShapeMaterializations() -> max._core.Pass:
     """
     This pass goes through ops that implement the Staticization interface and
@@ -269,7 +303,9 @@ def MergeDuplicateShapeMaterializations() -> max._core.Pass:
     Canonicalization and CSE can take this one step further and eliminate a number of additional operations.
     """
 
-def NanCheckPass(kernel_library_paths: Sequence[str] = []) -> max._core.Pass:
+def NanCheckPass(
+    kernel_library_paths: Sequence[str] = [], stride: int = 20
+) -> max._core.Pass:
     """
     This pass inserts nan_check ops after each floating-point tensor output
     in the graph and lowers them to MOGG kernels in-place. Each nan_check
@@ -278,6 +314,16 @@ def NanCheckPass(kernel_library_paths: Sequence[str] = []) -> max._core.Pass:
     For debugging only — activated via the `max-debug.nan-check` config
     key (for example, `InferenceSession.debug.nan_check = True` or
     `MODULAR_DEBUG=nan-check`) or the `--nan-check` compiler flag.
+
+    The `stride` option samples one of every N floating-point kernel
+    outputs rather than checking all of them. Models with many compiled
+    regions (e.g. gemma-4-31b-it produces ~920 float kernel results) make
+    checking every tensor prohibitively expensive — the single-threaded
+    Mojo/KGEN compile path can't absorb hundreds of extra MOGG kernel
+    call sites in a usable amount of time (GEX-3703). The default of 20
+    keeps NaN/Inf checking usable on large models; set stride=1 to
+    restore the original "check every tensor" behaviour (only practical
+    on small graphs, e.g. lit tests).
     """
 
 def PropagateShapes() -> max._core.Pass:

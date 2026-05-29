@@ -77,7 +77,7 @@ def run_matvec[
     def run_func_gemv(ctx: DeviceContext) raises:
         comptime kernel = gemv_kernel[c_type, a_type, b_type]
 
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -98,7 +98,7 @@ def run_matvec[
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
         ]
 
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -138,9 +138,9 @@ def run_matvec[
     # Create tensors for vendor_blas
     # For GEMV (N=1): A is MxK, B is Kx1, C is Mx1
     # For GEVM (M=1): A is 1xK, B is KxN, C is 1xN
-    var a_nd = TileTensor(a_device, row_major(Idx(M), Idx(K)))
-    var b_nd = TileTensor(b_device, row_major(Idx(K), Idx(N)))
-    var c_ref_nd = TileTensor(c_device_naive, row_major(Idx(M), Idx(N)))
+    var a_nd = TileTensor(a_device, row_major(M, K))
+    var b_nd = TileTensor(b_device, row_major(K, N))
+    var c_ref_nd = TileTensor(c_device_naive, row_major(M, N))
 
     vendor_blas.matmul(
         ctx,
@@ -207,7 +207,7 @@ def run_matvec_with_epilogue_fn(
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N * c_stride)
 
     var c_device_nd = TileTensor(
-        c_device, Layout((Idx(M), Idx(N)), (Idx(N * c_stride), Idx(c_stride)))
+        c_device, Layout((M, N), (N * c_stride, c_stride))
     )
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -218,7 +218,7 @@ def run_matvec_with_epilogue_fn(
     @always_inline
     @__copy_capture(c_device_nd, const_val)
     def epilogue_fn[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
             Coord(idx),
@@ -238,7 +238,7 @@ def run_matvec_with_epilogue_fn(
             DType.float32,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             func,
             c_device,
@@ -261,7 +261,7 @@ def run_matvec_with_epilogue_fn(
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             func,
             c_device,
@@ -315,7 +315,7 @@ def run_matvec_with_epilogue_fn(
             BLOCK_DIM,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             func,
             c_device,

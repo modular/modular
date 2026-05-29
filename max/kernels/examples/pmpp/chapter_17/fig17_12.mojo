@@ -135,7 +135,7 @@ def main() raises:
     var blockSize = 256
     var numBlocks = (rows + blockSize - 1) // blockSize
 
-    ctx.enqueue_function_experimental[spmv_ell_kernel](
+    ctx.enqueue_function[spmv_ell_kernel](
         d_ellMatrix,
         d_x_buf,
         d_y_buf,

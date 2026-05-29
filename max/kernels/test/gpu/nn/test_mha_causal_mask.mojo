@@ -88,27 +88,26 @@ def test[
     var o_size = q_size
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    # Q is randomly initialized.
+    rand(q_ptr.as_span())
 
-    # Q, K, V are randomly initialized.
-    rand[qkv_type](q_ptr, q_size)
-    # rand[qkv_type](k_ptr, k_size)
-    # rand[qkv_type](v_ptr, v_size)
-    for i in range(v_size):
-        v_ptr[i] = 0.5
-    # for i in range(q_size):
-    #     q_ptr[i] = 1.0
-    for i in range(k_size):
-        k_ptr[i] = 0.25
+    var output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
+
+    # K and V are filled with uniform constants for this test instead of being
+    # randomly initialized.
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    rand(k_ptr.as_span())
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
+
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    rand(v_ptr.as_span())
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
+
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
@@ -119,27 +118,19 @@ def test[
     # Construct device buffers.
     var q_device = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     @parameter
@@ -177,13 +168,9 @@ def test[
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-    ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
-
     var output_device_ref = TileTensor(
         output_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     mha_gpu_naive(
@@ -204,27 +191,28 @@ def test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+    ctx.synchronize()
 
     var rtol = 1e-2
     for s in range(seq_len):
         for h in range(num_heads):
             for d in range(depth):
-                var expect = output_ptr.load(
+                var expect = output_ptr[d + depth * (h + s * num_heads)].cast[
+                    DType.float64
+                ]()
+                var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
+                ].cast[DType.float64]()
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var next_expect = 0 * expect
                     var next_actual = 0 * actual
                     if h < num_heads and s < seq_len and d < depth - 1:
-                        next_expect = output_ptr.load(
+                        next_expect = output_ptr[
                             d + depth * (h + s * num_heads) + 1
-                        ).cast[DType.float64]()
-                        next_actual = flash_output_ptr.load(
+                        ].cast[DType.float64]()
+                        next_actual = flash_output_ptr[
                             d + depth * (h + s * num_heads) + 1
-                        ).cast[DType.float64]()
+                        ].cast[DType.float64]()
                     var rerr = abs((actual - expect) / expect)
                     print(
                         "s, h, d = ",
@@ -262,26 +250,18 @@ def test[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth):
-                    orig = flash_output_ptr.load(
-                        d + depth * (h + s * num_heads)
-                    )
-                    rep = output_ptr.load(d + depth * (h + s * num_heads))
+                    orig = flash_output_ptr[d + depth * (h + s * num_heads)]
+                    rep = output_ptr[d + depth * (h + s * num_heads)]
                     if rep != orig:
                         print("repeat s h d =", repeat, s, h, d)
                     assert_equal(rep, orig)
-                    output_ptr.store(d + depth * (h + s * num_heads), 123.4567)
+                    output_ptr[d + depth * (h + s * num_heads)] = 123.4567
 
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
     _ = output_device_ptr
     _ = output_ref_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
 
 
 def main() raises:
@@ -528,11 +508,8 @@ def main() raises:
         ) raises -> LayoutTensor[
             DType.uint32, Layout.row_major(1), MutAnyOrigin
         ]:
-            var host_ptr = alloc[Scalar[DType.uint32]](1)
-            host_ptr[] = val
             var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
-            ctx.enqueue_copy(dev_buf, host_ptr)
-            host_ptr.free()
+            ctx.enqueue_memset(dev_buf, val)
             return LayoutTensor[
                 DType.uint32, Layout.row_major(1), MutAnyOrigin
             ](dev_buf.unsafe_ptr())

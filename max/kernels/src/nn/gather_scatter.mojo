@@ -13,11 +13,10 @@
 
 from std.collections.string.string_slice import get_static_string
 from std.math import align_down, ceildiv
-from std.sys import simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target
 
 from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
-from std.gpu.host import DeviceContext
 from std.algorithm.functional import tile
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
@@ -30,9 +29,9 @@ from layout import (
     row_major,
 )
 from std.memory import memcpy
-from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from tensor import ManagedTensorSlice
+from extensibility import ManagedTensorSlice
 
 from std.utils import IndexList, StaticTuple
 from std.collections import OptionalReg
@@ -242,16 +241,14 @@ def gather_reduce[
                 ) -> StaticTuple[SIMD[dtype, simd_width], unroll_factor]:
                     var out = accums
                     var idxs = _unsafe_normalize_neg_index(
-                        indices.load[width=unroll_factor](
-                            Coord(Idx(i), Idx(j))
-                        ),
+                        indices.load[width=unroll_factor](Coord(i, j)),
                         gather_axis_size,
                     )
 
                     comptime for unroll_idx in range(0, unroll_factor):
                         var gather_chunk = input.load[
                             width=simd_width, alignment=1
-                        ]((Idx(Int(idxs[unroll_idx])), Idx(k)))
+                        ]((Int(idxs[unroll_idx]), k))
                         out[unroll_idx] = reduce_fn[dtype, simd_width](
                             accums[unroll_idx], gather_chunk
                         )
@@ -277,7 +274,7 @@ def gather_reduce[
                         StaticTuple[SIMD[dtype, simd_width], 1](accum), j
                     )[0]
 
-                var out_idx = Coord(Idx(i), Idx(k))
+                var out_idx = Coord(i, k)
                 output.store[width=simd_width, alignment=1](out_idx, accum)
 
             tile[
@@ -354,11 +351,13 @@ def gather[
     @parameter
     @always_inline
     def input_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, element_alignment: Int
     ](index: IndexList[_rank]) -> SIMD[dtype, width]:
         var coords = Coord(index)
         comptime assert input.flat_rank >= coords.flat_rank
-        return input.load[width=width, alignment=1](coords)
+        return input.load[
+            width=width, alignment=element_alignment * align_of[dtype]()
+        ](coords)
 
     @parameter
     @always_inline
@@ -367,128 +366,22 @@ def gather[
     ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
         var coords = Coord(index)
         comptime assert indices.flat_rank >= coords.flat_rank
-        return indices.load[width=width, alignment=1](coords)
+        return indices.load[width=width, alignment=align_of[indices_type]()](
+            coords
+        )
 
     @parameter
     @always_inline
     def output_fn[
-        width: SIMDSize, _rank: Int
+        width: SIMDSize, _rank: Int, element_alignment: Int
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
         comptime assert output.flat_rank >= coords.flat_rank
-        output.store[width=width, alignment=1](
-            coords, rebind[SIMD[dtype, width]](val)
-        )
+        output.store[
+            width=width, alignment=element_alignment * align_of[dtype]()
+        ](coords, rebind[SIMD[dtype, width]](val))
 
     gather[
-        dtype=dtype,
-        indices_type=indices_type,
-        input_fn=input_fn,
-        indices_fn=indices_fn,
-        output_fn=output_fn,
-        prefetch_fn=prefetch_fn,
-        target=target,
-    ](
-        Axis(axis),
-        coord_to_index_list(input.layout.shape_coord()),
-        coord_to_index_list(indices.layout.shape_coord()),
-        coord_to_index_list(output.layout.shape_coord()),
-        context=context,
-    )
-
-
-def gather[
-    dtype: DType,
-    indices_type: DType,
-    //,
-    *,
-    axis: Int,
-    target: StaticString = "cpu",
-](
-    output: TileTensor[mut=True, dtype, ...],
-    input: TileTensor[dtype, ...],
-    indices: TileTensor[indices_type, ...],
-    *,
-    context: DeviceContextPtr = DeviceContextPtr(),
-) raises:
-    """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
-
-    Note that this is NOT the same as the default PyTorch gather (which is equivalent to
-    https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
-    """
-
-    comptime prefetch_offset = 12  # TODO: search
-
-    var end_indices_ptr = indices.ptr + indices.num_elements()
-
-    @parameter
-    @__copy_capture(end_indices_ptr)
-    @always_inline
-    def prefetch_fn[
-        _input_rank: Int, _indices_rank: Int
-    ](
-        _input_coords: IndexList[_input_rank],
-        _indices_coords: IndexList[_indices_rank],
-    ):
-        var __input_coords = _input_coords
-        var input_coords = Coord(__input_coords)
-        var indices_coords = Coord(_indices_coords)
-        comptime assert indices_coords.rank == indices.rank
-        comptime assert input_coords.rank == input.rank
-        comptime assert indices_coords.flat_rank == indices.flat_rank
-        comptime assert input_coords.flat_rank == input.flat_rank
-
-        comptime if prefetch_offset > 0:
-            var indices_ptr = indices.ptr_at_offset(indices_coords)
-            var indices_remaining = (
-                Int(end_indices_ptr) - Int(indices_ptr)
-            ) // size_of[indices_type]()
-            # assumes that indices are laid out in row major order
-            var next_idx_ptr = indices_ptr + min(
-                indices_remaining - 1, prefetch_offset
-            )
-            input_coords[axis] = rebind[input_coords.element_types[axis]](
-                Int64(
-                    _unsafe_normalize_neg_index(
-                        next_idx_ptr.load(),
-                        Int(input.dim[axis]()),
-                    )
-                )
-            )
-            input.prefetch(input_coords)
-
-    @parameter
-    @always_inline
-    def input_fn[
-        width: Int, _rank: Int
-    ](index: IndexList[_rank]) -> SIMD[dtype, width]:
-        var coords = Coord(index)
-        comptime assert input.flat_rank >= coords.flat_rank
-        return input.load[width=width, alignment=1](coords)
-
-    @parameter
-    @always_inline
-    def indices_fn[
-        width: Int, _rank: Int
-    ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
-        var coords = Coord(index)
-        comptime assert indices.flat_rank >= coords.flat_rank
-        return indices.load[width=width, alignment=1](coords)
-
-    @parameter
-    @always_inline
-    def output_fn[
-        width: SIMDSize, _rank: Int
-    ](index: IndexList[_rank], val: SIMD[dtype, width]):
-        var coords = Coord(index)
-        comptime assert output.flat_rank >= coords.flat_rank
-        output.store[width=width, alignment=1](
-            coords, rebind[SIMD[dtype, width]](val)
-        )
-
-    gather[
-        dtype=dtype,
-        indices_type=indices_type,
         input_fn=input_fn,
         indices_fn=indices_fn,
         output_fn=output_fn,
@@ -542,13 +435,13 @@ def gather_elementwise_fn_wrapper[
     indices_type: DType,
     //,
     *,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_fn: def[width: Int, rank: Int, element_alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: def[width: SIMDSize, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     simd_width: Int,
@@ -558,6 +451,7 @@ def gather_elementwise_fn_wrapper[
         ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     error_index_fn: Optional[error_index_fn_type] = None,
+    element_alignment: Int = 1,
 ](
     axis: Axis,
     input_shape: IndexList,
@@ -629,10 +523,12 @@ def gather_elementwise_fn_wrapper[
             func[input_shape.size, indices_shape.size](
                 data_indices, indices_index
             )
-        var data = input_fn[simd_width, input_shape.size](data_indices)
+        var data = input_fn[simd_width, input_shape.size, element_alignment](
+            data_indices
+        )
 
         # Store it to the original index.
-        output_fn[simd_width, rank](idx.canonicalize(), data)
+        output_fn[simd_width, rank, element_alignment](idx.canonicalize(), data)
 
     gather_elementwise_fn[simd_width](coords)
 
@@ -640,16 +536,17 @@ def gather_elementwise_fn_wrapper[
 # TODO: Delete / for testing purposes (test_gather.mojo)
 @always_inline
 def gather[
-    *,
     dtype: DType,
     indices_type: DType,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    //,
+    *,
+    input_fn: def[width: Int, rank: Int, element_alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: def[width: SIMDSize, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
@@ -665,113 +562,6 @@ def gather[
     output_shape: IndexList,
     *,
     context: DeviceContext,
-) raises:
-    """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
-
-    Note that this is NOT the same as the default PyTorch gather (which is equivalent to
-    https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
-    """
-    gather_guards(axis, input_shape, indices_shape, output_shape)
-    with Trace[TraceLevel.OP, target=target](
-        "gather", task_id=get_safe_task_id(context)
-    ):
-        if (
-            input_shape.flattened_length() == 0
-            or indices_shape.flattened_length() == 0
-        ):
-            return
-
-        # Create an error reporting location since we cannot raise from an elementwise lambda.
-        var error_index: Int = -1  # Initialize invalid index
-
-        @parameter
-        @always_inline
-        def error_index_fn(val: Int):
-            error_index = val
-
-        comptime error_fn = Optional[error_index_fn_type](
-            error_index_fn
-        ) if is_cpu[target]() else None
-
-        @parameter
-        @always_inline
-        def gather_elementwise_fn[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            gather_elementwise_fn_wrapper[
-                input_fn=input_fn,
-                indices_fn=indices_fn,
-                output_fn=output_fn,
-                simd_width=simd_width,
-                prefetch_fn=prefetch_fn,
-                error_index_fn=error_fn,
-            ](
-                axis,
-                input_shape.canonicalize(),
-                indices_shape.canonicalize(),
-                output_shape.canonicalize(),
-                idx,
-            )
-
-        # If we are gathering on the last dimension then we have to be scalar.
-        if Int(axis) == input_shape.size - 1:
-            elementwise[
-                gather_elementwise_fn,
-                simd_width=1,
-                target=target,
-            ](
-                output_shape.canonicalize(),
-                context,
-            )
-        else:
-            elementwise[
-                gather_elementwise_fn,
-                simd_width=simd_width_of[dtype](),
-                target=target,
-            ](
-                output_shape.canonicalize(),
-                context,
-            )
-
-        # Check for bounds errors after elementwise operation completes (CPU only)
-        comptime if is_cpu[target]():
-            if error_index != -1:
-                var invalid_index = error_index
-                raise Error(
-                    String(
-                        "gather index {} is out of bounds for axis {} with"
-                        " size {}"
-                    ).format(invalid_index, Int(axis), input_shape[axis])
-                )
-
-
-@always_inline
-def gather[
-    *,
-    dtype: DType,
-    indices_type: DType,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
-    indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        indices_type, width
-    ],
-    output_fn: def[width: SIMDSize, rank: Int](
-        IndexList[rank], SIMD[dtype, width]
-    ) capturing -> None,
-    prefetch_fn: OptionalReg[
-        def[
-            input_rank: Int, indices_rank: Int
-        ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
-    ] = None,
-    target: StaticString = "cpu",
-](
-    axis: Axis,
-    input_shape: IndexList,
-    indices_shape: IndexList,
-    output_shape: IndexList,
-    *,
-    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
@@ -816,6 +606,7 @@ def gather[
                 simd_width=simd_width,
                 prefetch_fn=prefetch_fn,
                 error_index_fn=error_fn,
+                element_alignment=alignment,
             ](
                 axis,
                 input_shape.canonicalize(),
@@ -830,13 +621,21 @@ def gather[
                 gather_elementwise_fn,
                 simd_width=1,
                 target=target,
-            ](output_shape, context)
+                _trace_description="gather",
+            ](
+                output_shape.canonicalize(),
+                context,
+            )
         else:
             elementwise[
                 gather_elementwise_fn,
                 simd_width=simd_width_of[dtype, target=compile_target](),
                 target=target,
-            ](output_shape, context)
+                _trace_description="gather",
+            ](
+                output_shape.canonicalize(),
+                context,
+            )
 
         # Check for bounds errors after elementwise operation completes (CPU only)
         comptime if is_cpu[target]():
@@ -898,7 +697,7 @@ def scatter_nd_generator[
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: DeviceContext,
 ) raises:
     """
     Implements ONNX ScatterND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#ScatterND.
@@ -946,16 +745,14 @@ def scatter_nd_generator[
             )
 
         var output_flat = TileTensor(
-            output.ptr, row_major(Idx(output.num_elements()))
+            output.ptr, row_major(output.num_elements())
         )
-        var data_flat = TileTensor(
-            data.ptr, row_major(Idx(data.num_elements()))
-        )
+        var data_flat = TileTensor(data.ptr, row_major(data.num_elements()))
 
         # Always copy input to output first.
         comptime if is_gpu[target]():
             # TODO: Does it matter if output.data or output_flat.data (and data)?
-            var ctx = context.get_device_context()
+            var ctx = context
             # TODO: Owning = True or False?
             var outp = DeviceBuffer(
                 ctx,
@@ -983,7 +780,7 @@ def scatter_nd_generator[
             return
 
         var updates_flat = TileTensor(
-            updates.ptr, row_major(Idx(updates.num_elements()))
+            updates.ptr, row_major(updates.num_elements())
         )
 
         var data_shape = coord_to_index_list(data.layout.shape_coord())
@@ -1086,12 +883,8 @@ def scatter_nd_generator[
                     output_flat[output_offset + i] = reduction_fn[
                         output_type, 1
                     ](
-                        output_flat.load[width=1](
-                            Coord(Idx(output_offset + i))
-                        ),
-                        updates_flat.load[width=1](
-                            Coord(Idx(updates_offset + i))
-                        ),
+                        output_flat.load[width=1](Coord(output_offset + i)),
+                        updates_flat.load[width=1](Coord(updates_offset + i)),
                     )
 
             else:
@@ -1131,7 +924,7 @@ def scatter_nd[
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...
     ],
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: DeviceContext,
 ) raises:
     """Scatter_nd operation without any reduction."""
     scatter_nd_generator[target=target](data, indices, updates, output, context)
@@ -1277,6 +1070,7 @@ def scatter_elements[
     updates: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     _axis: Int,
     output: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
+    ctx: DeviceContext,
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1326,7 +1120,7 @@ def scatter_elements[
         )
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[update_func, 1](indices.shape())
+    elementwise[update_func, 1](indices.shape(), ctx)
 
 
 @always_inline
@@ -1394,6 +1188,7 @@ def gather_elements[
     indices: TileTensor[indices_type, ...],
     _axis: Int,
     output: TileTensor[mut=True, input_type, ...],
+    ctx: DeviceContext,
 ) raises:
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
@@ -1439,7 +1234,7 @@ def gather_elements[
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[gather_func, 1](
-        coord_to_index_list(output.layout.shape_coord())
+        coord_to_index_list(output.layout.shape_coord()), ctx
     )
 
 
@@ -1523,7 +1318,7 @@ def gather_nd[
     data: TileTensor[dtype, ...],
     indices: TileTensor[indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """
     GatherND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND.
@@ -1542,7 +1337,7 @@ def gather_nd[
                  to be within bounds [-s, s-1] along axis of size s. It is an
                  error if any of the index values are out of bounds.
         output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1 - b.
-        ctx: The DeviceContextPtr as prepared by the graph compiler.
+        ctx: The device context as prepared by the graph compiler.
 
     """
 
@@ -1555,7 +1350,7 @@ def gather_nd[
         return _gather_nd_impl[
             batch_dims,
             target=target,
-        ](data, indices, output, ctx.get_device_context())
+        ](data, indices, output, ctx)
 
 
 def _gather_nd_impl[
@@ -1650,18 +1445,19 @@ def _gather_nd_impl[
     )
 
     comptime if is_cpu[target]():
+        var cpu_ctx = DeviceContext(api="cpu")
         if use_simd:
             elementwise[
                 gather_nd_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()))
+            ](coord_to_index_list(output.layout.shape_coord()), cpu_ctx)
         else:
             elementwise[
                 gather_nd_elementwise_fn,
                 1,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()))
+            ](coord_to_index_list(output.layout.shape_coord()), cpu_ctx)
     else:
         assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
@@ -1693,7 +1489,7 @@ def scatter_set_constant[
     data: TileTensor[mut=True, data_type, ...],
     indices: TileTensor[index_type, ...],
     fill_value: Scalar[data_type],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """
     Scatter the fill_value into the data at the specified indices.

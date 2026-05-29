@@ -60,11 +60,13 @@ def bench_decode[
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     comptime kv_num_heads = num_heads // group
+    # MLA decode output has the V (no-rope) portion only: depth - 64.
+    comptime v_depth = depth - 64
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
     var k_size = batch_size * kv_num_heads * num_keys * depth
-    var o_size = q_size
+    var o_size = batch_size * num_heads * seq_len * v_depth
 
     # For cache busting: calculate strides and larger buffer sizes.
     comptime simd_size = 4
@@ -101,10 +103,10 @@ def bench_decode[
                 cb_q.offset_ptr(iteration),
                 row_major(
                     Coord(
-                        Idx(batch_size),
-                        Idx(seq_len),
-                        Idx[num_heads](),
-                        Idx[depth](),
+                        batch_size,
+                        seq_len,
+                        Idx[num_heads],
+                        Idx[depth],
                     )
                 ),
             )
@@ -112,10 +114,10 @@ def bench_decode[
                 cb_k.offset_ptr(iteration),
                 row_major(
                     Coord(
-                        Idx(batch_size),
-                        Idx(num_keys),
-                        Idx[kv_num_heads](),
-                        Idx[depth](),
+                        batch_size,
+                        num_keys,
+                        Idx[kv_num_heads],
+                        Idx[depth],
                     )
                 ),
             )
@@ -123,10 +125,10 @@ def bench_decode[
                 cb_o.offset_ptr(iteration),
                 row_major(
                     Coord(
-                        Idx(batch_size),
-                        Idx(seq_len),
-                        Idx[num_heads](),
-                        Idx[depth](),
+                        batch_size,
+                        seq_len,
+                        Idx[num_heads],
+                        Idx[v_depth],
                     )
                 ),
             )
@@ -253,11 +255,11 @@ def bench_prefill[
     # Row offsets tensors (these don't need cache busting offsets).
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Coord(Idx(batch_size + 1))),
+        row_major(Coord(batch_size + 1)),
     )
     var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr,
-        row_major(Coord(Idx(batch_size + 1))),
+        row_major(Coord(batch_size + 1)),
     )
 
     @parameter
@@ -279,9 +281,9 @@ def bench_prefill[
                 cb_q.offset_ptr(iteration),
                 row_major(
                     Coord(
-                        Idx(batch_size * seq_len),
-                        Idx[num_heads](),
-                        Idx[depth](),
+                        batch_size * seq_len,
+                        Idx[num_heads],
+                        Idx[depth],
                     )
                 ),
             )
@@ -289,9 +291,9 @@ def bench_prefill[
                 cb_k.offset_ptr(iteration),
                 row_major(
                     Coord(
-                        Idx(batch_size * num_keys),
-                        Idx[num_heads](),
-                        Idx[kv_depth](),
+                        batch_size * num_keys,
+                        Idx[num_heads],
+                        Idx[kv_depth],
                     )
                 ),
             )
@@ -299,9 +301,9 @@ def bench_prefill[
                 cb_v.offset_ptr(iteration),
                 row_major(
                     Coord(
-                        Idx(batch_size * num_keys),
-                        Idx[num_heads](),
-                        Idx[kv_depth](),
+                        batch_size * num_keys,
+                        Idx[num_heads],
+                        Idx[kv_depth],
                     )
                 ),
             )
@@ -309,10 +311,10 @@ def bench_prefill[
                 cb_cache.offset_ptr(iteration),
                 row_major(
                     Coord(
-                        Idx(batch_size),
-                        Idx(num_keys),
-                        Idx[cache_num_heads](),
-                        Idx[cache_depth](),
+                        batch_size,
+                        num_keys,
+                        Idx[cache_num_heads],
+                        Idx[cache_depth],
                     )
                 ),
             )
@@ -320,9 +322,9 @@ def bench_prefill[
                 cb_o.offset_ptr(iteration),
                 row_major(
                     Coord(
-                        Idx(batch_size * seq_len),
-                        Idx[num_heads](),
-                        Idx[kv_depth](),
+                        batch_size * seq_len,
+                        Idx[num_heads],
+                        Idx[kv_depth],
                     )
                 ),
             )

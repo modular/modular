@@ -88,7 +88,6 @@ embed = nn.Embedding(vocab_size=50000, hidden_dim=768, dtype=DType.float32, devi
 | `nn.LayerNorm`      | `max.nn.LayerNorm`          | `ops.layer_norm`      | Epsilon parameter available |
 | RMSNorm (custom)    | `max.nn.RMSNorm`            | Custom implementation | Used in Llama, Gemma        |
 | `nn.GroupNorm`      | `max.nn.GroupNorm`          | Custom implementation | Group-wise normalization    |
-| Distributed RMSNorm | `max.nn.DistributedRMSNorm` | -                     | For tensor parallelism      |
 
 **Example:**
 

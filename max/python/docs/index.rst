@@ -28,7 +28,6 @@ Modules
 .. toctree::
    :maxdepth: 1
 
-   diagnostics.gpu
    driver
    dtype
    engine
@@ -37,8 +36,19 @@ Modules
    graph.ops
    graph.quantization
    graph.weights
-   interfaces
-   kv_cache
+   pipelines.diffusion
+   pipelines.diffusion.schedulers
+   pipelines.modeling.base
+   pipelines.modeling.dataprocessing
+   pipelines.modeling.kv_cache_config
+   pipelines.modeling.types
+   pipelines.modeling.weights
+   pipelines.modeling.types.pipeline_variants
+   pipelines.request
+   pipelines.request.provider_options
+   serve.queue
+   serve.scheduler.interface
+   serve.scheduler_result
    nn
    nn.attention
    nn.kernels
@@ -50,12 +60,12 @@ Modules
    pipelines.architectures.deepseekV3
    pipelines.architectures.deepseekV3_2
    pipelines.architectures.deepseekV3_nextn
+   pipelines.architectures.dflash_llama3
+   pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
    pipelines.architectures.exaone
    pipelines.architectures.exaone_modulev3
-   pipelines.architectures.flux1_modulev3
    pipelines.architectures.flux2
-   pipelines.architectures.flux2_modulev3
    pipelines.architectures.gemma3
    pipelines.architectures.gemma3_modulev3
    pipelines.architectures.gemma3multimodal
@@ -69,6 +79,7 @@ Modules
    pipelines.architectures.idefics3_modulev3
    pipelines.architectures.internvl
    pipelines.architectures.kimik2_5
+   pipelines.architectures.lfm2
    pipelines.architectures.llama3
    pipelines.architectures.llama3_modulev3
    pipelines.architectures.mamba
@@ -89,20 +100,27 @@ Modules
    pipelines.architectures.qwen2
    pipelines.architectures.qwen2_5vl
    pipelines.architectures.qwen3
+   pipelines.architectures.qwen3_5
    pipelines.architectures.qwen3_embedding
    pipelines.architectures.qwen3_embedding_modulev3
    pipelines.architectures.qwen3vl_moe
    pipelines.architectures.qwen_image
    pipelines.architectures.qwen_image_edit
+   pipelines.architectures.step3p5
+   pipelines.architectures.unified_dflash_llama3
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.wan
    pipelines.architectures.z_image_modulev3
    pipelines.core
+   pipelines.kv_cache
    pipelines.lib
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
+   pipelines.speculative
    profiler
+   profiler.cpu
+   profiler.gpu
    experimental
    experimental.nn
    experimental.nn.norm
@@ -110,4 +128,5 @@ Modules
    experimental.tensor
    experimental.random
    experimental.functional
+   experimental.sharding
    experimental.torch

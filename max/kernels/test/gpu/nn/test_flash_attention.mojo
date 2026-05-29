@@ -105,11 +105,11 @@ def test[
     var o_size = q_size
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
 
     # Q, K, V are initialized.
     if use_index_input:
@@ -134,9 +134,9 @@ def test[
                     ](i * depth + j)
     else:
         seed(1234567890)
-        rand[qkv_type](q_ptr, q_size)
-        rand[qkv_type](k_ptr, k_size)
-        rand[qkv_type](v_ptr, v_size)
+        rand[qkv_type](q_ptr.as_span())
+        rand[qkv_type](k_ptr.as_span())
+        rand[qkv_type](v_ptr.as_span())
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
@@ -152,27 +152,19 @@ def test[
     # Construct device buffers.
     var q_device = TileTensor(
         q_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     @parameter
@@ -212,9 +204,7 @@ def test[
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     var output_ref_device = TileTensor(
         output_ref_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
@@ -236,7 +226,7 @@ def test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
-    _ = output_ref_device_ptr
+    ctx.synchronize()
 
     @parameter
     def get_rtol() -> Float64:
@@ -246,12 +236,12 @@ def test[
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
-                var expect = output_ptr.load(
+                var expect = output_ptr[d + depth * (h + s * num_heads)].cast[
+                    DType.float64
+                ]()
+                var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
+                ].cast[DType.float64]()
                 var rerr = abs((actual - expect) / expect)
                 assert_almost_equal(
                     actual,
@@ -265,12 +255,6 @@ def test[
     _ = k_device_ptr
     _ = v_device_ptr
     _ = output_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
 
 
 def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
@@ -496,19 +480,19 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     comptime qkv_type = DType.bfloat16  # fast path on A100/H100
     comptime scale = Float32(0.0)  # force QK logits to exactly 0
 
-    var q_ptr = alloc[Scalar[qkv_type]](
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](
         batch_size * seq_len * num_heads * depth
     )
-    var k_ptr = alloc[Scalar[qkv_type]](
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](
         batch_size * num_keys * kv_heads * depth
     )
-    var v_ptr = alloc[Scalar[qkv_type]](
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](
         batch_size * num_keys * kv_heads * depth
     )
-    var out_ptr = alloc[Scalar[qkv_type]](
+    var out_ptr = ctx.enqueue_create_host_buffer[qkv_type](
         batch_size * seq_len * num_heads * depth
     )
-    var sinks_ptr = alloc[Scalar[qkv_type]](num_heads)
+    var sinks_ptr = ctx.enqueue_create_host_buffer[qkv_type](num_heads)
 
     # Q,K don't matter when scale=0, but set deterministically
     for i in range(batch_size * seq_len * num_heads * depth):
@@ -529,9 +513,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
 
     var out_host = TileTensor(
         out_ptr,
-        row_major(
-            (Idx[batch_size](), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((Idx[batch_size], seq_len, Idx[num_heads], Idx[depth])),
     )
 
     var q_dev = ctx.enqueue_create_buffer[qkv_type](
@@ -555,27 +537,19 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
 
     var q_device = TileTensor(
         q_dev,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_dev,
-        row_major(
-            (Idx(batch_size), Idx[num_keys](), Idx[kv_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, Idx[num_keys], Idx[kv_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_dev,
-        row_major(
-            (Idx(batch_size), Idx[num_keys](), Idx[kv_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, Idx[num_keys], Idx[kv_heads], Idx[depth])),
     )
     var out_device = TileTensor(
         out_dev,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     comptime sinks_layout = Layout.row_major(UNKNOWN_VALUE)
     var sinks_device = LayoutTensor[qkv_type, sinks_layout](
@@ -600,6 +574,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     launch(ctx)
     ctx.synchronize()
     ctx.enqueue_copy(out_ptr, out_dev)
+    ctx.synchronize()
 
     def expected_mass(sink: Float32) -> Float32:
         return Float32(num_keys) / (Float32(num_keys) + exp(sink))
@@ -615,12 +590,6 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             var got1 = out_host[0, s, 1, d].cast[DType.float32]()
             assert_almost_equal(got0, want0, atol=2e-2, rtol=2e-2)
             assert_almost_equal(got1, want1, atol=2e-2, rtol=2e-2)
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    out_ptr.free()
-    sinks_ptr.free()
 
 
 def main() raises:

@@ -84,13 +84,13 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     var c_size = total_tokens * N
 
-    var a_host_ptr = alloc[Scalar[in_type]](a_size)
-    var b_host_ptr = alloc[Scalar[in_type]](b_size)
-    var c_host_ptr = alloc[Scalar[out_type]](c_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[in_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[in_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(Idx(total_tokens), Idx[K]())),
+        row_major(Coord(total_tokens, Idx[K])),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -98,8 +98,12 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     )
 
     # Create offsets and expert_ids
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_offsets)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_expert_ids)
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_offsets
+    )
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+        num_expert_ids
+    )
 
     # Set up offsets
     for i in range(num_offsets):
@@ -116,12 +120,16 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
     )
 
-    var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
-    var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        a_scales_size
+    )
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        b_scales_size
+    )
 
     var a_scales_host = TileTensor(
         a_scales_host_ptr,
-        row_major(Coord(Idx[K // BLOCK_SCALE_K](), Idx(total_tokens))),
+        row_major(Coord(Idx[K // BLOCK_SCALE_K], total_tokens)),
     )
     var b_scales_host = TileTensor(
         b_scales_host_ptr,
@@ -153,35 +161,35 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     var a_device = TileTensor(
         a_device_buffer,
-        row_major(Coord(Idx(total_tokens), Idx[K]())),
+        row_major(Coord(total_tokens, Idx[K])),
     )
     var b_device = TileTensor(
         b_device_buffer,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[K]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[K])),
     )
     var c_device = TileTensor(
         c_device_buffer,
-        row_major(Coord(Idx(total_tokens), Idx[N]())),
+        row_major(Coord(total_tokens, Idx[N])),
     )
     var a_offsets_device = TileTensor(
         a_offsets_device_buffer,
-        row_major(Coord(Idx(num_offsets))),
+        row_major(Coord(num_offsets)),
     )
     var expert_ids_device = TileTensor(
         expert_ids_device_buffer,
-        row_major(Coord(Idx(num_expert_ids))),
+        row_major(Coord(num_expert_ids)),
     )
     var a_scales_device = TileTensor(
         a_scales_device_buffer,
-        row_major(Coord(Idx[K // BLOCK_SCALE_K](), Idx(total_tokens))),
+        row_major(Coord(Idx[K // BLOCK_SCALE_K], total_tokens)),
     )
     var b_scales_device = TileTensor(
         b_scales_device_buffer,
         row_major(
             Coord(
-                Idx[num_experts](),
-                Idx[N // BLOCK_SCALE_K](),
-                Idx[K // BLOCK_SCALE_K](),
+                Idx[num_experts],
+                Idx[N // BLOCK_SCALE_K],
+                Idx[K // BLOCK_SCALE_K],
             )
         ),
     )
@@ -221,13 +229,6 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     print("  ✓ Successfully handled edge case")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    a_offsets_host_ptr.free()
-    expert_ids_host_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
     _ = a_device_buffer^
     _ = b_device_buffer^
     _ = c_device_buffer^

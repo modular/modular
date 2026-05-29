@@ -20,6 +20,14 @@ from max.config import (
     get_default_max_config_file_section_name,
     resolve_max_config_inheritance,
 )
+from max.pipelines.modeling.weights.hf_utils import (
+    HuggingFaceRepo,
+    download_weight_files,
+    generate_local_model_path,
+    try_to_load_from_cache,
+    validate_hf_repo_access,
+)
+from max.pipelines.modeling.weights.weight_path_parser import WeightPathParser
 
 from .bfloat16_utils import (
     float32_array_to_buffer,
@@ -48,13 +56,6 @@ from .config import (
     supported_encoding_supported_on,
 )
 from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
-from .hf_utils import (
-    HuggingFaceRepo,
-    download_weight_files,
-    generate_local_model_path,
-    try_to_load_from_cache,
-    validate_hf_repo_access,
-)
 from .interfaces import (
     AlwaysSignalBuffersMixin,
     ModelInputs,
@@ -85,10 +86,6 @@ from .sampling import (
     rejection_sampler_with_residuals,
     token_sampler,
 )
-from .speculative_decoding import (
-    SpeculativeDecodingPipelineBase,
-    StandaloneSpeculativeDecodingPipeline,
-)
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
@@ -98,7 +95,6 @@ from .tokenizer import (
     max_tokens_to_generate,
 )
 from .utils import CompilationTimer, upper_bounded_default
-from .weight_path_parser import WeightPathParser
 
 __all__ = [
     "PIPELINE_REGISTRY",
@@ -136,9 +132,7 @@ __all__ = [
     "RopeType",
     "SamplingConfig",
     "SpeculativeConfig",
-    "SpeculativeDecodingBase",
     "SpeechTokenGenerationPipeline",
-    "StandaloneSpeculativeDecodingPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TextAndVisionTokenizer",

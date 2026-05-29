@@ -17,8 +17,8 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
-from max.pipelines.architectures.kimik2_5.unified_eagle_model import (
-    Eagle3KimiK25Unified,
+from max.pipelines.architectures.eagle3_deepseekV3.unified_eagle import (
+    Eagle3DeepseekV3Unified,
 )
 
 
@@ -78,7 +78,7 @@ def _target_config() -> DeepseekV3Config:
         data_parallel_degree=1,
         kv_params=_kv_params(num_layers=2),
         return_logits=ReturnLogits.VARIABLE,
-        return_hidden_states=ReturnHiddenStates.EAGLE3,
+        return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
         eagle_aux_hidden_state_layer_ids=[0, 1],
     )
 
@@ -133,7 +133,7 @@ def _draft_config() -> DeepseekV3Config:
 
 def test_draft_weights_are_independent_from_target() -> None:
     """Draft norm and lm_head must be separate Weight objects from target."""
-    model = Eagle3KimiK25Unified(_target_config(), _draft_config())
+    model = Eagle3DeepseekV3Unified(_target_config(), _draft_config())
 
     # Share only embed_tokens (matching production code).
     assert model.draft is not None
@@ -146,7 +146,7 @@ def test_draft_weights_are_independent_from_target() -> None:
 
 def test_state_dict_namespacing() -> None:
     """Draft weights must be prefixable without colliding with target."""
-    model = Eagle3KimiK25Unified(_target_config(), _draft_config())
+    model = Eagle3DeepseekV3Unified(_target_config(), _draft_config())
     assert model.draft is not None
     model.draft.embed_tokens = model.target.embed_tokens
 

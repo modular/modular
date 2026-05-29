@@ -1,10 +1,10 @@
 :title: max generate
 
 
-Generates output from a given model and prompt, without using an
-endpoint—primarily for debugging and testing purposes.
+Generates output from a given model and prompt without using an endpoint.
+This is primarily useful for debugging and testing.
 
-For example:
+For example, generate a short completion from a prompt:
 
 .. code-block:: bash
 

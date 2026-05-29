@@ -107,35 +107,35 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Shapes
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value])
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     # Calculate scales dimensions
     var a_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
     var b_scales_shape_n = ceildiv(N, BLOCK_SCALE_K)
     var b_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
 
-    var a_scales_shape = row_major(Coord(Idx(a_scales_shape_k), m))
-    var b_scales_shape = row_major(
-        Coord(Idx(b_scales_shape_n), Idx(b_scales_shape_k))
-    )
+    var a_scales_shape = row_major(Coord(a_scales_shape_k, m))
+    var b_scales_shape = row_major(Coord(b_scales_shape_n, b_scales_shape_k))
 
     # Allocate host memory
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
-    var c_host_ptr = alloc[Scalar[c_type]](M * N)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](M * N)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
-    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_shape_k * M)
-    var b_scales_host_ptr = alloc[Scalar[scales_type]](
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        a_scales_shape_k * M
+    )
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
         b_scales_shape_n * b_scales_shape_k
     )
 
@@ -230,12 +230,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -282,9 +276,9 @@ def main() raises:
             cta_group=1,
         ](
             ctx,
-            Idx(Int(512)),
-            Idx(576),
-            Idx(512),
+            Int(512),
+            Idx[576],
+            Idx[512],
         )
 
         # ============================================================
@@ -313,9 +307,9 @@ def main() raises:
             cta_group=2,
         ](
             ctx,
-            Idx(Int(512)),
-            Idx(576),
-            Idx(512),
+            Int(512),
+            Idx[576],
+            Idx[512],
         )
 
         # Additional 2SM test with larger cluster (4,4,1) from original tests
@@ -331,9 +325,9 @@ def main() raises:
             cta_group=2,
         ](
             ctx,
-            Idx(Int(512)),
-            Idx(4096),
-            Idx(1024),
+            Int(512),
+            Idx[4096],
+            Idx[1024],
         )
 
         print("\n=== ALL SMOKE TESTS PASSED ===")

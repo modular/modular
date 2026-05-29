@@ -1,0 +1,33 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_tool_parser",
+    srcs = [
+        "_grammar_fixtures.py",
+        "test_tool_parser.py",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("llguidance"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_reasoning",
+    srcs = ["test_reasoning.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)

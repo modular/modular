@@ -19,14 +19,22 @@ import logging
 import os
 import signal
 import socket
+import tempfile
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.interfaces import (
+from max.pipelines.core import TTSContext
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    AudioGenerationConfig,
+    PipelineConfig,
+)
+from max.pipelines.modeling.types import (
     AudioGenerationOutput,
     BaseContext,
     PipelineOutput,
@@ -34,13 +42,8 @@ from max.interfaces import (
     PipelineTask,
     PipelineTokenizer,
 )
-from max.pipelines.core import TTSContext
-from max.pipelines.lib import (
-    PIPELINE_REGISTRY,
-    AudioGenerationConfig,
-    PipelineConfig,
-)
 from max.serve.config import APIType, MetricRecordingMethod, Settings
+from max.serve.media import GeneratedMediaStore
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
@@ -63,6 +66,7 @@ from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from uvicorn import Config
 
 ROUTES = {
@@ -96,6 +100,8 @@ class ServingTokenGeneratorSettings:
     tokenizer: PipelineTokenizer[Any, Any, Any]
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
     reasoning_parser_name: str | None = None
+    temperature: float | None = None
+    thinking_temperature: float | None = None
 
 
 @asynccontextmanager
@@ -103,6 +109,7 @@ async def lifespan(
     app: FastAPI,
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
+    zmq_endpoint_base: str,
 ) -> AsyncGenerator[None]:
     try:
         if not settings.disable_telemetry:
@@ -120,6 +127,18 @@ async def lifespan(
     logger.info("Starting server...")
 
     async with AsyncExitStack() as exit_stack:
+        media_root = Path(
+            exit_stack.enter_context(
+                tempfile.TemporaryDirectory(prefix="max_serve_media_")
+            )
+        )
+        app.state.media_store = GeneratedMediaStore(
+            media_root,
+            max_storage_bytes=(
+                settings.generated_media_storage_mb * 1024 * 1024
+            ),
+        )
+
         # start telemetry worker and configure Metrics to use it
 
         metric_client = await exit_stack.enter_async_context(
@@ -155,12 +174,13 @@ async def lifespan(
                 settings,
                 metric_client,
                 model_worker_interface=model_worker_interface,
+                zmq_endpoint_base=zmq_endpoint_base,
             )
         )
 
         lora_queue: LoRAQueue | None = (
             LoRAQueue(
-                serving_settings.pipeline_config.runtime.zmq_endpoint_base,
+                zmq_endpoint_base,
                 serving_settings.pipeline_config.lora.lora_paths,
             )
             if serving_settings.pipeline_config.lora
@@ -208,6 +228,7 @@ async def lifespan(
         # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
+        app.state.zmq_endpoint_base = zmq_endpoint_base
 
         # Also store as handler for OpenResponses API route compatibility
         # For pixel generation, this is the same as pipeline
@@ -261,10 +282,14 @@ def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
+    zmq_endpoint_base = generate_zmq_ipc_path()
+
     @asynccontextmanager
     async def lifespan_wrap(app: FastAPI) -> AsyncGenerator[None, None]:
         try:
-            async with lifespan(app, settings, serving_settings):
+            async with lifespan(
+                app, settings, serving_settings, zmq_endpoint_base
+            ):
                 yield
         except BaseException as e:
             # Worker already logs the detailed traceback, so we use
@@ -305,9 +330,7 @@ def fastapi_app(
     app.add_api_route("/version", version)
     app.add_api_route("/health", health)
 
-    reset_prefix_cache_frontend = ResetPrefixCacheFrontend(
-        serving_settings.pipeline_config.runtime.zmq_endpoint_base
-    )
+    reset_prefix_cache_frontend = ResetPrefixCacheFrontend(zmq_endpoint_base)
 
     async def reset_prefix_cache() -> Response:
         """Reset the prefix cache."""

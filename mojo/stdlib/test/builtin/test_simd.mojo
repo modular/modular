@@ -15,6 +15,7 @@ from std.sys import size_of
 from std.sys.info import CompilationTarget, is_64bit
 
 from std.bit import count_leading_zeros
+from std.memory import alloc, free, Layout
 from std.memory.unsafe import bitcast
 from std.builtin.simd import _modf
 from std.itertools import product
@@ -384,11 +385,11 @@ def test_simd_repr_and_write_repr_to() raises:
 def test_issue_1625() raises:
     var size = 16
     comptime simd_width = 8
-    var ptr = alloc[Int64](size)
+    var data = List(length=size, fill=Int64(0))
     for i in range(size):
-        ptr[i] = Int64(i)
+        data[i] = Int64(i)
 
-    var x = ptr.load[width=2 * simd_width](0)
+    var x = data.unsafe_ptr().load[width=2 * simd_width](0)
     var evens_and_odds = x.deinterleave()
 
     # FIXME (40568) should directly use the SIMD assert_equal
@@ -400,11 +401,11 @@ def test_issue_1625() raises:
         String(evens_and_odds[1]),
         String(SIMD[DType.int64, 8](1, 3, 5, 7, 9, 11, 13, 15)),
     )
-    ptr.free()
 
 
 def test_issue_20421() raises:
-    var a = alloc[UInt8](count=16 * 64, alignment=64)
+    var a_layout = Layout[UInt8](count=16 * 64, alignment=64)
+    var a = alloc(a_layout)
     for i in range(16 * 64):
         a[i] = UInt8(i & 255)
     var av16 = (a + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
@@ -412,7 +413,7 @@ def test_issue_20421() raises:
         av16,
         SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),
     )
-    a.free()
+    free(a, a_layout)
 
 
 def test_issue_30237() raises:

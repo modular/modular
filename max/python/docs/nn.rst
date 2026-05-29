@@ -41,6 +41,7 @@ Linear layers
    Linear
    LinearLoRA
    MLP
+   StackedLinear
    VocabParallelEmbedding
 
 Normalization
@@ -174,6 +175,7 @@ Functions
 
    build_max_lengths_tensor
    clamp
+   forward_moe_sharded_layers
    split_batch
    split_batch_replicated
 

@@ -17,7 +17,7 @@ import logging
 import queue
 from typing import Any, Generic, TypeVar
 
-from max.kv_cache import KVTransferEngineMetadata
+from max.pipelines.kv_cache import KVTransferEngineMetadata
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,

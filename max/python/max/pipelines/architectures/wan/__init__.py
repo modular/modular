@@ -13,7 +13,7 @@
 """Wan diffusion architecture for video generation."""
 
 from .arch import WanArchConfig, wan_arch, wan_i2v_arch
-from .model import BlockLevelModel, WanTransformerModel
+from .model import BlockLevelModel
 from .model_config import WanConfig, WanConfigBase
 
 __all__ = [
@@ -21,7 +21,6 @@ __all__ = [
     "WanArchConfig",
     "WanConfig",
     "WanConfigBase",
-    "WanTransformerModel",
     "wan_arch",
     "wan_i2v_arch",
 ]

@@ -20,6 +20,7 @@ without max.experimental dependencies.
 
 import math
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn.attention.mask_config import MHAMaskVariant
@@ -116,6 +117,23 @@ class ResnetBlock2D(Module):
                 permute=True,
             )
 
+    def _use_fused_conv_residual(self) -> bool:
+        """Check if fused conv2d + residual add should be used.
+
+        Returns True when running on a supported GPU with matching channel
+        counts (so the shortcut is identity, not a projection conv). The
+        custom op `conv2d_residual_add` routes through `conv_gpu` which
+        dispatches to SM100 (CUDA) or AMD 4-wave (MI355X) in-kernel
+        residual paths.
+        """
+        return (
+            self.in_channels == self.out_channels
+            and self.conv_shortcut is None
+            and isinstance(self.conv2.device, DeviceRef)
+            and self.conv2.device.is_gpu()
+            and accelerator_api() in ("cuda", "rocm", "hip")
+        )
+
     def __call__(
         self, x: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
@@ -126,6 +144,55 @@ class ResnetBlock2D(Module):
         h = ops.silu(self.norm1(x))
         h = self.conv1(h)
         h = ops.silu(self.norm2(h))
+
+        if self._use_fused_conv_residual():
+            # Fused conv2d + residual add + bias in a single kernel.
+            # `conv2` is always constructed with `has_bias=True` above so
+            # `self.conv2.bias` is never None here; assert so MyPy can
+            # narrow `Weight | None` to `Weight` for the ops.custom call.
+            bias = self.conv2.bias
+            assert bias is not None, "conv2 must have has_bias=True"
+            # Permute inputs to NHWC for the custom op.
+            h_nhwc = ops.permute(h, [0, 2, 3, 1])
+            shortcut_nhwc = ops.permute(shortcut, [0, 2, 3, 1])
+            stride = self.conv2.stride
+            pad = self.conv2.padding
+            # Normalize stride/pad to (stride_h, stride_w) and
+            # (pad_top, pad_bottom, pad_left, pad_right). Conv2d accepts
+            # int, 2-tuple, or 4-tuple.
+            if isinstance(stride, int):
+                stride_h, stride_w = stride, stride
+            else:
+                stride_h, stride_w = stride[0], stride[1]
+            if isinstance(pad, int):
+                pad_t = pad_b = pad_l = pad_r = pad
+            elif len(pad) == 2:
+                pad_t = pad_b = pad[0]
+                pad_l = pad_r = pad[1]
+            else:
+                pad_t, pad_b, pad_l, pad_r = pad[0], pad[1], pad[2], pad[3]
+            result_nhwc = ops.custom(
+                "conv2d_residual_add",
+                device=h.device,
+                values=[
+                    h_nhwc,
+                    self.conv2.filter,
+                    shortcut_nhwc,
+                    bias,
+                ],
+                out_types=[shortcut_nhwc.type],
+                parameters={
+                    "stride_h": stride_h,
+                    "stride_w": stride_w,
+                    "pad_top": pad_t,
+                    "pad_bottom": pad_b,
+                    "pad_left": pad_l,
+                    "pad_right": pad_r,
+                    "has_bias": True,
+                },
+            )[0].tensor
+            return ops.permute(result_nhwc, [0, 3, 1, 2])
+
         h = self.conv2(h)
         return h + shortcut
 

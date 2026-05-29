@@ -15,19 +15,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.pipelines.lib import CompilationTimer, KVCacheConfig, PipelineConfig
+from max.nn.kv_cache import MultiKVCacheParams
+from max.pipelines.lib import CompilationTimer, PipelineConfig
 from max.pipelines.lib.quant import parse_quant_config
-from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Model
@@ -40,22 +39,15 @@ logger = logging.getLogger("max.pipelines")
 class DeepseekV3_2Model(DeepseekV3Model):
     """A DeepseekV3.2 model."""
 
+    model_config_cls: ClassVar[type[Any]] = DeepseekV3_2Config
+
     @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParamInterface:
-        return DeepseekV3_2Config.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
+    @override
+    def _ep_max_rank_send_tokens_for_pipeline(
+        cls, pipeline_config: PipelineConfig
+    ) -> int:
+        """Each rank holds full-length activations before EP MoE (no RS like V3 TP_EP)."""
+        return pipeline_config.runtime.max_batch_input_tokens
 
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
@@ -92,18 +84,15 @@ class DeepseekV3_2Model(DeepseekV3Model):
         else:
             if ep_size % len(self.devices) != 0:
                 raise ValueError(
-                    "If you are running with expert parallelism, ep_size must"
-                    " be set to the total number of GPUs across nodes."
+                    f"ep_size={ep_size} is not divisible by the number of GPUs"
+                    f" on this node ({len(self.devices)}). ep_size must equal"
+                    f" n_gpus_per_node * n_nodes. For a single-node deployment"
+                    f" set ep_size={len(self.devices)}."
                 )
             n_nodes = ep_size // len(self.devices)
 
-            # With a mixed TP-attention + EP-MoE strategy, the attention output
-            # will be scattered across ranks, so each rank will only send a
-            # subset of the tokens.
-            attn_tp_size = ep_size // data_parallel_degree
             ep_max_rank_send_tokens = (
-                self.pipeline_config.runtime.max_batch_input_tokens
-                // attn_tp_size
+                self._ep_max_rank_send_tokens_for_pipeline(self.pipeline_config)
             )
 
             ep_kwargs: dict[str, Any] = dict(
@@ -244,7 +233,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 # Unmarshal the KV cache arguments.
                 assert isinstance(self.kv_params, MultiKVCacheParams)
                 len_of_mla_kv_inputs = len(
-                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
+                    self.kv_params.params[0].get_symbolic_inputs().flatten()
                 )
                 mla_kv_caches_per_dev = self._unflatten_kv_inputs(
                     [
@@ -255,7 +244,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 )
 
                 len_of_indexer_kv_inputs = len(
-                    self.kv_params.get_symbolic_inputs().inputs[-1].flatten()
+                    self.kv_params.params[1].get_symbolic_inputs().flatten()
                 )
                 indexer_kv_caches_per_dev = self._unflatten_kv_inputs(
                     [

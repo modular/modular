@@ -21,13 +21,16 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.interfaces import TextGenerationContext
-from max.kv_cache import IncrementCacheLengthsProcessor, PagedKVCacheManager
-from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
-    increment_cache_lengths_from_counts,
-)
 from max.nn import Signals
 from max.nn.kv_cache import KVCacheParams
+from max.pipelines.kv_cache import (
+    IncrementCacheLengthsProcessor,
+    PagedKVCacheManager,
+)
+from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
+    increment_cache_lengths_from_counts,
+)
+from max.pipelines.modeling.types import TextGenerationContext
 from test_common.context_utils import create_text_context
 
 

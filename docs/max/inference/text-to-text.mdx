@@ -27,19 +27,19 @@ and [`v1/completions`](/max/inference/text-to-text#v1completions).
 
 ## Endpoints
 
-The [`v1/chat/completions`](/max/api/serve#operation/createChatCompletion)
+The [`v1/chat/completions`](/max/rest-api/#POST/v1/chat/completions)
 endpoint is recommended as the default for most text use cases and works best
 with instruction-tuned models. This endpoint supports both single-turn and
 multi-turn scenarios.
 
-The [`v1/completions`](/max/api/serve/#operation/createCompletion) endpoint is
+The [`v1/completions`](/max/rest-api/#POST/v1/completions) endpoint is
 also supported for traditional single-turn text generation tasks, which is
 useful for offline inference or generating text from a prompt without
 conversational context.
 
 ### `v1/chat/completions`
 
-The [`v1/chat/completions`](/max/api/serve#operation/createChatCompletion)
+The [`v1/chat/completions`](/max/rest-api/#POST/v1/chat/completions)
 endpoint is designed for chat-based models and supports both single-turn and
 multi-turn interactions. You provide a sequence of structured messages with
 roles (`system`, `user`, `assistant`), and the model generates a response.
@@ -77,7 +77,7 @@ enough for general text generation workflows.
 
 ### `v1/completions`
 
-The [`v1/completions`](/max/api/serve#operation/createCompletion) endpoint
+The [`v1/completions`](/max/rest-api/#POST/v1/completions) endpoint
 supports traditional text completions. You provide a prompt, and the model
 returns generated text. This endpoint is ideal when you only need a single
 response per request, such as:
@@ -254,7 +254,7 @@ You should receive a response similar to this:
 </Tabs>
 
 For complete details on all available API endpoints and options, see the
-[REST API documentation](/max/api/serve).
+[REST API documentation](/max/rest-api/).
 
 ## Next steps
 

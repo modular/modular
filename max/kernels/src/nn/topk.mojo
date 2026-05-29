@@ -40,7 +40,6 @@ from layout import (
     CoordLike,
     Idx,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     coord_to_index_list,
@@ -54,7 +53,6 @@ from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from nn.softmax import softmax_with_temperature
 from nn.topk_fi import apply_min_p_mask_kernel, topk_topp_sampling_from_prob
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList, product
@@ -140,11 +138,11 @@ def top_k[
     out_vals: TileTensor[mut=True, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     sorted: Bool,
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
     k: Optional[
         TileTensor[
             DType.int64,
-            RowMajorLayout[RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64],
             ImmutAnyOrigin,
         ],
     ] = None,
@@ -196,7 +194,7 @@ def top_k[
     with Trace[TraceLevel.OP, target=target](
         "top_k",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
 
@@ -217,7 +215,7 @@ def top_k[
                 out_idxs,
                 grain_size,
                 sorted=sorted,
-                ctx=ctx.get_optional_device_context(),
+                ctx=Optional[DeviceContext](ctx),
                 k=k,
             )
         else:
@@ -228,9 +226,8 @@ def top_k[
                     "Warning: Unsorted top-k is not supported on GPU. Falling"
                     " back to sorted top-k."
                 )
-            var cuda_ctx = ctx.get_device_context()
             topk_gpu[sampling=False, largest=largest](
-                cuda_ctx,
+                ctx,
                 bound_max_k,
                 input,
                 out_vals,
@@ -243,7 +240,7 @@ def _top_k_cpu[
     dtype: DType,
     out_idx_type: DType,
     largest: Bool,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     input: TileTensor[dtype, ...],
     max_k: Int,
@@ -363,12 +360,10 @@ def _top_k_cpu[
 def fused_token_sampling_cpu[
     dtype: DType,
     out_idx_type: DType,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     max_k: Int,
     input: TileTensor[dtype, ...],
@@ -456,12 +451,10 @@ def fused_token_sampling_cpu[
 
 def _top_k_sampling[
     dtype: DType,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     max_k: Int,
     input: TileTensor[dtype, ...],
@@ -908,7 +901,7 @@ def _block_reduce_topk[
     return _warp_reduce_topk[T, ascending](block_accum)
 
 
-@__name(t"topk_stage1_old_no_shmem_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_old_no_shmem_{T}_{out_idx_type}_{largest}")
 def _topk_stage1_old_no_shmem[
     T: DType,
     out_idx_type: DType,
@@ -989,7 +982,7 @@ def _topk_stage1_old_no_shmem[
                 ](-1)
 
 
-@__name(t"topk_stage1_old_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_old_{T}_{out_idx_type}_{largest}")
 def _topk_stage1_old[
     T: DType,
     out_idx_type: DType,
@@ -1097,7 +1090,7 @@ def _topk_stage1_old[
                 ](-1)
 
 
-@__name(t"topk_stage1_no_shmem_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_no_shmem_{T}_{out_idx_type}_{largest}")
 def _topk_stage1_no_shmem[
     T: DType,
     out_idx_type: DType,
@@ -1207,7 +1200,7 @@ def _topk_stage1_no_shmem[
                 out_idxs[remaining_k] = Scalar[out_idx_type](-1)
 
 
-@__name(t"topk_stage1_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_{T}_{out_idx_type}_{largest}")
 def _topk_stage1[
     T: DType,
     out_idx_type: DType,
@@ -1348,7 +1341,7 @@ def _get_shmem_size_stg_1[dtype: DType](block_size: Int) -> Int:
     return block_size * size_of[TopK_2[dtype]]()
 
 
-@__name(t"topk_stage2_{T}_{out_idx_type}_{sampling}_{largest}", mangle=True)
+@__name(t"topk_stage2_{T}_{out_idx_type}_{sampling}_{largest}")
 def _topk_stage2[
     T: DType,
     out_idx_type: DType,
@@ -1588,13 +1581,11 @@ def _topk_gpu[
     sampling: Bool = True,
     largest: Bool = True,
     _force_old_impl: Bool = False,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    MinPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1726,7 +1717,7 @@ def _topk_gpu[
             comptime kernel_1 = _topk_stage1_old_no_shmem[
                 dtype, out_idx_type, largest
             ]
-            ctx.enqueue_function[kernel_1, kernel_1](
+            ctx.enqueue_function[kernel_1](
                 k_ptr,
                 max_k,
                 N,
@@ -1736,12 +1727,12 @@ def _topk_gpu[
                 device_local_topk_idxs.to_device_buffer(ctx),
                 grid_dim=grid_dim_stage1,
                 block_dim=block_dim_stage1,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
             comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
-            ctx.enqueue_function[kernel_1, kernel_1](
+            ctx.enqueue_function[kernel_1](
                 k_ptr,
                 max_k,
                 N,
@@ -1752,7 +1743,7 @@ def _topk_gpu[
                 grid_dim=grid_dim_stage1,
                 block_dim=block_dim_stage1,
                 shared_mem_bytes=shared_mem_bytes_1,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
     else:
         var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
@@ -1762,7 +1753,7 @@ def _topk_gpu[
             comptime kernel_1 = _topk_stage1_no_shmem[
                 dtype, out_idx_type, largest
             ]
-            ctx.enqueue_function[kernel_1, kernel_1](
+            ctx.enqueue_function[kernel_1](
                 k_ptr,
                 max_k,
                 N,
@@ -1772,11 +1763,11 @@ def _topk_gpu[
                 device_local_topk_idxs.to_device_buffer(ctx),
                 grid_dim=grid_dim_stage1,
                 block_dim=block_dim_stage1,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
-            ctx.enqueue_function[kernel_1, kernel_1](
+            ctx.enqueue_function[kernel_1](
                 k_ptr,
                 max_k,
                 N,
@@ -1786,7 +1777,7 @@ def _topk_gpu[
                 device_local_topk_idxs.to_device_buffer(ctx),
                 grid_dim=grid_dim_stage1,
                 block_dim=block_dim_stage1,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         _ = input_buf_tmp^
 
@@ -1845,7 +1836,7 @@ def _topk_gpu[
 
     # Enqueue the second kernel (stage 2)
     comptime kernel_2 = _topk_stage2[dtype, out_idx_type, sampling, largest]
-    ctx.enqueue_function[kernel_2, kernel_2](
+    ctx.enqueue_function[kernel_2](
         k_ptr,
         max_k,
         num_blocks_per_input_,
@@ -1860,7 +1851,7 @@ def _topk_gpu[
         grid_dim=grid_dim_stage2,
         block_dim=block_dim_stage2,
         shared_mem_bytes=shared_mem_bytes_2,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1872,13 +1863,11 @@ def topk_gpu[
     sampling: Bool = True,
     largest: Bool = True,
     _force_old_impl: Bool = False,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    MinPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -2128,13 +2117,11 @@ def topk_gpu[
 def _topk_topp_sampling_fi[
     dtype: DType,
     out_idx_type: DType,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    MinPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -2182,7 +2169,7 @@ def _topk_topp_sampling_fi[
     if min_p:
         comptime MASK_BLOCK_SIZE = 256
         comptime mask_kernel = apply_min_p_mask_kernel[dtype, MASK_BLOCK_SIZE]
-        ctx.enqueue_function[mask_kernel, mask_kernel](
+        ctx.enqueue_function[mask_kernel](
             probs_buf,
             min_p.value().to_device_buffer(ctx),
             d,
@@ -2195,7 +2182,7 @@ def _topk_topp_sampling_fi[
     var out_shape = coord_to_index_list(out_idxs.layout.shape_coord())
     var out_1d = TileTensor(
         out_idxs.ptr,
-        row_major(Idx(out_shape[0])),
+        row_major(out_shape[0]),
     )
     topk_topp_sampling_from_prob[dtype, out_idx_type](
         ctx,
@@ -2216,13 +2203,11 @@ def fused_token_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
-    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    MinPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    KLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -2347,7 +2332,7 @@ def fused_token_sampling_gpu[
 # ===-----------------------------------------------------------------------===#
 
 
-@__name(t"apply_gumbel_noise_{dtype}", mangle=True)
+@__name(t"apply_gumbel_noise_{dtype}")
 def apply_gumbel_noise_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
@@ -2454,10 +2439,8 @@ def gumbel_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
-    TemperatureLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64]
-    ],
-    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
+    SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     input: TileTensor[dtype, ...],
@@ -2521,14 +2504,14 @@ def gumbel_sampling_gpu[
         if seed:
             seed_ptr = seed.value().ptr
 
-        ctx.enqueue_function[gumbel_kernel, gumbel_kernel](
+        ctx.enqueue_function[gumbel_kernel](
             noised_input,
             input.as_immut(),
             temperature_ptr,
             seed_ptr,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
         # Extract argmax after Gumbel noise application.

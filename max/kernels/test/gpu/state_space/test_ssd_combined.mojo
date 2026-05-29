@@ -385,24 +385,7 @@ def run_ssd_combined_gpu[
             z_gpu_lt.layout,
             delta_bias_gpu_lt.layout,
             gamma_gpu_lt.layout,
-        ],
-        ssd_combined_gpu[
-            dtype,
-            DSTATE,
-            output_gpu_lt.layout,
-            x_gpu_lt.layout,
-            out_z_gpu_lt.layout,
-            residual_gpu_lt.layout,
-            u_gpu_lt.layout,
-            delta_gpu_lt.layout,
-            A_gpu_lt.layout,
-            B_gpu_lt.layout,
-            C_gpu_lt.layout,
-            D_gpu_lt.layout,
-            z_gpu_lt.layout,
-            delta_bias_gpu_lt.layout,
-            gamma_gpu_lt.layout,
-        ],
+        ]
     ]()
 
     ctx.enqueue_function(

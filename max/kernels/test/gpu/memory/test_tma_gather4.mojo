@@ -59,7 +59,7 @@ from std.gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from std.memory import alloc, stack_allocation
+from std.memory import stack_allocation
 from std.random import rand, randn, seed
 from std.utils.index import IndexList
 
@@ -185,8 +185,8 @@ def test_raw_smoke[
     )
 
     var num_elems = num_tokens * row_width
-    var h_data = alloc[Scalar[dtype]](num_elems)
-    rand[dtype](h_data, num_elems)
+    var h_data = ctx.enqueue_create_host_buffer[dtype](num_elems)
+    rand(h_data.unsafe_ptr(), num_elems)
 
     var d_data = ctx.enqueue_create_buffer[dtype](num_elems)
     ctx.enqueue_copy(d_data, h_data)
@@ -204,14 +204,14 @@ def test_raw_smoke[
     var r3 = Int32(min(999, num_tokens - 1))
 
     var output_elems = 4 * row_width
-    var h_out = alloc[Scalar[dtype]](output_elems)
+    var h_out = ctx.enqueue_create_host_buffer[dtype](output_elems)
     var d_out = ctx.enqueue_create_buffer[dtype](output_elems)
     ctx.enqueue_memset(d_out, 0)
 
     var shared_mem_bytes = 4 * row_width * size_of[dtype]()
 
     comptime kernel = gather4_raw_smoke_kernel[dtype, row_width]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         tma_desc,
         d_out,
         r0,
@@ -227,17 +227,16 @@ def test_raw_smoke[
     ctx.synchronize()
 
     # Build a 4-element index array for the unified verification helper.
-    var h_indices = alloc[Int32](4)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](4)
     h_indices[0] = r0
     h_indices[1] = r1
     h_indices[2] = r2
     h_indices[3] = r3
-    _verify_gathered_rows[dtype, row_width](h_out, h_data, h_indices, 4)
+    _verify_gathered_rows[dtype, row_width](
+        h_out.unsafe_ptr(), h_data.unsafe_ptr(), h_indices.unsafe_ptr(), 4
+    )
     print("  PASSED: all 4 gathered rows match expected data")
 
-    h_data.free()
-    h_out.free()
-    h_indices.free()
     _ = d_data
     _ = d_out
 
@@ -340,7 +339,7 @@ def _run_paged_gather4_test[
     # Physical row = phys_block * stride + offset_in_page
     # where stride = kv_dim * num_layers * page_size.
     comptime paged_stride = kv_dim * num_layers * page_size
-    var h_indices = alloc[Int32](topk)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](topk)
     for i in range(topk):
         var seq_idx = i % batch_size
         var tok_idx = (i * 3 + 7) % tokens_per_seq
@@ -355,7 +354,7 @@ def _run_paged_gather4_test[
 
     # Launch kernel.
     var output_elems = topk * row_width
-    var h_out = alloc[Scalar[dtype]](output_elems)
+    var h_out = ctx.enqueue_create_host_buffer[dtype](output_elems)
     var d_out = ctx.enqueue_create_buffer[dtype](output_elems)
     ctx.enqueue_memset(d_out, 0)
 
@@ -369,7 +368,7 @@ def _run_paged_gather4_test[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -386,7 +385,7 @@ def _run_paged_gather4_test[
     #   offset(block, tok, h, d) = block*s0 + tok*s3 + h*s4 + d
     # which equals phys_row * row_width + col.
     _verify_gathered_rows[dtype, row_width](
-        h_out, blocks_host.ptr, h_indices, topk
+        h_out.unsafe_ptr(), blocks_host.ptr, h_indices.unsafe_ptr(), topk
     )
 
     comptime if use_mha_operand:
@@ -410,8 +409,6 @@ def _run_paged_gather4_test[
             ") match",
         )
 
-    h_indices.free()
-    h_out.free()
     _ = d_indices
     _ = d_out
     _ = blocks
@@ -523,7 +520,7 @@ def test_continuous_kv_cache[
     # Physical row = block_id * stride + tok_idx
     # where stride = 2 * num_layers * max_seq_len.
     comptime cont_stride = 2 * num_layers * max_seq_len
-    var h_indices = alloc[Int32](topk)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](topk)
     var lookup_ptr = lookup_host.ptr
     for i in range(topk):
         var seq_idx = i % batch_size
@@ -537,7 +534,7 @@ def test_continuous_kv_cache[
 
     # Launch kernel.
     var output_elems = topk * row_width
-    var h_out = alloc[Scalar[dtype]](output_elems)
+    var h_out = ctx.enqueue_create_host_buffer[dtype](output_elems)
     var d_out = ctx.enqueue_create_buffer[dtype](output_elems)
     ctx.enqueue_memset(d_out, 0)
 
@@ -551,7 +548,7 @@ def test_continuous_kv_cache[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -564,7 +561,7 @@ def test_continuous_kv_cache[
     ctx.synchronize()
 
     _verify_gathered_rows[dtype, row_width](
-        h_out, blocks_host.ptr, h_indices, topk
+        h_out.unsafe_ptr(), blocks_host.ptr, h_indices.unsafe_ptr(), topk
     )
     print(
         "  PASSED: all",
@@ -574,8 +571,6 @@ def test_continuous_kv_cache[
         "iterations) match",
     )
 
-    h_indices.free()
-    h_out.free()
     _ = d_indices
     _ = d_out
     _ = blocks
@@ -602,8 +597,8 @@ def test_device_buffer_overload[
     )
 
     var num_elems = num_tokens * row_width
-    var h_data = alloc[Scalar[dtype]](num_elems)
-    rand[dtype](h_data, num_elems)
+    var h_data = ctx.enqueue_create_host_buffer[dtype](num_elems)
+    rand(h_data.unsafe_ptr(), num_elems)
 
     var d_data = ctx.enqueue_create_buffer[dtype](num_elems)
     ctx.enqueue_copy(d_data, h_data)
@@ -614,7 +609,7 @@ def test_device_buffer_overload[
     )
 
     # Build gather indices on host.
-    var h_indices = alloc[Int32](topk)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](topk)
     for i in range(topk):
         h_indices[i] = Int32((i * 7 + 3) % num_tokens)
 
@@ -623,7 +618,7 @@ def test_device_buffer_overload[
 
     # Launch while-loop kernel.
     var output_elems = topk * row_width
-    var h_out = alloc[Scalar[dtype]](output_elems)
+    var h_out = ctx.enqueue_create_host_buffer[dtype](output_elems)
     var d_out = ctx.enqueue_create_buffer[dtype](output_elems)
     ctx.enqueue_memset(d_out, 0)
 
@@ -637,7 +632,7 @@ def test_device_buffer_overload[
         type_of(kv_tile).desc_shape,
         TensorMapSwizzle.SWIZZLE_NONE,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -649,12 +644,11 @@ def test_device_buffer_overload[
     ctx.enqueue_copy(h_out, d_out)
     ctx.synchronize()
 
-    _verify_gathered_rows[dtype, row_width](h_out, h_data, h_indices, topk)
+    _verify_gathered_rows[dtype, row_width](
+        h_out.unsafe_ptr(), h_data.unsafe_ptr(), h_indices.unsafe_ptr(), topk
+    )
     print("  PASSED: all", topk, "rows from DeviceBuffer overload match")
 
-    h_data.free()
-    h_out.free()
-    h_indices.free()
     _ = d_data
     _ = d_out
     _ = d_indices
@@ -810,8 +804,8 @@ def test_wide_gather4_device_buffer[
     )
 
     var num_elems = num_tokens * tile_width
-    var h_data = alloc[Scalar[dtype]](num_elems)
-    rand[dtype](h_data, num_elems)
+    var h_data = ctx.enqueue_create_host_buffer[dtype](num_elems)
+    rand(h_data.unsafe_ptr(), num_elems)
 
     var d_data = ctx.enqueue_create_buffer[dtype](num_elems)
     ctx.enqueue_copy(d_data, h_data)
@@ -822,7 +816,7 @@ def test_wide_gather4_device_buffer[
     ](ctx, d_data, num_tokens)
 
     # Build gather indices.
-    var h_indices = alloc[Int32](topk)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](topk)
     for i in range(topk):
         h_indices[i] = Int32((i * 7 + 3) % num_tokens)
 
@@ -831,7 +825,7 @@ def test_wide_gather4_device_buffer[
 
     # Launch kernel.
     var output_elems = topk * tile_width
-    var h_out = alloc[Scalar[dtype]](output_elems)
+    var h_out = ctx.enqueue_create_host_buffer[dtype](output_elems)
     var d_out = ctx.enqueue_create_buffer[dtype](output_elems)
     ctx.enqueue_memset(d_out, 0)
 
@@ -845,7 +839,7 @@ def test_wide_gather4_device_buffer[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -858,16 +852,15 @@ def test_wide_gather4_device_buffer[
     ctx.synchronize()
 
     # Verify: output row i should match source row h_indices[i].
-    _verify_gathered_rows[dtype, tile_width](h_out, h_data, h_indices, topk)
+    _verify_gathered_rows[dtype, tile_width](
+        h_out.unsafe_ptr(), h_data.unsafe_ptr(), h_indices.unsafe_ptr(), topk
+    )
     print(
         "  PASSED: all",
         topk,
         "wide rows match expected data",
     )
 
-    h_data.free()
-    h_out.free()
-    h_indices.free()
     _ = d_data
     _ = d_out
     _ = d_indices
@@ -963,7 +956,7 @@ def test_wide_gather4_paged_kv[
 
     # Build gather indices.
     comptime paged_stride = kv_dim * num_layers * page_size
-    var h_indices = alloc[Int32](topk)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](topk)
     for i in range(topk):
         var seq_idx = i % batch_size
         var tok_idx = (i * 3 + 7) % tokens_per_seq
@@ -978,7 +971,7 @@ def test_wide_gather4_paged_kv[
 
     # Launch kernel.
     var output_elems = topk * tile_width
-    var h_out = alloc[Scalar[dtype]](output_elems)
+    var h_out = ctx.enqueue_create_host_buffer[dtype](output_elems)
     var d_out = ctx.enqueue_create_buffer[dtype](output_elems)
     ctx.enqueue_memset(d_out, 0)
 
@@ -992,7 +985,7 @@ def test_wide_gather4_paged_kv[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -1005,7 +998,7 @@ def test_wide_gather4_paged_kv[
     ctx.synchronize()
 
     _verify_gathered_rows[dtype, tile_width](
-        h_out, blocks_host.ptr, h_indices, topk
+        h_out.unsafe_ptr(), blocks_host.ptr, h_indices.unsafe_ptr(), topk
     )
     print(
         "  PASSED: all",
@@ -1013,8 +1006,6 @@ def test_wide_gather4_paged_kv[
         "wide rows from PagedKVCache match",
     )
 
-    h_indices.free()
-    h_out.free()
     _ = d_indices
     _ = d_out
     _ = blocks
@@ -1105,7 +1096,7 @@ def test_wide_gather4_continuous_kv[
 
     # Build gather indices.
     comptime cont_stride = 2 * num_layers * max_seq_len
-    var h_indices = alloc[Int32](topk)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](topk)
     var lookup_ptr = lookup_host.ptr
     for i in range(topk):
         var seq_idx = i % batch_size
@@ -1119,7 +1110,7 @@ def test_wide_gather4_continuous_kv[
 
     # Launch kernel.
     var output_elems = topk * tile_width
-    var h_out = alloc[Scalar[dtype]](output_elems)
+    var h_out = ctx.enqueue_create_host_buffer[dtype](output_elems)
     var d_out = ctx.enqueue_create_buffer[dtype](output_elems)
     ctx.enqueue_memset(d_out, 0)
 
@@ -1133,7 +1124,7 @@ def test_wide_gather4_continuous_kv[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -1146,7 +1137,7 @@ def test_wide_gather4_continuous_kv[
     ctx.synchronize()
 
     _verify_gathered_rows[dtype, tile_width](
-        h_out, blocks_host.ptr, h_indices, topk
+        h_out.unsafe_ptr(), blocks_host.ptr, h_indices.unsafe_ptr(), topk
     )
     print(
         "  PASSED: all",
@@ -1154,8 +1145,6 @@ def test_wide_gather4_continuous_kv[
         "wide rows from ContinuousBatchingKVCache match",
     )
 
-    h_indices.free()
-    h_out.free()
     _ = d_indices
     _ = d_out
     _ = blocks
@@ -1254,7 +1243,7 @@ def test_wide_gather4_mha_operand[
 
     # Build gather indices.
     comptime paged_stride = kv_dim * num_layers * page_size
-    var h_indices = alloc[Int32](topk)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](topk)
     for i in range(topk):
         var seq_idx = i % batch_size
         var tok_idx = (i * 3 + 7) % tokens_per_seq
@@ -1269,7 +1258,7 @@ def test_wide_gather4_mha_operand[
 
     # Launch kernel.
     var output_elems = topk * tile_width
-    var h_out = alloc[Scalar[dtype]](output_elems)
+    var h_out = ctx.enqueue_create_host_buffer[dtype](output_elems)
     var d_out = ctx.enqueue_create_buffer[dtype](output_elems)
     ctx.enqueue_memset(d_out, 0)
 
@@ -1283,7 +1272,7 @@ def test_wide_gather4_mha_operand[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -1296,7 +1285,7 @@ def test_wide_gather4_mha_operand[
     ctx.synchronize()
 
     _verify_gathered_rows[dtype, tile_width](
-        h_out, blocks_host.ptr, h_indices, topk
+        h_out.unsafe_ptr(), blocks_host.ptr, h_indices.unsafe_ptr(), topk
     )
     print(
         "  PASSED: all",
@@ -1304,8 +1293,6 @@ def test_wide_gather4_mha_operand[
         "wide rows from KVCacheMHAOperand match",
     )
 
-    h_indices.free()
-    h_out.free()
     _ = d_indices
     _ = d_out
     _ = blocks
@@ -1329,8 +1316,8 @@ def test_non_divisible_width[
 
     # Allocate global memory with the actual (non-padded) row width.
     var num_elems = num_tokens * tile_width
-    var h_data = alloc[Scalar[dtype]](num_elems)
-    rand[dtype](h_data, num_elems)
+    var h_data = ctx.enqueue_create_host_buffer[dtype](num_elems)
+    rand(h_data.unsafe_ptr(), num_elems)
 
     var d_data = ctx.enqueue_create_buffer[dtype](num_elems)
     ctx.enqueue_copy(d_data, h_data)
@@ -1364,7 +1351,7 @@ def test_non_divisible_width[
     )
 
     # Build gather indices.
-    var h_indices = alloc[Int32](topk)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](topk)
     for i in range(topk):
         h_indices[i] = Int32((i * 7 + 3) % num_tokens)
 
@@ -1373,7 +1360,7 @@ def test_non_divisible_width[
 
     # Output uses padded_row_width so the kernel writes full column groups.
     var output_elems = topk * padded_row_width
-    var h_out = alloc[Scalar[dtype]](output_elems)
+    var h_out = ctx.enqueue_create_host_buffer[dtype](output_elems)
     var d_out = ctx.enqueue_create_buffer[dtype](output_elems)
     ctx.enqueue_memset(d_out, 0)
 
@@ -1390,7 +1377,7 @@ def test_non_divisible_width[
         type_of(kv_tile).desc_shape,
         swizzle_mode,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kv_tile,
         d_out,
         d_indices,
@@ -1447,9 +1434,6 @@ def test_non_divisible_width[
         "elements)",
     )
 
-    h_data.free()
-    h_out.free()
-    h_indices.free()
     _ = d_data
     _ = d_out
     _ = d_indices
@@ -1539,7 +1523,7 @@ def test_gather4_tile_api[
     randn[dtype](k_full_host.ptr, total_tokens * cols)
 
     # ---- Build bn non-contiguous indices ----
-    var h_indices = alloc[Int32](bn)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](bn)
     for i in range(bn):
         h_indices[i] = Int32((i * 37 + 13) % total_tokens)
 
@@ -1547,7 +1531,7 @@ def test_gather4_tile_api[
     ctx.enqueue_copy(d_indices, h_indices)
 
     # ---- Build reference K_gathered on host ----
-    var k_ref = alloc[Scalar[dtype]](bn * cols)
+    var k_ref = ctx.enqueue_create_host_buffer[dtype](bn * cols)
     for i in range(bn):
         var src_row = Int(h_indices[i])
         for c in range(cols):
@@ -1572,7 +1556,7 @@ def test_gather4_tile_api[
         type_of(g4t_tma).tile_shape,
         type_of(g4t_tma).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         g4t_tma,
         d_indices,
         out_device,
@@ -1586,7 +1570,7 @@ def test_gather4_tile_api[
     ctx.synchronize()
 
     # ---- Verify output matches reference ----
-    var out_host = alloc[Scalar[dtype]](bn * cols)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](bn * cols)
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -1635,9 +1619,6 @@ def test_gather4_tile_api[
     else:
         print("  gather4_tile_bytes correct:", actual_bytes, "bytes")
 
-    out_host.free()
-    h_indices.free()
-    k_ref.free()
     _ = out_device
     _ = d_indices
     _ = k_full^
@@ -1735,7 +1716,7 @@ def test_gather4_tile_api_paged[
     var kv_cache = collection.get_key_cache(0)
 
     # ---- Build gather indices from the paged cache ----
-    var h_indices = alloc[Int32](topk)
+    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](topk)
     for i in range(topk):
         var tok_idx = (i * 37 + 13) % tokens_per_seq
         var page_within_seq = tok_idx // page_size
@@ -1748,7 +1729,7 @@ def test_gather4_tile_api_paged[
     ctx.enqueue_copy(d_indices, h_indices)
 
     # ---- Build reference K_gathered on host ----
-    var k_ref = alloc[Scalar[dtype]](topk * row_width)
+    var k_ref = ctx.enqueue_create_host_buffer[dtype](topk * row_width)
     for i in range(topk):
         var src_row = Int(h_indices[i])
         for c in range(row_width):
@@ -1772,7 +1753,7 @@ def test_gather4_tile_api_paged[
         type_of(g4t_tma).tile_shape,
         type_of(g4t_tma).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         g4t_tma,
         d_indices,
         out_device,
@@ -1786,7 +1767,7 @@ def test_gather4_tile_api_paged[
     ctx.synchronize()
 
     # ---- Verify output matches reference ----
-    var out_host = alloc[Scalar[dtype]](topk * row_width)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](topk * row_width)
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -1822,9 +1803,6 @@ def test_gather4_tile_api_paged[
         print("  gather4_tile_api_paged max_err:", max_err)
         print("  gather4_tile_api_paged PASSED")
 
-    out_host.free()
-    h_indices.free()
-    k_ref.free()
     _ = out_device
     _ = d_indices
     _ = blocks^

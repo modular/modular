@@ -39,7 +39,9 @@ def test(ctx: DeviceContext) raises:
     comptime group_len = 3
 
     # Host allocation
-    var host_group_offsets_ptr = alloc[Scalar[DType.uint32]](group_len + 1)
+    var host_group_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        group_len + 1
+    )
     host_group_offsets_ptr[0] = 0
     host_group_offsets_ptr[1] = 18
     host_group_offsets_ptr[2] = 24
@@ -87,7 +89,7 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function_experimental[test_kernel[False, offset_layout]](
+    ctx.enqueue_function[test_kernel[False, offset_layout]](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),
@@ -126,7 +128,7 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function_experimental[test_kernel[True, offset_layout]](
+    ctx.enqueue_function[test_kernel[True, offset_layout]](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),
@@ -135,7 +137,6 @@ def test(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # Cleanup
-    host_group_offsets_ptr.free()
     _ = dev_group_offsets_buffer^
 
 

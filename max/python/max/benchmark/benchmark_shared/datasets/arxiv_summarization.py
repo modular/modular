@@ -73,12 +73,12 @@ class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
         prompt_suffix = "\n\nSummary:"
 
         # Calculate tokens for prefix and suffix
-        prefix_tokens = tokenizer(
+        prefix_tokens = tokenizer.encode(
             prompt_prefix, add_special_tokens=False
-        ).input_ids
-        suffix_tokens = tokenizer(
+        )
+        suffix_tokens = tokenizer.encode(
             prompt_suffix, add_special_tokens=False
-        ).input_ids
+        )
 
         # Reserve space for prefix and suffix
         max_article_len = input_len - len(prefix_tokens) - len(suffix_tokens)
@@ -96,9 +96,7 @@ class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
             article = item["article"]
 
             # Tokenize the article to check length
-            article_tokens = tokenizer(
-                article, add_special_tokens=False
-            ).input_ids
+            article_tokens = tokenizer.encode(article, add_special_tokens=False)
 
             # Truncate article if necessary
             if len(article_tokens) > max_article_len:
@@ -120,14 +118,14 @@ class ArxivSummarizationBenchmarkDataset(LocalBenchmarkDataset):
             # than the given input_len, if the downloaded paper happens to be a
             # small one.
             prompt_len = len(
-                tokenizer(prompt_formatted, add_special_tokens=False).input_ids
+                tokenizer.encode(prompt_formatted, add_special_tokens=False)
             )
 
             # Tokenize the abtsract to get output length.
             abstract = item["abstract"]
-            abstract_tokens = tokenizer(
+            abstract_tokens = tokenizer.encode(
                 abstract, add_special_tokens=False
-            ).input_ids
+            )
             output_len = len(abstract_tokens)
 
             # Skip outputs that are too large.

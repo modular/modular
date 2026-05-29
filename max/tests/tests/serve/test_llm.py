@@ -27,7 +27,13 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
-from max.interfaces import (
+from max.pipelines.core import TextContext
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    IdentityPipelineTokenizer,
+    PipelineConfig,
+)
+from max.pipelines.modeling.types import (
     GenerationStatus,
     Pipeline,
     PipelinesFactory,
@@ -36,12 +42,6 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
-)
-from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    PIPELINE_REGISTRY,
-    IdentityPipelineTokenizer,
-    PipelineConfig,
 )
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
@@ -322,7 +322,9 @@ async def _run_reasoning_pipeline(
     top_log_probs: AsyncMock | None = None,
 ) -> list[TokenGeneratorOutput]:
     """Build a mock TokenGeneratorPipeline with reasoning and collect all chunks."""
-    from max.pipelines.lib.reasoning import KimiK2_5ReasoningParser
+    from max.pipelines.architectures.kimik2_5.reasoning import (
+        KimiK2_5ReasoningParser,
+    )
     from max.serve.pipelines.llm import TokenGeneratorPipeline
 
     test_request_id = RequestID(value="test-request")
@@ -343,9 +345,11 @@ async def _run_reasoning_pipeline(
     mock_request.sampling_params.stop = stop or []
 
     pipeline = Mock()
-    pipeline.tokenizer.new_context = AsyncMock(
-        return_value=Mock(request_id=test_request_id, tokens=mock_tokens)
-    )
+    mock_context = Mock(request_id=test_request_id, tokens=mock_tokens)
+    # Explicitly set grammar/json_schema to None so getattr doesn't return Mock
+    mock_context.grammar = None
+    mock_context.json_schema = None
+    pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
     pipeline.tokenizer.decode = decode or AsyncMock(return_value="decoded_text")
     pipeline.model_worker.stream = mock_stream
     pipeline.debug_logging = False
@@ -510,3 +514,52 @@ async def test_next_token_chunk_stop_sequence_ignores_reasoning() -> None:
     assert chunks[0].decoded_reasoning_tokens == "STOP"
     assert chunks[0].decoded_tokens is None
     assert chunks[1].decoded_tokens == "hello"
+
+
+@pytest.mark.asyncio
+async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
+    """Status is END_OF_SEQUENCE when a stop sequence matches, even if the
+    model response itself is still ACTIVE."""
+    from max.serve.pipelines.llm import TokenGeneratorPipeline
+
+    test_request_id = RequestID(value="test-request")
+
+    async def mock_stream(
+        request_id: str, context: Any
+    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
+        yield [
+            TextGenerationOutput(
+                request_id=test_request_id,
+                tokens=[10],
+                final_status=GenerationStatus.ACTIVE,
+            )
+        ]
+
+    mock_context = Mock(
+        request_id=test_request_id,
+        tokens=Mock(prompt_length=5, prompt=[99]),
+    )
+    mock_context.eos_tracker.eos_stop_strings = ["stop_word"]
+    mock_context.eos_tracker.is_eos_from_string.return_value = "stop_word"
+
+    pipeline = Mock()
+    pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
+    pipeline.tokenizer.decode = AsyncMock(return_value="stop_word")
+    pipeline.model_worker.stream = mock_stream
+    pipeline.debug_logging = False
+    pipeline._reasoning_parser = AsyncMock(return_value=None)
+
+    mock_request = Mock(
+        request_id=test_request_id,
+        tools=None,
+        sampling_params=Mock(stop=["stop_word"]),
+    )
+
+    with patch("max.serve.pipelines.llm.METRICS", MagicMock()):
+        bound = TokenGeneratorPipeline.next_token_chunk.__get__(
+            pipeline, type(pipeline)
+        )
+        chunks = [chunk async for chunk in bound(mock_request)]
+
+    assert len(chunks) == 1
+    assert chunks[0].status == GenerationStatus.END_OF_SEQUENCE

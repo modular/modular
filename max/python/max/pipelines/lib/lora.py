@@ -39,22 +39,20 @@ from max.graph.quantization import QuantizationEncoding
 from max.graph.type import DeviceRef, Shape, TensorType
 from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
-from max.interfaces import (
+from max.nn.layer.layer import Module, recursive_named_layers
+from max.nn.lora import SupportsLoRA
+from max.pipelines.lib.config.lora_config import LoRAConfig
+from max.pipelines.modeling.types import (
     LoRAStatus,
     LoRAType,
     TextGenerationContextType,
 )
-from max.interfaces.pipeline import (
+from max.pipelines.modeling.types.pipeline import (
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
 )
-from max.nn.layer.layer import Module, recursive_named_layers
-from max.nn.lora import SupportsLoRA
-from max.pipelines.lib.config.lora_config import LoRAConfig
-
-from .hf_utils import HuggingFaceRepo
-from .lora_request_processor import LoRARequestProcessor
+from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 
 logger = logging.getLogger("max.serve")
 
@@ -717,7 +715,6 @@ class LoRAManager:
         n_heads: int,
         n_kv_heads: int,
         head_dim: int,
-        zmq_endpoint_base: str,
     ):
         """Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 
@@ -728,7 +725,6 @@ class LoRAManager:
             n_heads: The number of attention heads in the base model.
             n_kv_heads: The number of key-value heads in the base model.
             head_dim: The dimension of each attention head.
-            zmq_endpoint_base: The ZMQ endpoint base used to construct ZMQ lora request and response endpoints.
         """
         self.base_model_path = base_model_path
         self.base_dtype = base_dtype
@@ -743,16 +739,10 @@ class LoRAManager:
             max_size=self.max_num_loras
         )
 
-        self._request_processor = LoRARequestProcessor(self, zmq_endpoint_base)
-
         if config.lora_paths:
             self._load_adapters(config.lora_paths)
 
         self._alias_buffers: dict[str, DLPackArray] = {}
-
-    def process_lora_requests(self) -> None:
-        """Checks for new LoRA requests and processes them."""
-        self._request_processor.process_lora_requests()
 
     @property
     def loras(self) -> list[str]:

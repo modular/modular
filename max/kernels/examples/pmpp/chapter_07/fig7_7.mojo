@@ -104,7 +104,7 @@ def convolution_2d_basic(
     var grid_dim_y = ceildiv(height, BLOCK_DIM)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[convolution_2D_basic_kernel](
+    ctx.enqueue_function[convolution_2D_basic_kernel](
         d_in,
         d_filter,
         d_out,

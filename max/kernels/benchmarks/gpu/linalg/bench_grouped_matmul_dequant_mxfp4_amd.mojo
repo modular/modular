@@ -131,8 +131,12 @@ def bench_mxfp4_grouped_matmul[
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
 
     # Setup offsets and expert ids on host, copy to device
-    var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host = List(
+        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    )
+    var expert_ids_host = List(
+        length=num_active_experts, fill=Scalar[DType.int32](0)
+    )
     a_offsets_host[0] = UInt32(0)
     for i in range(num_active_experts):
         a_offsets_host[i + 1] = a_offsets_host[i] + UInt32(
@@ -144,7 +148,7 @@ def bench_mxfp4_grouped_matmul[
     ctx.synchronize()
 
     # Build TileTensors
-    var a_tt = TileTensor(a_device, row_major((Idx(total_tokens), Idx[K]())))
+    var a_tt = TileTensor(a_device, row_major((total_tokens, Idx[K])))
     var b_packed_tt = TileTensor(
         b_packed_device, row_major[num_experts, N, packed_K]()
     )
@@ -153,13 +157,13 @@ def bench_mxfp4_grouped_matmul[
     )
     var a_offsets_tt = TileTensor(
         a_offsets_device,
-        row_major(Coord(Idx(num_active_experts + 1))),
+        row_major(Coord(num_active_experts + 1)),
     )
     var expert_ids_tt = TileTensor(
         expert_ids_device,
-        row_major(Coord(Idx(num_active_experts))),
+        row_major(Coord(num_active_experts)),
     )
-    var c_tt = TileTensor(c_device, row_major((Idx(total_tokens), Idx[N]())))
+    var c_tt = TileTensor(c_device, row_major((total_tokens, Idx[N])))
 
     @__copy_capture(
         c_tt,
@@ -248,17 +252,15 @@ def bench_mxfp4_grouped_matmul[
                 b_scales_device.unsafe_ptr() + expert_id * N * scale_K,
                 row_major[N, scale_K](),
             )
-            var b_fp8_tt = TileTensor(b_fp8, row_major((Idx[N](), Idx[K]())))
+            var b_fp8_tt = TileTensor(b_fp8, row_major((Idx[N], Idx[K])))
             dequant_mxfp4(ctx, b_fp8_tt, bp_tt, bs_tt, num_rows=N, num_cols=K)
 
             var a_fp8 = ctx.enqueue_create_buffer[fp8_type](num_tokens * K)
             var a_slice_tt = TileTensor(
                 a_device.unsafe_ptr() + token_start * K,
-                row_major((Idx(num_tokens), Idx[K]())),
+                row_major((num_tokens, Idx[K])),
             )
-            var a_fp8_tt = TileTensor(
-                a_fp8, row_major((Idx(num_tokens), Idx[K]()))
-            )
+            var a_fp8_tt = TileTensor(a_fp8, row_major((num_tokens, Idx[K])))
             _cast_bf16_to_fp8(ctx, a_fp8_tt, a_slice_tt, num_tokens, K)
             ctx.synchronize()
 
@@ -266,7 +268,7 @@ def bench_mxfp4_grouped_matmul[
                 num_tokens * N
             )
             var c_expert_tt = TileTensor(
-                c_expert, row_major((Idx(num_tokens), Idx[N]()))
+                c_expert, row_major((num_tokens, Idx[N]))
             )
             vendor_blas.matmul(
                 ctx,
@@ -330,14 +332,14 @@ def bench_mxfp4_grouped_matmul[
 
         _ = c_ref_device^
 
-    a_offsets_host.free()
-    expert_ids_host.free()
     _ = a_device^
     _ = b_packed_device^
     _ = b_scales_device^
     _ = a_offsets_device^
     _ = expert_ids_device^
     _ = c_device^
+    _ = expert_ids_host^
+    _ = a_offsets_host^
 
 
 def bench_dequant_all_experts[
@@ -385,7 +387,7 @@ def bench_dequant_all_experts[
             )
             var fp8_tt = TileTensor(
                 b_fp8_dev.unsafe_ptr() + e * N * K,
-                row_major((Idx[N](), Idx[K]())),
+                row_major((Idx[N], Idx[K])),
             )
             dequant_mxfp4(ctx, fp8_tt, bp_tt, bs_tt, num_rows=N, num_cols=K)
 

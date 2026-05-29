@@ -178,7 +178,7 @@ def grouped_matmul_sm90[
         type_of(expert_ids).LayoutType,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

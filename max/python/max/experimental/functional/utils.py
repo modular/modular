@@ -21,7 +21,7 @@ sibling modules (``collective_ops``, ``spmd_ops``, ``creation_ops``).
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 
 from max.driver import Accelerator, Buffer
 from max.experimental import realization_context as rc
@@ -34,7 +34,8 @@ from max.experimental.sharding import (
     TensorLayout,
 )
 from max.experimental.tensor import Tensor
-from max.graph import BufferValue, Graph, TensorValue
+from max.graph import BufferValue, Graph, TensorValue, ops
+from max.graph.dim import StaticDim
 
 # ═════════════════════════════════════════════════════════════════════════
 #  Graph context + realization context
@@ -42,7 +43,7 @@ from max.graph import BufferValue, Graph, TensorValue
 
 
 def in_graph_context() -> bool:
-    """Return True when executing inside a ``Graph.current`` context."""
+    """Return ``True`` when executing inside a ``Graph.current`` context."""
     try:
         _ = Graph.current
     except LookupError:
@@ -53,21 +54,26 @@ def in_graph_context() -> bool:
 
 @contextlib.contextmanager
 def ensure_context() -> Generator[None]:
-    """Ensure a realization context exists for Tensor <-> TensorValue conversion.
+    """Ensures a realization context is active for the duration of the block.
 
-    Three execution contexts are supported:
+    A realization context controls how operations on
+    :class:`~max.experimental.tensor.Tensor` lower to
+    :class:`~max.graph.TensorValue` graph ops and whether the resulting
+    graph is executed. Three execution contexts are supported:
 
-    * **Eager** (``EagerRealizationContext``) — created automatically when no
-      context is active and we are *not* inside a ``Graph``.  On exit,
-      ``realize_all()`` is called so that all symbolic graph ops executed
-      within the block are compiled and realized into concrete tensors.
-    * **Lazy** (``LazyRealizationContext``) — set externally via
-      ``with lazy():``.  When already active this function re-uses it;
+    * ``EagerRealizationContext``: created automatically when
+      no context is active and execution is not inside a
+      :class:`~max.graph.Graph`. On exit, ``realize_all()`` is called so
+      that every symbolic graph op executed within the block is compiled
+      and realized into a concrete tensor.
+    * ``LazyRealizationContext``: set externally via
+      ``with lazy():``. When already active this function reuses it;
       tensors remain unrealized until explicitly awaited.
-    * **Graph** (``GraphRealizationContext``) — created automatically when
-      we are inside a ``Graph.current`` context.  Tensors stay symbolic.
+    * ``GraphRealizationContext``: created automatically
+      when execution is inside a :class:`~max.graph.Graph` context.
+      Tensors stay symbolic.
 
-    If a context of *any* kind already exists, it is re-used as-is.
+    If a context of any kind is already active, it is reused as-is.
     """
     if tensor.current_realization_context(None) is not None:
         yield
@@ -153,9 +159,35 @@ def _mesh_axis_groups(mesh: DeviceMesh, mesh_axis: int) -> list[list[int]]:
 
 
 def _even_split_sizes(dim: int, n: int) -> list[int]:
-    """Split *dim* into *n* sizes that differ by at most 1."""
+    """Splits *dim* into *n* sizes that differ by at most 1."""
     base, rem = divmod(dim, n)
     return [base + (1 if i < rem else 0) for i in range(n)]
+
+
+def _even_split_along_axis(
+    sv: TensorValue, axis: int, n: int
+) -> list[TensorValue]:
+    """Splits ``sv`` into ``n`` equal chunks along ``axis``.
+
+    Static dims route through :func:`ops.split`; symbolic dims use per-rank
+    :func:`ops.slice_tensor` with ``Dim`` arithmetic bounds. Eager execution
+    cannot use the ``slice_tensor`` path on a static shape (asserts inside
+    the runtime), hence the branch.
+    """
+    dim = sv.shape[axis]
+    if isinstance(dim, StaticDim):
+        return list(ops.split(sv, _even_split_sizes(int(dim), n), axis=axis))
+
+    base = dim // n
+    rank_ndim = len(sv.shape)
+    chunks: list[TensorValue] = []
+    for i in range(n):
+        start_tv = ops.shape_to_tensor([i * base])
+        stop_tv = ops.shape_to_tensor([(i + 1) * base])
+        indices: list[object] = [slice(None)] * rank_ndim
+        indices[axis] = (slice(start_tv, stop_tv, 1), base)
+        chunks.append(ops.slice_tensor(sv, indices))  # type: ignore[arg-type]
+    return chunks
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -210,7 +242,7 @@ def map_tensors(
     return tuple(_walk(a) for a in args)
 
 
-def any_distributed(args: tuple[object, ...]) -> bool:
+def any_distributed(args: Iterable[object]) -> bool:
     """True if any :class:`Tensor` in *args* is distributed (multi-device).
 
     Checks top-level args and one level of list/tuple nesting.
@@ -223,6 +255,19 @@ def any_distributed(args: tuple[object, ...]) -> bool:
                 if isinstance(item, Tensor) and item.is_distributed:
                     return True
     return False
+
+
+def collect_tensors(args: tuple[object, ...]) -> list[Tensor]:
+    """Collects every :class:`Tensor` reachable from *args* (one level of nesting)."""
+    out: list[Tensor] = []
+    for a in args:
+        if isinstance(a, Tensor):
+            out.append(a)
+        elif isinstance(a, (list, tuple)):
+            for item in a:
+                if isinstance(item, Tensor):
+                    out.append(item)
+    return out
 
 
 def is_sharded_on(t: Tensor, tensor_axis: int, exclude_mesh_axis: int) -> bool:
@@ -242,15 +287,16 @@ def is_sharded_on(t: Tensor, tensor_axis: int, exclude_mesh_axis: int) -> bool:
 
 @contextlib.contextmanager
 def lazy() -> Generator[None]:
-    """Context manager for lazy (deferred) tensor evaluation.
+    """Defers tensor realization for the duration of the ``with`` block.
 
-    Within this context, tensor operations are recorded but not executed.
-    Tensors remain unrealized until explicitly awaited via
+    Tensor operations executed within this context are recorded but not
+    run. Tensors remain unrealized until explicitly awaited via
     ``await tensor.realize`` or until their values are needed.
 
-    Example::
+    .. code-block:: python
 
         from max.experimental import functional as F
+
         with F.lazy():
             a = Tensor.zeros([5, 5])
             b = a + 1

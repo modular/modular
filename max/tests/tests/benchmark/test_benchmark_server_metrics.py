@@ -14,14 +14,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
-    BenchmarkMetrics,
+    RatePercentileMetrics,
+    ServingBenchmarkMetrics,
+    SpecDecodeMetrics,
+    SpecDecodeStats,
     StandardPercentileMetrics,
+    TextGenAggregates,
     ThroughputMetrics,
+    calculate_spec_decode_stats,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
     HistogramData,
@@ -33,6 +38,7 @@ from max.benchmark.benchmark_shared.server_metrics import (
     fetch_and_parse_metrics,
     get_metrics_url,
     parse_metrics,
+    parse_spec_decode_metrics,
     print_server_metrics,
 )
 
@@ -70,30 +76,37 @@ maxserve_batch_execution_time_milliseconds_count{batch_type="TG"} 100.0
 
 def _make_metrics(
     metrics_by_endpoint: dict[str, ParsedMetrics],
-) -> BenchmarkMetrics:
-    """Minimal BenchmarkMetrics carrying only the fields under test."""
-    return BenchmarkMetrics(
-        duration=10.0,
-        completed=100,
-        failures=0,
-        total_input=1000,
-        total_output=500,
-        nonempty_response_chunks=500,
+) -> ServingBenchmarkMetrics:
+    """Minimal text-gen ServingBenchmarkMetrics carrying only the fields under test."""
+    return ServingBenchmarkMetrics(
+        task_type="text",
         max_concurrency=10,
-        request_throughput=10.0,
-        input_throughput=ThroughputMetrics([1.0]),
-        output_throughput=ThroughputMetrics([1.0]),
-        ttft_ms=StandardPercentileMetrics([0.1]),
-        tpot_ms=StandardPercentileMetrics([0.01]),
-        itl_ms=StandardPercentileMetrics([0.01]),
-        latency_ms=StandardPercentileMetrics([1.0]),
-        max_input=100,
-        max_output=50,
-        max_total=150,
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
         gpu_utilization=[],
         metrics_by_endpoint=metrics_by_endpoint,
+        text_data=TextGenAggregates(
+            duration=10.0,
+            completed=100,
+            failures=0,
+            request_throughput=10.0,
+            latency_ms=StandardPercentileMetrics([1.0]),
+            total_input=1000,
+            total_output=500,
+            nonempty_response_chunks=500,
+            input_throughput=ThroughputMetrics([1.0]),
+            output_throughput=ThroughputMetrics([1.0]),
+            ttft_ms=StandardPercentileMetrics([0.1]),
+            tpot_ms=StandardPercentileMetrics([0.01]),
+            itl_ms=StandardPercentileMetrics([0.01]),
+            max_input=100,
+            max_output=50,
+            max_total=150,
+            global_cached_token_rate=0.35,
+            per_turn_cached_token_rate=RatePercentileMetrics(
+                [0.35], as_percent=True
+            ),
+        ),
     )
 
 
@@ -541,7 +554,7 @@ def test_batch_histograms_found_on_non_first_endpoint() -> None:
 
 
 class TestMetricsResultOutput:
-    """E2E: Prometheus response -> collect_benchmark_metrics -> _add_optional_result JSON."""
+    """E2E: Prometheus response -> collect_benchmark_metrics -> to_result_dict JSON."""
 
     @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
     def test_single_endpoint_emits_both_keys_with_matching_content(
@@ -550,19 +563,19 @@ class TestMetricsResultOutput:
         """Auto-derive (urls={}) produces one endpoint labeled `server`.
         Both `server_metrics` and `server_metrics_by_endpoint.server` appear
         in the output JSON and carry the same counter/gauge/histogram data."""
-        from max.benchmark.benchmark_serving import _add_optional_result
-
         mock_fetch.return_value = sample_metrics
         final = collect_benchmark_metrics(
             urls={}, backend="vllm", base_url="http://10.0.0.1:8000"
         )
-        result: dict[str, Any] = {}
-        _add_optional_result(result, _make_metrics(final), lora_manager=None)
+        result = _make_metrics(final).to_result_dict()
 
         sm = result["server_metrics"]
         by_ep = result["server_metrics_by_endpoint"]
+        assert isinstance(sm, dict)
+        assert isinstance(by_ep, dict)
         assert set(by_ep.keys()) == {"server"}
 
+        assert isinstance(by_ep["server"], dict)
         assert sm["counters"] == by_ep["server"]["counters"]
         assert sm["histograms"] == by_ep["server"]["histograms"]
         assert set(sm.keys()) >= {
@@ -577,8 +590,6 @@ class TestMetricsResultOutput:
         """Orchestrator and engine expose different metric families.
         Output must attribute each to its label, and `server_metrics` must
         mirror the FIRST endpoint (orchestrator), not the engine."""
-        from max.benchmark.benchmark_serving import _add_optional_result
-
         orch_prom = (
             "# TYPE orchestrator_requests counter\norchestrator_requests 42.0\n"
         )
@@ -600,11 +611,13 @@ class TestMetricsResultOutput:
             backend="vllm",
             base_url="http://10.0.0.1:8000",
         )
-        result: dict[str, Any] = {}
-        _add_optional_result(result, _make_metrics(final), lora_manager=None)
+        result = _make_metrics(final).to_result_dict()
 
         by_ep = result["server_metrics_by_endpoint"]
+        assert isinstance(by_ep, dict)
         assert set(by_ep.keys()) == {"orch", "engine-0"}
+        assert isinstance(by_ep["orch"], dict)
+        assert isinstance(by_ep["engine-0"], dict)
         assert by_ep["orch"]["counters"] == {"orchestrator_requests": 42.0}
         assert by_ep["engine-0"]["counters"] == {
             "engine_generation_tokens": 1000.0
@@ -613,5 +626,217 @@ class TestMetricsResultOutput:
         # server_metrics mirrors the FIRST inserted endpoint (orch), which is
         # how existing BigQuery/analysis consumers keep working.
         sm = result["server_metrics"]
+        assert isinstance(sm, dict)
         assert sm["counters"] == by_ep["orch"]["counters"]
         assert sm["counters"] != by_ep["engine-0"]["counters"]
+
+
+# ---------------------------------------------------------------------------
+# Spec decode metrics parsing and statistics
+# ---------------------------------------------------------------------------
+
+
+def test_parse_spec_decode_metrics_matches_vllm_format() -> None:
+    """Spec decode counters are parsed from vLLM Prometheus text."""
+    metrics_text = """# HELP vllm:spec_decode_num_drafts Number of spec decoding drafts.
+# TYPE vllm:spec_decode_num_drafts counter
+vllm:spec_decode_num_drafts 12
+# HELP vllm:spec_decode_num_draft_tokens Number of draft tokens.
+# TYPE vllm:spec_decode_num_draft_tokens counter
+vllm:spec_decode_num_draft_tokens 40
+# HELP vllm:spec_decode_num_accepted_tokens Number of accepted tokens.
+# TYPE vllm:spec_decode_num_accepted_tokens counter
+vllm:spec_decode_num_accepted_tokens 21
+# HELP vllm:spec_decode_num_accepted_tokens_per_pos Accepted tokens per position.
+# TYPE vllm:spec_decode_num_accepted_tokens_per_pos counter
+vllm:spec_decode_num_accepted_tokens_per_pos{position="0"} 12
+vllm:spec_decode_num_accepted_tokens_per_pos{position="1"} 7
+vllm:spec_decode_num_accepted_tokens_per_pos{position="2"} 2
+"""
+
+    parsed = parse_spec_decode_metrics(metrics_text)
+
+    assert parsed is not None
+    assert parsed.num_drafts == 12
+    assert parsed.num_draft_tokens == 40
+    assert parsed.num_accepted_tokens == 21
+    assert parsed.accepted_per_pos == {0: 12, 1: 7, 2: 2}
+
+
+def test_parse_spec_decode_metrics_returns_none_when_absent() -> None:
+    """Metrics parsing returns None when no spec decode counters exist."""
+    parsed = parse_spec_decode_metrics(
+        "# HELP requests Total requests\n# TYPE requests counter\nrequests 10\n"
+    )
+
+    assert parsed is None
+
+
+def test_parse_spec_decode_metrics_handles_maxserve_histogram() -> None:
+    """MAX Serve's per-position acceptance histogram is parsed into running sums/counts."""
+    metrics_text = """# HELP maxserve_spec_decode_acceptance_rate_per_position Per-position acceptance.
+# TYPE maxserve_spec_decode_acceptance_rate_per_position histogram
+maxserve_spec_decode_acceptance_rate_per_position_sum{position="0"} 8400.0
+maxserve_spec_decode_acceptance_rate_per_position_count{position="0"} 100
+maxserve_spec_decode_acceptance_rate_per_position_sum{position="1"} 5000.0
+maxserve_spec_decode_acceptance_rate_per_position_count{position="1"} 100
+"""
+
+    parsed = parse_spec_decode_metrics(metrics_text)
+
+    assert parsed is not None
+    assert parsed.num_drafts == 0
+    assert parsed.num_draft_tokens == 0
+    assert parsed.per_pos_rate_sum == {0: 8400.0, 1: 5000.0}
+    assert parsed.per_pos_rate_count == {0: 100, 1: 100}
+
+
+def test_parse_spec_decode_metrics_handles_maxserve_avg_acceptance_length() -> (
+    None
+):
+    """MAX Serve's avg acceptance length histogram is parsed for bench deltas."""
+    metrics_text = """# HELP maxserve_spec_decode_avg_acceptance_length Avg len.
+# TYPE maxserve_spec_decode_avg_acceptance_length histogram
+maxserve_spec_decode_avg_acceptance_length_sum 25.0
+maxserve_spec_decode_avg_acceptance_length_count 5
+"""
+
+    parsed = parse_spec_decode_metrics(metrics_text)
+
+    assert parsed is not None
+    assert parsed.avg_acceptance_length_sum == 25.0
+    assert parsed.avg_acceptance_length_count == 5.0
+
+
+def test_calculate_spec_decode_stats_from_maxserve_avg_length_histogram_only() -> (
+    None
+):
+    """Acceptance length is derived from the avg-acceptance-length histogram delta."""
+    before = SpecDecodeMetrics(
+        avg_acceptance_length_sum=10.0, avg_acceptance_length_count=2.0
+    )
+    after = SpecDecodeMetrics(
+        avg_acceptance_length_sum=30.0, avg_acceptance_length_count=5.0
+    )
+
+    stats = calculate_spec_decode_stats(before, after)
+
+    assert stats is not None
+    assert stats.acceptance_rate is None
+    assert stats.acceptance_length == pytest.approx((30.0 - 10.0) / (5.0 - 2.0))
+
+
+def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
+    """Acceptance math uses benchmark-window deltas like vLLM bench serve."""
+    before = SpecDecodeMetrics(
+        num_drafts=100,
+        num_draft_tokens=320,
+        num_accepted_tokens=150,
+        accepted_per_pos={0: 100, 1: 40, 2: 10},
+    )
+    after = SpecDecodeMetrics(
+        num_drafts=112,
+        num_draft_tokens=356,
+        num_accepted_tokens=174,
+        accepted_per_pos={0: 112, 1: 48, 2: 14},
+    )
+
+    stats = calculate_spec_decode_stats(before, after)
+
+    assert stats is not None
+    assert stats.num_drafts == 12
+    assert stats.draft_tokens == 36
+    assert stats.accepted_tokens == 24
+    assert stats.acceptance_rate == pytest.approx((24 / 36) * 100)
+    assert stats.acceptance_length == pytest.approx(1 + 24 / 12)
+    assert stats.per_position_acceptance_rates == pytest.approx(
+        [12 / 12, 8 / 12, 4 / 12]
+    )
+
+
+def test_calculate_spec_decode_stats_from_maxserve_histogram_only() -> None:
+    """Without aggregate counters, per-position rates surface from histogram deltas."""
+    before = SpecDecodeMetrics(
+        per_pos_rate_sum={0: 8000.0, 1: 4000.0},
+        per_pos_rate_count={0: 100, 1: 100},
+    )
+    after = SpecDecodeMetrics(
+        per_pos_rate_sum={0: 16800.0, 1: 9000.0},
+        per_pos_rate_count={0: 200, 1: 200},
+    )
+
+    stats = calculate_spec_decode_stats(before, after)
+
+    assert stats is not None
+    # Window per-position acceptance: (8800/100)% / 100 = 0.88; (5000/100)% / 100 = 0.50
+    assert stats.per_position_acceptance_rates == pytest.approx([0.88, 0.50])
+    assert stats.num_drafts is None
+    assert stats.draft_tokens is None
+    assert stats.accepted_tokens is None
+    assert stats.acceptance_rate == pytest.approx(69.0)
+    assert stats.acceptance_length is None
+
+
+def test_spec_decode_stats_to_result_dict_uses_vllm_json_keys() -> None:
+    """Spec decode stats are serialized under vLLM-compatible keys."""
+    stats = SpecDecodeStats(
+        num_drafts=5,
+        draft_tokens=18,
+        accepted_tokens=9,
+        acceptance_rate=50.0,
+        acceptance_length=2.8,
+        per_position_acceptance_rates=[1.0, 0.6, 0.2],
+    )
+
+    assert stats.to_result_dict() == {
+        "spec_decode_acceptance_rate": 50.0,
+        "spec_decode_acceptance_length": 2.8,
+        "spec_decode_num_drafts": 5,
+        "spec_decode_draft_tokens": 18,
+        "spec_decode_accepted_tokens": 9,
+        "spec_decode_per_position_acceptance_rates": [1.0, 0.6, 0.2],
+    }
+
+
+def test_spec_decode_stats_to_result_dict_omits_missing_aggregates() -> None:
+    """JSON result only includes fields the backend actually exposed."""
+    stats = SpecDecodeStats(per_position_acceptance_rates=[0.88, 0.50])
+
+    assert stats.to_result_dict() == {
+        "spec_decode_per_position_acceptance_rates": [0.88, 0.50],
+    }
+
+
+def test_spec_decode_metrics_iadd() -> None:
+    """SpecDecodeMetrics.__iadd__ merges all fields by summation."""
+    a = SpecDecodeMetrics(
+        num_drafts=10,
+        num_draft_tokens=30,
+        num_accepted_tokens=20,
+        accepted_per_pos={0: 10, 1: 7},
+        per_pos_rate_sum={0: 800.0, 1: 500.0},
+        per_pos_rate_count={0: 10, 1: 10},
+        avg_acceptance_length_sum=5.0,
+        avg_acceptance_length_count=2.0,
+    )
+    b = SpecDecodeMetrics(
+        num_drafts=5,
+        num_draft_tokens=15,
+        num_accepted_tokens=11,
+        accepted_per_pos={0: 5, 2: 3},
+        per_pos_rate_sum={0: 400.0, 2: 300.0},
+        per_pos_rate_count={0: 5, 2: 5},
+        avg_acceptance_length_sum=3.0,
+        avg_acceptance_length_count=1.0,
+    )
+
+    a += b
+
+    assert a.num_drafts == 15
+    assert a.num_draft_tokens == 45
+    assert a.num_accepted_tokens == 31
+    assert a.accepted_per_pos == {0: 15, 1: 7, 2: 3}
+    assert a.per_pos_rate_sum == {0: 1200.0, 1: 500.0, 2: 300.0}
+    assert a.per_pos_rate_count == {0: 15, 1: 10, 2: 5}
+    assert a.avg_acceptance_length_sum == pytest.approx(8.0)
+    assert a.avg_acceptance_length_count == pytest.approx(3.0)

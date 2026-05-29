@@ -6,17 +6,28 @@ sidebar_label: Quickstart
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
+import Tooltip from '@site/src/components/Tooltip/tooltip';
+
+export const tooltipNightly = (<Tooltip
+  parent="nightly build"
+  content="To get the stable build, change the version in the website header."
+/>);
+export const tooltipStable = (<Tooltip
+  parent="stable build"
+  content="To get the nightly build, change the version in the website header."
+/>);
 
 This page quickly teaches you Mojo's syntax by focusing on code.
 
 For more explanation of the language features, see the [Mojo get
-started tutorial](/mojo/manual/get-started) or [Mojo language
-basics](/mojo/manual/basics).
+started tutorial](/docs/manual/get-started) or [Mojo language
+basics](/docs/manual/basics).
 
 :::note System requirements
 
 You can use Mac, Linux, or Windows with WSL. For details, see the
-[system requirements](/mojo/requirements).
+[system requirements](/docs/requirements/).
 
 :::
 
@@ -25,9 +36,12 @@ You can use Mac, Linux, or Windows with WSL. For details, see the
 You can install Mojo using any Python or Conda package manager,
 but we recommend either `pixi` or `uv`.
 
-<Tabs groupId="install">
+<ConditionalVersionDocs version="nightly">
 
-<TabItem value="uv" label="uv" default>
+Use the following command to install the {tooltipNightly}:
+
+<Tabs groupId="install">
+<TabItem value="uv" label="uv">
 
 1. If needed, install `uv`:
 
@@ -40,8 +54,8 @@ but we recommend either `pixi` or `uv`.
     ```bash
     uv init temperature-analyzer && cd temperature-analyzer
     uv venv && source .venv/bin/activate
-    uv pip install mojo --extra-index-url https://modular.gateway.scarf.sh/simple/
-    ```
+    uv add mojo  --index https://whl.modular.com/nightly/simple/ \
+      --prerelease allow    ```
 
 </TabItem>
 
@@ -63,35 +77,38 @@ but we recommend either `pixi` or `uv`.
     ```
 
 </TabItem>
-
 </Tabs>
 
-## Try Mojo agent skills
+</ConditionalVersionDocs>
 
-Mojo is an AI-first programming language. If you're using an AI
-coding assistant, you don't have to rely on whatever it
-remembers about Mojo.
+<ConditionalVersionDocs version="stable">
 
-[Mojo agent skills](/mojo/tools/skills) give your AI tool
-up-to-date guidance about the language. They're maintained
-alongside Mojo and updated as it evolves, so your agent isn't
-limited by when the model was trained. This helps it generate
-code that compiles, follows current patterns, and matches how
-Mojo works today.
+Use the following command to install the {tooltipStable}:
 
-```bash
-npx skills add modular/skills
-```
+<Tabs groupId="install">
+<TabItem value="uv" label="uv">
 
-Two skills are especially useful when you're getting started:
+    ```sh
+    uv init temperature-analyzer && cd temperature-analyzer
+    uv venv && source .venv/bin/activate
+    uv add mojo
+    ```
 
-- **Project setup** (`new-modular-project`): helps create and structure new Mojo
-  projects without manual setup
-- **Mojo syntax** (`mojo-syntax`): keeps generated code aligned with the
-  current language, even as it evolves
+</TabItem>
+<TabItem value="pixi" label="pixi">
 
-You describe what you want to build. The skills keep the code
-accurate and up to date.
+    ```sh
+    pixi init temperature-analyzer \
+    -c https://conda.modular.com/max/  -c conda-forge
+    cd temperature-analyzer
+    pixi add mojo
+    pixi shell
+    ```
+
+</TabItem>
+</Tabs>
+
+</ConditionalVersionDocs>
 
 ## Hello Mojo
 
@@ -138,12 +155,15 @@ def main():
     # ... existing code ...
 
     for index in range(len(temps)):  # The range is [0, len(temps))
-        print("  Day {}: {}°C".format(index + 1, temps[index]))
+        print(t"  Day {index + 1}: {temps[index]}°C")
 ```
 
 Insights:
 
 - The day is offset by 1 because the range uses zero-based indexing.
+- The `t"..."` prefix creates a *template string*: braces `{}` interpolate
+  expressions directly into the output. This is useful because it avoids
+  memory allocations for the intermediate values.
 
 ## Functions
 
@@ -164,7 +184,7 @@ Add to the end of `main()` to call the function:
 
 ```mojo
     var avg = calculate_average(temps)
-    print("Average: {}°C".format(avg))
+    print(t"Average: {avg}°C")
 ```
 
 ## Conditionals
@@ -209,7 +229,7 @@ In `main()`, wrap your code in `try-except` for error handling:
 ```mojo
     try:
         var avg = calculate_average(temps)
-        print("Average: {}°C".format(avg))
+        print(t"Average: {avg}°C")
 
         if avg > 25.0:
             print("Status: Hot week")
@@ -292,11 +312,11 @@ def main():
     print("Recorded", len(temps), "temperatures")
 
     for index in range(len(temps)):
-        print("  Day {}: {}°C".format(index + 1, temps[index]))
+        print(t"  Day {index + 1}: {temps[index]}°C")
 
     try:
         var avg = calculate_average(temps)
-        print("Average: {}°C".format(avg))
+        print(t"Average: {avg}°C")
 
         if avg > 25.0:
             print("Status: Hot week")
@@ -318,8 +338,21 @@ def main():
 Mojo variables, lists, loops, functions, conditionals, error handling, and
 Python integration, all in one working program.
 
-**Build something bigger:** [Tutorial: Game of Life](/mojo/manual/get-started)
-**Language guide:** [Mojo Manual](/mojo/manual)
-**API docs:** [Standard Library](/mojo/lib)
+## Use Mojo with AI coding assistants
 
-Read about [learning Mojo with AI Agent skills](/mojo/manual/tools/skills).
+If you use AI coding assistants, the `mojo-syntax` skill keeps you aligned
+with the latest nightly language releases. Stay up to date with Mojo's
+rapid development:
+
+```bash
+npx skills add modular/skills
+```
+
+This installs all four [Mojo agent skills](/docs/tools/skills), including
+`mojo-syntax`.
+
+## Keep going
+
+**Build something bigger:** [Tutorial: Game of Life](/docs/manual/get-started)
+**Language guide:** [Mojo Manual](/docs/manual)
+**API docs:** [Standard Library](/docs/std)

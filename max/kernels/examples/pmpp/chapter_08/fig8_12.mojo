@@ -260,7 +260,7 @@ def main() raises:
     print()
 
     # Launch kernel
-    ctx.enqueue_function_experimental[stencil_kernel](
+    ctx.enqueue_function[stencil_kernel](
         d_in,
         d_out,
         d_c,

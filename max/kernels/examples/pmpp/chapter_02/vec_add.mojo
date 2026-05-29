@@ -72,7 +72,7 @@ def vec_add(
     var grid_dim = ceildiv(n, block_dim)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[vec_add_kernel](
+    ctx.enqueue_function[vec_add_kernel](
         a_d,
         b_d,
         c_d,

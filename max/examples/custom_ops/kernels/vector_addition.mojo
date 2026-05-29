@@ -13,11 +13,12 @@
 
 # DOC: max/develop/build-custom-ops.mdx
 
+from std.gpu.host import DeviceContext
 from std.math import ceildiv
 
 from std.gpu import block_dim, block_idx, thread_idx
-from std.runtime.asyncrt import DeviceContextPtr
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+
+from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils.index import IndexList
 
@@ -26,7 +27,7 @@ def _vector_addition_cpu(
     output: ManagedTensorSlice[mut=True, ...],
     lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ):
     # Warning: This is an extremely inefficient implementation! It's merely an
     # instructional example of how a dedicated CPU-only path can be specified
@@ -42,13 +43,13 @@ def _vector_addition_gpu(
     output: ManagedTensorSlice[mut=True, ...],
     lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     # Note: The following has not been tuned for any GPU hardware, and is an
     # instructional example for how a simple GPU function can be constructed
     # and dispatched.
     comptime BLOCK_SIZE = 16
-    var gpu_ctx = ctx.get_device_context()
+    var gpu_ctx = ctx
     var vector_length = output.dim_size(0)
 
     # The function that will be launched and distributed across GPU threads.
@@ -66,7 +67,7 @@ def _vector_addition_gpu(
 
     # The GPU function is compiled and enqueued to run on the GPU across the
     # 1-D vector, split into blocks of `BLOCK_SIZE` width.
-    gpu_ctx.enqueue_function_experimental[vector_addition_gpu_kernel](
+    gpu_ctx.enqueue_function[vector_addition_gpu_kernel](
         vector_length, grid_dim=num_blocks, block_dim=BLOCK_SIZE
     )
 
@@ -82,7 +83,7 @@ struct VectorAddition:
         lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         # For a simple elementwise operation like this, the `foreach` function
         # does much more rigorous hardware-specific tuning. We recommend using

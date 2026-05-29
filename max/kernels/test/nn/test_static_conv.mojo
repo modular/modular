@@ -70,15 +70,15 @@ def test[
         num_groups=num_groups,
     )
 
-    var input_ptr = alloc[Scalar[type]](N * H * W * C)
-    var filter_ptr = alloc[Scalar[type]](R * S * C * F)
+    var input_ptr = List(length=N * H * W * C, fill=Scalar[type](0))
+    var filter_ptr = List(length=R * S * C * F, fill=Scalar[type](0))
 
     # output from conv w/ dynamic and static shapes.
-    var output_ptr_static = alloc[Scalar[type]](N * HO * WO * F)
-    var output_ptr_dynamic = alloc[Scalar[type]](N * HO * WO * F)
+    var output_ptr_static = List(length=N * HO * WO * F, fill=Scalar[type](0))
+    var output_ptr_dynamic = List(length=N * HO * WO * F, fill=Scalar[type](0))
 
-    rand[type](input_ptr, N * H * W * C)
-    rand[type](filter_ptr, R * S * C * F)
+    rand(input_ptr)
+    rand(filter_ptr)
 
     comptime layout_4d = Layout.row_major[4]()
     comptime layout_5d = Layout.row_major[5]()
@@ -100,8 +100,8 @@ def test[
     var rounded_F_dynamic = (
         ceildiv(F, micro_kernel_f_size_default) * micro_kernel_f_size_default
     )
-    var packed_filter_ptr_dynamic = alloc[Scalar[type]](
-        R * S * C * rounded_F_dynamic
+    var packed_filter_ptr_dynamic = List(
+        length=R * S * C * rounded_F_dynamic, fill=Scalar[type](0)
     )
     var packed_filter_dynamic = LayoutTensor[type, layout_5d](
         packed_filter_ptr_dynamic,
@@ -153,8 +153,8 @@ def test[
     comptime packed_filter_layout = Layout.row_major(
         num_f_micro_tiles, R, S, C, micro_kernel_f_size
     )
-    var packed_filter_ptr_static = alloc[Scalar[type]](
-        R * S * C * rounded_F_static
+    var packed_filter_ptr_static = List(
+        length=R * S * C * rounded_F_static, fill=Scalar[type](0)
     )
     var packed_filter_static = LayoutTensor[type, packed_filter_layout](
         packed_filter_ptr_static
@@ -182,11 +182,6 @@ def test[
         conv_shape,
     )
 
-    input_ptr.free()
-    filter_ptr.free()
-    packed_filter_ptr_dynamic.free()
-    packed_filter_ptr_static.free()
-
     # Check results, return on the first failed comparison.
     for n, ho, wo, f in product(range(N), range(HO), range(WO), range(F)):
         if not isclose(
@@ -209,15 +204,16 @@ def test[
                 "rerr",
                 abs(actual - expected) / abs(expected + 1e-10),
             )
-            output_ptr_dynamic.free()
-            output_ptr_static.free()
             return
-
-    output_ptr_dynamic.free()
-    output_ptr_static.free()
 
     # CHECK: Succeed
     print("Succeed")
+    _ = output_ptr_static^
+    _ = output_ptr_dynamic^
+    _ = packed_filter_ptr_static^
+    _ = packed_filter_ptr_dynamic^
+    _ = filter_ptr^
+    _ = input_ptr^
 
 
 def main() raises:

@@ -14,7 +14,6 @@
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.math import exp, exp2, log
-from std.memory import alloc
 from state_space.selective_scan import (
     ssd_combined_cpu,
 )
@@ -71,56 +70,60 @@ def run_ssd_combined[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # output: (batch, dim, seqlen)
-    var output_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var output_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
     var output_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         output_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
+    )
 
     # x: (batch, dim, num_chunks, 2*dstate) - checkpoint tensor
-    var x_heap = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
+    var x_heap = List(
+        length=batch * dim * n_chunks * 2 * dstate, fill=Scalar[dtype](0)
+    )
     var x_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
         x_heap,
         RuntimeLayout[layout_4d].row_major(
             Index(batch, dim, n_chunks, 2 * dstate)
         ),
-    ).fill(0)
+    )
 
     # out_z: (batch, dim, seqlen) - gated output
-    var out_z_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var out_z_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
     var out_z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         out_z_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
+    )
 
     # residual: (batch, dim, seqlen)
-    var residual_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var residual_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
     var residual_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         residual_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
     # u: (batch, dim, seqlen)
-    var u_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var u_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
     var u_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         u_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
     )
 
     # delta: (batch, dim, seqlen)
-    var delta_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
+    var delta_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
     var delta_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         delta_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
     # A: (dim, dstate)
-    var A_heap = alloc[Scalar[dtype]](dim * dstate)
+    var A_heap = List(length=dim * dstate, fill=Scalar[dtype](0))
     var A_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
         A_heap, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
 
     # B: (batch, n_groups, dstate, seqlen)
-    var B_heap = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
+    var B_heap = List(
+        length=batch * n_groups * dstate * seqlen, fill=Scalar[dtype](0)
+    )
     var B_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
         B_heap,
         RuntimeLayout[layout_4d].row_major(
@@ -129,7 +132,9 @@ def run_ssd_combined[
     )
 
     # C: (batch, n_groups, dstate, seqlen)
-    var C_heap = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
+    var C_heap = List(
+        length=batch * n_groups * dstate * seqlen, fill=Scalar[dtype](0)
+    )
     var C_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
         C_heap,
         RuntimeLayout[layout_4d].row_major(
@@ -139,14 +144,14 @@ def run_ssd_combined[
 
     # D: (dim,) - optional
     var D_size = dim if has_D else 0
-    var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
+    var D_heap = List(length=max(D_size, 1), fill=Scalar[dtype](0))
     var D_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         D_heap, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
 
     # z: (batch, dim, seqlen) - optional
     var z_size = batch * dim * seqlen if has_z else 0
-    var z_heap = alloc[Scalar[dtype]](max(z_size, 1))
+    var z_heap = List(length=max(z_size, 1), fill=Scalar[dtype](0))
     var z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
         z_heap,
         RuntimeLayout[layout_3d].row_major(
@@ -160,14 +165,16 @@ def run_ssd_combined[
 
     # delta_bias: (dim,) - optional
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_heap = alloc[Scalar[dtype]](max(delta_bias_size, 1))
+    var delta_bias_heap = List(
+        length=max(delta_bias_size, 1), fill=Scalar[dtype](0)
+    )
     var delta_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         delta_bias_heap,
         RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
     )
 
     # gamma: (dim,) - for normalization
-    var gamma_heap = alloc[Scalar[dtype]](dim)
+    var gamma_heap = List(length=dim, fill=Scalar[dtype](0))
     var gamma_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         gamma_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
@@ -236,11 +243,8 @@ def run_ssd_combined[
 
     # Reference implementation for numerical verification
     var ref_size = batch * dim * seqlen
-    var output_ref_heap = alloc[Scalar[dtype]](ref_size)
-    var out_z_ref_heap = alloc[Scalar[dtype]](ref_size)
-    for i in range(ref_size):
-        output_ref_heap[i] = Scalar[dtype](0)
-        out_z_ref_heap[i] = Scalar[dtype](0)
+    var output_ref_heap = List(length=ref_size, fill=Scalar[dtype](0))
+    var out_z_ref_heap = List(length=ref_size, fill=Scalar[dtype](0))
 
     for b_idx in range(batch):
         for d_idx in range(dim):
@@ -329,24 +333,6 @@ def run_ssd_combined[
                 out_z_ref_heap[i],
                 rtol=rtol,
             )
-
-    output_ref_heap.free()
-    out_z_ref_heap.free()
-
-    # Cleanup
-    output_heap.free()
-    x_heap.free()
-    out_z_heap.free()
-    residual_heap.free()
-    u_heap.free()
-    delta_heap.free()
-    A_heap.free()
-    B_heap.free()
-    C_heap.free()
-    D_heap.free()
-    z_heap.free()
-    delta_bias_heap.free()
-    gamma_heap.free()
 
 
 def test_ssd_combined_basic() raises:

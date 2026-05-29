@@ -82,28 +82,32 @@ def test_gemv_partial_norm[
         t" shape=(M=1, N={N}, K={K}, N_normed={N_NORMED})"
     )
 
-    comptime ak_shape = row_major(Coord(Idx[1](), Idx[KType.static_value]()))
+    comptime ak_shape = row_major(Coord(Idx[1], Idx[KType.static_value]))
     comptime b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value])
     )
-    comptime c_shape = row_major(Coord(Idx[1](), Idx[NType.static_value]()))
+    comptime c_shape = row_major(Coord(Idx[1], Idx[NType.static_value]))
     comptime normed_shape = row_major(
-        Coord(Idx[1](), Idx[NNormedType.static_value]())
+        Coord(Idx[1], Idx[NNormedType.static_value])
     )
-    var unnormed_shape = row_major(Coord(Idx(1), Idx(N_UNNORMED)))
-    comptime gamma_shape = row_major(Idx[NNormedType.static_value]())
+    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime gamma_shape = row_major(Idx[NNormedType.static_value])
 
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
-    var b_host_ptr = alloc[Scalar[a_type]](N * K)
-    var gamma_host_ptr = alloc[Scalar[a_type]](N_NORMED)
-    var y_ref_host_ptr = alloc[Scalar[c_type]](M * N)
-    var normed_ref_ptr = alloc[Scalar[c_type]](M * N_NORMED)
-    var unnormed_ref_ptr = alloc[Scalar[c_type]](M * N_UNNORMED)
-    var normed_ours_ptr = alloc[Scalar[c_type]](M * N_NORMED)
-    var unnormed_ours_ptr = alloc[Scalar[c_type]](M * N_UNNORMED)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[a_type](N * K)
+    var gamma_host_ptr = ctx.enqueue_create_host_buffer[a_type](N_NORMED)
+    var y_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
+    var normed_ref_ptr = ctx.enqueue_create_host_buffer[c_type](M * N_NORMED)
+    var unnormed_ref_ptr = ctx.enqueue_create_host_buffer[c_type](
+        M * N_UNNORMED
+    )
+    var normed_ours_ptr = ctx.enqueue_create_host_buffer[c_type](M * N_NORMED)
+    var unnormed_ours_ptr = ctx.enqueue_create_host_buffer[c_type](
+        M * N_UNNORMED
+    )
 
-    rand(a_host_ptr, M * K)
-    rand(b_host_ptr, N * K)
+    rand(a_host_ptr.as_span())
+    rand(b_host_ptr.as_span())
     for i in range(N_NORMED):
         gamma_host_ptr[i] = (
             Float64(0.75) + Float64(i) / Float64(N_NORMED) * Float64(0.5)
@@ -158,39 +162,35 @@ def test_gemv_partial_norm[
     ctx.synchronize()
 
     _host_reference[c_type, a_type](
-        y_ref_host_ptr,
-        gamma_host_ptr,
-        normed_ref_ptr,
-        unnormed_ref_ptr,
+        y_ref_host_ptr.unsafe_ptr(),
+        gamma_host_ptr.unsafe_ptr(),
+        normed_ref_ptr.unsafe_ptr(),
+        unnormed_ref_ptr.unsafe_ptr(),
         N,
         N_NORMED,
         eps,
     )
 
     assert_almost_equal(
-        normed_ours_ptr, normed_ref_ptr, M * N_NORMED, atol=5e-2, rtol=5e-2
+        normed_ours_ptr.unsafe_ptr(),
+        normed_ref_ptr.unsafe_ptr(),
+        M * N_NORMED,
+        atol=5e-2,
+        rtol=5e-2,
     )
     # The unfused path does not populate `unnormed_output`: the
     # unnormed tail is a view into the matmul scratch. Only check
     # this output for the fused path.
     comptime if fused:
         assert_almost_equal(
-            unnormed_ours_ptr,
-            unnormed_ref_ptr,
+            unnormed_ours_ptr.unsafe_ptr(),
+            unnormed_ref_ptr.unsafe_ptr(),
             M * N_UNNORMED,
             atol=1e-2,
             rtol=1e-2,
         )
     print("\n=== TEST PASSED ===\n")
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    gamma_host_ptr.free()
-    y_ref_host_ptr.free()
-    normed_ref_ptr.free()
-    unnormed_ref_ptr.free()
-    normed_ours_ptr.free()
-    unnormed_ours_ptr.free()
     _ = a_dev^
     _ = b_dev^
     _ = gamma_dev^
@@ -203,16 +203,16 @@ def main() raises:
     with DeviceContext() as ctx:
         # Primary shape: N=2112, K=7168, N_normed=1536.
         test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=False](
-            ctx, Idx[2112](), Idx[7168](), Idx[1536]()
+            ctx, Idx[2112], Idx[7168], Idx[1536]
         )
         test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=True](
-            ctx, Idx[2112](), Idx[7168](), Idx[1536]()
+            ctx, Idx[2112], Idx[7168], Idx[1536]
         )
 
         # Smaller shape exercising the same path.
         test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=False](
-            ctx, Idx[512](), Idx[1024](), Idx[256]()
+            ctx, Idx[512], Idx[1024], Idx[256]
         )
         test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=True](
-            ctx, Idx[512](), Idx[1024](), Idx[256]()
+            ctx, Idx[512], Idx[1024], Idx[256]
         )

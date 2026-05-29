@@ -52,7 +52,7 @@ def compute_rms_norm_rope_ref[
         var inv_rms = Scalar[accum_type](1) / rms
 
         # Apply norm with gamma (multiply_before_cast=True: all ops in accum_type).
-        var normed = alloc[Scalar[dtype]](cols)
+        var normed = List(length=cols, fill=Scalar[dtype](0))
         for c in range(cols):
             var v = input_h[r * cols + c].cast[accum_type]()
             var g = (
@@ -72,8 +72,6 @@ def compute_rms_norm_rope_ref[
                 normed_val * cos_val + rotated * sin_val
             ).cast[dtype]()
 
-        normed.free()
-
 
 def run_rms_norm_rope_gpu[
     rank: Int, //, dtype: DType, cos_sin_dtype: DType = dtype
@@ -83,12 +81,12 @@ def run_rms_norm_rope_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
-    var cos_h = alloc[Scalar[cos_sin_dtype]](rows * cols)
-    var sin_h = alloc[Scalar[cos_sin_dtype]](rows * cols)
-    var result_gpu = alloc[Scalar[dtype]](rows * cols)
-    var result_ref = alloc[Scalar[dtype]](rows * cols)
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var cos_h = ctx.enqueue_create_host_buffer[cos_sin_dtype](rows * cols)
+    var sin_h = ctx.enqueue_create_host_buffer[cos_sin_dtype](rows * cols)
+    var result_gpu = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var result_ref = ctx.enqueue_create_host_buffer[dtype](rows * cols)
 
     # Initialize with diverse deterministic values.
     for i in range(rows * cols):
@@ -104,11 +102,11 @@ def run_rms_norm_rope_gpu[
 
     # Compute CPU reference.
     compute_rms_norm_rope_ref[dtype, cos_sin_dtype](
-        data_h,
-        gamma_h,
-        cos_h,
-        sin_h,
-        result_ref,
+        data_h.unsafe_ptr(),
+        gamma_h.unsafe_ptr(),
+        cos_h.unsafe_ptr(),
+        sin_h.unsafe_ptr(),
+        result_ref.unsafe_ptr(),
         rows,
         cols,
         epsilon,
@@ -129,7 +127,7 @@ def run_rms_norm_rope_gpu[
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var output_buf = TileTensor(output_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Idx(cols)))
+    var gamma = TileTensor(gamma_d, row_major(cols))
     var cos_vals = TileTensor(cos_d, row_major(Coord(shape)))
     var sin_vals = TileTensor(sin_d, row_major(Coord(shape)))
 
@@ -137,28 +135,28 @@ def run_rms_norm_rope_gpu[
     @__copy_capture(data_buf)
     @parameter
     def input_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
-        return data_buf.raw_load[width=width](idx)
+        return data_buf.raw_load[width=width, alignment=alignment](idx)
 
     @always_inline
     @__copy_capture(cos_vals)
     @parameter
     def cos_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
         var idx = cos_vals.layout(Coord(coords))
-        return cos_vals.raw_load[width=width](idx)
+        return cos_vals.raw_load[width=width, alignment=alignment](idx)
 
     @always_inline
     @__copy_capture(sin_vals)
     @parameter
     def sin_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
         var idx = sin_vals.layout(Coord(coords))
-        return sin_vals.raw_load[width=width](idx)
+        return sin_vals.raw_load[width=width, alignment=alignment](idx)
 
     @always_inline
     @__copy_capture(output_buf)
@@ -185,13 +183,6 @@ def run_rms_norm_rope_gpu[
     _ = cos_d
     _ = sin_d
     _ = output_d
-
-    data_h.free()
-    gamma_h.free()
-    cos_h.free()
-    sin_h.free()
-    result_gpu.free()
-    result_ref.free()
 
 
 def main() raises:

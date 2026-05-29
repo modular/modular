@@ -40,7 +40,7 @@ struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
         return self.list.pop()
 
     def dump[
-        WritableEltType: Writable & Copyable
+        WritableEltType: Writable & Copyable & ImplicitlyDestructible
     ](self: MyStack[WritableEltType]):
         print("[", end="")
         for item in self.list:

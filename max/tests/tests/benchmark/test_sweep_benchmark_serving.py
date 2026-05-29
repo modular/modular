@@ -31,6 +31,8 @@ import pytest_mock
 import yaml
 from max.benchmark import sweep_benchmark_serving
 
+pytestmark = pytest.mark.usefixtures("offline_dryrun_mocks")
+
 
 @pytest.fixture
 def workload_config(tmp_path: Path) -> Path:
@@ -93,23 +95,33 @@ def test_missing_workload_config_is_allowed(
     assert "Dry run:" in stdout
 
 
-def test_error_missing_workload_config_with_upload(
-    capsys: pytest.CaptureFixture[str],
+def test_warn_missing_workload_config_with_upload(
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """--workload-config is required when --upload-results is set."""
+    """--upload-results without --workload-config logs a warning but proceeds."""
     base_cmd_args = [
         "--model",
         "HuggingFaceTB/SmolLM2-135M",
         "--max-concurrency",
         "1",
+        "--num-prompts",
+        "10",
         "--upload-results",
         "--dry-run",
     ]
 
-    with pytest.raises(SystemExit) as exc_info:
+    with caplog.at_level(logging.WARNING, logger="sweep-benchmark-serving"):
         sweep_benchmark_serving.main(base_cmd_args)
-    assert exc_info.value.code != 0
-    _ = capsys.readouterr()
+
+    expected_fragment = (
+        "--workload-config is not set while --upload-results is set"
+    )
+    assert any(
+        expected_fragment in record.message for record in caplog.records
+    ), (
+        f"Expected warning containing {expected_fragment!r} in log records:\n"
+        f"{[r.message for r in caplog.records]}"
+    )
 
 
 def test_correct_number_of_runs(
@@ -653,17 +665,23 @@ def test_save_result_json_writes_valid_json(
         ]
     )
 
-    mock_metrics = MagicMock()
-    mock_metrics.completed = 5
+    mock_result = MagicMock()
+    mock_result.metrics.aggregates.completed = 5
+    mock_result.to_result_dict.return_value = {
+        "duration": 1.0,
+        "completed": 5,
+        "failures": 0,
+    }
 
     save_result_json(
+        config.result_filename,
         config,
-        {"duration": 1.0, "completed": 5, "failures": 0},
-        mock_metrics,
+        mock_result,
         benchmark_task="text-generation",
         model_id="myorg/mymodel",
         tokenizer_id="myorg/mymodel",
         request_rate=10.0,
+        record_max_concurrency=config.max_concurrency[0],
     )
 
     assert Path(result_path).exists(), (
@@ -753,7 +771,7 @@ def test_apply_workload_skips_explicitly_set_fields() -> None:
 
     config = ServingBenchmarkConfig(
         model="myorg/mymodel",
-        request_rate="5",
+        request_rate=[5.0],
     )
     # Both `model` and `request_rate` are now in model_fields_set.
     assert "request_rate" in config.model_fields_set
@@ -767,7 +785,7 @@ def test_apply_workload_skips_explicitly_set_fields() -> None:
 
     _apply_workload_to_config(config, workload)
 
-    assert config.request_rate == "5", (
+    assert list(config.request_rate) == [5.0], (
         f"CLI request_rate should not be overwritten by workload YAML;"
         f" got {config.request_rate}"
     )
@@ -909,32 +927,27 @@ def test_upload_path_writes_one_json_per_concurrency(
     """Upload mode must call save_result_json once per concurrency level."""
     from max.benchmark.benchmark_serving import BenchmarkRunResult
 
-    mock_metrics = MagicMock()
-    mock_metrics.completed = 5
-
     fake_results = [
         BenchmarkRunResult(
             max_concurrency=1,
             request_rate=float("inf"),
             num_prompts=10,
-            metrics=mock_metrics,
-            result_dict={"duration": 1.0},
+            result=MagicMock(),
         ),
         BenchmarkRunResult(
             max_concurrency=2,
             request_rate=float("inf"),
             num_prompts=10,
-            metrics=mock_metrics,
-            result_dict={"duration": 0.8},
+            result=MagicMock(),
         ),
     ]
 
-    # Capture result_filename at call time — config is mutated between calls, so
-    # call_args_list would only reflect the final state without this side_effect.
     saved_filenames: list[str] = []
 
-    def capture_save(config: object, *args: object, **kwargs: object) -> None:
-        saved_filenames.append(getattr(config, "result_filename", "") or "")
+    def capture_save(
+        result_filename: str | None, *args: object, **kwargs: object
+    ) -> None:
+        saved_filenames.append(result_filename or "")
 
     mocker.patch(
         "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
@@ -984,6 +997,117 @@ def test_upload_path_writes_one_json_per_concurrency(
         )
 
 
+def test_upload_writes_correct_data_to_correct_files(
+    tmp_path: Path,
+    workload_config: Path,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """Each concurrency level's JSON file must contain that level's results.
+
+    Regression test: a config-mutation bug caused the generator to resume
+    with a stale result_filename on the second iteration, writing mc2 data
+    into mc1's file and burying mc1's data in a .orig backup.
+
+    The fake generator here mimics the real generator's behavior: it reads
+    config.result_filename lazily on each resume.  If run_sweep mutates
+    config between yields (the bug), the second resume picks up the first
+    iteration's stale path and the file-content assertions fail.
+    """
+    from collections.abc import Iterator
+
+    from max.benchmark.benchmark_serving import (
+        BenchmarkRunResult,
+        save_result_json,
+    )
+    from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
+
+    MC1_SENTINEL = "mc1_data"
+    MC2_SENTINEL = "mc2_data"
+
+    def fake_benchmark_serving_main(
+        config: ServingBenchmarkConfig,
+    ) -> Iterator[BenchmarkRunResult]:
+        assert config.model is not None
+        for mc, sentinel in [(1, MC1_SENTINEL), (2, MC2_SENTINEL)]:
+            mock_result = MagicMock()
+            mock_result.metrics.aggregates.completed = 5
+            mock_result.to_result_dict.return_value = {
+                "duration": float(mc),
+                "completed": 5,
+                "failures": 0,
+                "test_sentinel": sentinel,
+            }
+            save_result_json(
+                config.result_filename,
+                config,
+                mock_result,
+                benchmark_task="text-generation",
+                model_id=config.model,
+                tokenizer_id=config.model,
+                request_rate=float(mc),
+                record_max_concurrency=mc,
+            )
+            yield BenchmarkRunResult(
+                max_concurrency=mc,
+                request_rate=float(mc),
+                num_prompts=10,
+                result=mock_result,
+            )
+
+    mocker.patch(
+        "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
+        side_effect=fake_benchmark_serving_main,
+    )
+    mocker.patch(
+        "max.benchmark.sweep_benchmark_serving._build_sweep_result",
+    )
+    mock_writer_cls = mocker.patch(
+        "max.benchmark.sweep_benchmark_serving.LLMBenchmarkResultWriter"
+    )
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
+    mock_ctx.__exit__ = MagicMock(return_value=False)
+    mock_writer_cls.return_value = mock_ctx
+
+    sweep_benchmark_serving.main(
+        [
+            "--model",
+            "myorg/mymodel",
+            "--workload-config",
+            str(workload_config),
+            "--max-concurrency",
+            "1,2",
+            "--num-prompts",
+            "10",
+            "--upload-results",
+            "--backend",
+            "modular",
+            "--log-dir",
+            str(tmp_path),
+        ],
+        uploader=MagicMock(),
+    )
+
+    mc1_file = tmp_path / "results-1-median.json"
+    mc2_file = tmp_path / "results-2-median.json"
+
+    assert mc1_file.exists(), "results-1-median.json was not written"
+    assert mc2_file.exists(), "results-2-median.json was not written"
+    assert not (tmp_path / "results-1-median.json.orig").exists(), (
+        "results-1-median.json.orig found — the generator wrote stale data "
+        "into mc1's file, meaning config.result_filename was mutated between iterations"
+    )
+
+    mc1_data = json.loads(mc1_file.read_text())
+    mc2_data = json.loads(mc2_file.read_text())
+    assert mc1_data.get("test_sentinel") == MC1_SENTINEL, (
+        f"results-1-median.json contains mc2 data (sentinel={mc1_data.get('test_sentinel')!r})"
+    )
+    assert mc2_data.get("test_sentinel") == MC2_SENTINEL, (
+        f"results-2-median.json contains wrong data (sentinel={mc2_data.get('test_sentinel')!r})"
+    )
+
+
 def test_upload_path_single_run_no_max_concurrency(
     tmp_path: Path,
     workload_config: Path,
@@ -997,23 +1121,21 @@ def test_upload_path_single_run_no_max_concurrency(
     """
     from max.benchmark.benchmark_serving import BenchmarkRunResult
 
-    mock_metrics = MagicMock()
-    mock_metrics.completed = 5
-
     fake_results = [
         BenchmarkRunResult(
             max_concurrency=None,
             request_rate=float("inf"),
             num_prompts=10,
-            metrics=mock_metrics,
-            result_dict={"duration": 1.0},
+            result=MagicMock(),
         )
     ]
 
     saved_filenames: list[str] = []
 
-    def capture_save(config: object, *args: object, **kwargs: object) -> None:
-        saved_filenames.append(getattr(config, "result_filename", "") or "")
+    def capture_save(
+        result_filename: str | None, *args: object, **kwargs: object
+    ) -> None:
+        saved_filenames.append(result_filename or "")
 
     mocker.patch(
         "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",

@@ -1,7 +1,7 @@
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("//bazel:api.bzl", "modular_py_binary", "mojo_binary")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "mojo_binary", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,6 +12,12 @@ _BUILDIFIER_IGNORES = [
     "./third-party/llvm-project/*",
     "./oss/max-llm-book/.pixi/*",
 ]
+
+modular_py_library(
+    name = "lint_helpers",
+    srcs = ["lint_helpers.py"],
+    imports = ["."],
+)
 
 buildifier(
     name = "buildifier.check",
@@ -96,36 +102,38 @@ modular_py_binary(
     name = "mblack-wrapper",
     srcs = ["mblack-wrapper.py"],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
-    deps = ["@mblack"],
+    deps = [
+        ":lint_helpers",
+        "@mblack",
+    ],
+)
+
+[
+    command(
+        name = name + "." + ("check" if check else "fix") + ("-fast" if fast else ""),
+        command = base_command,
+        environment = {
+            "FAST": str(fast),
+            "CHECK": str(check),
+        },
+    )
+    for name, base_command in [
+        ("mblack", ":mblack-wrapper"),
+    ]
+    for check in (True, False)
+    for fast in (True, False)
+]
+
+modular_py_binary(
+    name = "action-versions-pinned",
+    srcs = ["action-versions-pinned.py"],
+    deps = [requirement("pyyaml")],
 )
 
 command(
-    name = "mblack.check",
-    arguments = [
-        "--quiet",
-        "--check",
-        "--diff",
-        ".",
-    ],
-    command = ":mblack-wrapper",
-)
-
-command(
-    name = "mblack.fix",
-    arguments = [
-        "--quiet",
-        ".",
-    ],
-    command = ":mblack-wrapper",
-)
-
-command(
-    name = "mblack.fix-fast",
-    arguments = [
-        "--quiet",
-    ],
-    command = ":mblack-wrapper",
-    environment = {"FAST": "1"},
+    name = "action-versions-pinned.check",
+    command = ":action-versions-pinned",
+    run_from_workspace_root = True,
 )
 
 mojo_binary(
@@ -171,6 +179,7 @@ multirun(
     name = "lint",
     buffer_output = True,
     commands = [
+        ":action-versions-pinned.check",
         ":buildifier.check",
         ":check_licenses.check",
         ":mblack.check",

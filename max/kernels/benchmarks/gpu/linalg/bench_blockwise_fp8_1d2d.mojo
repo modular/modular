@@ -47,7 +47,6 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -118,19 +117,20 @@ def bench_blockwise_fp8_1d2d[
     )
 
     # Host allocations
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
-    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
+    var a_offsets_host_ptr = List(
+        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    )
+    var expert_ids_host_ptr = List(
+        length=num_active_experts, fill=Scalar[DType.int32](0)
+    )
+    var expert_scales_host_ptr = List(length=num_experts, fill=Float32(1.0))
 
     # Setup offsets, expert ids, scales
-    a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
         a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(
             num_tokens_by_expert[i]
         )
         expert_ids_host_ptr[i] = Int32(expert_ids_list[i])
-    for i in range(num_experts):
-        expert_scales_host_ptr[i] = Float32(1.0)
 
     # Device allocations
     var a_dev_buf = ctx.enqueue_create_buffer[a_type](a_size)
@@ -216,9 +216,7 @@ def bench_blockwise_fp8_1d2d[
 
     var a_tt = TileTensor(
         a_dev_buf,
-        new_row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[K]())
-        ),
+        new_row_major(Coord(Int64(total_num_tokens), Idx[K])),
     )
     var b_tt = TileTensor(
         b_dev_buf,
@@ -226,16 +224,14 @@ def bench_blockwise_fp8_1d2d[
     )
     var c_tt = TileTensor(
         c_dev_buf,
-        new_row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
-        ),
+        new_row_major(Coord(Int64(total_num_tokens), Idx[N])),
     )
     var a_scales_tt = TileTensor(
         a_scales_dev_buf,
         new_row_major(
             Coord(
-                Idx[K // BLOCK_SCALE_K](),
-                RuntimeInt[DType.int64](Int64(total_num_tokens)),
+                Idx[K // BLOCK_SCALE_K],
+                Int64(total_num_tokens),
             )
         ),
     )
@@ -246,15 +242,15 @@ def bench_blockwise_fp8_1d2d[
     var a_offsets_tt = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin](
         a_offsets_dev_buf,
         GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_active_experts + 1))),
-            Coord(Idx[1]()),
+            Coord(Int64(num_active_experts + 1)),
+            Coord(Idx[1]),
         ),
     )
     var expert_ids_tt = TileTensor[DType.int32, GMEMLayout1D, MutAnyOrigin](
         expert_ids_dev_buf,
         GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_active_experts))),
-            Coord(Idx[1]()),
+            Coord(Int64(num_active_experts)),
+            Coord(Idx[1]),
         ),
     )
     var expert_scales_tt = TileTensor[
@@ -262,8 +258,8 @@ def bench_blockwise_fp8_1d2d[
     ](
         expert_scales_dev_buf,
         GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_experts))),
-            Coord(Idx[1]()),
+            Coord(Int64(num_experts)),
+            Coord(Idx[1]),
         ),
     )
 
@@ -365,10 +361,6 @@ def bench_blockwise_fp8_1d2d[
         [ThroughputMeasure(BenchMetric.flops, total_flops)],
     )
 
-    # Cleanup
-    a_offsets_host_ptr.free()
-    expert_ids_host_ptr.free()
-    expert_scales_host_ptr.free()
     _ = a_dev_buf^
     _ = b_dev_buf^
     _ = c_dev_buf^
@@ -377,6 +369,9 @@ def bench_blockwise_fp8_1d2d[
     _ = a_scales_dev_buf^
     _ = b_scales_dev_buf^
     _ = expert_scales_dev_buf^
+    _ = expert_scales_host_ptr^
+    _ = expert_ids_host_ptr^
+    _ = a_offsets_host_ptr^
 
 
 def main() raises:

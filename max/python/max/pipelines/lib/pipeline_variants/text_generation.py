@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import copy
 import dataclasses
 import json
 import logging
@@ -25,7 +24,13 @@ from typing import TYPE_CHECKING, Any, Generic
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, DevicePinnedBuffer, load_devices
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    is_virtual_device_mode,
+    load_devices,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
@@ -35,7 +40,17 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import (
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.pipelines.core.exceptions import (
+    InputError,  # noqa: F401 (for docstring)
+)
+from max.pipelines.kv_cache import (
+    IncrementCacheLengthsProcessor,
+    PagedKVCacheManager,
+    load_kv_manager,
+)
+from max.pipelines.modeling.types import (
     BatchLogitsProcessor,
     LogProbabilities,
     Pipeline,
@@ -47,13 +62,6 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import (
-    IncrementCacheLengthsProcessor,
-    PagedKVCacheManager,
-    load_kv_manager,
-)
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 
@@ -79,6 +87,7 @@ from ..sampling import (
     apply_logits_processors,
     token_sampler,
 )
+from ..utils import CompilationTimer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -175,9 +184,14 @@ class TextGenerationPipeline(
         self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
         # Initialize structured output helper for constrained decoding.
+        # The helper's ``enable_response_format_schema`` mirrors the user
+        # flag and gates user-supplied JSON schemas; the bitmask-in-the-graph
+        # decisions below are gated separately on
+        # ``pipeline_config.needs_bitmask_constraints``.
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
+            pipeline_config.runtime.tool_parser,
         )
         self.vocab_size = self._structured_output.vocab_size
 
@@ -224,6 +238,7 @@ class TextGenerationPipeline(
         # Use the model's kv_params (not the manager's) because in
         # compile-only mode the manager is a Mock.
         if isinstance(kv_params, MultiKVCacheParams):
+            # In case of multiple KV caches, multiple KV cache inputs are passed to `IncrementCacheLengthsProcessor.execute`, params only used for metadata.
             primary_params = kv_params.params[0]
         else:
             assert isinstance(kv_params, KVCacheParams)
@@ -234,39 +249,38 @@ class TextGenerationPipeline(
             )
         )
 
-        # Load sampler.
+        # Load sampler. The bitmask-aware sampler is loaded when constrained
+        # decoding could fire (see ``needs_bitmask_constraints``).
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
-        if pipeline_config.sampling.enable_structured_output:
-            self._sampler_with_bitmask = session.load(
-                token_sampler(
+        with_bitmask_graph = None
+        with CompilationTimer("sampler") as sampler_timer:
+            if pipeline_config.needs_bitmask_constraints:
+                with_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
                     device=DeviceRef.from_device(self._devices[0]),
+                    needs_bitmask_input=True,
                 )
+            without_bitmask_graph = token_sampler(
+                pipeline_config.sampling,
+                device=DeviceRef.from_device(self._devices[0]),
+                needs_bitmask_input=False,
             )
-            cfg_without_bitmask = copy.deepcopy(pipeline_config.sampling)
-            cfg_without_bitmask.enable_structured_output = False
-            self._sampler_without_bitmask = session.load(
-                token_sampler(
-                    cfg_without_bitmask,
-                    device=DeviceRef.from_device(self._devices[0]),
-                )
-            )
-        else:
-            self._sampler_without_bitmask = session.load(
-                token_sampler(
-                    pipeline_config.sampling,
-                    device=DeviceRef.from_device(self._devices[0]),
-                )
-            )
+            sampler_timer.mark_build_complete()
+            if with_bitmask_graph is not None:
+                self._sampler_with_bitmask = session.load(with_bitmask_graph)
+            self._sampler_without_bitmask = session.load(without_bitmask_graph)
 
-        # Pre-allocate pinned buffer for D2H token copies only when structured
-        # output is enabled. This buffer is used for async token transfers in
-        # the guided decoding path. Allocated once and reused across batches.
+        # Pre-allocate pinned buffer for D2H token copies only when the
+        # bitmask path is wired in. This buffer is used for async token
+        # transfers in the guided decoding path. Allocated once and reused
+        # across batches. Skip in virtual device mode (compile-only) since
+        # VirtualDevice does not support memory allocation.
         self._pinned_new_tokens: Buffer | None = None
         if (
-            pipeline_config.sampling.enable_structured_output
+            pipeline_config.needs_bitmask_constraints
             and not self._devices[0].is_host
+            and not is_virtual_device_mode()
         ):
             max_batch_size = pipeline_config.runtime.max_batch_size
             assert max_batch_size is not None, "max_batch_size must be set"
@@ -275,6 +289,12 @@ class TextGenerationPipeline(
                 dtype=DType.int64,
                 device=self._devices[0],
             )
+
+        self._identity_logit_offsets = (
+            FusedSamplingProcessor.allocate_identity_logit_offsets(
+                pipeline_config, self._devices[0]
+            )
+        )
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -311,12 +331,10 @@ class TextGenerationPipeline(
             index: Global position into the bitmask for this request.
 
         Raises:
-            ValueError: If a JSON schema is provided but structured output is not
+            InputError: If a JSON schema is provided but structured output is not
                 enabled via sampling configuration.
         """
-        self._structured_output.update_context(
-            context, bitmask, index, support_jump_ahead=True
-        )
+        self._structured_output.update_context(context, bitmask, index)
 
     def initialize_bitmask(
         self, batch: list[TextGenerationContextType]
@@ -333,7 +351,10 @@ class TextGenerationPipeline(
         if not self._structured_output.enabled:
             return None
 
-        if all(context.json_schema is None for context in batch):
+        if all(
+            context.json_schema is None and context.grammar is None
+            for context in batch
+        ):
             return None
 
         return self._structured_output.allocate_bitmask(len(batch))
@@ -453,20 +474,13 @@ class TextGenerationPipeline(
             # Advance FSM with the sampled token (token buffer updated later)
             # new_tokens has shape (batch_size,) - 1D array
             token = int(new_tokens_np[batch_idx])
+
             with Tracer("advance_fsm"):
                 if not context.advance_fsm(token):
                     raise RuntimeError(
                         f"FSM rejected token {token} during multi-step update. "
                         f"This indicates a mismatch between the bitmask and FSM state."
                     )
-
-            # Handle jump-ahead (forced) tokens from the grammar.
-            # NOTE: We intentionally do NOT call compute_ff_tokens() or jump_ahead()
-            # here during multi-step execution. When the FSM forces tokens, the model's
-            # context and FSM state would become desynchronized since the model input
-            # doesn't include the forced tokens. Instead, we let update_context_and_prepare_responses
-            # handle jump-ahead tokens after the multi-step loop completes, which ensures
-            # proper synchronization before the next execute() call.
 
             # Fill the updated bitmask for this context
             with Tracer("fill_next_token_bitmask"):
@@ -553,6 +567,7 @@ class TextGenerationPipeline(
                     num_steps=num_steps,
                     device=device0,
                     pinned_new_tokens=self._pinned_new_tokens,
+                    identity_logit_offsets=self._identity_logit_offsets,
                     bitmask=bitmask,
                     vocab_size=self.vocab_size,
                 )
@@ -585,10 +600,17 @@ class TextGenerationPipeline(
 
             # Sample next token.
             with Tracer("sample_next_token_step_{i}"):
+                sample_logits, sample_offsets = (
+                    sampling_processor.logits_for_sampling(
+                        logits=model_outputs.logits,
+                        next_token_logits=model_outputs.next_token_logits,
+                        logit_offsets=model_outputs.logit_offsets,
+                    )
+                )
                 apply_logits_processors(
                     context_batch=flat_batch,
-                    batch_logits=model_outputs.logits,
-                    batch_logit_offsets=model_outputs.logit_offsets,
+                    batch_logits=sample_logits,
+                    batch_logit_offsets=sample_offsets,
                     batch_processors=batch_processors,
                 )
                 new_tokens = sampling_processor.new_tokens

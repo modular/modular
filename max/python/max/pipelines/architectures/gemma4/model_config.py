@@ -19,7 +19,7 @@ from typing import Any
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import KVCacheQuantizationConfig, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
@@ -31,10 +31,11 @@ from max.pipelines.lib import (
     PipelineConfig,
     upper_bounded_default,
 )
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVAndVisionCache,
 )
+from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import Self, override
 
@@ -429,6 +430,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
     dtype: DType
     """DType of the model weights and input."""
 
+    unquantized_dtype: DType = DType.bfloat16
+    """DType of unquantized weights."""
+
     kv_params: MultiKVCacheParams
     """KV cache parameters."""
 
@@ -510,6 +514,18 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
                 global_layers += 1
             else:
                 raise ValueError(f"Unknown attention type: {attention_type}")
+
+        # When fp8 KV cache is requested, construct a quantization config with
+        # blockwise granularity=64 along head_dim.  Both sliding (head_dim=256)
+        # and global (head_dim=512) layers use the same granularity so that
+        # scale overhead stays under 4% while keeping per-block resolution tight.
+        kvcache_quant_config: KVCacheQuantizationConfig | None = None
+        if cache_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+            kvcache_quant_config = KVCacheQuantizationConfig(
+                scale_dtype=DType.float32,
+                quantization_granularity=64,
+            )
+
         sliding_window_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.text_config.num_key_value_heads,
@@ -517,6 +533,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             num_layers=sliding_window_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            kvcache_quant_config=kvcache_quant_config,
         )
         global_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
@@ -525,6 +542,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             num_layers=global_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            kvcache_quant_config=kvcache_quant_config,
         )
         return MultiKVCacheParams.from_params(
             sliding_window_kv_params, global_kv_params
@@ -653,8 +671,21 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")
+
+        quant_config = parse_quant_config(
+            huggingface_config,
+            state_dict,
+            self.dtype,
+        )
+
+        for k, v in state_dict.items():
+            if k.endswith("layers.0.input_layernorm.weight"):
+                self.unquantized_dtype = v.dtype
+                break
+
         self.text_config.finalize(
             huggingface_config=hf_text_config,
             state_dict=state_dict,
             return_logits=return_logits,
+            quant_config=quant_config,
         )
