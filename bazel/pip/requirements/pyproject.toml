@@ -218,8 +218,8 @@ nvidia = [
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "compressed-tensors==0.15.0.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
-  "flashinfer-cubin==0.6.8.post1",  # Pin to match sglang's version
-  "flashinfer-python>=0.6.4; sys_platform == 'linux'",
+  "flashinfer-cubin==0.6.8.post1",
+  "flashinfer-python==0.6.8.post1; sys_platform == 'linux'",
 
   "nvidia-cudnn-frontend>=1.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "nvidia-cutlass-dsl>=4.4.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
@@ -277,7 +277,7 @@ override-dependencies = [
   "apache-tvm-ffi==0.1.9",
   "compressed-tensors==0.15.0.1",
   "flashinfer-cubin==0.6.8.post1",
-  "flashinfer-python==0.6.3",
+  "flashinfer-python==0.6.8.post1",
   "mistral-common==1.11.1",
   "nvidia-cutlass-dsl==4.4.1",
 
