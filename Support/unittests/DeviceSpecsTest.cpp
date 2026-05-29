@@ -126,6 +126,43 @@ TEST(DeviceSpecs, EncodeDecodeRoundTrip) {
   EXPECT_EQ(decoded->disabled, ti.disabledFeatures);
 }
 
+TEST(DeviceSpecs, HasFeature) {
+  // Basic enabled/disabled checks.
+  EXPECT_TRUE(hasFeature("+avx2,+avx512f,-long-calls", "avx2"));
+  EXPECT_TRUE(hasFeature("+avx2,+avx512f,-long-calls", "avx512f"));
+  EXPECT_FALSE(hasFeature("+avx2,+avx512f,-long-calls", "long-calls"));
+  EXPECT_FALSE(hasFeature("+avx2,+avx512f,-long-calls", "neon"));
+
+  // No accidental prefix/substring matching: "avx512" must not match
+  // "+avx512f".
+  EXPECT_FALSE(hasFeature("+avx512f,+avx2", "avx512"));
+
+  // Disabled token must not match as enabled.
+  EXPECT_FALSE(hasFeature("+avx2,-avx512f", "avx512f"));
+}
+
+TEST(DeviceSpecs, SimdWidthFromFeature) {
+  EXPECT_EQ(simdWidthFromFeature("avx512f"), 512u);
+  EXPECT_EQ(simdWidthFromFeature("avx2"), 256u);
+  EXPECT_EQ(simdWidthFromFeature("bmi1"), 128u);
+}
+
+TEST(DeviceSpecs, DecodeFeaturesLastWins) {
+  // Last entry wins: +avx512f,-avx512f resolves to disabled.
+  {
+    ErrorOr<DecodedFeatures> result = decodeFeatures("+avx512f,-avx512f");
+    ASSERT_FALSE(result.isError());
+    EXPECT_TRUE(result->enabled.empty());
+    EXPECT_EQ(result->disabled, (std::vector<std::string>{"avx512f"}));
+  }
+  {
+    ErrorOr<DecodedFeatures> result = decodeFeatures("-avx512f,+avx512f");
+    ASSERT_FALSE(result.isError());
+    EXPECT_EQ(result->enabled, (std::vector<std::string>{"avx512f"}));
+    EXPECT_TRUE(result->disabled.empty());
+  }
+}
+
 TEST(DeviceSpecs, DecodeFeaturesNormalizesUnsigned) {
   // Unsigned names are treated as enabled for backward compat with older
   // serialized TargetInfos that predate the signed format.

@@ -1264,11 +1264,26 @@ kgen.generator export @interpret_concrete() {
 
 // -----
 
-module attributes {M.target_info = #M.target<triple="", arch="", features="foobar", data_layout="", simd_bit_width=128>} {
+module attributes {M.target_info = #M.target<triple="", arch="", features="+foobar", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @custom_target
   kgen.generator @custom_target() {
     // CHECK: constant: i1 = <1>
     kgen.param.constant: i1 = <target_has_feature(current_target(), "foobar")>
+    kgen.return
+  }
+}
+
+// -----
+
+// Explicitly disabled feature (leading '-') must return false even if the
+// feature name appears in the string.
+module attributes {M.target_info = #M.target<triple="", arch="", features="+avx2,-avx512f", data_layout="", simd_bit_width=256>} {
+  // CHECK-LABEL: @disabled_feature_returns_false
+  kgen.generator @disabled_feature_returns_false() {
+    // CHECK: constant: i1 = <1>
+    kgen.param.constant: i1 = <target_has_feature(current_target(), "avx2")>
+    // CHECK: constant: i1 = <0>
+    kgen.param.constant: i1 = <target_has_feature(current_target(), "avx512f")>
     kgen.return
   }
 }

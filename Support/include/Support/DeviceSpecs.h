@@ -41,10 +41,10 @@ struct DecodedFeatures {
 };
 
 /// Decodes a signed LLVM feature string (e.g. "+avx2,+bmi1,-avx512f") into
-/// separate enabled and disabled plain-name lists. Unsigned names (no prefix)
+/// separate enabled and disabled plain-name lists. Applies last-wins semantics
+/// so duplicate names resolve to the final sign. Unsigned names (no prefix)
 /// are treated as enabled for backward compat with older serialized data.
-/// Returns an error if any entry is empty or a sign prefix has no name after
-/// it.
+/// Returns an error if a sign prefix has no name after it.
 ErrorOr<DecodedFeatures> decodeFeatures(StringRef encodedFeatures);
 
 //===----------------------------------------------------------------------===//
@@ -68,8 +68,8 @@ struct TargetInfo {
   std::vector<std::string> disabledFeatures;
 
   TargetInfo(llvm::Triple triple = llvm::Triple(""), std::string arch = {},
-             std::vector<std::string> features = {},
-             std::vector<std::string> disabledFeatures = {})
+             std::vector<std::string> &&features = {},
+             std::vector<std::string> &&disabledFeatures = {})
       : triple(std::move(triple)), arch(std::move(arch)),
         features(std::move(features)),
         disabledFeatures(std::move(disabledFeatures)) {}
@@ -199,10 +199,25 @@ struct DeviceSpecCollection {
 // SIMD Width
 //===----------------------------------------------------------------------===//
 
-/// Gets the SIMD width from the processor features. The features are comma
-/// separated.
-size_t simdWidthFromFeatures(StringRef features);
-size_t simdWidthFromFeatures(ArrayRef<std::string> features);
+/// Returns true if `feature` is enabled in a comma-separated signed LLVM
+/// feature string (e.g. "+avx2,+bmi1,-avx512f"). Scans tokens exactly;
+/// disabled tokens ("-feature") and prefix matches (e.g. "avx512" against
+/// "+avx512f") both return false.
+bool hasFeature(StringRef llvmFeatureStr, StringRef feature);
+
+/// Returns the SIMD bit width implied by a single plain (unsigned) feature
+/// name, e.g. "avx512f" → 512, "avx2" → 256, anything else → 128.
+size_t simdWidthFromFeature(StringRef plainFeature);
+
+/// Returns the SIMD bit width implied by a comma-separated signed LLVM feature
+/// string (e.g. "+avx2,+bmi1,-avx512f"). Disabled features (leading '-') are
+/// ignored. Assumes no duplicate feature names; use decodeFeatures first if
+/// the source string may contain duplicates.
+size_t simdWidthFromFeatures(StringRef llvmFeatureStr);
+
+/// Returns the SIMD bit width implied by a list of plain (unsigned) feature
+/// names.
+size_t simdWidthFromFeatures(ArrayRef<std::string> plainFeatures);
 
 } // namespace M
 

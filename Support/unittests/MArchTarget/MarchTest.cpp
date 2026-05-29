@@ -50,3 +50,44 @@ TEST(ArchTarget, getMArchTargetInfo) {
   EXPECT_EQ(info->arch, "neoverse-n1");
   EXPECT_EQ(info->triple.str(), "aarch64-unknown-linux-gnu");
 }
+
+// getTargetInfoFor must expand the explicit --target-features delta against
+// the CPU model defaults so that hasFeature() reflects what LLVM will actually
+// compile for. znver4 enables avx512f by default; omitting -avx512f from the
+// feature string should not make it invisible to Mojo's compile-time queries.
+TEST(ArchTarget, GetTargetInfoForExpandsFeatures) {
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+  llvm::InitializeAllAsmPrinters();
+
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
+  ctx.loadDialect<MDialect>();
+
+  constexpr StringLiteral triple = "x86_64-unknown-linux-gnu";
+  constexpr StringLiteral cpu = "znver4";
+  // Feature string that enables/disables some other features but does not
+  // mention avx512f
+  constexpr StringLiteral featuresWithoutDisablingAvx512f =
+      "+avx,+avx2,-avx512bw,-avx512cd,-avx512dq,-avx512vl";
+
+  // avx512f is part of znver4's CPU model defaults. Without an explicit
+  // -avx512f in the feature string, LLVM keeps it enabled — hasFeature must
+  // agree.
+  auto targetOn =
+      M::getTargetInfoFor(&ctx, triple, cpu, featuresWithoutDisablingAvx512f,
+                          "", "", llvm::Reloc::Static);
+  ASSERT_FALSE(targetOn.isError()) << targetOn.getError();
+  EXPECT_TRUE(targetOn->hasFeature("avx512f"));
+  EXPECT_TRUE(targetOn->hasFeature("avx2"));
+
+  // With an explicit -avx512f, hasFeature must return false.
+  constexpr StringLiteral featuresWithAvx512fDisabled =
+      "+avx,+avx2,-avx512bw,-avx512cd,-avx512dq,-avx512f,-avx512vl";
+  auto targetOff =
+      M::getTargetInfoFor(&ctx, triple, cpu, featuresWithAvx512fDisabled, "",
+                          "", llvm::Reloc::Static);
+  ASSERT_FALSE(targetOff.isError()) << targetOff.getError();
+  EXPECT_FALSE(targetOff->hasFeature("avx512f"));
+  EXPECT_TRUE(targetOff->hasFeature("avx2"));
+}
