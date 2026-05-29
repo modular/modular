@@ -796,11 +796,13 @@ def mla_prefill_branch_fp8[
     comptime scales_m_padding = 16 // size_of[fp8_scale_dtype]()
     var scales_padded_m = align_up(buffer_length, scales_m_padding)
     var fp8_k_latent_scale_buf = ctx.enqueue_create_buffer[fp8_scale_dtype](
-        scales_padded_m * kv_latent_dim // k_scale_granularity
+        scales_padded_m * ceildiv(kv_latent_dim, k_scale_granularity)
     )
     var fp8_k_latent_scale = TileTensor(
         fp8_k_latent_scale_buf,
-        row_major((Idx[kv_latent_dim // k_scale_granularity], scales_padded_m)),
+        row_major(
+            (Idx[ceildiv(kv_latent_dim, k_scale_granularity)], scales_padded_m)
+        ),
     )
 
     @__copy_capture(k_latent)
