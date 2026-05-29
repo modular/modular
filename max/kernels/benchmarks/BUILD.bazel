@@ -192,6 +192,7 @@ _CPU_TESTS = glob(
             "gpu/nn/bench_conv2d.mojo",
             "gpu/layout/bench_tile_io_copy.mojo",
             "gpu/nn/bench_conv3d.mojo",
+            "gpu/state_space/bench_causal_conv1d.mojo",
         ],
     )
 ]
@@ -208,6 +209,7 @@ _CPU_TESTS = glob(
             "gpu/nn/bench_conv2d.mojo",
             "gpu/layout/bench_tile_io_copy.mojo",
             "gpu/nn/bench_conv3d.mojo",
+            "gpu/state_space/bench_causal_conv1d.mojo",
         ],
     )
 ]
@@ -236,6 +238,48 @@ mojo_test(
         "//max:internal_utils",
         "//max:layout",
         "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# causal_conv1d lives in //max:state_space, which the globbed GPU benchmark
+# deps above don't include, so it needs explicit targets.
+mojo_binary(
+    name = "gpu/state_space/bench_causal_conv1d",
+    srcs = ["gpu/state_space/bench_causal_conv1d.mojo"],
+    enable_assertions = False,
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:state_space",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/state_space/bench_causal_conv1d.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/state_space/bench_causal_conv1d"],
+)
+
+mojo_test(
+    name = "gpu/state_space/bench_causal_conv1d.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/state_space/bench_causal_conv1d.mojo"],
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:state_space",
         "@mojo//:std",
     ],
 )
