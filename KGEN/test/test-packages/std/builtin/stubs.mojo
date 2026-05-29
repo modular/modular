@@ -43,8 +43,8 @@ comptime ExternalOrigin[*, mut: Bool] = Origin[
 comptime StaticConstantOrigin = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
-        `#lit.static.origin : !lit.origin<0>`,
-        `, "__constants__"> : !lit.origin<0>`,
+        `#lit.static.origin : !lit.origin<false>`,
+        `, "__constants__"> : !lit.origin<false>`,
     ]
 ]()
 
@@ -772,18 +772,20 @@ struct String(ImplicitlyCopyable, KeyElement):
 
 @stable
 struct Bool(TrivialRegisterPassable):
-    var _mlir_value: __mlir_type.i1
+    var _mlir_value: __mlir_type.`!kgen.scalar<bool>`
 
     @stable
     @always_inline("builtin")
     def __init__(out self):
-        self._mlir_value = __mlir_attr.`0 : i1`
+        self._mlir_value = __mlir_attr.`#kgen.simd<false> : !kgen.scalar<bool>`
 
     @stable
     @always_inline("builtin")
     @implicit
     def __init__(out self, value: __mlir_type.i1):
-        self._mlir_value = value
+        self._mlir_value = __mlir_op.`pop.cast_from_builtin`[
+            _type=__mlir_type.`!kgen.scalar<bool>`
+        ](value)
 
     @implicit
     @always_inline("builtin")
@@ -793,13 +795,13 @@ struct Bool(TrivialRegisterPassable):
         Args:
             mlir_value: The initial value.
         """
-        self._mlir_value = __mlir_op.`pop.cast_to_builtin`[
-            _type=__mlir_type.i1
-        ](mlir_value)
+        self._mlir_value = mlir_value
 
     @always_inline("builtin")
     def __mlir_i1__(self) -> __mlir_type.i1:
-        return self._mlir_value
+        return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i1](
+            self._mlir_value
+        )
 
     @always_inline("builtin")
     def __bool__(self) -> Bool:
@@ -807,11 +809,14 @@ struct Bool(TrivialRegisterPassable):
 
     @always_inline("builtin")
     def __invert__(self) -> Bool:
-        return __mlir_op.`pop.xor`(self._mlir_value, __mlir_attr.true)
+        return __mlir_op.`pop.simd.xor`(
+            self._mlir_value,
+            __mlir_attr.`#kgen.simd<true> : !kgen.scalar<bool>`,
+        )
 
     @always_inline("builtin")
     def __and__(self, rhs: Bool) -> Bool:
-        return __mlir_op.`pop.and`(self._mlir_value, rhs._mlir_value)
+        return __mlir_op.`pop.simd.and`(self._mlir_value, rhs._mlir_value)
 
 
 struct Slice(TrivialRegisterPassable):

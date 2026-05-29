@@ -195,11 +195,11 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
     case RefSpecifierKind::kRefArgument:
       // "ref [_] arg" infers mutability from the argument.
       isMut = addParam(valueName + "_is_mut",
-                       IntegerType::get(shared.getContext(), 1));
+                       SIMDType::get(shared.getContext(), 1, KGENDType::kBool));
       break;
     case RefSpecifierKind::kOutArgument:
       // "out [_] arg" infers the origin but is always mutable.
-      isMut = BoolAttr::get(shared.getContext(), true);
+      isMut = SIMDAttr::getScalarBool(shared.getContext(), true);
       break;
     case RefSpecifierKind::kRefResult:
       emitter.emitError(origExpr->getLoc())
@@ -1158,22 +1158,22 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         result.allParamConstraints.emplace_back();
     IREmitter constraintEmitter(declScope, EC_Requires);
     for (const ParsedConstraint &constraint : arg.constraints) {
-      RValue propI1 =
+      RValue prop =
           constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
-      if (!propI1) {
+      if (!prop) {
         constraintEmitter.emitError(constraint.loc,
                                     "failed to emit constraint expression");
         continue;
       }
 
-      PValue propVal = propI1.getIfPValue();
+      PValue propVal = prop.getIfPValue();
       if (!propVal) {
         constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
         continue;
       }
 
       // Convert `x and y` to `x & y` so we get better canonicalization.
-      propVal = PValue(deShortCircuitCond(propVal.get()));
+      propVal = deShortCircuitCond(CastFromBuiltinAttr::get(propVal.get()));
 
       // Store the constraint in the parameter list as is. These will be
       // remapped to using index refs later when constructing the final
@@ -1223,6 +1223,7 @@ void TypeCheckedParamList::emitBodyConstraints() {
   SharedState &shared = declScope.getShared();
   IREmitter constraintEmitter(declScope, EC_Requires);
   for (const ParsedConstraint &constraint : stagedBodyConstraints) {
+    // TODO: directly emit scalar<bool> instead of i1.
     RValue propI1 =
         constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
     if (!propI1) {
@@ -1238,7 +1239,7 @@ void TypeCheckedParamList::emitBodyConstraints() {
     }
 
     // Convert `x and y` to `x & y` so we get better canonicalization.
-    propVal = deShortCircuitCond(propVal);
+    propVal = deShortCircuitCond(CastFromBuiltinAttr::get(propVal));
 
     // Translate location without any DebugInfo scope since this metadata is
     // purely frontend use and never ends up in DWARF.
@@ -1732,7 +1733,8 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   // The reference is immutable when borrowing, mutable otherwise.
   bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
                    arg.convention != ParsedArgument::kConventionUnspec;
-  bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isMutable),
+  bindings.add(arg.typeExpr,
+               SIMDAttr::getScalarBool(emitter.getContext(), isMutable),
                StringAttr::get(emitter.getContext(), "elt_is_mutable"));
   bindings.add(arg.typeExpr,
                UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
@@ -1741,7 +1743,8 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
                StringAttr::get(emitter.getContext(), "element_trait"));
 
   bool isOwned = arg.convention == ParsedArgument::kConventionVar;
-  bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isOwned));
+  bindings.add(arg.typeExpr,
+               SIMDAttr::getScalarBool(emitter.getContext(), isOwned));
 
   // Splat in the list of types.
   bindings.add(arg.typeExpr,
@@ -1800,7 +1803,9 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
   // The reference is immutable when borrowing, mutable otherwise.
   bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
                    arg.convention != ParsedArgument::kConventionUnspec;
-  bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isMutable),
+  // See typeCheckVariadicPack above for why we use scalar<bool> instead of i1.
+  bindings.add(arg.typeExpr,
+               SIMDAttr::getScalarBool(emitter.getContext(), isMutable),
                StringAttr::get(emitter.getContext(), "elt_is_mutable"));
 
   bindings.add(arg.typeExpr, // Origin is left unbound.
@@ -1809,7 +1814,8 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
   bindings.add(arg.typeExpr, PValue(elementType));
 
   bool isVar = arg.convention == ParsedArgument::kConventionVar;
-  bindings.add(arg.typeExpr, BoolAttr::get(emitter.getContext(), isVar));
+  bindings.add(arg.typeExpr,
+               SIMDAttr::getScalarBool(emitter.getContext(), isVar));
 
   TypeSignatureType sig = structDeclOp.getSignature();
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),

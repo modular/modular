@@ -106,11 +106,13 @@ static bool kgenNoneSummaryProvider(ValueObject &valobj, Stream &stream,
   return true;
 }
 
-/// Bool types are rendered nicely as True or False.
+/// Bool (a !kgen.scalar<bool>) types are rendered nicely as True or False.
 static bool boolSummaryProvider(ValueObject &valobj, Stream &stream,
                                 const TypeSummaryOptions &summaryOptions) {
+  ValueObjectSP dataVal = valobj.GetChildAtIndex(0);
+
   bool success = false;
-  int val = valobj.GetValueAsUnsigned(/*default=*/0, &success);
+  int val = dataVal->GetValueAsUnsigned(/*default=*/0, &success);
   if (success) {
     if (val == 0)
       stream << "False";
@@ -546,12 +548,12 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
                 "SIMD bool vector summary provider", "!kgen.simd<[0-9]+, bool>",
                 summaryFlags, /*regex=*/true);
 
+  AddCXXSummary(mojoCategorySP, boolSummaryProvider, "bool summary provider",
+                "!kgen.scalar<bool>", summaryFlags, /*regex=*/false);
+
   AddCXXSummary(mojoCategorySP, scalarSummaryProvider,
                 "scalar summary provider", R"(!kgen\.scalar<[^>]+>)",
                 summaryFlags, /*regex=*/true);
-
-  AddCXXSummary(mojoCategorySP, boolSummaryProvider, "bool summary provider",
-                "i1", summaryFlags, /*regex=*/false);
 
   AddCXXSummary(
       mojoCategorySP, builtinStringSummaryProvider,

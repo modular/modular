@@ -39,7 +39,7 @@ def unsafe_ptr(s: __mlir_type.`!kgen.string`):
     # CHECK-SAME: :!AnyType #type_value,
     # CHECK-SAME: :!Int {3},
     # CHECK-SAME: :!AddressSpace {_value: !Int = {0}},
-    # CHECK-SAME: :!Bool {:i1 0},
+    # CHECK-SAME: :!Bool {:scalar<bool> false},
     # CHECK-SAME: :!Int {1}>>
     var ptr = MyUnsafePointer[origin=AnyOrigin[mut=True]](
         __mlir_op.`pop.string.address`(s)

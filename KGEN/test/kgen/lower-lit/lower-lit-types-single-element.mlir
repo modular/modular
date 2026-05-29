@@ -27,7 +27,7 @@ lit.struct.decl @MultiElement register_passable {
 // Field access should become a no-op (no struct.gep needed).
 // CHECK-SAME: (%arg0: !kgen.pointer<index>)
 // CHECK-NEXT: kgen.return
-lit.fn @single_element_index_field_access<l: !lit.origin<1>>
+lit.fn @single_element_index_field_access<l: !lit.origin<true>>
     (%ptr: !lit.ref<@SingleElementIndex, mut l>) {
   // This should be lowered without creating a struct.gep since the struct
   // is flattened to just `index`.
@@ -38,7 +38,7 @@ lit.fn @single_element_index_field_access<l: !lit.origin<1>>
 // CHECK-LABEL: kgen.generator @single_element_i32_field_access
 // CHECK-SAME: (%arg0: !kgen.pointer<i32>)
 // CHECK-NEXT: kgen.return
-lit.fn @single_element_i32_field_access<l: !lit.origin<1>>
+lit.fn @single_element_i32_field_access<l: !lit.origin<true>>
     (%ptr: !lit.ref<@SingleElementI32, mut l>) {
   %0 = lit.ref.struct.ger %ptr[value] : <@SingleElementI32, mut l> -> i32
   kgen.return
@@ -48,7 +48,7 @@ lit.fn @single_element_i32_field_access<l: !lit.origin<1>>
 // Multi-element structs should still use struct.gep.
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<(index, index)>>)
 // CHECK-NEXT: kgen.struct.gep %arg0[1]
-lit.fn @multi_element_field_access<l: !lit.origin<1>>
+lit.fn @multi_element_field_access<l: !lit.origin<true>>
     (%ptr: !lit.ref<@MultiElement, mut l>) {
   %0 = lit.ref.struct.ger %ptr[second] : <@MultiElement, mut l> -> index
   kgen.return
@@ -58,7 +58,7 @@ lit.fn @multi_element_field_access<l: !lit.origin<1>>
 // Index access (used by __struct_field_ref) should also work for single-element.
 // CHECK-SAME: (%arg0: !kgen.pointer<index>)
 // CHECK-NEXT: kgen.return
-lit.fn @single_element_index_access<l: !lit.origin<1>>
+lit.fn @single_element_index_access<l: !lit.origin<true>>
     (%ptr: !lit.ref<@SingleElementIndex, mut l>) {
   %0 = lit.ref.struct.ger %ptr[idx 0] : <@SingleElementIndex, mut l> -> <index, mut l>
   kgen.return
@@ -68,7 +68,7 @@ lit.fn @single_element_index_access<l: !lit.origin<1>>
 // Index access on multi-element structs should still use struct.gep.
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<(index, index)>>)
 // CHECK-NEXT: kgen.struct.gep %arg0[0]
-lit.fn @multi_element_index_access<l: !lit.origin<1>>
+lit.fn @multi_element_index_access<l: !lit.origin<true>>
     (%ptr: !lit.ref<@MultiElement, mut l>) {
   %0 = lit.ref.struct.ger %ptr[idx 0] : <@MultiElement, mut l> -> <index, mut l>
   kgen.return

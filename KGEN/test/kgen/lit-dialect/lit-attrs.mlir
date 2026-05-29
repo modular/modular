@@ -39,52 +39,52 @@ lit.struct.decl @Foo {
 "struct.attr"() {a = #lit.struct<{foo = 5, bar: dtype = f32}> : !lit.struct<@Foo>} : () -> ()
 
 // CHECK-LABEL: "origin.attr"
-// CHECK: #lit.any.origin : !lit.origin<1>
-"origin.attr"() {a = #lit.any.origin : !lit.origin<1>} : () -> ()
+// CHECK: #lit.any.origin : !lit.origin<true>
+"origin.attr"() {a = #lit.any.origin : !lit.origin<true>} : () -> ()
 
 
-kgen.generator @lifetime_lower<p: !lit.origin<1>>(%a: !lit.origin<0>) {
+kgen.generator @lifetime_lower<p: !lit.origin<true>>(%a: !lit.origin<false>) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @caller
 kgen.generator @caller() {
-  // CHECK: %origin = kgen.param.constant: origin<0> = <#lit.any.origin>
-  %cst = kgen.param.constant: origin<0> = <#lit.any.origin>
-  // CHECK: kgen.call @lifetime_lower<:origin<1> #lit.any.origin>(%origin) : (!lit.origin<0>) -> ()
-  kgen.call @lifetime_lower<:origin<1> #lit.any.origin>(%cst) : (!lit.origin<0>) -> ()
+  // CHECK: %origin = kgen.param.constant: origin<false> = <#lit.any.origin>
+  %cst = kgen.param.constant: origin<false> = <#lit.any.origin>
+  // CHECK: kgen.call @lifetime_lower<:origin<true> #lit.any.origin>(%origin) : (!lit.origin<false>) -> ()
+  kgen.call @lifetime_lower<:origin<true> #lit.any.origin>(%cst) : (!lit.origin<false>) -> ()
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @ref_type<p: origin<0>, q: origin<1>>(
+// CHECK-LABEL: kgen.generator @ref_type<p: origin<false>, q: origin<true>>(
 // CHECK-SAME: %arg0: !lit.ref<!lit.struct<@Foo>, imm p>
 // CHECK-SAME: %arg1: !lit.ref<!lit.struct<@Foo>, mut q>)
-kgen.generator @ref_type<p: !lit.origin<0>, q: !lit.origin<1>>
+kgen.generator @ref_type<p: !lit.origin<false>, q: !lit.origin<true>>
 (%a: !lit.ref<!lit.struct<@Foo>, imm p>, %b: !lit.ref<!lit.struct<@Foo>, mut q>) {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @field_attr<life: origin<0>>(
+// CHECK-LABEL: kgen.generator @field_attr<life: origin<false>>(
 // CHECK-SAME: %arg0: !lit.ref<!lit.struct<@Foo>, imm life->field>
 // CHECK-SAME: %arg1: !lit.ref<!lit.struct<@Foo>, imm life->a->b->c>)
-kgen.generator @field_attr<life: !lit.origin<0>>
+kgen.generator @field_attr<life: !lit.origin<false>>
 (%arg0: !lit.ref<@Foo, imm life->field>,
  %arg1: !lit.ref<@Foo, imm life->a->b->c>) {
 
-  // CHECK-NEXT: "verbose_attr"() {attr = #lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<0>, "field0"> : !lit.origin<0>} : () -> ()
-  "verbose_attr"() {attr = #lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<0>, "field0"> : !lit.origin<0>} : () -> ()
+  // CHECK-NEXT: "verbose_attr"() {attr = #lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<false>, "field0"> : !lit.origin<false>} : () -> ()
+  "verbose_attr"() {attr = #lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<false>, "field0"> : !lit.origin<false>} : () -> ()
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @indirect_origin_attr<orig: origin<0>>(
+// CHECK-LABEL: kgen.generator @indirect_origin_attr<orig: origin<false>>(
 // CHECK-SAME: %arg0: !lit.ref<!lit.struct<@Foo>, imm orig[]->field>
 // CHECK-SAME: %arg1: !lit.ref<!lit.struct<@Foo>, imm orig[]->a[]>)
-kgen.generator @indirect_origin_attr<orig: !lit.origin<0>>
+kgen.generator @indirect_origin_attr<orig: !lit.origin<false>>
 (%arg0: !lit.ref<@Foo, imm orig[]->field>,
  %arg1: !lit.ref<@Foo, imm orig[]->a[]>) {
 
-  // CHECK-NEXT: "verbose_attr"() {attr = #lit.indirect.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<0>> : !lit.origin<0>} : () -> ()
-  "verbose_attr"() {attr = #lit.indirect.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<0>> : !lit.origin<0>} : () -> ()
+  // CHECK-NEXT: "verbose_attr"() {attr = #lit.indirect.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
+  "verbose_attr"() {attr = #lit.indirect.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<false>> : !lit.origin<false>} : () -> ()
   kgen.return
 }
 
@@ -106,70 +106,70 @@ kgen.generator @unpacked<a: param_list<index>>() {
 }
 
 // CHECK-LABEL: @lifetime_union
-kgen.generator @lifetime_union<x: !lit.origin<0>, y: !lit.origin<0>>() {
+kgen.generator @lifetime_union<x: !lit.origin<false>, y: !lit.origin<false>>() {
   // CHECK-NEXT: %a = lit.var.decl
   %a = lit.var.decl "a" imp : !lit.ref<index, mut z>
 
-  // CHECK-NEXT: "empty"() {a = #lit<origin.union > : !lit.origin<0>} : () -> ()
-  "empty"() {a = #lit.origin.union<> : !lit.origin<0>} : () -> ()
-  // CHECK-NEXT: "a"() {a = #lit.any.origin : !lit.origin<0>} : () -> ()
-  "a"() {a = #lit.origin.union<:origin<0> #lit.any.origin> : !lit.origin<0>} : () -> ()
-  // CHECK-NEXT: "b"() {a = #kgen.param.decl.ref<"x"> : !lit.origin<0>}
-  "b"() {a = #lit.origin.union<:origin<0> #kgen.param.decl.ref<"x">>
-        : !lit.origin<0>} : () -> ()
-  // CHECK-NEXT: "c"() {a = #lit<origin.union <:origin<0> x, :origin<0> y>> : !lit.origin<0>}
-  "c"() {a = #lit.origin.union<:origin<0> #kgen.param.decl.ref<"x">,
-                              :origin<0> #kgen.param.decl.ref<"y">>
-        : !lit.origin<0>} : () -> ()
-  // CHECK-NEXT: "d"() {a = #lit<origin.union <:origin<0> x, :origin<0> x->field0>> : !lit.origin<0>}
-  "d"() {a = #lit.origin.union<:origin<0> #kgen.param.decl.ref<"x">,
-                               :origin<0> #lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<0>, "field0">,
-                               :origin<0> #kgen.param.decl.ref<"x">>
-        : !lit.origin<0>} : () -> ()
+  // CHECK-NEXT: "empty"() {a = #lit<origin.union > : !lit.origin<false>} : () -> ()
+  "empty"() {a = #lit.origin.union<> : !lit.origin<false>} : () -> ()
+  // CHECK-NEXT: "a"() {a = #lit.any.origin : !lit.origin<false>} : () -> ()
+  "a"() {a = #lit.origin.union<:origin<false> #lit.any.origin> : !lit.origin<false>} : () -> ()
+  // CHECK-NEXT: "b"() {a = #kgen.param.decl.ref<"x"> : !lit.origin<false>}
+  "b"() {a = #lit.origin.union<:origin<false> #kgen.param.decl.ref<"x">>
+        : !lit.origin<false>} : () -> ()
+  // CHECK-NEXT: "c"() {a = #lit<origin.union <:origin<false> x, :origin<false> y>> : !lit.origin<false>}
+  "c"() {a = #lit.origin.union<:origin<false> #kgen.param.decl.ref<"x">,
+                              :origin<false> #kgen.param.decl.ref<"y">>
+        : !lit.origin<false>} : () -> ()
+  // CHECK-NEXT: "d"() {a = #lit<origin.union <:origin<false> x, :origin<false> x->field0>> : !lit.origin<false>}
+  "d"() {a = #lit.origin.union<:origin<false> #kgen.param.decl.ref<"x">,
+                               :origin<false> #lit.origin.field<#kgen.param.decl.ref<"x"> : !lit.origin<false>, "field0">,
+                               :origin<false> #kgen.param.decl.ref<"x">>
+        : !lit.origin<false>} : () -> ()
 
-  // CHECK-NEXT: "e"() {a = #lit<origin.union <:origin<0> *[0,1], :origin<0> *[1,0]>> : !lit.origin<0>}
-  "e"() {a = #lit.origin.union<:origin<0> #lit.implicit.origin.ref<1, 0>,
-                                :origin<0> #lit.implicit.origin.ref<0, 1>> : !lit.origin<0>} : () -> ()
+  // CHECK-NEXT: "e"() {a = #lit<origin.union <:origin<false> *[0,1], :origin<false> *[1,0]>> : !lit.origin<false>}
+  "e"() {a = #lit.origin.union<:origin<false> #lit.implicit.origin.ref<1, 0>,
+                                :origin<false> #lit.implicit.origin.ref<0, 1>> : !lit.origin<false>} : () -> ()
 
-  kgen.param.declare is_mut: i1 = <0>
-  kgen.param.declare a: origin<1> = <?>
-  kgen.param.declare b: origin<0> = <?>
+  kgen.param.declare is_mut: !kgen.scalar<bool> = <#kgen.simd<false>:!kgen.scalar<bool>>
+  kgen.param.declare a: origin<true> = <?>
+  kgen.param.declare b: origin<false> = <?>
   kgen.param.declare c: origin<is_mut> = <?>
 
   // CHECK: <{(is_mut) c, mut a, imm b}>
   kgen.param.constant: origin.set = <{imm b, mut a, (is_mut) c, mut a}>
   // CHECK-NEXT: <{mut a}>
   kgen.param.constant: origin.set = <{imm (mutcast mut a)}>
-  // CHECK-NEXT: <{mut a, mut #lit.any.origin, imm b}>
+  // CHECK-NEXT: <{mut a, imm b, mut #lit.any.origin}>
   kgen.param.constant: origin.set = <{mut #lit.any.origin, mut a, imm b}>
   // CHECK-NEXT: <{mut a, imm b}>
   kgen.param.constant: origin.set = <{mut {(mutcast imm b), a}}>
 
   // CHECK-NEXT: <{(mutcast mut a), b}>
-  kgen.param.constant: origin<0> = <|{mut a, imm b}|>
+  kgen.param.constant: origin<false> = <|{mut a, imm b}|>
 
-  // CHECK-NEXT: kgen.param.declare nothing: origin<0> = <#lit.any.origin>
-  kgen.param.declare nothing: !lit.origin<0> = <#lit.any.origin>
-  // CHECK-NEXT:  kgen.param.declare nothing_2: origin<0> = <#lit.any.origin>
-  kgen.param.declare nothing_2: !lit.origin<0> = <{#lit.any.origin, #lit.any.origin}>
-  // CHECK-NEXT: kgen.param.declare x_ref: origin<0> = <x>
-  kgen.param.declare x_ref: !lit.origin<0> = <x>
-  // CHECK-NEXT: kgen.param.declare x_ref2: origin<0> = <x>
-  kgen.param.declare x_ref2: !lit.origin<0> = <*"x">
-  // CHECK-NEXT: kgen.param.declare x_or_y_ref: origin<0> = <{x, y}>
-  kgen.param.declare x_or_y_ref: !lit.origin<0> = <{x, y, x}>
-  // CHECK-NEXT: kgen.param.declare y_ref: origin<0> = <#lit.any.origin>
-  kgen.param.declare y_ref: !lit.origin<0> = <{y, #lit.any.origin}>
-  // CHECK-NEXT: kgen.param.declare xyz_ref: origin<0> = <{x, y, (mutcast mut z)}>
-  kgen.param.declare xyz_ref: !lit.origin<0> = <{{x, y}, {(mutcast mut z), y}}>
+  // CHECK-NEXT: kgen.param.declare nothing: origin<false> = <#lit.any.origin>
+  kgen.param.declare nothing: !lit.origin<false> = <#lit.any.origin>
+  // CHECK-NEXT:  kgen.param.declare nothing_2: origin<false> = <#lit.any.origin>
+  kgen.param.declare nothing_2: !lit.origin<false> = <{#lit.any.origin, #lit.any.origin}>
+  // CHECK-NEXT: kgen.param.declare x_ref: origin<false> = <x>
+  kgen.param.declare x_ref: !lit.origin<false> = <x>
+  // CHECK-NEXT: kgen.param.declare x_ref2: origin<false> = <x>
+  kgen.param.declare x_ref2: !lit.origin<false> = <*"x">
+  // CHECK-NEXT: kgen.param.declare x_or_y_ref: origin<false> = <{x, y}>
+  kgen.param.declare x_or_y_ref: !lit.origin<false> = <{x, y, x}>
+  // CHECK-NEXT: kgen.param.declare y_ref: origin<false> = <#lit.any.origin>
+  kgen.param.declare y_ref: !lit.origin<false> = <{y, #lit.any.origin}>
+  // CHECK-NEXT: kgen.param.declare xyz_ref: origin<false> = <{x, y, (mutcast mut z)}>
+  kgen.param.declare xyz_ref: !lit.origin<false> = <{{x, y}, {(mutcast mut z), y}}>
 
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @test_origin
-kgen.generator @test_origin<x: i1>() {
-  // CHECK-NEXT: kgen.param.constant: origin<0> = <rebind(:i1 x)>
-  kgen.param.constant: origin<0> = <rebind(:i1 x)>
+kgen.generator @test_origin<x: !kgen.scalar<bool>>() {
+  // CHECK-NEXT: kgen.param.constant: origin<false> = <rebind(:scalar<bool> x)>
+  kgen.param.constant: origin<false> = <rebind(:!kgen.scalar<bool> x)>
   kgen.return
 }
 

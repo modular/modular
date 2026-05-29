@@ -55,9 +55,9 @@ def fold_bool_init() -> BoolT[True]:
     comptime F = Bool(
         mlir_value=__mlir_attr.`#kgen.simd<false> : !kgen.scalar<bool>`
     )
-    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#BoolT <:!Bool {:i1 1}>>, mut *"a`3">
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#BoolT <:!Bool {:scalar<bool> true}>>, mut *"a`3">
     var a = BoolT[T]()
-    # CHECK: %b = lit.var.decl "b" var : !lit.ref<!lit.struct<#BoolT <:!Bool {:i1 0}>>, mut *"b`4">
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<!lit.struct<#BoolT <:!Bool {:scalar<bool> false}>>, mut *"b`4">
     var b = BoolT[F]()
     return a
 

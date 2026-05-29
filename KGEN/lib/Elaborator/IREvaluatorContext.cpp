@@ -156,7 +156,7 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
 FailureOr<TypedAttr>
 IREvaluatorContext::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
   auto qualifiedBuiltins =
-      dyn_cast<BoolAttr>(getTypeNameAttr.getQualifiedBuiltins());
+      dyn_cast<SIMDAttr>(getTypeNameAttr.getQualifiedBuiltins());
   if (!qualifiedBuiltins) {
     emitError({*errorLoc, "'get_type_name' name did not narrow to a constant"});
     return failure();
@@ -172,7 +172,7 @@ IREvaluatorContext::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
     return failure();
   }
   return {StringAttr::get(
-      stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins.getValue()),
+      stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins.getAsBool()),
       getTypeNameAttr.getType())};
 }
 
@@ -698,12 +698,15 @@ void IREvaluatorContext::printParamValue(raw_ostream &os, ParamDeclAttr decl,
         ArrayRef<KGEN::DTypeValue> values = simdAttr.getValues();
         KGENDType dType = *simdAttr.getType().getResolvedDType();
         KGEN::printDTypeValues(os, values, dType);
-        os << " : ";
-        if (qualifiedBuiltins)
-          os << "std.builtin.simd.";
-        os << "SIMD[";
-        printDType(os, dType, qualifiedBuiltins);
-        os << ", " << values.size() << "]";
+        // Don't print Bool as a SIMD type.
+        if (!isScalarOf<KGENDType::kBool>(simdAttr.getType())) {
+          os << " : ";
+          if (qualifiedBuiltins)
+            os << "std.builtin.simd.";
+          os << "SIMD[";
+          printDType(os, dType, qualifiedBuiltins);
+          os << ", " << values.size() << "]";
+        }
       })
       .Default([&](auto value) { os << "<unprintable>"; });
 }

@@ -113,13 +113,13 @@ def pop_cast_to_builtin_bool(
 
 # CHECK-LABEL: lit.fn @"fold_pop_cast_to_builtin_bool
 def fold_pop_cast_to_builtin_bool() -> BoolT[True]:
-    # CHECK: %a = lit.var.decl "a" var : {{.*}}:i1 1}>>,
+    # CHECK: %a = lit.var.decl "a" var : {{.*}}:scalar<bool> true}>>,
     var a = BoolT[
         pop_cast_to_builtin_bool(
             __mlir_attr.`#kgen.simd<true> : !kgen.scalar<bool>`
         )
     ]()
-    # CHECK:  %b = lit.var.decl "b" var : {{.*}}:i1 0}>>,
+    # CHECK:  %b = lit.var.decl "b" var : {{.*}}:scalar<bool> false}>>,
     var b = BoolT[
         pop_cast_to_builtin_bool(
             __mlir_attr.`#kgen.simd<false> : !kgen.scalar<bool>`

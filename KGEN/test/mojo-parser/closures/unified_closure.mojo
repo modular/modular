@@ -117,11 +117,11 @@ def make_closure(x: Int, mem: String) -> Int:
 # CHECK: lit.struct.decl @"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{[^"]*}}"<impl: {{.*}}, origin_set: origin.set, |>({{.*}}) attributes {definesClosure,{{.*}}synthetic}
 # CHECK: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
 
-# CHECK-NEXT: lit.fn @"__call__{{.*}}"<{{.*}}, lt: !lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *"lt._mlir_origin`2x">>>[
+# CHECK-NEXT: lit.fn @"__call__{{.*}}"<{{.*}}, lt: !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"lt._mlir_origin`2x">>>[
 # CHECK-NEXT: [[FIELD:%.*]] = lit.ref.struct.ger %0[field0]
 # CHECK-NEXT: [[V1:%.*]] = lit.ref.immut [[FIELD]]
 # CHECK-NEXT: [[V2:%.*]] = lit.call[!lit.generator<[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none>:
-# CHECK-SAME: bind_params(:!lit.generator<<{{.*}}"lt": !lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *(0,0)>>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
+# CHECK-SAME: bind_params(:!lit.generator<<{{.*}}"lt": !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *(0,0)>>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
 # CHECK-SAME:> #kgen.get_witness<:[[TRAIT]] impl, "def[{{.*}}](a: ref[lt] String, b: String) -> None", "__call__{{.*}}">{{.*}}][muttoimm *{{.*}}->field0, {{.*}}]([[V1]], %a, %b)
 # CHECK-NEXT: lit.return [[V2]] : !kgen.none
 # CHECK-NEXT: lit.end_fn
@@ -312,7 +312,7 @@ def bindIt(mem: String) -> Int:
 
 
 # CHECK: kgen.conformance @"def[{{.*}}](a: ref[lt] String, b: String) -> None" {
-# CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator<<{{.*}}"lt": !lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *(0,0)>>>[2](!lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
+# CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator<<{{.*}}"lt": !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *(0,0)>>>[2](!lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
 # CHECK-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__call__{{.*}}"<:[[TRAIT]] impl, :origin.set origin_set,
 
 # CHECK: kgen.conformance @{{.*}}::Movable" {
@@ -1626,8 +1626,8 @@ def demo[o: Origin[mut=True]](
        address_space=AddressSpace.GENERIC,
    ],
 ):
-   # CHECK: kgen.struct.generator @"demo{{.*}}::write"<*"o._mlir_origin`": origin<1>, o: !lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *"o._mlir_origin`">>>
-   # CHECK-SAME: struct_inst<"demo{{.*}}::write"[*"o._mlir_origin`", o]<:origin<1> *"o._mlir_origin`", :!lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *"o._mlir_origin`">> o>
+   # CHECK: kgen.struct.generator @"demo{{.*}}::write"<*"o._mlir_origin`": origin<true>, o: !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">>>
+   # CHECK-SAME: struct_inst<"demo{{.*}}::write"[*"o._mlir_origin`", o]<:origin<true> *"o._mlir_origin`", :!lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">> o>
    def write() {read ptr}:
        ptr.store(0, 3)
    can_mutate(write)
@@ -1649,8 +1649,8 @@ def demo[o: Origin[mut=True]](
 ):
    var immut_ptr = ptr.as_immutable()
 
-   # CHECK: kgen.struct.generator @"demo{{.*}}::read"<*"o._mlir_origin`": origin<0>, *"immut_ptr{{.*}}": origin<0>>
-   # CHECK-SAME: struct_inst<"demo{{.*}}::read"[*"o._mlir_origin`", *"immut_ptr{{.*}}"]<:origin<0> *"o._mlir_origin`", :origin<0> *"immut_ptr{{.*}}">
+   # CHECK: kgen.struct.generator @"demo{{.*}}::read"<*"o._mlir_origin`": origin<false>, *"immut_ptr{{.*}}": origin<false>>
+   # CHECK-SAME: struct_inst<"demo{{.*}}::read"[*"o._mlir_origin`", *"immut_ptr{{.*}}"]<:origin<false> *"o._mlir_origin`", :origin<false> *"immut_ptr{{.*}}">
 
    def read() {read immut_ptr}:
        _ = immut_ptr[0]

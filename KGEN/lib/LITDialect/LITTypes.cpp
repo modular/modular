@@ -510,7 +510,7 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
         return SugarKind::AlwaysInlineBuiltin;
 
     if (typeName == "Bool" || typeName == "DType") {
-      if (isa<IntegerAttr, DTypeConstantAttr>(elt))
+      if (isa<SIMDAttr, IntegerAttr, DTypeConstantAttr>(elt))
         return SugarKind::Alias;
     }
 
@@ -1023,29 +1023,29 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
 }
 
 OriginType OriginType::get(TypedAttr isMutable) {
-  assert(isMutable.getType().isSignlessInteger(1) &&
-         "isMutable bit should be i1");
+  assert(KGEN::isScalarOf<KGENDType::kBool>(isMutable.getType()) &&
+         "isMutable bit should scalar<bool>");
   return get(isMutable.getContext(), isMutable);
 }
 
 OriginType OriginType::get(MLIRContext *ctx, bool isMutable) {
-  return get(ctx, BoolAttr::get(ctx, isMutable));
+  return get(ctx, SIMDAttr::getScalarBool(ctx, isMutable));
 }
 
 /// Return true if the mutable attribute is known to be the specific
 /// constant.  This returns false if parametric or if the other value.
 bool OriginType::isMutableKnown(bool value) {
-  if (auto cst = ::dyn_cast<BoolAttr>(getCanonicalAttr(getIsMutable())))
-    return cst.getValue() == value;
+  if (auto cst = ::dyn_cast<SIMDAttr>(getCanonicalAttr(getIsMutable())))
+    return cst.getAsBool() == value;
   return false;
 }
 
 /// Classify the mutability into Mutable/Immutable/Parametric.
 OriginType::MutabilityClass OriginType::getMutabilityClass() {
-  auto cst = ::dyn_cast<BoolAttr>(getIsMutable());
+  auto cst = ::dyn_cast<SIMDAttr>(getIsMutable());
   if (!cst)
     return Parametric;
-  return cst.getValue() ? Mutable : Immutable;
+  return cst.getAsBool() ? Mutable : Immutable;
 }
 
 /// Given a value of origin type, return true if the origin is known to have
@@ -1073,7 +1073,7 @@ std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
   // print as MutableOrigin / ImmutableOrigin.  This ends up being a lot nicer
   // than: "origin_of(_lit_mut_cast[True, MutAnyOrigin].result".  We keep sugar
   // if our mutability so parametric expression.
-  if (sugarIsa<IntegerAttr>(getIsMutable()))
+  if (sugarIsa<SIMDAttr>(getIsMutable()))
     return SugarKind::Alias;
 
   // StaticConstantOrigin can also be elided.

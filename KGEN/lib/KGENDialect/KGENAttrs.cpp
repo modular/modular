@@ -688,14 +688,14 @@ TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
         traitTableOp.lookup(getFlattenedSymbolName(traitSym)));
 
     if (!conformOp)
-      return {getScalarBoolConstant(getContext(), false)};
+      return {SIMDAttr::getScalarBool(getContext(), false)};
 
     props.push_back(evaluator.replace(
         getCanonicalAttr(conformOp.getConstraint().getProposition())));
   }
 
   if (props.empty())
-    return {getScalarBoolConstant(getContext(), true)};
+    return {SIMDAttr::getScalarBool(getContext(), true)};
 
   return {ParamOperatorAttr::get(POC::And, props)};
 }
@@ -2699,13 +2699,13 @@ static TypedAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
       return splatIntLiteralToSIMD(true, retType);
     }
 
-    return getScalarBoolConstant(rhs.getContext(), true);
+    return SIMDAttr::getScalarBool(rhs.getContext(), true);
   }
 
   Type lhsTypeVal = getTypeValueAsType(stripUpcast(lhs));
   Type rhsTypeVal = getTypeValueAsType(stripUpcast(rhs));
   if (lhsTypeVal && rhsTypeVal && isEqualCanon(lhsTypeVal, rhsTypeVal))
-    return getScalarBoolConstant(rhs.getContext(), true);
+    return SIMDAttr::getScalarBool(rhs.getContext(), true);
 
   // Folding to False is a lot harder:
   // If either side contains expression nodes that still need to be evaluated,
@@ -2720,7 +2720,7 @@ static TypedAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
       return splatIntLiteralToSIMD(lhs == rhs, retType);
     }
 
-    return getScalarBoolConstant(rhs.getContext(), lhs == rhs);
+    return SIMDAttr::getScalarBool(rhs.getContext(), lhs == rhs);
   }
 
   // Type inequality is a bit stronger due to nominality of struct types.
@@ -2734,7 +2734,7 @@ static TypedAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
         // Both sides are struct types. If the referenced symbols are different,
         // they are never equal.
         if (lhsStructRef != rhsStructRef)
-          return getScalarBoolConstant(rhs.getContext(), false);
+          return SIMDAttr::getScalarBool(rhs.getContext(), false);
       } else if (static_cast<bool>(lhsStructRef) !=
                  static_cast<bool>(rhsStructRef)) {
         // If one side is a struct type and the other is not, we can only fold
@@ -2742,9 +2742,9 @@ static TypedAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
         // we do not yet know whether the non-struct side will evaluate to a
         // struct.
         if (lhsStructRef && rhsSimpleConstant)
-          return getScalarBoolConstant(rhs.getContext(), false);
+          return SIMDAttr::getScalarBool(rhs.getContext(), false);
         if (rhsStructRef && lhsSimpleConstant)
-          return getScalarBoolConstant(rhs.getContext(), false);
+          return SIMDAttr::getScalarBool(rhs.getContext(), false);
       }
     }
   }
@@ -3292,7 +3292,7 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
 
   // If there are no trailing operands, fold to false.
   if (trailing.empty())
-    return getScalarBoolConstant(b.getContext(), false);
+    return SIMDAttr::getScalarBool(b.getContext(), false);
 
   // If there is only one trailing operand, canonicalize to an `eq` operator.
   if (trailing.size() == 1)
@@ -3304,10 +3304,10 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
     if (auto knownEq = foldEquality(lhs, operand)) {
       if (auto simdEq = sugarDynCast<SIMDAttr>(knownEq);
           simdEq && isAllIntLikeOne(simdEq))
-        return getScalarBoolConstant(b.getContext(), true);
+        return SIMDAttr::getScalarBool(b.getContext(), true);
     } else if (lhs == operand) {
       // Fold to true if they match symbolically, like "x+1" and "x+1".
-      return getScalarBoolConstant(b.getContext(), true);
+      return SIMDAttr::getScalarBool(b.getContext(), true);
     } else {
       // If this is a symbolic comparison like "x == 5", then we cannot fold the
       // non-containment case.
@@ -3319,7 +3319,7 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
   // they might be symbolic.  If we know for sure that LHS *isn't* equal to any
   // of the elements in the set then we can fold to false.
   if (allKnownFalse)
-    return getScalarBoolConstant(b.getContext(), false);
+    return SIMDAttr::getScalarBool(b.getContext(), false);
 
   // Sort and unique the trailing operands.
   llvm::stable_sort(trailing, ParameterAttr::compare);
@@ -4321,12 +4321,23 @@ TypedAttr CastFromBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
   // Else, try sink the cast_from_builtin to the leaf of the expression,
   // s.t.,
   // cast_from_builtin(i * j) -> cast_from_builtin(i) * cast_from_builtin(j)
-  if (auto expr = dyn_cast<ParamOperatorAttr>(arg);
-      expr && shouldSinkCast(expr.getOpcode(), expr.getOperands())) {
-    auto operands = llvm::map_to_vector(expr.getOperands(), [&](auto operand) {
-      return splatBuiltinToSIMD(operand, out_type.getSize());
-    });
-    return ParamOperatorAttr::get(expr.getOpcode(), operands);
+  if (auto expr = dyn_cast<ParamOperatorAttr>(arg)) {
+    if (shouldSinkCast(expr.getOpcode(), expr.getOperands())) {
+      auto operands =
+          llvm::map_to_vector(expr.getOperands(), [&](auto operand) {
+            return splatBuiltinToSIMD(operand, out_type.getSize());
+          });
+      return ParamOperatorAttr::get(expr.getOpcode(), operands);
+    } else if (expr.getOpcode() == POC::Cond) {
+      // POC::Cond is not a lane-wise select, keep the original cond operand,
+      // sink the cast on the expressions to be selected.
+      return ParamOperatorAttr::get(
+          POC::Cond, {
+                         expr.getOperand(0),
+                         CastFromBuiltinAttr::get(expr.getOperand(1)),
+                         CastFromBuiltinAttr::get(expr.getOperand(2)),
+                     });
+    }
   }
   return Base::get(ctx, arg, out_type);
 }
@@ -4383,6 +4394,22 @@ TypedAttr CastToBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
   if (auto fold = KGEN::foldCastToBuiltin(arg, out_type))
     if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
       return ret;
+
+  // Sink the cast into the operands of a `cond` parameter expression.
+  // This mirrors the canonicalization of `cast_from_builtin` to ensure that
+  // `to_builtin(cond(c, from_builtin(x), from_builtin(y)))` folds
+  // back to `cond(c, x, y)`.
+  if (auto expr = dyn_cast<ParamOperatorAttr>(arg)) {
+    if (expr.getOpcode() == POC::Cond) {
+      return ParamOperatorAttr::get(
+          POC::Cond,
+          {
+              expr.getOperand(0),
+              CastToBuiltinAttr::get(ctx, expr.getOperand(1), out_type),
+              CastToBuiltinAttr::get(ctx, expr.getOperand(2), out_type),
+          });
+    }
+  }
   return Base::get(ctx, arg, out_type);
 }
 
@@ -5025,6 +5052,17 @@ SIMDAttr SIMDAttr::getZeroValue(SIMDType type) {
 
   SmallVector<DTypeValue> elements(optSize.value(), zeroValue.value());
   return SIMDAttr::get(elements, type);
+}
+
+/// Create a bool scalar value
+SIMDAttr SIMDAttr::getScalarBool(MLIRContext *ctx, bool value) {
+  return SIMDAttr::get(DTypeValue(value, KGENDType::kBool),
+                       SIMDType::get(ctx, 1, KGENDType::kBool));
+}
+
+bool SIMDAttr::getAsBool() const {
+  assert(isScalarOf<KGENDType::kBool>(getType()));
+  return isAllIntLikeOne(*this);
 }
 
 //===----------------------------------------------------------------------===//

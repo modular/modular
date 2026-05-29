@@ -128,7 +128,7 @@ FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
     // struct (e.g. MLIR primitive types like `index`). Non-struct types don't
     // conform to any traits, so return false.
     if (context.isMaterializationContext())
-      return {getScalarBoolConstant(getContext(), false)};
+      return {SIMDAttr::getScalarBool(getContext(), false)};
     return failure();
   }
 

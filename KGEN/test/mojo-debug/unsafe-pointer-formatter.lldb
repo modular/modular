@@ -36,6 +36,6 @@
 
 # CHECK: p_neg = -5
 
-# CHECK: p_bool = True
+# CHECK: p_bool[0] = True
 
 # CHECK: p_float = 3.125

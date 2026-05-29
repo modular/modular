@@ -582,7 +582,7 @@ def test_if_cond(var cond: Bool, memCond: MemBoolish):
     # CHECK-NEXT: lit.ref.store %[[IF_RES]], %i
     var i: Int = 2 if cond else 3
 
-    # CHECK: [[TRUEB:%.+]] = kgen{{.*}}{:i1 1}
+    # CHECK: [[TRUEB:%.+]] = kgen{{.*}}{:scalar<bool> true}
     # CHECK-NEXT: lit.ref.store [[TRUEB]], %cond
     cond = True
     i += i
@@ -591,7 +591,7 @@ def test_if_cond(var cond: Bool, memCond: MemBoolish):
 
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 def test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(from_builtin(:i1 #lit.struct.extract<:!Bool cond, "_mlir_value">), {2}, {3})>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
   comptime i = 2 if cond else 3
 
   # CHECK-NEXT: lit.alias.decl *"j{{.*}} = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">
@@ -805,8 +805,8 @@ def literals() raises:
     # Test parsing for this value with lots of underscores here because mblack
     # can't handle it.
     comptime b = 1_2.3__1e+1_1 # CHECK: #pop.float_literal<1231000000000|1>
-    c = False         # CHECK: !Bool = <{:i1 0}>
-    c = True          # CHECK: !Bool = <{:i1 1}>
+    c = False         # CHECK: !Bool = <{:scalar<bool> false}>
+    c = True          # CHECK: !Bool = <{:scalar<bool> true}>
 
 # CHECK-LABEL: lit.fn @"_strings
 def _strings():
@@ -1008,7 +1008,7 @@ def function_types():
   comptime p1 = def[a: Int, b: ParamType[a]]() thin raises -> None
 
   # CHECK: lit.alias.decl *"p2{{.*}}"Ts": !lit.struct<#TypeList{{.*}} pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack
-  # CHECK-SAME: <:!Bool {:i1 0},  :origin<0> *(0,2){{.*}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> *(0,0), :!Bool {:i1 0}, {{.*}}>>, imm *[0,0]>
+  # CHECK-SAME: <:!Bool {:scalar<bool> false},  :origin<false> *(0,2){{.*}}, :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> *(0,0), :!Bool {:scalar<bool> false}, {{.*}}>>, imm *[0,0]>
   # CHECK-SAME: read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
   comptime p2 = async def[*Ts: AnyType](* *Ts) thin -> None
 
@@ -1232,7 +1232,7 @@ struct ThingWithMethodReferenceSelf:
 def testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
     # CHECK-SAME: <apply(:!lit.generator<("a": !lit.ref<!ThingWithMethodReferenceSelf,
-    # CHECK-SAME:     <:i1 0, :origin<0> #lit.comptime.origin>, store_to_mem(a))>
+    # CHECK-SAME:     <:scalar<bool> false, :origin<false> #lit.comptime.origin>, store_to_mem(a))>
     comptime sizzle = a.method()
 
 struct HasOverloadedFooMethods:

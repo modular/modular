@@ -88,7 +88,7 @@ ConstraintResult LIT::checkConstraints(
         ParamOperatorAttr::get(POC::And, overallAssumptionOperands);
   } else {
     MLIRContext *ctx = constraints.front().getContext();
-    overallAssumption = getScalarBoolConstant(ctx, true);
+    overallAssumption = SIMDAttr::getScalarBool(ctx, true);
   }
 
   SmallVector<std::pair<size_t, ConstraintAttr>> failedConstraints;
@@ -158,6 +158,9 @@ ConstraintResult LIT::checkConstraints(
 ///     and/or(struct.extract(b, field), struct.extract(c, field))
 /// Recursively processes nested cond operations to handle "a and b and c".
 TypedAttr LIT::deShortCircuitCond(TypedAttr value) {
+  assert(isScalarOf<KGENDType::kBool>(value.getType()) &&
+         "expected scalar<bool>");
+
   // Check if this is a struct.extract on top of a cond.
   LIT::StructExtractAttr extractAttr;
   TypedAttr innerValue = getCanonicalAttr(value);
@@ -186,14 +189,10 @@ TypedAttr LIT::deShortCircuitCond(TypedAttr value) {
                                            extractAttr.getType());
   }
 
-  // We need to make `Bool` holding a `scalar<bool>` field to get rid of the
-  // cast, otherwise the struct_extract on a `Bool`-value always returns an i1
-  // value.
-  TypedAttr i1Cond = CastToBuiltinAttr::get(condOrig);
   POC opcode;
-  if (condOrig == falseVal || i1Cond == falseVal) {
+  if (condOrig == falseVal) {
     opcode = POC::And;
-  } else if (condOrig == trueVal || i1Cond == trueVal) {
+  } else if (condOrig == trueVal) {
     opcode = POC::Or;
   } else {
     // Not a pattern we recognize. Return unchanged.

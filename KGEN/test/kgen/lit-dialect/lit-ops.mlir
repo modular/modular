@@ -113,7 +113,7 @@ lit.fn @end_fn() {
 }
 
 
-lit.fn @ref_immut<life: origin<1>>(%ref1: !lit.ref<@MyStruct, mut life>)
+lit.fn @ref_immut<life: origin<true>>(%ref1: !lit.ref<@MyStruct, mut life>)
  -> !lit.ref<@MyStruct, muttoimm life> {
   // CHECK: %0 = lit.ref.immut %ref1 : <!lit.struct<@MyStruct>, mut life>
   %ref2 = lit.ref.immut %ref1: <!lit.struct<@MyStruct>, mut life>
@@ -121,7 +121,7 @@ lit.fn @ref_immut<life: origin<1>>(%ref1: !lit.ref<@MyStruct, mut life>)
   kgen.return %ref2: !lit.ref<!lit.struct<@MyStruct>, muttoimm life>
 }
 
-lit.fn @ref_pointer<life: origin<1>, ilife: origin<0>>
+lit.fn @ref_pointer<life: origin<true>, ilife: origin<false>>
      (%ref1: !lit.ref<@MyStruct, mut life>) {
   // CHECK: %0 = lit.ref.to_pointer %ref1 : <!lit.struct<@MyStruct>, mut life>
   %ptr = lit.ref.to_pointer %ref1: <!lit.struct<@MyStruct>, mut life>
@@ -133,7 +133,7 @@ lit.fn @ref_pointer<life: origin<1>, ilife: origin<0>>
   lit.end_fn
 }
 
-lit.fn @ref_kgen_ptr<life: origin<1>, ilife: origin<0>>
+lit.fn @ref_kgen_ptr<life: origin<true>, ilife: origin<false>>
      (%ref1: !lit.ref<@MyStruct, mut life>) {
   // CHECK: %0 = lit.ref.to_kgen_ptr %ref1 : <!lit.struct<@MyStruct>, mut life> -> <struct<(i64)>>
   %ptr = lit.ref.to_kgen_ptr %ref1 : !lit.ref<!lit.struct<@MyStruct>, mut life>
@@ -198,11 +198,11 @@ lit.fn @main(%a: !lit.struct<@A>, %b: !lit.struct<@B>) {
   kgen.return
 }
 
-// CHECK-LABEL: lit.struct.decl @CrazyParams<*"m`": origin<0>> {
-lit.struct.decl @CrazyParams<*"m`": origin<0>> {
+// CHECK-LABEL: lit.struct.decl @CrazyParams<*"m`": origin<false>> {
+lit.struct.decl @CrazyParams<*"m`": origin<false>> {
 }
 
-lit.struct.decl @LifetimeRef<b: origin<0>> {
+lit.struct.decl @LifetimeRef<b: origin<false>> {
   lit.struct.field b : !lit.generator<(!lit.ref<@A, imm *(0,1)>) -> ()>
 }
 

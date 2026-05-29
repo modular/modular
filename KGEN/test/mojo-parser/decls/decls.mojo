@@ -69,7 +69,7 @@ def variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
 # CHECK-LABEL: lit.fn @"trait_pack
 # CHECK-SAME: <{{.*}}, Ts:
 
-# CHECK-SAME: %rest: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:i1 0}, :origin<0> *"rest
+# CHECK-SAME: %rest: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"rest
 # CHECK-SAME: :!lit.anytrait<!AnyType> !ImplicitlyCopyable, :param_list<!ImplicitlyCopyable> *"Ts.values`"
 def trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: *Ts):
     pass
@@ -510,7 +510,7 @@ def variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.fn @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 def test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.generator<[1]("values": {{.*}}#VariadicList{{.*}}:!AnyType !MemStruct, :!Bool {:i1 0}>>, imm #lit.comptime.origin> read_mem|pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only{{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.generator<[1]("values": {{.*}}#VariadicList{{.*}}:!AnyType !MemStruct, :!Bool {:scalar<bool> false}>>, imm #lit.comptime.origin> read_mem|pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only{{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)])
     comptime b = variadic_mem_only(x, y)
 
@@ -1007,7 +1007,7 @@ async def capture_byref(mut x: Awaitable, y: Awaitable):
 
 
 @fieldwise_init
-struct LifetimeAccess[origin: __mlir_type.`!lit.origin<1>`](RegisterPassable):
+struct LifetimeAccess[origin: __mlir_type.`!lit.origin<true>`](RegisterPassable):
     pass
 
 
@@ -1028,8 +1028,8 @@ def coroutine_origins():
     # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}@__MLIRType<:non_struct_type none>, none], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO2]])
     var coro = capture_byref(x, y)
 
-    # CHECK: lit.async.call[!lit.generator<[2]("x": !lit.ref<!lit.struct<#LifetimeAccess <:origin<1> [[Y_LT]]>>,
-    # CHECK-SAME: mut *[0,0]{{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:origin<1> [[Y_LT]]>]
+    # CHECK: lit.async.call[!lit.generator<[2]("x": !lit.ref<!lit.struct<#LifetimeAccess <:origin<true> [[Y_LT]]>>,
+    # CHECK-SAME: mut *[0,0]{{.*}}) async -> !kgen.none>: {{.*}}lifetime_access{{.*}}<:origin<true> [[Y_LT]]>]
     # CHECK: #Coroutine <:!AnyType [{{.*}}@__MLIRType<:non_struct_type none>, none], :origin.set {{{.*}}, mut [[Y_LT]]}>
     var access = lifetime_access(LifetimeAccess[origin_of(y)._mlir_origin]())
 
@@ -1131,13 +1131,13 @@ struct HasLifetimeParam[p: Origin[mut=True]](TrivialRegisterPassable):
 
 
 # CHECK-LABEL: lit.fn @"explicitLifetime
-# CHECK-SAME: #Origin <:!Bool {:i1 1}{{.*}}>> lt>
+# CHECK-SAME: #Origin <:!Bool {:scalar<bool> true}{{.*}}>> lt>
 def explicitLifetime[lt: Origin[mut=True], //, arg: HasLifetimeParam[lt]]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"inaccessibleImplicitLifetimeParam
-# CHECK-SAME: <?, *"arg.p._mlir_origin``": origin<1>,
+# CHECK-SAME: <?, *"arg.p._mlir_origin``": origin<true>,
 def inaccessibleImplicitLifetimeParam(arg: HasLifetimeParam):
     pass
 
@@ -1199,9 +1199,9 @@ def inferCaptureOrigins[
     # CHECK: lit.alias.decl *"boundSet{{.*}}!kgen.func.literal<:!lit.fn<:rebind(:origin.set {mut *"x`1"}):
     comptime boundSet = closureParameterCaptures[captureSomething]
 
-    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}:origin<1> *(0,0)>
+    # CHECK: lit.alias.decl *"unboundSingleParam{{.*}}:origin<true> *(0,0)>
     comptime unboundSingleParam = explicitLifetime
-    # CHECK: lit.alias.decl *"boundSingleParam{{.*}}:origin<1> *"lt._mlir_origin`"
+    # CHECK: lit.alias.decl *"boundSingleParam{{.*}}:origin<true> *"lt._mlir_origin`"
     comptime boundSingleParam = explicitLifetime[param]
 
     # CHECK: lit.alias.decl *"memberFunction{{.*}}!kgen.func.literal<:!lit.fn<:*(0,1):
@@ -1316,7 +1316,7 @@ struct SomeType:
 # COM: An implicit origin is passed into a struct parameter inside a trait
 # COM: binding. Ensure this passes `-verify-parameters`.
 # CHECK-LABEL: lit.fn @"implicit_origin_as_param
-# CHECK-SAME: !lit.ref<{{.*}}<:!AnyType {{.*}}Match<:origin<0> *"arg`">>
+# CHECK-SAME: !lit.ref<{{.*}}<:!AnyType {{.*}}Match<:origin<false> *"arg`">>
 def implicit_origin_as_param(
     arg: SomeType,
 ) -> Bound[Match[origin_of(arg)._mlir_origin]]:
@@ -1329,10 +1329,10 @@ struct Bound[T: AnyType]:
 
 @fieldwise_init
 # CHECK: lit.struct.decl @Match
-struct Match[lt: __mlir_type.`!lit.origin<0>`]:
+struct Match[lt: __mlir_type.`!lit.origin<false>`]:
     pass
     # CHECK: kgen.conformance {{.*}}::ImplicitlyDestructible
-    # CHECK-NEXT: kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<#Match <:origin<0> lt>>, mut *[0,0]> deinit_mem,
+    # CHECK-NEXT: kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<#Match <:origin<false> lt>>, mut *[0,0]> deinit_mem,
 
 
 ##===----------------------------------------------------------------------===##
@@ -1536,7 +1536,7 @@ def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]() where x > 0:
     need_positive_int[x]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">, <{<sugar_preserved(from_builtin(:i1 #lit.struct.extract<:!Bool apply(:!lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool> @std::@builtin::@stubs::@Int::@"__gt__(::Int,::Int)", *"cs.a`", {0}), "_mlir_value">), ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int *"cs.a`", "_mlir_value">), 1)), #loc236>}>>>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
+# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">, <{<sugar_preserved(#lit.struct.extract<:!Bool apply(:!lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool> @std::@builtin::@stubs::@Int::@"__gt__(::Int,::Int)", *"cs.a`", {0}), "_mlir_value">, ge(:scalar<index> from_builtin(#lit.struct.extract<:!Int *"cs.a`", "_mlir_value">), 1)), #loc236>}>>>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
 def use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
     pass
 

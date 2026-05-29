@@ -759,9 +759,9 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
     return FnTriviality::Unknown;
 
   if (auto &[name, boolVal] = structVals.front(); name == "_mlir_value") {
-    if (auto boolAttr = dyn_cast<BoolAttr>(boolVal))
-      return boolAttr.getValue() ? FnTriviality::ProvablyTrivial
-                                 : FnTriviality::ProvablyNonTrivial;
+    if (auto boolAttr = dyn_cast<SIMDAttr>(boolVal))
+      return boolAttr.getAsBool() ? FnTriviality::ProvablyTrivial
+                                  : FnTriviality::ProvablyNonTrivial;
   }
 
   return FnTriviality::Unknown;
@@ -944,9 +944,9 @@ ASTType::VariadicListInfo ASTType::getVariadicListInfo() const {
          "Not a VariadicList struct?");
 
   // The "owned" bit is guaranteed to be a constant boolean.
-  auto isOwned = cast<BoolAttr>(
-      std::get<1>(cast<LITStructAttr>(bindings[4]).getValues()[0]));
-  return {ASTType(bindings[3]), bindings[1], isOwned.getValue()};
+  auto isOwned = cast<SIMDAttr>(
+      std::get<1>(sugarCast<LITStructAttr>(bindings[4]).getValues()[0]));
+  return {ASTType(bindings[3]), bindings[1], isOwned.getAsBool()};
 }
 
 /// Return the RefPackType that corresponds to the VariadicPack instance.

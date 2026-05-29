@@ -553,9 +553,9 @@ lit.fn @callLifetimes[mut lt](%arg0[*""]: !lit.ref<index, mut lt>) -> !lit.ref<i
 
 // This should drop the explicit origin parameters since they are singletons.
 
-// CHECK-LABEL: kgen.generator @takes_life_explicit<ismut: i1, size, val: simd<size, f32>>
+// CHECK-LABEL: kgen.generator @takes_life_explicit<ismut: scalar<bool>, size, val: simd<size, f32>>
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<() memoryOnly>> byref_result)
-lit.fn @takes_life_explicit<ismut: i1, life: !lit.origin<ismut>, size: index, val: !kgen.simd<size, f32>>
+lit.fn @takes_life_explicit<ismut: !kgen.scalar<bool>, life: !lit.origin<ismut>, size: index, val: !kgen.simd<size, f32>>
                     (%ref: !lit.ref<!Mem, mut=ismut, life> byref_result, |) {
   kgen.return
 }
@@ -563,9 +563,9 @@ lit.fn @takes_life_explicit<ismut: i1, life: !lit.origin<ismut>, size: index, va
 // CHECK-LABEL: kgen.generator @call_takes_life_explicit
 // CHECK-SAME: <val: simd<4, f32>>(%arg0: !kgen.pointer<struct<() memoryOnly>> byref_result)
 lit.fn @call_takes_life_explicit<val: !kgen.simd<4, f32>>[mut lt](%__result__: !lit.ref<!Mem, mut lt> byref_result, |) {
-  // CHECK-NEXT: kgen.call @takes_life_explicit<:i1 1, 4, :simd<4, f32> val>(%arg0)
+  // CHECK-NEXT: kgen.call @takes_life_explicit<:scalar<bool> true, 4, :simd<4, f32> val>(%arg0)
   // CHECK-SAME: : (!kgen.pointer<struct<() memoryOnly>> byref_result) -> ()
-  lit.call @takes_life_explicit<:i1 1, :!lit.origin<1> lt, :index 4, :!kgen.simd<4, f32> val>(%__result__)
+  lit.call @takes_life_explicit<:!kgen.scalar<bool> true, :!lit.origin<true> lt, :index 4, :!kgen.simd<4, f32> val>(%__result__)
       : !lit.generator<("ref": !lit.ref<!Mem, mut lt> byref_result, |) -> ()>
   kgen.return
 }
@@ -578,8 +578,8 @@ lit.struct.decl @Int {
   lit.struct.field value : index
 }
 
-lit.struct.decl @IndexList<life: !lit.origin<1>, size: !Int> {
-  lit.fn @getitem(%self[*""]: !lit.struct<@IndexList<:!lit.origin<1> life, :!Int size>>) -> !Int {
+lit.struct.decl @IndexList<life: !lit.origin<true>, size: !Int> {
+  lit.fn @getitem(%self[*""]: !lit.struct<@IndexList<:!lit.origin<true> life, :!Int size>>) -> !Int {
     kgen.unreachable
   }
 }
@@ -590,8 +590,8 @@ lit.struct.decl @IndexList<life: !lit.origin<1>, size: !Int> {
 // CHECK-LABEL: kgen.generator @paramReplacement<_1: struct<(index) memoryOnly>, callee: (!kgen.struct<() memoryOnly>) -> ()>()
 lit.fn @paramReplacement<
     _1: !Int,
-    _2: @IndexList<:!lit.origin<1> lt, :!Int _1>,
-    callee: !lit.generator<[1](!lit.struct<#IndexList <:!lit.origin<1> lt, :!Int apply(:!lit.generator<(!lit.struct<#IndexList <:!lit.origin<1> lt, :!Int _1>>) -> !Int> @IndexList::@getitem<:!lit.origin<1> lt, :!Int _1>, _2)>>) -> ()>>[mut lt]() {
+    _2: @IndexList<:!lit.origin<true> lt, :!Int _1>,
+    callee: !lit.generator<[1](!lit.struct<#IndexList <:!lit.origin<true> lt, :!Int apply(:!lit.generator<(!lit.struct<#IndexList <:!lit.origin<true> lt, :!Int _1>>) -> !Int> @IndexList::@getitem<:!lit.origin<true> lt, :!Int _1>, _2)>>) -> ()>>[mut lt]() {
   kgen.unreachable
 }
 
@@ -829,21 +829,21 @@ lit.fn @metadata_closure(%x: index) -> !kgen.none {
 // COM: kgen.struct.generators are pruned of singleton parameters. This is only used in the context of closures and should be temporary
 
 // CHECK: #kgen.type<typevalue<#kgen.genref<@"demo::fn">>, pointer<pointer<none>>> : !kgen.type
-#type_value = #kgen.type<typevalue<#kgen.genref<@"demo::fn"<:origin<0> #lit.any.origin, :origin<0> #lit.any.origin>>>, pointer<pointer<none>>> : !kgen.type
+#type_value = #kgen.type<typevalue<#kgen.genref<@"demo::fn"<:origin<false> #lit.any.origin, :origin<false> #lit.any.origin>>>, pointer<pointer<none>>> : !kgen.type
 #capture_type = #kgen.type<index> : !kgen.type
 
 // CHECK: kgen.struct.generator @"demo::fn" = struct_inst<"demo::fn"(cap: index) memoryOnly>
-kgen.struct.generator @"demo::fn"<o1: origin<0>, o2: origin<0>> =
-    struct_inst<"demo::fn"[o1, o2]<:origin<0> o1, :origin<0> o2>(cap: index) memoryOnly> {
+kgen.struct.generator @"demo::fn"<o1: origin<false>, o2: origin<false>> =
+    struct_inst<"demo::fn"[o1, o2]<:origin<false> o1, :origin<false> o2>(cap: index) memoryOnly> {
   kgen.conformance @"closure_trait" {
     kgen.witness "__call__" :
-        (!kgen.pointer<struct_inst<"demo::fn"[o1, o2]<:origin<0> o1, :origin<0> o2>(cap: index) memoryOnly>> read_mem) ->
+        (!kgen.pointer<struct_inst<"demo::fn"[o1, o2]<:origin<false> o1, :origin<false> o2>(cap: index) memoryOnly>> read_mem) ->
             index = #kgen.closure.symbol<@"demo", "fn",
-                    #kgen.closure_method<call>, <:origin<0> o1, :origin<0> o2>>
+                    #kgen.closure_method<call>, <:origin<false> o1, :origin<false> o2>>
   }
 }
 
-lit.fn @demo<o1: origin<0>, o2: origin<0>>(%arg0: index) -> !kgen.none {
+lit.fn @demo<o1: origin<false>, o2: origin<false>>(%arg0: index) -> !kgen.none {
   %0 = lit.closure.init[#type_value](%arg0)() -> index {
     kgen.return %arg0 : index
   } : (index), !lit.ref<!kgen.closure<@demo, "fn" nonescaping>, mut *"fn`1"> {captureNames = ["cap"], captureTypes = [#capture_type]}

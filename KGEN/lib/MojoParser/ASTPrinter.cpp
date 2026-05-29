@@ -961,8 +961,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
           [&] { os << " or "; });
       return;
     case POC::Cond: {
-      // TODO: Cast won't be needed after making Bool holding a `scalar<bool>`.
-      auto cond = CastToBuiltinAttr::get(operands[0]);
+      auto cond = operands[0];
       // Strip _mlir_value extraction for pattern matching.
       if (auto extract = dyn_cast<LIT::StructExtractAttr>(cond))
         cond = extract.getStructValue();
@@ -1121,6 +1120,11 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   // Special case bool constants instead of printing as 0/1.
   if (auto boolAttr = dyn_cast<BoolAttr>(param)) {
     os << (boolAttr.getValue() ? "True" : "False");
+    return;
+  }
+  if (auto simdAttr = dyn_cast<SIMDAttr>(param);
+      simdAttr && KGEN::isScalarOf<KGENDType::kBool>(simdAttr.getType())) {
+    os << (simdAttr.getAsBool() ? "True" : "False");
     return;
   }
 
@@ -1754,8 +1758,8 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
       if (params.size() == 2 && structDecl.getDeclName().strref() == "Origin") {
         // Check to see if we have a Bool with a known constant parameter.
         //   #lit.struct<{value: i1 = 1}>
-        if (auto value = getSingleElementStructAttr<BoolAttr>(params[0])) {
-          os << (value.getValue() ? "MutOrigin" : "ImmutOrigin");
+        if (auto value = getSingleElementStructAttr<SIMDAttr>(params[0])) {
+          os << (value.getAsBool() ? "MutOrigin" : "ImmutOrigin");
           // TODO: While the mlir_origin is almost always infer-only, it can
           // technically be written.  We should print it here if it isn't an
           // infer-only arg value.

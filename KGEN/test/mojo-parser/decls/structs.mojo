@@ -22,13 +22,13 @@ trait RPTTrait(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @DtorExample1
 # Trivial destructor because it's trivial and not explicit.
-# CHECK: kgen.witness "__del__is_trivial" : !Bool = {:i1 1}
+# CHECK: kgen.witness "__del__is_trivial" : !Bool = {:scalar<bool> true}
 struct DtorExample1(AnyType, TrivialRegisterPassable):
     var a: Int
 
 # CHECK-LABEL: lit.struct.decl @DtorExample2
 # Non-trivial destructor because it is explicit.
-# CHECK: kgen.witness "__del__is_trivial" : !Bool = {:i1 0}
+# CHECK: kgen.witness "__del__is_trivial" : !Bool = {:scalar<bool> false}
 struct DtorExample2(AnyType, RegisterPassable):
     var a: Int
 
@@ -38,7 +38,7 @@ struct DtorExample2(AnyType, RegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @DtorExample3
 # Trivial destructor RPT is obviously trivial
-# CHECK: kgen.witness "__del__is_trivial" : !Bool = {:i1 1}
+# CHECK: kgen.witness "__del__is_trivial" : !Bool = {:scalar<bool> true}
 struct DtorExample3[T: RPTTrait]:
     var thing: Self.T
 
@@ -269,7 +269,7 @@ struct NmStruct(TrivialRegisterPassable):
 
 # CHECK: lit.alias.decl{{.*}}notMaterializedAlias{{.*}}NmStruct{{.*}}77
 comptime notMaterializedAlias = NmStruct(77)
-# CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}: !NmTarget = {{.*}}{:i1 0}})>
+# CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}: !NmTarget = {{.*}}{:scalar<bool> false}})>
 comptime notMaterializedButConverted: NmTarget = NmStruct(76)
 
 
@@ -292,10 +292,10 @@ def nmResult() -> NmStruct:
 # CHECK-LABEL: lit.fn @"useNonmaterializable
 def useNonmaterializable(p: Bool):
     # CHECK: lit.var.decl "gotConverted1" var : !lit.ref<!NmTarget
-    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 1}
+    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:scalar<bool> true}
     var gotConverted1 = NmStruct(76) + NmStruct(1)
     # CHECK: lit.var.decl "gotConverted2" var : !lit.ref<!NmTarget
-    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 0}
+    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:scalar<bool> false}
     var gotConverted2 = notMaterializedAlias + NmStruct(1)
     # CHECK: lit.alias.decl{{.*}}useIfAlias{{.*}}NmStruct{{.*}}2
     comptime useIfAlias = NmStruct(2) if True else NmStruct(3)

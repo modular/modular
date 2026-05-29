@@ -307,10 +307,10 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
       needMutCast = true; // Notice sugar.
 
     auto isMut = sugarCast<OriginType>(origin.getType()).getIsMutable();
-    // Remove any sugar from the mutability to get a pure i1.
-    if (!isMut.getType().isInteger(1))
+    // Remove any sugar from the mutability to get a pure scalar<bool>.
+    if (!isScalarOf<KGENDType::kBool>(isMut.getType()))
       isMut = ParamOperatorAttr::getRebind(
-          isMut, IntegerType::get(isMut.getContext(), 1));
+          isMut, SIMDType::get(isMut.getContext(), 1, KGENDType::kBool));
     return isMut;
   };
 
@@ -404,7 +404,7 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, bool isMutable) {
   if (auto curTy = sugarDynCast<OriginType>(operand.getType()))
     if (curTy.isMutableKnown(isMutable))
       return operand;
-  return get(operand, BoolAttr::get(operand.getContext(), isMutable));
+  return get(operand, SIMDAttr::getScalarBool(operand.getContext(), isMutable));
 }
 
 // Casts are simple constants if their base is.

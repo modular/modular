@@ -648,7 +648,8 @@ static void generateIsTrivialSpecialAlias(StringRef name, bool value,
 
   ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
       declOp->getLoc(), &declOp.getBodyRegion().front());
-  TypedAttr valueAttr = BoolAttr::get(ctx, value);
+  TypedAttr valueAttr = SIMDAttr::getScalarBool(ctx, value);
+
   ParamDeclAttr paramAttr =
       ParamDeclAttr::get(ctx, StringAttr::get(ctx, name), valueAttr.getType());
   AliasDeclOp aliasOp = LIT::AliasDeclOp::create(
@@ -3275,8 +3276,9 @@ void ClosureEmitter::addConformanceToDevicePassable(
         TypedAttr selfDeviceType = GetWitnessAttr::get(
             selfType, traitName, StringAttr::get(ctx, kDeviceType),
             deviceTypeAliasType);
-        TypedAttr isConvertible =
-            ParamOperatorAttr::get(POC::EQ, targetType, selfDeviceType);
+        TypedAttr isConvertible = ParamOperatorAttr::get(
+            b.getContext(), POC::EQ, {targetType, selfDeviceType},
+            SIMDType::get(b.getContext(), 1, KGENDType::kBool));
         auto isConvertibleValue =
             KGEN::ParamConstantOp::create(b, isConvertible);
         IREmitter::emitNormalReturn(b, isConvertibleValue);

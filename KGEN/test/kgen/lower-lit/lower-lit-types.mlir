@@ -112,10 +112,10 @@ lit.fn @use_struct_param(%arg0: !lit.struct<@StructParam<:@Struct #lit.struct<{}
 // CHECK-LABEL: kgen.generator @lifetime_lower
 // CHECK-SAME: (%arg0: !kgen.struct<()>)
 // CHECK: sourceParamList = #kgen.pog_list<[<"p", pos_or_kw, not_vararg>]>
-lit.fn @lifetime_lower<p: !lit.origin<0>>(%a: !lit.origin<1>) {
+lit.fn @lifetime_lower<p: !lit.origin<false>>(%a: !lit.origin<true>) {
 
   // CHECK: kgen.param.declare A: struct<()> = <{ }>
-  kgen.param.declare A: !lit.origin<1> = <#lit.any.origin>
+  kgen.param.declare A: !lit.origin<true> = <#lit.any.origin>
 
   // CHECK: kgen.param.declare B: struct<()> = <{ }>
   kgen.param.declare B: origin.set = <{imm p}>
@@ -125,46 +125,46 @@ lit.fn @lifetime_lower<p: !lit.origin<0>>(%a: !lit.origin<1>) {
 // CHECK-LABEL: kgen.generator @call_lifetime_lower
 lit.fn @call_lifetime_lower() {
   // CHECK: %struct = kgen.param.constant: struct<()> = <{ }>
-  %cst = kgen.param.constant: origin<1> = <#lit.any.origin>
+  %cst = kgen.param.constant: origin<true> = <#lit.any.origin>
   // CHECK: kgen.call @lifetime_lower(%struct) : (!kgen.struct<()>) -> ()
-  lit.call @lifetime_lower<:origin<0> #lit.any.origin>(%cst) : !lit.generator<(!lit.origin<1>) -> ()>
+  lit.call @lifetime_lower<:origin<false> #lit.any.origin>(%cst) : !lit.generator<(!lit.origin<true>) -> ()>
   kgen.return
 }
 
-lit.fn @take_origin<lt: origin<0>>() {
+lit.fn @take_origin<lt: origin<false>>() {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @implicit_lifetime_as_param
 lit.fn @implicit_lifetime_as_param() {
   // CHECK-NEXT: kgen.call @take_origin() : () -> ()
-  kgen.call @take_origin<:origin<0> *[0,0]>() : () -> ()
+  kgen.call @take_origin<:origin<false> *[0,0]>() : () -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @ref_type(
 // CHECK-SAME: %arg0: !kgen.pointer<struct<()>>
 // CHECK-SAME: %arg1: !kgen.pointer<struct<()>>)
-lit.fn @ref_type<p: !lit.origin<0>, q: !lit.origin<1>>
+lit.fn @ref_type<p: !lit.origin<false>, q: !lit.origin<true>>
     (%a: !lit.ref<@Struct, imm p>, %b: !lit.ref<@Struct, mut p>) {
   // Random use of a parameter that goes away should be updated.
   // CHECK: kgen.param.declare A: struct<()> = <{ }>
-  kgen.param.declare A : !lit.origin<0> = <p>
+  kgen.param.declare A : !lit.origin<false> = <p>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @call_ref_type
-lit.fn @call_ref_type<a: !lit.origin<0>, b: !lit.origin<1>>
+lit.fn @call_ref_type<a: !lit.origin<false>, b: !lit.origin<true>>
     (%a: !lit.ref<@Struct, imm a>, %b: !lit.ref<@Struct, mut b>) {
   // CHECK-NEXT: kgen.call @ref_type(%arg0, %arg1)
   // CHECK-SAME: : (!kgen.pointer<struct<()>>, !kgen.pointer<struct<()>>) -> ()
-  kgen.call @ref_type<:origin<0> a, :origin<1> b>(%a, %b): (!lit.ref<@Struct, imm a>, !lit.ref<@Struct, mut b>) -> ()
+  kgen.call @ref_type<:origin<false> a, :origin<true> b>(%a, %b): (!lit.ref<@Struct, imm a>, !lit.ref<@Struct, mut b>) -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @raw_pointer_from_ref_type
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<()>>) -> !kgen.pointer<struct<()>>
-lit.fn @raw_pointer_from_ref_type<q: !lit.origin<0>>(%a: !lit.ref<@Struct, imm q>)
+lit.fn @raw_pointer_from_ref_type<q: !lit.origin<false>>(%a: !lit.ref<@Struct, imm q>)
   -> !kgen.pointer<@Struct> {
   // CHECK-NEXT: kgen.return %a
   %ptr = lit.ref.to_pointer %a: !lit.ref<@Struct, imm q>
@@ -173,7 +173,7 @@ lit.fn @raw_pointer_from_ref_type<q: !lit.origin<0>>(%a: !lit.ref<@Struct, imm q
 
 // CHECK-LABEL: kgen.generator @ref_to_kgen_ptr
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<()>>) -> !kgen.pointer<struct<()>>
-lit.fn @ref_to_kgen_ptr<q: !lit.origin<0>>(%a: !lit.ref<@Struct, imm q>)
+lit.fn @ref_to_kgen_ptr<q: !lit.origin<false>>(%a: !lit.ref<@Struct, imm q>)
   -> !kgen.pointer<!kgen.struct<()>> {
   // CHECK-NEXT: kgen.return %arg0
   %ptr = lit.ref.to_kgen_ptr %a : !lit.ref<@Struct, imm q>
@@ -183,7 +183,7 @@ lit.fn @ref_to_kgen_ptr<q: !lit.origin<0>>(%a: !lit.ref<@Struct, imm q>)
 
 // CHECK-LABEL: kgen.generator @ref_from_kgen_ptr
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<()>>) -> !kgen.pointer<struct<()>>
-lit.fn @ref_from_kgen_ptr<q: !lit.origin<0>>(%a: !kgen.pointer<!kgen.struct<()>>)
+lit.fn @ref_from_kgen_ptr<q: !lit.origin<false>>(%a: !kgen.pointer<!kgen.struct<()>>)
   -> !lit.ref<@Struct, imm q> {
   // CHECK-NEXT: kgen.return %arg0
   %ref = lit.ref.from_kgen_ptr %a : !kgen.pointer<!kgen.struct<()>>
@@ -193,7 +193,7 @@ lit.fn @ref_from_kgen_ptr<q: !lit.origin<0>>(%a: !kgen.pointer<!kgen.struct<()>>
 
 // CHECK-LABEL: kgen.generator @ref_kgen_ptr_roundtrip
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<(si32, ui32) memoryOnly>>)
-lit.fn @ref_kgen_ptr_roundtrip<q: !lit.origin<0>>
+lit.fn @ref_kgen_ptr_roundtrip<q: !lit.origin<false>>
   (%a: !lit.ref<!lit.struct<@PairStruct>, imm q>)
   -> !lit.ref<!lit.struct<@PairStruct>, imm q> {
   // Convert to kgen pointer - uses memoryOnly to match @PairStruct
@@ -216,7 +216,7 @@ lit.struct.decl @PairStruct {
 //===----------------------------------------------------------------------===//
 
 // CHECK-LABEL: kgen.generator @gerToGEPFooFromBar
-lit.fn @gerToGEPFooFromBar<l: !lit.origin<1>, l2: !lit.origin<1>>
+lit.fn @gerToGEPFooFromBar<l: !lit.origin<true>, l2: !lit.origin<true>>
   (%arg0: !lit.ref<@PairStruct, mut l>, %arg1: si32) -> si32 {
   // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(si32, ui32) memoryOnly>>
   %0 = lit.ref.struct.ger %arg0[x] : <@PairStruct, mut l> -> si32
@@ -234,7 +234,7 @@ lit.fn @gerToGEPFooFromBar<l: !lit.origin<1>, l2: !lit.origin<1>>
 }
 
 // CHECK-LABEL: kgen.generator @gerByIndexToKGEN
-lit.fn @gerByIndexToKGEN<l: !lit.origin<1>>
+lit.fn @gerByIndexToKGEN<l: !lit.origin<true>>
   (%arg0: !lit.ref<@PairStruct, mut l>) -> si32 {
   // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(si32, ui32) memoryOnly>>
   %0 = lit.ref.struct.ger %arg0[idx 0] : <@PairStruct, mut l> -> <si32, mut l>
@@ -245,7 +245,7 @@ lit.fn @gerByIndexToKGEN<l: !lit.origin<1>>
 }
 
 // CHECK-LABEL: kgen.generator @gerASByIndexToKGEN
-lit.fn @gerASByIndexToKGEN<l: !lit.origin<1>>
+lit.fn @gerASByIndexToKGEN<l: !lit.origin<true>>
   (%arg0: !lit.ref<@PairStruct, mut l, 3>) -> si32 {
   // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(si32, ui32) memoryOnly>, 3>
   %0 = lit.ref.struct.ger %arg0[idx 0] : <@PairStruct, mut l, 3> -> <si32, mut l, 3>
@@ -258,12 +258,12 @@ lit.fn @gerASByIndexToKGEN<l: !lit.origin<1>>
 // Issue #29038 - lower lit can't change positions of parameters.
 // CHECK-LABEL: kgen.generator @takes_val_after_origin
 // CHECK-SAME: <type: type>(%arg0: !kgen.pointer<type>)
-lit.fn @takes_val_after_origin<life: origin<1>, type: type>(%a: !lit.ref<type, mut life>) {
+lit.fn @takes_val_after_origin<life: origin<true>, type: type>(%a: !lit.ref<type, mut life>) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @does_memcpy
-lit.fn @does_memcpy<l: !lit.origin<1>, l2: !lit.origin<1>>
+lit.fn @does_memcpy<l: !lit.origin<true>, l2: !lit.origin<true>>
   (%arg0: !lit.ref<@PairStruct, mut l>, %arg1: !lit.ref<@PairStruct, mut l>, %arg2: !lit.ref<@PairStruct, mut l, 3>) -> si32 {
   // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(si32, ui32) memoryOnly>>
   %0 = lit.ref.struct.ger %arg0[x] : <@PairStruct, mut l> -> si32
@@ -296,7 +296,7 @@ lit.fn @does_memcpy<l: !lit.origin<1>, l2: !lit.origin<1>>
 
 // CHECK-LABEL: kgen.generator @takes_pack<types: param_list<type>>
 lit.fn @takes_pack
-<life: !lit.origin<1>, types: !kgen.param_list<!kgen.type>>
+<life: !lit.origin<true>, types: !kgen.param_list<!kgen.type>>
 // CHECK-SAME: (%arg0: !kgen.struct<variadic_ptr_map(:param_list<type> types, 42) isParamPack>)
 // CHECK-SAME: sourceParamList = #kgen.pog_list<[<"life", pos_or_kw, not_vararg>, <"types", pos_or_kw, not_vararg>]>
 (%args: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>) {
@@ -313,7 +313,7 @@ lit.fn @takes_pack
 }
 
 // CHECK-LABEL: kgen.generator @pass_pack
-lit.fn @pass_pack<life: !lit.origin<1>>
+lit.fn @pass_pack<life: !lit.origin<true>>
   (%index: !lit.ref<index, mut life, 42>,
    %float: !lit.ref<f32, mut life, 42>) {
 
@@ -321,7 +321,7 @@ lit.fn @pass_pack<life: !lit.origin<1>>
   %pack = lit.ref.pack.create(%index, %float) :
     !lit.ref.pack<:param_list<!kgen.type> [index, f32], mut life, 42>
   // CHECK-NEXT: kgen.call @takes_pack<:param_list<type> [index, f32]>(%0)
-  kgen.call @takes_pack<:origin<1> life, :param_list<!kgen.type> [index, f32]>(%pack)
+  kgen.call @takes_pack<:origin<true> life, :param_list<!kgen.type> [index, f32]>(%pack)
      : (!lit.ref.pack<:param_list<!kgen.type> [index, f32], mut life, 42>) -> ()
 
   // CHECK-NEXT: kgen.param.constant: struct<(pointer<i8>, pointer<ui4>, pointer<i32>) isParamPack> = <{ store_to_mem(3), store_to_mem(1), store_to_mem(4) }>

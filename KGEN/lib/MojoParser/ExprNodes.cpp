@@ -542,8 +542,7 @@ bool ExprNode::isEmptyTuple() const {
 //===----------------------------------------------------------------------===//
 
 AnyValue BoolLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
-  // Create the SIMDAttr to represent the constant.
-  auto boolAttr = BoolAttr::get(emitter.getContext(), value);
+  auto boolAttr = SIMDAttr::getScalarBool(emitter.getContext(), value);
 
   // Convert this to an instance of Bool. Bool must be in scope since it is
   // auto-imported.

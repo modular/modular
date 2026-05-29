@@ -1360,7 +1360,12 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
     if (PValue pvalue = value.ir.getIfPValue()) {
       if (auto extractVal = ASTType::extractStructField(
               pvalue.get(), "_mlir_value", value.expr->getLoc(), shared))
-        return emitRValue({PValue(extractVal), value.expr}, context);
+        // Bool holds a scalar<bool> in _mlir_value, so we need to cast it to
+        // i1.
+        // FIXME: we should not emit i1 expression at all, compiler should just
+        // use scalar<bool>.
+        return emitRValue(
+            {PValue(CastToBuiltinAttr::get(extractVal)), value.expr}, context);
     }
   }
 

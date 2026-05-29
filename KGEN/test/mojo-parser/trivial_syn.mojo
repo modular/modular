@@ -59,9 +59,9 @@ struct StructMLIRTypeOnly(ImplicitlyCopyable):
     var x: __mlir_type.index
     var y: __mlir_type.index
 
-    # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:i1 1}>
-    # CHECK-DAG: lit.alias.decl __move_ctor_is_trivial: !Bool = <{:i1 1}>
-    # CHECK-DAG: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:i1 1}>
+    # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:scalar<bool> true}>
+    # CHECK-DAG: lit.alias.decl __move_ctor_is_trivial: !Bool = <{:scalar<bool> true}>
+    # CHECK-DAG: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:scalar<bool> true}>
 
 
 # MOCO-2396:
@@ -76,9 +76,9 @@ struct NotTrivial(Copyable):
     def __del__(deinit self):
         pass
 
-    # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:i1 0}>
-    # CHECK-DAG: lit.alias.decl __move_ctor_is_trivial: !Bool = <{:i1 0}>
-    # CHECK-DAG: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:i1 0}>
+    # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:scalar<bool> false}>
+    # CHECK-DAG: lit.alias.decl __move_ctor_is_trivial: !Bool = <{:scalar<bool> false}>
+    # CHECK-DAG: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:scalar<bool> false}>
 
 
 # CHECK-LABEL: lit.struct.decl @Wrapper
@@ -87,9 +87,9 @@ struct Wrapper(Copyable):
 
     # Should be parser-folded.
 
-    # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:i1 0}>
-    # CHECK-DAG: lit.alias.decl __move_ctor_is_trivial: !Bool = <{:i1 0}>
-    # CHECK-DAG: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:i1 0}>
+    # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:scalar<bool> false}>
+    # CHECK-DAG: lit.alias.decl __move_ctor_is_trivial: !Bool = <{:scalar<bool> false}>
+    # CHECK-DAG: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:scalar<bool> false}>
 
 
 # CHECK-LABEL: lit.struct.decl @TrivialFieldGen
@@ -101,8 +101,8 @@ struct TrivialFieldGen[T: Movable](Movable):
     var q: Self.T
 
 # CHECK-LABEL: lit.struct.decl @TestTrivialRegisterPassable
-# CHECK: lit.alias.decl __del__is_trivial: !Bool = <{:i1 1}>
-# CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <{:i1 1}>
-# CHECK: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:i1 1}>
+# CHECK: lit.alias.decl __del__is_trivial: !Bool = <{:scalar<bool> true}>
+# CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <{:scalar<bool> true}>
+# CHECK: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:scalar<bool> true}>
 struct TestTrivialRegisterPassable[T: TrivialRegisterPassable](Copyable):
     var _value: Self.T
