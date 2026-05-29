@@ -4340,8 +4340,12 @@ CastFromBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return CastFromBuiltinAttr::get(context, value, out_type);
 }
 
+SIMDType CastFromBuiltinAttr::getInferredResultType(TypedAttr arg) {
+  return getEquivalentSIMDType(arg.getType());
+}
+
 TypedAttr CastFromBuiltinAttr::get(TypedAttr arg) {
-  auto simdType = getEquivalentSIMDType(arg.getType());
+  SIMDType simdType = getInferredResultType(arg);
   if (!simdType)
     return {};
   return get(arg.getContext(), arg, simdType);
@@ -4350,7 +4354,7 @@ TypedAttr CastFromBuiltinAttr::get(TypedAttr arg) {
 TypedAttr
 CastFromBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                                 TypedAttr arg) {
-  auto simdType = getEquivalentSIMDType(arg.getType());
+  SIMDType simdType = getInferredResultType(arg);
   if (!simdType) {
     emitError() << "failed to infer the equivalent simd type for "
                 << arg.getType();
@@ -4391,7 +4395,7 @@ CastToBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return CastToBuiltinAttr::get(context, value, out_type);
 }
 
-TypedAttr CastToBuiltinAttr::get(TypedAttr arg) {
+Type CastToBuiltinAttr::getInferredResultType(TypedAttr arg) {
   auto simdType = sugarDynCast<SIMDType>(arg.getType());
   if (!simdType || !simdType.getResolvedDType() || !simdType.getResolvedSize())
     return {};
@@ -4405,12 +4409,20 @@ TypedAttr CastToBuiltinAttr::get(TypedAttr arg) {
   if (1 != *simdType.getResolvedSize())
     builtinType = VectorType::get(*simdType.getResolvedSize(), builtinType);
 
+  return builtinType;
+}
+
+TypedAttr CastToBuiltinAttr::get(TypedAttr arg) {
+  Type builtinType = getInferredResultType(arg);
+  if (!builtinType)
+    return {};
   return CastToBuiltinAttr::get(arg, builtinType);
 }
 
 TypedAttr
 CastToBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                               TypedAttr arg) {
+  // Distinguish the two failure modes for a useful diagnostic.
   auto simdType = sugarDynCast<SIMDType>(arg.getType());
   if (!simdType || !simdType.getResolvedDType() ||
       !simdType.getResolvedSize()) {
@@ -4420,17 +4432,12 @@ CastToBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
     return {};
   }
 
-  KGENDType dtype = *simdType.getResolvedDType();
-  Type builtinType = dtype.getEquivalentBuiltinType(arg.getContext());
+  Type builtinType = getInferredResultType(arg);
   if (!builtinType) {
     emitError() << "failed to infer the equivalent builtin type for "
                 << arg.getType();
     return {};
   }
-
-  // SIMDType -> VectorType conversion.
-  if (1 != *simdType.getResolvedSize())
-    builtinType = VectorType::get(*simdType.getResolvedSize(), builtinType);
 
   return getChecked(emitError, arg.getContext(), arg, builtinType);
 }
