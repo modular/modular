@@ -29,7 +29,7 @@ from std.algorithm.functional import elementwise, IndexList
 from std.reflection import reflect
 
 from extensibility import ElementwiseUnaryOp, ElementwiseUnaryMixedOp
-from elementwise_kernels import (
+from builtin_kernels import (
     Negative,
     Abs,
     ReLU,

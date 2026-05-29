@@ -261,7 +261,8 @@ def run_max_indexer(
         index_topk=index_topk,
         q_lora_rank=q_lora_rank,
         devices=[DeviceRef.GPU()],
-        quant_config=quant_config,
+        activation_quant_config=quant_config,
+        weight_quant_config=quant_config,
     )
 
     # Convert state_dict to WeightData format

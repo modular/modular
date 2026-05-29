@@ -266,6 +266,40 @@ def elementwise[
     ](func, shape, context)
 
 
+@fieldwise_init
+struct _IndexListToCoordAdapter[
+    rank: Int,
+    FuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+](
+    ImplicitlyCopyable,
+    RegisterPassable,
+    def[width: Int, alignment: Int = 1](Coord) -> None,
+):
+    """Adapts an `IndexList`-taking function to a `Coord`-taking callable.
+
+    Bridges the `IndexList`-based elementwise body convention to the
+    `Coord`-based GPU kernel interface required by `_elementwise_impl_gpu`.
+
+    TODO(MOCO-4071): Use a closure instead, using a struct avoids a generic
+    `lit.closure.init` with parametric witnesses in the MOGG package that the
+    package loader cannot resolve.
+
+    Parameters:
+        rank: The rank of the index space.
+        FuncType: The wrapped function type.
+    """
+
+    var func: Self.FuncType
+
+    @always_inline
+    def __call__[width: Int, alignment: Int = 1](self, coords: Coord):
+        self.func[width, Self.rank, alignment](
+            rebind[IndexList[Self.rank]](coord_to_index_list(coords))
+        )
+
+
 @always_inline
 def _elementwise_impl[
     rank: Int,
@@ -316,17 +350,14 @@ def _elementwise_impl[
             ](func_wrap_cpu, shape=Coord(shape), ctx=Optional(context))
         elif is_gpu[target]():
             var shape_coord = Coord(shape)
-
-            @always_inline
-            def func_wrap[width: Int, alignment: Int = 1](coords: Coord) {read}:
-                func[width, rank, alignment](
-                    rebind[IndexList[rank]](coord_to_index_list(coords))
-                )
-
             _elementwise_impl_gpu[
                 simd_width=simd_width,
                 trace_description=trace_description,
-            ](func_wrap, shape=shape_coord, ctx=context)
+            ](
+                _IndexListToCoordAdapter[rank, FuncType](func),
+                shape=shape_coord,
+                ctx=context,
+            )
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name()

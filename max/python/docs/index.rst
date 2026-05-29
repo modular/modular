@@ -71,6 +71,7 @@ Modules
    pipelines.architectures.gemma3multimodal
    pipelines.architectures.gemma3multimodal_modulev3
    pipelines.architectures.gemma4
+   pipelines.architectures.glm5_1
    pipelines.architectures.gpt_oss
    pipelines.architectures.gpt_oss_modulev3
    pipelines.architectures.granite

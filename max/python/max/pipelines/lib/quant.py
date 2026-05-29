@@ -15,10 +15,11 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import huggingface_hub
@@ -113,6 +114,102 @@ def _quantized_layers_and_embedding_dtype(
         embedding_output_dtype = DType.float8_e4m3fn
 
     return mlp_quantized_layers, attn_quantized_layers, embedding_output_dtype
+
+
+def _modelopt_ignore_patterns(
+    hf_quant_config: Mapping[str, Any] | Any,
+) -> list[str]:
+    """Return modelopt ``ignore`` entries (glob patterns) from a HF quant config."""
+    ignore = hf_quant_config.get("ignore", [])
+    if not isinstance(ignore, Sequence) or isinstance(ignore, str):
+        return []
+    return [str(entry) for entry in ignore]
+
+
+def _modelopt_layer_subtree_ignored(
+    layer_idx: int,
+    subtree: str,
+    ignore_patterns: Sequence[str],
+    *,
+    modules_prefix: str = "model.",
+) -> bool:
+    """Return whether an entire layer subtree (``mlp`` or ``self_attn``) is ignored.
+
+    Matches modelopt-style globs such as ``model.layers.3.self_attn*`` from
+    https://huggingface.co/lukealonso/GLM-5.1-NVFP4/blob/main/config.json.
+    """
+    prefix_path = f"{modules_prefix}layers.{layer_idx}.{subtree}"
+    wildcard_path = f"{prefix_path}*"
+    for pattern in ignore_patterns:
+        if pattern in (prefix_path, wildcard_path):
+            return True
+        if fnmatch.fnmatch(prefix_path, pattern) or fnmatch.fnmatch(
+            wildcard_path, pattern
+        ):
+            return True
+    return False
+
+
+def _quantized_layers_from_modelopt_ignore(
+    huggingface_config: AutoConfig,
+    ignore_patterns: Sequence[str],
+    *,
+    modules_prefix: str = "model.",
+) -> tuple[set[int], set[int]]:
+    """Derive per-layer MLP/attention quantization from modelopt ``ignore`` globs."""
+    num_hidden_layers = _get_num_hidden_layers(huggingface_config)
+    mlp_quantized_layers: set[int] = set()
+    attn_quantized_layers: set[int] = set()
+
+    for layer_idx in range(num_hidden_layers):
+        if not _modelopt_layer_subtree_ignored(
+            layer_idx, "mlp", ignore_patterns, modules_prefix=modules_prefix
+        ):
+            mlp_quantized_layers.add(layer_idx)
+        if not _modelopt_layer_subtree_ignored(
+            layer_idx,
+            "self_attn",
+            ignore_patterns,
+            modules_prefix=modules_prefix,
+        ):
+            attn_quantized_layers.add(layer_idx)
+
+    return mlp_quantized_layers, attn_quantized_layers
+
+
+def _modelopt_shared_experts_quantized_dtype(
+    ignore_patterns: Sequence[str],
+    *,
+    modules_prefix: str = "model.",
+) -> DType | None:
+    """Return quant dtype if MoE shared experts are quantized (not in ``ignore``)."""
+    probe = f"{modules_prefix}layers.0.mlp.shared_experts.gate_proj.weight"
+    for pattern in ignore_patterns:
+        if fnmatch.fnmatch(probe, pattern):
+            return DType.bfloat16
+    return None
+
+
+def _embedding_output_dtype_from_state_dict(
+    state_dict: Mapping[str, WeightData],
+    ignore_patterns: Sequence[str],
+    *,
+    state_dict_name_prefix: str = "",
+    modules_prefix: str = "model.",
+) -> DType:
+    """Embedding output dtype for modelopt NVFP4, respecting ``lm_head`` ignore."""
+    lm_head_ignored = any(
+        fnmatch.fnmatch(f"{modules_prefix}lm_head", pattern)
+        or fnmatch.fnmatch(f"{modules_prefix}lm_head*", pattern)
+        for pattern in ignore_patterns
+    )
+    if f"{state_dict_name_prefix}embed_tokens.weight" in state_dict:
+        return state_dict[f"{state_dict_name_prefix}embed_tokens.weight"].dtype
+    if f"{state_dict_name_prefix}lm_head.weight" in state_dict:
+        return state_dict[f"{state_dict_name_prefix}lm_head.weight"].dtype
+    if lm_head_ignored:
+        raise ValueError("cannot determine original type from checkpoint")
+    return DType.bfloat16
 
 
 def _parse_compressed_tensors_fp8_config(
@@ -590,7 +687,13 @@ def _load_standalone_quant_config(
         quant_algo = quantization.get("quant_algo")
 
         if quant_method and quant_algo:
-            return {"quant_method": quant_method, "quant_algo": quant_algo}
+            mapped: dict[str, Any] = {
+                "quant_method": quant_method,
+                "quant_algo": quant_algo,
+            }
+            if "ignore" in quantization:
+                mapped["ignore"] = quantization["ignore"]
+            return mapped
         return None
 
     except Exception as e:
@@ -624,13 +727,17 @@ def _parse_modelopt_float4_config(
     *,
     quant_method_override: str | None = None,
     quant_algo_override: str | None = None,
+    state_dict_name_prefix: str = "",
+    ignored_modules_prefix: str = "model.",
 ) -> QuantConfig | None:
-    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    resolved_quant_config = _resolve_quant_config(
+        huggingface_config, state_dict
+    )
     quant_method = quant_method_override
     quant_algo = quant_algo_override
-    if hf_quant_config:
-        quant_method = hf_quant_config.get("quant_method", quant_method)
-        quant_algo = hf_quant_config.get("quant_algo", quant_algo)
+    if resolved_quant_config:
+        quant_method = resolved_quant_config.get("quant_method", quant_method)
+        quant_algo = resolved_quant_config.get("quant_algo", quant_algo)
     if not quant_method or not quant_algo:
         return None
 
@@ -647,18 +754,37 @@ def _parse_modelopt_float4_config(
     )
 
     bias_dtype = _bias_dtype(state_dict)
+    ignore_patterns = (
+        _modelopt_ignore_patterns(resolved_quant_config)
+        if resolved_quant_config
+        else []
+    )
+    mlp_quantized_layers, attn_quantized_layers = (
+        _quantized_layers_from_modelopt_ignore(
+            huggingface_config,
+            ignore_patterns,
+            modules_prefix=ignored_modules_prefix,
+        )
+    )
+    embedding_output_dtype = _embedding_output_dtype_from_state_dict(
+        state_dict,
+        ignore_patterns,
+        state_dict_name_prefix=state_dict_name_prefix,
+        modules_prefix=ignored_modules_prefix,
+    )
 
-    # All layers use float4 in modelopt NVFP4 checkpoints.
-    num_hidden_layers = _get_num_hidden_layers(huggingface_config)
-    all_layers = set(range(num_hidden_layers))
+    shared_experts_weight_dtype = _modelopt_shared_experts_quantized_dtype(
+        ignore_patterns, modules_prefix=ignored_modules_prefix
+    )
 
     return QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_quantized_layers=all_layers,
-        attn_quantized_layers=all_layers,
-        embedding_output_dtype=DType.bfloat16,
+        mlp_quantized_layers=mlp_quantized_layers,
+        attn_quantized_layers=attn_quantized_layers,
+        embedding_output_dtype=embedding_output_dtype,
         bias_dtype=bias_dtype,
+        shared_experts_weight_dtype=shared_experts_weight_dtype,
         format=QuantFormat.NVFP4,
     )
 
@@ -750,6 +876,8 @@ def _parse_float4_config(
             dtype,
             quant_method_override=quant_method,
             quant_algo_override=quant_config.get("quant_algo"),
+            state_dict_name_prefix=state_dict_name_prefix,
+            ignored_modules_prefix=ignored_modules_prefix,
         )
 
     logger.debug(
@@ -806,8 +934,8 @@ def parse_quant_config(
             huggingface_config,
             state_dict,
             dtype,
-            state_dict_name_prefix,
-            ignored_modules_prefix,
+            state_dict_name_prefix=state_dict_name_prefix,
+            ignored_modules_prefix=ignored_modules_prefix,
         )
     elif dtype == DType.float8_e4m3fn:
         config = _parse_fp8_config(
