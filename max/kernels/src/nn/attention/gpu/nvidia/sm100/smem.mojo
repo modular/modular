@@ -21,7 +21,9 @@ Split-mode memory layout (low to high address):
     [Q: q_nope_bytes + q_rope_bytes]
     [K: num_kv_stages * (padded_ov_depth*BN*qkv_dt + rope_depth*BN*rope_dt)]
     [V: num_kv_stages * padded_ov_depth * BN elements of qkv_dtype]
-    [correction: BM elements of Float32]
+    [correction: 2 * WARPGROUP_SIZE Float32 entries (= BM in 2Q; doubled
+                  to 2*BM in 1Q so each softmax thread tid in [0, 255]
+                  has a dedicated slot)]
     [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
     [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
@@ -33,7 +35,9 @@ Fused-mode memory layout (low to high address):
     [Q: BM * padded_qk_depth elements of qkv_dtype]
     [KV_fused: num_kv_stages * padded_ov_depth * BN elements of qkv_dtype]
     [Rope: ceil(num_kv_stages/2) * BN * rope_depth elements of qkv_dtype]
-    [correction: BM elements of Float32]
+    [correction: 2 * WARPGROUP_SIZE Float32 entries (= BM in 2Q; doubled
+                  to 2*BM in 1Q so each softmax thread tid in [0, 255]
+                  has a dedicated slot)]
     [q_scale: BM * scale_dtype (0 when scale_dtype is invalid)]
     [k_scale: num_k_scale_bufs * BN * scale_dtype (0 when invalid)]
     [mbars: FA4MiscMBars.size SharedMemBarriers]
@@ -42,6 +46,12 @@ Fused-mode memory layout (low to high address):
 In fused mode, K_nope and V alternate in the same buffer (padded_ov_depth
 wide), and rope data is stored separately at half the staging rate.
 k_smem_base() and v_smem_base() return the same pointer.
+
+In `num_qo == 1` mode the cross-WG LSE exchange runs through the (now-dead)
+s TMEM slot rather than smem, so no additional smem region is needed. Both
+warpgroups still write the combined LSE-reduced output to the single
+q-aliased o_smem region, then TMA-store it to gmem. Output partials remain
+in TMEM throughout the combine.
 """
 
 from std.sys import size_of
@@ -156,9 +166,20 @@ struct SM100AttentionSMem[
         + Self.rope_bytes if Self.config.use_fused_kv else Self.kv_stages_bytes
     )
 
-    # Correction region: BM elements of Float32.
+    # Correction region: 2 * WARPGROUP_SIZE Float32 entries (one slot per
+    # softmax-warp thread). Each softmax thread (CTA-wide `tid`, 0..255 for
+    # two softmax warpgroups) writes its correction value at offset `tid`.
+    # The correction warp reads WG0's slots at [0, WARPGROUP_SIZE) and WG1's
+    # at [WARPGROUP_SIZE, 2*WARPGROUP_SIZE). Doubling in 1Q (BM=128) gives
+    # the same 1 KiB the 2Q (BM=256) layout used to get from `BM`. Keep the
+    # expression `BM` for 2Q and `2*BM` for 1Q so the BM-derived intuition
+    # stays visible.
     comptime correction_byte_offset: Int = Self.kv_byte_offset + Self.kv_bytes
-    comptime correction_bytes: Int = Self.config.BM * size_of[DType.float32]()
+    comptime correction_bytes: Int = (
+        (2 if Self.config.num_qo == 1 else 1)
+        * Self.config.BM
+        * size_of[DType.float32]()
+    )
 
     # Scale regions (per-token scale only; zero-sized when scale_dtype is invalid).
     comptime _scale_dt_size: Int = (
@@ -190,6 +211,7 @@ struct SM100AttentionSMem[
         use_order_barriers=Self.use_order_barriers,
         use_fused_kv=Self.config.use_fused_kv,
         pair_cta=Self.config.pair_cta,
+        num_qo=Self.config.num_qo,
     ]
 
     comptime mbar_bytes: Int = Int(Self.MiscMBarsType.num_mbars()) * size_of[

@@ -664,6 +664,7 @@ struct SM100MLA[
         use_order_barriers=EnableForcedOrdering,
         use_fused_kv=Self.config.fa4_config.use_fused_kv,
         pair_cta=Self.config.fa4_config.pair_cta,
+        num_qo=Self.config.fa4_config.num_qo,
     ]
 
     @staticmethod

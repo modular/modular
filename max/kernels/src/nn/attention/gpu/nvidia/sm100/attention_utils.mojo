@@ -2168,6 +2168,7 @@ struct FA4MiscMBars[
     use_order_barriers: Bool = True,
     use_fused_kv: Bool = False,
     pair_cta: Bool = False,
+    num_qo: Int = 2,
 ](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
@@ -2187,10 +2188,14 @@ struct FA4MiscMBars[
             warp group overlap. When False, order barriers are omitted.
         use_fused_kv: Whether the K and V share the same pipeline, or separate.
         pair_cta: Whether to use 1-cta or 2-cta implementation.
+        num_qo: Number of Q tiles per CTA. When 1, the `Q1Sync` slot is
+            collapsed and `K_offset` shifts down by `num_qk_stages`. Must
+            be 2 for any caller of `q1_wait_mbar()`.
 
     Memory layout (count=128 first, then count=1):
-        [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync] [K] [V] [O_prod]
+        [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync**] [K] [V] [O_prod]
         *Order barriers only present when use_order_barriers=True
+        **Q1Sync barriers only present when num_qo == 2
     """
 
     var mbar_base: MBarType
@@ -2209,10 +2214,12 @@ struct FA4MiscMBars[
     # S producer barriers: 1 per warp group
     comptime S0_producer_offset = Self.order_offset + Self.num_order_barriers
     comptime S1_producer_offset = Self.S0_producer_offset + 1
-    # Q1Sync barriers
+    # Q1Sync barriers (collapsed when num_qo == 1; q1_wait_mbar() is
+    # then unsafe to call — see the comptime assert in q1_wait_mbar().)
     comptime Q1SyncIdx = Self.S1_producer_offset + 1
+    comptime Q1Sync_count: Int = Self.num_qk_stages if Self.num_qo == 2 else 0
     # K pipeline barriers
-    comptime K_offset = Self.Q1SyncIdx + Self.num_qk_stages
+    comptime K_offset = Self.Q1SyncIdx + Self.Q1Sync_count
     comptime K_barriers: Int = 2 * Self.num_qk_stages * Self.num_kv_stages
     # V pipeline barriers (separate from K, only in split mode)
     comptime V_offset: Int = Self.K_offset + Self.K_barriers
@@ -2328,6 +2335,10 @@ struct FA4MiscMBars[
 
     @always_inline
     def q1_wait_mbar(self) -> MBarType:
+        comptime assert Self.num_qo == 2, (
+            "q1_wait_mbar() requires num_qo == 2; the Q1Sync slot is"
+            " collapsed when num_qo == 1."
+        )
         return self.mbar_base + Self.Q1SyncIdx
 
     # K/V/O barrier accessors

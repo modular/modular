@@ -192,7 +192,12 @@ __extension SM100MLA:
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_dtype,
             Self.config.output_swizzle_mode,
-            BM=Self.config.fa4_config.BM // 2,
+            # `// fa4_config.num_qo` instead of `// 2`: matches the
+            # fa4_softmax / fa4_lse_combine_write signature so MLA's 2Q
+            # path type-checks under the unified 1Q/2Q signature.
+            # Numerically identical to `// 2` for num_qo=2 (the only
+            # mode MLA exercises today).
+            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_qo,
             BN=Self.config.fa4_config.ov_depth,
             group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
         ],
@@ -1514,7 +1519,7 @@ def mla_sm100_prefill_per_token_scale[
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
-        BM=fa4_config.fa4_config.BM // 2,
+        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
         BN=fa4_config.fa4_config.ov_depth,
     ]
 

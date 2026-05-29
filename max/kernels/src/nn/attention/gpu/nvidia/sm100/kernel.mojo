@@ -30,16 +30,12 @@ from std.gpu.compute.arch.tcgen05 import (
 from std.gpu.memory import fence_mbarrier_init
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout.tma_async import RaggedTMA3DTile
-from nn.attention.gpu.nvidia.sm100.attention import (
-    FA4Config,
-    EnableForcedOrdering,
-)
+from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     SM100TensorAccumulatorSS,
     SM100TensorAccumulatorTS,
     elect,
-    FA4MiscMBars,
     kv_sub_tile_rows,
 )
 from nn.attention.gpu.nvidia.sm90.attention import (
@@ -115,16 +111,6 @@ struct SM100MHA2Q[
     comptime num_qk_stages = Self.config.num_qk_stages
     comptime num_pv_stages = Self.config.num_pv_stages
 
-    # Unified misc barriers type managing all barriers including K/V/O pipelines
-    comptime MiscMBarsType = FA4MiscMBars[
-        num_qk_stages=Self.num_qk_stages,
-        num_pv_stages=Self.num_pv_stages,
-        num_kv_stages=Self.config.num_kv_stages,
-        use_order_barriers=EnableForcedOrdering,
-        use_fused_kv=Self.config.use_fused_kv,
-        pair_cta=Self.pair_cta,
-    ]
-
     # First MMA is Q@K' (can be staged by num_qk_stages)
     # (BM x depth) @ (BN x depth)' -> (BM x BN)
     comptime UMMA0Type = SM100TensorAccumulatorSS[
@@ -191,13 +177,13 @@ struct SM100MHA2Q[
         `nvvm.cluster_dim`=StaticTuple[Int32, 3](Int32(Self.cta_group), 1, 1)
     )
     @__name(
-        t"sm100_mha_2q_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        t"sm100_mha_{Self.config.num_qo}q_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
     def kernel(
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BM=Self.config.BM // 2,
+            BM=Self.config.BM // Self.config.num_qo,
             depth=Self.config.qk_depth,
             group=Self.config.group,
             decoding=False,
@@ -219,7 +205,10 @@ struct SM100MHA2Q[
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
             Self.config.swizzle_mode,
-            BM=Self.config.BM // 2,
+            # 2Q: BM=128 (each WG writes one of two Q halves).
+            # 1Q: BM=128 (both WGs cover the full BM=128 Q rows and write
+            # disjoint depth-column ranges).
+            BM=Self.config.BM // Self.config.num_qo,
             BN=Self.config.ov_depth,
             group=Self.config.group if Self.fuse_gqa else 1,
         ],
@@ -265,7 +254,7 @@ struct SM100MHA2Q[
         max_seq_len = pack.max_seq_len
         partition = pack.partition
 
-        comptime num_qo = Self.config.num_qo()
+        comptime num_qo = Self.config.num_qo
         # TODO: We may want to support num_qo>2 for depth=64?
         comptime assert (
             num_qo == 1 or num_qo == 2

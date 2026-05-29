@@ -164,7 +164,9 @@ __extension SM100MLA:
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_dtype,
             Self.config.output_swizzle_mode,
-            BM=Self.config.fa4_config.BM // 2,
+            # `// fa4_config.num_qo` matches fa4_softmax's unified
+            # 1Q/2Q signature; numerically `// 2` for num_qo=2.
+            BM=Self.config.fa4_config.BM // Self.config.fa4_config.num_qo,
             BN=Self.config.fa4_config.ov_depth,
             group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
         ],
@@ -1693,7 +1695,7 @@ def mla_sm100_prefill_blockscale[
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
-        BM=fa4_config.fa4_config.BM // 2,
+        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
         BN=fa4_config.fa4_config.ov_depth,
     ]
 
@@ -1775,7 +1777,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     ragged_tma_store: RaggedTMA3DTile[
         output_dtype,
         fa4_config.output_swizzle_mode,
-        BM=fa4_config.fa4_config.BM // 2,
+        BM=fa4_config.fa4_config.BM // fa4_config.fa4_config.num_qo,
         BN=fa4_config.fa4_config.ov_depth,
     ],
     q_tma_op: QTMATile[
