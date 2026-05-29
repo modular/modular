@@ -900,7 +900,9 @@ VerifiedParamBindings ParamInf::inferForStruct() {
 
   ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(
       getShared().getContext(), evaluator.getIndexBindings());
-  return VerifiedParamBindings(rawBindings, evaluator.getEvaluationContext());
+  return VerifiedParamBindings(rawBindings,
+                               std::move(dischargedBodyConstraints),
+                               evaluator.getEvaluationContext());
 }
 
 // Infer any missing parameter from defaulted value (this is supposed to be
@@ -2238,5 +2240,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
 
   ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(
       getShared().getContext(), evaluator.getIndexBindings());
-  return VerifiedParamBindings(rawBindings, evaluator.getEvaluationContext());
+  return VerifiedParamBindings(rawBindings,
+                               std::move(dischargedBodyConstraints),
+                               evaluator.getEvaluationContext());
 }

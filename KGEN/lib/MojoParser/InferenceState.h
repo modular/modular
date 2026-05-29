@@ -63,6 +63,11 @@ public:
   ArrayRef<TypedAttr> getValues() const {
     return bindings ? bindings.getValue() : ArrayRef<TypedAttr>{};
   }
+  /// Mask for body constraints discharged by these bindings.
+  const llvm::BitVector &getDischargedBodyConstraints() const {
+    return dischargedBodyConstraints;
+  }
+
   /// Specialize a struct declaration with the verified bindings.
   TypedAttr specializeStructType(StructDeclOp structOp) const;
 
@@ -72,14 +77,18 @@ public:
 
   /// Specialize a generator type via the type-level
   /// `GeneratorType::getSpecializedGenerator` API.
-  GeneratorType specializeGeneratorType(GeneratorType genType) const;
+  Type specializeGeneratorType(GeneratorType genType) const;
 
 private:
   VerifiedParamBindings(ParameterExprArrayAttr bindings,
+                        llvm::BitVector dischargedBodyConstraints,
                         ParameterEvaluationContext *evaluationContext)
-      : bindings(bindings), evaluationContext(evaluationContext) {}
+      : bindings(bindings),
+        dischargedBodyConstraints(std::move(dischargedBodyConstraints)),
+        evaluationContext(evaluationContext) {}
 
   ParameterExprArrayAttr bindings;
+  llvm::BitVector dischargedBodyConstraints;
   ParameterEvaluationContext *evaluationContext = nullptr;
 
   friend class CallParamInf;
@@ -167,6 +176,9 @@ public:
   /// choose to surface these errors at the appropriate time.
   /// Filled in by `checkBodyConstraints`.
   SmallVector<ConstraintAttr> bodyUnprovableConstraints;
+  /// Mask of body constraints discharged by inference.
+  /// Filled in by `checkBodyConstraints`.
+  llvm::BitVector dischargedBodyConstraints;
 
   /// When non-null, body-constraint inconclusiveness at single-candidate
   /// binding sites is silently accepted and the unprovable body constraints

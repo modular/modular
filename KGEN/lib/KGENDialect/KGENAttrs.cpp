@@ -1034,6 +1034,30 @@ normalizeBindParamsValues(GeneratorType genType,
   return normalizedParamValues;
 }
 
+static llvm::BitVector
+denseBoolArrayAttrToBitVector(DenseBoolArrayAttr discharged) {
+  if (!discharged)
+    return {};
+
+  llvm::BitVector mask(discharged.size());
+  for (auto [idx, value] : llvm::enumerate(discharged.asArrayRef()))
+    if (value)
+      mask.set(idx);
+  return mask;
+}
+
+DenseBoolArrayAttr KGEN::getDenseBoolArrayAttr(MLIRContext *context,
+                                               const llvm::BitVector &mask) {
+  if (mask.empty() || mask.none())
+    return {};
+
+  SmallVector<bool> values;
+  values.reserve(mask.size());
+  for (size_t idx = 0, end = mask.size(); idx != end; ++idx)
+    values.push_back(mask[idx]);
+  return Builder(context).getDenseBoolArrayAttr(values);
+}
+
 Type BindParamsAttr::inferResultType(
     TypedAttr generator, ArrayRef<TypedAttr> paramValues,
     DenseBoolArrayAttr discharged,
@@ -1041,9 +1065,15 @@ Type BindParamsAttr::inferResultType(
   auto genType = sugarCast<GeneratorType>(generator.getType());
   SmallVector<TypedAttr> normalizedParamValues =
       normalizeBindParamsValues(genType, paramValues);
+  llvm::BitVector dischargedBodyConstraints =
+      denseBoolArrayAttrToBitVector(discharged);
+  std::optional<PartiallySpecializedInputParams> specializationOpt =
+      PartiallySpecializedInputParams::from(
+          genType.getInputParamTypes(), normalizedParamValues,
+          evaluationContext, /*emitErrorFn=*/{}, dischargedBodyConstraints);
+  assert(specializationOpt && "Failed to specialize generator");
   GeneratorType specializedType =
-      genType.getSpecializedGenerator(normalizedParamValues, evaluationContext,
-                                      /*emitErrorFn=*/{});
+      genType.getSpecializedGenerator(*specializationOpt, /*emitErrorFn=*/{});
   assert(specializedType && "Failed to specialize generator");
   // By back-compat, we never eliminate the empty generator type wrapper on
   // func types. This should eventually be made consistent with other types.
@@ -1063,7 +1093,7 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
                                     ArrayRef<TypedAttr> paramValues, Type type,
                                     ParameterEvaluationContext *evalContext,
                                     DenseBoolArrayAttr discharged) {
-  if (paramValues.empty() && !discharged)
+  if (paramValues.empty() && (!discharged || discharged.empty()))
     return generator;
 
   // If the actual generator is a BindParamsAttr, then we can flatten the new
@@ -1094,8 +1124,16 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
         "A foldable BindParamsAttr must be created with an evaluation context");
     SmallVector<TypedAttr> partialParamValues = normalizeBindParamsValues(
         cast<GeneratorType>(genAttr.getType()), paramValues);
+    llvm::BitVector dischargedBodyConstraints =
+        denseBoolArrayAttrToBitVector(discharged);
+    std::optional<PartiallySpecializedInputParams> specializationOpt =
+        PartiallySpecializedInputParams::from(
+            genAttr.getInputParamTypes(), partialParamValues, evalContext,
+            /*emitErrorFn=*/{}, dischargedBodyConstraints);
+    if (!specializationOpt)
+      return {};
     GeneratorAttr specializedGenerator =
-        genAttr.getSpecializedGenerator(partialParamValues, evalContext);
+        genAttr.getSpecializedGenerator(*specializationOpt);
     if (!specializedGenerator)
       return {};
 
@@ -1597,22 +1635,10 @@ bool GeneratorAttr::isLessThan(Attribute rhs) const {
 }
 
 GeneratorAttr GeneratorAttr::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
-    ParameterEvaluationContext *evaluationContext,
+    PartiallySpecializedInputParams &specialization,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
   VerboseCompilerTimeTraceScope traceScope(
       "GeneratorAttr::getSpecializedGenerator");
-
-  if (paramBindings.empty())
-    return *this;
-
-  std::optional<PartiallySpecializedInputParams> specializationOpt =
-      PartiallySpecializedInputParams::from(getInputParamTypes(), paramBindings,
-                                            evaluationContext, emitErrorFn);
-  if (!specializationOpt)
-    return {}; // Error already emitted to emitErrorFn.
-  PartiallySpecializedInputParams &specialization = *specializationOpt;
-
   TypedAttr newBody =
       cast<TypedAttr>(specialization.evaluator.getReboundAttribute(getBody()));
   // Propagate null back to the caller. This only happens in materialization
@@ -1626,13 +1652,30 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
   PogListAttr genMetadata = getMetadata();
   if (genMetadata) {
     genMetadata = genMetadata.getSpecializedMetadata(
-        specialization.evaluator, specialization.boundParams, emitErrorFn);
+        specialization.evaluator, specialization.boundParams, emitErrorFn,
+        specialization.dischargedBodyConstraints);
     if (!genMetadata)
       return {}; // Error already emitted to emitErrorFn.
   }
 
   return GeneratorAttr::get(newBody.getContext(), newBody,
                             specialization.unboundParamTypes, genMetadata);
+}
+
+GeneratorAttr GeneratorAttr::getSpecializedGenerator(
+    ArrayRef<TypedAttr> paramBindings,
+    ParameterEvaluationContext *evaluationContext,
+    function_ref<InFlightDiagnostic()> emitErrorFn) {
+  if (paramBindings.empty())
+    return *this;
+
+  std::optional<PartiallySpecializedInputParams> specializationOpt =
+      PartiallySpecializedInputParams::from(getInputParamTypes(), paramBindings,
+                                            evaluationContext, emitErrorFn);
+  if (!specializationOpt)
+    return {}; // Error already emitted to emitErrorFn.
+
+  return getSpecializedGenerator(*specializationOpt, emitErrorFn);
 }
 
 GeneratorAttr GeneratorAttr::getSpecializedGenerator(

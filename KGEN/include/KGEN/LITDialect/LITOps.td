@@ -125,10 +125,14 @@ def LIT_FnOp : LITOp<"fn", [
                       ParameterExprArrayAttr bindings = {});
 
     /// Return a GeneratorAttr that generates a FuncLiteralAttr for this
-    /// function.
+    /// function. `dischargedBodyConstraints` is an optional bitmask over the
+    /// function's body constraints: a set bit drops the matching constraint
+    /// from the result type. Empty (the default) retains all body constraints.
     TypedAttr
     getFuncLiteralGenerator(ParameterEvaluationContext &evalContext,
-                            ParameterExprArrayAttr bindings = {});
+                            ParameterExprArrayAttr bindings = {},
+                            const llvm::BitVector &dischargedBodyConstraints =
+                                llvm::BitVector());
 
     /// Return the SpecialFunctionKind ID that indicates if this is a special
     /// function like __init__ or __radd__.

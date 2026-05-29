@@ -1439,7 +1439,9 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
     /// Derive the result type from the generator and parameter values.
     /// Parameter values are normalized to the generator's input arity: missing
     /// trailing values are treated as unbound and extra trailing values are
-    /// ignored.
+    /// ignored. `discharged` is an optional bitmask over the generator's body
+    /// constraints: a set bit drops the matching constraint from the result
+    /// type. Null (the default) retains all body constraints.
     static Type inferResultType(
         TypedAttr generator, ArrayRef<TypedAttr> paramValues,
         DenseBoolArrayAttr discharged,
@@ -1640,6 +1642,9 @@ def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
     Type getType() const;
 
     /// Get this GeneratorAttr with some parameters bound.
+    GeneratorAttr getSpecializedGenerator(
+      PartiallySpecializedInputParams &specialization,
+      function_ref<InFlightDiagnostic()> emitErrorFn = {});
     GeneratorAttr getSpecializedGenerator(
       ArrayRef<TypedAttr> paramBindings,
       ParameterEvaluationContext *evaluationContext,
@@ -2736,11 +2741,14 @@ def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list"> {
     /// Get a new metadata attribute for a generator where the parameters
     /// indicated by set bits in `boundParams` have been removed by being
     /// explicitly bound to values. The `evaluator` substitutes bound values
-    /// into any sub-attr/type of the metadata.
-    PogListAttr
-    getSpecializedMetadata(ParameterEvaluator &evaluator,
-                           const llvm::BitVector &boundParams,
-                           function_ref<InFlightDiagnostic()> emitError) const;
+    /// into any sub-attr/type of the metadata. Body constraints whose
+    /// corresponding bit in `dischargedBodyConstraints` is set are removed
+    /// from the result; an empty mask (the default) retains every body
+    /// constraint.
+    PogListAttr getSpecializedMetadata(
+        ParameterEvaluator &evaluator, const llvm::BitVector &boundParams,
+        function_ref<InFlightDiagnostic()> emitError,
+        const llvm::BitVector &dischargedBodyConstraints = {}) const;
 
     /// Get a new metadata attribute with positional input parameters
     /// prepended, named by `newParams` and tagged as inferred.

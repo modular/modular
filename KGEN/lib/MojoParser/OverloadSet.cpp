@@ -971,7 +971,8 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 
     // If anything was bound, apply it to the signature so the expected
     // argument types are updated.
-    candidateType = newBindings.specializeGeneratorType(candidateType);
+    candidateType =
+        cast<GeneratorType>(newBindings.specializeGeneratorType(candidateType));
     return {std::move(newBindings), candidateType};
   };
   auto getBindingsIfValidCandidate =
