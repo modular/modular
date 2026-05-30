@@ -411,7 +411,8 @@ def test_mergewith(
 # CHECK-LABEL: lit.fn @"chained_cmp
 def chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK:      [[CMP_A_B:%.*]] = lit.call tail @{{.*}}__lt__{{.*}}(%a, %b)
-    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = lit.call tail @{{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
+    # CHECK-NEXT: %[[CMP_A_B_SB:.*]] = lit.call tail @{{.*}}__mlir_bool__{{.*}}([[CMP_A_B]])
+    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = pop.cast_to_builtin %[[CMP_A_B_SB]]
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
     # CHECK-NEXT:   %[[CMP_B_C:.*]] = lit.call tail @{{.*}}__lt__{{.*}}(%b, %c)
     # CHECK:        %[[IF_B_C:.*]] = hlcf.if
@@ -430,14 +431,16 @@ def chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
 
     # COM: This checks the parsing precedence between `<` and `and`.
     # CHECK:      %[[CMP_A_B:.*]] = lit.call {{.*}}__lt__{{.*}}(%a, %b)
-    # CHECK:       %[[CMP_A_B_I1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[CMP_A_B]])
+    # CHECK:       %[[CMP_A_B_SB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[CMP_A_B]])
+    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = pop.cast_to_builtin %[[CMP_A_B_SB]]
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
     # CHECK:   %[[CMP_B_C:.*]] = lit.call {{.*}}__lt__{{.*}}(
     # CHECK-NEXT:   hlcf.yield %[[CMP_B_C]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[CMP_A_B]]
     # CHECK-NEXT: }
-    # CHECK-NEXT: %[[CMP_I1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[IF_A_B]])
+    # CHECK-NEXT: %[[CMP_SB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[IF_A_B]])
+    # CHECK-NEXT: %[[CMP_I1:.*]] = pop.cast_to_builtin %[[CMP_SB]]
     # CHECK-NEXT: %[[IF:.*]] = hlcf.if %[[CMP_I1]]
     # CHECK-NEXT:   %[[CMP_D_E:.*]] = lit.call {{.*}}__lt__{{.*}}(%d, %e)
     # CHECK-NEXT:   hlcf.yield %[[CMP_D_E]]
@@ -464,11 +467,13 @@ def chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
     # CHECK-NEXT: [[FINALRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
     # CHECK-NEXT:   [[PV:%.*]] = {{.*}}constant{{.*}}77
     # CHECK-NEXT:   [[CMPRESULT1:%.*]] = {{.*}}__lt__{{.*}}([[PV]], %x)
-    # CHECK-NEXT:   [[IFCOND:%.*]] = {{.*}}__mlir_i1__{{.*}}([[CMPRESULT1]])
+    # CHECK-NEXT:   [[IFCONDSB:%.*]] = {{.*}}__mlir_bool__{{.*}}([[CMPRESULT1]])
+    # CHECK-NEXT:   [[IFCOND:%.*]] = pop.cast_to_builtin [[IFCONDSB]]
     # CHECK-NEXT:   [[INNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
     # CHECK-NEXT:     [[PV:%.*]] = {{.*}}constant{{.*}}105
     # CHECK-NEXT:     [[CMPRESULT2:%.*]] = {{.*}}__lt__{{.*}}(%x, [[PV]])
-    # CHECK-NEXT:     [[IFCOND:%.*]] = {{.*}}__mlir_i1__{{.*}}([[CMPRESULT2]])
+    # CHECK-NEXT:     [[IFCONDSB:%.*]] = {{.*}}__mlir_bool__{{.*}}([[CMPRESULT2]])
+    # CHECK-NEXT:     [[IFCOND:%.*]] = pop.cast_to_builtin [[IFCONDSB]]
     # CHECK-NEXT:     [[MOSTINNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
     # CHECK-NEXT:       [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:scalar<bool> true}
     # CHECK-NEXT:       hlcf.yield [[TRUEPARAM]]
@@ -504,7 +509,8 @@ struct NonCopyableContainer:
 # CHECK-LABEL: lit.fn @"chained_cmp_in_non_copyable
 def chained_cmp_in_non_copyable(a: Int, b: Int, c: NonCopyableContainer):
     # CHECK:      [[CMP_A_B:%.*]] = lit.call {{.*}}__lt__{{.*}}(%a, %b)
-    # CHECK:      [[CMP_A_B_I1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
+    # CHECK:      [[CMP_A_B_SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[CMP_A_B]])
+    # CHECK-NEXT: [[CMP_A_B_I1:%.*]] = pop.cast_to_builtin [[CMP_A_B_SB]]
     # CHECK-NEXT: {{%.*}} = hlcf.if [[CMP_A_B_I1]]
     # CHECK-NEXT:   {{%.*}} = lit.call {{.*}}__contains__{{.*}}(%c,
     # CHECK:        hlcf.yield

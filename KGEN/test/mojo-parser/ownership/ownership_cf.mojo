@@ -279,6 +279,7 @@ def chris_origin_example(a: Bool, b: Bool):
         # CHECK: except
         # CHECK: hlcf.elif
         # CHECK-NEXT: lit.call
+        # CHECK-NEXT: pop.cast_to_builtin
         # CHECK-NEXT: hlcf.elif.yield
         # CHECK-NEXT: } then {
         # CHECK-NEXT: __del__{{.*}}(%x)
@@ -589,7 +590,8 @@ def test_elif(cond: Bool, cond2: Bool):
     var mem3 = MemExample()
 
     # CHECK: hlcf.elif {
-    # CHECK-NEXT:  __mlir_i1__
+    # CHECK-NEXT:  __mlir_bool__
+    # CHECK-NEXT: pop.cast_to_builtin
     # CHECK-NEXT: hlcf.elif.yield
     # CHECK-NEXT: } then {
     if cond:
@@ -609,7 +611,8 @@ def test_elif(cond: Bool, cond2: Bool):
     # mem1 never used at this point, destroy in the condition.
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem1)
     # CHECK-NEXT: lifetime.end %mem1
-    # CHECK-NEXT: __mlir_i1__
+    # CHECK-NEXT: __mlir_bool__
+    # CHECK-NEXT: pop.cast_to_builtin
     # CHECK-NEXT: hlcf.elif.yield
 
     # CHECK-NEXT: } then {
@@ -657,7 +660,8 @@ def loop_any_origin(var mem: MemExample, cond: Bool):
     # The "mem" destructor must be in the loop exit, not ahead of the loop because
     # there is an access through AnyOrigin within the loop.
     # CHECK: hlcf.loop
-    # CHECK-NEXT:     lit.call {{.*}}Bool::@"__mlir_i1__
+    # CHECK-NEXT:     lit.call {{.*}}Bool::@"__mlir_bool__
+    # CHECK-NEXT:     pop.cast_to_builtin
     # CHECK-NEXT:     hlcf.if
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     } else {

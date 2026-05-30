@@ -4419,24 +4419,13 @@ ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 ConstraintAttr
 ConstraintAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                            TypedAttr proposition, LocationAttr loc) {
-  if (proposition.getType().isSignlessInteger(1))
-    proposition = CastFromBuiltinAttr::get(proposition);
-
-  assert(proposition);
   if (failed(verify(emitError, proposition, loc)))
     return {};
   return get(proposition, loc);
 }
 
 ConstraintAttr ConstraintAttr::get(TypedAttr proposition, LocationAttr loc) {
-  // TODO: maybe we should just update all the callsites to passing in an
-  // `scalar<bool>` at the first place.
-  MLIRContext *ctx = proposition.getContext();
-  if (proposition.getType().isSignlessInteger(1))
-    proposition = CastFromBuiltinAttr::get(proposition);
-
-  assert(proposition);
-  return get(ctx, proposition, loc);
+  return get(proposition.getContext(), proposition, loc);
 }
 
 //===----------------------------------------------------------------------===//

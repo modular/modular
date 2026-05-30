@@ -153,7 +153,8 @@ def test_list_comprehension():
     # CHECK-NEXT:    [[TMP:%.*]] = lit.ref.load %i4
     # CHECK-NEXT:    [[TMPREF:%.*]] = lit.ref.load [[TMP]]
     # CHECK-NEXT:    @Int::@"__bool__
-    # CHECK-NEXT:    @Bool::@"__mlir_i1__
+    # CHECK-NEXT:    @Bool::@"__mlir_bool__
+    # CHECK-NEXT:    pop.cast_to_builtin
     # CHECK-NEXT:    hlcf.elif.yield
     # CHECK-NEXT: } then {
     # CHECK-NEXT: [[RES:%.*]] = lit.ref.load %i4

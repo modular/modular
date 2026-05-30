@@ -978,7 +978,8 @@ def overwrite(y: MemExample, x: Bool) raises:
 # MOCO-721: Test that ownership is transferred and all the move optimizations are
 # done.
 def test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExample:
-    # CHECK-NEXT: lit.call {{.*}}__mlir_i1__
+    # CHECK-NEXT: lit.call {{.*}}__mlir_bool__
+    # CHECK-NEXT: pop.cast_to_builtin
     # CHECK-NEXT: [[RES:%.*]] = hlcf.if
     # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %a
     # CHECK-NEXT:    hlcf.yield [[TMP]]

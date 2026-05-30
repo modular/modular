@@ -194,10 +194,10 @@ def testBadCM():
 
 
 struct MyBool(TrivialRegisterPassable):
-    var _mlir_value: __mlir_type.i1
+    var _mlir_value: __mlir_type.`!kgen.scalar<bool>`
 
     # expected-note @below {{function declared here}}
-    def __mlir_i1__(self) -> __mlir_type.i1:
+    def __mlir_bool__(self) -> __mlir_type.`!kgen.scalar<bool>`:
         return self._mlir_value
 
 def noIndentError():

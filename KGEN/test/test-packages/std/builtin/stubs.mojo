@@ -798,6 +798,10 @@ struct Bool(TrivialRegisterPassable):
         self._mlir_value = mlir_value
 
     @always_inline("builtin")
+    def __mlir_bool__(self) -> __mlir_type.`!kgen.scalar<bool>`:
+        return self._mlir_value
+
+    @always_inline("builtin")
     def __mlir_i1__(self) -> __mlir_type.i1:
         return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i1](
             self._mlir_value

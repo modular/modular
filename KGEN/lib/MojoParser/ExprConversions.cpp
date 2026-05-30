@@ -12,6 +12,7 @@
 #include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+
 #include "OverloadSet.h"
 
 #include "MojoUtils.h"
@@ -20,14 +21,15 @@
 #include "SpecializeInf.h"
 #include "StructEmitter.h"
 
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/DeclResolver.h"
-
-#include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/LITDialect/LITAttrs.h"
-#include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/Support/xxhash.h"
@@ -831,6 +833,14 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   toType = getCanonicalType(toType);
   fromType = getCanonicalType(fromType);
 
+  // i1 to scalar<bool> is indeed a zero-cost conversion (`pop.cast_to_builtin`
+  // is a no-op).
+  // TODO: we also only need this for the sake of migration as well. Eventually,
+  // mojo should have no knowledge of i1 at all.
+  if (isScalarOf<KGENDType::kBool>(fromType.mlirType) &&
+      toType.mlirType.isInteger(1))
+    return true;
+
   FailureOr<bool> upCastable =
       isValidUpCastToTypeType(shared, fromType, toType);
   if (succeeded(upCastable))
@@ -1291,6 +1301,24 @@ PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,
 CValue IREmitter::emitZeroCostConvert(ASTExprAnd<CValue> value,
                                       ASTType toType) {
   assert(toType.mlirType != value.ir.getType() && "Already the same");
+
+  // i1 to scalar<bool> is indeed a zero-cost conversion (`pop.cast_to_builtin`
+  // is a no-op).
+  // TODO: we also only need this for the sake of migration as well. Eventually,
+  // mojo should have no knowledge of i1 at all.
+  if (isScalarOf<KGENDType::kBool>(value.ir.getType().mlirType) &&
+      toType.mlirType.isInteger(1)) {
+    if (auto pv = value.ir.getIfPValue())
+      return CastToBuiltinAttr::get(pv);
+
+    Value v = POP::CastToBuiltinOp::create(
+                  *builder, translateLocation(value.expr->getLoc()),
+                  toType.mlirType, value.ir.getSValueRegister())
+                  .getOutput();
+    if (value.ir.getIfSRValue())
+      return SRValue(v);
+    return SBValue(v);
+  }
 
   // PValue handling has a helper.
   if (auto pv = value.ir.getIfPValue())

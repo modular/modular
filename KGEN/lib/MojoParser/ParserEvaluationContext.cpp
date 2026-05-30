@@ -150,8 +150,8 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
       if (foldResult == ConformanceResult::NeedsEvidence)
         return failure(); // un-foldable
 
-      return TypedAttr(BoolAttr::get(isRefinedTrait.getContext(),
-                                     foldResult == ConformanceResult::Yes));
+      return TypedAttr(SIMDAttr::getScalarBool(
+          isRefinedTrait.getContext(), foldResult == ConformanceResult::Yes));
     }
   }
 

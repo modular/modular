@@ -20,11 +20,11 @@ def need_bool_pred[x: Int]() where bool_pred(x):
     pass
 
 
-def i1_pred(x: Int) -> __mlir_type.i1:
-    return __mlir_attr.`1: i1`
+def scalar_bool_pred(x: Int) -> __mlir_type.`!kgen.scalar<bool>`:
+    return __mlir_attr.`#kgen.simd<true> : !kgen.scalar<bool>`
 
 
-def need_i1_pred[x: Int]() where i1_pred(x):
+def need_scalar_bool_pred[x: Int]() where scalar_bool_pred(x):
     pass
 
 
@@ -57,28 +57,28 @@ def call_test_and_bool_nested():
                 test_and_bool[1, 2, 3]()
 
 
-# CHECK-LABEL: lit.fn @"test_and_i1[
-# CHECK-SAME: {<sugar_preserved(cond(from_builtin(:i1
-# CHECK-SAME: and(from_builtin(:i1 apply(:!lit.generator<("x": !Int) -> i1> @where_clause_and_operator::@"i1_pred(::Int)"
-def test_and_i1[x: Int, y: Int]() where i1_pred(x) and i1_pred(y):
-    need_i1_pred[x]()
-    need_i1_pred[y]()
+# CHECK-LABEL: lit.fn @"test_and_scalar_bool[
+# CHECK-SAME: {<sugar_preserved(cond(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::Int)"
+# CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::Int)"
+def test_and_scalar_bool[x: Int, y: Int]() where scalar_bool_pred(x) and scalar_bool_pred(y):
+    need_scalar_bool_pred[x]()
+    need_scalar_bool_pred[y]()
 
 
-# CHECK-LABEL: lit.fn @"test_and_i1_bool[
-# CHECK-SAME: {<sugar_preserved(#lit.struct.extract<:!Bool cond(from_builtin(:i1
-# CHECK-SAME: and(from_builtin(:i1 apply(:!lit.generator<("x": !Int) -> i1> @where_clause_and_operator::@"i1_pred(::Int)"
-def test_and_i1_bool[x: Int, y: Int]() where i1_pred(x) and bool_pred(y):
-    need_i1_pred[x]()
+# CHECK-LABEL: lit.fn @"test_and_scalar_bool_bool[
+# CHECK-SAME: {<sugar_preserved(#lit.struct.extract<:!Bool cond(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::Int)"
+# CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::Int)"
+def test_and_scalar_bool_bool[x: Int, y: Int]() where scalar_bool_pred(x) and bool_pred(y):
+    need_scalar_bool_pred[x]()
     need_bool_pred[y]()
 
 
-# CHECK-LABEL: lit.fn @"test_and_bool_i1[
+# CHECK-LABEL: lit.fn @"test_and_bool_scalar_bool[
 # CHECK-SAME: {<sugar_preserved(#lit.struct.extract<:!Bool
-# CHECK-SAME: and(from_builtin(:i1 apply(:!lit.generator<("x": !Int) -> i1> @where_clause_and_operator::@"i1_pred(::Int)"
-def test_and_bool_i1[x: Int, y: Int]() where bool_pred(x) and i1_pred(y):
+# CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> !kgen.scalar<bool>> @where_clause_and_operator::@"scalar_bool_pred(::Int)"
+def test_and_bool_scalar_bool[x: Int, y: Int]() where bool_pred(x) and scalar_bool_pred(y):
     need_bool_pred[x]()
-    need_i1_pred[y]()
+    need_scalar_bool_pred[y]()
 
 
 # Test with `or` operator as well.

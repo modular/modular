@@ -373,13 +373,16 @@ public:
   /// Emit the specified expression as a condition, converting it to an MLIR
   /// I1 value that we can test directly.  This reports and error and returns
   /// null on error.
+  /// TODO: delete emitI1
   RValue emitI1(ASTExprAnd<CValue> value, ExprContext context);
+  RValue emitScalarBool(ASTExprAnd<CValue> value, ExprContext context);
 
   /// Emit the specified expression as a condition, converting it to an MLIR I1
   /// value that we can test directly.  This reports and error and returns null
   /// on error.
-  /// TODO: emit scalar<bool> instead of i1.
+  /// TODO: delete emitExprI1
   RValue emitExprI1(const ExprNode *condExpr, ExprContext context);
+  RValue emitExprScalarBool(const ExprNode *condExpr, ExprContext context);
 
   /// Given a value, emit it into an MLIR value by invoking its `__mlir_index__`
   /// method.

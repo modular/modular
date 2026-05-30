@@ -283,7 +283,8 @@ def precedence_associativity(a: Int):
   # CHECK: %[[C:.*]] = lit.ref.load %c
   # CHECK-NEXT: %[[TEN:.*]] = kgen.param.constant: !Int = <{10}>
   # CHECK-NEXT: %[[EQ:.*]] = lit.call {{.*}}__eq__{{.*}}(%[[C]], %[[TEN]])
-  # CHECK-NEXT: %[[EQI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}%[[EQ]]
+  # CHECK-NEXT: %[[EQSB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}%[[EQ]]
+  # CHECK-NEXT: %[[EQI1:.*]] = pop.cast_to_builtin %[[EQSB]]
   # CHECK-NEXT: %[[RESULT:.*]] = hlcf.if %[[EQI1]] -> !Int {
   # CHECK-NEXT:   %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
   # CHECK-NEXT:   hlcf.yield %[[ZERO]] : !Int
@@ -291,7 +292,8 @@ def precedence_associativity(a: Int):
   # CHECK-NEXT:  %[[C:.*]] = lit.ref.load %c
   # CHECK-NEXT:  %[[ELEVEN:.*]] = kgen.param.constant: !Int = <{11}>
   # CHECK-NEXT:  %[[EQ:.*]] = lit.call {{.*}}__eq__{{.*}}(%[[C]], %[[ELEVEN]])
-  # CHECK-NEXT:  %[[EQI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[EQ]])
+  # CHECK-NEXT:  %[[EQSB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[EQ]])
+  # CHECK-NEXT:  %[[EQI1:.*]] = pop.cast_to_builtin %[[EQSB]]
   # CHECK-NEXT:  %[[RIGHT_IF_RESULT:.*]] = hlcf.if %[[EQI1]] -> !Int {
   # CHECK-NEXT:    %[[ONE:.*]] = kgen.param.constant: !Int = <{1}>
   # CHECK-NEXT:    hlcf.yield %[[ONE]] : !Int
@@ -453,7 +455,8 @@ def andOr1(a: Boolish, b: Boolish):
   # otherwise.
 
   # CHECK: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%a)
-  # CHECK: [[I1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BOOL]])
+  # CHECK: [[SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[BOOL]])
+  # CHECK: [[I1:%.*]] = pop.cast_to_builtin [[SB]]
   # CHECK: hlcf.if [[I1]] -> !Boolish {
   # CHECK:   = lit.call {{.*}}__init__{{.*}}"{{.*}}(%b){{.*}}*, "copy"
   # CHECK:   hlcf.yield
@@ -470,7 +473,8 @@ def andOr2(a: Boolish, b: Boolish):
   # otherwise.  Boolish is defined with copy ctor so it must be invoked.
 
   # CHECK: [[ABOOL:%.*]] = lit.call {{.*}}Boolish::@"__bool__{{.*}}(
-  # CHECK-NEXT: [[I1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__{{.*}}([[ABOOL]])
+  # CHECK-NEXT: [[SB:%.*]] = lit.call {{.*}}@Bool::@"__mlir_bool__{{.*}}([[ABOOL]])
+  # CHECK-NEXT: [[I1:%.*]] = pop.cast_to_builtin [[SB]]
   # CHECK-NEXT:  = hlcf.if [[I1]] -> !Boolish {
   # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}Boolish::@"__init__{{.*}}"{{.*}}(%a){{.*}}*, "copy"
   # CHECK:        hlcf.yield [[TMP]]
@@ -485,7 +489,8 @@ def andOr3(a: Boolish, c: Bool):
   # Testing two different logic'y types returns the common bool type if present.
 
   # CHECK: [[ABOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%a)
-  # CHECK-NEXT: [[I1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[ABOOL]])
+  # CHECK-NEXT: [[SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[ABOOL]])
+  # CHECK-NEXT: [[I1:%.*]] = pop.cast_to_builtin [[SB]]
   # CHECK-NEXT:  = hlcf.if [[I1]] -> !Bool {
   # CHECK-NEXT:   hlcf.yield %c
   # CHECK-NEXT: } else {
@@ -498,7 +503,8 @@ def andOr3(a: Boolish, c: Bool):
 def andOr4(b: Boolish, c: Bool):
   # Check incompatible types that are nevertheless boolish.
   # CHECK: [[BBOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%b)
-  # CHECK-NEXT: [[BI1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BBOOL]])
+  # CHECK-NEXT: [[BSB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[BBOOL]])
+  # CHECK-NEXT: [[BI1:%.*]] = pop.cast_to_builtin [[BSB]]
   # CHECK-NEXT: = hlcf.if [[BI1]] -> !Bool {
   # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}([[BI1]])
   # CHECK:        hlcf.yield [[TMP]]
@@ -513,7 +519,8 @@ def andOr2(b: Boolish, d: MemBoolish):
   # Boolish and MemBoolish has a common type of MemBoolish.
 
   # CHECK: [[DBOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%d)
-  # CHECK-NEXT: [[DI1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[DBOOL]])
+  # CHECK-NEXT: [[DSB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[DBOOL]])
+  # CHECK-NEXT: [[DI1:%.*]] = pop.cast_to_builtin [[DSB]]
   # CHECK-NEXT: [[IFRESULT:%.*]] = lit.var.decl {{.*}} : !lit.ref<!MemBoolish
   # CHECK-NEXT: hlcf.if [[DI1]] {
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}"{{.*}}(%d, [[ANON:%[^)]*]]){{.*}}*, "copy"
@@ -571,7 +578,8 @@ z
 def test_if_cond(var cond: Bool, memCond: MemBoolish):
     # CHECK: %i = lit.var.decl "i"
     # CHECK: %[[COND:.*]] = lit.ref.load %cond
-    # CHECK: %[[LIT_BOOLI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
+    # CHECK: %[[LIT_BOOLSB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[COND]])
+    # CHECK-NEXT: %[[LIT_BOOLI1:.*]] = pop.cast_to_builtin %[[LIT_BOOLSB]]
     # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}{2}
     # CHECK-NEXT:   hlcf.yield %[[INT_TWO]]

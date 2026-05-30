@@ -2991,26 +2991,24 @@ static ParseResult resolveConformanceList(
     ConstraintAttr constraint =
         traitConstraints
             ? ConstraintAttr::get(
-                  IntegerAttr::get(IntegerType::get(shared.getContext(), 1), 1),
+                  SIMDAttr::getScalarBool(shared.getContext(), true),
                   shared.diags.translateLocation(conformance.loc))
             : ConstraintAttr();
     if (traitConstraints && conformance.constraint) {
       IREmitter constraintEmitter(declScope, EC_Requires);
-      // TODO: directly emit scalar<bool> instead of i1.
-      RValue propI1 = constraintEmitter.emitExprI1(
+      RValue prop = constraintEmitter.emitExprScalarBool(
           conformance.constraint->propExpr, EC_Requires);
-      if (!propI1) {
+      if (!prop) {
         constraintEmitter.emitError(conformance.loc,
                                     "failed to emit constraint expression");
         return failure();
       }
-      PValue propVal = propI1.getIfPValue();
+      PValue propVal = prop.getIfPValue();
       if (!propVal) {
         constraintEmitter.emitErrorForDynamicValueInParameter(conformance.loc);
         return failure();
       }
-      TypedAttr simplifiedProp =
-          LIT::deShortCircuitCond(CastFromBuiltinAttr::get(propVal));
+      TypedAttr simplifiedProp = LIT::deShortCircuitCond(propVal);
       constraint = ConstraintAttr::get(
           simplifiedProp, shared.diags.translateLocation(conformance.loc));
     }
