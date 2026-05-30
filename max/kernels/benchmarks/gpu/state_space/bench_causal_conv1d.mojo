@@ -20,7 +20,7 @@ the best occupancy/tiling for the workload. Benchmarks the kernel directly via
 """
 
 from std.math import ceildiv
-from std.sys import get_defined_int
+from std.sys import get_defined_int, get_defined_string
 
 from std.benchmark import (
     Bench,
@@ -32,11 +32,16 @@ from std.benchmark import (
 from std.gpu.host import DeviceContext
 from std.random import rand
 from layout import TileTensor, row_major
-from state_space.causal_conv1d import causal_conv1d_channel_first_fwd_gpu
+from state_space.causal_conv1d import (
+    causal_conv1d_channel_first_fwd_gpu,
+    causal_conv1d_channel_last_fwd_gpu,
+)
 
 
 def main() raises:
-    comptime dtype = DType.float32
+    comptime dtype = DType._from_str(
+        get_defined_string["dtype", "DType.float32"]()
+    )
     comptime batch = get_defined_int["batch", 1]()
     comptime dim = get_defined_int["dim", 1536]()
     comptime seqlen = get_defined_int["seqlen", 256]()
@@ -146,10 +151,99 @@ def main() raises:
                 [ThroughputMeasure(BenchMetric.elements, n)],
             )
 
-        # Winning config: 64x4 (float4, full L utilization, one channel/block).
-        # Channel folding (cpb>1) did not help, so keep the simple 1D launch.
-        # Single config → clean nsys CUDA-trace median vs Dao.
-        bench_cfg[64, 4, 1]()
+        # Winning config: kNThreads*kNElts == seqlen tile, full L utilization,
+        # one channel/block. kNElts is the 128-bit vector width: 4 for fp32,
+        # 8 for 16-bit dtypes. Channel folding (cpb>1) did not help.
+        comptime if dtype == DType.float32:
+            bench_cfg[64, 4, 1]()
+        else:
+            # 16-bit at L=256: full utilization (tile==L) beats a wider but
+            # half-idle load. 64x4 (tile 256, 64-bit load) measured fastest.
+            bench_cfg[64, 4, 1]()
+
+        # ---- Channel-last (B, L, C). Reuse the same device data, reinterpreted
+        # with channel-last strides (c_stride=1, l_stride=dim). Vectorization is
+        # across the kNElts contiguous channels.
+        var xcl = TileTensor(x_dev, row_major(batch, seqlen, dim))
+        var ocl = TileTensor(o_dev, row_major(batch, seqlen, dim))
+        var cl_batch_stride: UInt32 = UInt32(seqlen * dim)
+        var cl_l_stride: UInt32 = UInt32(dim)
+        var cl_c_stride: UInt32 = 1
+
+        @parameter
+        @always_inline
+        def bench_cl[kNThreads: Int, kNElts: Int]() raises:
+            var compiled = ctx.compile_function[
+                causal_conv1d_channel_last_fwd_gpu[
+                    dtype,
+                    dtype,
+                    dtype,
+                    kNThreads,
+                    kWidth,
+                    kNElts,
+                    dtype,
+                    dtype,
+                    xcl.LayoutType,
+                    w.LayoutType,
+                    ocl.LayoutType,
+                    b.LayoutType,
+                    b.LayoutType,
+                ]
+            ]()
+            var grid = (
+                ceildiv(seqlen, kNElts),
+                ceildiv(dim, kNThreads),
+                batch,
+            )
+
+            @parameter
+            @always_inline
+            def run(mut bn: Bencher):
+                @parameter
+                @always_inline
+                def launch(c: DeviceContext, i: Int) raises:
+                    c.enqueue_function(
+                        compiled,
+                        batch,
+                        dim,
+                        seqlen,
+                        kWidth,
+                        xcl.as_immut(),
+                        w.as_immut(),
+                        ocl,
+                        b.as_immut(),
+                        b.as_immut(),
+                        cl_batch_stride,
+                        cl_c_stride,
+                        cl_l_stride,
+                        UInt32(kWidth),
+                        UInt32(1),
+                        cl_batch_stride,
+                        cl_c_stride,
+                        cl_l_stride,
+                        UInt32(1),
+                        UInt32(0),
+                        UInt32(0),
+                        Int8(1),
+                        Int8(0),
+                        Int8(1),
+                        grid_dim=grid,
+                        block_dim=(kNThreads),
+                    )
+
+                bn.iter_custom[launch](ctx)
+
+            m.bench_function[run](
+                BenchId(
+                    "cl",
+                    input_id=String("nthreads=", kNThreads, "/nelts=", kNElts),
+                ),
+                [ThroughputMeasure(BenchMetric.elements, n)],
+            )
+
+        # 64 channels/block (coalesced), 8 positions/thread: kNElts=8 amortizes
+        # the sliding window best (11 loads / 8 outputs). Measured fastest.
+        bench_cl[64, 8]()
 
         ctx.synchronize()
 

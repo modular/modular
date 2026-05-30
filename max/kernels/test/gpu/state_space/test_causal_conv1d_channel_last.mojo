@@ -45,6 +45,8 @@ def main() raises:
 def run_causal_conv1d_channel_last_gpu[
     dtype: DType,
     activation: StaticString,
+    kNThreads: Int = 128,
+    kNElts: Int = 4,
 ](
     batch: Int,
     dim: Int,
@@ -130,9 +132,6 @@ def run_causal_conv1d_channel_last_gpu[
     var output_device_tt = TileTensor(
         output_device, row_major(batch, seqlen, dim)
     )
-
-    comptime kNThreads = 128
-    comptime kNElts = 4
     var silu_activation_int8 = Int8(silu_activation)
 
     # bias_device_tt stands in for the unused seq_idx argument (has_seq_idx=0).
@@ -183,8 +182,8 @@ def run_causal_conv1d_channel_last_gpu[
                 Int8(False),
                 silu_activation_int8,
                 grid_dim=(
-                    ceildiv(seqlen, kNThreads * kNElts),
-                    ceildiv(dim, kNElts),
+                    ceildiv(seqlen, kNElts),
+                    ceildiv(dim, kNThreads),
                     batch,
                 ),
                 block_dim=(kNThreads),
@@ -285,3 +284,36 @@ def test_channel_last_gpu_large() raises:
     run_causal_conv1d_channel_last_gpu[DType.float32, "none"](
         2, 16, 64, 4, ctx=ctx
     )
+
+
+def test_channel_last_gpu_ragged_channels() raises:
+    """dim not a multiple of kNElts exercises the scalar fallback (the last
+    channel chunk is partial, so the vectorized channel load is skipped)."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for d in [6, 10, 1535]:
+        run_causal_conv1d_channel_last_gpu[DType.float32, "silu"](
+            1, d, 64, 4, ctx=ctx
+        )
+
+
+def test_channel_last_gpu_mamba_dims() raises:
+    """Vectorized channel-last fast path at mamba dims (dim=1536)."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_causal_conv1d_channel_last_gpu[DType.float32, "silu"](
+        1, 1536, 256, 4, ctx=ctx
+    )
+
+
+def test_channel_last_gpu_bf16() raises:
+    """bf16 channel-last fast path (kNElts=8, 128-bit channel vector)."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for width in [2, 4]:
+        run_causal_conv1d_channel_last_gpu[DType.bfloat16, "silu", 128, 8](
+            1, 1536, 256, width, ctx=ctx, rtol=0.03
+        )

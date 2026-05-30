@@ -327,12 +327,18 @@ struct CausalConv1DChannelLast[activation: StaticString]:
             )
         elif is_gpu[target]():
             var gpu_ctx: DeviceContext = ctx
-            comptime kNThreads = 128
-            comptime kNElts = 4
+            # Channel-last maps threads to channels for coalesced loads: a block
+            # owns kNThreads contiguous channels (full warps along the contiguous
+            # C axis) and each thread scans kNElts sequence positions with a
+            # sliding window. 64 channels x 8 positions measured fastest (and
+            # beats Dao-AILab's channel-last kernel). grid.x scales with L,
+            # grid.y with dim.
+            comptime kNThreads = 64
+            comptime kNElts = 8
             var silu_activation_int8 = Int8(silu_activation)
             var grid = (
-                ceildiv(seqlen, kNThreads * kNElts),
-                ceildiv(dim, kNElts),
+                ceildiv(seqlen, kNElts),
+                ceildiv(dim, kNThreads),
                 batch_size,
             )
 

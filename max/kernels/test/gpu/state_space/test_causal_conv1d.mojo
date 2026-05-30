@@ -51,6 +51,8 @@ def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
 def run_causal_conv1d_gpu[
     dtype: DType,
     activation: StaticString,
+    kNThreads: Int = 128,
+    kNElts: Int = 4,
 ](
     batch: Int,
     dim: Int,
@@ -216,8 +218,6 @@ def run_causal_conv1d_gpu[
 
     # Run GPU kernel. seq_idx is unused (has_seq_idx=False); bias_device_tt
     # stands in as a valid tensor argument and is never dereferenced.
-    comptime kNThreads = 128
-    comptime kNElts = 4
     var silu_activation_int8 = Int8(silu_activation)
 
     @parameter
@@ -402,3 +402,33 @@ def test_gpu_causal_conv1d_vectorized_mamba_prefill() raises:
     if not ctx.is_compatible():
         return
     run_causal_conv1d_gpu[DType.float32, "silu"](1, 1536, 512, 4, ctx=ctx)
+
+
+def test_gpu_causal_conv1d_bf16_fast_path() raises:
+    """bf16 fast path: 128-bit load is kNElts=8, accumulation stays float32.
+
+    64 threads x 8 bf16 == 512-position tile, full utilization. bf16 carries
+    ~8 mantissa bits, so the tolerance is looser than fp32 but the float32
+    accumulator keeps it well within a few bf16 ULPs.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for width in [1, 2, 3, 4]:
+        run_causal_conv1d_gpu[DType.bfloat16, "none", 64, 8](
+            2, 8, 512, width, ctx=ctx, rtol=0.03
+        )
+        run_causal_conv1d_gpu[DType.bfloat16, "silu", 64, 8](
+            1, 1536, 512, width, ctx=ctx, rtol=0.03
+        )
+
+
+def test_gpu_causal_conv1d_fp16_fast_path() raises:
+    """fp16 fast path: kNElts=8 (128-bit), float32 accumulation."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for width in [2, 4]:
+        run_causal_conv1d_gpu[DType.float16, "silu", 64, 8](
+            1, 1536, 512, width, ctx=ctx, rtol=0.01
+        )

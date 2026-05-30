@@ -34,9 +34,11 @@ Kernel inventory:
           a vectorized fast path (one width-kNElts vector load per thread + a
           short L2-cached halo, fully comptime-unrolled); seq_idx / non-contiguous
           / ragged-tail inputs fall back to a width-generic scalar accumulation.
-        - `causal_conv1d_channel_last_fwd_gpu[…]` — GPU kernel for (B, L, C); a
-          chunk of `kNElts` channels per block, C-contiguous coalescing, using a
-          width-generic scalar accumulation over the kWidth taps.
+        - `causal_conv1d_channel_last_fwd_gpu[…]` — GPU kernel for (B, L, C);
+          threads map to channels (a block owns kNThreads contiguous channels),
+          so per-position loads coalesce across the warp along the contiguous C
+          axis. Each thread does a sliding scan over kNElts positions reusing the
+          kWidth-tap window; seq_idx falls back to a per-tap scan.
 
         Every forward kernel is parameterized by whether a bias is present and
         whether a `seq_idx` packed-sequence mask is present, instead of carrying
@@ -112,8 +114,9 @@ def silu[
     Constraints:
         The dtype must be a floating-point type.
     """
-    if x < -20.0:
-        return 0.0
+    # Branchless and width-generic. For very negative x, exp(-x) -> +inf and
+    # x / (1 + inf) -> 0, which is exactly the small-x clamp, so no explicit
+    # guard is needed (and a scalar `if` would not vectorize).
     return x / (1 + exp(-x))
 
 
@@ -262,7 +265,12 @@ def causal_conv1d_fwd_cpu[
                     seq_idx.raw_load(seq_base + UInt32(l) * seq_idx_l_stride)
                 )
 
-            var conv_sum: Scalar[output_dtype] = cur_bias
+            # Accumulate in float32 (matches the GPU fast path and Dao's
+            # reference); a no-op for fp32 output, and keeps bf16/fp16 results
+            # high-precision so they round to the same value the GPU produces.
+            var conv_sum: Scalar[DType.float32] = Scalar[DType.float32](
+                cur_bias
+            )
             for w in range(width):
                 var input_l: Int = l - (width_minus_1 - w)
                 if input_l >= 0:
@@ -283,12 +291,13 @@ def causal_conv1d_fwd_cpu[
                         ] = w0 if w == 0 else (
                             w1 if w == 1 else (w2 if w == 2 else w3)
                         )
-                        conv_sum = conv_sum + Scalar[output_dtype](
-                            input_val * Scalar[x_dtype](weight_val)
-                        )
+                        conv_sum = conv_sum + Scalar[DType.float32](
+                            input_val
+                        ) * Scalar[DType.float32](weight_val)
 
             var out_offset = out_base + UInt32(l) * out_l_stride
-            output.raw_store(out_offset, apply_silu(conv_sum, silu_activation))
+            var activated = apply_silu(conv_sum, silu_activation)
+            output.raw_store(out_offset, Scalar[output_dtype](activated))
 
     sync_parallelize[process_bc](total_bc, ctx)
 
@@ -447,19 +456,27 @@ def causal_conv1d_channel_first_fwd_gpu[
             if input_l >= 0:
                 halo[k] = Scalar[x_dtype](x.raw_load(x_cbase + UInt32(input_l)))
 
+        # Accumulate in float32 regardless of storage dtype (matches Dao's
+        # internal precision, so bf16/fp16 stay within parity tolerance; for
+        # fp32 it is a no-op). The vector load/store stay in the native dtype to
+        # keep memory traffic minimal.
+        var bias_f32 = Scalar[DType.float32](cur_bias)
         var fast_out: SIMD[output_dtype, kNElts] = 0
         comptime for i in range(kNElts):
-            var acc: Scalar[x_dtype] = 0
+            var acc: Scalar[DType.float32] = bias_f32
             comptime for w in range(kWidth):
                 comptime rel = i - (kWidth - 1 - w)
                 comptime if rel >= 0:
-                    acc = acc + W[w] * xv[rel]
+                    acc = acc + Scalar[DType.float32](W[w]) * Scalar[
+                        DType.float32
+                    ](xv[rel])
                 else:
-                    acc = acc + W[w] * halo[i + w]
-            var ov: Scalar[output_dtype] = Scalar[output_dtype](
-                cur_bias
-            ) + Scalar[output_dtype](acc)
-            fast_out[i] = apply_silu(ov, silu_active)
+                    acc = acc + Scalar[DType.float32](W[w]) * Scalar[
+                        DType.float32
+                    ](halo[i + w])
+            if silu_active:
+                acc = silu(acc)
+            fast_out[i] = acc.cast[output_dtype]()
 
         output.raw_store[width=kNElts, alignment=vec_align](
             out_cbase + UInt32(seq_start), fast_out
@@ -555,34 +572,27 @@ def causal_conv1d_channel_last_fwd_gpu[
 ):
     """GPU causal conv1d for channel-last (B, L, C) layout.
 
-    Each block handles a chunk of `kNElts` channels (coalesced along the
-    contiguous C axis) and a chunk of sequence positions. The per-channel weight
-    row is loaded in a single `load[width=kWidth]`. `has_bias` / `has_seq_idx`
-    gate the bias add and packed-sequence masking.
+    Threads map to channels (not positions): thread t of a block owns channel
+    `block_idx.y * kNThreads + t`, and the block covers a contiguous range of
+    `kNElts` sequence positions (`block_idx.x`). Because C is the contiguous
+    axis, neighbouring threads (neighbouring channels) read neighbouring memory
+    at each L position, so the per-position loads coalesce across the warp — the
+    key to channel-last throughput. Each thread does a short sliding scan over
+    its `kNElts` positions, reusing the kWidth-tap window. `has_bias` /
+    `has_seq_idx` gate the bias add and packed-sequence masking.
 
-    Grid: (ceildiv(seqlen, kNThreads * kNElts), ceildiv(dim, kNElts), batch).
+    Grid: (ceildiv(seqlen, kNElts), ceildiv(dim, kNThreads), batch).
     Block: kNThreads.
     """
-    var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
-    var channel_chunk_id: Int = block_idx.y
-    var chunk_id: Int = block_idx.x
-    var kChunkSize: Int = block_dim.x
-
-    var nBatches: Int = batch
     var nSeqLen: Int = seqlen
     var nChannels: Int = dim
 
-    if batch_id >= nBatches or kWidth != width:
-        return
+    # Thread -> channel (coalesced across the warp); block -> kNElts positions.
+    var c: Int = Int(block_idx.y) * Int(block_dim.x) + Int(thread_idx.x)
+    var l0: Int = Int(block_idx.x) * kNElts
 
-    var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
-    var seq_end: Int = min(seq_start + kNElts, nSeqLen)
-    if seq_start >= nSeqLen:
-        return
-
-    var channel_start: Int = channel_chunk_id * kNElts
-    if channel_start >= nChannels:
+    if batch_id >= batch or c >= nChannels or kWidth != width or l0 >= nSeqLen:
         return
 
     # Null pointer safety for the always-present tensors.
@@ -594,67 +604,90 @@ def causal_conv1d_channel_last_fwd_gpu[
     var silu_active = Bool(Int(silu_activation) != 0)
     var use_seq_idx = has_seq_idx != 0
 
-    for c_offset in range(kNElts):
-        var c_idx: Int = channel_start + c_offset
-        if c_idx >= nChannels:
+    # Per-channel bias and weights (weight row is kWidth-contiguous).
+    var cur_bias: Scalar[DType.float32] = 0
+    if has_bias != 0 and Int(bias.ptr) != 0 and c < bias_dim:
+        cur_bias = Scalar[DType.float32](bias.raw_load(UInt32(c) * bias_stride))
+    var wbase: UInt32 = UInt32(c) * weight_c_stride
+    var W: SIMD[DType.float32, kWidth] = 0
+    comptime for w in range(kWidth):
+        W[w] = Scalar[DType.float32](
+            weight.raw_load(wbase + UInt32(w) * weight_width_stride)
+        )
+
+    var x_bc: UInt32 = (
+        UInt32(batch_id) * x_batch_stride + UInt32(c) * x_c_stride
+    )
+    var out_bc: UInt32 = (
+        UInt32(batch_id) * out_batch_stride + UInt32(c) * out_c_stride
+    )
+
+    # Scan this thread's kNElts positions for channel c. Each input element is
+    # read with a per-position scalar load that coalesces across the warp
+    # (adjacent threads = adjacent channels = adjacent memory, since C is
+    # contiguous). Accumulate in float32. Correct for any strides (a
+    # non-contiguous layout simply loses the coalescing, not correctness).
+    #
+    # Fast path (no packed-sequence masking): load each of the kNElts+kWidth-1
+    # distinct window positions once and reuse it across outputs, instead of the
+    # kNElts*kWidth redundant per-tap loads (adjacent outputs share kWidth-1
+    # taps). Output cur_l=l0+i, tap w reads l0-(kWidth-1)+(i+w).
+    if not use_seq_idx:
+        comptime kWindow = kNElts + kWidth - 1
+        var xs = InlineArray[Scalar[DType.float32], kWindow](fill=0)
+        comptime for j in range(kWindow):
+            var input_l: Int = l0 - (kWidth - 1) + j
+            if input_l >= 0 and input_l < nSeqLen:
+                xs[j] = Scalar[DType.float32](
+                    x.raw_load(x_bc + UInt32(input_l) * x_l_stride)
+                )
+        comptime for i in range(kNElts):
+            var cur_l: Int = l0 + i
+            if cur_l >= nSeqLen:
+                break
+            var acc: Scalar[DType.float32] = cur_bias
+            comptime for w in range(kWidth):
+                acc = acc + W[w] * xs[i + w]
+            if silu_active:
+                acc = silu(acc)
+            output.raw_store(
+                out_bc + UInt32(cur_l) * out_l_stride, acc.cast[output_dtype]()
+            )
+        return
+
+    comptime for i in range(kNElts):
+        var cur_l: Int = l0 + i
+        if cur_l >= nSeqLen:
             break
 
-        var cur_bias: Scalar[output_dtype] = 0
-        if has_bias != 0 and Int(bias.ptr) != 0 and c_idx < bias_dim:
-            cur_bias = Scalar[output_dtype](
-                bias.raw_load(UInt32(c_idx) * bias_stride)
+        var cur_seq_idx: Int32 = 0
+        if use_seq_idx:
+            cur_seq_idx = Int32(
+                seq_idx.raw_load(seq_base + UInt32(cur_l) * seq_idx_l_stride)
             )
 
-        var W = (weight.ptr + c_idx * Int(weight_c_stride)).load[width=kWidth]()
-
-        var out_vals_channel: SIMD[output_dtype, kNElts] = 0
-
-        comptime for i in range(kNElts):
-            var pos: Int = seq_start + i
-            if pos >= seq_end:
-                break
-
-            var cur_seq_idx: Int32 = 0
-            if use_seq_idx:
-                cur_seq_idx = Int32(
-                    seq_idx.raw_load(seq_base + UInt32(pos) * seq_idx_l_stride)
-                )
-
-            var conv_sum: Scalar[output_dtype] = cur_bias
-            comptime for w in range(kWidth):
-                var input_l: Int = pos - (kWidth - 1 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    var ok = True
-                    if use_seq_idx:
-                        var in_seq = Int32(
-                            seq_idx.raw_load(
-                                seq_base + UInt32(input_l) * seq_idx_l_stride
-                            )
+        var acc: Scalar[DType.float32] = cur_bias
+        comptime for w in range(kWidth):
+            var input_l: Int = cur_l - (kWidth - 1 - w)
+            if input_l >= 0:
+                var ok = True
+                if use_seq_idx:
+                    var in_seq = Int32(
+                        seq_idx.raw_load(
+                            seq_base + UInt32(input_l) * seq_idx_l_stride
                         )
-                        if in_seq != cur_seq_idx:
-                            ok = False
-                    if ok:
-                        var load_offset: UInt32 = (
-                            UInt32(batch_id) * x_batch_stride
-                            + UInt32(input_l) * x_l_stride
-                            + UInt32(c_idx) * x_c_stride
-                        )
-                        var x_val: Scalar[x_dtype] = x.raw_load(load_offset)
-                        conv_sum = conv_sum + Scalar[output_dtype](
-                            x_val * Scalar[x_dtype](W[w])
-                        )
-            out_vals_channel[i] = apply_silu(conv_sum, silu_active)
-
-        comptime for i in range(kNElts):
-            var pos: Int = seq_start + i
-            if pos >= seq_end:
-                break
-            var out_offset: UInt32 = (
-                UInt32(batch_id) * out_batch_stride
-                + UInt32(pos) * out_l_stride
-                + UInt32(c_idx) * out_c_stride
-            )
-            output.raw_store(out_offset, out_vals_channel[i])
+                    )
+                    if in_seq != cur_seq_idx:
+                        ok = False
+                if ok:
+                    acc = acc + W[w] * Scalar[DType.float32](
+                        x.raw_load(x_bc + UInt32(input_l) * x_l_stride)
+                    )
+        if silu_active:
+            acc = silu(acc)
+        output.raw_store(
+            out_bc + UInt32(cur_l) * out_l_stride, acc.cast[output_dtype]()
+        )
 
 
 # ============================================================================
