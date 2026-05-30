@@ -669,13 +669,25 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     if (!emitDiagnosticOnFailure || isErroneous())
       return {};
 
-    auto diag = getShared().emitError(getExprLoc()) << getExpr()->getRange();
-
     // Diagnose the case when there are no candidates found by lookup.
     if (fnDecls.empty()) {
+      auto diag = getShared().emitError(getExprLoc()) << getExpr()->getRange();
       diag << "invalid call to '" << baseName << "': no candidates found";
       return {};
     }
+
+    // Otherwise, there is one or more candidate, and they all failed.  Emit the
+    // primary error on the operand that failed if it is consistent, otherwise
+    // fallback to the location of the call. We prefer to issue it on the
+    // operand so we can know which of the 42 arguments failed.
+    auto diagLoc = evaluations[0].second.getDiag().getPrimaryLoc();
+    for (auto &[candidate, eval] : evaluations) {
+      if (eval.getDiag().getPrimaryLoc() != diagLoc) {
+        diagLoc = getShared().translateLocation(getExprLoc());
+        break;
+      }
+    }
+    auto diag = getShared().emitError(diagLoc) << getExpr()->getRange();
 
     // If we have one operand being passed to an __init__, get it to help tailor
     // type conversion errors.

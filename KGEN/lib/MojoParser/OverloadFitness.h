@@ -60,6 +60,12 @@ public:
     return std::move(*diag);
   }
 
+  /// Consume the diagnostic if the candidate is invalid.
+  const MojoInflightDiag &getDiag() const {
+    assert(getValidity() == Validity::kInvalid);
+    return *diag;
+  }
+
   /// Return the unprovable constraints if the candidate is inconclusive.
   ArrayRef<ConstraintAttr> getUnprovableConstraints() const {
     assert(isInconclusive());

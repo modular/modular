@@ -1790,12 +1790,14 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     auto diag = emitter.emitError(node->getLoc())
                 << diagType << base.expr->getRange();
 
-    if (isSubscript)
+    if (isSubscript) {
       diag << " is not subscriptable, it does not implement the "
               "`__getitem__`/`__setitem__` methods";
-    else
+    } else {
+      auto *expr = exprOperands[0].expr->getWithoutParens();
       diag << " value has no attribute '"
-           << cast<StringLiteralNode>(exprOperands[0].expr)->getValue() << "'";
+           << cast<StringLiteralNode>(expr)->getValue() << "'";
+    }
   };
 
   // As an extension to Python, we allow types to define getattr/getitem where
@@ -2157,9 +2159,12 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     // StringLiteral wants ArrayRef<StringRef>.
     auto strRefs = shared.getPersistentCopy(ArrayRef(quotedNameRef));
     auto *strLiteral = shared.allocPersistent<StringLiteralNode>(strRefs);
+    // Put the expression in a ParenNode so it has a location.
+    auto *parenNode =
+        shared.allocPersistent<ParenNode>(getLoc(), strLiteral, getLoc());
     return emitGetterSetterAccess(
         this, {baseVal, base},
-        Operand(strLiteral, getLoc(), Operand::kPositional), dest, emitter);
+        Operand(parenNode, getLoc(), Operand::kPositional), dest, emitter);
   }
   shared.notifyListenerOnRef(memberDecls, spelling, this);
 
