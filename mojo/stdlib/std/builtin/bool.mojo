@@ -177,8 +177,8 @@ struct Bool(
 
     @doc_hidden
     @always_inline("builtin")
-    def __mlir_i1__(self) -> __mlir_type.i1:
-        """Convert this Bool to __mlir_type.i1.
+    def __mlir_bool__(self) -> __mlir_type.`!kgen.scalar<bool>`:
+        """Convert this Bool to __mlir_type.`!kgen.scalar<bool>`.
 
         This method is a special hook used by the compiler to test boolean
         objects in control flow conditions.  It should be implemented by Bool
@@ -187,6 +187,16 @@ struct Bool(
 
         Returns:
             The underlying value for the Bool.
+        """
+        return self._mlir_value
+
+    @doc_hidden
+    @always_inline("builtin")
+    def __mlir_i1__(self) -> __mlir_type.i1:
+        """Convert this Bool to __mlir_type.i1.
+
+        Returns:
+            The underlying value for the Bool as an __mlir_type.i1.
         """
         return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i1](
             self._mlir_value
