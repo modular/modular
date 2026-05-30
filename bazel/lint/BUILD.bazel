@@ -168,25 +168,29 @@ command(
     run_from_workspace_root = True,
 )
 
-alias(
-    name = "shellcheck",
-    actual = select({
-        "//:linux_x86_64": "@shellcheck-linux.x86_64//:shellcheck",
-        "//:linux_aarch64": "@shellcheck-linux.aarch64//:shellcheck",
-        "@platforms//os:macos": "@shellcheck-darwin.aarch64//:shellcheck",
+modular_py_binary(
+    name = "shellcheck_wrapper",
+    srcs = ["shellcheck_wrapper.py"],
+    data = select({
+        "//:linux_x86_64": ["@shellcheck-linux.x86_64//:shellcheck"],
+        "//:linux_aarch64": ["@shellcheck-linux.aarch64//:shellcheck"],
+        "@platforms//os:macos": ["@shellcheck-darwin.aarch64//:shellcheck"],
     }),
+    deps = [":lint_helpers"],
 )
 
-sh_binary(
-    name = "shellcheck-wrapper",
-    srcs = ["shellcheck-wrapper.sh"],
-    data = [":shellcheck"],
-)
-
-command(
-    name = "shellcheck.check",
-    command = ":shellcheck-wrapper",
-)
+[
+    command(
+        name = "shellcheck.check" + ("-fast" if fast else ""),
+        command = ":shellcheck_wrapper",
+        environment = {
+            "CHECK": "true",
+            "FAST": str(fast),
+        },
+        tags = ["maybe-unused"],
+    )
+    for fast in (True, False)
+]
 
 multirun(
     name = "lint",
