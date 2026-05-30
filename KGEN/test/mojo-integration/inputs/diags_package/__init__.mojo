@@ -24,3 +24,30 @@ def overloaded_function(n: Int, m: Float64):
 @fieldwise_init
 struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]:
     pass
+
+
+struct DeprecatedImplicitConversion:
+    @implicit(deprecated=True)
+    def __init__(out self, value: Int):
+        pass
+
+
+@always_inline("builtin")
+def foldable_predicate(y: Int) -> Bool:
+    return y > 10
+
+
+def constraint_fn[a: Int, b: Int]() where a > 0:
+    pass
+
+
+def unfoldable_predicate(y: Int) -> Bool:
+    return y > 2
+
+
+def unprovable_constraints[x: Int]() where unfoldable_predicate(x):
+    pass
+
+
+struct Conflict:
+    pass

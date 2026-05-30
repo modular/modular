@@ -315,28 +315,22 @@ static void emitInconclusiveCandidatesError(
       continue;
     }
 
-    auto func = cast<FnOp>(candidate->getIfOperation());
     if (validity == OverloadFitness::Validity::kValid) {
       // This is a valid candidate, but we can't use it since we need to
       // disprove the other candidates first.
-      diag.attachNote(candidate->getLoc())
+      diag.attachNote(*candidate)
           << "candidate is valid but cannot be selected until other "
              "candidates are disproved";
       continue;
     }
     ArrayRef<ConstraintAttr> constraints = eval.getUnprovableConstraints();
-    diag.attachNote(candidate->getLoc()) << "cannot prove";
+    diag.attachNote(*candidate) << "cannot prove";
     if (constraints.size() > 1)
       diag << " or disprove";
     diag << " constraint" << plural(constraints.size()) << " for candidate";
     for (auto constraint : constraints)
       LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag,
                                       constraint);
-
-    if (func.getSynthetic()) {
-      diag.attachNote(candidate->getLoc()) << "generated function with type "
-                                           << ASTType(func.getFullSignature());
-    }
   }
 
   // Add action item.
@@ -398,14 +392,8 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
                     "cannot form a reference to overloaded declaration of '")
                 << baseName << "'" << getExpr()->getRange();
     for (auto &[candidate, eval] : evaluations) {
-      diag.attachNote(candidate->getLoc())
+      diag.attachNote(*candidate)
           << "candidate not viable: " << eval.takeDiag();
-      auto func = cast<FnOp>(candidate->getIfOperation());
-      if (func.getSynthetic()) {
-        diag.attachNote(candidate->getLoc())
-            << "generated function with type "
-            << ASTType(func.getFullSignature());
-      }
     }
     return {};
   }
@@ -469,16 +457,8 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
          << ", disambiguate with an explicit cast" << getExpr()->getRange();
   else
     diag.attachNote(getExprLoc()) << "add '()' to call the function";
-  for (auto &[candidate, eval] : evaluations) {
-    auto func = cast<FnOp>(candidate->getIfOperation());
-    MojoInflightDiag &note = diag.attachNote(candidate->getLoc());
-    if (func.getSynthetic()) {
-      note << "candidate generated with type "
-           << ASTType(func.getFullSignature());
-    } else {
-      note << "candidate declared here";
-    }
-  }
+  for (auto &[candidate, eval] : evaluations)
+    diag.attachNote(*candidate) << "candidate declared here";
   return {};
 }
 
@@ -859,7 +839,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
           << FixIt::insertAfterToken(getExpr()->getRangeEnd(), ")",
                                      emitter.shared.diags)
           << getExpr()->getRange();
-      diag.attachNote(selectedDecl->getLoc())
+      diag.attachNote(*selectedDecl)
           << "implicit constructor for " << selfResultType << " declared here";
     }
 
@@ -911,16 +891,8 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
            << " implicit conversion" << plural(minConversions)
            << ", disambiguate with an explicit cast";
     }
-    for (auto &[candidate, eval] : evaluations) {
-      auto func = cast<FnOp>(candidate->getIfOperation());
-      MojoInflightDiag &note = diag.attachNote(candidate->getLoc());
-      if (func.getSynthetic()) {
-        note << "candidate generated with type "
-             << ASTType(func.getFullSignature());
-      } else {
-        note << "candidate declared here";
-      }
-    }
+    for (auto &[candidate, eval] : evaluations)
+      diag.attachNote(*candidate) << "candidate declared here";
   }
   return {};
 }
@@ -938,10 +910,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
                    << "cannot convert function to non-function type "
                    << functionType;
       for (ASTDecl *candidate : fnDecls)
-        diag.attachNote(candidate->getLoc())
-            << "candidate declared here with type "
-            << ASTType(
-                   cast<FnOp>(candidate->getIfOperation()).getFullSignature());
+        diag.attachNote(*candidate) << "candidate declared here";
     }
     return {};
   }
@@ -1047,8 +1016,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
   }
 
   for (ASTDecl *candidate : declsToReport) {
-    diag.attachNote(candidate->getLoc())
-        << "candidate declared here with type ";
+    diag.attachNote(*candidate) << "candidate declared here with type ";
     FnTypeGeneratorType candidateType =
         cast<FnOp>(candidate->getIfOperation()).getFullSignature();
     // If there are bindings, specialize the candidate type and print the
@@ -1087,16 +1055,8 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
               << baseName << "'" << getExpr()->getRange();
   diag.attachNote(getExprLoc()) << "add '()' to call the function";
 
-  for (ASTDecl *candidate : fnDecls) {
-    auto func = cast<FnOp>(candidate->getIfOperation());
-    MojoInflightDiag &note = diag.attachNote(candidate->getLoc());
-    if (func.getSynthetic()) {
-      note << "candidate generated with type "
-           << ASTType(func.getFullSignature());
-    } else {
-      note << "candidate declared here";
-    }
-  }
+  for (ASTDecl *candidate : fnDecls)
+    diag.attachNote(*candidate) << "candidate declared here";
 
   return {};
 }

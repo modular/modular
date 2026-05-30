@@ -72,7 +72,8 @@ struct ConvertibleFromInt(ImplicitlyCopyable):
 
 
 @fieldwise_init
-# expected-note @below {{candidate generated with type 'def(var a: ConvertibleFromInt, b: Int) -> AmbiguousCtor'}}
+# expected-note @below {{candidate declared here}}
+# expected-note @below {{def __init__(out self, var a: ConvertibleFromInt, b: Int)    # note - generated function}}
 struct AmbiguousCtor:
     var a: ConvertibleFromInt
     var b: Int

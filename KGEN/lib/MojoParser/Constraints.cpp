@@ -45,7 +45,7 @@ void LIT::emitConstraintInconclusive(DeclResolver &resolver,
       auto callee = op.getOperand(0);
       if (auto sym = dyn_cast<SymbolConstantAttr>(callee)) {
         ASTDecl *calleeDecl = resolver.getDeclForFuncSymbol(sym.getSymbol());
-        diag.attachNote(calleeDecl->getLoc())
+        diag.attachNote(*calleeDecl)
             << "cannot evaluate call to non-builtin function declared here";
       }
     }
