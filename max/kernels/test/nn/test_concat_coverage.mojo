@@ -285,9 +285,9 @@ def test_fused_concat_cpu() raises:
         input_fn,
         output_fn,
         output_dyn.LayoutType,
+        axis=axis,
         target="cpu",
     ](
-        axis,
         StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
         output_dyn,
         DeviceContext(api="cpu"),

@@ -13,23 +13,26 @@
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass, field
 
 import numpy as np
 import pytest
-from max.driver import Accelerator, Buffer
+from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn import Signals
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
 from max.pipelines.kv_cache import (
     IncrementCacheLengthsProcessor,
     PagedKVCacheManager,
 )
+from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
+from max.pipelines.modeling.kv_cache_config import KVConnectorConfig
 from max.pipelines.modeling.types import TextGenerationContext
 from test_common.context_utils import create_text_context
 
@@ -352,3 +355,140 @@ def test_increment_cache_lengths_from_counts_two_nonempty_replicas() -> None:
         result_buffers[1].to_numpy(),
         np.array([29, 37], dtype=np.uint32),
     )
+
+
+def test_get_metrics_aggregated_h2d_d2h() -> None:
+    """Verify get_metrics_aggregated() sums h2d/d2h transfer counts across DP replicas.
+
+    Setup: 2 GPUs, data_parallel_degree=2 → 2 replicas, each with 1 GPU.
+    Each replica's LocalConnector independently tracks d2h_blocks_copied and
+    h2d_blocks_copied.  get_metrics_aggregated() must return the sum across
+    both replicas.
+    """
+    if accelerator_count() < 2:
+        pytest.skip("Need at least 2 GPUs")
+
+    num_devices = 2
+    data_parallel_degree = 2
+
+    devices = [Accelerator(id=i) for i in range(num_devices)]
+    params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=4,
+        head_dim=32,
+        num_layers=2,
+        page_size=16,
+        enable_prefix_caching=True,
+        kv_connector=KVConnectorType.local,
+        devices=[DeviceRef.GPU(i) for i in range(num_devices)],
+        data_parallel_degree=data_parallel_degree,
+    )
+    session = InferenceSession(devices=devices)
+    manager = PagedKVCacheManager(
+        params=params,
+        session=session,
+        total_num_pages=16,
+        total_num_host_pages=8,
+        max_batch_size=128,
+    )
+
+    # Offload 2 blocks per replica → triggers D2H copies on each connector.
+    # Use distinct hashes per replica so they don't collide.
+    for replica_idx in range(data_parallel_degree):
+        connector = manager._replica[replica_idx].connector
+        hashes = [100 + replica_idx * 100, 200 + replica_idx * 100]
+        connector.offload([0, 1], hashes)
+        connector.sync()
+
+    metrics = manager.get_metrics_aggregated()
+    assert metrics.d2h_blocks_copied == 4  # 2 per replica x 2 replicas
+    assert metrics.h2d_blocks_copied == 0  # nothing loaded yet
+
+    # Load the same blocks back → triggers H2D copies on each connector.
+    for replica_idx in range(data_parallel_degree):
+        connector = manager._replica[replica_idx].connector
+        hashes = [100 + replica_idx * 100, 200 + replica_idx * 100]
+        connector.load([0, 1], hashes)
+
+    metrics = manager.get_metrics_aggregated()
+    assert metrics.d2h_blocks_copied == 4  # unchanged
+    assert metrics.h2d_blocks_copied == 4  # 2 per replica x 2 replicas
+
+
+def test_get_metrics_aggregated_disk_ops() -> None:
+    """Verify get_metrics_aggregated() sums disk metrics across DP replicas.
+
+    Setup: 2 GPUs, data_parallel_degree=2, TieredConnector with 2 host blocks
+    per replica.  Offloading fills the host tier and spills to disk; a
+    subsequent load must fetch from disk.  get_metrics_aggregated() must sum
+    disk_blocks_written and disk_blocks_read across both replicas.
+    """
+    if accelerator_count() < 2:
+        pytest.skip("Need at least 2 GPUs")
+
+    num_devices = 2
+    data_parallel_degree = 2
+
+    with tempfile.TemporaryDirectory(prefix="kv_metrics_disk_") as disk_dir:
+        devices = [Accelerator(id=i) for i in range(num_devices)]
+        params = KVCacheParams(
+            dtype=DType.float32,
+            n_kv_heads=4,
+            head_dim=32,
+            num_layers=2,
+            page_size=16,
+            enable_prefix_caching=True,
+            kv_connector=KVConnectorType.tiered,
+            kv_connector_config=KVConnectorConfig(
+                host_kvcache_swap_space_gb=1.0,
+                disk_offload_dir=disk_dir,
+                disk_offload_max_gb=1.0,
+            ),
+            devices=[DeviceRef.GPU(i) for i in range(num_devices)],
+            data_parallel_degree=data_parallel_degree,
+        )
+        session = InferenceSession(devices=devices)
+        # total_num_host_pages=2 per replica: deliberately small so that
+        # offloading a second pair of blocks evicts the first pair to disk.
+        manager = PagedKVCacheManager(
+            params=params,
+            session=session,
+            total_num_pages=16,
+            total_num_host_pages=2,
+            max_batch_size=128,
+        )
+
+        # Offload 2 blocks per replica → D2H + write-through to disk.
+        for replica_idx in range(data_parallel_degree):
+            connector = manager._replica[replica_idx].connector
+            assert isinstance(connector, TieredConnector)
+            hashes = [100 + replica_idx * 100, 200 + replica_idx * 100]
+            connector.offload([0, 1], hashes)
+            connector.sync()
+            connector._disk_tier.wait_for_writes()
+            connector.sync()  # drain write-locked host blocks
+
+        metrics = manager.get_metrics_aggregated()
+        assert metrics.d2h_blocks_copied == 4  # 2 per replica x 2 replicas
+        assert metrics.disk_blocks_written == 4  # 2 per replica x 2 replicas
+
+        # Offload 2 more blocks per replica → evicts the first pair from the
+        # 2-slot host tier, leaving them only on disk.
+        for replica_idx in range(data_parallel_degree):
+            connector = manager._replica[replica_idx].connector
+            assert isinstance(connector, TieredConnector)
+            new_hashes = [300 + replica_idx * 100, 400 + replica_idx * 100]
+            connector.offload([2, 3], new_hashes)
+            connector.sync()
+            connector._disk_tier.wait_for_writes()
+            connector.sync()
+
+        # Load the first pair back → must be promoted from disk (not in host).
+        for replica_idx in range(data_parallel_degree):
+            connector = manager._replica[replica_idx].connector
+            hashes = [100 + replica_idx * 100, 200 + replica_idx * 100]
+            connector.load([4, 5], hashes)
+
+        metrics = manager.get_metrics_aggregated()
+        assert metrics.disk_blocks_read == 4  # 2 per replica x 2 replicas
+        assert metrics.h2d_blocks_copied == 4  # 2 per replica x 2 replicas

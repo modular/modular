@@ -15,8 +15,11 @@
 Ported from `amd/mha.mojo::mha_decoding`.  Uses a full-depth KVBuffer
 for K (optionally double-buffered via `double_buffer_k_only`) and a
 two-view V setup sharing one SMEM region: `v_dma_buffer` (full
-BN x output_depth) for cooperative DRAM→LDS, `v_buffer` (per-warp
+BN x depth) for cooperative DRAM→LDS, `v_buffer` (per-warp
 BN x depth_per_warp) for LDS→REG and MMA.
+
+MLA decode (K==V aliasing, `output_depth < depth`, K-tail rope handling)
+lives in `mla_decode.mojo`; this file is MHA-only.
 
 Recipe (see `process_tile`):
   * Wait K (and V unless shared_kv) → optional FULL_MASK skip → load K
@@ -39,7 +42,6 @@ from std.gpu.sync import s_waitcnt
 from std.memory import bitcast
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
-from layout.swizzle import Swizzle
 from nn.attention.mha_mask import TileMaskStatus
 from nn.attention.mha_utils import get_start_and_end_for_partitions
 
@@ -64,6 +66,9 @@ __extension Attention:
     ):
         """gfx950 MHA decode on KVBuffer.  See module docstring."""
         comptime assert Self.token_gen, "mha_decode requires token_gen=True"
+        comptime assert (
+            not Self.mla_kv_alias
+        ), "mha_decode does not support mla_kv_alias=True; use mla_decode"
         comptime assert (
             Self.BK == 32 or Self.BK == 64 or Self.BK == 128
         ), "BK must be 32, 64, or 128"
@@ -119,15 +124,14 @@ __extension Attention:
         )
 
         # V uses two buffers to avoid loading full depth into registers:
-        # - v_dma_buffer: V depth (= output_depth), for cooperative DRAM→LDS.
+        # - v_dma_buffer: full depth, for cooperative DRAM→LDS.
         # - v_buffer:     per-warp depth_per_warp slice, for LDS→REG and MMA.
         # The per-warp buffer's SMEM pointer is offset into the shared V SMEM
         # region.  When depth_per_warp < BK, multiple warps share one
         # BK-wide block; the offset encodes within-block position.
-        # MHA: output_depth == depth.  MLA: output_depth < depth.
-        comptime depth_per_warp = Self.output_depth // Self.num_warps_n
-        # SMEM block width seen by each warp.  Must be >= BK so the blocked
-        # product layout has at least one repeat.
+        comptime depth_per_warp = Self.depth // Self.num_warps_n
+        # SMEM block width seen by each warp.  Must be >= BK so the
+        # blocked product layout has at least one repeat.
         comptime smem_depth_per_warp = max(depth_per_warp, Self.BK)
 
         comptime VDmaBufT = KVBuffer[
@@ -138,7 +142,7 @@ __extension Attention:
             WN=Self.BN,
             BK=Self.BK,
             num_threads=Self.num_threads,
-            depth=Self.output_depth,
+            depth=Self.depth,
             kv_num_heads=Self.num_heads // Self.group,
             transpose=False,
             cache_depth=Self.cache_depth,
@@ -157,29 +161,16 @@ __extension Attention:
         # Per-warp V SMEM offset in the blocks-stacked physical layout
         # (row-major (BN, BK) blocks laid out contiguously): for
         # (row=0, col) → (col // BK) * BN * BK + col % BK.
-        # Intentionally NOT a `.tile[BN, depth_per_warp](0, v_warp_col).ptr`
-        # on the MixedLayout-stride parent: that only matches this offset
-        # when `depth_per_warp >= BK` (and is a multiple of BK). For
-        # `depth_per_warp < BK` the two formulas diverge; this manual
-        # form is the correct one for both regimes.
         var v_warp_col = umod(Int(warp_id), Self.num_warps_n)
         var v_col_start = v_warp_col * depth_per_warp
         var v_warp_smem_offset = ufloordiv(
             v_col_start, Self.BK
         ) * Self.BN * Self.BK + umod(v_col_start, Self.BK)
 
-        # In mla_kv_alias mode, V reads from K's swizzled SMEM, so V's
-        # `ds_read_tr8_b64` addressing must apply the same swizzle K uses.
-        # `load_v_fp8_strip` consumes this and XORs the byte offset at vec
-        # granularity to land on the writer's permuted slot.
-        comptime v_swizzle = (
-            k_swizzle if Self.mla_kv_alias else Optional[Swizzle](None)
-        )
-
         comptime VBufT = KVBuffer[
             kv_t=Self.v_t,
             mma_shape=Self.mma_shape,
-            swizzle=v_swizzle,
+            swizzle=None,
             BN=Self.BN,
             WN=Self.BN,
             BK=Self.BK,
@@ -204,8 +195,7 @@ __extension Attention:
 
         # Advance iterators and mask tracking to partition start.
         k_buffer.kv_cache_iter.tile_start_row = start
-        comptime if not Self.mla_kv_alias:
-            v_dma_buffer.kv_cache_iter.tile_start_row = start
+        v_dma_buffer.kv_cache_iter.tile_start_row = start
         self.kv_start_row = UInt32(start)
 
         # Pre-scale Q by (scale * log2e).  Default on for bf16: the deferred
@@ -252,7 +242,7 @@ __extension Attention:
         @parameter
         def mma_pv():
             # Each warp's v_buffer holds only depth_per_warp tiles
-            # (loaded from the warp's LDS depth offset), so get_mma_tile
+            # (loaded from the warp's LDS depth offset), so mma_subtile
             # directly gives the warp's depth range.
             comptime for i in range(Self.BN // Self.BK):
                 comptime for k_mma in range(v_buffer.num_k_mmas2):
@@ -288,7 +278,7 @@ __extension Attention:
                 _ = k_buffer.load_from_dram[1 - slot]()
             else:
                 _ = k_buffer.load_from_dram[0]()
-            comptime if not shared_kv and not Self.mla_kv_alias:
+            comptime if not shared_kv:
                 _ = v_dma_buffer.load_from_dram[0]()
 
         @always_inline
@@ -343,7 +333,7 @@ __extension Attention:
             s_waitcnt[lgkmcnt=0]()
             barrier()
 
-            comptime if shared_kv and not Self.mla_kv_alias:
+            comptime if shared_kv:
                 # K consumed + P synced.  Load V into shared SMEM
                 # (overwrites K).  All warps finished K LDS reads above.
                 _ = v_dma_buffer.load_from_dram[0]()
@@ -373,10 +363,9 @@ __extension Attention:
         var num_tiles = ceildiv(end - start, Self.BN)
 
         # Prologue: load first tile's K (slot 0).  V loaded in parallel
-        # when separate SMEM, or mid-tile when shared.  In mla_kv_alias
-        # mode, K==V and K's no-swizzle SMEM image already serves PV.
+        # when separate SMEM, or mid-tile when shared.
         _ = k_buffer.load_from_dram[0]()
-        comptime if not shared_kv and not Self.mla_kv_alias:
+        comptime if not shared_kv:
             _ = v_dma_buffer.load_from_dram[0]()
 
         comptime if double_buffer_k_only:

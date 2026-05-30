@@ -29,7 +29,7 @@ from std.reflection import reflect
 
 from std.sys.info import has_apple_gpu_accelerator
 from extensibility import ElementwiseUnaryMixedOp
-from elementwise_kernels import Cast
+from builtin_kernels import Cast
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 

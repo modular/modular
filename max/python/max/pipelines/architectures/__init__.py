@@ -52,6 +52,7 @@ def register_all_models() -> None:
     from .gemma3multimodal import gemma3_multimodal_arch
     from .gemma3multimodal_modulev3 import gemma3_multimodal_modulev3_arch
     from .gemma4 import gemma4_arch
+    from .glm5_1 import glm5_1_arch
     from .gpt_oss import gpt_oss_arch
     from .gpt_oss_modulev3 import gpt_oss_modulev3_arch
     from .granite import granite_arch
@@ -93,6 +94,7 @@ def register_all_models() -> None:
     from .qwen_image import qwen_image_arch
     from .qwen_image_edit import qwen_image_edit_arch, qwen_image_edit_plus_arch
     from .step3p5 import step3p5_arch
+    from .unified_dflash_kimi_k25 import unified_dflash_kimi_k25_arch
     from .unified_dflash_llama3 import unified_dflash_llama3_arch
     from .unified_eagle_llama3 import unified_eagle_llama3_arch
     from .unified_mtp_deepseekV3 import unified_mtp_deepseekV3_arch
@@ -118,6 +120,7 @@ def register_all_models() -> None:
         gemma3_multimodal_arch,
         gemma3_multimodal_modulev3_arch,
         gemma4_arch,
+        glm5_1_arch,
         granite_arch,
         granite_modulev3_arch,
         gpt_oss_arch,
@@ -161,6 +164,7 @@ def register_all_models() -> None:
         qwen_image_edit_arch,
         qwen_image_edit_plus_arch,
         step3p5_arch,
+        unified_dflash_kimi_k25_arch,
         unified_dflash_llama3_arch,
         unified_eagle_llama3_arch,
         unified_mtp_deepseekV3_arch,

@@ -827,7 +827,11 @@ def _elementwise_impl_gpu[
     if length == 0:
         return
 
-    comptime if _has_sm_100x_or_newer() and _USE_CLC_WORK_STEALING:
+    # Gate on the cheap compile-time flag first so the more expensive
+    # accelerator-arch predicate is only evaluated when work-stealing is
+    # actually enabled. This avoids per-instantiation comptime cost in the
+    # common case where `_USE_CLC_WORK_STEALING` is off.
+    comptime if _USE_CLC_WORK_STEALING and _has_sm_100x_or_newer():
         var num_packed = ufloordiv(Int(length), simd_width)
         var num_tiles = uceildiv(num_packed, block_size * elems_per_thread)
 

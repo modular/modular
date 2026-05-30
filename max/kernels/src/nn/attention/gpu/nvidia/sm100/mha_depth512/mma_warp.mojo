@@ -61,6 +61,7 @@ def depth512_mma[
     page_size: Int,
 ](
     smem: Depth512AttentionSMem[config=config],
+    seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
@@ -181,11 +182,11 @@ def depth512_mma[
     # ---- Iteration bounds (must match load_warp exactly) ---------------------
 
     var kv_row: UInt32 = mask.start_column[PairBM_mask, BN, page_size](
-        score_row
+        seq_id, score_row
     )
     var iter_count: UInt32 = (
         mask.last_masked_set_end[PairBM_mask, BN, page_size](
-            score_row, num_keys
+            seq_id, score_row, num_keys
         )
         - 1
     )
@@ -370,6 +371,7 @@ def depth512_mma[
         comptime if check_mask:
             if (
                 mask.status(
+                    seq_id,
                     Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                     Index[dtype=DType.int32](PairBM_mask, BN),
                 )

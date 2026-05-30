@@ -54,7 +54,7 @@ def extract_eagle_aux_layer_ids(
     """Extract ``eagle_aux_hidden_state_layer_ids`` from a HuggingFace config.
 
     The IDs live inside an ``eagle_config`` sub-dict/object that is present on
-    the *draft* checkpoint's config (e.g. ``nvidia/Kimi-K2.5-Thinking-Eagle3``).
+    the *draft* checkpoint's config.
     """
     eagle_config = getattr(hf_config, "eagle_config", None)
     if eagle_config is None:
@@ -64,7 +64,16 @@ def extract_eagle_aux_layer_ids(
         if isinstance(eagle_config, dict)
         else getattr(eagle_config, "eagle_aux_hidden_state_layer_ids", [])
     )
-    return list(raw) or None
+    raw_list = list(raw)
+    if not raw_list:
+        return None
+    if any(i <= 0 for i in raw_list):
+        raise ValueError(
+            "eagle_aux_hidden_state_layer_ids must contain positive ids "
+            "(capturing layer-0's input = raw token embeddings is not yet "
+            f"wired in MAX). Got {raw_list}."
+        )
+    return [i - 1 for i in raw_list]
 
 
 @dataclass
@@ -298,7 +307,8 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
         extra = draft_provided - draft_expected
         if missing:
             raise ValueError(
-                f"Draft model has unloaded non-shared weights: {sorted(missing)}"
+                "Draft model has unloaded non-shared weights:"
+                f" {sorted(missing)}"
             )
         if extra:
             logger.warning(f"Draft state_dict has unused keys: {sorted(extra)}")

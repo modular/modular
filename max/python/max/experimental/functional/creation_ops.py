@@ -20,17 +20,19 @@ from __future__ import annotations
 
 import builtins
 import itertools
-from typing import cast
+from collections.abc import Callable
+from typing import Any
 
 from max.driver import Device, DLPackArray
 from max.dtype import DType
+from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     DistributedTensorType,
+    Placement,
     PlacementMapping,
     Replicated,
-    Sharded,
     local_shard_shape_from_global,
 )
 from max.experimental.tensor import Tensor, TensorType, defaults
@@ -46,17 +48,17 @@ from max.graph import (
 from max.graph.ops.constant import NestedArray, Number
 
 from .collective_ops import transfer_to
-from .utils import ensure_context
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Helpers
-# ═════════════════════════════════════════════════════════════════════════
+
+def _trace_only() -> bool:
+    """Legacy shim — always ``False`` after the Trace/Op rip-out."""
+    return False
 
 
 def _normalized_device(
     device: Device | DeviceMapping | DeviceRef | None,
 ) -> DeviceMapping:
-    """Coerce any device specification to a ``DeviceMapping``."""
+    """Coerce any device specification to a :class:`DeviceMapping`."""
     if isinstance(device, DeviceMapping):
         return device
     if isinstance(device, DeviceRef):
@@ -80,9 +82,14 @@ def _device_from_like(
     return like.device.to_device()
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Creation ops
-# ═════════════════════════════════════════════════════════════════════════
+def _reject_sharded_creation(mapping: DeviceMapping, op_name: str) -> None:
+    """Raises if ``mapping`` localizes any tensor axis (sharded creation is unsupported)."""
+    for p in mapping.to_placements():
+        if p.localized_axis() is not None:
+            raise ValueError(
+                f"{op_name}: cannot create with sharded placement {p!r}. "
+                f"Use Replicated and shard after creation."
+            )
 
 
 def full(
@@ -113,11 +120,10 @@ def full(
         every element set to ``value``.
     """
     mapping = _normalized_device(device)
+    resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
     mesh = mapping.mesh
-    resolved_dtype, _ = defaults(dtype, mesh.devices[0])
     placements = mapping.to_placements()
-    global_shape = Shape(shape)
-    shard_shapes = local_shard_shape_from_global(global_shape, mesh, placements)
+    shard_shapes = local_shard_shape_from_global(Shape(shape), mesh, placements)
     with ensure_context():
         tvs = [
             ops.broadcast_to(
@@ -131,9 +137,7 @@ def full(
             for i in builtins.range(mesh.num_devices)
         ]
         return Tensor.from_shard_values(
-            [TensorValue(tv) for tv in tvs],
-            mapping,
-            global_shape=global_shape,
+            [TensorValue(tv) for tv in tvs], mapping
         )
 
 
@@ -183,6 +187,28 @@ def zeros(
     return full(shape, 0.0, dtype=dtype, device=device)
 
 
+def _full_like_distributed(like: Tensor, value: Number) -> Tensor:
+    """Build a ``full`` tensor from *like*'s per-shard TV shapes directly."""
+    mapping = PlacementMapping(like.mesh, like.placements)
+    mesh = mapping.mesh
+    resolved_dtype, _ = defaults(like.dtype, mesh.devices[0])
+    with ensure_context():
+        tvs = [
+            TensorValue(
+                ops.broadcast_to(
+                    ops.constant(
+                        value,
+                        resolved_dtype,
+                        DeviceRef.from_device(mesh.devices[i]),
+                    ),
+                    list(tv.shape),
+                )
+            )
+            for i, tv in builtins.enumerate(like.graph_values)
+        ]
+        return Tensor.from_shard_values(tvs, mapping)
+
+
 def full_like(
     like: Tensor | TensorType | DistributedTensorType, value: Number
 ) -> Tensor:
@@ -197,6 +223,11 @@ def full_like(
         A tensor matching the shape, dtype, and placement of ``like``,
         with every element set to ``value``.
     """
+    if isinstance(like, Tensor) and like.is_distributed and not _trace_only():
+        # Eager path: preserves per-rank symbolic dim identity. Under trace_only
+        # the skeleton has no graph values; route through ``full`` which has
+        # its own dispatch + skeleton path.
+        return _full_like_distributed(like, value)
     return full(
         like.shape, value, dtype=like.dtype, device=_device_from_like(like)
     )
@@ -213,6 +244,8 @@ def ones_like(like: Tensor | TensorType | DistributedTensorType) -> Tensor:
         A tensor matching the shape, dtype, and placement of ``like``,
         with every element set to ``1``.
     """
+    if isinstance(like, Tensor) and like.is_distributed and not _trace_only():
+        return _full_like_distributed(like, 1.0)
     return full(
         like.shape, 1.0, dtype=like.dtype, device=_device_from_like(like)
     )
@@ -229,21 +262,14 @@ def zeros_like(like: Tensor | TensorType | DistributedTensorType) -> Tensor:
         A tensor matching the shape, dtype, and placement of ``like``,
         with every element set to ``0``.
     """
+    if isinstance(like, Tensor) and like.is_distributed and not _trace_only():
+        return _full_like_distributed(like, 0.0)
     return full(
         like.shape, 0.0, dtype=like.dtype, device=_device_from_like(like)
     )
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Random ops
-# ═════════════════════════════════════════════════════════════════════════
-
-# Each distributed random op gets a unique base seed so that successive
-# ops (e.g. two calls to ``uniform()``) produce different streams.
-# Within one op, shards in the same "group" (same Replicated axes) share
-# a seed so they draw identical values; Sharded-axis shards get distinct
-# seeds so each shard is independent.  The gap of 100 between base seeds
-# leaves room for up to 100 devices per group without seed collision.
+# Base-seed stride 100 = max devices per group; group = same Replicated axes.
 _BASE_SEED_COUNTER = 0
 
 
@@ -257,38 +283,57 @@ def _next_base_seed() -> int:
 
 def _shard_group_ids(
     mesh_shape: tuple[int, ...],
-    placements: tuple[Replicated | Sharded, ...],
+    placements: tuple[Placement, ...],
 ) -> list[int]:
-    """Assign a group ID to each device so Replicated axes share seeds."""
+    """Assign a group ID to each device so devices that share data share a seed."""
     ndim = len(mesh_shape)
     ids = []
     for coords in itertools.product(*(builtins.range(s) for s in mesh_shape)):
         group_id = 0
         stride = 1
         for ax in reversed(builtins.range(ndim)):
-            if isinstance(placements[ax], Sharded):
+            if placements[ax].localized_axis() is not None:
                 group_id += coords[ax] * stride
                 stride *= mesh_shape[ax]
         ids.append(group_id)
     return ids
 
 
-def _distributed_random_setup(
+def _distributed_random_op(
+    op_fn: Callable[..., TensorValue],
     shape: ShapeLike,
-    mapping: DeviceMapping,
-) -> tuple[DeviceMesh, list[Shape], list[int], int, int]:
-    """Shared setup for distributed random ops: shapes, groups, seed."""
-    mesh = mapping.mesh
-    placements = mapping.to_placements()
-    shard_shapes = local_shard_shape_from_global(Shape(shape), mesh, placements)
-    # Random ops only support Replicated/Sharded — Partial is invalid.
-    assert all(isinstance(p, (Replicated, Sharded)) for p in placements)
-    group_ids = _shard_group_ids(
-        mesh.mesh_shape, cast(tuple[Replicated | Sharded, ...], placements)
-    )
-    n_unique = builtins.max(group_ids) + 1
-    base = _next_base_seed()
-    return mesh, shard_shapes, group_ids, n_unique, base
+    *,
+    dtype: DType,
+    device: DeviceMapping,
+    **op_kwargs: Any,
+) -> Tensor:
+    """Shared body for distributed random sampling (``uniform``, ``gaussian``)."""
+    with ensure_context():
+        if device.mesh.num_devices == 1:
+            tt = TensorType(
+                dtype, shape, DeviceRef.from_device(device.mesh.devices[0])
+            )
+            return Tensor.from_graph_value(op_fn(tt, **op_kwargs))
+        mesh = device.mesh
+        placements = device.to_placements()
+        shard_shapes = local_shard_shape_from_global(
+            Shape(shape), mesh, placements
+        )
+        # Random ops support Replicated and any localizing placement; Partial is invalid.
+        assert all(
+            isinstance(p, Replicated) or p.localized_axis() is not None
+            for p in placements
+        )
+        group_ids = _shard_group_ids(mesh.mesh_shape, placements)
+        n_unique = builtins.max(group_ids) + 1
+        base = _next_base_seed()
+        shard_values = []
+        for i, d in enumerate(mesh.devices):
+            tt = TensorType(dtype, shard_shapes[i], DeviceRef.from_device(d))
+            ops.random.set_seed(base + group_ids[i])
+            shard_values.append(op_fn(tt, **op_kwargs))
+        ops.random.set_seed(base + n_unique)
+        return Tensor.from_shard_values(shard_values, device)
 
 
 def uniform(
@@ -320,29 +365,13 @@ def uniform(
     """
     mapping = _normalized_device(device)
     resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
-
-    with ensure_context():
-        if mapping.mesh.num_devices == 1:
-            tt = TensorType(
-                resolved_dtype,
-                shape,
-                DeviceRef.from_device(mapping.mesh.devices[0]),
-            )
-            return Tensor.from_graph_value(ops.random.uniform(tt, range=range))
-        mesh, shard_shapes, group_ids, n_unique, base = (
-            _distributed_random_setup(shape, mapping)
-        )
-        shard_values = []
-        for i, d in enumerate(mesh.devices):
-            tt = TensorType(
-                resolved_dtype, shard_shapes[i], DeviceRef.from_device(d)
-            )
-            ops.random.set_seed(base + group_ids[i])
-            shard_values.append(ops.random.uniform(tt, range=range))
-        ops.random.set_seed(base + n_unique)
-        return Tensor.from_shard_values(
-            shard_values, mapping, global_shape=Shape(shape)
-        )
+    return _distributed_random_op(
+        ops.random.uniform,
+        shape,
+        dtype=resolved_dtype,
+        device=mapping,
+        range=range,
+    )
 
 
 def gaussian(
@@ -376,34 +405,55 @@ def gaussian(
     """
     mapping = _normalized_device(device)
     resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
-
-    with ensure_context():
-        if mapping.mesh.num_devices == 1:
-            tt = TensorType(
-                resolved_dtype,
-                shape,
-                DeviceRef.from_device(mapping.mesh.devices[0]),
-            )
-            return Tensor.from_graph_value(
-                ops.random.gaussian(tt, mean=mean, std=std)
-            )
-        mesh, shard_shapes, group_ids, n_unique, base = (
-            _distributed_random_setup(shape, mapping)
-        )
-        shard_values = []
-        for i, d in enumerate(mesh.devices):
-            tt = TensorType(
-                resolved_dtype, shard_shapes[i], DeviceRef.from_device(d)
-            )
-            ops.random.set_seed(base + group_ids[i])
-            shard_values.append(ops.random.gaussian(tt, mean=mean, std=std))
-        ops.random.set_seed(base + n_unique)
-        return Tensor.from_shard_values(
-            shard_values, mapping, global_shape=Shape(shape)
-        )
+    return _distributed_random_op(
+        ops.random.gaussian,
+        shape,
+        dtype=resolved_dtype,
+        device=mapping,
+        mean=mean,
+        std=std,
+    )
 
 
 normal = gaussian
+
+
+def _random_like_distributed(
+    like: Tensor,
+    *,
+    op: str,
+    range: tuple[float, float] | None = None,
+    mean: float = 0.0,
+    std: float = 1.0,
+) -> Tensor:
+    """Per-shard random sampling that preserves *like*'s per-rank symbol names."""
+    mapping = PlacementMapping(like.mesh, like.placements)
+    mesh = mapping.mesh
+    resolved_dtype, _ = defaults(like.dtype, mesh.devices[0])
+    placements = mapping.to_placements()
+    assert all(
+        isinstance(p, Replicated) or p.localized_axis() is not None
+        for p in placements
+    )
+    group_ids = _shard_group_ids(mesh.mesh_shape, placements)
+    n_unique = builtins.max(group_ids) + 1
+    base = _next_base_seed()
+    with ensure_context():
+        shard_values: list[TensorValue] = []
+        for i, tv in builtins.enumerate(like.graph_values):
+            tt = TensorType(
+                resolved_dtype,
+                tv.shape,
+                DeviceRef.from_device(mesh.devices[i]),
+            )
+            ops.random.set_seed(base + group_ids[i])
+            if op == "uniform":
+                assert range is not None
+                shard_values.append(ops.random.uniform(tt, range=range))
+            else:
+                shard_values.append(ops.random.gaussian(tt, mean=mean, std=std))
+        ops.random.set_seed(base + n_unique)
+        return Tensor.from_shard_values(shard_values, mapping)
 
 
 def uniform_like(
@@ -422,6 +472,8 @@ def uniform_like(
         A tensor matching the shape, dtype, and placement of ``like``,
         with values sampled uniformly from ``[range[0], range[1])``.
     """
+    if isinstance(like, Tensor) and like.is_distributed and not _trace_only():
+        return _random_like_distributed(like, op="uniform", range=range)
     return uniform(
         like.shape,
         range=range,
@@ -448,6 +500,8 @@ def gaussian_like(
         A tensor matching the shape, dtype, and placement of ``like``,
         with values sampled from ``Normal(mean, std**2)``.
     """
+    if isinstance(like, Tensor) and like.is_distributed and not _trace_only():
+        return _random_like_distributed(like, op="gaussian", mean=mean, std=std)
     return gaussian(
         like.shape,
         mean=mean,
@@ -458,26 +512,6 @@ def gaussian_like(
 
 
 normal_like = gaussian_like
-
-
-# ═════════════════════════════════════════════════════════════════════════
-#  Creation-like ops (replicated per-device, no tensor inputs)
-# ═════════════════════════════════════════════════════════════════════════
-
-
-def _validated_creation_mapping(
-    device: Device | DeviceMapping | DeviceRef | None,
-    op_name: str,
-) -> DeviceMapping:
-    """Return a validated DeviceMapping, rejecting Sharded placements."""
-    mapping = _normalized_device(device)
-    for p in mapping.to_placements():
-        if isinstance(p, Sharded):
-            raise ValueError(
-                f"{op_name}: cannot create with Sharded placement. "
-                f"Use Replicated and shard after creation."
-            )
-    return mapping
 
 
 def hann_window(
@@ -503,9 +537,10 @@ def hann_window(
         A 1-D tensor of length ``window_length`` containing the Hann
         window samples.
     """
-    mapping = _validated_creation_mapping(device, "hann_window")
+    mapping = _normalized_device(device)
+    _reject_sharded_creation(mapping, "hann_window")
+    resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
     mesh = mapping.mesh
-    resolved_dtype, _ = defaults(dtype, mesh.devices[0])
     with ensure_context():
         shard_values = [
             ops.hann_window(
@@ -546,9 +581,10 @@ def range(
         A 1-D tensor of values ``[start, start+step, start+2*step, ...]``
         up to but excluding ``stop``.
     """
-    mapping = _validated_creation_mapping(device, "range")
+    mapping = _normalized_device(device)
+    _reject_sharded_creation(mapping, "range")
+    resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
     mesh = mapping.mesh
-    resolved_dtype, _ = defaults(dtype, mesh.devices[0])
     with ensure_context():
         shard_values = [
             ops.range(
@@ -564,13 +600,8 @@ def range(
         return Tensor.from_shard_values(shard_values, mapping)
 
 
-# Backward compat alias — callers use both F.arange and F.range.
+# Backward-compat alias: callers use both F.arange and F.range.
 arange = range
-
-
-# ═════════════════════════════════════════════════════════════════════════
-#  constant / constant_external
-# ═════════════════════════════════════════════════════════════════════════
 
 
 def constant(
@@ -600,8 +631,6 @@ def constant(
     """
     mapping = _normalized_device(device)
     mesh = mapping.mesh
-    # For DLPack-compatible arrays, pass dtype through as-is so that
-    # ops.constant preserves the array's native dtype when dtype is None.
     if isinstance(value, DLPackArray):
         resolved_dtype = dtype
     else:
@@ -612,7 +641,8 @@ def constant(
             for d in mesh.devices
         ]
         return Tensor.from_shard_values(
-            [TensorValue(tv) for tv in tvs], mapping
+            [TensorValue(tv) for tv in tvs],
+            mapping,
         )
 
 

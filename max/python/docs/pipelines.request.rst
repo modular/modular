@@ -11,6 +11,14 @@ max.pipelines.request
 
 .. currentmodule:: max.pipelines.request
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   pipelines.request.provider_options
+
 Base request types
 ------------------
 
@@ -172,3 +180,4 @@ Protocols
    :template: autosummary/class.rst
 
    FastAPIRequestProtocol
+

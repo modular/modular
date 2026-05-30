@@ -65,7 +65,7 @@ def llvm_intrinsic[
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
-            hasSideEffects=has_side_effect._mlir_value,
+            hasSideEffects=has_side_effect.__mlir_i1__(),
         ](loaded_pack)
         return rebind[type](None)
 
@@ -73,7 +73,7 @@ def llvm_intrinsic[
         return __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=type,
-            hasSideEffects=has_side_effect._mlir_value,
+            hasSideEffects=has_side_effect.__mlir_i1__(),
         ](loaded_pack)
 
 
@@ -757,7 +757,7 @@ def _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
         `#kgen.type<`,
         +t2,
         `> : !kgen.type`,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 
@@ -781,7 +781,7 @@ def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
         `#kgen.type<`,
         +t2,
         `> : !kgen.type`,
-        `> : i1`,
+        `> : !kgen.scalar<bool>`,
     ]
 
 

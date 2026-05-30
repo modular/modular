@@ -11,6 +11,14 @@ max.pipelines.modeling.types
 
 .. currentmodule:: max.pipelines.modeling.types
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   pipelines.modeling.types.pipeline_variants
+
 Pipeline base
 -------------
 
@@ -67,20 +75,6 @@ Embeddings
    EmbeddingsGenerationContextType
    EmbeddingsGenerationInputs
    EmbeddingsGenerationOutput
-
-Audio generation
-----------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   AudioGenerationContextType
-   AudioGenerationInputs
-   AudioGenerationMetadata
-   AudioGenerationOutput
-   AudioGenerationRequest
 
 Image generation
 ----------------
@@ -224,3 +218,4 @@ Utilities
 
    msgpack_numpy_decoder
    msgpack_numpy_encoder
+

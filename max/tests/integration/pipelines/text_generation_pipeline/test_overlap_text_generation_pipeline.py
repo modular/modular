@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import threading
 from unittest.mock import MagicMock, call, patch
 
 import numpy as np
@@ -649,6 +650,7 @@ class TestBuildBitmaskCallback:
         # int32 advance_fsm_and_compute_bitmasks call returns.
         overlap_bool_np = np.zeros((1, 3, 64), dtype=np.bool_)
 
+        done_event = threading.Event()
         callback = pipeline._build_bitmask_callback(
             context_batch=[ctx],
             bonus_tokens_np=bonus_np,
@@ -657,9 +659,11 @@ class TestBuildBitmaskCallback:
             next_draft_tokens_np=next_draft_np,
             bitmask_pinned_np=bitmask_np,
             overlap_bool_pinned_np=overlap_bool_np,
+            done_event=done_event,
         )
 
         callback()
+        assert done_event.is_set()
 
         mock_so.advance_fsm_and_compute_bitmasks.assert_called_once_with(
             context_batch=[ctx],
@@ -681,6 +685,7 @@ class TestBuildBitmaskCallback:
         )
         pipeline._structured_output = mock_so
 
+        done_event = threading.Event()
         callback = pipeline._build_bitmask_callback(
             context_batch=[],
             bonus_tokens_np=np.array([], dtype=np.int64),
@@ -689,10 +694,14 @@ class TestBuildBitmaskCallback:
             next_draft_tokens_np=np.zeros((0, 0), dtype=np.int64),
             bitmask_pinned_np=np.zeros((0, 0, 0), dtype=np.int32),
             overlap_bool_pinned_np=np.zeros((0, 0, 0), dtype=np.bool_),
+            done_event=done_event,
         )
 
         # Must not raise — exceptions are caught and logged
         callback()
+        # ``finally`` in the callback signals even on exception so the
+        # next iter's sync_prime can't deadlock.
+        assert done_event.is_set()
 
 
 class TestEnqueueAsyncBitmaskCallback:
@@ -849,6 +858,13 @@ class TestEnqueueAsyncBitmaskCallback:
             )
 
         assert result is True
+        # The handoff event is stashed on ``SpecDecodeState`` so the next
+        # iter's ``_assign_bitmask_inputs`` can wait on it before
+        # ``sync_prime`` even after ``_prev_batch`` is cleared between
+        # requests.
+        assert isinstance(
+            mock_spec_state.last_callback_done_event, threading.Event
+        )
         mock_overlap_state.enqueue_async_callback.assert_called_once()
         assert mock_spec_state.has_precomputed_bitmask is True
         assert mock_spec_state.callback_request_ids == [rid]
@@ -1536,3 +1552,139 @@ class TestAssignBitmaskInputs:
         # Bitmask shape is keyed on overlap_state.num_positions (the
         # captured-graph dim), not on num_draft_tokens_to_verify.
         assert call_kwargs["num_positions"] == self._NUM_POS
+
+    def test_sync_prime_waits_for_unset_callback_event_then_clears(
+        self,
+    ) -> None:
+        """On the sync-prime branch, an in-flight callback's done_event
+        is awaited *before* ``prime`` overwrites pinned, then cleared to
+        ``None`` so a subsequent callback-less iter doesn't re-wait on
+        the consumed event."""
+        ctx_a = self._make_constrained_ctx(RequestID("a"))
+        pipeline, _structured_output, spec_state, overlap_state, _ = (
+            self._make_pipeline(
+                callback_request_ids=[],
+                has_precomputed_bitmask=False,
+            )
+        )
+
+        mock_event = MagicMock(name="done_event")
+        mock_event.is_set.return_value = False
+
+        # Worker finished within the timeout. Assert the wait happens
+        # before ``prime`` so a late worker write can't stomp primed rows.
+        def _wait(timeout: float) -> bool:
+            assert not overlap_state.prime.called, (
+                "prime ran before waiting on the callback done_event"
+            )
+            return True
+
+        mock_event.wait.side_effect = _wait
+        spec_state.last_callback_done_event = mock_event
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[ctx_a],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+
+        mock_event.wait.assert_called_once_with(timeout=5.0)
+        overlap_state.prime.assert_called_once()
+        assert spec_state.last_callback_done_event is None
+
+    def test_sync_prime_skips_wait_when_callback_event_already_set(
+        self,
+    ) -> None:
+        """If the prior callback already signalled completion, the
+        sync-prime branch skips ``wait()`` entirely but still clears the
+        consumed event."""
+        ctx_a = self._make_constrained_ctx(RequestID("a"))
+        pipeline, _structured_output, spec_state, overlap_state, _ = (
+            self._make_pipeline(
+                callback_request_ids=[],
+                has_precomputed_bitmask=False,
+            )
+        )
+
+        mock_event = MagicMock(name="done_event")
+        mock_event.is_set.return_value = True
+        spec_state.last_callback_done_event = mock_event
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[ctx_a],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+
+        mock_event.wait.assert_not_called()
+        overlap_state.prime.assert_called_once()
+        assert spec_state.last_callback_done_event is None
+
+    def test_sync_prime_logs_and_proceeds_when_callback_event_times_out(
+        self,
+    ) -> None:
+        """A worker that died before reaching its ``finally`` never sets
+        the event. The bounded wait must time out, log an error, and
+        still proceed to ``prime`` (degrade to a noisy race, not a silent
+        hang) -- and the consumed event is still cleared."""
+        ctx_a = self._make_constrained_ctx(RequestID("a"))
+        pipeline, _structured_output, spec_state, overlap_state, _ = (
+            self._make_pipeline(
+                callback_request_ids=[],
+                has_precomputed_bitmask=False,
+            )
+        )
+
+        mock_event = MagicMock(name="done_event")
+        mock_event.is_set.return_value = False
+        mock_event.wait.return_value = False  # timed out
+        spec_state.last_callback_done_event = mock_event
+
+        with patch(
+            "max.pipelines.lib.pipeline_variants.overlap_text_generation.logger"
+        ) as mock_logger:
+            pipeline._assign_bitmask_inputs(
+                model_inputs=MagicMock(),
+                context_batch=[ctx_a],
+                draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+                num_draft_tokens_to_verify=self._K,
+            )
+
+        mock_event.wait.assert_called_once_with(timeout=5.0)
+        mock_logger.error.assert_called_once()
+        overlap_state.prime.assert_called_once()
+        assert spec_state.last_callback_done_event is None
+
+    def test_adopt_path_leaves_callback_event_uncleared(self) -> None:
+        """The clear-to-``None`` lives inside the sync-prime branch. On
+        the adopt path (``can_adopt`` true, ``prime`` skipped) the event
+        is intentionally left as-is: ``prime`` is never called there, so
+        there is nothing to re-wait on. Locks the subtlety that
+        ``last_callback_done_event`` is *not* an
+        ``in-flight-iff-non-None`` flag."""
+        rid_a = RequestID("a")
+        ctx_a = self._make_constrained_ctx(rid_a)
+        pipeline, structured_output, spec_state, overlap_state, _ = (
+            self._make_pipeline(
+                callback_request_ids=[rid_a],
+                has_precomputed_bitmask=True,
+            )
+        )
+
+        mock_event = MagicMock(name="done_event")
+        mock_event.is_set.return_value = True
+        spec_state.last_callback_done_event = mock_event
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[ctx_a],
+            draft_tokens_np=np.zeros((1, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+
+        structured_output.compute_speculative_bitmasks.assert_not_called()
+        overlap_state.prime.assert_not_called()
+        mock_event.wait.assert_not_called()
+        assert spec_state.last_callback_done_event is mock_event

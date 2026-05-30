@@ -34,6 +34,7 @@ family.
    pipelines.architectures.gemma3multimodal
    pipelines.architectures.gemma3multimodal_modulev3
    pipelines.architectures.gemma4
+   pipelines.architectures.glm5_1
    pipelines.architectures.gpt_oss
    pipelines.architectures.gpt_oss_modulev3
    pipelines.architectures.granite
@@ -70,6 +71,7 @@ family.
    pipelines.architectures.qwen_image
    pipelines.architectures.qwen_image_edit
    pipelines.architectures.step3p5
+   pipelines.architectures.unified_dflash_kimi_k25
    pipelines.architectures.unified_dflash_llama3
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
@@ -96,6 +98,7 @@ Text generation
    ~max.pipelines.architectures.gemma3multimodal
    ~max.pipelines.architectures.gemma3multimodal_modulev3
    ~max.pipelines.architectures.gemma4
+   ~max.pipelines.architectures.glm5_1
    ~max.pipelines.architectures.gpt_oss
    ~max.pipelines.architectures.gpt_oss_modulev3
    ~max.pipelines.architectures.granite
@@ -126,6 +129,7 @@ Text generation
    ~max.pipelines.architectures.qwen3_5
    ~max.pipelines.architectures.qwen3vl_moe
    ~max.pipelines.architectures.step3p5
+   ~max.pipelines.architectures.unified_dflash_kimi_k25
    ~max.pipelines.architectures.unified_dflash_llama3
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3

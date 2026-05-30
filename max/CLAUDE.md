@@ -179,25 +179,33 @@ blow-up is in CI, not locally.
   `PagedKVCacheManager`) and an executor (claims/runs/releases per call).
   Parametrize per-case inputs separately and have each test consume the
   compiled-model fixture.
-- **Also limit compilations per file**: a module-scoped fixture deduplicates
-  within a file, but the file's runtime still scales linearly with the
-  number of unique compiles it triggers — and each compile on a contended
-  worker can take ~2 minutes. When a single test file needs more than 1–2
-  unique compiles, split it into separate `test_*.py` files (one bazel
-  target per file) so the compiles parallelize across CI workers and a
-  single slow-compile branch can't bust the timeout budget for the rest of
-  the suite. Move shared fixtures into the directory's `conftest.py` so
-  pytest auto-discovers them, and put plain-Python helpers in a sibling
-  `_helpers.py` module added to `srcs` in the BUILD rule.
+- **Use `shard_count` to parallelize compilations**: a module-scoped fixture
+  deduplicates within a pytest process, but each shard runs its own process.
+  When a test file has multiple tests that need distinct compiles, use Bazel
+  test sharding instead of splitting into separate files. Add `shard_count` or
+  `per_test_shard_count` to the BUILD rule:
+
+  ```python
+  modular_py_test(
+      name = "tests",
+      srcs = ["test_attention.py", ...],
+      # 4 tests → 4 shards: one test per shard, compiles run in parallel
+      per_test_shard_count = {
+          "test_attention.py": 4,
+      },
+  )
+  ```
+
+  Sharding distributes tests across CI workers via round-robin. Each shard
+  runs as its own pytest process, so tests that would serialize locally now
+  compile in parallel across separate workers.
 - **Reference**: see
-  `max/tests/integration/architectures/gemma4/test_attention.py` (bf16
-  smoke), `test_attention_fp8_local.py`, and `test_attention_fp8_global.py`.
-  Shared fixtures sit in `gemma4/conftest.py`; `build_max_attention` /
-  `execute_max_attention` helpers live in `_attention_helpers.py`. On a
-  remote B200 the critical path dropped from ~440s (single file, 6
-  per-test compiles) to ~230s (three targets, 2 compiles each, running
-  in parallel). Also see `max/tests/integration/nn/kv_cache/conftest.py`
-  for the simpler session-scoped `InferenceSession` fixture pattern.
+  `max/tests/integration/architectures/gemma4/test_attention.py` which uses
+  `per_test_shard_count = 4` to parallelize bf16 vs fp8-local vs fp8-global
+  tests. Shared fixtures sit in `gemma4/conftest.py`; `build_max_attention` /
+  `execute_max_attention` helpers live in `_attention_helpers.py`. Also see
+  `max/tests/integration/nn/kv_cache/conftest.py` for the simpler session-scoped
+  `InferenceSession` fixture pattern.
 
 ### Performance Testing
 

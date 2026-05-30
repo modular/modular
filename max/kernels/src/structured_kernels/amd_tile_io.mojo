@@ -72,7 +72,7 @@ from std.gpu.intrinsics import AMDBufferResource
 from std.memory import AddressSpace
 from std.memory.unsafe import bitcast
 from std.math import ceildiv, min
-from std.math.uutils import umod, ufloordiv
+from std.math.uutils import udivmod, umod, ufloordiv
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import readfirstlane
 from std.utils import IndexList
@@ -431,6 +431,126 @@ struct TiledMmaLoader[
         var r1 = _load_keys[16]()
         var r2 = _load_keys[32]()
         var r3 = _load_keys[48]()
+        return r0.join(r1).join(r2.join(r3))
+
+    @staticmethod
+    @always_inline
+    def load_v_fp8_strip_16[
+        BN: Int,
+        block_width: Int,
+        bk_tile: Int,
+        dt: Int,
+    ](
+        v_base: UnsafePointer[
+            Scalar[Self.in_type],
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ],
+        key_group: Int,
+        pair_idx: Int,
+        is_odd: Int,
+    ) -> SIMD[Self.in_type, 32]:
+        """FP8 V per-strip `ds_read_tr8_b64` load for one (bk_tile, dt),
+        sized for the 16x16x128 MFMA A-operand fragment layout.
+
+        Lane partition for a 64-lane wave (lane id `l`):
+          - key_group g    = l // 16     (0..3 — 16-lane "rows")
+          - pair_idx  p    = (l % 16)/2  (0..7 — pair within the row)
+          - is_odd    o    = l % 2       (0 or 1)
+
+        Per (bk_tile, dt), one MFMA tile of V is 16 depths * 128 keys
+        = 2048 FP8 = 64 lanes * 32 FP8/lane.  Four `ds_read_tr8_b64`
+        calls at `key_base ∈ {0, 8, 16, 24}` deliver 8 keys per lane
+        each, totaling 32 contiguous keys per lane at one depth.
+
+        Within one `ds_read_tr8_b64` call, each 16-lane row performs
+        **two interleaved 8x8 byte transposes** (one over the 8 even
+        lanes, one over the 8 odd lanes).  Per the AMD ISA, paired
+        even/odd lanes share a key and read 8 depths each:
+          - Even lane (p, o=0) reads V[g*32 + key_base + p, depth 0..7]
+          - Odd lane  (p, o=1) reads V[g*32 + key_base + p, depth 8..15]
+        After the transpose, even lane at pair_idx p in the row gets 8
+        keys (key_base..key_base+7 within the group) at depth p; odd
+        lane at pair_idx p gets the same 8 keys at depth p+8.
+
+        The per-lane output matches the scalar gather it replaces:
+        lane l holds V[key=g*32..g*32+31, depth=butterfly(l%16) + dt*16],
+        where `butterfly(p) = (p/2) + (p%2)*8`.  The depth axis is a
+        butterfly permutation of the linear ordering — the MFMA's
+        A-operand lane->m_h mapping for the 16x16x128 shape consumes
+        this permuted layout directly (no post-load permute needed).
+
+        Parameters:
+            BN: V block height in elements (keys per block).
+            block_width: SMEM block width in depth elements (caller's
+                `bk_smem` — not `BK` if the K-split path is active and
+                `bk_smem < BK`).
+            bk_tile: Which BK-tall row strip (always 0 here; kept for
+                API symmetry with the 32x32x64 variant).
+            dt: Which depth-tile within the strip
+                (0 .. depth/MMA_M - 1).
+
+        Args:
+            v_base: Pointer to V SMEM stage base (block 0).
+            key_group: Per-lane key-group index (lane_id // 16).
+            pair_idx: Per-lane pair index ((lane_id % 16) // 2).
+            is_odd: Per-lane parity (lane_id % 2).
+
+        Returns:
+            `SIMD[in_type, 32]` — 32 contiguous keys at one depth for
+            this lane's (bk_tile, dt).
+        """
+        comptime assert (
+            Self.mma_shape[0] == 16
+        ), "load_v_fp8_strip_16 requires MMA_M == 16"
+        # The 4 × `ds_read_tr8_b64` schedule below (key_base ∈
+        # {0, 8, 16, 24}) hard-encodes the 16x16x128 lane geometry —
+        # `num_matrix_reg[16, 128] = 32` per-lane elements as four
+        # 8-element joins.  A future shape change (e.g. 16x16x64)
+        # would need a different schedule.
+        comptime assert (
+            Self.mma_shape[2] == 128
+        ), "load_v_fp8_strip_16 requires MMA_K == 128"
+        # num_k_tiles == 1 for V in the current 16x16x128 wiring, so
+        # bk_tile is always 0.  Keep the parameter for API symmetry with
+        # the 32x32x64 variant, but assert until a caller actually
+        # exercises bk_tile > 0 and the row-stride math is verified.
+        comptime assert (
+            bk_tile == 0
+        ), "load_v_fp8_strip_16: bk_tile > 0 path is not yet validated"
+        comptime MMA_M = Self.mma_shape[0]
+        # Per-call key span is 128 (= 4 groups * 32 keys), so bk_tile
+        # shifts by 128 in key space.
+        comptime row_offset = bk_tile * 128
+        comptime depth_offset = dt * MMA_M
+        comptime blk = depth_offset // block_width
+        comptime d_in_blk = depth_offset % block_width
+        var block_base = v_base + blk * BN * block_width
+
+        comptime simd_w = simd_width_of[Self.in_type]()
+        # Even lanes (is_odd=0) read the low-half-depth-byte octet
+        # (d_in_blk + 0..7); odd lanes read the high-half octet
+        # (d_in_blk + 8..15).  The transpose then spreads these 16
+        # depth bytes across the 16 lanes of the row.
+        var depth_base = d_in_blk + is_odd * 8
+
+        @always_inline
+        @parameter
+        def _load_keys[key_base: Int]() -> SIMD[Self.in_type, 8]:
+            var key = row_offset + key_group * 32 + key_base + pair_idx
+            var byte_offset = key * block_width + depth_base
+            comptime if Self.swizzle:
+                var vec_idx, sub_vec = udivmod(byte_offset, simd_w)
+                var swizzled_vec = Self.swizzle.value()(vec_idx)
+                var addr = block_base + swizzled_vec * simd_w + sub_vec
+                return ds_read_tr8_b64(addr)
+            else:
+                return ds_read_tr8_b64(block_base + byte_offset)
+
+        var r0 = _load_keys[0]()
+        var r1 = _load_keys[8]()
+        var r2 = _load_keys[16]()
+        var r3 = _load_keys[24]()
         return r0.join(r1).join(r2.join(r3))
 
     @staticmethod

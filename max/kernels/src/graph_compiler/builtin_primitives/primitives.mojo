@@ -1641,17 +1641,15 @@ def view_copy_impl[
     ](), "static shapes not compatible"
     assert x.shape() == z.shape(), "runtime shapes not compatible"
 
-    @parameter
     @always_inline
     def func[
         width: Int, element_alignment: Int
-    ](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
+    ](idx: IndexList[z.rank]) {var x} -> SIMD[z.dtype, width]:
         return simd_load_from_managed_tensor_slice[
             simd_width=width, element_alignment=element_alignment
         ](x, idx)
 
     foreach[
-        func,
         target=target,
         _trace_name=_trace_name,
-    ](z, ctx)
+    ](func, z, ctx)

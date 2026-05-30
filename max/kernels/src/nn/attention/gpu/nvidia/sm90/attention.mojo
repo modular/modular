@@ -380,6 +380,7 @@ struct MHAPosition[
                 # In decoding, we have `group` rows, but these
                 # correspond to the same position w/ respect to the mask.
                 return mask.status(
+                    self.prompt_idx,
                     Index[dtype=DType.int32](
                         Int(self.num_keys - 1),
                         Int(kv_tile_start_row),
@@ -390,6 +391,7 @@ struct MHAPosition[
                 return TileMaskStatus.PARTIAL_MASK
         else:
             return mask.status(
+                self.prompt_idx,
                 Index[dtype=DType.int32](
                     Int(self.prompt_offset + self.start_pos),
                     Int(kv_tile_start_row),
@@ -429,7 +431,7 @@ struct MHAPosition[
         PartitionType: MHAPartitionScheme, MaskType: MHAMask, //, page_size: Int
     ](self, partition: PartitionType, mask: MaskType) -> Tuple[UInt32, UInt32]:
         var start_col: UInt32 = mask.start_column[Self.BM, Self.BN, page_size](
-            self.get_score_row()
+            self.prompt_idx, self.get_score_row()
         )
 
         comptime if PartitionType.do_partition:

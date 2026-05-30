@@ -47,11 +47,9 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
 from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
     LoRAMetrics,
-    PixelGenerationBenchmarkResult,
-    ServingBenchmarkMetrics,
     SpecDecodeStats,
-    TextGenerationBenchmarkResult,
 )
 from max.benchmark.benchmark_shared.server_metrics import print_server_metrics
 from max.benchmark.benchmark_shared.utils import print_section
@@ -290,7 +288,7 @@ def print_lora_benchmark_results(metrics: LoRAMetrics) -> None:
 
 
 def print_benchmark_summary(
-    metrics: ServingBenchmarkMetrics,
+    metrics: BenchmarkResult,
     request_rate: float,
     max_concurrency: int | None,
     achieved_request_rate: float,
@@ -527,8 +525,7 @@ def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
 def save_result_json(
     result_filename: str | None,
     args: ServingBenchmarkConfig,
-    benchmark_result: TextGenerationBenchmarkResult
-    | PixelGenerationBenchmarkResult,
+    benchmark_result: BenchmarkResult,
     *,
     benchmark_task: BenchmarkTask,
     model_id: str,
@@ -552,7 +549,7 @@ def save_result_json(
         "tokenizer_id": tokenizer_id,
         "num_prompts": (
             agg.completed
-            if (agg := benchmark_result.metrics.aggregates) is not None
+            if (agg := benchmark_result.aggregates) is not None
             else 0
         ),
         "dataset_name": args.dataset_name,
@@ -579,8 +576,7 @@ def save_result_json(
 
 def save_output_lengths(
     args: ServingBenchmarkConfig,
-    benchmark_result: TextGenerationBenchmarkResult
-    | PixelGenerationBenchmarkResult,
+    benchmark_result: BenchmarkResult,
     benchmark_task: BenchmarkTask,
     *,
     iteration_config: tuple[int | None, float] | None = None,
@@ -593,7 +589,6 @@ def save_output_lengths(
             "--record-output-lengths is only supported for text-generation"
         )
         return
-    assert isinstance(benchmark_result, TextGenerationBenchmarkResult)
     args_to_save = (
         "backend",
         "burstiness",
@@ -616,7 +611,7 @@ def save_output_lengths(
         args_dict["max_concurrency"] = mc_snap
         args_dict["request_rate"] = rr_snap
     output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
-    text_data = benchmark_result.metrics.text_data
+    text_data = benchmark_result.text_data
     output_lens_dict["output_lengths"] = (
         text_data.output_lens if text_data is not None else []
     )

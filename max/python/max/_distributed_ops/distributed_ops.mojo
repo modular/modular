@@ -102,6 +102,7 @@ def _do_broadcast[
     )
     var in_tile = TileTensor(in_ptr, row_major(n)).as_immut()
 
+    # Resolve Python pointers up front; the worker threads run pure Mojo.
     var out_ptrs = InlineArray[
         UnsafePointer[Scalar[DType.uint8], MutAnyOrigin], ngpus
     ](uninitialized=True)
@@ -129,10 +130,16 @@ def _do_broadcast[
         read root_v,
     }:
         var out_tile = TileTensor(out_ptrs[index], row_major(n))
+        # use_multimem=False: the multicast-store path needs an SM90+ build
+        # target, i.e. per-arch .so variants of the shared library.
         broadcast[ngpus, use_multimem=False](
             in_tile, out_tile, rank_sigs, dev_ctxs[index], root_v
         )
 
-    # Worker callbacks may need to acquire the GIL while we wait.
+    # Release the GIL during the blocking tg.wait() so other Python threads
+    # aren't stalled while the enqueues run on worker threads. Pass a copy:
+    # launch_broadcast borrows dev_ctxs, which the call below moves.
     with GILReleased(Python()):
-        _launch_device_collective[ngpus](launch_broadcast, dev_ctxs)
+        _launch_device_collective[ngpus](
+            launch_broadcast, DeviceContextList[ngpus](copy=dev_ctxs)
+        )

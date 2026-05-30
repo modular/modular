@@ -816,7 +816,7 @@ def register_epilogue[
 
     comptime for i in range(repeats):
         # each tensor memory load (16x256b) may be repeated based on our desired size.
-        # if thats the case our fragment will be repeated as well. So process it in chunks i.e
+        # if that's the case our fragment will be repeated as well. So process it in chunks i.e
         # one 16x256b at a time.
         # inc represents the shift in global memory offset for each chunk, based on the repeat, and
         # offset represents the offset into the fragment for each chunk.

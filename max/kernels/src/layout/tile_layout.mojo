@@ -59,6 +59,7 @@ from layout.coord import (
     _Multiply,
     _MultiplyByScalar,
     _Flattened,
+    _IsNotTuplePredicate,
 )
 from .int_tuple import IntTuple, coord_to_int_tuple
 
@@ -276,7 +277,21 @@ trait TensorLayout(TrivialRegisterPassable):
 comptime RowMajorLayout[*shape_types: CoordLike] = Layout[
     shape_types, _RowMajor[*shape_types]
 ]
-"""A `Layout` with row-major (C-order) strides computed from the shape.
+"""A `Layout` with row-major (C-order) strides for a flat shape. For nested
+shapes use `RowMajorNestedLayout`.
+
+Parameters:
+    shape_types: The types for the shape dimensions.
+"""
+
+
+comptime RowMajorNestedLayout[*shape_types: CoordLike] = Layout[
+    shape_types, _RowMajorNested[*shape_types]
+]
+"""A `Layout` with row-major strides for a nested shape (CuTe semantics).
+
+For shape `((a, b), (c, d))` the strides are `((b*c*d, c*d), (d, 1))` —
+row-major over the flattened shape, re-nested.
 
 Parameters:
     shape_types: The types for the shape dimensions.
@@ -766,14 +781,128 @@ comptime _UnwrapSingleTuple[*element_types: CoordLike] = TypeList[
     and element_types[0].is_tuple else element_types.values
 ]()
 
-comptime _RowMajor[*element_types: CoordLike] = TypeList[
-    _UnwrapSingleTuple[*element_types]
-    .reverse()
-    .reduce_idx[
-        TypeList.of[Trait=CoordLike]().values,
-        _RowMajorMapperIdx[_UnwrapSingleTuple[*element_types].reverse(), ...],
-    ]
-]()
+
+# ===-------------------------------------------------------------------=== #
+# Nested-shape support for `_RowMajor` / `_ColMajor` (CuTe `local_tile`).
+#
+# Strides over a nested shape `((a, b), (c, d))` = strides over the
+# flattened shape `(a, b, c, d)`, re-nested to mirror the original. The
+# helpers below splice the flat-strides list back into the nested shape.
+# Depth-1 only; the in-tree kernel suite never goes deeper.
+# ===-------------------------------------------------------------------=== #
+
+
+comptime _ElementFlatRank[T: CoordLike] = (
+    _Flattened[*T.ParamListType].size if T.is_tuple else 1
+)
+"""Number of leaf dims contributed by one (possibly nested) `CoordLike`."""
+
+
+comptime _CumulativeFlatRankReducer[
+    upto: Int,
+    Prev: Int,
+    Element: CoordLike,
+    list_idx: Int,
+] = Prev + _ElementFlatRank[Element] if list_idx < upto else Prev
+
+
+comptime _CumulativeFlatRankAt[
+    ShapeTL: TypeList[Trait=CoordLike, ...],
+    upto: Int,
+] = ShapeTL.reduce_idx[
+    0,
+    _CumulativeFlatRankReducer[upto, ...],
+]
+"""Flat-leaf offset of outer-mode `upto` in `ShapeTL`."""
+
+
+# Re-nesting tabulators form a chain `Leaf → D1 → D2 → D3` mirroring the
+# `_FlattenOnce → _Flatten2 → _Flattened` doubling: each Dk handles up to
+# `k` levels of nesting under `SubShape[sub_idx]` by delegating to
+# `D(k-1)` in its tuple branch. The outer entry point is `D3` (depth-3
+# nesting at the entry), which is more than any in-tree kernel needs.
+# Mojo comptime aliases cannot self-recurse, hence the layered names.
+
+
+comptime _NestedStrideLeaf[
+    SubShape: TypeList[Trait=CoordLike, ...],
+    FlatStrides: TypeList[Trait=CoordLike, ...],
+    base: Int,
+    sub_idx: Int,
+]: CoordLike = FlatStrides[base + _CumulativeFlatRankAt[SubShape, upto=sub_idx]]
+"""Scalar-leaf case: pick one entry of `FlatStrides`."""
+
+
+comptime _NestedStrideD1[
+    SubShape: TypeList[Trait=CoordLike, ...],
+    FlatStrides: TypeList[Trait=CoordLike, ...],
+    base: Int,
+    sub_idx: Int,
+]: CoordLike = Coord[
+    *TypeList.tabulate[
+        Trait=CoordLike,
+        SubShape[sub_idx].ParamListType.size,
+        _NestedStrideLeaf[
+            SubShape[sub_idx].ParamListType,
+            FlatStrides,
+            base + _CumulativeFlatRankAt[SubShape, upto=sub_idx],
+            ...,
+        ],
+    ]()
+] if SubShape[
+    sub_idx
+].is_tuple else _NestedStrideLeaf[
+    SubShape, FlatStrides, base, sub_idx
+]
+
+
+comptime _NestedStrideD2[
+    SubShape: TypeList[Trait=CoordLike, ...],
+    FlatStrides: TypeList[Trait=CoordLike, ...],
+    base: Int,
+    sub_idx: Int,
+]: CoordLike = Coord[
+    *TypeList.tabulate[
+        Trait=CoordLike,
+        SubShape[sub_idx].ParamListType.size,
+        _NestedStrideD1[
+            SubShape[sub_idx].ParamListType,
+            FlatStrides,
+            base + _CumulativeFlatRankAt[SubShape, upto=sub_idx],
+            ...,
+        ],
+    ]()
+] if SubShape[
+    sub_idx
+].is_tuple else _NestedStrideLeaf[
+    SubShape, FlatStrides, base, sub_idx
+]
+
+
+comptime _NestedStrideTabulator[
+    SubShape: TypeList[Trait=CoordLike, ...],
+    FlatStrides: TypeList[Trait=CoordLike, ...],
+    base: Int,
+    sub_idx: Int,
+]: CoordLike = Coord[
+    *TypeList.tabulate[
+        Trait=CoordLike,
+        SubShape[sub_idx].ParamListType.size,
+        _NestedStrideD2[
+            SubShape[sub_idx].ParamListType,
+            FlatStrides,
+            base + _CumulativeFlatRankAt[SubShape, upto=sub_idx],
+            ...,
+        ],
+    ]()
+] if SubShape[
+    sub_idx
+].is_tuple else _NestedStrideLeaf[
+    SubShape, FlatStrides, base, sub_idx
+]
+"""Entry point: stride type for `sub_idx`-th element of `SubShape`
+rooted at flat offset `base`. Handles up to depth-3 nesting under
+`SubShape[sub_idx]` (four total levels including the entry's outer)."""
 
 
 comptime _RowMajorMapperIdx[
@@ -809,6 +938,38 @@ comptime _RowMajorMapperIdx[
 ]().values
 
 
+comptime _AnyTuple[*element_types: CoordLike] = (
+    not element_types.all_satisfies[_IsNotTuplePredicate]()
+)
+"""True iff `element_types` contains at least one tuple element."""
+
+
+comptime _RowMajor[*element_types: CoordLike] = TypeList[
+    _UnwrapSingleTuple[*element_types]
+    .reverse()
+    .reduce_idx[
+        TypeList.of[Trait=CoordLike]().values,
+        _RowMajorMapperIdx[_UnwrapSingleTuple[*element_types].reverse(), ...],
+    ]
+]()
+"""Row-major (C-order) strides for a flat shape variadic. For nested
+shapes use `_RowMajorNested`."""
+
+
+comptime _RowMajorNested[*element_types: CoordLike] = TypeList.tabulate[
+    Trait=CoordLike,
+    element_types.size,
+    _NestedStrideTabulator[
+        TypeList[element_types.values](),
+        _RowMajor[*_Flattened[*element_types]],
+        0,
+        ...,
+    ],
+]()
+"""Row-major strides for a nested shape variadic (CuTe semantics):
+row-major over the flattened shape, then re-nested."""
+
+
 @always_inline
 def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
     """Creates a row-major layout from a shape `Coord`.
@@ -836,11 +997,11 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
         var stride_ptr = UnsafePointer(to=strides[idx])
 
         comptime if i == 0:
-            # Rightmost dimension always has stride 1
+            # Rightmost dimension always has stride 1.
             comptime StrideType = RowMajorTypes[idx]
             stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]))
         else:
-            # Calculate stride as product of shape[idx+1] * stride[idx+1]
+            # stride[i] = shape[i+1] * stride[i+1]
             comptime StrideType = RowMajorTypes[idx]
 
             comptime if StrideType.is_static_value:
@@ -887,29 +1048,26 @@ def row_major[
 
     var strides = Tuple[*RowMajorTypes]()
 
-    # Compute row-major strides on the flattened shape
-    # Row-major means rightmost dimension has stride 1,
-    # and each preceding dimension has stride equal to the product of all following dimensions
+    # Compute row-major strides on the flattened shape (flat-only — the
+    # nested case has its own `row_major_nested` constructor).
     comptime for i in range(rank):
         comptime idx = rank - 1 - i  # Process in reverse order
         var stride_ptr = UnsafePointer(to=strides[idx])
 
         comptime if i == 0:
-            # Rightmost dimension always has stride 1
+            # Rightmost dimension always has stride 1.
             comptime StrideType = RowMajorTypes[idx]
             stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]))
         else:
-            # Calculate stride as product of shape[idx+1] * stride[idx+1]
+            # stride[i] = shape[i+1] * stride[i+1]
             comptime StrideType = RowMajorTypes[idx]
 
             comptime if StrideType.is_static_value:
-                # Stride is compile-time known (both shape and prev stride are compile-time)
                 comptime stride_val = StrideType.static_value
                 stride_ptr.init_pointee_copy(
                     rebind[StrideType](Idx[stride_val])
                 )
             else:
-                # At least one is runtime, compute at runtime
                 var stride_val = Int(elements[idx + 1].value()) * Int(
                     strides[idx + 1].value()
                 )
@@ -941,6 +1099,44 @@ def row_major[*idxs: Int]() -> RowMajorLayout[*_IntToComptimeInt[*idxs]]:
 
 
 # ===----------------------------------------------------------------------=== #
+# Row-major nested-shape constructor (CuTe semantics).
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def row_major_nested(
+    var shape: Coord,
+) -> RowMajorNestedLayout[*shape.element_types]:
+    """Creates a row-major layout from a nested shape `Coord`.
+
+    For a nested shape `((a, b), (c, d))` the result has nested strides
+    `((b*c*d, c*d), (d, 1))` — row-major over the flattened shape, re-nested.
+
+    Currently restricted to all-static (compile-time) leaf dimensions
+    and one level of nesting. For flat shapes use `row_major`.
+
+    Args:
+        shape: The nested shape as a `Coord` whose top-level elements
+            are themselves `Coord`s.
+
+    Returns:
+        A `Layout` with the matching nested row-major strides.
+    """
+    comptime RowMajorTypes = _RowMajorNested[*shape.element_types]
+    comptime rank = shape.element_types.size
+
+    var strides = Tuple[*RowMajorTypes]()
+
+    comptime for i in range(rank):
+        comptime idx = rank - 1 - i
+        var stride_ptr = UnsafePointer(to=strides[idx])
+        comptime StrideType = RowMajorTypes[idx]
+        stride_ptr.init_pointee_copy(rebind[StrideType](StrideType()))
+
+    return {shape, Coord(strides^)}
+
+
+# ===----------------------------------------------------------------------=== #
 # Column Major Layout
 # ===----------------------------------------------------------------------=== #
 
@@ -948,7 +1144,21 @@ def row_major[*idxs: Int]() -> RowMajorLayout[*_IntToComptimeInt[*idxs]]:
 comptime ColMajorLayout[shape_types: TypeList[Trait=CoordLike, ...]] = Layout[
     shape_types, _ColMajor[*shape_types]
 ]
-"""A `Layout` with column-major (Fortran-order) strides computed from the shape.
+"""A `Layout` with column-major (Fortran-order) strides for a flat shape.
+For nested shapes use `ColMajorNestedLayout`.
+
+Parameters:
+    shape_types: The types for the shape dimensions.
+"""
+
+
+comptime ColMajorNestedLayout[
+    shape_types: TypeList[Trait=CoordLike, ...]
+] = Layout[shape_types, _ColMajorNested[*shape_types]]
+"""A `Layout` with column-major strides for a nested shape (CuTe semantics).
+
+For shape `((a, b), (c, d))` the strides are `((1, a), (a*b, a*b*c))` —
+col-major over the flattened shape, re-nested.
 
 Parameters:
     shape_types: The types for the shape dimensions.
@@ -960,6 +1170,22 @@ comptime _ColMajor[*element_types: CoordLike] = TypeList[
         _ColMajorMapperIdx[_UnwrapSingleTuple[*element_types], ...],
     ]
 ]()
+"""Column-major (Fortran-order) strides for a flat shape variadic. For
+nested shapes use `_ColMajorNested`."""
+
+
+comptime _ColMajorNested[*element_types: CoordLike] = TypeList.tabulate[
+    Trait=CoordLike,
+    element_types.size,
+    _NestedStrideTabulator[
+        TypeList[element_types.values](),
+        _ColMajor[*_Flattened[*element_types]],
+        0,
+        ...,
+    ],
+]()
+"""Column-major strides for a nested shape variadic (CuTe semantics):
+col-major over the flattened shape, then re-nested."""
 
 
 comptime _ColMajorMapperIdx[
@@ -1038,28 +1264,25 @@ def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
 
     var strides = Tuple[*ColMajorTypes]()
 
-    # Compute column-major strides on the shape
-    # Column-major means leftmost dimension has stride 1,
-    # and each subsequent dimension has stride = product of all previous dimensions
+    # Compute column-major strides (flat-only — the nested case has
+    # its own `col_major_nested` constructor).
     comptime for i in range(rank):
         var stride_ptr = UnsafePointer(to=strides[i])
 
         comptime if i == 0:
-            # Leftmost dimension always has stride 1
+            # Leftmost dimension always has stride 1.
             comptime StrideType = ColMajorTypes[i]
             stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]))
         else:
-            # Calculate stride as product of shape[i-1] * stride[i-1]
+            # stride[i] = shape[i-1] * stride[i-1]
             comptime StrideType = ColMajorTypes[i]
 
             comptime if StrideType.is_static_value:
-                # Stride is compile-time known
                 comptime stride_val = StrideType.static_value
                 stride_ptr.init_pointee_copy(
                     rebind[StrideType](Idx[stride_val])
                 )
             else:
-                # At least one is runtime, compute at runtime
                 var stride_val = Int(shape[i - 1].value()) * Int(
                     strides[i - 1].value()
                 )
@@ -1095,6 +1318,38 @@ def col_major[*idxs: Int]() -> ColMajorLayout[_IntToComptimeInt[*idxs]]:
     """
     var shape = Coord[*_IntToComptimeInt[*idxs]]()
     return col_major(shape)
+
+
+@always_inline
+def col_major_nested(
+    var shape: Coord,
+) -> ColMajorNestedLayout[shape.element_types]:
+    """Creates a column-major layout from a nested shape `Coord`.
+
+    For a nested shape `((a, b), (c, d))` the result has nested strides
+    `((1, a), (a*b, a*b*c))` — col-major over the flattened shape, re-nested.
+
+    Currently restricted to all-static (compile-time) leaf dimensions
+    and one level of nesting. For flat shapes use `col_major`.
+
+    Args:
+        shape: The nested shape as a `Coord` whose top-level elements
+            are themselves `Coord`s.
+
+    Returns:
+        A `Layout` with the matching nested column-major strides.
+    """
+    comptime ColMajorTypes = _ColMajorNested[*shape.element_types]
+    comptime rank = shape.element_types.size
+
+    var strides = Tuple[*ColMajorTypes]()
+
+    comptime for i in range(rank):
+        var stride_ptr = UnsafePointer(to=strides[i])
+        comptime StrideType = ColMajorTypes[i]
+        stride_ptr.init_pointee_copy(rebind[StrideType](StrideType()))
+
+    return Layout(shape, Coord[*ColMajorTypes](strides^))
 
 
 @always_inline("nodebug")

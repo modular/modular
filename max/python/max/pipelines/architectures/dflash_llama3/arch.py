@@ -45,7 +45,7 @@ dflash_llama_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     weight_adapters={
         WeightsFormat.safetensors: llama3_weight_adapters.convert_safetensor_state_dict,
     },

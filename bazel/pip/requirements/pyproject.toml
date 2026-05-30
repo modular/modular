@@ -3,7 +3,6 @@ name = "bazel-pyproject"
 version = "0"
 requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settings
 dependencies = [
-  "levenshtein",
   "aioboto3",
   "aiofiles",
   "aiohttp",
@@ -22,7 +21,6 @@ dependencies = [
   "diffusers==0.37.0",
   "docutils",
   "einops",
-  "einx",
   "exceptiongroup",
   "expandvars",
   "fastapi[standard]>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
@@ -35,7 +33,6 @@ dependencies = [
   "hypothesis==6.108.4",
   "ipython",
   "jinja2",
-  "jiwer",
   "jsonschema",
   "kaleido==0.2.1",
   "kepler",
@@ -50,7 +47,6 @@ dependencies = [
   "numpy==2.2.6; python_version < '3.11'",
   "numpy>=2.3.0; python_version >= '3.11'",
   "nvitop",
-  "onnxruntime", # Needed by faster_whisper
   "opentelemetry-api",
   "opentelemetry-exporter-otlp-proto-http>=1.28.2",
   "opentelemetry-exporter-prometheus",
@@ -138,18 +134,12 @@ dependencies = [
   "pillow>=10.0.0",
   "locust",
   "openai==2.11.0",
-  "librosa==0.10.2",
-  "soundfile==0.13.1",
 
   # mypy types
   "types-protobuf",
   "types-PyYAML",
   "types-setuptools",
   "types-tabulate",
-
-  # tts
-  "zhon",
-  "zhconv",
 
   # Video processing
   "av",

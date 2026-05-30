@@ -41,6 +41,7 @@ from std.memory.memory import _free, _malloc
 from std.memory import UnsafeMaybeUninit
 from std.memory._poison import _check_not_poison, _check_not_poison_masked
 from std.os import abort
+from std._plugin import CurrentPlugin
 from std.python import PythonObject
 from std.utils._nicheable import (
     UnsafeSingleNicheable,
@@ -1124,6 +1125,14 @@ struct UnsafePointer[
         ```
         """
         comptime alignment = align_of[Self.type]()
+        comptime if CurrentPlugin.unsafe_dangling_fn:
+            comptime address = CurrentPlugin.unsafe_dangling_fn.value()[
+                alignment
+            ]()
+            comptime assert (
+                address != 0
+            ), "UnsafePointer cannot be constructed with address 0"
+            return Self(unsafe_from_address=address)
         return Self(unsafe_from_address=alignment)
 
     @always_inline("nodebug")
@@ -1257,9 +1266,9 @@ struct UnsafePointer[
             for i in range(width):
                 v[i] = __mlir_op.`pop.load`[
                     alignment=alignment._int_mlir_index(),
-                    isVolatile=volatile._mlir_value,
-                    isInvariant=invariant._mlir_value,
-                    isNonTemporal=non_temporal._mlir_value,
+                    isVolatile=volatile.__mlir_i1__(),
+                    isInvariant=invariant.__mlir_i1__(),
+                    isNonTemporal=non_temporal.__mlir_i1__(),
                 ]((self + i).address)
             comptime if dtype.is_floating_point():
                 _check_not_poison[dtype, width](v)
@@ -1284,9 +1293,9 @@ struct UnsafePointer[
 
         var result = __mlir_op.`pop.load`[
             alignment=alignment._int_mlir_index(),
-            isVolatile=volatile._mlir_value,
-            isInvariant=invariant._mlir_value,
-            isNonTemporal=non_temporal._mlir_value,
+            isVolatile=volatile.__mlir_i1__(),
+            isInvariant=invariant.__mlir_i1__(),
+            isNonTemporal=non_temporal.__mlir_i1__(),
         ](address)
         comptime if dtype.is_floating_point():
             _check_not_poison[dtype, width](result)
@@ -1532,8 +1541,8 @@ struct UnsafePointer[
         else:
             __mlir_op.`pop.store`[
                 alignment=alignment._int_mlir_index(),
-                isVolatile=volatile._mlir_value,
-                isNonTemporal=non_temporal._mlir_value,
+                isVolatile=volatile.__mlir_i1__(),
+                isNonTemporal=non_temporal.__mlir_i1__(),
             ](val, self.bitcast[SIMD[dtype, width]]().address)
 
     @always_inline("nodebug")

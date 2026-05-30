@@ -68,6 +68,7 @@ struct FA4Config[
     var swizzle_mode: TensorMapSwizzle
     var use_fused_kv: Bool
     var pair_cta: Bool
+    var num_qo: Int
 
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
     comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
@@ -89,10 +90,6 @@ struct FA4Config[
         if self.fuse_gqa:
             return self.BM // self.group
         return self.BM
-
-    @always_inline
-    def num_qo(self) -> Int:
-        return 2
 
     @always_inline
     def cta_group(self) -> Int:
@@ -174,14 +171,22 @@ struct FA4Config[
         page_size: Int,
         is_mla: Bool,
         pair_cta: Bool = False,
+        num_qo: Int = 2,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
         self.group = group
         self.qk_depth = qk_depth
         self.pair_cta = pair_cta
-        self.BM = 256
+        self.num_qo = num_qo
         self.MMA_M = 256 if pair_cta else 128
+        # num_qo=1 halves BM to MMA_M (=128) — each CTA now covers half as
+        # many Q rows. supported() forbids num_qo=1 with pair_cta, so MMA_M
+        # is always 128 here when num_qo == 1.
+        if num_qo == 1:
+            self.BM = self.MMA_M
+        else:
+            self.BM = 256
         self.fuse_gqa = group > 1 and (self.MMA_M % group == 0) and not is_mla
         self.swizzle_mode = swizzle_mode
         swizzle_elems = swizzle_mode.bytes() // Self.qkv_dtype_size
@@ -272,15 +277,18 @@ struct FA4Config[
         # - S producers: 2 (1 per warp group)
         # - C barriers: 4 (C0/C1 producer/consumer)
         # - Order barriers: 2 (only when EnableForcedOrdering)
-        # - Q1Sync barriers: num_qk_stages
+        # - Q1Sync barriers: num_qk_stages (only when num_qo == 2; num_qo=1
+        #   shares Q across both pipelines so no Q1Sync slot is needed —
+        #   FA4MiscMBars collapses Q1SyncIdx in that mode)
         # - O producers: 2 (O consumers reuse S_consumer[0], not separate)
-        # Total fixed = 8 + order_barrier_count + 2*num_pv_stages + num_qk_stages
+        # Total fixed = 8 + order_barrier_count + 2*num_pv_stages
+        #             + (num_qk_stages if num_qo == 2 else 0)
         comptime order_barrier_count: Int = 2 if EnableForcedOrdering else 0
         misc_mbars_fixed_size = (
             8
             + order_barrier_count
             + 2 * self.num_pv_stages
-            + self.num_qk_stages
+            + (self.num_qk_stages if num_qo == 2 else 0)
         )
         smem_use += misc_mbars_fixed_size * Self.mbar_size
 
@@ -302,9 +310,20 @@ struct FA4Config[
         smem_use += self.BM * qk_depth_bytes
         # q_scale: always 1 buffer (per-token scale only; 0 when no scaling).
         smem_use += self.BM * Self.scale_dtype_size
-        # Add space for correction smem when not using tmem for correction
+        # Add space for correction smem when not using tmem for correction.
+        # Must match `SM100AttentionSMem.correction_bytes` in smem.mojo: the
+        # layout reserves one Float32 slot per softmax thread, i.e.
+        # `2 * WARPGROUP_SIZE = 256` Float32 entries (1 KiB) regardless of
+        # `num_qo`. In 2Q this equals `BM * num_correction_cols`, but 1Q
+        # halves `BM` to 128 and needs the doubling factor here too.
+        # Without it, `smem_use` (passed as `shared_mem_bytes` at launch) is
+        # 512 bytes short of the smem.mojo layout, and the trailing mbar /
+        # tmem_addr regions overflow into unmapped __shared__ on init.
         smem_use += (
-            self.BM * Self.num_correction_cols * size_of[DType.float32]()
+            (2 if num_qo == 1 else 1)
+            * self.BM
+            * Self.num_correction_cols
+            * size_of[DType.float32]()
         )
 
         # We use one of two strategies:
@@ -393,6 +412,18 @@ struct FA4Config[
             and self.tmem_used <= Self.sm100_tmem_cols
             and self.smem_used <= Self.sm100_smem_carveout
         )
+        if self.num_qo == 1:
+            # num_qo=1 is single-CTA only (pair-CTA only requires double
+            # the seq-len of single-CTA, num_qo=1 is for small seq-len).
+            # pair-CTA decreases perf in every benchmark I've tried
+            # anyway, so it especially doesn't make sense for small
+            # seq-len.
+            return (
+                base
+                and self.qk_depth >= 64
+                and self.qk_depth <= 256
+                and not self.pair_cta
+            )
         if self.pair_cta:
             # Pair-CTA: depth > 64 (depth=64 needs 32B swizzles) and <= 128.
             return base and self.qk_depth > 64 and self.qk_depth <= 128
@@ -402,6 +433,8 @@ struct FA4Config[
         return String(
             "pair_cta = ",
             self.pair_cta,
+            "\nnum_qo = ",
+            self.num_qo,
             "\nMMA_M = ",
             self.MMA_M,
             "\nqk_depth = ",

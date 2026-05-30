@@ -12,10 +12,24 @@ This version is still a work in progress.
 
 - Added NVFP4 quantization support for Gemma 4.
 - Added MXFP4 quantization support for MiniMax-M2.
+- Kimi K2.5 tool calling now supports interleaved thinking: a single
+  assistant turn may interleave multiple `<think>...</think>` reasoning
+  blocks with multiple tool-call sections and end with `<|im_end|>`. The
+  constrained-decoding grammar (used for `tool_choice` and JSON
+  `response_format`) admits up to eight tool-call sections with an optional
+  reasoning block before each, and lets the model stop before the cap. This
+  fixes a `tool_choice=auto` failure where a second tool-call section
+  disabled grammar enforcement for the rest of the request.
 
 ## MAX framework
 
 ### Inference server
+
+- MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
+  normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
+  o1/o3 chat-completion spec uses `developer` in place of `system`, and
+  recent OpenAI SDKs emit it by default. The previous behavior rejected
+  the request with a 422 (`literal_error` on the message role).
 
 - Fixed `CreateChatCompletionRequest` rejecting explicit `null` values for
   optional fields such as `tool_choice`, `tools`, and `response_format`.

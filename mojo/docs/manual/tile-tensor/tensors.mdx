@@ -103,7 +103,7 @@ def takes_2d(tensor2d: TileTensor[...]):
     # el0 = tensor2d[x]  # Compile-time error
 
 # OR
-def takes_2d_constrained(tensor2d: TileTensor[...] where tensor2d.flat_rank == 2):
+def takes_2d_constrained(tensor2d: TileTensor[...]) where tensor2d.flat_rank == 2:
     el0 = tensor2d[0, 0]
 ```
 

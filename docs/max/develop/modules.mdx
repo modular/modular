@@ -300,22 +300,27 @@ from max.engine import InferenceSession
 from max.driver import GPU
 
 session = InferenceSession(devices=[GPU()])
-compiled_model = session.load(graph, weights_registry=model.state_dict())
-result = compiled_model(input_data)
+compiled = session.compile(graph)
+runnable_model = session.init(compiled, weights_registry=model.state_dict())
+result = runnable_model(input_data)
 
 print(result[0].to_numpy())
 ```
 
-[`InferenceSession.load()`](/max/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.load)
-compiles a graph into an executable
-[`Model`](/max/api/python/generated/max.engine.Model/). It requires a graph and
-a `weights_registry`, or a dictionary that maps weight names to tensor data.
+[`InferenceSession.compile()`](/max/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.compile)
+compiles a graph into a
+[`CompiledModel`](/max/api/python/generated/max.engine.CompiledModel/) artifact,
+which holds the compiled code but isn't directly executable.
+[`InferenceSession.init()`](/max/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.init)
+then binds the artifact to weights and returns an executable
+[`Model`](/max/api/python/generated/max.engine.Model/). It accepts a
+`weights_registry`, or a dictionary that maps weight names to tensor data.
 
 You should have already passed this dictionary to `load_state_dict()`, which
 stored the dictionary inside the `Module` instance. Reuse it by passing
 `model.state_dict()` as the `weights_registry` argument.
 
-Calling the compiled `Model` runs `execute()` and returns a list of output
+Calling the runnable `Model` runs `execute()` and returns a list of output
 buffers. Convert each buffer to a NumPy array with `to_numpy()` to inspect the
 results. Output post-processing such as decoding happens elsewhere in the
 [inference pipeline](/max/develop/pipelines/).

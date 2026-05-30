@@ -40,6 +40,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
     "test_runtime_source_notes.py",
+    "test_scatter.py",
 ]
 
 modular_py_library(
@@ -151,6 +152,9 @@ modular_py_test(
         "conftest.py",
         "test_advanced_indexing.py",
     ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -171,11 +175,37 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_scatter",
+    srcs = [
+        "conftest.py",
+        "test_scatter.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "nvidia_tests",
     size = "large",
     srcs = _NVIDIA_ONLY_TESTS + ["conftest.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:nvidia_gpu"],
     tags = [
@@ -339,6 +369,9 @@ modular_py_test(
         "conftest.py",
         "test_logits_processor_gpu.py",
     ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2743
         "//conditions:default": [],
