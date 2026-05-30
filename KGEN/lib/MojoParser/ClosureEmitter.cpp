@@ -2185,8 +2185,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     ExprDest dest(anyType, EC_Type);
     PValue captureTypeValue =
         emitter
-            .emitImplicitConversionToType({value.getType(), synthNode}, anyType,
-                                          dest)
+            .emitImplicitConversionToType({value.getType(), &synthNode},
+                                          anyType, dest)
             .getIfPValue();
     auto captureTypeAttr = cast<TypedAttr>(captureTypeValue.get());
     captureTypes.push_back(captureTypeAttr);
@@ -2646,7 +2646,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
         SyntheticNode node(result->getLoc());
         ExprDest dest(EC_Capture);
         captureValue = emitter.emitRValue(
-            {CValue::getMValueForRef(valueInParent.getMlirValue()), node},
+            {CValue::getMValueForRef(valueInParent.getMlirValue()), &node},
             dest);
       } else {
         captureValue = valueInParent;
@@ -2666,7 +2666,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       }
       ExprDest dest(EC_Capture);
       SyntheticNode node(result->getLoc());
-      ASTExprAnd<CValue> valueInParentExpr{valueInParent, node};
+      ASTExprAnd<CValue> valueInParentExpr{valueInParent, &node};
       LValue copiedOrMovedValue =
           dest.getLValueForResult(valueInParentExpr.expr->getLoc(),
                                   valueInParentExpr.ir.getRValueType(),
@@ -3118,7 +3118,7 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
       callFunction, structSelfType.mlirType, *shared.declResolver);
 
   auto bindings = ParamBindings::getForDeclaredType(
-      emitter.getDeclScope(), structSelfType, syntheticNode);
+      emitter.getDeclScope(), structSelfType, &syntheticNode);
   // This could be a parametric function, we don't need to bind the parameter on
   // the function to test the compatibility.
   bindings.relaxBindingKindTo(ParamBindings::kWithEllipsis);

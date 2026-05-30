@@ -423,7 +423,7 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
   SyntheticNode synthNode(structDecl.getLoc());
   CValue selfTypeCValue(structSelfType.mlirType);
   PValue selfAsTrait = emitter.emitMetaTypeToTraitConversion(
-      {selfTypeCValue, synthNode}, parentTrait);
+      {selfTypeCValue, &synthNode}, parentTrait);
 
   // emitMetaTypeToTraitConversion can fail if the struct holding the defaulted
   // trait function wrapper didn't conform to the trait due to an unimplemented
@@ -663,8 +663,9 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
 
     // Project self to the right field and store the RValue.
     auto fieldRef = RefStructGEROp::create(builder, selfValue, fieldOp);
-    emitter.emitStoreToLValue({argVal, SyntheticNode(structDecl.getLoc())},
-                              MLValue(fieldRef), EC_AttributeRefBase);
+    SyntheticNode node(structDecl.getLoc());
+    emitter.emitStoreToLValue({argVal, &node}, MLValue(fieldRef),
+                              EC_AttributeRefBase);
   }
 
   // For a register-passable result, load the result from the temporary.
@@ -936,14 +937,14 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       Value reboundSrc = rebindRefForTrait(srcFieldOp, fieldType.mlirType,
                                            conditionalTraitOp, b);
 
+      SyntheticNode expr(location);
       if (isMove) {
         CValue reboundMoveSrc = CValue(MRValue(reboundSrc));
-        emitter.emitStoreToLValue({reboundMoveSrc, SyntheticNode(location)},
+        emitter.emitStoreToLValue({reboundMoveSrc, &expr},
                                   MLValue(reboundTarget), EC_SynthesizedMethod);
       } else {
         CValue reboundCopySrc = CValue(MBValue(reboundSrc));
         ExprDest dest(MLValue(reboundTarget), EC_SynthesizedMethod);
-        SyntheticNode expr(location);
         ASTType refinedFieldType(
             cast<RefType>(reboundTarget.getType()).getElementType());
         CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr,
@@ -958,6 +959,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
     CValue src =
         isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
 
+    SyntheticNode expr(location);
     if (!isMove) {
       // If this a copy constructor and the field is only `Copyable` but not
       // implicitly copyable, generate the explicit call to copy ctor so
@@ -969,8 +971,6 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
                                           &fnDecl)) {
         // Invoke `T(*, copy: Self)`.
         ExprDest dest(MLValue(targetFieldOp), EC_SynthesizedMethod);
-        SyntheticNode expr(location);
-
         CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr,
                               std::move(dest));
         operands.addKeyword(StringAttr::get(shared.getContext(), "copy"),
@@ -979,9 +979,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
         continue;
       }
     }
-
-    emitter.emitStoreToLValue({src, SyntheticNode(location)},
-                              MLValue(targetFieldOp), EC_SynthesizedMethod);
+    emitter.emitStoreToLValue({src, &expr}, MLValue(targetFieldOp),
+                              EC_SynthesizedMethod);
   }
 
   SymbolConstantAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());
@@ -1087,9 +1086,8 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   // avoid signature resolving `Bool::__init__`s, the implicit conversion will
   // be taken care of when body resolve conformanceOp.
   auto emitBoolAttr = [&](BoolAttr v) -> TypedAttr {
-    SyntheticNode synthNode(structDecl.getLoc());
-    return emitter.emitBool({v, synthNode}, EC_OperatorOperandValue)
-        .getIfPValue();
+    SyntheticNode node(structDecl.getLoc());
+    return emitter.emitBool({v, &node}, EC_OperatorOperandValue).getIfPValue();
   };
 
   LookupResult spDecls = shared.lookupAndResolveDecl(
@@ -1111,7 +1109,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   auto getI1Constant = [&](CValue value) -> std::optional<bool> {
     SyntheticNode node(structDecl.getLoc());
     PValue i1 =
-        emitter.emitI1({value, node}, EC_OperatorOperandValue).getIfPValue();
+        emitter.emitI1({value, &node}, EC_OperatorOperandValue).getIfPValue();
     if (IntegerAttr asIntAttr = sugarDynCastIfPresent<IntegerAttr>(i1.get()))
       return asIntAttr.getValue().isOne();
     // No need to double check the same value. This crushes sugar bloat.
@@ -1139,7 +1137,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     ExprDest dest(EC_OperatorOperandValue);
     return emitter.emitNamedMethodCall(
         "__and__", CallOperands(CallSyntax::kOperator, &node, std::move(dest),
-                                {{lhs, node}, {rhs, node}}));
+                                {{lhs, &node}, {rhs, &node}}));
   };
 
   ASTDecl *traitDecl =

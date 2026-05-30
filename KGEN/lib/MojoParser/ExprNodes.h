@@ -53,8 +53,6 @@ struct SyntheticNode final : public ExprNode {
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
-
-  operator ExprNode *() { return this; }
 };
 
 /// This returns an SMLoc from a StringRef that points into the source buffer.

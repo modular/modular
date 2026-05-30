@@ -233,8 +233,8 @@ AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
   PValue expectedMutability =
       cast<OriginType>(expectedRefPackType.getOrigin().getType())
           .getIsMutable();
-  CValue mutabilityValue = emitter.emitBool({expectedMutability, synthBoolNode},
-                                            ExprContext::EC_PackArgument);
+  CValue mutabilityValue = emitter.emitBool(
+      {expectedMutability, &synthBoolNode}, ExprContext::EC_PackArgument);
   paramBindings[0] = mutabilityValue.getIfPValue().get();
   paramBindings[1] = compatibleOrigin;
   paramBindings[2] =
