@@ -1,10 +1,18 @@
 load("@module_versions//:config.bzl", "DEFAULT_PYTHON_VERSION", "PYTHON_VERSIONS_DOTTED")
-load("//bazel:api.bzl", "mojo_test", "requirement")
+load("//bazel:api.bzl", "modular_py_test", "mojo_shared_library", "mojo_test", "requirement")
 
 package(default_visibility = ["//visibility:private"])
 
 _NUMPY_TESTS = [
     "test_python_to_mojo.mojo",
+]
+
+_SHARED_LIB_MOJO_SRCS = [
+    "buffer_mojo_module.mojo",
+    "mapping_mojo_module.mojo",
+    "number_mojo_module.mojo",
+    "sequence_mojo_module.mojo",
+    "type_protocol_mojo_module.mojo",
 ]
 
 [
@@ -30,7 +38,7 @@ _NUMPY_TESTS = [
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _NUMPY_TESTS,
+        exclude = _NUMPY_TESTS + _SHARED_LIB_MOJO_SRCS,
     )
     for version in PYTHON_VERSIONS_DOTTED
 ]
@@ -55,4 +63,47 @@ _NUMPY_TESTS = [
     )
     for src in _NUMPY_TESTS
     for version in PYTHON_VERSIONS_DOTTED
+]
+
+_PROTOCOL_TESTS = [
+    "buffer",
+    "mapping",
+    "number",
+    "sequence",
+    "type_protocol",
+]
+
+[
+    mojo_shared_library(
+        name = name + "_mojo_module",
+        testonly = True,
+        srcs = [name + "_mojo_module.mojo"],
+        shared_lib_name = name + "_mojo_module.so",
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "//:tsan": ["@platforms//:incompatible"],
+            "//:ubsan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for name in _PROTOCOL_TESTS
+]
+
+[
+    modular_py_test(
+        name = "test_" + name,
+        srcs = ["test_" + name + ".py"],
+        data = [":" + name + "_mojo_module"],
+        tags = ["no-pydeps"] if name == "buffer" else [],
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "//:tsan": ["@platforms//:incompatible"],
+            "//:ubsan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    )
+    for name in _PROTOCOL_TESTS
 ]
