@@ -432,3 +432,24 @@ def test_gpu_causal_conv1d_fp16_fast_path() raises:
         run_causal_conv1d_gpu[DType.float16, "silu", 64, 8](
             1, 1536, 512, width, ctx=ctx, rtol=0.01
         )
+
+
+def test_gpu_causal_conv1d_datacenter_scale() raises:
+    """Correctness at larger-model / datacenter shapes.
+
+    Wide channels (grid.y = dim) and long sequences (grid.x scales with L) and
+    multi-stream batches (grid.z = batch). Confirms the kernel stays correct and
+    within grid limits (dim, batch <= 65535) at scale; the op launches the same
+    64x4 config, whose grid.x grows with L so every block stays full.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    # Wide model (mamba-1.4B-ish dim) with a long prefill.
+    run_causal_conv1d_gpu[DType.float32, "silu"](1, 4096, 2048, 4, ctx=ctx)
+    # Batched prefill (multi-stream serving).
+    run_causal_conv1d_gpu[DType.float32, "silu"](8, 1536, 512, 4, ctx=ctx)
+    # bf16 wide model.
+    run_causal_conv1d_gpu[DType.bfloat16, "silu", 64, 8](
+        2, 5120, 512, 4, ctx=ctx, rtol=0.03
+    )
