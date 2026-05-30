@@ -551,3 +551,14 @@ def differ_wrong[
     # expected-error @below {{has 'def[input_addr: Int, output_shape: Int, output_addr: Int](DifferExample[output_shape, output_addr]) -> None' type, but value has type 'def differ_wrong[input_addr: Int, output_shape: Int, output_addr: Int](output: DifferExample[output_shape, input_addr]) -> None'}}
     # expected-note @below {{.output.addr of the first value is 'output_addr' but the second value is 'input_addr'}}
     differ_take[differ_wrong]()
+
+# expected-note @below {{cannot be converted from 'StringLiteral[""]' to 'Int'}}
+def call_error_location(a: Int): pass
+# expected-note @below {{cannot be converted from 'StringLiteral[""]' to 'IntLiteral}}
+def call_error_location(a: IntLiteral): pass
+def test_call_error_location():
+    # The error location should be on the operand, not the call.
+    call_error_location(
+
+        # expected-error @below {{no matching function in call to 'call_error_location'}}
+        "")
