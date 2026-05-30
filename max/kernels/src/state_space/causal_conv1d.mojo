@@ -351,11 +351,26 @@ def causal_conv1d_channel_first_fwd_gpu[
     """GPU causal conv1d for channel-first (B, C, L) layout.
 
     One channel per block-row; each thread owns `kNElts` consecutive sequence
-    positions of a single channel (coalesced along the contiguous L axis). Weights
-    are loaded into width-specialized SIMD registers. `has_bias` / `has_seq_idx`
-    gate the bias add and packed-sequence masking.
+    positions of a single channel (coalesced along the contiguous L axis).
+    `has_bias` / `has_seq_idx` gate the bias add and packed-sequence masking.
 
     Grid: (ceildiv(seqlen, kNThreads * kNElts), dim, batch). Block: kNThreads.
+
+    Optimization (GB10: 3.17 µs vs Dao-AILab 3.30 µs at mamba prefill, fp32;
+    2.82 vs 4.06 µs in bf16). The dense path is **issue-bound on load
+    instructions**, not bandwidth-bound — the ~3 MB working set is L2-resident,
+    and a naive scalar kernel issues `kNElts*kWidth` global loads per thread. The
+    vectorized fast path below replaces those with a single width-`kNElts` vector
+    load for the thread's tile plus `kWidth-1` L2-cached halo scalars, computed
+    fully unrolled at comptime (so every tap/halo index is a compile-time
+    constant) and a single vector store. It engages only when the access is
+    L-contiguous, unmasked, full-tile, and `kNElts`-aligned; everything else
+    (seq_idx / non-contiguous / ragged tail) falls back to the scalar loop, which
+    is what keeps correctness general. The op picks `kNThreads*kNElts == 256` so
+    every thread is busy at the common L=256 (Dao's 512-tile idles half the
+    block). Accumulation is float32 regardless of storage dtype so bf16/fp16 stay
+    within parity. Rationale + what regressed (shmem, warp-shuffle, channel-fold)
+    is in `.planning/causal-conv1d-optimization-notes.md`.
     """
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
@@ -583,6 +598,18 @@ def causal_conv1d_channel_last_fwd_gpu[
 
     Grid: (ceildiv(seqlen, kNElts), ceildiv(dim, kNThreads), batch).
     Block: kNThreads.
+
+    Optimization (GB10: 3.15 µs vs Dao-AILab 3.55 µs at mamba prefill, fp32).
+    The thread->channel mapping is the whole game: a thread-per-position mapping
+    (the obvious port) reads L positions `dim` elements apart across the warp and
+    is **uncoalesced** — that version measured 14.5 µs, 4x slower. Mapping
+    threads to channels instead makes each per-position load a coalesced warp
+    transaction along the contiguous C axis. Channels are independent, so unlike
+    channel-first there is no cross-thread halo to share (no shared memory
+    needed); per-thread sliding-window reuse (load each of `kNElts+kWidth-1`
+    window positions once) removes the only remaining redundancy. The op uses 64
+    channels/block x 8 positions/thread. Trajectory and the failed shared-memory
+    /vector-load attempts are in `.planning/causal-conv1d-optimization-notes.md`.
     """
     var batch_id: Int = block_idx.z
     var nSeqLen: Int = seqlen
