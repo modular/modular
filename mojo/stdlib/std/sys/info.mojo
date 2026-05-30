@@ -455,7 +455,7 @@ def is_triple[
 
 
 @always_inline("nodebug")
-def _is_nvidia_gpu_any[archs: List[String]]() -> Bool:
+def _is_nvidia_gpu_any[archs: List[StaticString]]() -> Bool:
     comptime for arch in archs:
         comptime if is_nvidia_gpu[arch]():
             return True
@@ -463,7 +463,7 @@ def _is_nvidia_gpu_any[archs: List[String]]() -> Bool:
 
 
 @always_inline("nodebug")
-def _has_nvidia_gpu_any[archs: List[String]]() -> Bool:
+def _has_nvidia_gpu_any[archs: List[StaticString]]() -> Bool:
     comptime if not has_nvidia_gpu_accelerator():
         return False
 
@@ -473,7 +473,7 @@ def _has_nvidia_gpu_any[archs: List[String]]() -> Bool:
     return False
 
 
-comptime _SM_80X_ARCHS: List[String] = ["sm_80", "sm_86", "sm_89"]
+comptime _SM_80X_ARCHS: List[StaticString] = ["sm_80", "sm_86", "sm_89"]
 
 
 @always_inline("nodebug")
@@ -486,7 +486,7 @@ def _has_sm_8x() -> Bool:
     return _has_nvidia_gpu_any[_SM_80X_ARCHS]()
 
 
-comptime _SM_90X_ARCHS: List[String] = ["sm_90", "sm_90a"]
+comptime _SM_90X_ARCHS: List[StaticString] = ["sm_90", "sm_90a"]
 
 
 @always_inline("nodebug")
@@ -499,7 +499,7 @@ def _has_sm_9x() -> Bool:
     return _has_nvidia_gpu_any[_SM_90X_ARCHS]()
 
 
-comptime _SM_100X_ARCHS: List[String] = ["sm_100", "sm_100a"]
+comptime _SM_100X_ARCHS: List[StaticString] = ["sm_100", "sm_100a"]
 
 
 @always_inline("nodebug")
@@ -512,7 +512,7 @@ def _has_sm_100x() -> Bool:
     return _has_nvidia_gpu_any[_SM_100X_ARCHS]()
 
 
-comptime _SM_101X_ARCHS: List[String] = ["sm_101", "sm_101a"]
+comptime _SM_101X_ARCHS: List[StaticString] = ["sm_101", "sm_101a"]
 
 
 @always_inline("nodebug")
@@ -525,7 +525,7 @@ def _has_sm_101x() -> Bool:
     return _has_nvidia_gpu_any[_SM_101X_ARCHS]()
 
 
-comptime _SM_103X_ARCHS: List[String] = ["sm_103", "sm_103a"]
+comptime _SM_103X_ARCHS: List[StaticString] = ["sm_103", "sm_103a"]
 
 
 @always_inline("nodebug")
@@ -538,7 +538,7 @@ def _has_sm_103x() -> Bool:
     return _has_nvidia_gpu_any[_SM_103X_ARCHS]()
 
 
-comptime _SM_110X_ARCHS: List[String] = ["sm_110", "sm_110a"]
+comptime _SM_110X_ARCHS: List[StaticString] = ["sm_110", "sm_110a"]
 
 
 @always_inline("nodebug")
@@ -551,7 +551,7 @@ def _has_sm_110x() -> Bool:
     return _has_nvidia_gpu_any[_SM_110X_ARCHS]()
 
 
-comptime _SM_120X_ARCHS: List[String] = ["sm_120", "sm_120a"]
+comptime _SM_120X_ARCHS: List[StaticString] = ["sm_120", "sm_120a"]
 
 
 @always_inline("nodebug")
@@ -564,7 +564,7 @@ def _has_sm_120x() -> Bool:
     return _has_nvidia_gpu_any[_SM_120X_ARCHS]()
 
 
-comptime _SM_121X_ARCHS: List[String] = ["sm_121", "sm_121a"]
+comptime _SM_121X_ARCHS: List[StaticString] = ["sm_121", "sm_121a"]
 
 
 @always_inline("nodebug")
@@ -698,7 +698,7 @@ def is_nvidia_gpu[subarch: StaticString]() -> Bool:
     return is_nvidia_gpu() and CompilationTarget._is_arch[subarch]()
 
 
-comptime _AMD_GCN_ARCHS: List[String] = [
+comptime _AMD_GCN_ARCHS: List[StaticString] = [
     "gfx600",
     "gfx601",
     "gfx602",
@@ -735,7 +735,7 @@ def _is_amd_gcn() -> Bool:
     return False
 
 
-comptime _AMD_RDNA1_ARCHS: List[String] = [
+comptime _AMD_RDNA1_ARCHS: List[StaticString] = [
     "gfx1010",  # Navi 10 (RX 5700 XT/5700)
     "gfx1011",  # Navi 12
     "gfx1012",  # Navi 14 (RX 5500 XT/5500)
@@ -763,7 +763,7 @@ def _is_amd_rdna1() -> Bool:
     return False
 
 
-comptime _AMD_RDNA2_ARCHS: List[String] = [
+comptime _AMD_RDNA2_ARCHS: List[StaticString] = [
     "gfx1030",  # Navi 21 (RX 6900/6800)
     "gfx1031",  # Navi 22 (RX 6700)
     "gfx1032",  # Navi 23 (RX 6600)
@@ -797,7 +797,7 @@ def _is_amd_rdna2() -> Bool:
     return False
 
 
-comptime _AMD_RDNA3_ARCHS: List[String] = [
+comptime _AMD_RDNA3_ARCHS: List[StaticString] = [
     "gfx1100",  # Navi 31
     "gfx1101",  # Navi 32
     "gfx1102",  # Navi 33
@@ -1375,7 +1375,7 @@ def has_nvidia_gpu_accelerator[subarch: String]() -> Bool:
 
 
 @always_inline("nodebug")
-def has_nvidia_gpu_accelerator[subarchs: List[String]]() -> Bool:
+def has_nvidia_gpu_accelerator[subarchs: List[StaticString]]() -> Bool:
     """Returns True if the host system has an NVIDIA GPU of the specified
     sub-architecture and False otherwise.
 
