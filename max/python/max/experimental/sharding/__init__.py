@@ -62,6 +62,7 @@ from .mappings import (
     resolve_partials_mapping,
 )
 from .mesh import DeviceMesh, MeshContext, get_active_mesh
+from .mode import ShardingError, current_solver, isolated_solver, mode
 from .per_shard_dim import (
     PerShardDim,
     cell_at,
@@ -136,6 +137,7 @@ __all__ = [
     "Replicated",
     "ReshardBehavior",
     "Sharded",
+    "ShardingError",
     "Solver",
     "SpecEntry",
     "TensorLayout",
@@ -143,6 +145,7 @@ __all__ = [
     "build_action_set",
     "cell_at",
     "cheapest_action",
+    "current_solver",
     "default_mesh",
     "enumerate_feasible_actions",
     "force_replicated_action_set",
@@ -156,8 +159,10 @@ __all__ = [
     "is_per_shard_dim",
     "is_replicated",
     "is_sharded",
+    "isolated_solver",
     "local_shard_shape_from_global",
     "make_per_shard_dim",
+    "mode",
     "remap_sharded",
     "replicate_all",
     "replicate_axes",

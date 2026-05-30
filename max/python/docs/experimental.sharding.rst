@@ -108,6 +108,7 @@ Exceptions
    :template: autosummary/class.rst
 
    ConversionError
+   ShardingError
 
 Constants
 ---------
@@ -131,6 +132,7 @@ Functions
    build_action_set
    cell_at
    cheapest_action
+   current_solver
    default_mesh
    enumerate_feasible_actions
    force_replicated_action_set
@@ -143,8 +145,10 @@ Functions
    is_per_shard_dim
    is_replicated
    is_sharded
+   isolated_solver
    local_shard_shape_from_global
    make_per_shard_dim
+   mode
    remap_sharded
    replicate_all
    replicate_axes

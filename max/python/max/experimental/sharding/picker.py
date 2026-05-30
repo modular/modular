@@ -29,7 +29,11 @@ from max.experimental.sharding.cost import (
 )
 from max.experimental.sharding.mappings import PlacementMapping
 from max.experimental.sharding.mesh import DeviceMesh
-from max.experimental.sharding.placements import Partial, Replicated
+from max.experimental.sharding.placements import (
+    Partial,
+    Replicated,
+    ShardingError,
+)
 from max.experimental.sharding.types import TensorLayout
 
 __all__ = [
@@ -355,7 +359,7 @@ class PartialsOnly:
         for action in actions:
             if _only_partial_to_replicated(action, in_layouts):
                 return action
-        raise RuntimeError(
+        raise ShardingError(
             "PartialsOnly: no feasible action that only resolves "
             "Partial → Replicated. Pin input placements upstream or switch "
             "to a more permissive picker."

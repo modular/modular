@@ -49,6 +49,10 @@ are reported as infeasible by the cost model.
 """
 
 
+class ShardingError(RuntimeError):
+    """Raised when a sharding constraint cannot be satisfied."""
+
+
 def _shard_sizes_along_axis(global_size: int, num_shards: int) -> list[int]:
     """Splits ``global_size`` across ``num_shards``; sizes differ by at most 1.
 
@@ -204,7 +208,7 @@ class Sharded(Placement):
             )
         elif isinstance(parent_dim, SymbolicDim):
             if not allow_symbolic_mint:
-                raise ValueError(
+                raise ShardingError(
                     f"Sharded.local_dim cannot mint per-shard cells from "
                     f"bare symbolic {parent_dim!r}. Thread a per-shard "
                     "wrapper (``tensor.shape[k]`` from a sharded input) "
@@ -219,7 +223,7 @@ class Sharded(Placement):
                 for device_idx in range(mesh.num_devices)
             )
         elif isinstance(parent_dim, AlgebraicDim):
-            raise ValueError(
+            raise ShardingError(
                 f"Sharded.local_dim cannot split algebraic {parent_dim!r}: "
                 "shard the underlying operand instead, or thread a "
                 "per-shard wrapper (``tensor.shape[k]`` from a sharded "

@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
 from max.driver import CPU
 from max.dtype import DType
@@ -29,10 +31,12 @@ from max.experimental.sharding import (
     PartialsOnly,
     Replicated,
     Sharded,
+    ShardingError,
     TensorLayout,
     build_action_set,
     enumerate_feasible_actions,
 )
+from max.experimental.sharding._diagnostics import report_reshard
 from max.experimental.sharding.placements import Placement
 
 
@@ -120,6 +124,16 @@ class TestPassthroughPreference:
         assert input_placements(picked) == (Sharded(0),)
 
 
+class TestPartialResolveRefusal:
+    def test_raises_when_only_non_partial_reshards_available(self) -> None:
+        mesh = mesh_1d(4)
+        lay = layout(mesh, (16,), (Sharded(0),))
+        rows = [AxisAssignment((Replicated(),), Replicated())]
+        menu = build_action_set(rows, layouts=(lay,))
+        with pytest.raises(ShardingError):
+            PartialsOnly()(menu, (lay,))
+
+
 class TestEnumerateFeasibleActions:
     def test_filters_infeasible_combinations(self) -> None:
         mesh = mesh_1d(2)
@@ -150,3 +164,55 @@ class TestEnumerateFeasibleActions:
         assert (Sharded(0), Sharded(1)) in produced
         assert (Sharded(1), Sharded(0)) in produced
         assert (Sharded(1), Sharded(1)) in produced
+
+
+class TestReportReshard:
+    def _picked_with_reshard(self) -> tuple[TensorLayout, ActionSet]:
+        mesh = mesh_1d(4)
+        lay = layout(mesh, (1024,), (Partial(),))
+        rows = [AxisAssignment((Replicated(),), Replicated())]
+        menu = build_action_set(rows, layouts=(lay,))
+        return lay, menu
+
+    def test_silent_emits_nothing_and_does_not_raise(self) -> None:
+        lay, menu = self._picked_with_reshard()
+        solver = GreedyReshard(on_reshard="silent")
+        picked = solver(menu, (lay,))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            report_reshard(solver, "op_name", (lay,), menu, picked)
+        assert caught == []
+
+    def test_warn_emits_user_warning(self) -> None:
+        lay, menu = self._picked_with_reshard()
+        solver = GreedyReshard(on_reshard="warn")
+        picked = solver(menu, (lay,))
+        with pytest.warns(UserWarning):
+            report_reshard(solver, "op_name", (lay,), menu, picked)
+
+    def test_raise_raises_sharding_error(self) -> None:
+        lay, menu = self._picked_with_reshard()
+        solver = GreedyReshard(on_reshard="raise")
+        picked = solver(menu, (lay,))
+        with pytest.raises(ShardingError):
+            report_reshard(solver, "op_name", (lay,), menu, picked)
+
+    def test_warn_is_silent_when_already_matching(self) -> None:
+        mesh = mesh_1d(4)
+        lay = layout(mesh, (16,), (Replicated(),))
+        menu = build_action_set([], layouts=(lay,))
+        solver = GreedyReshard(on_reshard="warn")
+        picked = solver(menu, (lay,))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            report_reshard(solver, "op_name", (lay,), menu, picked)
+        assert caught == []
+
+    def test_no_reshard_solver_is_silent(self) -> None:
+        lay, menu = self._picked_with_reshard()
+        solver = NoReshard()
+        picked = solver(menu, (lay,))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            report_reshard(solver, "op_name", (lay,), menu, picked)
+        assert caught == []
