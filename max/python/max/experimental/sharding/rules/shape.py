@@ -46,7 +46,7 @@ from ..cost import P, R, build_action_set
 # ── split / slice helpers (only consumers of these are split_rule / slice_tensor_rule) ──
 
 
-def localize_sizes(
+def _localize_sizes(
     sizes: Sequence[DimLike],
     axis: int,
     ndim: int,
@@ -113,7 +113,7 @@ def _expand_ellipsis(
     return out
 
 
-def slice_modifies_axis(indices: SliceIndices, axis: int, ndim: int) -> bool:
+def _slice_modifies_axis(indices: SliceIndices, axis: int, ndim: int) -> bool:
     """``True`` if the slice expression touches ``axis``."""
     if not isinstance(indices, (list, tuple)):
         return True
@@ -200,7 +200,7 @@ def _per_rank_target(
     return PerShard(per_rank_shapes)
 
 
-class RepackContext(NamedTuple):
+class _RepackContext(NamedTuple):
     """Per-call finalize context for ``concat`` / ``stack``."""
 
     n: int
@@ -213,7 +213,7 @@ class RepackContext(NamedTuple):
     """``True`` when the user passed a ``tuple`` (vs. ``list``)."""
 
 
-def _repack_finalize(action: Action, ctx: RepackContext) -> Action:
+def _repack_finalize(action: Action, ctx: _RepackContext) -> Action:
     """Repacks ``inputs[:ctx.n]`` into the user's container followed by ``ctx.axis``."""
     mappings = action.inputs[: ctx.n]
     container: list[DeviceMapping] | tuple[DeviceMapping, ...] = (
@@ -309,14 +309,14 @@ def flatten_rule(
     return build_action_set(rows, layouts=(x,), extras=(start_dim, end_dim))
 
 
-class ReshapeContext(NamedTuple):
+class _ReshapeContext(NamedTuple):
     """Per-call finalize context for ``reshape``."""
 
     x: TensorLayout
     shape: Shape
 
 
-def _reshape_finalize(action: Action, ctx: ReshapeContext) -> Action:
+def _reshape_finalize(action: Action, ctx: _ReshapeContext) -> Action:
     """Per-rank projection using the chosen output placements."""
     in_mapping = action.inputs[0]
     assert isinstance(in_mapping, PlacementMapping)
@@ -547,7 +547,7 @@ def reshape_rule(x: TensorLayout, shape: Any) -> ActionSet:
         extras=(shape,),
         result_shape=new_shape,
         finalize=_reshape_finalize,
-        finalize_ctx=ReshapeContext(x=x, shape=new_shape),
+        finalize_ctx=_ReshapeContext(x=x, shape=new_shape),
     )
 
 
@@ -650,7 +650,7 @@ def rebind_rule(
     )
 
 
-class BroadcastContext(NamedTuple):
+class _BroadcastContext(NamedTuple):
     """Per-call finalize context for ``broadcast_to``."""
 
     x: TensorLayout
@@ -658,7 +658,7 @@ class BroadcastContext(NamedTuple):
     out_dims: Iterable[DimLike] | None
 
 
-def _broadcast_to_finalize(action: Action, ctx: BroadcastContext) -> Action:
+def _broadcast_to_finalize(action: Action, ctx: _BroadcastContext) -> Action:
     """Per-rank projection using the chosen output placements."""
     in_mapping = action.inputs[0]
     assert isinstance(in_mapping, PlacementMapping)
@@ -718,7 +718,7 @@ def broadcast_to_rule(
         layouts=(x,),
         extras=(shape, out_dims),
         finalize=_broadcast_to_finalize,
-        finalize_ctx=BroadcastContext(
+        finalize_ctx=_BroadcastContext(
             x=x, shape=target_shape, out_dims=out_dims
         ),
     )
@@ -756,7 +756,7 @@ def concat_rule(
         layouts=layouts,
         extras=(axis,),
         finalize=_repack_finalize,
-        finalize_ctx=RepackContext(
+        finalize_ctx=_RepackContext(
             n=len(layouts), axis=axis, is_tuple=isinstance(original_vals, tuple)
         ),
     )
@@ -775,7 +775,7 @@ def stack_rule(values: Iterable[TensorLayout], axis: int = 0) -> ActionSet:
         layouts=layouts,
         extras=(axis,),
         finalize=_repack_finalize,
-        finalize_ctx=RepackContext(
+        finalize_ctx=_RepackContext(
             n=len(layouts), axis=axis, is_tuple=isinstance(values, tuple)
         ),
     )
@@ -870,7 +870,11 @@ def pad_rule(
 def slice_tensor_rule(x: TensorLayout, indices: SliceIndices) -> ActionSet:
     """Strategies for ``slice_tensor``: sharding allowed on non-sliced axes only."""
     sliced = (
-        {ax for ax in range(x.rank) if slice_modifies_axis(indices, ax, x.rank)}
+        {
+            ax
+            for ax in range(x.rank)
+            if _slice_modifies_axis(indices, ax, x.rank)
+        }
         if indices is not None
         else set()
     )
@@ -980,7 +984,7 @@ def scatter_add_rule(
     )
 
 
-class SplitContext(NamedTuple):
+class _SplitContext(NamedTuple):
     """Per-call finalize context for ``split``."""
 
     x: TensorLayout
@@ -988,10 +992,10 @@ class SplitContext(NamedTuple):
     axis: int
 
 
-def _split_finalize(action: Action, ctx: SplitContext) -> Action:
+def _split_finalize(action: Action, ctx: _SplitContext) -> Action:
     chosen = action.inputs[0]
     assert isinstance(chosen, PlacementMapping)
-    local_sizes = localize_sizes(
+    local_sizes = _localize_sizes(
         [Dim(sz) for sz in ctx.split_sizes],
         ctx.axis,
         ctx.x.rank,
@@ -1027,5 +1031,5 @@ def split_rule(
         layouts=(x,),
         extras=(split_sizes, axis),
         finalize=_split_finalize,
-        finalize_ctx=SplitContext(x=x, split_sizes=split_sizes, axis=axis),
+        finalize_ctx=_SplitContext(x=x, split_sizes=split_sizes, axis=axis),
     )

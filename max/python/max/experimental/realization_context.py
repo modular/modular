@@ -18,8 +18,8 @@ exits. This is the default behavior.
 
 This has a huge concrete advantage over eagerly executing one operation
 at a time: by controlling the boundary of where the eager context starts
-and ends, we can give advanced users a tool to _enable fine-grained
-bounds for automatic fusion_!
+and ends, we can give advanced users a tool to *enable fine-grained
+bounds for automatic fusion*.
 
 In practice the easiest way to do this is to mark a function as
 `F.functional`. This function is then assumed to be "atomic" for the
@@ -140,7 +140,7 @@ def _interpreter_max_ops() -> int:
     compiler so fusion optimizations can kick in.
 
     Returns:
-        The op-count threshold (default 30).
+        The op-count threshold (default 1024).
     """
     raw = os.environ.get(_INTERPRETER_MAX_OPS_ENV_VAR, "")
     if raw.strip().isdigit():
@@ -780,3 +780,15 @@ def lazy() -> Generator[None]:
     """Defers tensor realization until explicitly awaited."""
     with LazyRealizationContext() as ctx, realization_context(ctx):
         yield
+
+
+__all__ = [
+    "EagerRealizationContext",
+    "GraphRealizationContext",
+    "LazyRealizationContext",
+    "ensure_context",
+    "in_graph_context",
+    "lazy",
+    "seed",
+    "set_seed",
+]

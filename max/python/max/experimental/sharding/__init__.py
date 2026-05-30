@@ -11,7 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Distributed-tensor sharding: placements, mappings, per-op rules, cost, picker."""
+"""Distributed-tensor sharding: how a tensor is laid out across a device mesh.
+
+Describes, for every op, what redistribution to perform before the op runs.
+The pipeline is deliberately local: per-op rules over a placement vocabulary
+(:class:`Replicated`, :class:`Sharded`, :class:`Partial`), scored by a single
+cost model, with one pluggable :class:`Solver` making the choice at each
+dispatch. There is no whole-graph trace.
+
+A ``mode(...)`` block selects the solver for the ops inside it:
+
+.. code-block:: python
+
+    from max.experimental.functional import matmul, relu
+    from max.experimental.sharding import GreedyReshard, mode
+
+    with mode(GreedyReshard(on_reshard="warn")):
+        y = relu(matmul(a, b))
+
+Shipped solvers: :class:`GreedyReshard` (cheapest feasible action),
+:class:`NoReshard` (first feasible, prefers passthrough), and
+:class:`PartialsOnly` (only ``Partial -> Replicated`` resolutions).
+
+This module avoids the overloaded word "rank". A *device* is one accelerator;
+a *mesh axis* is one named dimension of the :class:`DeviceMesh` grid; a
+*shard* is one device's piece of a tensor; a *tensor axis* is a dimension of
+the tensor itself.
+"""
 
 from .action import (
     Action,

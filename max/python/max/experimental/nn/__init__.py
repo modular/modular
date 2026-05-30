@@ -10,7 +10,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Module implementation using eager tensors."""
+"""Module framework for :mod:`max.experimental`.
+
+Provides the :class:`Module` base class, the :func:`module_dataclass`
+decorator, and :meth:`Module.compile`, which traces ``forward`` against
+symbolic inputs and returns an ahead-of-time-compiled ``CompiledModel``. The
+same ``forward`` body runs eagerly, traces to a :class:`~max.graph.Graph`, or
+compiles, depending on the active realization context.
+
+Example:
+
+.. code-block:: python
+
+    from max.driver import Accelerator
+    from max.dtype import DType
+    from max.experimental.tensor import Tensor
+    from max.experimental.nn import Module, module_dataclass
+    from max.graph import TensorType
+
+    @module_dataclass
+    class MyLayer(Module):
+        weight: Tensor
+        bias: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x @ self.weight.T + self.bias
+
+    model = MyLayer(weight=Tensor.zeros([10, 5]), bias=Tensor.zeros([10]))
+    model.to(Accelerator())                       # weights to GPU
+    y = model(Tensor.ones([3, 5]))                # eager forward
+
+    input_type = TensorType(DType.float32, ["batch", 5], device=model.device)
+    compiled = model.compile(input_type)          # AOT-compiled model
+"""
 
 from .conv import Conv2d
 from .embedding import Embedding

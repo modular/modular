@@ -47,7 +47,7 @@ def cond_rule(
     )
 
 
-class WhileLoopContext(NamedTuple):
+class _WhileLoopContext(NamedTuple):
     """Per-call finalize context for ``while_loop``.
 
     Args:
@@ -67,7 +67,7 @@ class WhileLoopContext(NamedTuple):
     container_type: type
 
 
-def _while_loop_finalize(action: Action, ctx: WhileLoopContext) -> Action:
+def _while_loop_finalize(action: Action, ctx: _WhileLoopContext) -> Action:
     mappings = action.inputs[: ctx.n]
     suggested: list[DeviceMapping | Value[Any]] = []
     out_mappings: list[DeviceMapping] = []
@@ -124,7 +124,7 @@ def while_loop_rule(
     return dataclasses.replace(
         pool,
         finalize=_while_loop_finalize,
-        finalize_ctx=WhileLoopContext(
+        finalize_ctx=_WhileLoopContext(
             items=items,
             n=n,
             predicate=predicate,
