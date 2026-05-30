@@ -71,6 +71,34 @@ Distributed types
    DistributedType
    TensorLayout
 
+Per-op decisions
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   Action
+   ActionSet
+   AxisAssignment
+   FeasibilityContext
+   PerShard
+
+Pickers
+-------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   GreedyReshard
+   NoReshard
+   PartialsOnly
+   ReshardBehavior
+   Solver
+
 Exceptions
 ----------
 
@@ -81,6 +109,17 @@ Exceptions
 
    ConversionError
 
+Constants
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   P
+   R
+
 Functions
 ---------
 
@@ -89,8 +128,12 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   build_action_set
    cell_at
+   cheapest_action
    default_mesh
+   enumerate_feasible_actions
+   force_replicated_action_set
    global_dim
    global_shape
    global_shape_from_local
@@ -110,3 +153,4 @@ Functions
    shape_at
    shard_shape
    sharded_symbolic_dim
+   transition_cost

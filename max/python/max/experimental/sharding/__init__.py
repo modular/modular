@@ -35,6 +35,20 @@ each other for the standard placement vocabulary. Conversions that would
 lose information raise :class:`ConversionError`.
 """
 
+from .action import (
+    Action,
+    ActionSet,
+    AxisAssignment,
+    PerShard,
+)
+from .cost import (
+    FeasibilityContext,
+    P,
+    R,
+    build_action_set,
+    force_replicated_action_set,
+    transition_cost,
+)
 from .mappings import (
     ConversionError,
     DeviceMapping,
@@ -57,6 +71,15 @@ from .per_shard_dim import (
     is_per_shard_dim,
     make_per_shard_dim,
     shape_at,
+)
+from .picker import (
+    GreedyReshard,
+    NoReshard,
+    PartialsOnly,
+    ReshardBehavior,
+    Solver,
+    cheapest_action,
+    enumerate_feasible_actions,
 )
 from .placements import (
     Collective,
@@ -86,6 +109,9 @@ from .types import (
 )
 
 __all__ = [
+    "Action",
+    "ActionSet",
+    "AxisAssignment",
     "Collective",
     "ConversionError",
     "DeviceMapping",
@@ -93,20 +119,33 @@ __all__ = [
     "DistributedBufferType",
     "DistributedTensorType",
     "DistributedType",
+    "FeasibilityContext",
+    "GreedyReshard",
     "MeshContext",
     "NamedMapping",
+    "NoReshard",
+    "P",
     "Partial",
+    "PartialsOnly",
+    "PerShard",
     "PerShardDim",
     "Placement",
     "PlacementMapping",
+    "R",
     "ReduceOp",
     "Replicated",
+    "ReshardBehavior",
     "Sharded",
+    "Solver",
     "SpecEntry",
     "TensorLayout",
     "_shard_sizes_along_axis",
+    "build_action_set",
     "cell_at",
+    "cheapest_action",
     "default_mesh",
+    "enumerate_feasible_actions",
+    "force_replicated_action_set",
     "get_active_mesh",
     "global_dim",
     "global_shape",
@@ -127,4 +166,5 @@ __all__ = [
     "shape_at",
     "shard_shape",
     "sharded_symbolic_dim",
+    "transition_cost",
 ]
