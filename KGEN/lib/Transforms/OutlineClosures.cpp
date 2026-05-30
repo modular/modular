@@ -255,12 +255,9 @@ void OutlineClosuresPass::runOnOperation() {
              regionDecl.getFuncTypeGenerator().getInputParamTypes())
           partialBindings.push_back(UnboundAttr::get(paramType));
 
-        Type resultType = BindParamsAttr::inferResultType(
-            wrapperSymbol, partialBindings, /*evaluationContext=*/nullptr);
-        signature =
-            BindParamsAttr::get(wrapperSymbol.getContext(), wrapperSymbol,
-                                partialBindings, resultType,
-                                /*evaluationContext=*/nullptr);
+        signature = BindParamsAttr::get(wrapperSymbol.getContext(),
+                                        wrapperSymbol, partialBindings,
+                                        /*evaluationContext=*/nullptr);
       }
 
       // The param region's location should be the fusion of the file location

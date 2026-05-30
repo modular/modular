@@ -224,8 +224,12 @@ VerifiedParamBindings::specializeGenerator(TypedAttr generator) const {
       specializeGeneratorType(sugarCast<GeneratorType>(generator.getType()));
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       generator.getContext(), dischargedBodyConstraints);
-  return BindParamsAttr::get(generator.getContext(), generator, getValues(),
-                             discharged, specializedType, evaluationContext);
+  TypedAttr result =
+      BindParamsAttr::get(generator.getContext(), generator, getValues(),
+                          discharged, evaluationContext);
+  assert(isEqualCanon(result.getType(), specializedType) &&
+         "inferred bind_params type must match verified specialization");
+  return result;
 }
 
 Type VerifiedParamBindings::specializeGeneratorType(

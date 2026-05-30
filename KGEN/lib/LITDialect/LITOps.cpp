@@ -493,22 +493,32 @@ TypedAttr FnOp::getBoundReference(ParameterEvaluationContext &evalContext,
   if (!bindings) // We allow null for convenience.
     bindings = ParameterExprArrayAttr::get(getContext(), {});
 
-  // SymbolConstantAttr provides a type for the SymbolRefAttr with the
-  // parameters substituted in.  The function reference binds any parameter
-  // bindings present on the access (in bindings), which typically concretizes
-  // the signature.
-  FnTypeGeneratorType resultType;
-  std::tie(resultType, bindings) = getUnboundSpecializedSignature(
-      getFullSignature(), bindings, &evalContext);
-
   if (ParamDeclAttr decl = getParamDeclAttr()) {
+    // KGEN expects different binding types than Lit can provide.
+    SmallVector<TypedAttr> reboundBindings;
+    ParameterEvaluator evaluator;
+    evaluator.setEvaluationContext(&evalContext);
+    for (auto [binding, type] :
+         llvm::zip(bindings, getFullSignature().getInputParamTypes())) {
+      TypedAttr value = binding;
+      Type unboundType = evaluator.getReboundType(type);
+      if (unboundType != value.getType())
+        value = ParamOperatorAttr::getRebind(value, unboundType);
+      evaluator.appendIndexBinding(value);
+      reboundBindings.push_back(value);
+    }
+
     TypedAttr generator = ParamDeclRefAttr::get(decl);
-    return BindParamsAttr::get(generator.getContext(), generator, bindings,
-                               resultType, &evalContext);
+    return BindParamsAttr::get(generator.getContext(), generator,
+                               reboundBindings, &evalContext);
   }
 
-  return SymbolConstantAttr::get(getFullyResolvedSymbolRef(*this), resultType,
-                                 bindings);
+  SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
+  auto unboundSymbol = SymbolConstantAttr::get(symbol, getFullSignature());
+  auto resultType = cast<FuncTypeGeneratorType>(
+      BindParamsAttr::inferResultType(unboundSymbol, bindings,
+                                      /*discharged=*/{}, &evalContext));
+  return SymbolConstantAttr::get(symbol, resultType, bindings);
 }
 
 SymbolConstantAttr
@@ -563,10 +573,8 @@ TypedAttr FnOp::getFuncLiteralGenerator(
   }
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       unboundGen.getContext(), dischargedBodyConstraints);
-  Type resultType = BindParamsAttr::inferResultType(unboundGen, bindings,
-                                                    discharged, &evalContext);
   return BindParamsAttr::get(unboundGen.getContext(), unboundGen, bindings,
-                             discharged, resultType, &evalContext);
+                             discharged, &evalContext);
 }
 
 bool FnOp::isSynthetic() { return getSynthetic(); }

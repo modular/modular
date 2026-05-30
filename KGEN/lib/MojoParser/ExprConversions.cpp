@@ -437,11 +437,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   ArrayRef<TypedAttr> calleeParamValues =
       ArrayRef(paramValues)
           .take_back(actualSignature.getInputParamTypes().size());
-  Type calleeParamType = BindParamsAttr::inferResultType(
-      calleeGenerator, calleeParamValues, &shared.getEvaluationContext());
-  TypedAttr calleeParam = BindParamsAttr::get(
-      calleeGenerator.getContext(), calleeGenerator, calleeParamValues,
-      calleeParamType, &shared.getEvaluationContext());
+  TypedAttr calleeParam =
+      BindParamsAttr::get(calleeGenerator.getContext(), calleeGenerator,
+                          calleeParamValues, &shared.getEvaluationContext());
   assert(sugarCast<FnTypeGeneratorType>(calleeParam.getType())
              .getInputParamTypes()
              .size() == 0);

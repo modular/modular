@@ -65,6 +65,28 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
     return std::make_pair(scopeAttr, WalkResult::skip());
   });
 
+  replacer.addReplacement(
+      [&](BindParamsAttr attr) -> std::pair<TypedAttr, WalkResult> {
+        // Lifting may change the type of a parameter value, creating temporary
+        // illegal IR. Rebind it back to the original, correct type if this
+        // happened so that BindParamsAttr can still infer the result type
+        // correctly.
+        TypedAttr generator =
+            cast<TypedAttr>(replacer.replace(attr.getGenerator()));
+
+        SmallVector<TypedAttr> paramValues;
+        for (TypedAttr paramValue : attr.getParamValues()) {
+          TypedAttr value = cast<TypedAttr>(replacer.replace(paramValue));
+          if (value.getType() != paramValue.getType())
+            value = ParamOperatorAttr::getRebind(value, paramValue.getType());
+          paramValues.push_back(value);
+        }
+
+        return {BindParamsAttr::get(generator.getContext(), generator,
+                                    paramValues, attr.getDischarged()),
+                WalkResult::skip()};
+      });
+
   replacer.addReplacement([&](ParamOperatorAttr op)
                               -> std::pair<Attribute, WalkResult> {
     // Expressions cannot be hoisted out of a condition because it only

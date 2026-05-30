@@ -869,7 +869,7 @@ kgen.generator @returnParam<T: type, I>(%arg : !kgen.param<T>) -> !kgen.param<T>
 
 // CHECK-LABEL: @partialBindSignature3
 kgen.generator @partialBindSignature3<T: type>(%arg : !kgen.param<T>) {
-  // CHECK-NEXT: kgen.param.declare fn: <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> = <@returnParam<?, 32>>
+  // CHECK-NEXT: kgen.param.declare fn: <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> = <@returnParam<:type ?, 32>>
   kgen.param.declare fn: <type>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> =
     <bind_params(:<type, index>(!kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> @returnParam, ?, 32)>
   kgen.return
