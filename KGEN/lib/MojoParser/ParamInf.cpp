@@ -1116,8 +1116,10 @@ LogicalResult ParamInf::finalizeWithUnbound() {
           diag << " of parent struct '" << structOp.getDeclName().getValue()
                << "'";
 
-          diag.attachNote(*declIfKnown->getParentDecl())
-              << " struct declared here";
+          if (auto *parentDecl = declIfKnown->getParentDecl())
+            diag.attachNote(*parentDecl) << " struct declared here";
+          else
+            diag.attachNote(structOp.getLoc()) << " struct declared here";
           return;
         }
       }
