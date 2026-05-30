@@ -817,38 +817,31 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       aliasValue = convertedValue.getIfPValue();
     } else {
       // Handle cases where this is a default value.
-
-      // Found the decl in the trait that provided the default value, body
-      // resolve the aliasDeclOp to get the concrete value.
-      ArrayRef<ASTDecl *> decls = traitDecl.lookupInCurrentScope(name);
-      assert(decls.size() == 1 &&
-             isa_and_nonnull<AliasDeclOp>(decls.front()->getIfOperation()) &&
-             "expected one AliasDeclOp in the trait");
-      // NOTE: Strictly speaking, we only need the alias type here to verify
-      // conformance, but AliasDeclOp resolves it body (i.e., value) as well in
-      // at signature resolution phase. The extra work is a source of parsing
-      // cycle.
-      if (failed(shared.declResolver->resolveSignature(*decls.front(),
-                                                       traitDecl.getLoc()))) {
-        hadErrors = true;
-        return success();
+      // Check if the alias was already satisfied by the default from
+      // another (refined) trait?
+      // Clone from this struct-side defaulted op directly rather than
+      // re-looking up on `traitDecl` and resolving from there.
+      // Skip the clone if a prior conformance check (e.g. Foo→A) already
+      // materialized this default into the struct body to avoid duplication.
+      AliasDeclOp clonedDefault;
+      if (structAliasDecl->resolvedness == DeclResolvedness::body) {
+        clonedDefault = structAliasDeclOp;
+      } else {
+        AliasDeclOp defaultAliasOp = structAliasDeclOp;
+        // Position builder before the first ConformanceOp (there will always
+        // be one since the struct should at least conform the trait that we
+        // are cloning the defaulted value from).
+        ConformanceOp firstConformanceOp =
+            *structDeclOp.getFields().front().getOps<ConformanceOp>().begin();
+        ImplicitLocOpBuilder builder(structDeclOp.getLoc(),
+                                     firstConformanceOp.getOperation());
+        clonedDefault = cast<AliasDeclOp>(builder.clone(*defaultAliasOp));
+        Attribute newValAttr =
+            traitAliasReplacer.replace(clonedDefault->getAttrDictionary());
+        clonedDefault->setAttrs(cast<DictionaryAttr>(newValAttr));
+        structAliasDecl->setIRValue(clonedDefault);
+        structAliasDecl->resolvedness = DeclResolvedness::body;
       }
-
-      auto defaultAliasOp = cast<AliasDeclOp>(decls.front()->getIfOperation());
-      // Position builder before the first ConformanceOp (there will always be
-      // one since the struct should at least conform the trait that we are
-      // cloning the defaulted value from).
-
-      ConformanceOp firstConformanceOp =
-          *structDeclOp.getFields().front().getOps<ConformanceOp>().begin();
-      ImplicitLocOpBuilder builder(structDeclOp.getLoc(),
-                                   firstConformanceOp.getOperation());
-      auto clonedDefault = cast<AliasDeclOp>(builder.clone(*defaultAliasOp));
-      Attribute newValAttr =
-          traitAliasReplacer.replace(clonedDefault->getAttrDictionary());
-      clonedDefault->setAttrs(cast<DictionaryAttr>(newValAttr));
-      structAliasDecl->setIRValue(clonedDefault);
-      structAliasDecl->resolvedness = DeclResolvedness::body;
 
       aliasValue = PValue(clonedDefault.getValueAttr());
       // Since we cloned the defaulted op from the trait, there is no need for
