@@ -255,7 +255,7 @@ def _handle_constant_external(
     name = op.name
     if _weights_registry is None:
         raise RuntimeError(
-            f"No weights registry provided to interpreter, cannot resolve "
+            "No weights registry provided to interpreter, cannot resolve "
             f"external constant '{name}'"
         )
     if name not in _weights_registry:
@@ -353,7 +353,7 @@ def _handle_mutable_store_slice(
     dtype = in_buffer.dtype
     if dtype is DType.float4_e2m1fn:
         raise NotImplementedError(
-            f"mo.mutable.store.slice interpreter handler does not yet "
+            "mo.mutable.store.slice interpreter handler does not yet "
             f"support dtype {dtype}"
         )
 
@@ -1342,7 +1342,8 @@ def _handle_param_to_value(
                         )
                 else:
                     raise NotImplementedError(
-                        f"Unsupported dimension attr in param.to_value: {dim_attr}"
+                        "Unsupported dimension attr in param.to_value:"
+                        f" {dim_attr}"
                     )
             # Create a 1D tensor of si64 values
             result_np = np.array(shape_values, dtype=np.int64)
@@ -1363,7 +1364,8 @@ def _handle_param_to_value(
             return [output]
 
     raise NotImplementedError(
-        f"Unsupported param.to_value result type: {result_type}, attr: {value_attr}"
+        f"Unsupported param.to_value result type: {result_type}, attr:"
+        f" {value_attr}"
     )
 
 
@@ -1998,12 +2000,12 @@ def _handle_gather(
 ) -> Sequence[Buffer]:
     """Handle mo.gather by dispatching to Mojo gather kernel.
 
-    Operands: input (tensor), indices (tensor), axis (scalar int64 on CPU).
-    Output shape: input[:axis] + indices.shape + input[axis+1:]
+    Operands: input (tensor), indices (tensor). ``axis`` is a compile-time
+    ``index`` attribute. Output shape: input[:axis] + indices.shape + input[axis+1:]
 
     Args:
         op: The gather operation.
-        inputs: Input buffers - input tensor, indices tensor, axis scalar.
+        inputs: Input buffers - input tensor, indices tensor.
 
     Returns:
         List containing the gathered tensor buffer.
@@ -2012,12 +2014,11 @@ def _handle_gather(
 
     assert isinstance(inputs[0], Buffer)  # input
     assert isinstance(inputs[1], Buffer)  # indices
-    assert isinstance(inputs[2], Buffer)  # axis (scalar int64, always CPU)
 
     input_buffer = inputs[0]
     indices_buffer = inputs[1]
 
-    axis = int(inputs[2].to_numpy().item())
+    axis = op.axis
     if axis < 0:
         axis += len(input_buffer.shape)
 
@@ -2458,13 +2459,13 @@ def _handle_scatter(
 ) -> Sequence[Buffer]:
     """Handle mo.scatter by copying input then scattering updates via Mojo.
 
-    Operands: input, updates, indices, axis (scalar int64 on CPU),
-    outputParamDecls.
-    Output: same shape/dtype as input with updates scattered along axis.
+    Operands: input, updates, indices. ``axis`` is a compile-time ``index``
+    attribute. Output: same shape/dtype as input with updates scattered along
+    axis.
 
     Args:
         op: The scatter operation.
-        inputs: Input buffers - input, updates, indices, axis.
+        inputs: Input buffers - input, updates, indices.
 
     Returns:
         List containing the scattered tensor buffer.
@@ -2474,13 +2475,12 @@ def _handle_scatter(
     assert isinstance(inputs[0], Buffer)  # input
     assert isinstance(inputs[1], Buffer)  # updates
     assert isinstance(inputs[2], Buffer)  # indices
-    assert isinstance(inputs[3], Buffer)  # axis (scalar int64, always CPU)
 
     input_buffer = inputs[0]
     updates_buffer = inputs[1]
     indices_buffer = inputs[2]
 
-    axis = int(inputs[3].to_numpy().item())
+    axis = op.axis
     in_shape = list(input_buffer.shape)
     ndim = len(in_shape)
     if axis < 0:
@@ -3981,7 +3981,7 @@ def _handle_distributed_scatter(
     results = list(op.results)
     num_outputs = len(results) - 1  # exclude trailing chain
     assert num_outputs == num_inputs, (
-        f"scatter expects N inputs and N outputs, "
+        "scatter expects N inputs and N outputs, "
         f"got {num_inputs} inputs and {num_outputs} outputs"
     )
 
@@ -4027,7 +4027,7 @@ def _handle_distributed_broadcast(
     results = list(op.results)
     num_outputs = len(results) - 1  # exclude trailing chain
     assert num_outputs == num_signal_bufs, (
-        f"broadcast expects one output per signal buffer, "
+        "broadcast expects one output per signal buffer, "
         f"got {num_outputs} outputs and {num_signal_bufs} signal buffers"
     )
 
@@ -4174,7 +4174,7 @@ def _handle_distributed_reducescatter_sum(
     results = list(op.results)
     num_outputs = len(results) - 1  # exclude trailing chain
     assert num_outputs == num_inputs, (
-        f"reducescatter expects N inputs and N outputs, "
+        "reducescatter expects N inputs and N outputs, "
         f"got {num_inputs} inputs and {num_outputs} outputs"
     )
 

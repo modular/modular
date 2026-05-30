@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for scatter."""
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import builtin, kgen, rmo
 from max.dtype import DType
 
 from .. import dtype_promotion
@@ -53,19 +53,22 @@ def scatter(
 
     if not (-input.rank <= axis < input.rank):
         raise ValueError(
-            f"Invalid axis value {axis}. Axis must be in range [-{input.rank}, {input.rank - 1}]"
+            f"Invalid axis value {axis}. Axis must be in range [-{input.rank},"
+            f" {input.rank - 1}]"
         )
 
     updates = TensorValue(updates)
     if input.dtype != updates.dtype:
         raise ValueError(
-            f"The input dtype '{input.dtype}' and updates dtype '{updates.dtype}' must match."
+            f"The input dtype '{input.dtype}' and updates dtype"
+            f" '{updates.dtype}' must match."
         )
 
     indices = TensorValue(indices)
     if indices.dtype not in [DType.int32, DType.int64]:
         raise ValueError(
-            f"Invalid indices dtype: '{indices.dtype}'. Indices must be of type int32 or int64."
+            f"Invalid indices dtype: '{indices.dtype}'. Indices must be of type"
+            " int32 or int64."
         )
 
     assert_same_device(input=input, updates=updates, indices=indices)
@@ -76,16 +79,14 @@ def scatter(
         updates = transfer_to(updates, DeviceRef.CPU())
         indices = transfer_to(indices, DeviceRef.CPU())
     # TODO(GEX-2197): Add GPU kernel support for scatter.
-    axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
-
     result = Graph.current._add_op_generated(
         rmo.MoScatterOp,
-        input.type,
-        input,
-        updates,
-        indices,
-        axis_constant,
-        kgen.ParamDeclArrayAttr([]),
+        result=input.type,
+        input=input,
+        updates=updates,
+        indices=indices,
+        axis=builtin.IntegerAttr(builtin.IndexType(), axis),
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
     if old_device is not None:
         return transfer_to(result, old_device)
@@ -121,7 +122,8 @@ def scatter_nd(
 
     if indices.dtype not in (DType.int32, DType.int64):
         raise ValueError(
-            f"Invalid indices dtype: '{indices.dtype}'. Indices must be of type int32 or int64."
+            f"Invalid indices dtype: '{indices.dtype}'. Indices must be of type"
+            " int32 or int64."
         )
 
     assert_same_device(input=input, updates=updates, indices=indices)
