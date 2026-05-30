@@ -47,6 +47,7 @@ def run_causal_conv1d_channel_last_gpu[
     activation: StaticString,
     kNThreads: Int = 128,
     kNElts: Int = 4,
+    has_seq_idx: Bool = False,
 ](
     batch: Int,
     dim: Int,
@@ -55,12 +56,18 @@ def run_causal_conv1d_channel_last_gpu[
     ctx: DeviceContext,
     rtol: Float64 = 0.01,
 ) raises:
-    """Compare the channel-last GPU kernel against the CPU core."""
+    """Compare the channel-last GPU kernel against the CPU core.
+
+    When `has_seq_idx` is set, a two-segment packed-sequence mask (split at
+    seqlen//2) is supplied so the per-tap seq_idx scalar path — which the
+    coalesced fast path defers to — is validated against the CPU reference.
+    """
     var n = batch * seqlen * dim
 
     var input_heap = ctx.enqueue_create_host_buffer[dtype](n)
     var weight_heap = ctx.enqueue_create_host_buffer[dtype](dim * width)
     var bias_heap = ctx.enqueue_create_host_buffer[dtype](dim)
+    var seq_idx_heap = ctx.enqueue_create_host_buffer[dtype](batch * seqlen)
     var result_gpu_heap = ctx.enqueue_create_host_buffer[dtype](n)
     var result_cpu_heap = ctx.enqueue_create_host_buffer[dtype](n)
     ctx.synchronize()
@@ -68,6 +75,12 @@ def run_causal_conv1d_channel_last_gpu[
     rand[dtype](input_heap.unsafe_ptr(), n)
     rand[dtype](weight_heap.unsafe_ptr(), dim * width)
     rand[dtype](bias_heap.unsafe_ptr(), dim)
+    var split = seqlen // 2
+    for bb in range(batch):
+        for ll in range(seqlen):
+            seq_idx_heap.unsafe_ptr()[bb * seqlen + ll] = Scalar[dtype](
+                1 if (has_seq_idx and ll >= split) else 0
+            )
 
     # Channel-last strides for (B, L, C).
     var x_batch_stride: UInt32 = UInt32(seqlen * dim)
@@ -76,6 +89,8 @@ def run_causal_conv1d_channel_last_gpu[
     var weight_c_stride: UInt32 = UInt32(width)
     var weight_width_stride: UInt32 = 1
     var bias_stride: UInt32 = 1
+    var seq_idx_batch_stride: UInt32 = UInt32(seqlen)
+    var seq_idx_l_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
 
@@ -85,11 +100,14 @@ def run_causal_conv1d_channel_last_gpu[
     )
     var weight_tt = TileTensor(weight_heap.unsafe_ptr(), row_major(dim, width))
     var bias_tt = TileTensor(bias_heap.unsafe_ptr(), row_major(dim))
+    var seq_idx_tt = TileTensor(
+        seq_idx_heap.unsafe_ptr(), row_major(batch, seqlen)
+    )
     var result_cpu_tt = TileTensor(
         result_cpu_heap.unsafe_ptr(), row_major(batch, seqlen, dim)
     )
 
-    causal_conv1d_fwd_cpu[dtype, dtype, dtype, dtype, dtype, True, False](
+    causal_conv1d_fwd_cpu[dtype, dtype, dtype, dtype, dtype, True, has_seq_idx](
         batch,
         dim,
         seqlen,
@@ -98,7 +116,7 @@ def run_causal_conv1d_channel_last_gpu[
         weight_tt.as_immut(),
         result_cpu_tt,
         bias_tt.as_immut(),
-        bias_tt.as_immut(),
+        seq_idx_tt.as_immut(),
         x_batch_stride,
         x_c_stride,
         x_l_stride,
@@ -108,8 +126,8 @@ def run_causal_conv1d_channel_last_gpu[
         x_c_stride,
         x_l_stride,
         bias_stride,
-        UInt32(0),
-        UInt32(0),
+        seq_idx_batch_stride,
+        seq_idx_l_stride,
         silu_activation,
     )
 
@@ -117,24 +135,26 @@ def run_causal_conv1d_channel_last_gpu[
     var input_device = ctx.enqueue_create_buffer[dtype](n)
     var weight_device = ctx.enqueue_create_buffer[dtype](dim * width)
     var bias_device = ctx.enqueue_create_buffer[dtype](dim)
+    var seq_idx_device = ctx.enqueue_create_buffer[dtype](batch * seqlen)
     var output_device = ctx.enqueue_create_buffer[dtype](n)
 
     with ctx.push_context():
         ctx.enqueue_copy(input_device, input_heap.unsafe_ptr())
         ctx.enqueue_copy(weight_device, weight_heap.unsafe_ptr())
         ctx.enqueue_copy(bias_device, bias_heap.unsafe_ptr())
+        ctx.enqueue_copy(seq_idx_device, seq_idx_heap.unsafe_ptr())
 
     var input_device_tt = TileTensor(
         input_device, row_major(batch, seqlen, dim)
     )
     var weight_device_tt = TileTensor(weight_device, row_major(dim, width))
     var bias_device_tt = TileTensor(bias_device, row_major(dim))
+    var seq_idx_device_tt = TileTensor(seq_idx_device, row_major(batch, seqlen))
     var output_device_tt = TileTensor(
         output_device, row_major(batch, seqlen, dim)
     )
     var silu_activation_int8 = Int8(silu_activation)
 
-    # bias_device_tt stands in for the unused seq_idx argument (has_seq_idx=0).
     @parameter
     @always_inline
     def launch[kWidth: Int]() raises:
@@ -152,7 +172,7 @@ def run_causal_conv1d_channel_last_gpu[
                 weight_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
+                seq_idx_device_tt.LayoutType,
             ]
         ]()
         with ctx.push_context():
@@ -166,7 +186,7 @@ def run_causal_conv1d_channel_last_gpu[
                 weight_device_tt.as_immut(),
                 output_device_tt,
                 bias_device_tt.as_immut(),
-                bias_device_tt.as_immut(),
+                seq_idx_device_tt.as_immut(),
                 x_batch_stride,
                 x_c_stride,
                 x_l_stride,
@@ -176,10 +196,10 @@ def run_causal_conv1d_channel_last_gpu[
                 x_c_stride,
                 x_l_stride,
                 bias_stride,
-                UInt32(0),
-                UInt32(0),
+                seq_idx_batch_stride,
+                seq_idx_l_stride,
                 Int8(True),
-                Int8(False),
+                Int8(has_seq_idx),
                 silu_activation_int8,
                 grid_dim=(
                     ceildiv(seqlen, kNElts),
@@ -316,4 +336,20 @@ def test_channel_last_gpu_bf16() raises:
     for width in [2, 4]:
         run_causal_conv1d_channel_last_gpu[DType.bfloat16, "silu", 128, 8](
             1, 1536, 256, width, ctx=ctx, rtol=0.03
+        )
+
+
+def test_channel_last_gpu_seq_idx() raises:
+    """Packed-sequence (seq_idx) path: the coalesced fast path defers to the
+    per-tap scalar scan when seq_idx is active. Validates that masked scan
+    against the CPU reference across all widths."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for width in [1, 2, 3, 4]:
+        run_causal_conv1d_channel_last_gpu[DType.float32, "silu", 64, 8, True](
+            2, 16, 64, width, ctx=ctx
+        )
+        run_causal_conv1d_channel_last_gpu[DType.float32, "silu", 64, 8, True](
+            1, 1536, 256, width, ctx=ctx
         )

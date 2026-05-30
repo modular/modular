@@ -53,6 +53,7 @@ def run_causal_conv1d_gpu[
     activation: StaticString,
     kNThreads: Int = 128,
     kNElts: Int = 4,
+    has_seq_idx: Bool = False,
 ](
     batch: Int,
     dim: Int,
@@ -61,7 +62,13 @@ def run_causal_conv1d_gpu[
     ctx: DeviceContext,
     rtol: Float64 = 0.01,
 ) raises:
-    """Test causal conv1d GPU kernel against CPU reference."""
+    """Test causal conv1d GPU kernel against the CPU reference.
+
+    When `has_seq_idx` is set, a packed-sequence mask is supplied (two segments
+    split at seqlen//2) so the GPU scalar fallback — which the vectorized fast
+    path defers to whenever seq_idx is active — is exercised against the CPU
+    reference computing the same masked convolution.
+    """
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_2d = Layout.row_major[2]()
@@ -79,6 +86,12 @@ def run_causal_conv1d_gpu[
     var bias_heap = ctx.enqueue_create_host_buffer[dtype](dim)
     var bias_h = LayoutTensor[dtype, layout_1d, _](
         bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
+    )
+    # seq_idx (B, L) packed-sequence tags. Always allocated (passed to both the
+    # CPU ref and the GPU kernel); only read when has_seq_idx is True.
+    var seq_idx_heap = ctx.enqueue_create_host_buffer[dtype](batch * seqlen)
+    var seq_idx_h = LayoutTensor[dtype, layout_2d, _](
+        seq_idx_heap, RuntimeLayout[layout_2d].row_major(Index(batch, seqlen))
     )
     var result_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
         batch * dim * seqlen
@@ -99,6 +112,14 @@ def run_causal_conv1d_gpu[
     rand[dtype](input_h.ptr, input_h.size())
     rand[dtype](weight_h.ptr, weight_h.size())
     rand[dtype](bias_h.ptr, bias_h.size())
+    # Two packed segments split at seqlen // 2 (so taps near the split are
+    # masked); a single segment (all zeros) otherwise.
+    var split = seqlen // 2
+    for b in range(batch):
+        for l in range(seqlen):
+            seq_idx_h.ptr[b * seqlen + l] = Scalar[dtype](
+                1 if (has_seq_idx and l >= split) else 0
+            )
 
     var input_buf = input_h
     var weight_buf = weight_h
@@ -116,6 +137,8 @@ def run_causal_conv1d_gpu[
     var out_c_stride: UInt32 = UInt32(seqlen)
     var out_l_stride: UInt32 = 1
     var bias_stride: UInt32 = 1
+    var seq_idx_batch_stride: UInt32 = UInt32(seqlen)
+    var seq_idx_l_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
 
@@ -131,9 +154,9 @@ def run_causal_conv1d_gpu[
     var result_cpu_tt = TileTensor(
         result_cpu_buf.ptr, row_major(batch, dim, seqlen)
     )
+    var seq_idx_tt = TileTensor(seq_idx_h.ptr, row_major(batch, seqlen))
 
-    # Run CPU reference. Read-only inputs are immutable borrows, so bias_tt
-    # stands in for the unused seq_idx argument (has_seq_idx=False).
+    # Run CPU reference (same has_seq_idx as the GPU launch below).
     causal_conv1d_fwd_cpu[
         dtype,
         dtype,
@@ -141,7 +164,7 @@ def run_causal_conv1d_gpu[
         dtype,
         dtype,
         True,
-        False,
+        has_seq_idx,
     ](
         batch,
         dim,
@@ -151,7 +174,7 @@ def run_causal_conv1d_gpu[
         weight_tt.as_immut(),
         result_cpu_tt,
         bias_tt.as_immut(),
-        bias_tt.as_immut(),
+        seq_idx_tt.as_immut(),
         x_batch_stride,
         x_c_stride,
         x_l_stride,
@@ -161,8 +184,8 @@ def run_causal_conv1d_gpu[
         out_c_stride,
         out_l_stride,
         bias_stride,
-        UInt32(0),
-        UInt32(0),
+        seq_idx_batch_stride,
+        seq_idx_l_stride,
         silu_activation,
     )
 
@@ -170,6 +193,7 @@ def run_causal_conv1d_gpu[
     var input_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var weight_device = ctx.enqueue_create_buffer[dtype](dim * width)
     var bias_device = ctx.enqueue_create_buffer[dtype](dim)
+    var seq_idx_device = ctx.enqueue_create_buffer[dtype](batch * seqlen)
     var output_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
 
     # Copy data to device
@@ -177,6 +201,7 @@ def run_causal_conv1d_gpu[
         ctx.enqueue_copy(input_device, input_buf.ptr)
         ctx.enqueue_copy(weight_device, weight_buf.ptr)
         ctx.enqueue_copy(bias_device, bias_buf.ptr)
+        ctx.enqueue_copy(seq_idx_device, seq_idx_h.ptr)
 
     # Create device LayoutTensors
     var input_device_tensor = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
@@ -211,6 +236,10 @@ def run_causal_conv1d_gpu[
             dim,
         ),
     )
+    var seq_idx_device_tt = TileTensor(
+        seq_idx_device,
+        row_major(batch, seqlen),
+    )
     var output_device_tt = TileTensor(
         output_device,
         row_major(batch, dim, seqlen),
@@ -237,7 +266,7 @@ def run_causal_conv1d_gpu[
                 weight_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
+                seq_idx_device_tt.LayoutType,
             ]
         ]()
         with ctx.push_context():
@@ -251,7 +280,7 @@ def run_causal_conv1d_gpu[
                 weight_device_tt.as_immut(),
                 output_device_tt,
                 bias_device_tt.as_immut(),
-                bias_device_tt.as_immut(),
+                seq_idx_device_tt.as_immut(),
                 x_batch_stride,
                 x_c_stride,
                 x_l_stride,
@@ -261,10 +290,10 @@ def run_causal_conv1d_gpu[
                 out_c_stride,
                 out_l_stride,
                 bias_stride,
-                UInt32(0),
-                UInt32(0),
+                seq_idx_batch_stride,
+                seq_idx_l_stride,
                 Int8(True),
-                Int8(False),
+                Int8(has_seq_idx),
                 silu_activation_int8,
                 grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
                 block_dim=(kNThreads),
@@ -431,6 +460,24 @@ def test_gpu_causal_conv1d_fp16_fast_path() raises:
     for width in [2, 4]:
         run_causal_conv1d_gpu[DType.float16, "silu", 64, 8](
             1, 1536, 512, width, ctx=ctx, rtol=0.01
+        )
+
+
+def test_gpu_causal_conv1d_seq_idx() raises:
+    """Packed-sequence (seq_idx) path: the vectorized fast path defers to the
+    scalar fallback whenever seq_idx is active, so this validates that fallback
+    (with masking across the segment boundary) against the CPU reference.
+    Covers all widths and both a full-tile (L=512) and a small (L=16) shape.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    for width in [1, 2, 3, 4]:
+        run_causal_conv1d_gpu[DType.float32, "silu", 128, 4, True](
+            2, 8, 16, width, ctx=ctx
+        )
+        run_causal_conv1d_gpu[DType.float32, "silu", 128, 4, True](
+            1, 1536, 512, width, ctx=ctx
         )
 
 
