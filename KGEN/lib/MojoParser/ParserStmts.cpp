@@ -1438,7 +1438,8 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     }
 
     // Re-raise the contextual exception.
-    emitter.emitResult(MRValue(tryOp.getErr()), SyntheticNode(loc.Start), dest);
+    SyntheticNode synthNode(loc.Start);
+    emitter.emitResult(MRValue(tryOp.getErr()), &synthNode, dest);
   }
 
   // If we are in a debug build, we inject a call to a stop hook for the
@@ -2080,7 +2081,8 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
       auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
       moveDest = ExprDest(errorVar, EC_RaiseValue);
     }
-    getEmitter().emitResult(MRValue(errDecl), SyntheticNode(loc), moveDest);
+    SyntheticNode synthNode(loc);
+    getEmitter().emitResult(MRValue(errDecl), &synthNode, moveDest);
     if (inferringErrorType)
       getEmitter().checkInferredErrorType(errSlot.getRValueType(), loc);
     RaiseOp::create(builder, tryOp.getLoc());
@@ -2221,7 +2223,8 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
         getEmitter().checkInferredErrorType(errDecl.getType().getElementType(),
                                             finallyLoc);
       }
-      getEmitter().emitResult(MRValue(errDecl), SyntheticNode(smLoc), dest);
+      SyntheticNode node(smLoc);
+      getEmitter().emitResult(MRValue(errDecl), &node, dest);
       LIT::RaiseOp::create(builder, loc);
       TryYieldOp::create(builder, loc);
     }

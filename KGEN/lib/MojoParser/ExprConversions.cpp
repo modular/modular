@@ -403,7 +403,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
         thunkSignature.getArgListAttrs().getPassingKind(actualArgIndex) ==
             PassingKind::KwOnly)
       name = thunkSignature.getArgName(actualArgIndex);
-    operands.addKeyword(name, {value, node});
+    operands.addKeyword(name, {value, &node});
   }
 
   // Allocate the value dest for the call. Set the value dest to the result
@@ -469,10 +469,10 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // If we need an explicit copy out, emit a call to T(copy=) on the result into
   // the ultimate dest.
   if (needsExplicitCopyOut) {
-    CallOperands operands(CallSyntax::kImplicitCopyCtor, node,
+    CallOperands operands(CallSyntax::kImplicitCopyCtor, &node,
                           std::move(explicitCopyOutDest));
     operands.addKeyword(StringAttr::get(shared.getContext(), "copy"),
-                        {callResult, node});
+                        {callResult, &node});
     callResult = emitter.emitConstructorCall(callResult.getRValueType(),
                                              std::move(operands));
   }
@@ -482,7 +482,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     ExprDest dest(MLValue(thunk.getArguments().back()), EC_ConversionThunk);
     if (!emitter.emitNamedMethodCall(
             "__await__", CallOperands(CallSyntax::kMethodCall, &node,
-                                      std::move(dest), {{callResult, node}})))
+                                      std::move(dest), {{callResult, &node}})))
       return {};
   }
 
@@ -490,7 +490,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // result slot.
   Value retVal;
   if (hasRegisterResult)
-    retVal = emitter.emitSRValue({callResult, node}, EC_ConversionThunk);
+    retVal = emitter.emitSRValue({callResult, &node}, EC_ConversionThunk);
 
   emitter.emitNormalReturn(mlirLoc, retVal);
   return thunk;

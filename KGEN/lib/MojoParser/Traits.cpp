@@ -211,7 +211,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     SyntheticNode syntheticNode(structDecl.getLoc());
     auto [wrapperSignature, bindings] = getTraitFunctionSignature(
         emitter, traitFn, structSelfType, traitDecl.getSymbolRef(),
-        syntheticNode, traitAliasReplacer);
+        &syntheticNode, traitAliasReplacer);
 
     // If a function with matching signature is defined in the same trait we're
     // golden since existing machinery takes care of reporting there is a
@@ -636,7 +636,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
     SyntheticNode syntheticNode(structDecl.getLoc());
     auto [traitSignature, bindings] = getTraitFunctionSignature(
-        emitter, traitFn, selfType, parent, syntheticNode, traitAliasReplacer);
+        emitter, traitFn, selfType, parent, &syntheticNode, traitAliasReplacer);
 
     // Get the conformance constraint for checking method constraints.
     ConstraintAttr conformanceConstraint = op.getConstraintAttr();
@@ -764,7 +764,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       // they need to be converted first to the trait's alias's type (see
       // SAVMBCTATBS).
       SyntheticNode synthNode(structAliasDecl->getLoc());
-      if (!IREmitter::canImplicitlyConvertToType({initializerExpr, synthNode},
+      if (!IREmitter::canImplicitlyConvertToType({initializerExpr, &synthNode},
                                                  traitAliasType,
                                                  emitter.getDeclScope())) {
         diag->attachNote(traitAliasDecl->getLoc())
@@ -812,7 +812,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       // somewhere.
       ExprDest dest(traitAliasType, EC_AliasValue);
       CValue convertedValue = emitter.emitImplicitConversionToType(
-          {initializerExpr, synthNode}, traitAliasType, dest);
+          {initializerExpr, &synthNode}, traitAliasType, dest);
 
       aliasValue = convertedValue.getIfPValue();
     } else {

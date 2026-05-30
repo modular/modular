@@ -2608,7 +2608,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     auto overrideAliasParamValue =
         PValue(ParamDeclRefAttr::get(aliasDeclOp.getParamDecl()));
     if (!IREmitter::canImplicitlyConvertToType(
-            {overrideAliasParamValue, synthNode},
+            {overrideAliasParamValue, &synthNode},
             parentAliasDeclOp.getParamDecl().getType(), traitDecl)) {
       auto diag = emitError(aliasDeclOp->getLoc(), "invalid redefinition of '")
                   << name << "': cannot convert " << ASTType(overrideAliasType)
