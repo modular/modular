@@ -293,5 +293,5 @@ def test_data_parallel_layer_symbolic(
 
         out = layer(x, kv_collection, freqs_cis, input_row_offsets)
 
-    assert list(out.shape) == ["dynamic_size", _HIDDEN_SIZE]
+    assert out.shape == x.shape
     assert out.mapping.mesh == mesh

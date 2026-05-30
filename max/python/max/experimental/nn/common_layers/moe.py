@@ -22,7 +22,6 @@ from collections.abc import Callable
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.functional.utils import ensure_context
 from max.experimental.nn import Linear
 from max.experimental.nn.common_layers.functional_kernels import (
     Independent,
@@ -33,6 +32,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
 from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.nn.module import Module
 from max.experimental.nn.sequential import ModuleList
+from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -191,7 +191,7 @@ class MoE(Module[[Tensor], Tensor]):
         Returns:
             Tensor with shape (seq_len, hidden_dim)
         """
-        seq_len = x.shape[0]
+        seq_len = x.per_rank_shape[0]
 
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)

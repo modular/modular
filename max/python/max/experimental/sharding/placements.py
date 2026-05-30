@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal, TypeGuard
+from typing import Literal
 
 from max.graph.dim import AlgebraicDim, Dim, DimLike, StaticDim, SymbolicDim
 from max.graph.shape import Shape
@@ -281,40 +281,6 @@ class Partial(Placement):
         if isinstance(other, Sharded):
             return "reduce_scatter"
         return super().transition_to(other)
-
-
-def is_replicated(p: Placement) -> TypeGuard[Replicated]:
-    """``True`` if ``p`` is :class:`Replicated`."""
-    return isinstance(p, Replicated)
-
-
-def is_sharded(p: Placement, axis: int | None = None) -> TypeGuard[Sharded]:
-    """``True`` if ``p`` is :class:`Sharded`, optionally on a specific axis."""
-    return isinstance(p, Sharded) and (axis is None or p.axis == axis)
-
-
-def is_partial(p: Placement) -> TypeGuard[Partial]:
-    """``True`` if ``p`` is :class:`Partial`."""
-    return isinstance(p, Partial)
-
-
-def remap_sharded(
-    placements: tuple[Placement, ...],
-    fn: Callable[[int], int],
-) -> tuple[Placement, ...]:
-    """Applies ``fn`` to every :class:`Sharded` axis index."""
-    return tuple(
-        Sharded(fn(p.axis)) if isinstance(p, Sharded) else p for p in placements
-    )
-
-
-def resolve_partials(
-    placements: tuple[Placement, ...],
-) -> tuple[Placement, ...]:
-    """Replaces all :class:`Partial` placements with :class:`Replicated`."""
-    return tuple(
-        Replicated() if isinstance(p, Partial) else p for p in placements
-    )
 
 
 def shard_shape(

@@ -15,9 +15,7 @@
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import Generator, Iterable
-from contextvars import ContextVar
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from .mesh import DeviceMesh
@@ -26,7 +24,6 @@ from .placements import (
     Placement,
     Replicated,
     Sharded,
-    resolve_partials,
 )
 
 
@@ -37,58 +34,6 @@ class ConversionError(Exception):
 SpecEntry = str | tuple[str, ...] | None
 """One entry in a named spec: a mesh axis name, a tuple of names
 (multi-axis sharding), or ``None`` for replicated."""
-
-
-_DEFAULT_MESH: ContextVar[DeviceMesh | None] = ContextVar(
-    "_DEFAULT_MESH", default=None
-)
-"""Ambient mesh consulted at mapping construction time.
-
-When a :class:`DeviceMapping` or :class:`NamedMapping` is built with the
-trivial singleton mesh (``DeviceMesh.single(...)``, axis name ``"_"``)
-and this context var is set, construction swaps the mesh for the
-ambient one before resolving placements. Layers that declare sharding
-intent on a per-parameter singleton (for example
-``NamedMapping(self.weight.mesh, (None, "TP"))`` in
-``RowParallelLinear``) materialize the intent the moment the model is
-constructed inside a :func:`default_mesh` block, with no deferred
-resolution machinery.
-"""
-
-
-@contextlib.contextmanager
-def default_mesh(mesh: DeviceMesh) -> Generator[DeviceMesh, None, None]:
-    """Sets the ambient mesh for mapping construction inside the block.
-
-    See :data:`_DEFAULT_MESH`.
-
-    .. code-block:: python
-
-        from max.experimental.sharding import DeviceMesh, default_mesh
-
-        mesh = DeviceMesh((Accelerator(),) * 4, (4,), ("tp",))
-        with default_mesh(mesh):
-            model = MyModel(config)   # layer mappings resolve against mesh
-    """
-    token = _DEFAULT_MESH.set(mesh)
-    try:
-        yield mesh
-    finally:
-        _DEFAULT_MESH.reset(token)
-
-
-def _resolve_construction_mesh(mesh: DeviceMesh) -> DeviceMesh:
-    """Returns the ambient mesh when ``mesh`` is the singleton placeholder.
-
-    Returns ``mesh`` unchanged when no ambient mesh is set or when ``mesh``
-    is already a real (non-singleton) mesh.
-    """
-    active = _DEFAULT_MESH.get()
-    if active is None:
-        return mesh
-    if mesh.num_devices == 1 and mesh.axis_names == ("_",):
-        return active
-    return mesh
 
 
 @dataclass(frozen=True)
@@ -105,9 +50,6 @@ class DeviceMapping:
     placements: tuple[Placement, ...]
 
     def __post_init__(self) -> None:
-        resolved = _resolve_construction_mesh(self.mesh)
-        if resolved is not self.mesh and len(self.placements) == resolved.ndim:
-            object.__setattr__(self, "mesh", resolved)
         if len(self.placements) != self.mesh.ndim:
             raise ValueError(
                 f"Need one placement per mesh axis ({self.mesh.ndim}), "
@@ -122,6 +64,24 @@ class DeviceMapping:
     def is_fully_replicated(self) -> bool:
         """``True`` when every mesh axis is :class:`Replicated`."""
         return all(isinstance(p, Replicated) for p in self.placements)
+
+    def to_mesh(self, mesh: DeviceMesh) -> DeviceMapping:
+        """Rebinds this mapping onto ``mesh`` by axis-name correspondence.
+
+        For each axis in ``mesh``: if its name exists in
+        :attr:`self.mesh`, copy that axis's placement; otherwise the
+        axis becomes :class:`Replicated`. Axes unique to the source
+        mesh drop away.
+        """
+        old_by_name = dict(
+            zip(self.mesh.axis_names, self.placements, strict=False)
+        )
+        return DeviceMapping(
+            mesh,
+            tuple(
+                old_by_name.get(name, Replicated()) for name in mesh.axis_names
+            ),
+        )
 
     def __repr__(self) -> str:
         placement_str = ", ".join(repr(p) for p in self.placements)
@@ -160,7 +120,6 @@ class NamedMapping(DeviceMapping):
         *,
         unreduced: Iterable[str] = (),
     ) -> None:
-        mesh = _resolve_construction_mesh(mesh)
         unreduced_t = tuple(unreduced)
         placements = _spec_to_placements(mesh, spec, unreduced_t)
         object.__setattr__(self, "mesh", mesh)
@@ -263,37 +222,3 @@ def _spec_to_placements(
         placements[ax] = Partial()
 
     return tuple(placements)
-
-
-def resolve_partials_mapping(current: DeviceMapping) -> DeviceMapping:
-    """Resolves any :class:`Partial` placements on ``current`` to :class:`Replicated`."""
-    new_p = resolve_partials(current.placements)
-    if new_p == current.placements:
-        return current
-    return DeviceMapping(current.mesh, new_p)
-
-
-def replicate_axes(
-    current: DeviceMapping, tensor_axes: Iterable[int]
-) -> DeviceMapping:
-    """Forces :class:`Replicated` on any mesh axis currently sharding ``tensor_axes``.
-
-    :class:`Partial` placements are preserved; compose with
-    :func:`resolve_partials_mapping` when nonlinear semantics also apply.
-    """
-    bad = frozenset(tensor_axes)
-    new_p = tuple(
-        Replicated() if isinstance(p, Sharded) and p.axis in bad else p
-        for p in current.placements
-    )
-    if new_p == current.placements:
-        return current
-    return DeviceMapping(current.mesh, new_p)
-
-
-def replicate_all(current: DeviceMapping) -> DeviceMapping:
-    """Forces fully-Replicated placement on every mesh axis."""
-    replicated = tuple(Replicated() for _ in range(current.mesh.ndim))
-    if current.placements == replicated:
-        return current
-    return DeviceMapping(current.mesh, replicated)

@@ -11,29 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Placement types and sharding specifications for distributed tensors.
-
-This package is the single source of truth for describing how tensor data is
-distributed across a :class:`DeviceMesh`. It contains:
-
-**Placement types** (mesh-axis-indexed primitives):
-
-* :class:`Replicated`: every device holds a full copy.
-* :class:`Sharded`: tensor is split along a dimension.
-* :class:`Partial`: each device holds a partial result needing reduction.
-
-**Sharding specifications** (high-level wrappers):
-
-* :class:`PlacementMapping`, **mesh-axis-indexed** (PyTorch DTensor style).
-  One :class:`Placement` per mesh axis. Suitable for eager dispatch.
-* :class:`NamedMapping`, **tensor-dimension-indexed** (JAX PartitionSpec
-  style). One entry per tensor dimension names the mesh axis that shards it.
-  Suitable for compiler-driven sharding propagation.
-
-Both spec types share the same :class:`DeviceMesh` and can be converted to
-each other for the standard placement vocabulary. Conversions that would
-lose information raise :class:`ConversionError`.
-"""
+"""Distributed-tensor sharding: placements, mappings, per-op rules, cost, picker."""
 
 from .action import (
     Action,
@@ -55,13 +33,11 @@ from .mappings import (
     NamedMapping,
     PlacementMapping,
     SpecEntry,
-    default_mesh,
     is_fully_replicated,
-    replicate_all,
-    replicate_axes,
-    resolve_partials_mapping,
 )
 from .mesh import DeviceMesh, MeshContext, get_active_mesh
+
+# Re-export so ``sharding.mode(...)`` resolves to the function, not the submodule.
 from .mode import ShardingError, current_solver, isolated_solver, mode
 from .per_shard_dim import (
     PerShardDim,
@@ -89,19 +65,11 @@ from .placements import (
     ReduceOp,
     Replicated,
     Sharded,
-    is_partial,
-    is_replicated,
-    is_sharded,
-    remap_sharded,
-    resolve_partials,
-)
-from .shapes import (
     _shard_sizes_along_axis,
-    global_shape_from_local,
     local_shard_shape_from_global,
     shard_shape,
-    sharded_symbolic_dim,
 )
+from .rules import *
 from .types import (
     DistributedBufferType,
     DistributedTensorType,
@@ -146,30 +114,19 @@ __all__ = [
     "cell_at",
     "cheapest_action",
     "current_solver",
-    "default_mesh",
     "enumerate_feasible_actions",
     "force_replicated_action_set",
     "get_active_mesh",
     "global_dim",
     "global_shape",
-    "global_shape_from_local",
     "is_fully_replicated",
     "is_one",
-    "is_partial",
     "is_per_shard_dim",
-    "is_replicated",
-    "is_sharded",
     "isolated_solver",
     "local_shard_shape_from_global",
     "make_per_shard_dim",
     "mode",
-    "remap_sharded",
-    "replicate_all",
-    "replicate_axes",
-    "resolve_partials",
-    "resolve_partials_mapping",
     "shape_at",
     "shard_shape",
-    "sharded_symbolic_dim",
     "transition_cost",
 ]

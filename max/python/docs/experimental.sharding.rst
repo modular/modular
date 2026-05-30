@@ -133,28 +133,17 @@ Functions
    cell_at
    cheapest_action
    current_solver
-   default_mesh
    enumerate_feasible_actions
    force_replicated_action_set
    global_dim
    global_shape
-   global_shape_from_local
    is_fully_replicated
    is_one
-   is_partial
    is_per_shard_dim
-   is_replicated
-   is_sharded
    isolated_solver
    local_shard_shape_from_global
    make_per_shard_dim
    mode
-   remap_sharded
-   replicate_all
-   replicate_axes
-   resolve_partials
-   resolve_partials_mapping
    shape_at
    shard_shape
-   sharded_symbolic_dim
    transition_cost

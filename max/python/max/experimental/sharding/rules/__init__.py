@@ -11,10 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Placement propagation rules for distributed ops."""
+"""Per-op placement rules: ``{op}_rule(*op_args) -> ActionSet``."""
 
-from ._common import RuleSignature
-from .conv import conv2d_rule, conv2d_transpose_rule, conv3d_rule
+from .buffer import (
+    buffer_store_rule,
+    buffer_store_slice_rule,
+)
+from .control_flow import cond_rule, while_loop_rule
+from .conv import (
+    conv2d_rule,
+    conv2d_transpose_rule,
+    conv3d_rule,
+)
 from .elementwise import (
     binary_rule,
     linear_binary_rule,
@@ -22,39 +30,46 @@ from .elementwise import (
     ternary_rule,
     unary_rule,
 )
-from .matmul import matmul_rule
+from .matmul import matmul_rule, outer_rule
 from .misc import (
     as_interleaved_complex_rule,
     band_part_rule,
-    buffer_store_slice_rule,
-    cond_rule,
+    dequantize_rule,
     fold_rule,
     irfft_rule,
+    masked_scatter_rule,
+    qmatmul_rule,
     reject_distributed_rule,
+    resize_bicubic_rule,
     resize_linear_rule,
+    resize_nearest_rule,
     resize_rule,
-    while_loop_rule,
+    scatter_nd_add_rule,
+    scatter_nd_rule,
 )
-from .norm import normalization_rule
+from .norm import layer_norm_rule, rms_norm_rule
 from .pooling import linear_pool_rule, pool_rule
-from .reduction import linear_reduce_rule, reduce_rule
+from .reduction import (
+    linear_reduce_rule,
+    mean_rule,
+    reduce_rule,
+    softmax_rule,
+)
 from .shape import (
     argsort_rule,
+    broadcast_to_rule,
     chunk_rule,
     flatten_rule,
     gather_nd_rule,
     gather_rule,
-    masked_scatter_rule,
     nonzero_rule,
-    outer_rule,
     pad_rule,
     passthrough_rule,
     permute_rule,
+    rebind_rule,
     repeat_interleave_rule,
-    same_placement_multi_input_rule,
+    reshape_rule,
     scatter_add_rule,
-    scatter_nd_add_rule,
-    scatter_nd_rule,
     scatter_rule,
     slice_tensor_rule,
     split_rule,
@@ -65,3 +80,4 @@ from .shape import (
     transpose_rule,
     unsqueeze_rule,
 )
+from .shape import concat_rule as same_placement_multi_input_rule

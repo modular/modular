@@ -154,12 +154,12 @@ class RotaryEmbedding(Module[..., Tensor]):
             Input activation tensor with rotary positional embeddings applied and
             the same shape as `x`.
         """
-        _, seq_len, _, _ = x.shape
+        _, seq_len, _, _ = x.per_rank_shape
         start_pos = Dim(start_pos)
 
         x_complex = F.as_interleaved_complex(x)
         freqs_cis = self.weight[start_pos : start_pos + seq_len, None, ...]
-        return F.complex_mul(x_complex, freqs_cis).reshape(x.shape)
+        return F.complex_mul(x_complex, freqs_cis).reshape(x.per_rank_shape)
 
 
 class TransposedRotaryEmbedding(RotaryEmbedding):
@@ -185,10 +185,10 @@ class TransposedRotaryEmbedding(RotaryEmbedding):
             Input activation tensor with rotary positional embeddings applied and
             the same shape as `x`.
         """
-        _, seq_len, _, _ = x.shape
-        *rest, head_dim = x.shape
+        _, seq_len, _, _ = x.per_rank_shape
+        *rest, head_dim = x.per_rank_shape
         start_pos = Dim(start_pos)
 
         x_complex = x.reshape((*rest, 2, head_dim // 2)).T
         freqs_cis = self.weight[start_pos : start_pos + seq_len, None, ...]
-        return F.complex_mul(x_complex, freqs_cis).T.reshape(x.shape)
+        return F.complex_mul(x_complex, freqs_cis).T.reshape(x.per_rank_shape)

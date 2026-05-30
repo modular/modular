@@ -45,6 +45,7 @@ in another Graph API usage.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import hashlib
 import logging
@@ -52,6 +53,7 @@ import os
 import threading
 import weakref
 from collections import OrderedDict
+from collections.abc import Generator
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
@@ -61,7 +63,6 @@ from max._core.dialects import builtin, rmo
 from max._mlir_context import in_default_mlir_context
 from max.dtype import DType
 from max.experimental import _passes
-from max.experimental import functional as F
 from max.experimental.support import driver_tensor_type
 from max.experimental.tensor import (
     GraphValue,
@@ -76,7 +77,6 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     Graph,
-    Shape,
     Value,
     ops,
 )
@@ -244,15 +244,12 @@ def _make_unrealized(
     ctx: RealizationContext,
     values: tuple[GraphValue, ...],
     mapping: DeviceMapping | None,
-    global_shape: Shape | None,
 ) -> Tensor:
     """Wraps graph values into a Tensor, dispatching to sharded constructor if needed."""
     state = RealizationState(values, ctx)
     if mapping is not None and mapping.mesh.num_devices > 1:
         placements = mapping.to_placements()
-        return Tensor._from_unrealized_shards(
-            state, mapping.mesh, placements, global_shape
-        )
+        return Tensor._from_unrealized_shards(state, mapping.mesh, placements)
     return Tensor(state=state)
 
 
@@ -564,10 +561,9 @@ class EagerRealizationContext(RealizationContext):
         values: tuple[GraphValue, ...],
         *,
         mapping: DeviceMapping | None = None,
-        global_shape: Shape | None = None,
     ) -> Tensor:
         """Creates an unrealized tensor backed by graph value(s)."""
-        tensor = _make_unrealized(self, values, mapping, global_shape)
+        tensor = _make_unrealized(self, values, mapping)
         self.unrealized.append(weakref.ref(tensor))
         return tensor
 
@@ -630,6 +626,8 @@ class EagerRealizationContext(RealizationContext):
     ):
         self.graph.__exit__(exception_type, exception, traceback)
         if not exception:
+            from max.experimental import functional as F
+
             F._run(self.realize_all())
 
 
@@ -736,10 +734,9 @@ class GraphRealizationContext(RealizationContext):
         values: tuple[GraphValue, ...],
         *,
         mapping: DeviceMapping | None = None,
-        global_shape: Shape | None = None,
     ) -> Tensor:
         """Creates a tensor backed by graph value(s)."""
-        return _make_unrealized(self, values, mapping, global_shape)
+        return _make_unrealized(self, values, mapping)
 
     def __enter__(self):
         self.graph.__enter__()
@@ -752,3 +749,34 @@ class GraphRealizationContext(RealizationContext):
         traceback: TracebackType | None,
     ):
         self.graph.__exit__(exception_type, exception, traceback)
+
+
+def in_graph_context() -> bool:
+    """Returns ``True`` when executing inside a :class:`~max.graph.Graph` context."""
+    try:
+        _ = Graph.current
+    except LookupError:
+        return False
+    return True
+
+
+@contextlib.contextmanager
+def ensure_context() -> Generator[None]:
+    """Ensures a realization context exists for Tensor / TensorValue conversion."""
+    if current_realization_context(None) is not None:
+        yield
+        return
+    ctx: EagerRealizationContext | GraphRealizationContext = (
+        GraphRealizationContext(Graph.current)
+        if in_graph_context()
+        else EagerRealizationContext()
+    )
+    with ctx, realization_context(ctx):
+        yield
+
+
+@contextlib.contextmanager
+def lazy() -> Generator[None]:
+    """Defers tensor realization until explicitly awaited."""
+    with LazyRealizationContext() as ctx, realization_context(ctx):
+        yield

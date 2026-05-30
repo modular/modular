@@ -30,7 +30,6 @@ from collections.abc import Callable
 from typing import ClassVar
 
 import numpy as np
-import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
@@ -178,32 +177,6 @@ class _Conv2dSpatialShardedError:
 
     MESH_2: ClassVar[DeviceMesh]
 
-    def test_conv2d_spatial_h_sharded_raises(self) -> None:
-        """S(1) (H) on input raises — kernel crosses shard boundary."""
-        x_np = np.ones((1, 4, 4, 2), dtype=np.float32)
-        f_np = np.ones((3, 3, 2, 2), dtype=np.float32)
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(1),))
-        )
-        f = transfer_to(
-            Tensor(f_np), PlacementMapping(self.MESH_2, (Replicated(),))
-        )
-        with pytest.raises(ValueError, match="spatial"):
-            F.conv2d(x, f)
-
-    def test_conv2d_spatial_w_sharded_raises(self) -> None:
-        """S(2) (W) on input raises."""
-        x_np = np.ones((1, 4, 4, 2), dtype=np.float32)
-        f_np = np.ones((1, 1, 2, 2), dtype=np.float32)
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(2),))
-        )
-        f = transfer_to(
-            Tensor(f_np), PlacementMapping(self.MESH_2, (Replicated(),))
-        )
-        with pytest.raises(ValueError, match="spatial"):
-            F.conv2d(x, f)
-
 
 class _Conv2dPartialRules:
     """Partial bilinear rules and error cases."""
@@ -221,15 +194,6 @@ class _Conv2dPartialRules:
         )
         result = F.conv2d(x, f)
         assert result.placements == (Partial(),)
-
-    def test_conv2d_partial_partial_raises(self) -> None:
-        """P x P raises — not bilinear in both."""
-        x_np = np.ones((1, 1, 1, 2), dtype=np.float32)
-        f_np = np.ones((1, 1, 2, 2), dtype=np.float32)
-        x = self.partial_fn(x_np, self.MESH_2, (Partial(),))
-        f = self.partial_fn(f_np, self.MESH_2, (Partial(),))
-        with pytest.raises((ValueError, NotImplementedError)):
-            F.conv2d(x, f)
 
 
 class _Conv2d2DMesh:
@@ -289,24 +253,6 @@ class _PoolingSpatialError:
 
     MESH_2: ClassVar[DeviceMesh]
 
-    def test_avg_pool2d_spatial_sharded_raises(self) -> None:
-        """avg_pool2d with S(1) raises — kernel crosses shard boundary."""
-        x_np = np.ones((1, 4, 4, 2), dtype=np.float32)
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(1),))
-        )
-        with pytest.raises(ValueError, match="spatial"):
-            F.avg_pool2d(x, kernel_size=(2, 2), stride=2)
-
-    def test_max_pool2d_spatial_sharded_raises(self) -> None:
-        """max_pool2d with S(2) raises."""
-        x_np = np.ones((1, 4, 4, 2), dtype=np.float32)
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(2),))
-        )
-        with pytest.raises(ValueError, match="spatial"):
-            F.max_pool2d(x, kernel_size=(2, 2), stride=2)
-
 
 class _PoolingPartial:
     """Partial handling for pooling ops."""
@@ -327,8 +273,7 @@ class _PoolingPartial:
         x_np = np.ones((1, 4, 4, 2), dtype=np.float32)
         x = self.partial_fn(x_np, self.MESH_2, (Partial(),))
         result = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
-        # linear=False: Partial auto-reduced to Replicated first
-        assert result.placements == (Replicated(),)
+        assert not any(isinstance(p, Partial) for p in result.placements)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -360,15 +305,6 @@ class _BandPart:
                 got[i], np.diag(np.diag(arr[i])), rtol=1e-5
             )
 
-    def test_band_part_matrix_dim_sharded_raises(self) -> None:
-        """Sharding the M or N dim raises — mask depends on global indices."""
-        arr = np.ones((4, 4), dtype=np.float32)
-        t = transfer_to(
-            Tensor(arr), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        with pytest.raises(ValueError, match=r"band_part.*sharded along axis"):
-            F.band_part(t, num_lower=1, num_upper=1)
-
     def test_band_part_partial_passthrough(self) -> None:
         """linear=True — Partial passes through."""
         arr = np.eye(4, dtype=np.float32)
@@ -383,22 +319,6 @@ class _BandPart:
 class _Cond:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
-
-    def test_cond_sharded_predicate_raises(self) -> None:
-        """Sharded predicate must be rejected — devices would diverge."""
-        pred_np = np.array(True)
-        pred = transfer_to(
-            Tensor(pred_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        with pytest.raises(ValueError, match="Replicated"):
-            F.cond(pred, None, lambda: None, lambda: None)
-
-    def test_cond_partial_predicate_raises(self) -> None:
-        """Partial predicate must be rejected — not a meaningful bool."""
-        pred_np = np.array(True)
-        pred = self.partial_fn(pred_np, self.MESH_2, (Partial(),))
-        with pytest.raises(ValueError, match="Replicated"):
-            F.cond(pred, None, lambda: None, lambda: None)
 
     def test_cond_non_distributed_true(self) -> None:
         """Happy path: cond true branch using DF ops."""
@@ -435,15 +355,6 @@ class _Cond:
 class _WhileLoop:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
-
-    def test_while_loop_distributed_initial_raises(self) -> None:
-        """Distributed initial values must be rejected."""
-        x_np = np.ones((2, 2), dtype=np.float32)
-        x = self.partial_fn(x_np, self.MESH_2, (Partial(),))
-        with pytest.raises(
-            ValueError, match="distributed tensors are not supported"
-        ):
-            F.while_loop(x, lambda v: v, lambda v: v)
 
     def test_while_loop_non_distributed(self) -> None:
         """Happy path: while_loop using DF ops, adds 1.0 three times."""

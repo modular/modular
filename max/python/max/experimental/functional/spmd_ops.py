@@ -17,298 +17,431 @@ Each op is an explicit function that:
 
 1. Calls the sharding rule (with ``tensor_to_layout()`` to convert Tensors to TensorLayouts).
 2. Redistributes tensors to match the rule's suggestions.
-3. Dispatches per-shard via ``spmd_dispatch``.
-
-Rules return ``(suggested_args, output_mappings)`` — a 2-tuple with no kwargs.
+3. Dispatches per-shard via ``per_shard_dispatch``.
 """
 
 from __future__ import annotations
 
 import builtins
-import functools
-import inspect
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
-from max.driver import CPU, Device
+from max.driver import CPU, Buffer
 from max.experimental import tensor
+from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMapping,
-    global_shape_from_local,
+    DeviceMesh,
+    PlacementMapping,
+    Replicated,
+    TensorLayout,
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, TensorValueLike, Type, ops
-from max.graph.dim import StaticDim
+from max.graph.dim import DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndices
 
-from ..sharding.rules._common import RuleSignature
-from ..sharding.rules.conv import (
+from ..sharding import (
+    ActionSet,
+    PerShard,
+    mode,
+)
+from ..sharding.mode import ShardingError
+from ..sharding.rules import (
+    argsort_rule,
+    as_interleaved_complex_rule,
+    band_part_rule,
+    binary_rule,
+    broadcast_to_rule,
+    buffer_store_rule,
+    buffer_store_slice_rule,
+    chunk_rule,
+    cond_rule,
     conv2d_rule,
     conv2d_transpose_rule,
     conv3d_rule,
-)
-from ..sharding.rules.elementwise import (
-    binary_rule,
-    linear_binary_rule,
-    linear_unary_rule,
-    ternary_rule,
-    unary_rule,
-)
-from ..sharding.rules.matmul import matmul_rule
-from ..sharding.rules.misc import (
-    as_interleaved_complex_rule,
-    band_part_rule,
-    buffer_store_rule,
-    buffer_store_slice_rule,
-    cond_rule,
-    fold_rule,
-    irfft_rule,
-    resize_linear_rule,
-    resize_rule,
-    while_loop_rule,
-)
-from ..sharding.rules.norm import normalization_rule
-from ..sharding.rules.pooling import linear_pool_rule, pool_rule
-from ..sharding.rules.reduction import linear_reduce_rule, reduce_rule
-from ..sharding.rules.shape import (
-    argsort_rule,
-    chunk_rule,
+    dequantize_rule,
     flatten_rule,
+    fold_rule,
     gather_nd_rule,
     gather_rule,
+    irfft_rule,
+    layer_norm_rule,
+    linear_binary_rule,
+    linear_pool_rule,
+    linear_reduce_rule,
+    linear_unary_rule,
     masked_scatter_rule,
+    matmul_rule,
+    mean_rule,
     nonzero_rule,
     outer_rule,
     pad_rule,
     permute_rule,
+    pool_rule,
+    qmatmul_rule,
+    rebind_rule,
+    reduce_rule,
     repeat_interleave_rule,
+    reshape_rule,
+    resize_bicubic_rule,
+    resize_linear_rule,
+    resize_nearest_rule,
+    resize_rule,
+    rms_norm_rule,
     same_placement_multi_input_rule,
     scatter_add_rule,
     scatter_nd_add_rule,
     scatter_nd_rule,
     scatter_rule,
     slice_tensor_rule,
+    softmax_rule,
     split_rule,
     squeeze_rule,
     stack_rule,
+    ternary_rule,
     tile_rule,
     top_k_rule,
     transpose_rule,
+    unary_rule,
     unsqueeze_rule,
+    while_loop_rule,
 )
 from ._signatures import install_tensor_signature
-from .collective_ops import transfer_to
 from .creation_ops import full_like
-from .utils import (
-    any_distributed,
-    collect_tensors,
-    ensure_context,
-    map_tensors,
-    tensor_to_layout,
-    to_tensors,
-)
 
-# ═════════════════════════════════════════════════════════════════════════
-#  spmd_dispatch — the per-shard dispatch engine
-# ═════════════════════════════════════════════════════════════════════════
+# Re-exported; user-facing factory lives in ``max.experimental.sharding``.
+__all__ = [
+    "ShardingError",
+    "any_distributed",
+    "map_tensors",
+    "mode",
+    "to_tensors",
+]
 
 
-def spmd_dispatch(
+def to_tensors(values: Any) -> Any:
+    """Converts graph op results to :class:`Tensor`, preserving container type.
+
+    Recurses one level into ``list`` and ``tuple`` containers; unknown
+    types pass through unchanged. Returns ``Tensor`` for ``Buffer`` and
+    ``TensorValue`` leaves, and a same-shape container for list/tuple
+    inputs (each leaf converted independently). ``Any`` reflects that
+    leaves change type while the container type is preserved.
+    """
+
+    def _one(value: Any) -> Tensor | Any:
+        if isinstance(value, Tensor):
+            return value
+        if isinstance(value, Buffer):
+            return Tensor(storage=value)
+        if isinstance(value, TensorValue):
+            return Tensor.from_graph_value(value)
+        return value
+
+    if values is None:
+        return None
+    if isinstance(values, (Buffer, Tensor, TensorValue)):
+        return _one(values)
+    if isinstance(values, (list, tuple)):
+        return type(values)(_one(v) for v in values)
+    return values
+
+
+def map_tensors(
+    fn: Callable[[Tensor], Any], args: tuple[Any, ...]
+) -> tuple[Any, ...]:
+    """Applies ``fn`` to every :class:`Tensor` leaf in ``args``.
+
+    Recurses into ``list`` and ``tuple`` containers; non-tensor leaves
+    pass through unchanged.
+    """
+
+    def _walk(x: Any) -> Any:
+        if isinstance(x, Tensor):
+            return fn(x)
+        if isinstance(x, list):
+            return [_walk(v) for v in x]
+        if isinstance(x, tuple):
+            return tuple(_walk(v) for v in x)
+        return x
+
+    return tuple(_walk(a) for a in args)
+
+
+def tensor_to_layout(t: Tensor) -> TensorLayout:
+    """Converts a :class:`Tensor` to a :class:`TensorLayout` for sharding-rule evaluation.
+
+    Carries the per-rank-aware shape (``t.per_rank_shape``) so the rules
+    that fold per-rank cells (notably ``reshape_rule``) can do the
+    correct shape arithmetic. Non-distributed tensors fall back to a
+    plain :class:`Shape`.
+    """
+    if t.is_distributed:
+        return TensorLayout(
+            t.dtype,
+            t.per_rank_shape,
+            PlacementMapping(t.mesh, t.placements),
+        )
+    return TensorLayout(
+        t.dtype,
+        t.shape,
+        PlacementMapping(DeviceMesh.single(t.device), (Replicated(),)),
+    )
+
+
+def any_distributed(args: tuple[object, ...]) -> bool:
+    """True if any :class:`Tensor` in ``args`` is distributed (multi-device)."""
+    for a in args:
+        if isinstance(a, Tensor) and a.is_distributed:
+            return True
+        if isinstance(a, (list, tuple)):
+            for item in a:
+                if isinstance(item, Tensor) and item.is_distributed:
+                    return True
+    return False
+
+
+def per_shard_dispatch(
     graph_op: Callable[..., Any],
     args: tuple[Any, ...],
     output_mappings: tuple[DeviceMapping, ...],
 ) -> Any:
-    """Dispatches a graph op per-shard for distributed tensor inputs.
-
-    Runs ``graph_op`` once per device on the target mesh, extracting the
-    per-shard :class:`~max.graph.TensorValue` from each distributed
-    :class:`~max.experimental.tensor.Tensor` in ``args``. Non-distributed
-    tensors pass through to every shard unchanged. The per-shard results
-    are reassembled into distributed
-    :class:`~max.experimental.tensor.Tensor` outputs using
-    ``output_mappings``.
-
-    Also used internally by custom op dispatch.
+    """Runs ``graph_op`` once per shard and reassembles distributed outputs.
 
     Args:
-        graph_op: The graph op to run on each shard. Receives per-shard
-            :class:`~max.graph.TensorValue` inputs and may return a
-            single value, a ``list`` or ``tuple`` of values, or ``None``.
-        args: The positional arguments to pass to ``graph_op``. Any
-            distributed :class:`~max.experimental.tensor.Tensor` is
-            replaced by its per-shard
-            :class:`~max.graph.TensorValue` on each invocation; other
-            values are forwarded unchanged.
-        output_mappings: The
-            :class:`~max.experimental.sharding.DeviceMapping` placements
-            for the outputs. When ``graph_op`` returns multiple values
-            and fewer mappings are provided, the last mapping is reused
-            for the remaining outputs.
-
-    Returns:
-        The reassembled outputs from ``graph_op``. The return matches
-        what ``graph_op`` produces: ``None`` becomes ``None``, a single
-        value becomes a single distributed
-        :class:`~max.experimental.tensor.Tensor`, and a ``list`` or
-        ``tuple`` of values becomes a ``list`` or ``tuple`` of
-        distributed :class:`~max.experimental.tensor.Tensor` objects.
+        graph_op: The per-rank graph op to run.
+        args: Already-redistributed args.
+        output_mappings: One :class:`DeviceMapping` per output.
     """
     mesh = output_mappings[0].mesh
-    n = mesh.num_devices
 
     with ensure_context():
-        per_shard: list[Any] = []
-        for i in builtins.range(n):
-
-            def _get_shard(t: Tensor, _i: int = i) -> TensorValue:
-                if t.is_distributed:
-                    return TensorValue(t.local_shards[_i])
-                else:
-                    return TensorValue(t)
-
-            shard_args = map_tensors(_get_shard, args)
-            per_shard.append(graph_op(*shard_args))
-
+        per_shard = _run_per_shard(graph_op, args, mesh.num_devices)
         first = per_shard[0]
         if first is None:
             return None
 
-        reference_tensors = collect_tensors(args)
-
-        if not isinstance(first, (list, tuple)):
-            tvs = [TensorValue(s) for s in per_shard]
-            global_shape = global_shape_from_local(
-                [list(tv.shape) for tv in tvs],
-                output_mappings[0].mesh,
-                output_mappings[0].to_placements(),
-                reference_tensors,
+        multi = isinstance(first, (list, tuple))
+        num_out = len(first) if multi else 1
+        outputs = [
+            _reassemble_output(
+                per_shard,
+                j,
+                output_mappings[builtins.min(j, len(output_mappings) - 1)],
+                multi=multi,
             )
-            return Tensor.from_shard_values(
-                tvs, output_mappings[0], global_shape=global_shape
+            for j in builtins.range(num_out)
+        ]
+        return type(first)(outputs) if multi else outputs[0]
+
+
+def _run_per_shard(
+    graph_op: Callable[..., Any],
+    args: tuple[Any, ...],
+    num_devices: int,
+) -> list[Any]:
+    """Calls ``graph_op`` once per shard with per-rank arg unwrapping."""
+    per_shard: list[Any] = []
+    for i in builtins.range(num_devices):
+
+        def _per_rank(t: Tensor, _i: int = i) -> TensorValue:
+            return (
+                TensorValue(t.local_shards[_i])
+                if t.is_distributed
+                else TensorValue(t)
             )
 
-        num_out = len(first)
-        outputs: list[Tensor] = []
-        for j in builtins.range(num_out):
-            out_m = output_mappings[builtins.min(j, len(output_mappings) - 1)]
-            tvs = [TensorValue(per_shard[i][j]) for i in builtins.range(n)]
-            global_shape = global_shape_from_local(
-                [list(tv.shape) for tv in tvs],
-                out_m.mesh,
-                out_m.to_placements(),
-                reference_tensors,
-            )
-            outputs.append(
-                Tensor.from_shard_values(tvs, out_m, global_shape=global_shape)
-            )
-        return type(first)(outputs)
+        shard_args = map_tensors(_per_rank, args)
+        shard_args = tuple(
+            a[i] if isinstance(a, PerShard) else a for a in shard_args
+        )
+        per_shard.append(graph_op(*shard_args))
+    return per_shard
 
 
-def _transfer_args(
-    args: tuple[Any, ...], suggested: tuple[Any, ...]
-) -> tuple[Any, ...]:
-    """Transfer Tensor args to match rule-suggested mappings.
-
-    For Tensor args, calls ``transfer_to(tensor, mapping)``.
-    For list/tuple args (e.g. concat's tensor list), walks into the
-    container.  For non-Tensor args, uses the suggested value (which
-    the rule may have modified, e.g. shape localization).
-    """
-    result: list[object] = []
-    for orig, sugg in zip(args, suggested, strict=True):
-        if isinstance(orig, Tensor):
-            assert isinstance(sugg, (Device, DeviceMapping))
-            result.append(transfer_to(orig, sugg))
-        elif isinstance(orig, (list, tuple)):
-            assert isinstance(sugg, (list, tuple))
-            items = [
-                transfer_to(o, s) if isinstance(o, Tensor) else s
-                for o, s in zip(orig, sugg, strict=True)
-            ]
-            result.append(type(orig)(items))
-        else:
-            result.append(sugg)
-    return tuple(result)
+def _reassemble_output(
+    per_shard: Sequence[Any],
+    j: int,
+    out_mapping: DeviceMapping,
+    *,
+    multi: bool,
+) -> Tensor:
+    """Reassembles output ``j`` from per-shard results into one distributed Tensor."""
+    tvs = [TensorValue(s[j] if multi else s) for s in per_shard]
+    return Tensor.from_shard_values(tvs, out_mapping)
 
 
 def functional(
-    graph_op: Callable[..., Any] | None = None,
-    rule: Callable[..., RuleSignature] | None = None,
+    graph_op: Callable[..., Any],
+    rule: Callable[..., ActionSet] | None = None,
 ) -> Callable[..., Any]:
-    """Wraps a :mod:`max.graph.ops` op for use with :class:`~max.experimental.tensor.Tensor` inputs.
+    """Wraps a graph op as a distributed dispatch entry.
 
-    When a sharding ``rule`` is provided, the wrapper also dispatches
-    per-shard for tensors that are sharded across devices.
-
-    Args:
-        graph_op: The :mod:`max.graph.ops` op to wrap.
-        rule: Optional sharding rule for distributed inputs.
-
-    Returns:
-        A callable that wraps ``graph_op``.
+    Returns a callable that local-auto-shards when any argument is a
+    distributed :class:`Tensor` (and a rule is bound), and otherwise
+    forwards to the bare ``graph_op``. The returned wrapper carries
+    ``graph_op`` and ``rule`` as attributes; reassign ``wrapper.rule``
+    to swap the sharding rule at runtime without re-wrapping.
     """
-    if graph_op is None:
-        return functools.partial(functional, rule=rule)
 
-    # Pre-compute signature for canonicalizing kwargs → positional.
-    sig = inspect.signature(graph_op)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        active_rule = getattr(wrapper, "rule", None)
+        if any_distributed(args) and active_rule is not None:
+            return _local_dispatch(graph_op, active_rule, args, kwargs)
+        with ensure_context():
+            return to_tensors(graph_op(*args, **kwargs))
 
-    def _canonicalize(
-        args: tuple[object, ...], kwargs: dict[str, object]
-    ) -> tuple[object, ...]:
-        """Bind args+kwargs into a single positional tuple with defaults."""
-        bound = sig.bind(*args, **kwargs)
+    # ``Any``-typed alias so attribute writes are dynamic;
+    # ``functools.wraps`` types the closure as ``_Wrapped[...]`` which
+    # rejects arbitrary attribute assignment under mypy.
+    w: Any = wrapper
+    w.__name__ = getattr(graph_op, "__name__", "wrapper")
+    w.__qualname__ = getattr(graph_op, "__qualname__", w.__name__)
+    w.__module__ = getattr(graph_op, "__module__", w.__module__)
+    w.__wrapped__ = graph_op
+    w.graph_op = graph_op
+    w.rule = rule
+    # Rewrite the wrapper's signature/annotations so inspect.signature and
+    # Sphinx show ``Tensor`` instead of the graph op's ``TensorValueLike``
+    # parameter types (reads graph_op via ``__wrapped__``). From #87216.
+    install_tensor_signature(wrapper)
+    return wrapper
+
+
+def _local_dispatch(
+    graph_op: Callable[..., Any],
+    rule: Callable[..., ActionSet],
+    args: tuple[Any, ...],
+    kwargs: Mapping[str, Any],
+) -> Any:
+    """Picks one :class:`Action` for this call and applies it."""
+    from max.experimental.sharding._diagnostics import report_reshard
+    from max.experimental.sharding.mode import current_solver
+
+    flat_args = _canonicalize_call(graph_op, args, kwargs)
+    layout_args = map_tensors(tensor_to_layout, flat_args)
+    in_layouts = _walk_tensor_layouts(layout_args)
+
+    menu = rule(*layout_args)
+    solver = current_solver()
+    action = solver(menu, in_layouts)
+
+    op_name = getattr(graph_op, "__name__", "<op>")
+    report_reshard(solver, op_name, layout_args, menu, action)
+    redistributed = _transfer_args(flat_args, action.inputs)
+
+    if action.outputs:
+        out_mappings = action.outputs
+    else:
+        out_mappings = (
+            next(
+                t.mapping for t in _walk_tensors(flat_args) if t.is_distributed
+            ),
+        )
+    return per_shard_dispatch(
+        graph_op,
+        redistributed,
+        out_mappings,
+    )
+
+
+def _canonicalize_call(
+    graph_op: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: Mapping[str, Any],
+) -> tuple[Any, ...]:
+    """Normalizes ``args`` + ``kwargs`` into a positional tuple.
+
+    Binds against ``graph_op``'s signature so kwargs become positional.
+    Falls back to ``args`` when the signature is uninspectable.
+    """
+    import inspect
+
+    sig_source = getattr(graph_op, "graph_op", graph_op)
+    try:
+        bound = inspect.signature(sig_source).bind(*args, **kwargs)
         bound.apply_defaults()
         return tuple(bound.args)
+    except (TypeError, NotImplementedError, ValueError):
+        return args + tuple(kwargs.values())
 
-    @functools.wraps(
-        graph_op,
-        assigned=("__module__", "__name__", "__qualname__", "__annotations__"),
-    )
-    def wrapped(*args: Any, **kwargs: Any) -> Any:
-        if rule is not None and (
-            any_distributed(args) or any_distributed(kwargs.values())
+
+def _walk_tensors(value: Any) -> Iterable[Tensor]:
+    """Yields every :class:`Tensor` reachable through tuples/lists."""
+    if isinstance(value, Tensor):
+        yield value
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _walk_tensors(v)
+
+
+def _walk_tensor_layouts(value: Any) -> list[Any]:
+    """Flattens TensorLayout leaves out of arbitrary nested args."""
+    out: list[Any] = []
+    if isinstance(value, (list, tuple)):
+        for v in value:
+            out.extend(_walk_tensor_layouts(v))
+        return out
+    if hasattr(value, "mapping") and hasattr(value, "shape"):
+        out.append(value)
+    return out
+
+
+def _transfer_args(
+    args: tuple[Any, ...],
+    suggested: tuple[Any, ...],
+) -> tuple[Any, ...]:
+    """Reshards Tensor args to match the action's per-slot mappings."""
+    from .collective_ops import transfer_to
+
+    result: list[object] = []
+    for orig, sugg in zip(args, suggested, strict=False):
+        if isinstance(sugg, PerShard):
+            result.append(sugg)
+        elif isinstance(orig, Tensor) and isinstance(sugg, DeviceMapping):
+            result.append(transfer_to(orig, sugg))
+        elif isinstance(orig, (list, tuple)) and isinstance(
+            sugg, (list, tuple)
         ):
-            all_args = _canonicalize(args, kwargs)
-            layout_args = map_tensors(tensor_to_layout, all_args)
-            suggested, out_mappings = rule(*layout_args)
-            redistributed = _transfer_args(all_args, suggested)
-            return spmd_dispatch(graph_op, redistributed, out_mappings)
+            items = [
+                transfer_to(o, s)
+                if isinstance(o, Tensor) and isinstance(s, DeviceMapping)
+                else s
+                for o, s in zip(orig, sugg, strict=False)
+            ]
+            result.append(type(orig)(items))
+        elif not isinstance(orig, Tensor) and sugg is not None:
+            result.append(sugg)
+        else:
+            result.append(orig)
+    if len(args) > len(suggested):
+        result.extend(args[len(suggested) :])
+    return tuple(result)
 
-        with ensure_context():
-            result = graph_op(*args, **kwargs)
-            return to_tensors(result)
 
-    # Rewrite annotations so inspect.signature / Sphinx show ``Tensor``
-    # instead of the graph-op's ``TensorValueLike`` parameter types.
-    install_tensor_signature(wrapped)
+def _align_ranks(*tensors: Tensor) -> tuple[Tensor, ...]:
+    """Prepends size-1 dims so every input shares the same rank.
 
-    return wrapped
-
-
-# ═════════════════════════════════════════════════════════════════════════
-#  Scalar promotion helper
-# ═════════════════════════════════════════════════════════════════════════
-# The underlying ``ops.add(tensor, 0.5)`` graph op accepts a Python number
-# fine, but the SPMD rule-dispatch path in ``functional()`` expects every
-# argument to be distributable (i.e. produce a ``TensorLayout`` via
-# ``tensor_to_layout``). For binary ops that can take a scalar operand
-# (``F.add(x, eps)`` inside RMSNorm, ``F.mul(x, 0.5)`` inside GELU, …) we
-# promote the scalar to a ``full_like`` Tensor *before* dispatch so the
-# rule always sees two layouts.
+    Sharding rules always see equal-rank inputs; broadcasts become
+    explicit :func:`unsqueeze` nodes.
+    """
+    max_rank = builtins.max(builtins.len(t.shape) for t in tensors)
+    result: list[Tensor] = []
+    for t in tensors:
+        for _ in builtins.range(max_rank - builtins.len(t.shape)):
+            t = unsqueeze(t, 0)
+        result.append(t)
+    return tuple(result)
 
 
 def _binary_with_scalar_promotion(
     inner: Callable[..., object],
 ) -> Callable[..., Tensor]:
-    """Wrap a binary dispatch so that scalars are promoted to Tensors.
+    """Wraps a binary dispatch with scalar promotion plus unconditional rank alignment.
 
-    Only the SPMD rule-dispatch path needs both args to be Tensors (so
-    they produce a TensorLayout). The single-device graph-op path handles
-    scalar + tensor natively — including int-dtype tensors, where eager
-    ``full_like(int_tensor, 0.5)`` would bad_cast a float into an int
-    constant. Gate the promotion on ``any_distributed`` to keep the
-    native path intact.
+    Scalar promotion is gated on ``any_distributed`` because the
+    single-device graph-op path handles scalar + tensor natively.
     """
 
     def wrapper(lhs: Tensor | int | float, rhs: Tensor | int | float) -> Tensor:
@@ -317,26 +450,21 @@ def _binary_with_scalar_promotion(
                 lhs = full_like(rhs, lhs)
             elif isinstance(rhs, (int, float)) and isinstance(lhs, Tensor):
                 rhs = full_like(lhs, rhs)
+        if isinstance(lhs, Tensor) and isinstance(rhs, Tensor):
+            lhs, rhs = _align_ranks(lhs, rhs)
         result = inner(lhs, rhs)
         assert isinstance(result, Tensor)
         return result
 
-    # Propagate name/qualname/module from the wrapped op so
-    # ``F.add.__name__`` is ``"add"`` rather than ``"wrapper"``. Set
-    # these directly instead of via ``functools.update_wrapper`` so we
-    # don't set ``__wrapped__`` — that would route ``inspect.signature``
-    # through ``inner`` and lose ``wrapper``'s ``Tensor | int | float``
-    # scalar-promotion annotations.
     wrapper.__module__ = getattr(inner, "__module__", wrapper.__module__)
     wrapper.__name__ = getattr(inner, "__name__", wrapper.__name__)
     wrapper.__qualname__ = getattr(inner, "__qualname__", wrapper.__qualname__)
     return wrapper
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Elementwise — Binary (with scalar promotion)
-# ═════════════════════════════════════════════════════════════════════════
-
+#: Adds two tensors element-wise with SPMD distribution support.
+#: Scalars are promoted to tensors automatically.
+#: See :func:`max.graph.ops.add` for details.
 add = _binary_with_scalar_promotion(
     functional(ops.add, rule=linear_binary_rule)
 )
@@ -490,10 +618,8 @@ Returns:
     A tensor with the broadcast shape containing ``lhs % rhs`` element-wise.
 """
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Elementwise — Unary
-# ═════════════════════════════════════════════════════════════════════════
-
+#: Negates a tensor element-wise. Distributed via SPMD.
+#: See :func:`max.graph.ops.negate` for details.
 negate = functional(ops.negate, rule=linear_unary_rule)
 negate.__doc__ = """Negates a tensor element-wise.
 
@@ -960,44 +1086,9 @@ Returns:
 """
 
 acos = functional(ops.acos, rule=unary_rule)
-acos.__doc__ = """Computes the arccosine of a tensor element-wise.
-
-.. code-block:: python
-
-    from max.experimental import Tensor
-    from max.experimental import functional as F
-
-    x = Tensor([-1.0, 0.0, 1.0])
-    result = F.acos(x)
-    # result is approximately [3.1416, 1.5708, 0.0] or [pi, pi/2, 0]
-
-Args:
-    x: The input tensor, with values in the range ``[-1, 1]``. Values
-        outside this domain are clamped. Must have a floating-point dtype.
-
-Returns:
-    A tensor of the same shape and dtype with values in the range
-    ``[0, pi]`` (radians).
-"""
-
-dequantize = functional(ops.dequantize, rule=unary_rule)
-dequantize.__doc__ = """Dequantizes a quantized tensor back to a floating-point representation.
-
-Currently supports the ``Q4_0``, ``Q4_K``, and ``Q6_K`` encodings.
-
-Args:
-    encoding: The :class:`~max.graph.quantization.QuantizationEncoding`
-        used to pack ``quantized``.
-    quantized: The input quantized tensor.
-
-Returns:
-    A floating-point tensor with the values reconstructed from the
-    quantized input.
-"""
-
-# ═════════════════════════════════════════════════════════════════════════
-#  Elementwise — Comparison / Logical
-# ═════════════════════════════════════════════════════════════════════════
+#: Dequantizes a tensor. Distributed via SPMD.
+#: See :func:`max.graph.ops.dequantize` for details.
+dequantize = functional(ops.dequantize, rule=dequantize_rule)
 
 equal = _binary_with_scalar_promotion(functional(ops.equal, rule=binary_rule))
 equal.__doc__ = """Tests element-wise equality between two tensors.
@@ -1183,26 +1274,43 @@ Returns:
     one input is ``True``.
 """
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Elementwise — Ternary / Binary min-max
-# ═════════════════════════════════════════════════════════════════════════
+#: SPMD-distributed wrapper around :func:`max.graph.ops.where`.
+_where_inner = functional(ops.where, rule=ternary_rule)
 
-where = functional(ops.where, rule=ternary_rule)
-where.__doc__ = """Selects elements from two tensors based on a boolean condition.
 
-For each position, returns the corresponding element from ``x`` where
-``condition`` is ``True`` and from ``y`` otherwise. Inputs are broadcast
-to a common shape.
+def where(
+    cond: Tensor,
+    x: Tensor | int | float,
+    y: Tensor | int | float,
+) -> Tensor:
+    """Selects elements from two tensors based on a boolean condition.
 
-Args:
-    condition: A boolean tensor controlling the selection.
-    x: The tensor providing values where ``condition`` is ``True``.
-    y: The tensor providing values where ``condition`` is ``False``.
+    For each position, returns the corresponding element from ``x`` where
+    ``cond`` is ``True`` and from ``y`` otherwise. Scalar ``x``/``y`` operands
+    are promoted to tensors and all inputs are broadcast to a common shape.
 
-Returns:
-    A tensor with the broadcast shape, with elements selected from ``x``
-    or ``y`` according to ``condition``.
-"""
+    Args:
+        cond: A boolean tensor controlling the selection.
+        x: The tensor (or scalar) providing values where ``cond`` is ``True``.
+        y: The tensor (or scalar) providing values where ``cond`` is ``False``.
+
+    Returns:
+        A tensor with the broadcast shape, with elements selected from ``x``
+        or ``y`` according to ``cond``.
+    """
+    if isinstance(x, (int, float)) and isinstance(y, Tensor):
+        x = full_like(y, x)
+    elif isinstance(x, (int, float)):
+        x = full_like(cond, x)
+    if isinstance(y, (int, float)) and isinstance(x, Tensor):
+        y = full_like(x, y)
+    elif isinstance(y, (int, float)):
+        y = full_like(cond, y)
+    cond, x, y = _align_ranks(cond, x, y)
+    result = _where_inner(cond, x, y)
+    assert isinstance(result, Tensor)
+    return result
+
 
 elementwise_min = _binary_with_scalar_promotion(
     functional(ops.elementwise.min, rule=binary_rule)
@@ -1258,10 +1366,8 @@ Returns:
     position.
 """
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Cast
-# ═════════════════════════════════════════════════════════════════════════
-
+#: Casts a tensor to a different data type. Distributed via SPMD.
+#: See :func:`max.graph.ops.cast` for details.
 cast = functional(ops.cast, rule=unary_rule)
 cast.__doc__ = """Casts a tensor to a different data type.
 
@@ -1288,10 +1394,8 @@ Returns:
 """
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Matmul / Linear Algebra
-# ═════════════════════════════════════════════════════════════════════════
-
+#: Performs matrix multiplication. Distributed via SPMD.
+#: See :func:`max.graph.ops.matmul` for details.
 matmul = functional(ops.matmul, rule=matmul_rule)
 matmul.__doc__ = """Performs matrix multiplication between two tensors.
 
@@ -1325,50 +1429,12 @@ Returns:
     A tensor representing the matrix product of ``lhs`` and ``rhs``.
 """
 
-layer_norm = functional(ops.layer_norm, rule=normalization_rule)
-layer_norm.__doc__ = """Applies layer normalization over the last dimension of a tensor.
-
-Computes ``gamma * (input - mean) / sqrt(var + epsilon) + beta``, where
-``mean`` and ``var`` are reduced over the last axis of ``input`` and
-broadcast back across the leading axes.
-
-Args:
-    input: The input tensor.
-    gamma: The scale parameter tensor.
-    beta: The shift parameter tensor.
-    epsilon: A small constant added to the variance for numerical stability.
-
-Returns:
-    A tensor of the same shape and dtype as ``input`` with layer
-    normalization applied.
-"""
-
-qmatmul = functional(ops.qmatmul, rule=matmul_rule)
-qmatmul.__doc__ = """Performs matrix multiplication between a floating-point and a quantized tensor.
-
-Computes ``dequantize(quantize(lhs) @ transpose(rhs))``: ``lhs`` is
-quantized to match ``rhs``'s encoding, the matmul runs in the quantized
-domain, then the result is dequantized back to floating point. ``rhs``
-must be supplied in *transposed* form — for ``lhs`` of shape ``[M, K]``
-and (transposed) ``rhs`` of shape ``[N, K]``, the output shape is
-``[M, N]``. Currently supports the ``Q4_0``, ``Q4_K``, and ``Q6_K``
-encodings.
-
-Args:
-    encoding: The quantization encoding used to pack ``rhs``.
-    config: Optional quantization configuration. Required for some
-        encodings (for example, ``GPTQ``); may be :obj:`None` otherwise.
-    lhs: The left-hand side floating-point tensor.
-    rhs: One or more packed and transposed quantized right-hand side
-        tensors.
-
-Returns:
-    A floating-point tensor containing the dequantized matrix product.
-"""
-
-# ═════════════════════════════════════════════════════════════════════════
-#  Pooling
-# ═════════════════════════════════════════════════════════════════════════
+#: Applies layer normalization. Distributed via SPMD.
+#: See :func:`max.graph.ops.layer_norm` for details.
+layer_norm = functional(ops.layer_norm, rule=layer_norm_rule)
+#: Performs quantized matrix multiplication. Distributed via SPMD.
+#: See :func:`max.graph.ops.qmatmul` for details.
+qmatmul = functional(ops.qmatmul, rule=qmatmul_rule)
 
 avg_pool2d = functional(ops.avg_pool2d, rule=linear_pool_rule)
 avg_pool2d.__doc__ = """Applies 2D average pooling to a tensor.
@@ -1427,10 +1493,8 @@ Returns:
     max-pooled values.
 """
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Shape
-# ═════════════════════════════════════════════════════════════════════════
-
+#: Permutes the dimensions of a tensor. Distributed via SPMD.
+#: See :func:`max.graph.ops.permute` for details.
 permute = functional(ops.permute, rule=permute_rule)
 permute.__doc__ = """Permutes the dimensions of a tensor.
 
@@ -1468,17 +1532,23 @@ Returns:
 """
 
 squeeze = functional(ops.squeeze, rule=squeeze_rule)
-squeeze.__doc__ = """Removes a size-1 dimension from a tensor.
+#: SPMD-distributed wrapper around :func:`max.graph.ops.reshape`.
+reshape = functional(ops.reshape, rule=reshape_rule)
+reshape.__doc__ = """Reshapes a tensor to a new shape.
+
+Returns a tensor with the same data but a different shape; the total
+number of elements must stay the same.
 
 Args:
     x: The input tensor.
-    axis: The dimension to remove. Must have size 1.
+    shape: The desired output shape. The element count must match the
+        input tensor.
 
 Returns:
-    A tensor of rank ``x.rank - 1`` with the size-1 dimension at ``axis``
-    removed.
+    A tensor with the requested shape.
 """
-
+#: Flattens a tensor. Distributed via SPMD.
+#: See :func:`max.graph.ops.flatten` for details.
 flatten = functional(ops.flatten, rule=flatten_rule)
 flatten.__doc__ = """Flattens a contiguous range of dimensions into one.
 
@@ -1513,25 +1583,23 @@ Returns:
 """
 
 pad = functional(ops.pad, rule=pad_rule)
-pad.__doc__ = """Pads a tensor along every dimension.
+#: SPMD-distributed wrapper around :func:`max.graph.ops.broadcast_to`.
+broadcast_to = functional(ops.broadcast_to, rule=broadcast_to_rule)
+broadcast_to.__doc__ = """Broadcasts a tensor to a target shape.
+
+Follows NumPy broadcasting semantics: dimensions of size 1 in the input
+expand to match larger dimensions in the target shape.
 
 Args:
-    input: The input tensor.
-    paddings: A flat sequence of ``2 * rank(input)`` non-negative
-        integers in the order
-        ``[pad_before_dim0, pad_after_dim0, pad_before_dim1, pad_after_dim1, ...]``.
-    mode: The padding mode. One of ``"constant"`` (fill with ``value``),
-        ``"reflect"`` (reflect interior values about the edges, excluding
-        the boundary), or ``"edge"`` (repeat the nearest boundary
-        element). Defaults to ``"constant"``.
-    value: The constant fill value used when ``mode == "constant"``.
-        Defaults to ``0``.
+    x: The input tensor.
+    shape: The target shape. Each dimension must match the input dimension
+        or be broadcastable from size 1.
 
 Returns:
-    A tensor with the same dtype as ``input`` padded along each
-    dimension according to ``paddings``.
+    A tensor broadcast to the target shape.
 """
-
+#: Repeats elements of a tensor. Distributed via SPMD.
+#: See :func:`max.graph.ops.repeat_interleave` for details.
 repeat_interleave = functional(
     ops.repeat_interleave, rule=repeat_interleave_rule
 )
@@ -1663,6 +1731,14 @@ Raises:
 gather = functional(ops.gather, rule=gather_rule)
 gather.__doc__ = """Gathers values from a tensor along an axis using indices.
 
+When the gather axis is :class:`~max.experimental.sharding.Sharded`,
+the dispatcher will :func:`allgather` the input to
+:class:`~max.experimental.sharding.Replicated` first; the rule does
+not emit an expert-parallel ``(Sharded(a_axis), R) → Partial(SUM)``
+row because that's only correct when the caller masks indices per
+rank. Models that genuinely want EP semantics override
+``gather.rule`` with their own rule.
+
 Args:
     input: The input tensor to gather from.
     indices: An integer tensor of indices.
@@ -1675,6 +1751,14 @@ Returns:
 
 scatter = functional(ops.scatter, rule=scatter_rule)
 scatter.__doc__ = """Writes values into a tensor at positions specified by indices.
+
+When the scatter axis is :class:`~max.experimental.sharding.Sharded`,
+the dispatcher will :func:`allgather` the input to
+:class:`~max.experimental.sharding.Replicated` first; the rule does
+not emit a per-rank-local ``(Sharded(a_axis), R, R) → Sharded(a_axis)``
+row because that's only correct when the caller masks indices and
+updates per rank. Models that genuinely want EP semantics override
+``scatter.rule`` with their own rule.
 
 Args:
     input: The destination tensor.
@@ -1865,30 +1949,18 @@ Returns:
     ``lhs[i] * rhs[j]``.
 """
 
-# Multi-output shape ops
-
 _split_impl = functional(ops.split, rule=split_rule)
 
 
 def split(
     x: Tensor,
-    split_size_or_sections: int | list[int],
+    split_size_or_sections: int | Sequence[DimLike],
     axis: int = 0,
 ) -> list[Tensor]:
     """Splits a tensor into chunks along an axis.
 
-    When ``split_size_or_sections`` is an ``int``, splits into equal-sized
-    chunks (the last chunk may be smaller). When it is a list of ints,
-    splits into chunks with exactly those sizes.
-
-    Args:
-        x: The input tensor.
-        split_size_or_sections: Either a chunk size (``int``) or a list of
-            per-chunk sizes.
-        axis: The axis along which to split.
-
-    Returns:
-        A list of tensors, each a chunk of the input along ``axis``.
+    An ``int`` ``split_size_or_sections`` produces equal chunks (the
+    last may be smaller); a sequence specifies per-chunk sizes.
     """
     if isinstance(split_size_or_sections, int):
         dim = x.shape[axis]
@@ -1900,7 +1972,7 @@ def split(
         dim_size = int(dim)
         chunk_size = split_size_or_sections
         num_full, remainder = divmod(dim_size, chunk_size)
-        split_sizes: list[int] = [chunk_size] * num_full
+        split_sizes: list[DimLike] = [chunk_size] * num_full
         if remainder > 0:
             split_sizes.append(remainder)
     else:
@@ -1969,27 +2041,16 @@ Returns:
 """
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Reduction helpers
-# ═════════════════════════════════════════════════════════════════════════
-
-
 def _reduce_op(
     graph_op: Callable[..., object],
-    *,
-    rule: Callable[..., RuleSignature],
+    rule: Callable[..., ActionSet],
 ) -> Callable[..., Tensor]:
-    """Build a reduction wrapper matching the old ``functional`` semantics.
+    """Builds a reduction wrapper.
 
-    When ``axis`` is an ``int``, delegates directly to the single-axis
-    graph op (via ``functional()``).
-
-    When ``axis is None``, flattens the tensor to 1-D first, then reduces
-    on axis 0 — producing shape ``[1]``.  This is pure syntactic sugar
-    at the Tensor level; the graph op itself always reduces exactly one
-    axis.
+    An integer ``axis`` delegates to the single-axis graph op;
+    ``axis=None`` flattens to 1-D first.
     """
-    single_axis = functional(graph_op, rule=rule)
+    single_axis = functional(graph_op, rule)
 
     def fn(
         x: Tensor,
@@ -1997,10 +2058,6 @@ def _reduce_op(
     ) -> Tensor:
         assert isinstance(x, tensor.Tensor)
         if axis is None:
-            # Lazy import: ``shape_ops`` imports ``functional`` from this
-            # module, so a top-level import would be circular.
-            from .shape_ops import reshape
-
             x = reshape(x, [-1])
             axis = 0
         return single_axis(x, axis)
@@ -2010,19 +2067,11 @@ def _reduce_op(
 
 def _reduce_elementwise_op(
     graph_op: Callable[..., object],
-    *,
-    rule: Callable[..., RuleSignature],
+    rule: Callable[..., ActionSet],
     elementwise_fn: Callable[[Tensor, Tensor], Tensor],
 ) -> Callable[..., Tensor]:
-    """Build a function that acts as reduction (1 arg) or elementwise (2 args).
-
-    ``max(x)`` reduces along an axis; ``max(x, y)`` computes element-wise
-    maximum.  The ``y`` argument disambiguates the two modes.
-
-    Matches old ``functional`` semantics: ``axis=None`` flattens to 1-D
-    then reduces on axis 0.
-    """
-    reduce_fn = _reduce_op(graph_op, rule=rule)
+    """Builds a function that reduces (1 arg) or runs elementwise (2 args)."""
+    reduce_fn = _reduce_op(graph_op, rule)
 
     def fn(
         x: Tensor,
@@ -2037,34 +2086,14 @@ def _reduce_elementwise_op(
     return fn
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Reduction ops
-# ═════════════════════════════════════════════════════════════════════════
-
+#: Computes the sum along one or more axes. Distributed via SPMD.
+#: See :func:`max.graph.ops.sum` for details.
 sum = _reduce_op(ops.sum, rule=linear_reduce_rule)
-sum.__doc__ = """Computes the sum of a tensor along an axis.
-
-Args:
-    x: The input tensor.
-    axis: The axis along which to reduce. When ``None``, the tensor is
-        flattened to 1-D and reduced. Defaults to ``-1``.
-
-Returns:
-    A tensor with the sum computed along ``axis``.
-"""
-
-mean = _reduce_op(ops.mean, rule=linear_reduce_rule)
-mean.__doc__ = """Computes the mean of a tensor along an axis.
-
-Args:
-    x: The input tensor.
-    axis: The axis along which to reduce. When ``None``, the tensor is
-        flattened to 1-D and reduced. Defaults to ``-1``.
-
-Returns:
-    A tensor with the mean computed along ``axis``.
-"""
-
+#: Computes the mean along one or more axes. Distributed via SPMD.
+#: See :func:`max.graph.ops.mean` for details.
+mean = _reduce_op(ops.mean, rule=mean_rule)
+#: Computes the product along one or more axes. Distributed via SPMD.
+#: See :func:`max.graph.ops.prod` for details.
 prod = _reduce_op(ops.prod, rule=reduce_rule)
 prod.__doc__ = """Computes the product of a tensor along an axis.
 
@@ -2195,34 +2224,14 @@ Returns:
     element-wise minimum with the broadcast shape of the inputs.
 """
 
-softmax = functional(ops.softmax, rule=reduce_rule)
-softmax.__doc__ = """Applies the softmax function to a tensor along an axis.
-
-Normalizes the values along ``axis`` so that they sum to ``1``.
-
-Args:
-    value: The input tensor.
-    axis: The axis along which to compute the softmax. Defaults to the
-        final axis (``-1``).
-
-Returns:
-    A tensor of the same shape and dtype with softmax applied along
-    ``axis``.
-"""
-
-logsoftmax = functional(ops.logsoftmax, rule=reduce_rule)
-logsoftmax.__doc__ = """Computes ``log(softmax(x))`` along an axis.
-
-Args:
-    value: The input tensor.
-    axis: The axis along which to compute the log-softmax. Defaults to the
-        final axis (``-1``).
-
-Returns:
-    A tensor of the same shape and dtype with log-softmax applied along
-    ``axis``.
-"""
-
+#: Applies the softmax function along an axis. Distributed via SPMD.
+#: See :func:`max.graph.ops.softmax` for details.
+softmax = functional(ops.softmax, rule=softmax_rule)
+#: Applies the log softmax function along an axis. Distributed via SPMD.
+#: See :func:`max.graph.ops.logsoftmax` for details.
+logsoftmax = functional(ops.logsoftmax, rule=softmax_rule)
+#: Computes the cumulative sum along an axis. Distributed via SPMD.
+#: See :func:`max.graph.ops.cumsum` for details.
 cumsum = functional(ops.cumsum, rule=linear_reduce_rule)
 cumsum.__doc__ = """Computes the cumulative sum of a tensor along an axis.
 
@@ -2242,11 +2251,8 @@ Returns:
 """
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Convolution
-# ═════════════════════════════════════════════════════════════════════════
-
-
+#: Applies 2D convolution. Distributed via SPMD.
+#: See :func:`max.graph.ops.conv2d` for details.
 conv2d = functional(ops.conv2d, rule=conv2d_rule)
 conv2d.__doc__ = """Applies a 2D convolution to a tensor.
 
@@ -2367,10 +2373,8 @@ Raises:
 """
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Misc
-# ═════════════════════════════════════════════════════════════════════════
-
+#: Copies a tensor setting everything outside a central band to zero. Distributed via SPMD.
+#: See :func:`max.graph.ops.band_part` for details.
 band_part = functional(ops.band_part, rule=band_part_rule)
 band_part.__doc__ = """Masks out everything except a diagonal band of an input matrix.
 
@@ -2441,7 +2445,8 @@ Raises:
 """
 
 as_interleaved_complex = functional(
-    ops.complex.as_interleaved_complex, rule=as_interleaved_complex_rule
+    ops.complex.as_interleaved_complex,
+    rule=as_interleaved_complex_rule,
 )
 as_interleaved_complex.__doc__ = """Reshapes a real tensor of alternating (real, imag) values into complex form.
 
@@ -2497,59 +2502,14 @@ Returns:
 """
 
 resize_linear = functional(ops.resize_linear, rule=resize_linear_rule)
-resize_linear.__doc__ = """Resizes a tensor using linear (bilinear) interpolation.
-
-Args:
-    input: The input symbolic tensor to resize.
-    size: The full output shape. Must have the same rank as ``input``.
-    coordinate_transform_mode: How to map an output coordinate back to an
-        input coordinate. One of ``0`` (``half_pixel``, the default),
-        ``1`` (``align_corners``), ``2`` (``asymmetric``), or ``3``
-        (``half_pixel_1D``).
-    antialias: When ``True``, applies an antialiasing filter when the
-        output is smaller than the input (downscaling). Has no effect
-        when upscaling. Defaults to ``False``.
-
-Returns:
-    A tensor with the given ``size`` and the same dtype as ``input``.
-"""
-
-resize_nearest = functional(ops.resize_nearest, rule=resize_rule)
-resize_nearest.__doc__ = """Resizes a tensor using nearest-neighbor interpolation.
-
-Args:
-    input: The input symbolic tensor to resize.
-    size: The full output shape. Must have the same rank as ``input``.
-    coordinate_transform_mode: How to map an output coordinate back to an
-        input coordinate. One of ``0`` (``half_pixel``, the default),
-        ``1`` (``align_corners``), ``2`` (``asymmetric``), or ``3``
-        (``half_pixel_1D``).
-    round_mode: How to round the mapped coordinate to select the nearest
-        input sample. One of ``0`` (``HalfDown``, the default), ``1``
-        (``HalfUp``), ``2`` (``Floor``), or ``3`` (``Ceil``).
-
-Returns:
-    A tensor with the given ``size`` and the same dtype as ``input``.
-"""
-
-resize_bicubic = functional(ops.resize_bicubic, rule=resize_rule)
-resize_bicubic.__doc__ = """Resizes a 4-D tensor using bicubic interpolation.
-
-The input must be in NCHW layout — that is, a rank-4 tensor whose
-dimensions represent ``(N, C, H, W)``: batch size, channels, height,
-and width.
-
-Uses a 4x4-pixel Catmull-Rom cubic filter with half-pixel coordinate
-mapping.
-
-Args:
-    input: The input tensor. Must have rank 4 in NCHW layout.
-    size: The full output shape of length 4 as ``(N, C, H, W)``.
-
-Returns:
-    A tensor with the given ``size`` and the same dtype as ``input``.
-"""
-
+#: Resizes a tensor using nearest-neighbor interpolation. Distributed via SPMD.
+#: See :func:`max.graph.ops.resize_nearest` for details.
+resize_nearest = functional(ops.resize_nearest, rule=resize_nearest_rule)
+#: Resizes a tensor using bicubic interpolation. Distributed via SPMD.
+#: See :func:`max.graph.ops.resize_bicubic` for details.
+resize_bicubic = functional(ops.resize_bicubic, rule=resize_bicubic_rule)
+#: Computes the inverse real FFT. Distributed via SPMD.
+#: See :func:`max.graph.ops.irfft` for details.
 irfft = functional(ops.irfft, rule=irfft_rule)
 irfft.__doc__ = """Computes the inverse of the real-input FFT.
 
@@ -2576,11 +2536,6 @@ Returns:
     matches the input shape, except along ``axis``, which is replaced by
     ``n``.
 """
-
-
-# ═════════════════════════════════════════════════════════════════════════
-#  Control flow
-# ═════════════════════════════════════════════════════════════════════════
 
 
 def _cond_graph(
@@ -2640,28 +2595,23 @@ Returns:
 def _while_loop_graph(
     initial_values: Iterable[TensorValueLike] | TensorValueLike,
     predicate: Callable[..., Tensor],
-    body: Callable[..., Tensor | Iterable[Tensor]],
+    body: Callable[..., Tensor | list[Tensor]],
 ) -> list[TensorValue]:
-    """Wrap predicate/body so callbacks see :class:`Tensor`.
+    """Wraps predicate/body so :class:`Tensor` returns are unwrapped to :class:`TensorValue`."""
 
-    ``ops.while_loop`` passes :class:`TensorValue` into its predicate/body
-    and expects :class:`TensorValue` back. This wrapper wraps callback
-    args as :class:`Tensor` and coerces callback returns back to
-    :class:`TensorValue`. The outer ``functional()`` wrapper converts the
-    returned :class:`TensorValue` list back to :class:`Tensor` for the
-    public surface.
-    """
+    def _unwrap_list(
+        vals: list[Tensor] | tuple[Tensor, ...],
+    ) -> list[TensorValue]:
+        return [v.__tensorvalue__() for v in vals]
 
     def _pred(*args: TensorValue) -> TensorValue:
-        tensors = [Tensor.from_graph_value(a) for a in args]
-        return TensorValue(predicate(*tensors))
+        return predicate(*args).__tensorvalue__()
 
     def _body(*args: TensorValue) -> list[TensorValue]:
-        tensors = [Tensor.from_graph_value(a) for a in args]
-        result = body(*tensors)
+        result = body(*args)
         if isinstance(result, Tensor):
-            return [TensorValue(result)]
-        return [TensorValue(t) for t in result]
+            return [result.__tensorvalue__()]
+        return _unwrap_list(result)
 
     if isinstance(initial_values, Iterable):
         unwrapped = [TensorValue(v) for v in initial_values]
@@ -2706,13 +2656,31 @@ Returns:
 """
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Mutation ops
-#
-#  These are hand-rolled (not using ``functional()``) because they
-#  mutate in-place via ``__buffervalue__()`` rather than returning a
-#  new Tensor.
-# ═════════════════════════════════════════════════════════════════════════
+# Mutation ops: hand-rolled because they write in-place via __buffervalue__().
+
+
+def _spmd_buffer_write(
+    destination: Tensor,
+    source: Tensor,
+    write: Callable[[Any, Any], None],
+) -> None:
+    """Per-shard in-place write; flows each post-write value back to ``destination._state``."""
+    shards = list(destination.local_shards)
+    src_shards = list(source.local_shards) if source.is_distributed else None
+    for i, dest_tensor in enumerate(shards):
+        dest_shard = dest_tensor.__buffervalue__()
+        src_shard = (
+            src_shards[i].__tensorvalue__()
+            if src_shards is not None
+            else source.__tensorvalue__()
+        )
+        write(dest_shard, src_shard)
+        if destination._state is not None and dest_tensor._state is not None:
+            new_values = list(destination._state.values)
+            new_values[i] = dest_tensor._state.value
+            destination._state = type(destination._state)(
+                tuple(new_values), destination._state.ctx
+            )
 
 
 def buffer_store(destination: Tensor, source: Tensor) -> None:
@@ -2730,14 +2698,7 @@ def buffer_store(destination: Tensor, source: Tensor) -> None:
 
     with ensure_context():
         if destination.is_distributed:
-            for i in builtins.range(len(destination.local_shards)):
-                dest_shard = destination.local_shards[i].__buffervalue__()
-                src_shard = (
-                    source.local_shards[i].__tensorvalue__()
-                    if source.is_distributed
-                    else source.__tensorvalue__()
-                )
-                ops.buffer_store(dest_shard, src_shard)
+            _spmd_buffer_write(destination, source, ops.buffer_store)
         else:
             ops.buffer_store(
                 destination.__buffervalue__(), source.__tensorvalue__()
@@ -2763,68 +2724,25 @@ def buffer_store_slice(
 
     with ensure_context():
         if destination.is_distributed:
-            for i in builtins.range(len(destination.local_shards)):
-                dest_shard = destination.local_shards[i].__buffervalue__()
-                src_shard = (
-                    source.local_shards[i].__tensorvalue__()
-                    if source.is_distributed
-                    else source.__tensorvalue__()
-                )
-                dest_shard[indices] = src_shard
+
+            def _write(dest_buf: Any, src_tv: Any) -> None:
+                dest_buf[indices] = src_tv
+
+            _spmd_buffer_write(destination, source, _write)
         else:
             dest_buf = destination.__buffervalue__()
             source_tv = source.__tensorvalue__()
             dest_buf[indices] = source_tv
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Additional ops (no sharding rule — replicated-only for now)
-# ═════════════════════════════════════════════════════════════════════════
-
+#: Applies group normalization.
+#: See :func:`max.graph.ops.group_norm` for details.
 group_norm = functional(ops.group_norm)
-group_norm.__doc__ = """Applies group normalization over the channel axis of a tensor.
-
-Splits the channel axis (axis 1) of ``input`` into ``num_groups``
-groups, computes the mean and variance within each group, and
-normalizes. ``gamma`` and ``beta`` then apply a per-channel affine
-transform.
-
-Args:
-    input: The input tensor.
-    gamma: The scale parameter tensor.
-    beta: The shift parameter tensor.
-    num_groups: The number of groups to split the channels into.
-    epsilon: A small constant added to the variance for numerical
-        stability.
-
-Returns:
-    A tensor of the same shape and dtype as ``input`` with group
-    normalization applied.
-"""
-
-rms_norm = functional(ops.rms_norm)
-rms_norm.__doc__ = """Applies RMS (root-mean-square) normalization over the last dimension of a tensor.
-
-Computes ``input / rms(input) * (weight + weight_offset)`` where
-``rms(x) = sqrt(mean(x ** 2) + epsilon)``. The reduction runs over the
-last axis of ``input`` and is broadcast back across the leading axes.
-
-Args:
-    input: The input tensor.
-    weight: The scale parameter tensor.
-    epsilon: A small constant added to the mean-square for numerical
-        stability.
-    weight_offset: A constant added to ``weight`` before scaling. Defaults
-        to ``0.0``.
-    multiply_before_cast: When ``True``, multiplies by the scaled weight
-        before casting the result back to the input dtype. Defaults to
-        ``False``.
-
-Returns:
-    A tensor of the same shape and dtype as ``input`` with RMS
-    normalization applied.
-"""
-
+#: Applies RMS normalization.
+#: See :func:`max.graph.ops.rms_norm` for details.
+rms_norm = functional(ops.rms_norm, rule=rms_norm_rule)
+#: Filters boxes with high intersection-over-union.
+#: See :func:`max.graph.ops.non_maximum_suppression` for details.
 non_maximum_suppression = functional(ops.non_maximum_suppression)
 non_maximum_suppression.__doc__ = """Filters boxes by greedy non-maximum suppression per ``(batch, class)`` pair.
 
@@ -2901,24 +2819,12 @@ def clamp(
     lower_bound: TensorValueLike,
     upper_bound: TensorValueLike,
 ) -> Tensor:
-    """Clamps the values of a tensor to a specified range.
-
-    Equivalent to ``max(min(x, upper_bound), lower_bound)``.
-
-    Args:
-        x: The input tensor.
-        lower_bound: The minimum value (tensor or scalar).
-        upper_bound: The maximum value (tensor or scalar).
-
-    Returns:
-        A tensor of the same shape and dtype with values clamped to
-        ``[lower_bound, upper_bound]``.
-    """
+    """Clamps tensor values to ``[lower_bound, upper_bound]``."""
     return max(min(x, upper_bound), lower_bound)
 
 
 clip = clamp
-rebind = functional(ops.rebind)
+rebind = functional(ops.rebind, rule=rebind_rule)
 rebind.__doc__ = """Rebinds the symbolic shape of a tensor.
 
 Asserts at runtime that the tensor's dimensions match the new shape.
@@ -2935,4 +2841,234 @@ Args:
 
 Returns:
     A tensor with the same data and the new symbolic shape.
+"""
+
+acos.__doc__ = """Computes the arccosine of a tensor element-wise.
+
+.. code-block:: python
+
+    from max.experimental import Tensor
+    from max.experimental import functional as F
+
+    x = Tensor([-1.0, 0.0, 1.0])
+    result = F.acos(x)
+    # result is approximately [3.1416, 1.5708, 0.0] or [pi, pi/2, 0]
+
+Args:
+    x: The input tensor, with values in the range ``[-1, 1]``. Values
+        outside this domain are clamped. Must have a floating-point dtype.
+
+Returns:
+    A tensor of the same shape and dtype with values in the range
+    ``[0, pi]`` (radians).
+"""
+dequantize.__doc__ = """Dequantizes a quantized tensor back to a floating-point representation.
+
+Currently supports the ``Q4_0``, ``Q4_K``, and ``Q6_K`` encodings.
+
+Args:
+    encoding: The :class:`~max.graph.quantization.QuantizationEncoding`
+        used to pack ``quantized``.
+    quantized: The input quantized tensor.
+
+Returns:
+    A floating-point tensor with the values reconstructed from the
+    quantized input.
+"""
+group_norm.__doc__ = """Applies group normalization over the channel axis of a tensor.
+
+Splits the channel axis (axis 1) of ``input`` into ``num_groups``
+groups, computes the mean and variance within each group, and
+normalizes. ``gamma`` and ``beta`` then apply a per-channel affine
+transform.
+
+Args:
+    input: The input tensor.
+    gamma: The scale parameter tensor.
+    beta: The shift parameter tensor.
+    num_groups: The number of groups to split the channels into.
+    epsilon: A small constant added to the variance for numerical
+        stability.
+
+Returns:
+    A tensor of the same shape and dtype as ``input`` with group
+    normalization applied.
+"""
+layer_norm.__doc__ = """Applies layer normalization over the last dimension of a tensor.
+
+Computes ``gamma * (input - mean) / sqrt(var + epsilon) + beta``, where
+``mean`` and ``var`` are reduced over the last axis of ``input`` and
+broadcast back across the leading axes.
+
+Args:
+    input: The input tensor.
+    gamma: The scale parameter tensor.
+    beta: The shift parameter tensor.
+    epsilon: A small constant added to the variance for numerical stability.
+
+Returns:
+    A tensor of the same shape and dtype as ``input`` with layer
+    normalization applied.
+"""
+logsoftmax.__doc__ = """Computes ``log(softmax(x))`` along an axis.
+
+Args:
+    value: The input tensor.
+    axis: The axis along which to compute the log-softmax. Defaults to the
+        final axis (``-1``).
+
+Returns:
+    A tensor of the same shape and dtype with log-softmax applied along
+    ``axis``.
+"""
+mean.__doc__ = """Computes the mean of a tensor along an axis.
+
+Args:
+    x: The input tensor.
+    axis: The axis along which to reduce. When ``None``, the tensor is
+        flattened to 1-D and reduced. Defaults to ``-1``.
+
+Returns:
+    A tensor with the mean computed along ``axis``.
+"""
+pad.__doc__ = """Pads a tensor along every dimension.
+
+Args:
+    input: The input tensor.
+    paddings: A flat sequence of ``2 * rank(input)`` non-negative
+        integers in the order
+        ``[pad_before_dim0, pad_after_dim0, pad_before_dim1, pad_after_dim1, ...]``.
+    mode: The padding mode. One of ``"constant"`` (fill with ``value``),
+        ``"reflect"`` (reflect interior values about the edges, excluding
+        the boundary), or ``"edge"`` (repeat the nearest boundary
+        element). Defaults to ``"constant"``.
+    value: The constant fill value used when ``mode == "constant"``.
+        Defaults to ``0``.
+
+Returns:
+    A tensor with the same dtype as ``input`` padded along each
+    dimension according to ``paddings``.
+"""
+qmatmul.__doc__ = """Performs matrix multiplication between a floating-point and a quantized tensor.
+
+Computes ``dequantize(quantize(lhs) @ transpose(rhs))``: ``lhs`` is
+quantized to match ``rhs``'s encoding, the matmul runs in the quantized
+domain, then the result is dequantized back to floating point. ``rhs``
+must be supplied in *transposed* form — for ``lhs`` of shape ``[M, K]``
+and (transposed) ``rhs`` of shape ``[N, K]``, the output shape is
+``[M, N]``. Currently supports the ``Q4_0``, ``Q4_K``, and ``Q6_K``
+encodings.
+
+Args:
+    encoding: The quantization encoding used to pack ``rhs``.
+    config: Optional quantization configuration. Required for some
+        encodings (for example, ``GPTQ``); may be :obj:`None` otherwise.
+    lhs: The left-hand side floating-point tensor.
+    rhs: One or more packed and transposed quantized right-hand side
+        tensors.
+
+Returns:
+    A floating-point tensor containing the dequantized matrix product.
+"""
+resize_bicubic.__doc__ = """Resizes a 4-D tensor using bicubic interpolation.
+
+The input must be in NCHW layout — that is, a rank-4 tensor whose
+dimensions represent ``(N, C, H, W)``: batch size, channels, height,
+and width.
+
+Uses a 4x4-pixel Catmull-Rom cubic filter with half-pixel coordinate
+mapping.
+
+Args:
+    input: The input tensor. Must have rank 4 in NCHW layout.
+    size: The full output shape of length 4 as ``(N, C, H, W)``.
+
+Returns:
+    A tensor with the given ``size`` and the same dtype as ``input``.
+"""
+resize_linear.__doc__ = """Resizes a tensor using linear (bilinear) interpolation.
+
+Args:
+    input: The input symbolic tensor to resize.
+    size: The full output shape. Must have the same rank as ``input``.
+    coordinate_transform_mode: How to map an output coordinate back to an
+        input coordinate. One of ``0`` (``half_pixel``, the default),
+        ``1`` (``align_corners``), ``2`` (``asymmetric``), or ``3``
+        (``half_pixel_1D``).
+    antialias: When ``True``, applies an antialiasing filter when the
+        output is smaller than the input (downscaling). Has no effect
+        when upscaling. Defaults to ``False``.
+
+Returns:
+    A tensor with the given ``size`` and the same dtype as ``input``.
+"""
+resize_nearest.__doc__ = """Resizes a tensor using nearest-neighbor interpolation.
+
+Args:
+    input: The input symbolic tensor to resize.
+    size: The full output shape. Must have the same rank as ``input``.
+    coordinate_transform_mode: How to map an output coordinate back to an
+        input coordinate. One of ``0`` (``half_pixel``, the default),
+        ``1`` (``align_corners``), ``2`` (``asymmetric``), or ``3``
+        (``half_pixel_1D``).
+    round_mode: How to round the mapped coordinate to select the nearest
+        input sample. One of ``0`` (``HalfDown``, the default), ``1``
+        (``HalfUp``), ``2`` (``Floor``), or ``3`` (``Ceil``).
+
+Returns:
+    A tensor with the given ``size`` and the same dtype as ``input``.
+"""
+rms_norm.__doc__ = """Applies RMS (root-mean-square) normalization over the last dimension of a tensor.
+
+Computes ``input / rms(input) * (weight + weight_offset)`` where
+``rms(x) = sqrt(mean(x ** 2) + epsilon)``. The reduction runs over the
+last axis of ``input`` and is broadcast back across the leading axes.
+
+Args:
+    input: The input tensor.
+    weight: The scale parameter tensor.
+    epsilon: A small constant added to the mean-square for numerical
+        stability.
+    weight_offset: A constant added to ``weight`` before scaling. Defaults
+        to ``0.0``.
+    multiply_before_cast: When ``True``, multiplies by the scaled weight
+        before casting the result back to the input dtype. Defaults to
+        ``False``.
+
+Returns:
+    A tensor of the same shape and dtype as ``input`` with RMS
+    normalization applied.
+"""
+softmax.__doc__ = """Applies the softmax function to a tensor along an axis.
+
+Normalizes the values along ``axis`` so that they sum to ``1``.
+
+Args:
+    value: The input tensor.
+    axis: The axis along which to compute the softmax. Defaults to the
+        final axis (``-1``).
+
+Returns:
+    A tensor of the same shape and dtype with softmax applied along
+    ``axis``.
+"""
+squeeze.__doc__ = """Removes a size-1 dimension from a tensor.
+
+Args:
+    x: The input tensor.
+    axis: The dimension to remove. Must have size 1.
+
+Returns:
+    A tensor of rank ``x.rank - 1`` with the size-1 dimension at ``axis``
+    removed.
+"""
+sum.__doc__ = """Computes the sum of a tensor along an axis.
+
+Args:
+    x: The input tensor.
+    axis: The axis along which to reduce. When ``None``, the tensor is
+        flattened to 1-D and reduced. Defaults to ``-1``.
+
+Returns:
+    A tensor with the sum computed along ``axis``.
 """

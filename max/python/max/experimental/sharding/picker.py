@@ -18,7 +18,7 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from max.experimental.sharding.action import Action, ActionSet
 from max.experimental.sharding.cost import (
@@ -32,6 +32,7 @@ from max.experimental.sharding.mesh import DeviceMesh
 from max.experimental.sharding.placements import (
     Partial,
     Replicated,
+    Sharded,
     ShardingError,
 )
 from max.experimental.sharding.types import TensorLayout
@@ -97,9 +98,14 @@ def enumerate_feasible_actions(
     return [menu.finalize(a, menu.finalize_ctx) for a in actions]
 
 
-def action_input_for_slot(action: Action, slot_idx: int) -> object:
-    """Flat-index lookup into an action's per-slot expected placement."""
-    flat: list[object] = []
+def action_input_for_slot(action: Action, slot_idx: int) -> Any:
+    """Flat-index lookup into an action's per-slot expected placement.
+
+    Returns whatever the action stored at that slot (typically
+    :class:`PlacementMapping`, :class:`PerShard`, a bare scalar, or
+    ``None``). Callers are expected to ``isinstance``-check before use.
+    """
+    flat: list[Any] = []
     for entry in action.inputs:
         if isinstance(entry, (list, tuple)):
             flat.extend(entry)
@@ -174,18 +180,24 @@ class GreedyReshard:
     """Diagnostic policy when the picked action requires a reshard on any
     input. ``"silent"`` (default), ``"warn"``, or ``"raise"``. Inspected by
     ``_local_dispatch`` after the picker picks."""
-    prefer_replicated_from_partial: bool = False
-    """When ``True``, filter out any action that requires a
-    ``Partial → Sharded(d)`` transition on any input slot, forcing the
-    picker to resolve every ``Partial`` to ``Replicated`` via allreduce.
-    The result is the textbook Megatron pure-TP layout: two allreduces per
-    transformer block, residual stream stays ``Replicated``, sequence-axis
-    sharding never appears. Trades the SP activation-memory win for fewer
-    collectives per block and simpler downstream shape algebra (no per-rank
-    symbolic drift, no ``rebind`` needed in the model). Default ``False``
-    lets the picker pick the locally cheapest collective, which on
-    Megatron-style transformers tends to land in SP+TP — same byte volume,
-    sharded residual stream, two extra collectives per block."""
+    allow_partial_to_sharded: bool = False
+    """When ``True``, the picker may resolve a ``Partial`` input by
+    ``reduce_scatter`` to ``Sharded(d)`` when that is the locally cheapest
+    collective. On Megatron-style transformers this tends to land in
+    sequence-parallel + TP: same byte volume as pure TP, but a sharded
+    residual stream, two extra collectives per block, and per-rank
+    symbolic-dim drift (the cost the SP activation-memory win pays for,
+    which only matters for long-sequence training). When ``False`` (the
+    default), the picker may not redistribute a ``Partial`` input to
+    ``Sharded``: it either keeps the ``Partial`` (linear passthrough) or
+    resolves it to ``Replicated`` via allreduce, on exactly the mesh axes
+    that are ``Partial`` — other axes (for example a ``dp`` batch shard)
+    are left untouched. A nonlinear consumer such as ``rms_norm`` has no
+    ``Partial`` row, so its input lands on ``Replicated``: the textbook
+    Megatron pure-TP layout and the right default for inference (fewer
+    collectives per block, a replicated residual stream, no ``rebind``
+    needed in the model). Set ``True`` to opt into sequence-parallel
+    discovery."""
 
     def __call__(
         self,
@@ -205,31 +217,35 @@ class GreedyReshard:
                 "GreedyReshard: all candidate actions exceed per-rank "
                 "memory budget."
             )
-        if self.prefer_replicated_from_partial:
-            actions = _filter_partial_to_replicated(actions, in_layouts)
+        if not self.allow_partial_to_sharded:
+            actions = _reject_partial_to_sharded(actions, in_layouts)
             if not actions:
                 raise RuntimeError(
-                    "GreedyReshard(prefer_replicated_from_partial=True): "
-                    "no action resolves every Partial input to Replicated. "
-                    "Either the rule omits a ``(R, ..., R) → R`` row or "
-                    "the action is intrinsically infeasible."
+                    "GreedyReshard(allow_partial_to_sharded=False): every "
+                    "candidate action requires a Partial -> Sharded "
+                    "(reduce_scatter) transition. Pass "
+                    "allow_partial_to_sharded=True to permit "
+                    "sequence-parallel resharding here."
                 )
         return cheapest_action(actions, in_layouts, mesh)
 
 
-def _filter_partial_to_replicated(
+def _reject_partial_to_sharded(
     actions: Sequence[Action],
     in_layouts: Sequence[TensorLayout],
 ) -> list[Action]:
-    """Keeps only actions that resolve every ``Partial`` input to ``Replicated``.
+    """Drops actions that redistribute a ``Partial`` input to ``Sharded``.
 
-    For each tensor input slot whose actual layout contains a
-    :class:`Partial` placement on some mesh axis, requires the chosen
-    action's consumer mapping on that slot to be :class:`Replicated`
-    on the same mesh axis. Other slots and other axes are unconstrained.
+    For each tensor input slot, rejects the action if any mesh axis
+    carries a :class:`Partial` placement that the action would
+    redistribute to :class:`Sharded` (a ``reduce_scatter``). Actions
+    that keep the ``Partial`` (linear passthrough) or resolve it to
+    :class:`Replicated` (allreduce) are kept, as are all other slots and
+    axes — in particular a ``dp`` batch shard on another mesh axis is
+    left untouched. This suppresses the sequence-parallel layout while
+    leaving legitimate ``Partial`` passthrough chains and the pure-TP
+    allreduce intact.
     """
-    from max.experimental.sharding.placements import Partial, Replicated
-
     kept: list[Action] = []
     for action in actions:
         ok = True
@@ -242,7 +258,7 @@ def _filter_partial_to_replicated(
                 consumer.placements,
                 strict=True,
             ):
-                if isinstance(src, Partial) and not isinstance(dst, Replicated):
+                if isinstance(src, Partial) and isinstance(dst, Sharded):
                     ok = False
                     break
             if not ok:

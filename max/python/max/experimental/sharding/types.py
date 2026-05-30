@@ -32,16 +32,13 @@ from max.graph import (
     BufferType,
     DeviceRef,
     Shape,
-    StaticDim,
-    SymbolicDim,
     TensorType,
 )
 from max.graph.shape import ShapeLike
 
 from .mappings import DeviceMapping
 from .mesh import DeviceMesh
-from .placements import Placement, Sharded
-from .shapes import sharded_symbolic_dim
+from .placements import Placement, Sharded, local_shard_shape_from_global
 
 T = TypeVar("T", TensorType, BufferType)
 
@@ -87,36 +84,13 @@ class DistributedType(Generic[T], ABC):
     def _local_shard_shape(self, device_idx: int = 0) -> Shape:
         """Computes one device's local shard shape from the global shape.
 
-        Static dims are divided evenly. Symbolic dims emit per-coord
-        distinct names via :func:`sharded_symbolic_dim` so the graph
-        treats each shard as an independent runtime size. Algebraic
-        dims use ``dim // mesh_axis_size``.
+        Delegates to :func:`local_shard_shape_from_global` (which dispatches
+        per placement type) and returns the requested device's shape.
         """
-        dims = list(self.shape)
-        for mesh_axis, placement in enumerate(self.placements):
-            if not isinstance(placement, Sharded):
-                continue
-            tensor_axis = placement.axis
-            dim = dims[tensor_axis]
-            mesh_axis_size = self.mesh.mesh_shape[mesh_axis]
-
-            if isinstance(dim, StaticDim):
-                size = int(dim)
-                if size % mesh_axis_size != 0:
-                    raise ValueError(
-                        f"Static dimension {size} at axis {tensor_axis} is "
-                        f"not evenly divisible by mesh axis "
-                        f"{self.mesh.axis_names[mesh_axis]!r} "
-                        f"(size {mesh_axis_size})."
-                    )
-                dims[tensor_axis] = StaticDim(size // mesh_axis_size)
-            elif isinstance(dim, SymbolicDim):
-                dims[tensor_axis] = sharded_symbolic_dim(
-                    dim, self.mesh, mesh_axis, device_idx
-                )
-            else:
-                dims[tensor_axis] = dim // mesh_axis_size
-        return Shape(dims)
+        shapes = local_shard_shape_from_global(
+            self.shape, self.mesh, self.placements
+        )
+        return shapes[device_idx]
 
     @property
     def rank(self) -> int:

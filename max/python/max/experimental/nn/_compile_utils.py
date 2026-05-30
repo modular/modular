@@ -32,7 +32,6 @@ from max.experimental.sharding import (
     DeviceMapping,
     DistributedType,
     PlacementMapping,
-    global_shape_from_local,
 )
 from max.experimental.tensor import GraphValue, Tensor
 from max.graph import DeviceRef, Value
@@ -140,7 +139,6 @@ def _wrap_graph_inputs(
                     mapping=PlacementMapping(
                         slot.dist.mesh, slot.dist.placements
                     ),
-                    global_shape=slot.dist.shape,
                 )
             )
         else:
@@ -213,17 +211,11 @@ def _reconstruct_outputs(
             buffers = tuple(
                 raw_results[slot.start + i] for i in range(slot.count)
             )
-            gshape = global_shape_from_local(
-                [buf.shape for buf in buffers],
-                _mesh,
-                _placements,
-            )
             results.append(
                 Tensor._from_shards(
                     buffers,
                     _mesh,
                     _placements,
-                    global_shape=gshape,
                 )
             )
         else:

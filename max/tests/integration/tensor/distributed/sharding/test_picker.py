@@ -78,11 +78,18 @@ def partial_input_menu() -> PartialInputMenu:
 
 
 class TestSolverDiscrimination:
-    def test_greedy_picks_reduce_scatter_over_allreduce(
+    def test_greedy_default_resolves_partial_to_replicated(
         self, partial_input_menu: PartialInputMenu
     ) -> None:
         lay, menu = partial_input_menu
         picked = GreedyReshard()(menu, (lay,))
+        assert input_placements(picked) == (Replicated(),)
+
+    def test_greedy_opt_in_picks_reduce_scatter_over_allreduce(
+        self, partial_input_menu: PartialInputMenu
+    ) -> None:
+        lay, menu = partial_input_menu
+        picked = GreedyReshard(allow_partial_to_sharded=True)(menu, (lay,))
         assert input_placements(picked) == (Sharded(0),)
 
     def test_no_cost_takes_first_feasible(

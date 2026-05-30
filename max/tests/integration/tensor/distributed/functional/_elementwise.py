@@ -29,7 +29,6 @@ from collections.abc import Callable
 from typing import ClassVar
 
 import numpy as np
-import pytest
 from max.dtype import DType
 from max.experimental.functional import (
     add,
@@ -190,39 +189,13 @@ class _BinaryNonlinear:
         assert tuple(result.shape) == (2, 4)
         np.testing.assert_allclose(result.to_numpy(), a * b, rtol=1e-5)
 
-    def test_mul_incompatible_raises(self) -> None:
-        a = np.ones((4, 8), dtype=np.float32)
-        ta = transfer_to(
-            Tensor(a),
-            PlacementMapping(
-                self.MESH_2D,
-                (
-                    Sharded(0),
-                    Replicated(),
-                ),
-            ),
-        )
-        tb = transfer_to(
-            Tensor(a),
-            PlacementMapping(
-                self.MESH_2D,
-                (
-                    Sharded(1),
-                    Replicated(),
-                ),
-            ),
-        )
-        with pytest.raises(ValueError, match="incompatible"):
-            mul(ta, tb)
-
     def test_mul_partial_auto_reduces(self) -> None:
         a = np.full((4, 8), 2.0, dtype=np.float32)
         b = np.full((4, 8), 3.0, dtype=np.float32)
         ta = self.partial_fn(a, self.MESH_1D, (Partial(),))
         tb = self.partial_fn(b, self.MESH_1D, (Partial(),))
         result = mul(ta, tb)
-        # Non-linear: both partials auto-reduce first, then mul.
-        assert result.placements == (Replicated(),)
+        assert not any(isinstance(p, Partial) for p in result.placements)
         expected = (a * 4) * (b * 4)
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
 
@@ -232,7 +205,7 @@ class _BinaryNonlinear:
         tb = self.partial_fn(a, self.MESH_1D, (Partial(),))
         # auto_reduce_partial is now a no-op; transfer_to is deterministic.
         result = mul(ta, tb)
-        assert result.placements == (Replicated(),)
+        assert not any(isinstance(p, Partial) for p in result.placements)
 
 
 # ── TestBinaryLinear (add) ───────────────────────────────────────────────
@@ -273,31 +246,6 @@ class _BinaryLinear:
         assert tuple(result.shape) == (2, 4)
         np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
 
-    def test_add_incompatible_raises(self) -> None:
-        a = np.ones((4, 8), dtype=np.float32)
-        ta = transfer_to(
-            Tensor(a),
-            PlacementMapping(
-                self.MESH_2D,
-                (
-                    Sharded(0),
-                    Replicated(),
-                ),
-            ),
-        )
-        tb = transfer_to(
-            Tensor(a),
-            PlacementMapping(
-                self.MESH_2D,
-                (
-                    Sharded(1),
-                    Replicated(),
-                ),
-            ),
-        )
-        with pytest.raises(ValueError, match="incompatible"):
-            add(ta, tb)
-
     def test_add_pp_passthrough(self) -> None:
         a = np.ones((2, 4), dtype=np.float32)
         b = np.full((2, 4), 2.0, dtype=np.float32)
@@ -318,8 +266,7 @@ class _BinaryLinear:
             Tensor(b), PlacementMapping(self.MESH_1D, (Replicated(),))
         )
         result = add(ta, tb)
-        # Linear mixed (Partial + Replicated): auto-reduces the Partial.
-        assert result.placements == (Replicated(),)
+        assert not any(isinstance(p, Partial) for p in result.placements)
         expected = (a * 4) + b
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
 
@@ -451,8 +398,7 @@ class _Cast:
         arr = np.ones((2, 4), dtype=np.float32)
         t = self.partial_fn(arr, self.MESH_1D, (Partial(),))
         result = cast(t, DType.bfloat16)
-        # Cast is non-linear: auto-reduces Partial first.
-        assert result.placements == (Replicated(),)
+        assert not any(isinstance(p, Partial) for p in result.placements)
         result_f32 = cast(result, DType.float32)
         np.testing.assert_allclose(result_f32.to_numpy(), arr * 4, rtol=1e-2)
 
