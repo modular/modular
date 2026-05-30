@@ -711,6 +711,16 @@ class BenchmarkResult(BaseModel):
 
     # Workload aggregates. Exactly the one matching ``task_type`` is set on
     # success; both stay ``None`` for failed iterations / dry runs.
+    #
+    # IMPORTANT: keep these as two *separate* Optional fields, NOT a combined
+    # union ``aggregates: TextGenAggregates | PixelGenAggregates | None``.
+    # The generic CSV reporter in
+    # ``utils/benchmarking/results_publication/reporters/csv.py`` can only
+    # expand ``Optional[SingleStructuredType]`` recursively into per-field
+    # columns.  A two-type union returns ``None`` from
+    # ``_unwrap_optional_structured_type``, causing ``_flatten_model`` to fall
+    # through to ``json.dumps`` and emit a single opaque JSON-blob column —
+    # making the CSV output difficult to work with in spreadsheet tools.
     text_data: TextGenAggregates | None = None
     pixel_data: PixelGenAggregates | None = None
 
