@@ -394,6 +394,11 @@ This version is still a work in progress.
   $ mojo --clear-cache -f   # no prompt
   ```
 
+- The Mojo compiler now reports call-related errors on the operand value that
+  causes the failure, instead of on the call overall. This makes it easier
+  to understand failures in calls with many arguments spread over multiple
+  lines.
+
 ## GPU programming
 
 - Added `DeviceContextList[size]` in `std.gpu.host`: a fixed-size,
