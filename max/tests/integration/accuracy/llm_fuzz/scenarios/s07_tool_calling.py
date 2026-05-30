@@ -25,6 +25,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from helpers import STRUCTURAL_LEAK_MARKERS
+
 from scenarios import BaseScenario, ScenarioResult, Verdict, register_scenario
 from scenarios._kimi_fixtures import PRODUCTION_ONEOF_TOOL
 
@@ -923,6 +925,151 @@ class ToolCallingAttacks(BaseScenario):
                 "tool_schema_with_oneof_and_const",
                 resp.body,
                 resp.status,
+            )
+        )
+
+        # ----- 13. Interleaved thinking + multiple tool-call sections -----
+        # Kimi K2.5 interleaves <think>...</think> reasoning with multiple
+        # <|tool_calls_section_begin|>...<|tool_calls_section_end|> sections in
+        # one turn. The constrained-decoding grammar caps sections at 1
+        # previously, which (a) desynced the async matcher in tool_choice=auto
+        # — the prod ``Async matcher rejected token 163595`` — and (b) could
+        # leak structural / reasoning markers into message.content. This
+        # multi-step agentic prompt encourages several tool calls; the
+        # invariant we assert holds no matter how many the model emits:
+        #   * no server error,
+        #   * tool_call arguments are valid JSON,
+        #   * NO structural / reasoning markers leak into message.content.
+        # Marker leakage is the fingerprint of a matcher/parser desync or a
+        # reasoning-span split that dropped a block — exactly the regressions
+        # this change guards. ``STRUCTURAL_LEAK_MARKERS`` is the union across
+        # tool-calling models, so this check is meaningful for whichever model
+        # is served.
+        leak_markers = STRUCTURAL_LEAK_MARKERS
+
+        def _assert_no_marker_leak(
+            name: str, resp_body: str, status: int
+        ) -> ScenarioResult:
+            if status >= 500:
+                return self.make_result(
+                    self.name,
+                    name,
+                    Verdict.FAIL,
+                    status_code=status,
+                    detail=f"server error: status {status}",
+                )
+            try:
+                body = json.loads(resp_body)
+                message = body["choices"][0]["message"]
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
+                return self.make_result(
+                    self.name,
+                    name,
+                    Verdict.FAIL,
+                    status_code=status,
+                    detail=f"malformed response: {e}",
+                )
+            content = message.get("content") or ""
+            reasoning = message.get("reasoning") or ""
+            leaked = [m for m in leak_markers if m in content or m in reasoning]
+            if leaked:
+                return self.make_result(
+                    self.name,
+                    name,
+                    Verdict.FAIL,
+                    status_code=status,
+                    detail=(
+                        f"structural/reasoning markers leaked into "
+                        f"content/reasoning: {leaked}"
+                    ),
+                )
+            for tc in message.get("tool_calls") or []:
+                args = tc.get("function", {}).get("arguments")
+                if args is not None:
+                    try:
+                        json.loads(args)
+                    except json.JSONDecodeError as e:
+                        return self.make_result(
+                            self.name,
+                            name,
+                            Verdict.FAIL,
+                            status_code=status,
+                            detail=f"tool_call arguments not valid JSON: {e}",
+                        )
+            return self.make_result(
+                self.name, name, Verdict.PASS, status_code=status
+            )
+
+        interleaved_payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "Plan a trip: first get the weather in Paris, then "
+                        "based on that decide whether to also get the weather "
+                        "in London. Use the get_weather tool for each city, "
+                        "thinking step by step between calls."
+                    ),
+                }
+            ],
+            "tools": [valid_tool],
+            "tool_choice": "auto",
+            "chat_template_kwargs": {"thinking": True, "enable_thinking": True},
+            "max_tokens": 512,
+        }
+        resp = await client.post_json(
+            interleaved_payload, timeout=config.timeout * 2
+        )
+        results.append(
+            _assert_no_marker_leak(
+                "interleaved_thinking_multi_section", resp.body, resp.status
+            )
+        )
+
+        # Streaming variant: reassemble content/reasoning and check the same
+        # no-marker-leak invariant on the streamed deltas.
+        resp_stream = await client.post_streaming(
+            interleaved_payload, read_timeout=config.timeout * 4
+        )
+        stream_content_parts: list[str] = []
+        stream_reasoning_parts: list[str] = []
+        stream_ok = resp_stream.status == 200
+        for raw in resp_stream.chunks or []:
+            if raw == "[DONE]":
+                break
+            try:
+                obj = json.loads(raw)
+                delta = obj.get("choices", [{}])[0].get("delta", {})
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                continue
+            if delta.get("content"):
+                stream_content_parts.append(delta["content"])
+            rc = delta.get("reasoning_content") or delta.get("reasoning")
+            if rc:
+                stream_reasoning_parts.append(rc)
+        stream_blob = "".join(stream_content_parts) + "".join(
+            stream_reasoning_parts
+        )
+        stream_leaked = [m for m in leak_markers if m in stream_blob]
+        if resp_stream.status >= 500 or resp_stream.error == "TIMEOUT":
+            stream_verdict = Verdict.FAIL
+            stream_detail = f"stream status {resp_stream.status}"
+        elif stream_leaked:
+            stream_verdict = Verdict.FAIL
+            stream_detail = (
+                f"markers leaked into streamed text: {stream_leaked}"
+            )
+        else:
+            stream_verdict = Verdict.PASS if stream_ok else Verdict.INTERESTING
+            stream_detail = f"status {resp_stream.status}"
+        results.append(
+            self.make_result(
+                self.name,
+                "interleaved_thinking_multi_section_streaming",
+                stream_verdict,
+                status_code=resp_stream.status,
+                detail=stream_detail,
             )
         )
 

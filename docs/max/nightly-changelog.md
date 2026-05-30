@@ -12,6 +12,14 @@ This version is still a work in progress.
 
 - Added NVFP4 quantization support for Gemma 4.
 - Added MXFP4 quantization support for MiniMax-M2.
+- Kimi K2.5 tool calling now supports interleaved thinking: a single
+  assistant turn may interleave multiple `<think>...</think>` reasoning
+  blocks with multiple tool-call sections and end with `<|im_end|>`. The
+  constrained-decoding grammar (used for `tool_choice` and JSON
+  `response_format`) admits up to eight tool-call sections with an optional
+  reasoning block before each, and lets the model stop before the cap. This
+  fixes a `tool_choice=auto` failure where a second tool-call section
+  disabled grammar enforcement for the rest of the request.
 
 ## MAX framework
 
