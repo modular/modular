@@ -594,8 +594,10 @@ def KGEN_IsRefinedType : KGENAttr<"IsRefinedType", "is_refined_type",
   ];
 
   let extraClassDeclaration = [{
-    /// Get the type of the attribute. It is always I1 type.
-    Type getType() const { return IntegerType::get(getContext(), 1);}
+    /// Get the type of the attribute. It is always `!kgen.scalar<bool>`.
+    Type getType() const {
+      return SIMDType::get(getContext(), 1, KGENDType::kBool);
+    }
   }];
 }
 

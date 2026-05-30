@@ -1174,8 +1174,8 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         result.allParamConstraints.emplace_back();
     IREmitter constraintEmitter(declScope, EC_Requires);
     for (const ParsedConstraint &constraint : arg.constraints) {
-      RValue prop =
-          constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
+      RValue prop = constraintEmitter.emitExprScalarBool(constraint.propExpr,
+                                                         EC_Requires);
       if (!prop) {
         constraintEmitter.emitError(constraint.loc,
                                     "failed to emit constraint expression");
@@ -1189,7 +1189,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
       }
 
       // Convert `x and y` to `x & y` so we get better canonicalization.
-      propVal = deShortCircuitCond(CastFromBuiltinAttr::get(propVal.get()));
+      propVal = deShortCircuitCond(propVal.get());
 
       // Store the constraint in the parameter list as is. These will be
       // remapped to using index refs later when constructing the final
@@ -1239,23 +1239,22 @@ void TypeCheckedParamList::emitBodyConstraints() {
   SharedState &shared = declScope.getShared();
   IREmitter constraintEmitter(declScope, EC_Requires);
   for (const ParsedConstraint &constraint : stagedBodyConstraints) {
-    // TODO: directly emit scalar<bool> instead of i1.
-    RValue propI1 =
-        constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
-    if (!propI1) {
+    RValue prop =
+        constraintEmitter.emitExprScalarBool(constraint.propExpr, EC_Requires);
+    if (!prop) {
       constraintEmitter.emitError(constraint.loc,
                                   "failed to emit constraint expression");
       continue;
     }
 
-    PValue propVal = propI1.getIfPValue();
+    PValue propVal = prop.getIfPValue();
     if (!propVal) {
       constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
       continue;
     }
 
     // Convert `x and y` to `x & y` so we get better canonicalization.
-    propVal = deShortCircuitCond(CastFromBuiltinAttr::get(propVal));
+    propVal = deShortCircuitCond(propVal);
 
     // Translate location without any DebugInfo scope since this metadata is
     // purely frontend use and never ends up in DWARF.

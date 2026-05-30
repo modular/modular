@@ -21,6 +21,7 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -1106,11 +1107,10 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
   }
 
   IREmitter emitter = getParamEmitter(EC_ComptimeAssert);
-  // TODO: directly emit scalar<bool> instead of i1.
-  RValue propI1 = emitter.emitExprI1(expr, EC_ComptimeAssert);
-  if (!propI1)
+  RValue prop = emitter.emitExprScalarBool(expr, EC_ComptimeAssert);
+  if (!prop)
     return failure();
-  PValue propVal = propI1.getIfPValue();
+  PValue propVal = prop.getIfPValue();
   if (!propVal) {
     emitter.emitErrorForDynamicValueInParameter(expr->getLoc());
     return failure();
@@ -1131,13 +1131,14 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
 
   // If the condition is always True, the assertion is redundant and adds no
   // useful constraint, so skip emitting IR entirely.
-  if (auto boolAttr = sugarDynCast<BoolAttr>(propVal.get());
-      boolAttr && boolAttr.getValue())
+  if (auto simdAttr = sugarDynCast<SIMDAttr>(propVal.get());
+      simdAttr && simdAttr.getAsBool())
     return success();
 
   Location loc = translateLocation(kwLoc);
-  auto assertOp =
-      KGEN::ParamAssertOp::create(builder, loc, propVal.get(), message);
+  // TODO: Update ParamAssertOp to take scalar<bool> directly.
+  TypedAttr propI1 = CastToBuiltinAttr::get(propVal.get());
+  auto assertOp = KGEN::ParamAssertOp::create(builder, loc, propI1, message);
 
   // All subsequent statements implicitly belong to a new, nested parameter
   // scope. This scope completely takes over as the new `curDeclScope` and the
@@ -1146,8 +1147,7 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
                                                          kwLoc, curDeclScope);
   // Inject this assumption into the newly created context.
   // Convert `x and y` to `x & y` so we get better canonicalization.
-  TypedAttr deShortCircuitCond =
-      LIT::deShortCircuitCond(CastFromBuiltinAttr::get(propVal.get()));
+  TypedAttr deShortCircuitCond = LIT::deShortCircuitCond(propVal.get());
   curDeclScope->insertKnownAssumptions(
       {ConstraintAttr::get(deShortCircuitCond, loc)});
   return success();

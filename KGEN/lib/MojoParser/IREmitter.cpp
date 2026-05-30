@@ -17,12 +17,12 @@
 #include "ParserEvaluationContext.h"
 #include "Traits.h"
 
-#include "KGEN/MojoParser/ASTDecl.h"
-#include "KGEN/MojoParser/DeclResolver.h"
-
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/POPDialect/POPOps.h"
 
 #include "Support/Compiler/OperationUtils.h"
@@ -353,7 +353,7 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
                                                       ExprContext context) {
   TypedAttr attr = value.ir.get();
   // We cannot emit types as values yet.
-  if (isTypeExpr(attr) && !isa<ModuleAttr>(attr)) {
+  if (LIT::isTypeExpr(attr) && !isa<ModuleAttr>(attr)) {
     const ExprNode *expr = value.expr;
     MojoInflightDiag diag = emitter.emitError(
         expr->getLoc(), "dynamic type values not permitted yet");
@@ -1334,16 +1334,33 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   if (valueRValueType.mlirType.isInteger(1))
     return emitRValue(value, context);
 
+  // re-route via scalar<bool> -> i1
+  RValue scalarBool = emitScalarBool(value, context);
+  return emitRValue({scalarBool, value.expr}, context,
+                    IntegerType::get(getContext(), 1));
+}
+
+RValue IREmitter::emitScalarBool(ASTExprAnd<CValue> value,
+                                 ExprContext context) {
+  if (!value.ir)
+    return {};
+
+  ASTType valueRValueType = value.ir.getRValueType();
+
+  // If this is already an 'scalar<bool>', then we're done.
+  if (isScalarOf<KGENDType::kBool>(valueRValueType.mlirType))
+    return emitRValue(value, context);
+
   // TODO: Python manual includes this off-hand comment:
   // Also, an object that doesn’t define a __bool__() method and whose __len__()
   // method returns zero is considered to be false in a Boolean context.
 
   // Check for the presence of a __mlir_i1__ method.  If it exists, we can avoid
   // a redundant call to __bool__ for Bool types.
-  if (!shared.typeHasMember(valueRValueType, "__mlir_i1__",
+  if (!shared.typeHasMember(valueRValueType, "__mlir_bool__",
                             value.expr->getLoc())) {
     // Use the __bool__ method to convert the user defined type to
-    // something that is a Bool or other type that implements __mlir_i1__.
+    // something that is a Bool or other type that implements __mlir_bool__.
     value.ir =
         emitNamedMethodCall("__bool__", CallOperands{CallSyntax::kMethodCall,
                                                      value.expr,
@@ -1352,7 +1369,7 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   }
 
   // For stdlib Bool, directly extract the _mlir_value field instead of calling
-  // __mlir_i1__. This avoids unnecessary sugar wrapping that would show up in
+  // __mlir_bool__. This avoids unnecessary sugar wrapping that would show up in
   // diagnostics.
   ASTType boolType =
       shared.lookupBuiltinType("Bool", declScope, value.expr->getLoc());
@@ -1360,21 +1377,16 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
     if (PValue pvalue = value.ir.getIfPValue()) {
       if (auto extractVal = ASTType::extractStructField(
               pvalue.get(), "_mlir_value", value.expr->getLoc(), shared))
-        // Bool holds a scalar<bool> in _mlir_value, so we need to cast it to
-        // i1.
-        // FIXME: we should not emit i1 expression at all, compiler should just
-        // use scalar<bool>.
-        return emitRValue(
-            {PValue(CastToBuiltinAttr::get(extractVal)), value.expr}, context);
+        return emitRValue({PValue(extractVal), value.expr}, context);
     }
   }
 
-  // For other types that implement __mlir_i1__, call the method.
+  // For other types that implement __mlir_bool__, call the method.
   CValue litBoolCall = emitNamedMethodCall(
-      "__mlir_i1__", CallOperands{CallSyntax::kMethodCall,
-                                  value.expr,
-                                  context,
-                                  {{value.ir, value.expr}}});
+      "__mlir_bool__", CallOperands{CallSyntax::kMethodCall,
+                                    value.expr,
+                                    context,
+                                    {{value.ir, value.expr}}});
 
   // If we got back a sugared PValue call to the method, then drop the sugar.
   // This reduces the size of the printed IR, making it easier to read, and the
@@ -1389,6 +1401,11 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
 
 RValue IREmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
   return emitI1({emitExprCValue(condExpr, context), condExpr}, context);
+}
+
+RValue IREmitter::emitExprScalarBool(const ExprNode *condExpr,
+                                     ExprContext context) {
+  return emitScalarBool({emitExprCValue(condExpr, context), condExpr}, context);
 }
 
 CValue IREmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {

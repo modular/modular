@@ -665,7 +665,7 @@ struct CopyAndInitMemType(ImplicitlyCopyable):
   def __init__(out self, *, copy: Self): pass
   # expected-note @+1 {{function declared here}}
   def __le__(self, other: Self) -> Self: return self
-  def __mlir_i1__(self) -> __mlir_type.i1: pass
+  def __mlir_bool__(self) -> __mlir_type.`!kgen.scalar<bool>`: pass
 
 def compare_mem_result():
   var x = CopyAndInitMemType()

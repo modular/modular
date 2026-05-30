@@ -253,7 +253,7 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
       });
   replacer.addInferredDomainNonRecursiveReplacement(
       [](IsRefinedTypeAttr isRefinedTrait) -> FailureOr<Attribute> {
-        return BoolAttr::get(isRefinedTrait.getContext(), true);
+        return SIMDAttr::getScalarBool(isRefinedTrait.getContext(), true);
       });
 
   // ParamRefTypes should be TypeValueType if in the value domain.
