@@ -133,6 +133,11 @@ public:
     return *diag;
   }
 
+  MojoInflightDiag &attachNote(ASTDecl &decl) & {
+    diag->attachNote(decl);
+    return *diag;
+  }
+
   /// Take the emitted diagnostic if any.
   std::optional<MojoInflightDiag> takeMojoDiag() { return std::move(diag); }
 

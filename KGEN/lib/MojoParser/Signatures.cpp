@@ -2511,7 +2511,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     auto diag =
         shared.emitError(fnDecl->getLoc(), "trivial types must not declare '");
     diag << fnInfo.name << "' methods; they are trivially destroyable";
-    diag.attachNote(fnDecl->getLoc())
+    diag.attachNote(*fnDecl)
         << "trivial types have no identity; the compiler destroys them "
            "automatically with no observable effect";
     fnInfo = SpecialFunctionInfo();

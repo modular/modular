@@ -843,9 +843,9 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   auto attachNoteOnError = llvm::scope_exit([&]() {
     if (diag.hasErrorEmitted() && declIfKnown) {
       if (llvm::isa_and_nonnull<FnOp>(declIfKnown->getIfOperation())) {
-        diag.attachNote(declIfKnown->getLoc()) << "function declared here";
+        diag.attachNote(*declIfKnown) << "function declared here";
       } else {
-        diag.attachNote(declIfKnown->getLoc())
+        diag.attachNote(*declIfKnown)
             << "'" << *declIfKnown->getUserNameIfOperation()
             << "' declared here";
       }
@@ -1115,7 +1115,9 @@ LogicalResult ParamInf::finalizeWithUnbound() {
         if (paramIdx < structSig.getNumParams()) {
           diag << " of parent struct '" << structOp.getDeclName().getValue()
                << "'";
-          diag.attachNote(structOp.getLoc()) << " struct declared here";
+
+          diag.attachNote(*declIfKnown->getParentDecl())
+              << " struct declared here";
           return;
         }
       }

@@ -443,12 +443,12 @@ struct DisprovedWithWhereNot[T: Movable](
 
 
 trait DefaultMethodTrait:
-    # expected-note @below {{cannot prove constraint for candidate}}
-    # expected-note @below {{generated function with type}}
     def custom_default(self) -> Int:
         return 42
 
 
+# expected-note @below {{cannot prove constraint for candidate}}
+# expected-note @below {{def custom_default(self) -> Int where conforms_to(T, AnyType & Copyable & Movable)    # note - generated function}}
 struct ConditionalDefaultMethod[T: Movable](
     # expected-note @below {{constraint declared here}}
     DefaultMethodTrait where conforms_to(T, Copyable),
@@ -474,12 +474,12 @@ def call_default_externally[T: Movable](x: ConditionalDefaultMethod[T]):
 
 
 trait ZeroFieldTrait:
-    # expected-note @below {{cannot prove constraint for candidate}}
-    # expected-note @below {{generated function with type}}
     def zero_field_method(self) -> Int:
         return 0
 
 
+# expected-note @below {{cannot prove constraint for candidate}}
+# expected-note @below {{def zero_field_method(self) -> Int where conforms_to(T, AnyType & Copyable & Movable)    # note - generated function}}
 struct ZeroFieldConditional[T: Movable](
     Movable,
     # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, AnyType & Copyable & Movable)'}}
