@@ -1677,7 +1677,7 @@ class Tensor(DLPackArray, HasTensorValue):
             )
         elif isinstance(target, DeviceMesh):
             if isinstance(self._mapping, NamedMapping):
-                mapping = NamedMapping(target, self._mapping.original_spec)
+                mapping = self._mapping._resolve(target)
             else:
                 mapping = PlacementMapping(target, self.placements)
         elif isinstance(target, DeviceMapping):

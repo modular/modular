@@ -41,9 +41,36 @@ from .mappings import (
     NamedMapping,
     PlacementMapping,
     SpecEntry,
+    default_mesh,
+    is_fully_replicated,
+    replicate_all,
+    replicate_axes,
+    resolve_partials_mapping,
 )
-from .mesh import DeviceMesh
-from .placements import Partial, Placement, ReduceOp, Replicated, Sharded
+from .mesh import DeviceMesh, MeshContext, get_active_mesh
+from .per_shard_dim import (
+    PerShardDim,
+    cell_at,
+    global_dim,
+    global_shape,
+    is_one,
+    is_per_shard_dim,
+    make_per_shard_dim,
+    shape_at,
+)
+from .placements import (
+    Collective,
+    Partial,
+    Placement,
+    ReduceOp,
+    Replicated,
+    Sharded,
+    is_partial,
+    is_replicated,
+    is_sharded,
+    remap_sharded,
+    resolve_partials,
+)
 from .shapes import (
     _shard_sizes_along_axis,
     global_shape_from_local,
@@ -59,14 +86,17 @@ from .types import (
 )
 
 __all__ = [
+    "Collective",
     "ConversionError",
     "DeviceMapping",
     "DeviceMesh",
     "DistributedBufferType",
     "DistributedTensorType",
     "DistributedType",
+    "MeshContext",
     "NamedMapping",
     "Partial",
+    "PerShardDim",
     "Placement",
     "PlacementMapping",
     "ReduceOp",
@@ -75,8 +105,26 @@ __all__ = [
     "SpecEntry",
     "TensorLayout",
     "_shard_sizes_along_axis",
+    "cell_at",
+    "default_mesh",
+    "get_active_mesh",
+    "global_dim",
+    "global_shape",
     "global_shape_from_local",
+    "is_fully_replicated",
+    "is_one",
+    "is_partial",
+    "is_per_shard_dim",
+    "is_replicated",
+    "is_sharded",
     "local_shard_shape_from_global",
+    "make_per_shard_dim",
+    "remap_sharded",
+    "replicate_all",
+    "replicate_axes",
+    "resolve_partials",
+    "resolve_partials_mapping",
+    "shape_at",
     "shard_shape",
     "sharded_symbolic_dim",
 ]

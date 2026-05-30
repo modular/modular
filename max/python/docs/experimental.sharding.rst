@@ -35,6 +35,16 @@ Placements
    Replicated
    Sharded
 
+Per-shard dim wrappers
+----------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   PerShardDim
+
 Sharding specifications
 -----------------------
 
@@ -79,7 +89,24 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   cell_at
+   default_mesh
+   global_dim
+   global_shape
    global_shape_from_local
+   is_fully_replicated
+   is_one
+   is_partial
+   is_per_shard_dim
+   is_replicated
+   is_sharded
    local_shard_shape_from_global
+   make_per_shard_dim
+   remap_sharded
+   replicate_all
+   replicate_axes
+   resolve_partials
+   resolve_partials_mapping
+   shape_at
    shard_shape
    sharded_symbolic_dim
