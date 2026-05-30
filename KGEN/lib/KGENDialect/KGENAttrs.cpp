@@ -1004,10 +1004,8 @@ static DenseBoolArrayAttr mergeDischargedConstraints(
 
 BindParamsAttr BindParamsAttr::getFromBytecode(TypedAttr generator,
                                                ArrayRef<TypedAttr> paramValues,
-                                               Type type,
                                                DenseBoolArrayAttr discharged) {
-  return Base::get(generator.getContext(), generator, paramValues, discharged,
-                   type);
+  return Base::get(generator.getContext(), generator, paramValues, discharged);
 }
 
 static bool isEagerlyInstantiatable(GeneratorType generator) {
@@ -1058,10 +1056,13 @@ DenseBoolArrayAttr KGEN::getDenseBoolArrayAttr(MLIRContext *context,
   return Builder(context).getDenseBoolArrayAttr(values);
 }
 
-Type BindParamsAttr::inferResultType(
-    TypedAttr generator, ArrayRef<TypedAttr> paramValues,
-    DenseBoolArrayAttr discharged,
-    ParameterEvaluationContext *evaluationContext) {
+static Type
+inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+                          DenseBoolArrayAttr discharged,
+                          ParameterEvaluationContext *evaluationContext) {
+  if (paramValues.empty() && (!discharged || discharged.empty()))
+    return generator.getType();
+
   auto genType = sugarCast<GeneratorType>(generator.getType());
   SmallVector<TypedAttr> normalizedParamValues =
       normalizeBindParamsValues(genType, paramValues);
@@ -1077,9 +1078,24 @@ Type BindParamsAttr::inferResultType(
   assert(specializedType && "Failed to specialize generator");
   // By back-compat, we never eliminate the empty generator type wrapper on
   // func types. This should eventually be made consistent with other types.
+  PogListAttr metadata = specializedType.getMetadata();
+  bool hasBodyConstraints = metadata && !metadata.getBodyConstraints().empty();
   bool canEagerInstantiate = specializedType.isFullyBound() &&
+                             !hasBodyConstraints &&
                              isEagerlyInstantiatable(specializedType);
-  return canEagerInstantiate ? specializedType.getBody() : specializedType;
+  if (canEagerInstantiate) {
+    IndexDepthAdjuster adjuster(-1);
+    return adjuster.replace(specializedType.getBody());
+  }
+  return specializedType;
+}
+
+Type BindParamsAttr::inferResultType(
+    TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+    DenseBoolArrayAttr discharged,
+    ParameterEvaluationContext *evaluationContext) {
+  return inferBindParamsResultType(generator, paramValues, discharged,
+                                   evaluationContext);
 }
 
 Type BindParamsAttr::inferResultType(
@@ -1087,6 +1103,11 @@ Type BindParamsAttr::inferResultType(
     ParameterEvaluationContext *evaluationContext) {
   return inferResultType(generator, paramValues, /*discharged=*/{},
                          evaluationContext);
+}
+
+Type BindParamsAttr::getType() const {
+  return inferResultType(getGenerator(), getParamValues(), getDischarged(),
+                         /*evaluationContext=*/nullptr);
 }
 
 static TypedAttr simplifyBindParams(TypedAttr generator,
@@ -1114,7 +1135,7 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
     }
     return BindParamsAttr::get(bindParams.getContext(),
                                bindParams.getGenerator(), mergedParamValues,
-                               mergedMask, type, evalContext);
+                               mergedMask, evalContext);
   }
 
   // Can simplify if the generator is a GeneratorAttr.
@@ -1184,54 +1205,60 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
                               ArrayRef<TypedAttr> paramValues,
-                              DenseBoolArrayAttr discharged, Type type,
+                              DenseBoolArrayAttr discharged,
                               ParameterEvaluationContext *evaluationContext) {
+  Type type = inferBindParamsResultType(generator, paramValues, discharged,
+                                        evaluationContext);
   if (auto simplified = simplifyBindParams(generator, paramValues, type,
                                            evaluationContext, discharged)) {
     assert(isEqualCanon(simplified.getType(), type) &&
            "bind_params simplification must preserve the requested type");
     return simplified;
   }
-  return Base::get(generator.getContext(), generator, paramValues, discharged,
-                   type);
+  return Base::get(generator.getContext(), generator, paramValues, discharged);
 }
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
-                              ArrayRef<TypedAttr> paramValues, Type type,
+                              ArrayRef<TypedAttr> paramValues,
                               ParameterEvaluationContext *evaluationContext) {
-  return get(context, generator, paramValues, /*discharged=*/{}, type,
+  return get(context, generator, paramValues, /*discharged=*/{},
              evaluationContext);
+}
+
+static LogicalResult
+verifyBindParamsInputs(function_ref<InFlightDiagnostic()> emitError,
+                       TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+                       DenseBoolArrayAttr discharged);
+
+TypedAttr
+BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                           MLIRContext *context, TypedAttr generator,
+                           ArrayRef<TypedAttr> paramValues,
+                           DenseBoolArrayAttr discharged,
+                           ParameterEvaluationContext *evaluationContext) {
+  if (failed(verifyBindParamsInputs(emitError, generator, paramValues,
+                                    discharged)))
+    return {};
+  return get(context, generator, paramValues, discharged, evaluationContext);
 }
 
 TypedAttr
 BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                            MLIRContext *context, TypedAttr generator,
                            ArrayRef<TypedAttr> paramValues,
-                           DenseBoolArrayAttr discharged, Type type,
                            ParameterEvaluationContext *evaluationContext) {
-  if (failed(verify(emitError, generator, paramValues, discharged, type)))
+  if (failed(verifyBindParamsInputs(emitError, generator, paramValues,
+                                    /*discharged=*/{})))
     return {};
-  return get(context, generator, paramValues, discharged, type,
-             evaluationContext);
-}
-
-TypedAttr
-BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                           MLIRContext *context, TypedAttr generator,
-                           ArrayRef<TypedAttr> paramValues, Type type,
-                           ParameterEvaluationContext *evaluationContext) {
-  if (failed(
-          verify(emitError, generator, paramValues, /*discharged=*/{}, type)))
-    return {};
-  return get(context, generator, paramValues, type, evaluationContext);
+  return get(context, generator, paramValues, evaluationContext);
 }
 
 bool BindParamsAttr::isConstant() const { return false; }
 
-LogicalResult
-BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+static LogicalResult
+verifyBindParamsInputs(function_ref<InFlightDiagnostic()> emitError,
                        TypedAttr generator, ArrayRef<TypedAttr> paramValues,
-                       DenseBoolArrayAttr discharged, Type type) {
+                       DenseBoolArrayAttr discharged) {
   auto genType = sugarDynCast<GeneratorType>(generator.getType());
   if (!genType)
     return emitError()
@@ -1256,28 +1283,19 @@ BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        << (origBodyCount == 1 ? " body constraint"
                                               : " body constraints");
 
-  size_t numDischarged = llvm::count(discharged.asArrayRef(), true);
-  size_t expectedResidual = discharged.size() - numDischarged;
-
-  auto typeGen = sugarDynCast<GeneratorType>(type);
-  size_t actualResidual = 0;
-  if (typeGen) {
-    PogListAttr typeMetadata = typeGen.getMetadata();
-    actualResidual =
-        typeMetadata ? typeMetadata.getBodyConstraints().size() : 0;
-  }
-  if (actualResidual != expectedResidual)
-    return emitError() << "bind_params type has " << actualResidual
-                       << " body constraint" << (actualResidual == 1 ? "" : "s")
-                       << " but the discharge mask claims " << expectedResidual
-                       << " survive";
-
   // It is possible that the parameter values do not have identical types as
   // what the generator type expects. This happens for example during
   // LiftAndFoldApply, where we may lift an apply from the operand, but not from
   // its type due to us not lifting apply operators out of generator types.
   // We will have to rely on post-elaboration verification to catch these.
   return success();
+}
+
+LogicalResult
+BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+                       DenseBoolArrayAttr discharged) {
+  return verifyBindParamsInputs(emitError, generator, paramValues, discharged);
 }
 
 //===----------------------------------------------------------------------===//

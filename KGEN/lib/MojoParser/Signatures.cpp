@@ -28,6 +28,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -974,10 +975,15 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
         return {};
       propagateBodyConstraints(genParamList);
       TypedAttr generator = paramType.getParam();
-      Type resultType = BindParamsAttr::inferResultType(
-          generator, paramValues, &shared.getEvaluationContext());
+      // The generator's trailing constraints were re-attached to the enclosing
+      // parameter list above, so they'll be guaranteed to be satisfied under
+      // this context. Discharge them all.
+      llvm::BitVector dischargedMask(genParamList.getBodyConstraints().size(),
+                                     true);
+      DenseBoolArrayAttr discharged =
+          KGEN::getDenseBoolArrayAttr(generator.getContext(), dischargedMask);
       return BindParamsAttr::get(generator.getContext(), generator, paramValues,
-                                 resultType, &shared.getEvaluationContext());
+                                 discharged, &shared.getEvaluationContext());
     }
   }
 

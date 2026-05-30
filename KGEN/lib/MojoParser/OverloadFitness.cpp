@@ -622,8 +622,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // If anything was bound, apply it to the signature so the expected argument
   // types are updated. The bindings produced by inference have already been
   // rebound by `setInferredValue` against `signature.getInputParamTypes()`, so
-  // there is no need for the additional `getUnboundSpecializedSignature`
-  // rebinding loop here.
+  // there is no need for an additional rebinding loop here.
   signature =
       cast<GeneratorType>(verifiedBindings.specializeGeneratorType(signature));
 

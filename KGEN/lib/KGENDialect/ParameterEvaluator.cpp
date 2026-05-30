@@ -388,10 +388,14 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
       return nullptr;
     changed |= newType != bindParams.getType();
 
-    if (changed)
-      return BindParamsAttr::get(bindParams.getContext(),
-                                 cast<TypedAttr>(newGenerator), newParamValues,
-                                 newType, getEvaluationContext());
+    if (changed) {
+      TypedAttr result = BindParamsAttr::get(
+          bindParams.getContext(), cast<TypedAttr>(newGenerator),
+          newParamValues, bindParams.getDischarged(), getEvaluationContext());
+      assert(isEqualCanon(result.getType(), newType) &&
+             "inferred bind_params type must match rebound type");
+      return result;
+    }
     return bindParams;
   } else {
     SmallVector<Attribute, 16> newAttrs;

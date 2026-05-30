@@ -921,11 +921,13 @@ static LogicalResult lowerAttributesAndTypes(
 
         // Remove discharge mask since it goes together with the generator
         // metadata's body constraints.
+        TypedAttr generator =
+            cast<TypedAttr>(replacer.replace(attr.getGenerator()));
         return std::make_pair(
-            cast<TypedAttr>(BindParamsAttr::get(
-                attr.getContext(), attr.getGenerator(), attr.getParamValues(),
-                attr.getType(), /*evaluationContext=*/nullptr)),
-            WalkResult::advance());
+            BindParamsAttr::get(generator.getContext(), generator,
+                                attr.getParamValues(),
+                                /*evaluationContext=*/nullptr),
+            WalkResult::skip());
       });
 
   replacer.addReplacement([&](StructInstanceType structInstType) {
@@ -1046,10 +1048,9 @@ static LogicalResult lowerAttributesAndTypes(
           if (newOperands.size() != bindParams.getParamValues().size()) {
             TypedAttr generator =
                 cast<TypedAttr>(replacer.replace(bindParams.getGenerator()));
-            Type resultType = replacer.replace(bindParams.getType());
             return std::make_pair(
                 BindParamsAttr::get(generator.getContext(), generator,
-                                    newOperands, resultType,
+                                    newOperands,
                                     /*evaluationContext=*/nullptr),
                 WalkResult::skip());
           }

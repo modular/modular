@@ -1772,40 +1772,6 @@ Type LIT::getSignatureUserResultType(FnOrFnLiteralTypeGeneratorType sigType,
   return resultType;
 }
 
-/// The Lit parser and KGEN have different semantics for binding function
-/// argument and result types. The parser will evaluate 'apply' expressions, but
-/// KGEN does not since it cannot always have access to a symbol table.
-/// Specialize a signature type while rebinding the input parameter values to
-/// the expected input parameter types.
-std::pair<FnTypeGeneratorType, ParameterExprArrayAttr>
-LIT::getUnboundSpecializedSignature(FnTypeGeneratorType type,
-                                    ParameterExprArrayAttr bindings,
-                                    ParameterEvaluationContext *evalContext) {
-  if (bindings.empty())
-    return {type, bindings};
-
-  // KGEN expects different bindings types than Lit can provide. Rebind the
-  // parameters to the expected types.
-  SmallVector<TypedAttr> unboundBindings;
-  ParameterEvaluator evaluator;
-  evaluator.setEvaluationContext(evalContext);
-  for (auto [binding, type] : llvm::zip(bindings, type.getInputParamTypes())) {
-    TypedAttr value = binding;
-    Type unboundType = evaluator.getReboundType(type);
-    if (unboundType != value.getType())
-      value = ParamOperatorAttr::getRebind(value, unboundType);
-    evaluator.appendIndexBinding(value);
-    unboundBindings.push_back(value);
-  }
-  type = type.getSpecializedGenerator(
-      unboundBindings, evalContext, [&]() -> InFlightDiagnostic {
-        return mlir::emitError(UnknownLoc::get(type.getContext()));
-      });
-  assert(type && "bad bindings specified");
-  return {type,
-          ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};
-}
-
 /// If this specified operation is a call-like operation, return the
 /// FnTypeGeneratorType for the callee, otherwise return null.
 LIT::FnTypeGeneratorType LIT::getFnTypeFromCall(Operation &op) {

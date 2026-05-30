@@ -775,12 +775,3 @@ kgen.generator @bind_params_discharged_mask_size() {
     <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:2)>}>index> ?, 1 | "1">>
   kgen.return
 }
-
-// -----
-
-kgen.generator @bind_params_discharged_residual_size() {
-  // expected-error @+2 {{bind_params type has 0 body constraints but the discharge mask claims 1 survive}}
-  kgen.param.declare bad: index =
-    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":4:1)>, <true, loc("bind_params":4:2)>}>index> ?, 1 | "10">>
-  kgen.return
-}

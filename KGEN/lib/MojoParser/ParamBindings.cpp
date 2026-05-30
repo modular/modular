@@ -268,12 +268,8 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
   const llvm::BitVector &discharged = verified.getDischargedBodyConstraints();
   DenseBoolArrayAttr dischargedAttr =
       KGEN::getDenseBoolArrayAttr(fnRef.getContext(), discharged);
-  Type resultType = BindParamsAttr::inferResultType(
-      fnRef, remainingParamValues, dischargedAttr,
-      &shared.getEvaluationContext());
   return BindParamsAttr::get(fnRef.getContext(), fnRef, remainingParamValues,
-                             dischargedAttr, resultType,
-                             &shared.getEvaluationContext());
+                             dischargedAttr, &shared.getEvaluationContext());
 }
 
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,

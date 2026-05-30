@@ -412,16 +412,6 @@ public:
 Type getSignatureUserResultType(FnOrFnLiteralTypeGeneratorType sigType,
                                 ArrayRef<Type> argTypes, Type resultType);
 
-/// The Lit parser and KGEN have different semantics for binding function
-/// argument and result types. The parser will evaluate 'apply' expressions, but
-/// KGEN does not since it cannot always have access to a symbol table.
-/// Specialize a signature type while rebinding the input parameter values to
-/// the expected input parameter types.
-std::pair<FnTypeGeneratorType, ParameterExprArrayAttr>
-getUnboundSpecializedSignature(FnTypeGeneratorType type,
-                               ParameterExprArrayAttr bindings,
-                               ParameterEvaluationContext *evalContext);
-
 /// If this specified operation is a call-like operation, return the
 /// FnTypeGeneratorType for the callee, otherwise return null.
 LIT::FnTypeGeneratorType getFnTypeFromCall(Operation &op);

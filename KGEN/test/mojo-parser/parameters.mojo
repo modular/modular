@@ -1563,12 +1563,12 @@ def scalar_type[dt: DType]():
 def funct_partial_binding[x: Empty, F: def[t: Empty, s: Empty] () thin -> None]():
     # CHECK: !lit.generator<<"u": !Empty, "v": !Empty>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none>
-    # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty ?, :!Empty ?)
+    # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, ?, ?)
 
     comptime G: def[u: Empty, v: Empty] () thin -> None = F[s=_, t=_]
     # CHECK: !lit.generator<<"u": !Empty>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.generator<<"s": !Empty>() -> !kgen.none>
-    # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty x, :!Empty ?))>
+    # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty x, ?))>
     comptime H: def[u: Empty] () thin -> None = F[x, _]
 
 struct StructWithSpecificSelfInitTypes[size: Int]:
