@@ -274,6 +274,11 @@ struct ParamDiffer {
 
         // Ok, we found a difference, recursively diff the two parameters.
         auto structDecl = cast<LIT::StructDeclOp>(lhsDecl->getIfOperation());
+
+        // Don't dig into the raw _mlir_origin inside the Origin type.
+        if (isa<OriginType>(lhsParam.getType()))
+          continue;
+
         accessPath += "." + structDecl.getParams()[idx].getName().str();
         return diff(lhsParam, rhsParam);
       }
