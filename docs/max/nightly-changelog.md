@@ -10,6 +10,11 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added support for the Tencent Hunyuan Hy3-preview (`HYV3ForCausalLM`)
+  architecture: a decoder-only mixture-of-experts model (192 routed experts,
+  top-8 plus one shared expert) with sigmoid plus correction-bias routing,
+  per-head query/key RMSNorm, and split-half RoPE. Runs multi-GPU with
+  tensor-parallel attention and expert-parallel MoE.
 - Added NVFP4 quantization support for Gemma 4.
 - Added MXFP4 quantization support for MiniMax-M2.
 - Kimi K2.5 tool calling now supports interleaved thinking: a single

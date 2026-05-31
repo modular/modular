@@ -429,6 +429,7 @@
                 "max/api/python/pipelines.architectures.gpt_oss_modulev3",
                 "max/api/python/pipelines.architectures.granite",
                 "max/api/python/pipelines.architectures.granite_modulev3",
+                "max/api/python/pipelines.architectures.hy_v3",
                 "max/api/python/pipelines.architectures.idefics3",
                 "max/api/python/pipelines.architectures.idefics3_modulev3",
                 "max/api/python/pipelines.architectures.internvl",

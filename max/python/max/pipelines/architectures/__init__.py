@@ -57,6 +57,7 @@ def register_all_models() -> None:
     from .gpt_oss_modulev3 import gpt_oss_modulev3_arch
     from .granite import granite_arch
     from .granite_modulev3 import granite_modulev3_arch
+    from .hy_v3 import hy_v3_arch
     from .idefics3 import idefics3_arch
     from .idefics3_modulev3 import idefics3_modulev3_arch
     from .internvl import internvl_arch
@@ -125,6 +126,7 @@ def register_all_models() -> None:
         granite_modulev3_arch,
         gpt_oss_arch,
         gpt_oss_modulev3_arch,
+        hy_v3_arch,
         internvl_arch,
         idefics3_arch,
         idefics3_modulev3_arch,
