@@ -486,8 +486,8 @@ static void addNoneLiteralMarker(CallOperands &operands, StringRef kwargName,
   RValue noneValue =
       paramEmitter.emitExprRValue(&noneLiteral, EC_CollectionLiteral);
   assert(noneValue && "failed to emit None literal");
-  operands.addKeyword(StringAttr::get(paramEmitter.getContext(), kwargName),
-                      {noneValue, operands.callExpr});
+  operands.add(StringAttr::get(paramEmitter.getContext(), kwargName),
+               {noneValue, operands.callExpr}, ArgUnpackStyle::kKeyword);
 }
 
 ASTType InitializerUValue::getDefaultType(SharedState &shared) const {

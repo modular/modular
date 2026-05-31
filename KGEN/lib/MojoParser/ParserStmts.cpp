@@ -4103,8 +4103,9 @@ static AnyValue emitComprehension(const ComprehensionNode *node, ExprDest &dest,
     SyntheticNode collTypeExpr(loc, PValue(defaultType));
     SyntheticNode eltTypeExpr(loc, PValue(eltType));
     SyntheticNode valTypeExpr(loc, PValue(valType));
-    Operand subscriptOperand[] = {{&eltTypeExpr, loc, Operand::kPositional},
-                                  {&valTypeExpr, loc, Operand::kPositional}};
+    Operand subscriptOperand[] = {
+        {&eltTypeExpr, loc, ArgUnpackStyle::kPositional},
+        {&valTypeExpr, loc, ArgUnpackStyle::kPositional}};
     SubscriptNode subscript(&collTypeExpr, loc,
                             node->kind == ExprNode::kDictComprehension
                                 ? ArrayRef<Operand>(subscriptOperand)

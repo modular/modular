@@ -1093,15 +1093,12 @@ FailureOr<Operand> ExprParser::parseOperand(
   if (getToken().is(Token::star)) {
     if (failed(parseStarredItem(value, /*allowAssign=*/false)))
       return failure();
-    return Operand(value, startLoc, Operand::kStar);
+    return Operand(value, startLoc, ArgUnpackStyle::kStar);
   }
   if (consumeIf(Token::star_star)) {
     if (failed(parseExpression(value)))
       return failure();
-    // Keyword argument unpacking is considered a keyword argument. Mark that
-    // with a non-null but empty name.
-    return Operand(value, startLoc, Operand::kStarStar,
-                   StringAttr::get(getContext()));
+    return Operand(value, startLoc, ArgUnpackStyle::kStarStar);
   }
 
   // Check for a keyword argument.  We need look-ahead to determine whether
@@ -1113,7 +1110,7 @@ FailureOr<Operand> ExprParser::parseOperand(
     if (consumeIf(Token::equal)) {
       if (failed(parseOperandValue(value, Precedence::kExpression)))
         return failure();
-      return Operand(value, startLoc, Operand::kKeyword, name);
+      return Operand(value, startLoc, ArgUnpackStyle::kKeyword, name);
     }
     // Otherwise, we consumed the base expression, just pop it back off.
     cursor.restore(lexer);
@@ -1122,7 +1119,7 @@ FailureOr<Operand> ExprParser::parseOperand(
   // Parse this as an assignment_expression, allowing := operator.
   if (failed(parseOperandValue(value, Precedence::kAssignExpr)))
     return failure();
-  return Operand(value, startLoc, Operand::kPositional);
+  return Operand(value, startLoc, ArgUnpackStyle::kPositional);
 }
 
 /// call ::=  primary "(" [argument_list [","] | comprehension] ")"
@@ -1233,7 +1230,7 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
     SMLoc loc = operand.getLoc();
     hasUnpackedKw |= operand.isUnpackedKeyword();
 
-    if (isArgument && operand.passKind == Operand::kStar) {
+    if (isArgument && operand.unpackStyle == ArgUnpackStyle::kStar) {
       if (unpackedPosOperand) {
         auto diag =
             emitError(loc, "unpack markers (*name syntax) must not appear more "
@@ -1252,7 +1249,7 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
       return std::move(diag);
     }
 
-    if (operand.isPositional()) {
+    if (operand.unpackStyle == ArgUnpackStyle::kPositional) {
       if (isArgument && !kwOperandMap.empty()) {
         // Parameter operands allow keywords before positional operands because
         // inferred parameters can be passed with keyword syntax before
@@ -1269,7 +1266,7 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
                   "convert to a keyword argument";
       }
     }
-    if (operand.isKeyword()) {
+    if (operand.unpackStyle == ArgUnpackStyle::kKeyword) {
       auto [it, addedNew] = kwOperandMap.try_emplace(operand.name, &operand);
       if (!addedNew) {
         auto diag = emitError(loc, "keyword ")

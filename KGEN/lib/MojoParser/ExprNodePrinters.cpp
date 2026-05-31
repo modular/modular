@@ -292,14 +292,14 @@ void AttributeRefNode::print(raw_indented_ostream &os) const {
 
 void Operand::print(raw_indented_ostream &os) const {
   auto stringifyPassKind = [&] {
-    switch (passKind) {
-    case Operand::kPositional:
-      return "positional";
-    case Operand::kStar:
-      return "star";
-    case Operand::kKeyword:
+    switch (unpackStyle) {
+    case ArgUnpackStyle::kKeyword:
       return "keyword";
-    case Operand::kStarStar:
+    case ArgUnpackStyle::kPositional:
+      return "positional";
+    case ArgUnpackStyle::kStar:
+      return "star";
+    case ArgUnpackStyle::kStarStar:
       return "starstar";
     }
   };

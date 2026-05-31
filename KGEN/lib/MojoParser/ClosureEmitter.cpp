@@ -123,11 +123,16 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
     }();
 
     if (pog.getPassingKind() == PassingKind::KwOnly)
-      callOperands.addKeyword(pog.getName(), {argValue, &syntheticExpr});
-    else if (pog.isPosVarArg() || pog.isPack())
-      callOperands.addUnpackedPositional({argValue, &syntheticExpr});
-    else
-      callOperands.add({argValue, &syntheticExpr});
+      callOperands.add(pog.getName(), {argValue, &syntheticExpr},
+                       ArgUnpackStyle::kKeyword);
+    else {
+      ArgUnpackStyle unpackStyle = ArgUnpackStyle::kPositional;
+      if (pog.isPosVarArg() || pog.isPack())
+        unpackStyle = ArgUnpackStyle::kStar;
+      else if (pog.isKwVarArg())
+        unpackStyle = ArgUnpackStyle::kStarStar;
+      callOperands.add({argValue, &syntheticExpr}, unpackStyle);
+    }
   }
 
   CValue callResult =

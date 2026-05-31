@@ -1895,11 +1895,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);
     if (!exprVal)
       return {};
-    if (operand.isKeywordOrUnpackedKeyword()) {
-      operands.addKeyword(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
-    } else {
-      operands.add({exprVal, expr});
-    }
+    operands.add(operand.name, ASTExprAnd<AnyValue>{exprVal, expr},
+                 operand.unpackStyle);
   }
 
   // If we /just/ have a getter, or we already know we're assigning this into
@@ -2164,7 +2161,8 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
         shared.allocPersistent<ParenNode>(getLoc(), strLiteral, getLoc());
     return emitGetterSetterAccess(
         this, {baseVal, base},
-        Operand(parenNode, getLoc(), Operand::kPositional), dest, emitter);
+        Operand(parenNode, getLoc(), ArgUnpackStyle::kPositional), dest,
+        emitter);
   }
   shared.notifyListenerOnRef(memberDecls, spelling, this);
 
@@ -2839,14 +2837,8 @@ AnyValue CallNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
       operandsList.dest.resetForError(emitter);
       return {};
     }
-    if (operand.isPositional()) {
-      operandsList.add(std::move(exprAndVal));
-    } else if (operand.isUnpackedPositional()) {
-      operandsList.addUnpackedPositional(std::move(exprAndVal));
-    } else {
-      assert(operand.isKeyword());
-      operandsList.addKeyword(operand.name, std::move(exprAndVal));
-    }
+
+    operandsList.add(operand.name, std::move(exprAndVal), operand.unpackStyle);
   }
 
   // If the callee is a type value (as in `T()` or `T[123]()`), then this is an
@@ -3171,7 +3163,9 @@ AnyValue SetInitLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     auto value = emitter.emitExpr(valueExpr, EC_CollectionLiteral);
     if (!value)
       return {};
-    operands.addKeyword(keyName, {value, valueExpr});
+    operands.add(keyName, {value, valueExpr},
+                 keyName ? ArgUnpackStyle::kKeyword
+                         : ArgUnpackStyle::kPositional);
   }
 
   auto result = InitializerUValue::create(InitializerUValue::kSetInitLiteral,
@@ -4751,7 +4745,7 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ExprDest &dest,
   SmallVector<Operand> callOperands;
   for (SyntheticNode &funcValueNode : funcValues) {
     callOperands.emplace_back(
-        Operand(&funcValueNode, getLoc(), Operand::PassKind::kPositional));
+        Operand(&funcValueNode, getLoc(), ArgUnpackStyle::kPositional));
   }
   CallNode tupleCallNode(&tupleDeclRef, getLoc(), callOperands, getLoc());
 
@@ -4948,7 +4942,7 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
     assert(intIndex && "Int must be PValue when constructed from int attr");
 
     SyntheticNode indexExpr(getLoc(), intIndex);
-    Operand exprOperand(&indexExpr, getLoc(), Operand::PassKind::kPositional);
+    Operand exprOperand(&indexExpr, getLoc(), ArgUnpackStyle::kPositional);
     SubscriptNode subscript(this, this->getLoc(), {}, this->getLoc());
 
     // Emit the extraction from the tuple as a synthesized subscript with
