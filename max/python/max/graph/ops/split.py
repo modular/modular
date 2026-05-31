@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from max._core.dialects import kgen, mo
+from max._core.dialects import builtin, kgen, mo
 from max.dtype import DType
 
 from ..dim import Dim, DimLike
@@ -78,7 +78,7 @@ def split(
         results=result_types,
         input=x,
         split_sizes=constant(sizes, DType.int64, DeviceRef.CPU()),
-        axis=constant(axis, DType.int64, DeviceRef.CPU()),
+        axis=builtin.IntegerAttr(builtin.IndexType(), axis),
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )
     return [out.tensor for out in outputs]

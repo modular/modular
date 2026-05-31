@@ -15,15 +15,14 @@
 from __future__ import annotations
 
 from max._core import Operation
-from max._core.dialects import kgen, rmo
+from max._core.dialects import builtin, kgen, rmo
 from max.dtype import DType
 
 from ..dim import Dim
 from ..graph import Graph
 from ..shape import Shape
-from ..type import DeviceRef, TensorType
+from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
-from .constant import constant
 
 
 def sum(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -164,7 +163,7 @@ def _reduce(
         op_type,
         result=result_type,
         input=x,
-        axis=constant(axis, DType.int64, DeviceRef.CPU()),
+        axis=builtin.IntegerAttr(builtin.IndexType(), axis),
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 

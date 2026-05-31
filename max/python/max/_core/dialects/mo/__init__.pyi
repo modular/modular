@@ -579,9 +579,7 @@ class Reduction(Protocol):
     @property
     def input_mutable(self) -> max._core.OpOperand: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
-    @property
-    def axis_mutable(self) -> max._core.OpOperand: ...
+    def axis_attr(self) -> max._core.dialects.builtin.IntegerAttr: ...
     @property
     def result(self) -> max._core.Value[TensorType]: ...
     def get_effects(
@@ -1224,10 +1222,7 @@ class ReduceArgMaxOp(max._core.Operation):
       %0 = mo.constant {
         value = #M.dense_array<0, 1, 3, 2> : tensor<2x2xsi32>
       } : !mo.tensor<[2, 2], si32>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<si32>
-      } : !mo.tensor<[], si32>
-      %1 = mo.arg_max(%0, %axis) : (!mo.tensor<[2, 2], si32>) -> !mo.tensor<[2, 1], si64>
+      %1 = mo.arg_max(%0) {axis = 1 : index} : (!mo.tensor<[2, 2], si32>) -> !mo.tensor<[2, 1], si64>
     ```
     """
 
@@ -1238,17 +1233,8 @@ class ReduceArgMaxOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
-        output_ty: TensorType = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -1262,7 +1248,9 @@ class ReduceArgMaxOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -1290,10 +1278,7 @@ class ReduceArgMinOp(max._core.Operation):
       %0 = mo.constant {
         value = #M.dense_array<0, 1, 3, 2> : tensor<2x2xsi32>
       } : !mo.tensor<[2, 2], si32>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<si32>
-      } : !mo.tensor<[], si32>
-      %1 = mo.arg_min(%0, %axis) : (!mo.tensor<[2, 2], si32>) -> !mo.tensor<[2, 1], si64>
+      %1 = mo.arg_min(%0) {axis = 1 : index} : (!mo.tensor<[2, 2], si32>) -> !mo.tensor<[2, 1], si64>
     ```
     """
 
@@ -1304,17 +1289,8 @@ class ReduceArgMinOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
-        output_ty: TensorType = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -1328,7 +1304,9 @@ class ReduceArgMinOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -2774,9 +2752,8 @@ class CumsumOp(max._core.Operation):
 
     ```mlir
     %arg: !mo.tensor<[2, 3], f32>
-    %axis: !mo.tensor<[], i64>
-    %res = mo.cumsum(%arg, %axis) {exclusive = 1 : index, reverse = 0 : index} : (
-      !mo.tensor<[2, 3], f32>., !mo.tensor<[], i64>) -> !mo.tensor<[2, 3], f32>
+    %res = mo.cumsum(%arg) {axis = 0 : index, exclusive = 1 : index, reverse = 0 : index} : (
+      !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32>
     ```
     """
 
@@ -2786,14 +2763,16 @@ class CumsumOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         exclusive: max._core.dialects.builtin.IntegerAttr,
         reverse: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def exclusive(self) -> int: ...
     @exclusive.setter
@@ -4362,12 +4341,14 @@ class ReduceLogsoftmaxOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
 
 class MatmulOp(max._core.Operation):
     """
@@ -4587,10 +4568,8 @@ class ReduceMeanOp(max._core.Operation):
 
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %res = mo.mean(%arg, %axis) : (
-        !mo.tensor<[2, 3], f32>, !mo.tensor<[], si64>) -> !mo.tensor<[2, 1], f32>
+      %res = mo.mean(%arg) {axis = 1 : index} : (
+        !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 1], f32>
     ```
     """
 
@@ -4601,17 +4580,8 @@ class ReduceMeanOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
-        output_ty: TensorType = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -4625,7 +4595,9 @@ class ReduceMeanOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -5553,10 +5525,8 @@ class ReduceAddOp(max._core.Operation):
 
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %res = mo.reduce.add(%arg, %axis) : (
-        !mo.tensor<[2, 3], f32>, !mo.tensor<[], si64>) -> !mo.tensor<[2, 1], f32>
+      %res = mo.reduce.add(%arg) {axis = 1 : index} : (
+        !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 1], f32>
     ```
     """
 
@@ -5567,17 +5537,8 @@ class ReduceAddOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
-        output_ty: TensorType = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -5591,7 +5552,9 @@ class ReduceAddOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -5661,10 +5624,8 @@ class ReduceMaxOp(max._core.Operation):
 
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %res = mo.reduce.max(%arg, %axis) : (
-        !mo.tensor<[2, 3], f32>, !mo.tensor<[], si64>) -> !mo.tensor<[2, 1], f32>
+      %res = mo.reduce.max(%arg) {axis = 1 : index} : (
+        !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 1], f32>
     ```
     """
 
@@ -5675,17 +5636,8 @@ class ReduceMaxOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
-        output_ty: TensorType = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -5699,7 +5651,9 @@ class ReduceMaxOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -5721,8 +5675,8 @@ class ReduceReduceMinAndMaxOp(max._core.Operation):
     Example:
 
     ```mlir
-      %res = mo.reduce.reduce_min_and_max(%input, %axis) :
-        (!mo.tensor<[2, 10], f32>, !mo.tensor<[], si32>) -> !mo.tensor<[2, 2], f32>
+      %res = mo.reduce.reduce_min_and_max(%input) {axis = 1 : index} :
+        (!mo.tensor<[2, 10], f32>) -> !mo.tensor<[2, 2], f32>
     ```
     """
 
@@ -5732,13 +5686,15 @@ class ReduceReduceMinAndMaxOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -5760,10 +5716,8 @@ class ReduceMinOp(max._core.Operation):
 
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %res = mo.reduce.min(%arg, %axis) : (
-        !mo.tensor<[2, 3], f32>, !mo.tensor<[], si64>) -> !mo.tensor<[2, 1], f32>
+      %res = mo.reduce.min(%arg) {axis = 1 : index} : (
+        !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 1], f32>
     ```
     """
 
@@ -5774,17 +5728,8 @@ class ReduceMinOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
-        output_ty: TensorType = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -5798,7 +5743,9 @@ class ReduceMinOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -5820,10 +5767,8 @@ class ReduceMulOp(max._core.Operation):
 
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %res = mo.reduce.mul(%arg, %axis) : (
-        !mo.tensor<[2, 3], f32>, !mo.tensor<[], si64>) -> !mo.tensor<[2, 1], f32>
+      %res = mo.reduce.mul(%arg) {axis = 1 : index} : (
+        !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 1], f32>
     ```
     """
 
@@ -5834,17 +5779,8 @@ class ReduceMulOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
-        output_ty: TensorType = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -5858,7 +5794,9 @@ class ReduceMulOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -7223,12 +7161,14 @@ class ReduceSoftmaxOp(max._core.Operation):
         location: Location,
         result: TensorType,
         input: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
 
 class SplitDimOp(max._core.Operation):
     """
@@ -7281,10 +7221,7 @@ class SplitOp(max._core.Operation):
       %splitSizes = mo.constant {
         value = #M.dense_array<3, 5> : tensor<2xsi64>
       } : !mo.tensor<[2], si64>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<1xsi64>
-      } : !mo.tensor<[], si64>
-      %res:2 = mo.split[%axis: !mo.tensor<[], si64>](%input, %splitSizes) : (
+      %res:2 = mo.split(%input, %splitSizes) {axis = 1 : index} : (
         !mo.tensor<[2, 8], f32>, !mo.tensor<[2], si64>
       ) -> (!mo.tensor<[2, 3], f32>, !mo.tensor<[2, 5], f32>)
     ```
@@ -7297,7 +7234,7 @@ class SplitOp(max._core.Operation):
         results: Sequence[max._core.Type],
         input: max._core.Value[TensorType],
         split_sizes: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
@@ -7305,7 +7242,9 @@ class SplitOp(max._core.Operation):
     @property
     def split_sizes(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,

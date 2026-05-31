@@ -15,7 +15,7 @@
 from collections.abc import Callable
 
 from max._core import Operation
-from max._core.dialects import kgen, rmo
+from max._core.dialects import builtin, kgen, rmo
 from max.dtype import DType
 
 from .. import dtype_promotion
@@ -23,7 +23,6 @@ from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .cast import cast
-from .constant import constant
 from .custom import custom
 from .validation import assert_same_device
 
@@ -678,7 +677,7 @@ def _softmax_like(op_type: type[Operation], name: str):  # noqa: ANN202
             op_type,
             result=value.type,
             input=value,
-            axis=constant(axis, DType.int64, DeviceRef.CPU()),
+            axis=builtin.IntegerAttr(builtin.IndexType(), axis),
             output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 

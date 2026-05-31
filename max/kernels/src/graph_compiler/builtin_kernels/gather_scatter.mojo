@@ -1935,11 +1935,11 @@ struct Split:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        axis: Int,
     ](
         output: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         split_sizes: InputTensor[rank=1, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) raises:
         comptime shape_types = DynamicCoord[DType.int64, rank].element_types
@@ -1947,7 +1947,7 @@ struct Split:
         # runtime strides.
         comptime stride_types = DynamicCoord[DType.int64, rank].element_types
 
-        check_axis_in_range[output.rank](Int(axis))
+        check_axis_in_range[output.rank](axis)
 
         var output_bufs = StaticTuple[
             TileTensor[
@@ -1970,7 +1970,7 @@ struct Split:
 
         split[dtype, target=target, trace_description=_trace_name](
             input.to_tile_tensor[DType.int64](),
-            normalize_neg_index(Int(axis), rank),
+            normalize_neg_index(axis, rank),
             output_bufs,
             ctx,
         )

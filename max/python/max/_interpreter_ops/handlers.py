@@ -22,7 +22,7 @@ Handlers are registered using the @register_op_handler decorator.
 
 from collections.abc import Callable, Mapping, Sequence
 from math import ceil, prod
-from typing import Any
+from typing import Any, Protocol, cast
 
 import max._interpreter_ops as ops
 import numpy as np
@@ -30,6 +30,20 @@ from max import _core, graph
 from max._core.dialects import builtin, kgen, mo, mosh
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
+
+
+class _HasAxis(Protocol):
+    """Structural type for ops carrying a compile-time ``axis`` int attribute.
+
+    The reduce/softmax handlers are written against the generic
+    ``_core.Operation`` base (a single handler serves several concrete op
+    types), but every such op exposes an ``axis`` int property. Casting to
+    this protocol lets the handlers read ``op.axis`` in a type-safe way.
+    """
+
+    @property
+    def axis(self) -> int: ...
+
 
 # Type alias for op handlers
 # Signature: (op, input_buffers) -> output_buffers
@@ -1384,14 +1398,11 @@ def reduce_handler(op_type: type) -> OpHandler:
         target_device = result_type.device.to_device()
 
         assert isinstance(inputs[0], Buffer)
-        assert isinstance(inputs[1], Buffer)
 
         input_buffer = inputs[0]
-        axis_buffer = inputs[1]
 
-        # Extract axis value from the axis tensor (scalar si64)
-        axis_np = axis_buffer.to_numpy()
-        axis = int(axis_np.item())
+        # `axis` is a compile-time `index` attribute, not an operand.
+        axis = cast(_HasAxis, op).axis
 
         # Calculate output shape (same as input with reduced axis dim = 1)
         output_shape = list(input_buffer.shape)
@@ -1426,12 +1437,12 @@ def _argmax_min_handler(
 ) -> Sequence[Buffer]:
     """Shared implementation for ArgMaxOp and ArgMinOp.
 
-    Both ops reduce along an axis and return int64 indices. The axis operand
-    is always on host (MO_SingleDeviceWithHostOperands<["axis"]>).
+    Both ops reduce along an axis and return int64 indices. ``axis`` is a
+    compile-time ``index`` attribute carried on the op (not an operand).
 
     Args:
         op: The argmax/argmin operation.
-        inputs: Input buffers - input tensor and axis (scalar si64 on CPU).
+        inputs: Input buffers - the input tensor.
         kernel_fn: The Mojo kernel to call (ArgMax or ArgMin).
 
     Returns:
@@ -1442,12 +1453,10 @@ def _argmax_min_handler(
     target_device = result_type.device.to_device()
 
     assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
 
     input_buffer = inputs[0]
-    axis_buffer = inputs[1]
 
-    axis = int(axis_buffer.to_numpy().item())
+    axis = cast(_HasAxis, op).axis
     in_shape = list(input_buffer.shape)
     ndim = len(in_shape)
 
@@ -1505,13 +1514,11 @@ def softmax_handler(op_type: type) -> OpHandler:
         target_device = result_type.device.to_device()
 
         assert isinstance(inputs[0], Buffer)
-        assert isinstance(inputs[1], Buffer)
 
         input_buffer = inputs[0]
-        axis_buffer = inputs[1]
 
-        # Extract axis value from the axis tensor (scalar si64)
-        axis = int(axis_buffer.to_numpy().item())
+        # `axis` is a compile-time `index` attribute.
+        axis = cast(_HasAxis, op).axis
 
         # Output shape is the same as input (not reduced)
         output = Buffer(
@@ -1544,22 +1551,18 @@ def _handle_cumsum(
 
     Args:
         op: The cumsum operation.
-        inputs: Input buffers - first is the input tensor, second is the
-            axis tensor (scalar int64).
+        inputs: Input buffers - the input tensor. ``axis`` is a compile-time
+            ``index`` attribute.
 
     Returns:
         List containing the cumsum tensor buffer.
     """
     assert isinstance(inputs[0], Buffer)  # input tensor
-    assert isinstance(inputs[1], Buffer)  # axis (scalar int64)
 
     input_buffer = inputs[0]
-    axis_buffer = inputs[1]
 
-    # Extract axis value from the axis tensor (scalar si64)
-    axis = int(axis_buffer.to_numpy().item())
-
-    # Extract exclusive and reverse from op attributes
+    # Extract axis, exclusive and reverse from op attributes
+    axis = op.axis
     exclusive = op.exclusive
     reverse = op.reverse
 
@@ -2399,19 +2402,18 @@ def _handle_split(
 ) -> Sequence[Buffer]:
     """Handle mo.split by copying each chunk via the Mojo split kernel.
 
-    Operands: input (device tensor), splitSizes (host int64 rank-1),
-    axis (host scalar int64).
+    Operands: input (device tensor), splitSizes (host int64 rank-1).
+    ``axis`` is a compile-time ``index`` attribute.
     Returns N output buffers where N = len(splitSizes).
     """
     target_device = _get_target_device(op)
 
     assert isinstance(inputs[0], Buffer)  # input
     assert isinstance(inputs[1], Buffer)  # splitSizes (host)
-    assert isinstance(inputs[2], Buffer)  # axis (host)
 
     input_buffer = inputs[0]
     split_sizes = [int(s) for s in inputs[1].to_numpy().flatten()]
-    axis = int(inputs[2].to_numpy().item())
+    axis = op.axis
 
     in_shape = list(input_buffer.shape)
     ndim = len(in_shape)
