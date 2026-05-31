@@ -12,15 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
+from max.pipelines.architectures.pixtral.tokenizer import PixtralTokenizer
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.core.context_validators import (
     validate_only_one_image,
     validate_requires_vision_context,
 )
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextAndVisionTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
@@ -35,7 +33,7 @@ pixtral_modulev3_arch = SupportedArchitecture(
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
     pipeline_model=PixtralModel,
-    tokenizer=TextAndVisionTokenizer,
+    tokenizer=PixtralTokenizer,
     context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={

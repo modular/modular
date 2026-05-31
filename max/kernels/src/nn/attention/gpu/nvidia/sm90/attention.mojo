@@ -1666,6 +1666,12 @@ def output_reg_to_smem_st_matrix[
     output_reg_tile: _LocalTT[accum_type, row_major[num_m_mmas, o_frag_size]()],
     accum_smem_tile: _SharedMemTT[output_type, row_major[BM, padded_depth]()],
 ):
+    # The store packs 8 elements per lane through bitcast<f32x4>, which is
+    # well-defined only when output_type is exactly bf16/f16.
+    comptime assert (
+        size_of[output_type]() == 2
+    ), "output_reg_to_smem_st_matrix only supports bf16/f16 output_type"
+
     comptime st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[
             output_type, padded_depth, num_m_mmas, num_consumer
