@@ -26,7 +26,6 @@ from std.gpu.host.info import is_cpu, is_gpu
 
 from extensibility import InputTensor, OutputTensor
 from layout import TensorLayout, TileTensor
-from layout.tile_layout import Layout as TileLayout
 from std.utils.index import IndexList
 
 from state_space.selective_scan import (
@@ -576,51 +575,6 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        comptime output_LT = TileLayout[
-            shape_types=output.static_spec.static_layout._shape_types,
-            stride_types=output.static_spec.static_layout._stride_types,
-        ]
-        comptime x_LT = TileLayout[
-            shape_types=x.static_spec.static_layout._shape_types,
-            stride_types=x.static_spec.static_layout._stride_types,
-        ]
-        comptime out_z_LT = TileLayout[
-            shape_types=out_z.static_spec.static_layout._shape_types,
-            stride_types=out_z.static_spec.static_layout._stride_types,
-        ]
-        comptime u_LT = TileLayout[
-            shape_types=u.static_spec.static_layout._shape_types,
-            stride_types=u.static_spec.static_layout._stride_types,
-        ]
-        comptime delta_LT = TileLayout[
-            shape_types=delta.static_spec.static_layout._shape_types,
-            stride_types=delta.static_spec.static_layout._stride_types,
-        ]
-        comptime A_LT = TileLayout[
-            shape_types=A.static_spec.static_layout._shape_types,
-            stride_types=A.static_spec.static_layout._stride_types,
-        ]
-        comptime B_LT = TileLayout[
-            shape_types=B.static_spec.static_layout._shape_types,
-            stride_types=B.static_spec.static_layout._stride_types,
-        ]
-        comptime C_LT = TileLayout[
-            shape_types=C.static_spec.static_layout._shape_types,
-            stride_types=C.static_spec.static_layout._stride_types,
-        ]
-        comptime D_LT = TileLayout[
-            shape_types=D.static_spec.static_layout._shape_types,
-            stride_types=D.static_spec.static_layout._stride_types,
-        ]
-        comptime z_LT = TileLayout[
-            shape_types=z.static_spec.static_layout._shape_types,
-            stride_types=z.static_spec.static_layout._stride_types,
-        ]
-        comptime delta_bias_LT = TileLayout[
-            shape_types=delta_bias.static_spec.static_layout._shape_types,
-            stride_types=delta_bias.static_spec.static_layout._stride_types,
-        ]
-
         var output_tt = output.to_tile_tensor()
         var x_tt = x.to_tile_tensor()
         var out_z_tt = out_z.to_tile_tensor()
@@ -668,17 +622,17 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
 
         var args = SelectiveScanFwdArgs[
             dtype,
-            output_LT,
-            x_LT,
-            out_z_LT,
-            u_LT,
-            delta_LT,
-            A_LT,
-            B_LT,
-            C_LT,
-            D_LT,
-            z_LT,
-            delta_bias_LT,
+            output_tt.LayoutType,
+            x_tt.LayoutType,
+            out_z_tt.LayoutType,
+            u_tt.LayoutType,
+            delta_tt.LayoutType,
+            A_tt.LayoutType,
+            B_tt.LayoutType,
+            C_tt.LayoutType,
+            D_tt.LayoutType,
+            z_tt.LayoutType,
+            delta_bias_tt.LayoutType,
         ](
             ctx=ctx,
             total_batch_dim=total_batch_dim,
@@ -765,35 +719,6 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        comptime output_LT = TileLayout[
-            shape_types=output.static_spec.static_layout._shape_types,
-            stride_types=output.static_spec.static_layout._stride_types,
-        ]
-        comptime x_LT = TileLayout[
-            shape_types=x.static_spec.static_layout._shape_types,
-            stride_types=x.static_spec.static_layout._stride_types,
-        ]
-        comptime u_LT = TileLayout[
-            shape_types=u.static_spec.static_layout._shape_types,
-            stride_types=u.static_spec.static_layout._stride_types,
-        ]
-        comptime delta_LT = TileLayout[
-            shape_types=delta.static_spec.static_layout._shape_types,
-            stride_types=delta.static_spec.static_layout._stride_types,
-        ]
-        comptime A_LT = TileLayout[
-            shape_types=A.static_spec.static_layout._shape_types,
-            stride_types=A.static_spec.static_layout._stride_types,
-        ]
-        comptime B_LT = TileLayout[
-            shape_types=B.static_spec.static_layout._shape_types,
-            stride_types=B.static_spec.static_layout._stride_types,
-        ]
-        comptime C_LT = TileLayout[
-            shape_types=C.static_spec.static_layout._shape_types,
-            stride_types=C.static_spec.static_layout._stride_types,
-        ]
-
         var output_tt = output.to_tile_tensor()
         var x_tt = x.to_tile_tensor()
         var u_tt = u.to_tile_tensor()
@@ -833,13 +758,13 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
 
         var args = SelectiveScanFwdMinimalArgs[
             dtype,
-            output_LT,
-            x_LT,
-            u_LT,
-            delta_LT,
-            A_LT,
-            B_LT,
-            C_LT,
+            output_tt.LayoutType,
+            x_tt.LayoutType,
+            u_tt.LayoutType,
+            delta_tt.LayoutType,
+            A_tt.LayoutType,
+            B_tt.LayoutType,
+            C_tt.LayoutType,
         ](
             ctx=ctx,
             total_batch_dim=total_batch_dim,
@@ -922,51 +847,6 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        comptime state_out_LT = TileLayout[
-            shape_types=state_out.static_spec.static_layout._shape_types,
-            stride_types=state_out.static_spec.static_layout._stride_types,
-        ]
-        comptime output_LT = TileLayout[
-            shape_types=output.static_spec.static_layout._shape_types,
-            stride_types=output.static_spec.static_layout._stride_types,
-        ]
-        comptime state_in_LT = TileLayout[
-            shape_types=state_in.static_spec.static_layout._shape_types,
-            stride_types=state_in.static_spec.static_layout._stride_types,
-        ]
-        comptime x_LT = TileLayout[
-            shape_types=x.static_spec.static_layout._shape_types,
-            stride_types=x.static_spec.static_layout._stride_types,
-        ]
-        comptime dt_LT = TileLayout[
-            shape_types=dt.static_spec.static_layout._shape_types,
-            stride_types=dt.static_spec.static_layout._stride_types,
-        ]
-        comptime A_LT = TileLayout[
-            shape_types=A.static_spec.static_layout._shape_types,
-            stride_types=A.static_spec.static_layout._stride_types,
-        ]
-        comptime B_LT = TileLayout[
-            shape_types=B.static_spec.static_layout._shape_types,
-            stride_types=B.static_spec.static_layout._stride_types,
-        ]
-        comptime C_LT = TileLayout[
-            shape_types=C.static_spec.static_layout._shape_types,
-            stride_types=C.static_spec.static_layout._stride_types,
-        ]
-        comptime D_LT = TileLayout[
-            shape_types=D.static_spec.static_layout._shape_types,
-            stride_types=D.static_spec.static_layout._stride_types,
-        ]
-        comptime z_LT = TileLayout[
-            shape_types=z.static_spec.static_layout._shape_types,
-            stride_types=z.static_spec.static_layout._stride_types,
-        ]
-        comptime dt_bias_LT = TileLayout[
-            shape_types=dt_bias.static_spec.static_layout._shape_types,
-            stride_types=dt_bias.static_spec.static_layout._stride_types,
-        ]
-
         var state_out_tt = state_out.to_tile_tensor()
         var output_tt = output.to_tile_tensor()
         var state_in_tt = state_in.to_tile_tensor()
@@ -1014,17 +894,17 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
 
         var args = SelectiveScanUpdateArgs[
             dtype,
-            state_out_LT,
-            output_LT,
-            state_in_LT,
-            x_LT,
-            dt_LT,
-            A_LT,
-            B_LT,
-            C_LT,
-            D_LT,
-            z_LT,
-            dt_bias_LT,
+            state_out_tt.LayoutType,
+            output_tt.LayoutType,
+            state_in_tt.LayoutType,
+            x_tt.LayoutType,
+            dt_tt.LayoutType,
+            A_tt.LayoutType,
+            B_tt.LayoutType,
+            C_tt.LayoutType,
+            D_tt.LayoutType,
+            z_tt.LayoutType,
+            dt_bias_tt.LayoutType,
         ](
             ctx=ctx,
             total_batch_dim=total_batch_dim,

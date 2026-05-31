@@ -25,7 +25,6 @@ from std.gpu.host.info import is_cpu, is_gpu
 
 from extensibility import InputTensor, OutputTensor
 from layout import TensorLayout, TileTensor
-from layout.tile_layout import Layout as TileLayout
 from std.utils.index import IndexList
 
 from state_space.varlen_selective_scan import (
@@ -464,59 +463,6 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         var ngroups = B.dim_size(0)
         var batch = query_start_loc.dim_size(0) - 1
 
-        comptime output_LT = TileLayout[
-            shape_types=output.static_spec.static_layout._shape_types,
-            stride_types=output.static_spec.static_layout._stride_types,
-        ]
-        comptime ssm_states_LT = TileLayout[
-            shape_types=ssm_states.static_spec.static_layout._shape_types,
-            stride_types=ssm_states.static_spec.static_layout._stride_types,
-        ]
-        comptime z_LT = TileLayout[
-            shape_types=z.static_spec.static_layout._shape_types,
-            stride_types=z.static_spec.static_layout._stride_types,
-        ]
-        comptime u_LT = TileLayout[
-            shape_types=u.static_spec.static_layout._shape_types,
-            stride_types=u.static_spec.static_layout._stride_types,
-        ]
-        comptime delta_LT = TileLayout[
-            shape_types=delta.static_spec.static_layout._shape_types,
-            stride_types=delta.static_spec.static_layout._stride_types,
-        ]
-        comptime A_LT = TileLayout[
-            shape_types=A.static_spec.static_layout._shape_types,
-            stride_types=A.static_spec.static_layout._stride_types,
-        ]
-        comptime B_LT = TileLayout[
-            shape_types=B.static_spec.static_layout._shape_types,
-            stride_types=B.static_spec.static_layout._stride_types,
-        ]
-        comptime C_LT = TileLayout[
-            shape_types=C.static_spec.static_layout._shape_types,
-            stride_types=C.static_spec.static_layout._stride_types,
-        ]
-        comptime D_LT = TileLayout[
-            shape_types=D.static_spec.static_layout._shape_types,
-            stride_types=D.static_spec.static_layout._stride_types,
-        ]
-        comptime delta_bias_LT = TileLayout[
-            shape_types=delta_bias.static_spec.static_layout._shape_types,
-            stride_types=delta_bias.static_spec.static_layout._stride_types,
-        ]
-        comptime query_start_loc_LT = TileLayout[
-            shape_types=query_start_loc.static_spec.static_layout._shape_types,
-            stride_types=query_start_loc.static_spec.static_layout._stride_types,
-        ]
-        comptime cache_indices_LT = TileLayout[
-            shape_types=cache_indices.static_spec.static_layout._shape_types,
-            stride_types=cache_indices.static_spec.static_layout._stride_types,
-        ]
-        comptime has_initial_state_LT = TileLayout[
-            shape_types=has_initial_state.static_spec.static_layout._shape_types,
-            stride_types=has_initial_state.static_spec.static_layout._stride_types,
-        ]
-
         var output_tt = output.to_tile_tensor()
         var ssm_states_tt = ssm_states.to_tile_tensor()
         var z_tt = z.to_tile_tensor()
@@ -571,19 +517,19 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
 
         var args = VarlenSelectiveScanFwdArgs[
             dtype,
-            output_LT,
-            ssm_states_LT,
-            z_LT,
-            u_LT,
-            delta_LT,
-            A_LT,
-            B_LT,
-            C_LT,
-            D_LT,
-            delta_bias_LT,
-            query_start_loc_LT,
-            cache_indices_LT,
-            has_initial_state_LT,
+            output_tt.LayoutType,
+            ssm_states_tt.LayoutType,
+            z_tt.LayoutType,
+            u_tt.LayoutType,
+            delta_tt.LayoutType,
+            A_tt.LayoutType,
+            B_tt.LayoutType,
+            C_tt.LayoutType,
+            D_tt.LayoutType,
+            delta_bias_tt.LayoutType,
+            query_start_loc_tt.LayoutType,
+            cache_indices_tt.LayoutType,
+            has_initial_state_tt.LayoutType,
         ](
             ctx=ctx,
             dim=dim,
@@ -678,51 +624,6 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         var ngroups = B.dim_size(1)
         var nheads_ngroups_ratio = nheads // ngroups
 
-        comptime state_LT = TileLayout[
-            shape_types=state.static_spec.static_layout._shape_types,
-            stride_types=state.static_spec.static_layout._stride_types,
-        ]
-        comptime output_LT = TileLayout[
-            shape_types=output.static_spec.static_layout._shape_types,
-            stride_types=output.static_spec.static_layout._stride_types,
-        ]
-        comptime x_LT = TileLayout[
-            shape_types=x.static_spec.static_layout._shape_types,
-            stride_types=x.static_spec.static_layout._stride_types,
-        ]
-        comptime dt_LT = TileLayout[
-            shape_types=dt.static_spec.static_layout._shape_types,
-            stride_types=dt.static_spec.static_layout._stride_types,
-        ]
-        comptime A_LT = TileLayout[
-            shape_types=A.static_spec.static_layout._shape_types,
-            stride_types=A.static_spec.static_layout._stride_types,
-        ]
-        comptime B_LT = TileLayout[
-            shape_types=B.static_spec.static_layout._shape_types,
-            stride_types=B.static_spec.static_layout._stride_types,
-        ]
-        comptime C_LT = TileLayout[
-            shape_types=C.static_spec.static_layout._shape_types,
-            stride_types=C.static_spec.static_layout._stride_types,
-        ]
-        comptime D_LT = TileLayout[
-            shape_types=D.static_spec.static_layout._shape_types,
-            stride_types=D.static_spec.static_layout._stride_types,
-        ]
-        comptime z_LT = TileLayout[
-            shape_types=z.static_spec.static_layout._shape_types,
-            stride_types=z.static_spec.static_layout._stride_types,
-        ]
-        comptime dt_bias_LT = TileLayout[
-            shape_types=dt_bias.static_spec.static_layout._shape_types,
-            stride_types=dt_bias.static_spec.static_layout._stride_types,
-        ]
-        comptime state_batch_indices_LT = TileLayout[
-            shape_types=state_batch_indices.static_spec.static_layout._shape_types,
-            stride_types=state_batch_indices.static_spec.static_layout._stride_types,
-        ]
-
         var state_tt = state.to_tile_tensor()
         var output_tt = output.to_tile_tensor()
         var x_tt = x.to_tile_tensor()
@@ -792,17 +693,17 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
 
         var args = VarlenSelectiveStateUpdateArgs[
             dtype,
-            state_LT,
-            output_LT,
-            x_LT,
-            dt_LT,
-            A_LT,
-            B_LT,
-            C_LT,
-            D_LT,
-            z_LT,
-            dt_bias_LT,
-            state_batch_indices_LT,
+            state_tt.LayoutType,
+            output_tt.LayoutType,
+            x_tt.LayoutType,
+            dt_tt.LayoutType,
+            A_tt.LayoutType,
+            B_tt.LayoutType,
+            C_tt.LayoutType,
+            D_tt.LayoutType,
+            z_tt.LayoutType,
+            dt_bias_tt.LayoutType,
+            state_batch_indices_tt.LayoutType,
         ](
             ctx=ctx,
             total_threads=total_threads,
