@@ -918,11 +918,19 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         device_specs: list[driver.DeviceSpec],
     ) -> VLLMPipeline:
         gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
+        # vLLM's kimi_k25 plugin exposes its multimodal input under the
+        # vision_chunk modality, so the image must be keyed and limited under
+        # vision_chunk to reach the model.
         return VLLMPipeline(
             model_path=self.model_path,
             trust_remote_code=self.trust_remote_code,
             encoding=encoding,
             tensor_parallel_size=max(1, gpu_count),
+            extra_kwargs={
+                "mm_encoder_tp_mode": "data",
+                "limit_mm_per_prompt": {"vision_chunk": 1},
+            },
+            mm_data_key="vision_chunk",
         )
 
 

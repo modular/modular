@@ -878,10 +878,10 @@ logit_verification_pipelines:
     encoding: float4_e2m1fnx2
     tags: [amd-only, 4xmi355]
     pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_amd_kimi-k2_5-mxfp4_golden/1/a40f3192fabd8d61290dc32786271980d83902b4dce73c95d25d05d1a17cc11b/vllm_amd_kimi-k2_5-mxfp4_golden.tar.gz"
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_amd_kimi-k2_5-mxfp4_golden/1/e5ce00b937b3b28935578a74e1da2fbb37b19e60996406713592f563c44fff43/vllm_amd_kimi-k2_5-mxfp4_golden.tar.gz"
       json_file: "vllm_amd_kimi-k2_5-mxfp4_golden.json"
     cos_dist_threshold: 1.7e-02
-    kl_div_threshold: 2.2e+01
+    kl_div_threshold: 1.0e+00
 
   # Same NVFP4 weights as austinpowers/Kimi-K2.5-NVFP4-DeepseekV3, loaded from
   # a directory pre-staged on the dedicated prod-2 8xB200 runner. The tags
