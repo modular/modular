@@ -1726,6 +1726,16 @@ def test_first_true() raises:
     assert_equal(Scalar[DType.bool](True).first_true(), 0)
     assert_equal(Scalar[DType.bool](False).first_true(), -1)
 
+    # Custom default — returned only when all lanes are false.
+    assert_equal(
+        SIMD[DType.bool, 4](False, False, False, False).first_true(default=4), 4
+    )
+    assert_equal(
+        SIMD[DType.bool, 4](False, False, True, False).first_true(default=4), 2
+    )
+    assert_equal(Scalar[DType.bool](False).first_true(default=1), 1)
+    assert_equal(Scalar[DType.bool](True).first_true(default=1), 0)
+
 
 def test_count_true() raises:
     # All false.

@@ -3021,14 +3021,19 @@ struct SIMD[dtype: DType, size: Int](
             return Int(pop_count(self).reduce_add())
 
     @always_inline
-    def first_true(self) -> Int:
+    def first_true(self, default: Int = -1) -> Int:
         """Returns the index of the first `True` lane in a boolean SIMD vector.
+
+        Args:
+            default: The value to return if all lanes are `False`. Defaults to
+                `-1`.
 
         Constraints:
             The element type must be `DType.bool`.
 
         Returns:
-            The index of the first `True` lane, or `-1` if all lanes are `False`.
+            The index of the first `True` lane, or `default` if all lanes are
+            `False`.
 
         Example:
 
@@ -3037,17 +3042,18 @@ struct SIMD[dtype: DType, size: Int](
         print(mask.first_true())  # 2
         mask = SIMD[DType.bool, 4](False, False, False, False)
         print(mask.first_true())  # -1
+        print(mask.first_true(default=4))  # 4
         ```
         """
         comptime assert (
             Self.dtype == DType.bool
         ), "first_true requires SIMD[DType.bool, N]"
         comptime if Self.size == 1:
-            return 0 if self[0] else -1
+            return 0 if self[0] else default
         else:
             var mask = pack_bits(rebind[SIMD[DType.bool, Self.size]](self))
             if not mask:
-                return -1
+                return default
             comptime if is_big_endian():
                 return Int(count_leading_zeros(mask))
             else:
