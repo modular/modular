@@ -393,9 +393,12 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
     with buf_a.map_to_host() as host_a:
         for i in range(length):
             assert_equal(host_a[i], UInt32(0x22222222))
-    with buf_b.map_to_host() as host_b:
-        for i in range(length):
-            assert_equal(host_b[i], UInt32(0xBBBBBBBB))
+    # with buf_b.map_to_host() as host_b:
+    #    for i in range(length):
+    #        assert_equal(host_b[i], UInt32(0xBBBBBBBB))
+
+    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
+    _ = UnsafePointer(to=host_a1).as_any_origin()[]
 
 
 def test_collect_dependencies(ctx: DeviceContext) raises:

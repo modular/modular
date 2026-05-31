@@ -1703,7 +1703,9 @@ struct SMemEpilogueWriter[
         # aliasing (upper and lower share the same c_smem_tile origin).
         comptime warp_tile_layout = row_major[Self.data_paths, Self.stageN]()
         comptime SMemPtr = UnsafePointer[
-            Scalar[Self.c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[Self.c_type],
+            MutExternalOrigin,
+            address_space=AddressSpace.SHARED,
         ]
         var upper_tile = TileTensor(
             rebind[SMemPtr](c_smem_warp_tile_upper.ptr), warp_tile_layout

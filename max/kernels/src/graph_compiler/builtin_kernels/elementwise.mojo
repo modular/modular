@@ -39,7 +39,14 @@ import extensibility as compiler
 # ===-----------------------------------------------------------------------===#
 from std.builtin.simd import _pow
 
-from nn.activations import relu
+from nn.activations import (
+    gelu,
+    gelu_quick,
+    gelu_tanh,
+    relu,
+    sigmoid,
+    silu,
+)
 from extensibility import (
     ElementwiseBinaryComparisonOp,
     ElementwiseBinaryOp,
@@ -249,6 +256,56 @@ struct ReLU(ElementwiseUnaryOp):
         width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return relu(x)
+
+
+@compiler.register("mo.gelu")
+struct Gelu(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return gelu(x)
+
+
+@compiler.register("mo.gelu_tanh")
+struct GeluTanh(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return gelu_tanh(x)
+
+
+@compiler.register("mo.gelu_quick")
+struct GeluQuick(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return gelu_quick(x)
+
+
+@compiler.register("mo.sigmoid")
+struct Sigmoid(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return sigmoid(x)
+
+
+@compiler.register("mo.silu")
+struct Silu(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return silu(x)
 
 
 @compiler.register("mo.ceil")

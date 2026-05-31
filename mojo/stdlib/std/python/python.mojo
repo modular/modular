@@ -288,12 +288,15 @@ struct Python(Defaultable, ImplicitlyCopyable):
         # FIXME(MSTDL-910):
         #   This is an intentional memory leak, because we don't store this
         #   in a global variable (yet).
-        return Self._unsafe_add_functions(module, functions.steal_data())
+        return Self._unsafe_add_functions(
+            module,
+            functions.steal_data().unsafe_origin_cast[MutExternalOrigin](),
+        )
 
     @staticmethod
     def _unsafe_add_functions(
         module: PythonObject,
-        functions: UnsafePointer[PyMethodDef, MutAnyOrigin],
+        functions: UnsafePointer[PyMethodDef, MutExternalOrigin],
     ) raises:
         """Adds functions to a Python module object.
 

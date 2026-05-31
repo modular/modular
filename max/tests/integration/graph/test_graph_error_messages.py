@@ -240,7 +240,7 @@ def test_fused_build_error() -> None:
         "\n"
         "error: 'mo.gather' op [MO_TO_MOGG] Found at least one incompatible "
         "input/output type for a JIT-able operation which is not supported. "
-        "Operand types: <type>, <type>, <type>. "
+        "Operand types: <type>, <type>. "
         "Results Types: <type>\n"
     )
     assert canonicalized == expected

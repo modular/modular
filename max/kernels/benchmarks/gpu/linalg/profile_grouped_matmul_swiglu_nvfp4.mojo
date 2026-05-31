@@ -467,11 +467,7 @@ def main() raises:
         # the kernel's `swiglu_enable_trace=True` comptime parameter). The
         # untraced branch uses default `NullTrace()` and the kernel's
         # `swiglu_enable_trace=False`, stripping every record site.
-        var trace_buf_gmem = GmemTrace(
-            rebind[UnsafePointer[UInt64, MutAnyOrigin]](
-                trace_buf_dev.unsafe_ptr()
-            )
-        )
+        var trace_buf_gmem = GmemTrace(trace_buf_dev.unsafe_ptr())
 
         @parameter
         @always_inline

@@ -161,7 +161,9 @@ trait SharedMemoryBasePtr:
     @always_inline
     @staticmethod
     def ptr() -> (
-        UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Int8, MutExternalOrigin, address_space=AddressSpace.SHARED
+        ]
     ):
         ...
 
@@ -175,7 +177,9 @@ struct NVIDIASharedMemoryBasePtr[
     @always_inline
     @staticmethod
     def ptr() -> (
-        UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
+        UnsafePointer[
+            Int8, MutExternalOrigin, address_space=AddressSpace.SHARED
+        ]
     ):
         return external_memory[
             Int8,
@@ -199,7 +203,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
     ]
 
     var base_ptr: UnsafePointer[
-        Int8, MutAnyOrigin, address_space=AddressSpace.SHARED
+        Int8, MutExternalOrigin, address_space=AddressSpace.SHARED
     ]
     var offset: Int
 

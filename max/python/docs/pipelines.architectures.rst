@@ -39,6 +39,7 @@ family.
    pipelines.architectures.gpt_oss_modulev3
    pipelines.architectures.granite
    pipelines.architectures.granite_modulev3
+   pipelines.architectures.hy_v3
    pipelines.architectures.idefics3
    pipelines.architectures.idefics3_modulev3
    pipelines.architectures.internvl
@@ -103,6 +104,7 @@ Text generation
    ~max.pipelines.architectures.gpt_oss_modulev3
    ~max.pipelines.architectures.granite
    ~max.pipelines.architectures.granite_modulev3
+   ~max.pipelines.architectures.hy_v3
    ~max.pipelines.architectures.idefics3
    ~max.pipelines.architectures.idefics3_modulev3
    ~max.pipelines.architectures.internvl

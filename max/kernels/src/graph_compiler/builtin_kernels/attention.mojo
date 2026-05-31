@@ -2207,7 +2207,9 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
                 w_uv_scale.to_tile_tensor[DType.int64](),
                 scalar_args.to_tile_tensor[DType.int64](),
                 context,
-                scratch_sparse_indices.unsafe_ptr(),
+                scratch_sparse_indices.unsafe_ptr().unsafe_origin_cast[
+                    MutAnyOrigin
+                ](),
                 indices_stride,
                 topk_lengths_ptr,
                 attn_sink_ptr,
@@ -2585,7 +2587,9 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 w_uv_scale.to_tile_tensor[DType.int64](),
                 scalar_args.to_tile_tensor[DType.int64](),
                 context,
-                scratch_sparse_indices.unsafe_ptr(),
+                scratch_sparse_indices.unsafe_ptr().unsafe_origin_cast[
+                    MutAnyOrigin
+                ](),
                 indices_stride,
                 topk_lengths_ptr,
                 attn_sink_ptr,

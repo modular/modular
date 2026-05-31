@@ -312,7 +312,7 @@ def bench_matmul_tma_epilogue[
                 tensor_a,
                 tensor_b,
                 ctx,
-                epilogue_tensor=epilogue_for_gpu,
+                epilogue_tensor=epilogue_for_gpu.as_any_origin(),
             )
 
     @parameter
@@ -433,7 +433,7 @@ def bench_matmul_tma_epilogue[
                 a_ver_nd,
                 b_ver_nd,
                 ctx,
-                epilogue_tensor=epilogue_for_ver,
+                epilogue_tensor=epilogue_for_ver.as_any_origin(),
             )
 
         comptime if variant != "plain":

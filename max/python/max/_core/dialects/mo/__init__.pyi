@@ -3770,17 +3770,15 @@ class GatherOp(max._core.Operation):
     where `indices` appears at given axis of input.
 
     The values of `axis` and `indices` follows numpy semantics, e.g., -1
-    represents the last axis.
+    represents the last axis. `axis` is a compile-time `index` attribute.
 
     Example:
 
     ```mlir
       %input : !mo.tensor<[2, 2], f32>
       %indices: !mo.tensor<[2], si64>
-      %axis = mo.constant {
-        value = #M.dense_array<0> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %res = mo.gather(%input, %indices, %axis) : (
-        !mo.tensor<[2, 2], f32>, !mo.tensor<[2], si64>, !mo.tensor<[], si64>
+      %res = mo.gather(%input, %indices) {axis = 0 : index} : (
+        !mo.tensor<[2, 2], f32>, !mo.tensor<[2], si64>
       ) -> !mo.tensor<[2, 2], f32>
     ```
     """
@@ -3792,7 +3790,7 @@ class GatherOp(max._core.Operation):
         result: TensorType,
         input: max._core.Value[TensorType],
         indices: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
@@ -3800,7 +3798,9 @@ class GatherOp(max._core.Operation):
     @property
     def indices(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -3828,6 +3828,76 @@ class GatherSumOp(max._core.Operation):
     def input(self) -> max._core.Value[TensorType]: ...
     @property
     def indices(self) -> max._core.Value[TensorType]: ...
+
+class GeluOp(max._core.Operation):
+    """
+    Returns the exact GELU activation `0.5 * x * (1 + erf(x / sqrt(2)))`, where
+    `x` is the input tensor.
+
+    Example:
+
+    ```mlir
+      %arg: !mo.tensor<[2, 3], f32>
+      %res = mo.gelu(%arg) : !mo.tensor<[2, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+
+class GeluQuickOp(max._core.Operation):
+    """
+    Returns the quick approximation of GELU `x * sigmoid(1.702 * x)`, where `x`
+    is the input tensor.
+
+    Example:
+
+    ```mlir
+      %arg: !mo.tensor<[2, 3], f32>
+      %res = mo.gelu_quick(%arg) : !mo.tensor<[2, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+
+class GeluTanhOp(max._core.Operation):
+    """
+    Returns the tanh approximation of GELU
+    `0.5 * x * (1 + tanh(0.7978845608028654 * (x + 0.044715 * x^3)))`, where
+    `x` is the input tensor.
+
+    Example:
+
+    ```mlir
+      %arg: !mo.tensor<[2, 3], f32>
+      %res = mo.gelu_tanh(%arg) : !mo.tensor<[2, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
 
 class GraphOp(max._core.Operation):
     """
@@ -6855,8 +6925,8 @@ class ScatterOp(max._core.Operation):
     according to indices.
 
     It takes in `input`, `updates` and `indices` tensors of the same rank, and a
-    scalar axis. The output is a copy of the input, with certain elements
-    updated based on `updates` and `indices`.
+    scalar `axis` compile-time `index` attribute. The output is a copy of the
+    input, with certain elements updated based on `updates` and `indices`.
 
     For each entry in `indices`, the target index for `input` is obtained by
     making a copy of the entry's own index, and then updating the `axis`
@@ -6876,7 +6946,7 @@ class ScatterOp(max._core.Operation):
       %input:   !mo.tensor<[4, 4], f32>
       %updates: !mo.tensor<[2, 3], f32>
       %indices: !mo.tensor<[2, 3], si64>
-      %res = mo.scatter(%inputs, %updates, %indices) : (
+      %res = mo.scatter(%inputs, %updates, %indices) {axis = 0 : index} : (
         !mo.tensor<[4, 4], f32>, !mo.tensor<[2, 3], f32>, !mo.tensor<[2, 3], si64>
       ) -> !mo.tensor<[4, 4], f32>
     ```
@@ -6890,7 +6960,7 @@ class ScatterOp(max._core.Operation):
         input: max._core.Value[TensorType],
         updates: max._core.Value[TensorType],
         indices: max._core.Value[TensorType],
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
@@ -6900,7 +6970,9 @@ class ScatterOp(max._core.Operation):
     @property
     def indices(self) -> max._core.Value[TensorType]: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -6992,6 +7064,52 @@ class ShapeOfOp(max._core.Operation):
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
+
+class SigmoidOp(max._core.Operation):
+    """
+    Returns the sigmoid activation `1 / (1 + exp(-x))`, where `x` is the input
+    tensor.
+
+    Example:
+
+    ```mlir
+      %arg: !mo.tensor<[2, 3], f32>
+      %res = mo.sigmoid(%arg) : !mo.tensor<[2, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+
+class SiluOp(max._core.Operation):
+    """
+    Returns the SiLU (Swish) activation `x * sigmoid(x)`, where `x` is the input
+    tensor.
+
+    Example:
+
+    ```mlir
+      %arg: !mo.tensor<[2, 3], f32>
+      %res = mo.silu(%arg) : !mo.tensor<[2, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
 
 class SinOp(max._core.Operation):
     """

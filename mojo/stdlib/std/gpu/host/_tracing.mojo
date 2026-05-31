@@ -214,7 +214,7 @@ struct _C_EventAttributes(TrivialRegisterPassable):
     var message_type: Int32
     """Message type specified in this attribute structure."""
 
-    var message: UnsafePointer[UInt8, ImmutAnyOrigin]
+    var message: UnsafePointer[UInt8, ImmutExternalOrigin]
     """Message assigned to this attribute structure."""
 
 
@@ -258,7 +258,10 @@ struct EventAttributes(TrivialRegisterPassable):
             _reserved=0,
             event_payload=0,
             message_type=ASCII,
-            message=message.unsafe_ptr(),
+            # FIXME(MSTDL-2739): Ths is is wildly unsafe. What is keeping the 'message' string alive?
+            message=message.unsafe_ptr().unsafe_origin_cast[
+                ImmutExternalOrigin
+            ](),
         )
 
 

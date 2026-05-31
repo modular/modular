@@ -50,14 +50,14 @@ def _barrier_and(state: Bool) -> Bool:
     )
 
 
-struct Semaphore(TrivialRegisterPassable):
+struct Semaphore[origin: MutOrigin, //](TrivialRegisterPassable):
     """A device-wide semaphore implementation for GPUs.
 
     This struct provides atomic operations and memory barriers for inter-CTA synchronization.
     It uses a single thread per CTA to perform atomic operations on a shared lock variable.
     """
 
-    var _lock: UnsafePointer[Int32, MutAnyOrigin]
+    var _lock: UnsafePointer[Int32, Self.origin]
     """Pointer to the shared lock variable in global memory that all CTAs synchronize on"""
 
     var _wait_thread: Bool
@@ -68,7 +68,7 @@ struct Semaphore(TrivialRegisterPassable):
 
     @always_inline
     def __init__(
-        out self, lock: UnsafePointer[Int32, MutAnyOrigin], thread_id: Int
+        out self, lock: UnsafePointer[Int32, Self.origin], thread_id: Int
     ):
         """Initialize a new Semaphore instance.
 
@@ -133,7 +133,11 @@ struct Semaphore(TrivialRegisterPassable):
 
 
 struct NamedBarrierSemaphore[
-    thread_count: Int32, id_offset: Int32, max_num_barriers: Int32
+    origin: MutOrigin,
+    //,
+    thread_count: Int32,
+    id_offset: Int32,
+    max_num_barriers: Int32,
 ](TrivialRegisterPassable):
     """A device-wide semaphore implementation for NVIDIA GPUs with named barriers.
 
@@ -143,12 +147,13 @@ struct NamedBarrierSemaphore[
     https://github.com/NVIDIA/cutlass/blob/a1aaf2300a8fc3a8106a05436e1a2abad0930443/include/cutlass/arch/barrier.h.
 
     Parameters:
+        origin: Origin of the shared lock pointer in global memory.
         thread_count: Number of threads participating in the barrier.
         id_offset: Offset for the barrier ID.
         max_num_barriers: Maximum number of named barriers to use.
     """
 
-    var _lock: UnsafePointer[Int32, MutAnyOrigin]
+    var _lock: UnsafePointer[Int32, Self.origin]
     """Pointer to the shared lock variable in global memory that all CTAs synchronize on"""
 
     var _wait_thread: Bool
@@ -159,7 +164,7 @@ struct NamedBarrierSemaphore[
 
     @always_inline
     def __init__(
-        out self, lock: UnsafePointer[Int32, MutAnyOrigin], thread_id: Int
+        out self, lock: UnsafePointer[Int32, Self.origin], thread_id: Int
     ):
         """Initialize a new Semaphore instance.
 
