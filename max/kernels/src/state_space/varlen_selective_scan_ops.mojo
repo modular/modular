@@ -43,26 +43,29 @@ comptime _GPU_FWD_BLOCK_SIZE = 128
 comptime _GPU_UPDATE_BLOCK_SIZE_M = 4
 comptime _PAD_SLOT_ID: Int32 = -1
 
+# Supported d_state values for the varlen kernels, largest first (the varlen
+# path also supports d_state=4). Single source of truth: _validate_d_state and
+# every dispatch_for_d_state below iterate it. Keep _SUPPORTED_D_STATE_VALUES
+# (the human-readable error text) in sync with it.
+comptime _SUPPORTED_D_STATE = [256, 128, 64, 32, 16, 8, 4]
 comptime _SUPPORTED_D_STATE_VALUES = "4, 8, 16, 32, 64, 128, or 256"
 
 
+def _unsupported_d_state_error(d_state: Int) -> Error:
+    return Error(
+        "Unsupported d_state: "
+        + String(d_state)
+        + ". Expected "
+        + _SUPPORTED_D_STATE_VALUES
+        + "."
+    )
+
+
 def _validate_d_state(d_state: Int) raises:
-    if (
-        d_state != 256
-        and d_state != 128
-        and d_state != 64
-        and d_state != 32
-        and d_state != 16
-        and d_state != 8
-        and d_state != 4
-    ):
-        raise Error(
-            "Unsupported d_state: "
-            + String(d_state)
-            + ". Expected "
-            + _SUPPORTED_D_STATE_VALUES
-            + "."
-        )
+    comptime for ds in _SUPPORTED_D_STATE:
+        if d_state == ds:
+            return
+    raise _unsupported_d_state_error(d_state)
 
 
 @fieldwise_init
@@ -240,51 +243,17 @@ struct VarlenSelectiveScanFwdArgs[
         target: StaticString
     ](mut self, d_state: Int) capturing raises:
         comptime if is_cpu[target]():
-            if d_state == 256:
-                self.run_cpu[256]()
-            elif d_state == 128:
-                self.run_cpu[128]()
-            elif d_state == 64:
-                self.run_cpu[64]()
-            elif d_state == 32:
-                self.run_cpu[32]()
-            elif d_state == 16:
-                self.run_cpu[16]()
-            elif d_state == 8:
-                self.run_cpu[8]()
-            elif d_state == 4:
-                self.run_cpu[4]()
-            else:
-                raise Error(
-                    "Unsupported d_state: "
-                    + String(d_state)
-                    + ". Expected "
-                    + _SUPPORTED_D_STATE_VALUES
-                    + "."
-                )
+            comptime for ds in _SUPPORTED_D_STATE:
+                if d_state == ds:
+                    self.run_cpu[ds]()
+                    return
+            raise _unsupported_d_state_error(d_state)
         elif is_gpu[target]():
-            if d_state == 256:
-                self.launch_gpu[256]()
-            elif d_state == 128:
-                self.launch_gpu[128]()
-            elif d_state == 64:
-                self.launch_gpu[64]()
-            elif d_state == 32:
-                self.launch_gpu[32]()
-            elif d_state == 16:
-                self.launch_gpu[16]()
-            elif d_state == 8:
-                self.launch_gpu[8]()
-            elif d_state == 4:
-                self.launch_gpu[4]()
-            else:
-                raise Error(
-                    "Unsupported d_state: "
-                    + String(d_state)
-                    + ". Expected "
-                    + _SUPPORTED_D_STATE_VALUES
-                    + "."
-                )
+            comptime for ds in _SUPPORTED_D_STATE:
+                if d_state == ds:
+                    self.launch_gpu[ds]()
+                    return
+            raise _unsupported_d_state_error(d_state)
         else:
             raise Error("Unsupported target: " + target)
 
@@ -428,51 +397,17 @@ struct VarlenSelectiveStateUpdateArgs[
         target: StaticString
     ](mut self, d_state: Int) capturing raises:
         comptime if is_cpu[target]():
-            if d_state == 256:
-                self.run_cpu[256]()
-            elif d_state == 128:
-                self.run_cpu[128]()
-            elif d_state == 64:
-                self.run_cpu[64]()
-            elif d_state == 32:
-                self.run_cpu[32]()
-            elif d_state == 16:
-                self.run_cpu[16]()
-            elif d_state == 8:
-                self.run_cpu[8]()
-            elif d_state == 4:
-                self.run_cpu[4]()
-            else:
-                raise Error(
-                    "Unsupported d_state: "
-                    + String(d_state)
-                    + ". Expected "
-                    + _SUPPORTED_D_STATE_VALUES
-                    + "."
-                )
+            comptime for ds in _SUPPORTED_D_STATE:
+                if d_state == ds:
+                    self.run_cpu[ds]()
+                    return
+            raise _unsupported_d_state_error(d_state)
         elif is_gpu[target]():
-            if d_state == 256:
-                self.launch_gpu[256]()
-            elif d_state == 128:
-                self.launch_gpu[128]()
-            elif d_state == 64:
-                self.launch_gpu[64]()
-            elif d_state == 32:
-                self.launch_gpu[32]()
-            elif d_state == 16:
-                self.launch_gpu[16]()
-            elif d_state == 8:
-                self.launch_gpu[8]()
-            elif d_state == 4:
-                self.launch_gpu[4]()
-            else:
-                raise Error(
-                    "Unsupported d_state: "
-                    + String(d_state)
-                    + ". Expected "
-                    + _SUPPORTED_D_STATE_VALUES
-                    + "."
-                )
+            comptime for ds in _SUPPORTED_D_STATE:
+                if d_state == ds:
+                    self.launch_gpu[ds]()
+                    return
+            raise _unsupported_d_state_error(d_state)
         else:
             raise Error("Unsupported target: " + target)
 
