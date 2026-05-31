@@ -169,19 +169,15 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         var asm_data = compiled_info.asm
         var static_bundle = M_driver_static_bundle(
             mapped_data=M_driver_slice(
-                data=rebind[ImmutPointer[UInt8, ImmutAnyOrigin]](
-                    asm_data.unsafe_ptr()
-                ),
+                data=Pointer(to=asm_data.unsafe_ptr()[]),
                 size=UInt64(asm_data.byte_length()),
             ),
-            file_type=rebind[ImmutPointer[Int8, ImmutAnyOrigin]](
-                file_type.unsafe_ptr()
-            ),
+            file_type=Pointer(to=file_type.unsafe_ptr()[]),
             file_type_len=UInt64(file_type.byte_length()),
         )
 
         var opts = M_driver_bundle_compilation_options(
-            debug_level=rebind[ImmutPointer[Int8, ImmutAnyOrigin]](
+            debug_level=rebind[ImmutPointer[Int8, ImmutExternalOrigin]](
                 "".unsafe_ptr()
             ),
             debug_level_len=UInt64(0),

@@ -286,7 +286,7 @@ def bench_matmul_1d_tma_epilogue[
                 tensor_a,
                 tensor_b,
                 ctx,
-                epilogue_tensor=epilogue_for_gpu,
+                epilogue_tensor=epilogue_for_gpu.as_any_origin(),
             )
 
     @parameter
@@ -397,7 +397,7 @@ def bench_matmul_1d_tma_epilogue[
                 a_ver_nd,
                 b_ver_nd,
                 ctx,
-                epilogue_tensor=ver_epilogue,
+                epilogue_tensor=ver_epilogue.as_any_origin(),
             )
 
         # Add 1D bias to reference output (broadcast across M rows).

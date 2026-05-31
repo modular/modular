@@ -1765,7 +1765,7 @@ struct _HostBufferInner(Movable):
 
     var _buffer: Buffer
     var _context: ArcPointer[Context[get_device_spec[0]()]]
-    var _host_ptr: UnsafePointer[UInt8, MutAnyOrigin]
+    var _host_ptr: UnsafePointer[UInt8, MutExternalOrigin]
 
     def __del__(deinit self):
         try:
@@ -1799,7 +1799,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         var addr = UInt64(0)
         if byte_size > 0:
             addr = ctx._context[].memory_get_address(buffer)
-        var host_ptr = UnsafePointer[UInt8, MutAnyOrigin](
+        var host_ptr = UnsafePointer[UInt8, MutExternalOrigin](
             unsafe_from_address=Int(addr)
         )
         self._ctx = ctx

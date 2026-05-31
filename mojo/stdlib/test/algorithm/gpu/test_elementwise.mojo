@@ -387,8 +387,6 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # Test with zero in second dimension
-    shape = IndexList[3](2, 0, 4)
-
     elementwise[func, pack_size, target="gpu"](
         IndexList[3](2, 0, 4),
         ctx,
@@ -396,8 +394,6 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # Test with zero in third dimension
-    shape = IndexList[3](2, 4, 0)
-
     elementwise[func, pack_size, target="gpu"](
         IndexList[3](2, 4, 0),
         ctx,

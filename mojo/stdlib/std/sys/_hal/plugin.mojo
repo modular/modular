@@ -49,14 +49,14 @@ from .device import DeviceSpec
 
 @fieldwise_init
 struct M_driver_slice(TrivialRegisterPassable):
-    var data: ImmutPointer[UInt8, ImmutAnyOrigin]
+    var data: ImmutPointer[UInt8, StaticConstantOrigin]
     var size: UInt64
 
 
 @fieldwise_init
 struct M_driver_static_bundle(TrivialRegisterPassable):
     var mapped_data: M_driver_slice
-    var file_type: ImmutPointer[Int8, ImmutAnyOrigin]
+    var file_type: ImmutPointer[Int8, StaticConstantOrigin]
     var file_type_len: UInt64
 
 
@@ -91,7 +91,7 @@ struct M_driver_queue_execute_config:
 
 @fieldwise_init
 struct M_driver_bundle_compilation_options(TrivialRegisterPassable):
-    var debug_level: ImmutPointer[Int8, ImmutAnyOrigin]
+    var debug_level: ImmutPointer[Int8, ImmutExternalOrigin]
     var debug_level_len: UInt64
     var optimization_level: Int32
 

@@ -362,9 +362,9 @@ def kernel_2[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutExternalOrigin],
+    a: LayoutTensor[a_type, a_layout, MutExternalOrigin],
+    b: LayoutTensor[b_type, b_layout, MutExternalOrigin],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()

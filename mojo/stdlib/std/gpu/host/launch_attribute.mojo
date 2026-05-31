@@ -392,7 +392,7 @@ struct AccessPolicyWindow(
         The CUDA driver may align the `base_ptr` and restrict the maximum size.
     """
 
-    var base_ptr: Optional[OpaquePointer[MutAnyOrigin]]
+    var base_ptr: Optional[OpaquePointer[MutExternalOrigin]]
     """Starting address of the access policy window. Driver may align it."""
 
     var num_bytes: Int
@@ -441,10 +441,11 @@ struct AccessPolicyWindow(
             hit_prop: Access property for hit segments (default: NORMAL).
             miss_prop: Access property for miss segments (default: NORMAL).
         """
-        self.base_ptr = (
+        self.base_ptr = Optional[OpaquePointer[MutExternalOrigin]](
             base_ptr.bitcast[NoneType]()
             .unsafe_mut_cast[True]()
             .address_space_cast[AddressSpace.GENERIC]()
+            .unsafe_origin_cast[MutExternalOrigin]()
         )
         self.num_bytes = count * size_of[T]()
         self.hit_ratio = hit_ratio

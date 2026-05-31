@@ -445,9 +445,6 @@ def test_repack_Q4_0_for_sm8x[
     comptime _dequan_dim1 = NType.static_value
 
     var dynamic_gguf_b_shape = IndexList[2](N, (K // group_size) * group_bytes)
-    var dynamic_repacked_b_shape = IndexList[2](
-        N, (K // group_size) * group_bytes
-    )
     var dynamic_dequan_shape = IndexList[2](K, N)
 
     var gguf_b_size = N * ((K // group_size) * group_bytes)
@@ -635,10 +632,8 @@ def test_quantized[
     comptime _b_dim0 = NType.static_value
     comptime _b_dim1 = (KType.static_value // group_size) * group_bytes
 
-    var dynamic_a_shape = IndexList[2](M, K)
     var dynamic_b_shape = IndexList[2](N, (K // group_size) * group_bytes)
     var dynamic_b_ref_shape = IndexList[2](N, K)
-    var dynamic_c_shape = IndexList[2](M, N)
 
     var a_size = M * K
     var b_size = N * ((K // group_size) * group_bytes)

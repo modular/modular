@@ -582,7 +582,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 prompt_idx=UInt32(offset_position.batch_idx),
                 lse_accum_split_ptr=lse_accum_split_ptr,
                 batch_size=batch_size,
-                scale_k_smem=scale_smem_base,
+                scale_k_smem=scale_smem_base.unsafe_origin_cast[MutAnyOrigin](),
                 q_scale_ptr=q_scale_ptr,
             )
         elif warp_idx >= 4 and warp_idx < 8:  # correction warpgroup

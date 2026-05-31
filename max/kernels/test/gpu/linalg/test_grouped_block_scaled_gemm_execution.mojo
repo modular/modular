@@ -552,9 +552,9 @@ def test_grouped_kernel_single_group[
     ctx.synchronize()
 
     # Create HOST-based problem_sizes TileTensor for host-side computations
-    var problem_sizes_tensor_host = TileTensor(
-        problem_sizes_host, row_major[max_groups, 4]()
-    )
+    # var problem_sizes_tensor_host = TileTensor(
+    #     problem_sizes_host, row_major[max_groups, 4]()
+    # )
 
     # Create DEVICE-based problem_sizes TileTensor for kernel
     var problem_sizes_tensor_device = TileTensor(
@@ -702,6 +702,9 @@ def test_grouped_kernel_single_group[
         )
         raise Error("Grouped kernel output does not match cuBLAS")
 
+    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
+    _ = UnsafePointer(to=a_ptrs_host).as_any_origin()[]
+
 
 def test_grouped_kernel_multi_group_same_ptr[
     MType: CoordLike,
@@ -762,7 +765,7 @@ def test_grouped_kernel_multi_group_same_ptr[
     var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device, c_shape)
+    # var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
@@ -1011,6 +1014,9 @@ def test_grouped_kernel_multi_group_same_ptr[
         raise Error(
             "Grouped kernel (multi-group same ptr) does not match cuBLAS"
         )
+
+    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
+    _ = UnsafePointer(to=avg_diff).as_any_origin()[]
 
 
 def test_grouped_kernel_two_groups_different_ptrs[
@@ -1396,6 +1402,9 @@ def test_grouped_kernel_two_groups_different_ptrs[
     else:
         print("  FAILED (group outputs do not match cuBLAS)")
         raise Error("Multi-group different pointers test failed")
+
+    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
+    _ = UnsafePointer(to=passed).as_any_origin()[]
 
 
 def main() raises:
