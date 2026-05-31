@@ -44,6 +44,15 @@ enum class VariadicKind : uint32_t;
 
 namespace LIT {
 
+/// This specifies how the argument or parameter is passed (e.g. `**x`).  This
+/// is not the same as PassingKind or ArgConventions.
+enum class ArgUnpackStyle {
+  kPositional, ///< Positional operand like foo(x)
+  kKeyword,    ///< Keyword operand: foo(arg=x)
+  kStar,       ///< Splat list of positional values like: foo(*x)
+  kStarStar,   ///< Splat list of keyword values like: foo(**x)
+};
+
 /// Returns whether the given type is a LIT meta type.
 bool isMetaType(Type type);
 bool isVariadicOfMetaType(Type type);

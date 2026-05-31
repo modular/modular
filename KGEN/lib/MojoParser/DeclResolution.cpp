@@ -1113,7 +1113,7 @@ ArrayAttr FnSigDecorators::getLLVMMetadataArray(ArrayRef<Operand> operands) {
     StringAttr metadataName;
     ExprNode *metadataValue;
     // Handle the case of only a metadata name, with no value associated.
-    if (value.passKind == Operand::PassKind::kPositional) {
+    if (value.unpackStyle == ArgUnpackStyle::kPositional) {
       auto declRef = dyn_cast<DeclRefNode>(value.expr);
       if (!declRef) {
         emitError(value.getLoc(), "Expected LLVM metadata name");
@@ -1173,7 +1173,7 @@ void FnSigDecorators::applyLLVMArgMetadata(SMLoc decoratorLoc,
   auto declRef = dyn_cast<DeclRefNode>(targetArg.expr);
   // We expect the first operand to be "positional", i.e. it should just be a
   // standalone name.
-  if (targetArg.passKind != Operand::PassKind::kPositional || !declRef) {
+  if (targetArg.unpackStyle != ArgUnpackStyle::kPositional || !declRef) {
     emitError(
         targetArg.getLoc(),
         "First argument of '@__llvm_arg_metadata' must be an argument name");

@@ -188,7 +188,7 @@ CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   // Add the set value to the keyword arguments list.  Semantic analysis already
   // checked that there can't be a duplicate.
   CallOperands operandsWithValue(operands, EC_Assignment);
-  operandsWithValue.addKeyword(setterValueName, value);
+  operandsWithValue.add(setterValueName, value, ArgUnpackStyle::kKeyword);
 
   // We got an elementType, so we know it has at least a setter, so if we
   // couldn't resolve a setter, emit it to the named method so we can balk
@@ -309,7 +309,7 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 
     SyntheticNode indexExpr(expr->getLoc(), intIndex);
     Operand exprOperand(&indexExpr, expr->getLoc(),
-                        Operand::PassKind::kPositional);
+                        ArgUnpackStyle::kPositional);
     SubscriptNode subscript(expr, expr->getLoc(), {}, expr->getLoc());
 
     // Emit the extraction from the tuple as a synthesized subscript with

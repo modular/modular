@@ -1811,7 +1811,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
 
       // Support forwarding an entire list with "*list".
       if (posOperandIdx != numOperands &&
-          callOperands[posOperandIdx].isUnpackedPositional()) {
+          callOperands[posOperandIdx].unpackStyle == ArgUnpackStyle::kStar) {
 
         if (failed(inferOneOperand(callOperands[posOperandIdx], posOperandIdx,
                                    expectedArgIdx, expectedType,
@@ -1842,7 +1842,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
         if (operand.keyword)
           continue;
 
-        if (operand.isUnpackedPositional()) {
+        if (operand.unpackStyle == ArgUnpackStyle::kStar) {
           getMojoDiag(operand.expr->getLoc())
               << "cannot unpack a value into a variadic argument";
           return {};
@@ -1881,7 +1881,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
 
       // Support forwarding an entire pack with "*pack".
       if (posOperandIdx != numOperands &&
-          callOperands[posOperandIdx].isUnpackedPositional()) {
+          callOperands[posOperandIdx].unpackStyle == ArgUnpackStyle::kStar) {
 
         ASTType actualPackType = // FIXME: This is wrong for UValues.
             callOperands[posOperandIdx].ir.getRValueTypeIfResolvable();
@@ -1992,7 +1992,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
         if (operand.keyword) // Ignore keyword operands.
           continue;
 
-        if (operand.isUnpackedPositional()) {
+        if (operand.unpackStyle == ArgUnpackStyle::kStar) {
           getMojoDiag(operand.expr->getLoc())
               << "concatenating unpacked positional arguments is not supported";
           return {};
@@ -2135,7 +2135,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
     // Handle positional arguments.
     if (posOperandIdx < numOperands) {
       const OperandValue &operand = callOperands[posOperandIdx];
-      if (operand.isUnpackedPositional()) {
+      if (operand.unpackStyle == ArgUnpackStyle::kStar) {
         auto &diag = getMojoDiag(operand.expr->getLoc());
         diag << "unpacked positional arguments are only supported for callees "
                 "that expect a variadic pack argument at this position; to "

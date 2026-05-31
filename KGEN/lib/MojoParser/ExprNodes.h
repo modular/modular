@@ -269,22 +269,13 @@ struct AttributeRefNode final : public LValueCapableExprNode, Identifier {
                                    ExprDest &dest, IREmitter &emitter);
 };
 
-/// Struct to represent an expression passed as a parameter or argument operand,
-/// along with metadata to help overload resolution and call emission.
+/// Struct to represent a parsed expression passed as a parameter or argument
+/// operand, along with metadata to help overload resolution and call emission.
 struct Operand {
-  /// This specifies how the operand is passed, these are always present
-  /// in a specific order, and any of these may be missing.
-  enum PassKind {
-    kPositional, ///< Positional operand like foo(x)
-    kStar,       ///< Splat list of positional values like: foo(*x)
-    kKeyword,    ///< Keyword operand: foo(arg=x)
-    kStarStar,   ///< Splat list of keyword values like: foo(**x)
-  };
-
-  Operand(ExprNode *expr, SMLoc startLoc, PassKind passKind,
+  Operand(ExprNode *expr, SMLoc startLoc, ArgUnpackStyle unpackStyle,
           StringAttr name = StringAttr())
-      : expr(expr), startLoc(startLoc), passKind(passKind), name(name) {
-    assert(passKind != kKeyword || name);
+      : expr(expr), startLoc(startLoc), unpackStyle(unpackStyle), name(name) {
+    assert(unpackStyle != ArgUnpackStyle::kKeyword || name);
   }
 
   /// This is the expression for the operand value.
@@ -293,7 +284,9 @@ struct Operand {
   /// The location where the keyword (if given) or the value starts.
   const SMLoc startLoc;
 
-  const PassKind passKind;
+  // This indicates whether the operand is a keyword argument or a positional
+  // argument and if it is unpacked.
+  const ArgUnpackStyle unpackStyle;
 
   /// This is the name of a keyword operand when kind=kKeyword, else null.
   const StringAttr name;
@@ -301,24 +294,27 @@ struct Operand {
   SMLoc getLoc() const { return startLoc; }
 
   /// Return true if this is a positional operand.
-  bool isPositional() const { return passKind == kPositional; }
+  bool isPositional() const {
+    return unpackStyle == ArgUnpackStyle::kPositional;
+  }
 
   /// Return true if this is a keyword operand.
-  bool isKeyword() const { return passKind == kKeyword; }
+  bool isKeyword() const { return unpackStyle == ArgUnpackStyle::kKeyword; }
 
   /// Return true if this is an unpacked keyword operand.
-  bool isUnpackedKeyword() const { return passKind == kStarStar; }
+  bool isUnpackedKeyword() const {
+    return unpackStyle == ArgUnpackStyle::kStarStar;
+  }
 
   /// Return true if this is an unpacked positional operand.
-  bool isUnpackedPositional() const { return passKind == kStar; }
+  bool isUnpackedPositional() const {
+    return unpackStyle == ArgUnpackStyle::kStar;
+  }
 
   /// Return true if this is a keyword or keyword pack operand.
   bool isKeywordOrUnpackedKeyword() const {
     return isKeyword() || isUnpackedKeyword();
   }
-
-  /// Return true if this is an unpacked (positional or keyword) operand.
-  bool isUnpacked() const { return passKind == kStar || passKind == kStarStar; }
 
   /// Return true if this is a positional operand with a string literal
   /// containing the specified string.

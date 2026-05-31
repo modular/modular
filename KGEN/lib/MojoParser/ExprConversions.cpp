@@ -355,7 +355,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       SyntheticNode indexSynthNode(useLoc, indexCValue);
       SyntheticNode packSynthNode(useLoc, packRefMBValue);
       Operand subscriptOperand(&indexSynthNode, useLoc,
-                               Operand::PassKind::kKeyword,
+                               ArgUnpackStyle::kKeyword,
                                StringAttr::get(ctx, "index"));
       SubscriptNode packSubscriptNode(&packSynthNode, useLoc, subscriptOperand,
                                       useLoc);
@@ -403,7 +403,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
         thunkSignature.getArgListAttrs().getPassingKind(actualArgIndex) ==
             PassingKind::KwOnly)
       name = thunkSignature.getArgName(actualArgIndex);
-    operands.addKeyword(name, {value, &node});
+    operands.add(name, {value, &node},
+                 name ? ArgUnpackStyle::kKeyword : ArgUnpackStyle::kPositional);
   }
 
   // Allocate the value dest for the call. Set the value dest to the result
@@ -471,8 +472,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   if (needsExplicitCopyOut) {
     CallOperands operands(CallSyntax::kImplicitCopyCtor, &node,
                           std::move(explicitCopyOutDest));
-    operands.addKeyword(StringAttr::get(shared.getContext(), "copy"),
-                        {callResult, &node});
+    operands.add(StringAttr::get(shared.getContext(), "copy"),
+                 {callResult, &node}, ArgUnpackStyle::kKeyword);
     callResult = emitter.emitConstructorCall(callResult.getRValueType(),
                                              std::move(operands));
   }

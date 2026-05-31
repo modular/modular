@@ -357,7 +357,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
          "Must be a variadic we're emitting for");
   assert(!remainingOperands.empty() && "not called for empty lists");
 
-  if (remainingOperands.front().isUnpackedPositional()) {
+  if (remainingOperands.front().unpackStyle == ArgUnpackStyle::kStar) {
     assert(remainingOperands.size() == 1 &&
            "parser should reject additional positional operands after *list");
     auto &operand = remainingOperands.front();

@@ -949,8 +949,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
             cast<RefType>(reboundTarget.getType()).getElementType());
         CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr,
                               std::move(dest));
-        operands.addKeyword(StringAttr::get(shared.getContext(), "copy"),
-                            {reboundCopySrc, &expr});
+        operands.add(StringAttr::get(shared.getContext(), "copy"),
+                     {reboundCopySrc, &expr}, ArgUnpackStyle::kKeyword);
         emitter.emitConstructorCall(refinedFieldType, std::move(operands));
       }
       continue;
@@ -973,8 +973,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
         ExprDest dest(MLValue(targetFieldOp), EC_SynthesizedMethod);
         CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr,
                               std::move(dest));
-        operands.addKeyword(StringAttr::get(shared.getContext(), "copy"),
-                            {src, &expr});
+        operands.add(StringAttr::get(shared.getContext(), "copy"), {src, &expr},
+                     ArgUnpackStyle::kKeyword);
         (void)emitter.emitConstructorCall(fieldType, std::move(operands));
         continue;
       }

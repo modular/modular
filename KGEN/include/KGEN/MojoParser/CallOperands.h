@@ -55,19 +55,18 @@ raw_ostream &operator<<(raw_ostream &os, CallSyntax val);
 struct OperandValue : public ASTExprAnd<AnyValue> {
   // Null for positional arguments.
   StringAttr keyword;
-  // True if the operand is passed via positional "unpack" (`*x`). This is not
-  // used for keyword unpacking (`**x`).
-  bool unpackedPositional = false;
+  // This indicates whether the operand is a keyword argument or a positional
+  // argument and if it is unpacked.
+  ArgUnpackStyle unpackStyle;
 
   OperandValue(StringAttr keyword, ASTExprAnd<AnyValue> value,
-               bool unpackedPositional = false)
+               ArgUnpackStyle unpackStyle)
       : ASTExprAnd<AnyValue>(std::move(value)), keyword(keyword),
-        unpackedPositional(unpackedPositional) {
-    assert((!unpackedPositional || !keyword) &&
-           "unpacked positional operands cannot be keywords");
+        unpackStyle(unpackStyle) {
+    assert((keyword != StringAttr()) ==
+               (unpackStyle == ArgUnpackStyle::kKeyword) &&
+           "Keyword is present iff keyword argument");
   }
-
-  bool isUnpackedPositional() const { return unpackedPositional; }
 };
 
 using OperandValueList = SmallVector<OperandValue, 4>;
@@ -84,7 +83,7 @@ public:
                ArrayRef<ASTExprAnd<AnyValue>> posOperands = {})
       : syntax(syntax), callExpr(callExpr), dest(std::move(dest)) {
     for (const auto &operand : posOperands)
-      values.emplace_back(StringAttr(), operand);
+      add(operand);
   }
 
   // Initialize with an existing CallOperands and a new destination.
@@ -154,27 +153,24 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Add a positional argument to the list.
-  void add(ASTExprAnd<AnyValue> value) {
-    values.emplace_back(StringAttr(), std::move(value));
-  }
-
-  /// Add a positional argument that came from `*expr`.
-  void addUnpackedPositional(ASTExprAnd<AnyValue> value) {
-    values.emplace_back(StringAttr(), std::move(value),
-                        /*unpackedPositional=*/true);
+  void add(ASTExprAnd<AnyValue> value,
+           ArgUnpackStyle unpackStyle = ArgUnpackStyle::kPositional) {
+    values.emplace_back(StringAttr(), std::move(value), unpackStyle);
   }
 
   /// Add a keyword argument, there can never be conflicts here because keyword
   /// argument conflicts should be checked in the parser before any semantic
   /// analysis is attempted.
-  void addKeyword(StringAttr name, ASTExprAnd<AnyValue> value) {
-    values.push_back({name, std::move(value)});
+  void add(StringAttr name, ASTExprAnd<AnyValue> value,
+           ArgUnpackStyle unpackStyle) {
+    values.push_back({name, std::move(value), unpackStyle});
   }
 
   /// This adds a "self" argument to the start of the positional argument list.
   void addSelf(ASTExprAnd<AnyValue> value) {
     assert(!hasSelfOperand && "Cannot add a self when one is already present");
-    values.insert(values.begin(), {StringAttr(), value});
+    values.insert(values.begin(),
+                  {StringAttr(), value, ArgUnpackStyle::kPositional});
     hasSelfOperand = true;
   }
 

@@ -532,7 +532,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // to have the wrong element count.
   auto attachPackSplatNote = [&](MojoInflightDiag &diag) {
     for (const OperandValue &op : operands.values) {
-      if (!op.isUnpackedPositional())
+      if (op.unpackStyle != ArgUnpackStyle::kStar)
         continue;
       diag.attachNote(op.expr->getLoc())
           << "'*' splat is only supported when the callee accepts a "
