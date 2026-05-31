@@ -936,10 +936,10 @@ logit_verification_pipelines:
     encoding: float4_e2m1fnx2
     tags: [amd-only, 4xmi355]
     pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/amd_MiniMax-M2.7-MXFP4_golden/1/1ba298cb/vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json.tar.gz"
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/amd_MiniMax-M2.7-MXFP4_golden/1/3f20f966d15214f854b4b68c2454c686ee7f175564a11e51ede5f1540c008188/vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json.tar.gz"
       json_file: "vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json"
     cos_dist_threshold: 8.0e-03
-    kl_div_threshold: 4.0e+00
+    kl_div_threshold: 1.5e+00
 
   deepseek-ai/DeepSeek-V3.1-Terminus:
     pre_submit_agents: []
