@@ -105,19 +105,12 @@ UNARY_ELEMENTWISE: dict[
     mo.SinOp: elementwise_unary_ops.Sin,
     mo.CosOp: elementwise_unary_ops.Cos,
     mo.ErfOp: elementwise_unary_ops.Erf,
+    mo.SigmoidOp: elementwise_unary_ops.Sigmoid,
+    mo.SiluOp: elementwise_unary_ops.Silu,
+    mo.GeluOp: elementwise_unary_ops.Gelu,
+    mo.GeluTanhOp: elementwise_unary_ops.GeluTanh,
+    mo.GeluQuickOp: elementwise_unary_ops.GeluQuick,
     mo.NotOp: elementwise_unary_ops.Not,
-}
-
-# Activation ops: a single mo.activation op selected by the `activation` string
-# attribute maps to the matching unary elementwise kernel. The handler reads the
-# attribute and looks up the function here.
-ACTIVATIONS: dict[str, Callable[[Buffer, Buffer, int], None]] = {
-    "relu": elementwise_unary_ops.Relu,
-    "sigmoid": elementwise_unary_ops.Sigmoid,
-    "silu": elementwise_unary_ops.Silu,
-    "gelu": elementwise_unary_ops.Gelu,
-    "gelu_tanh": elementwise_unary_ops.GeluTanh,
-    "gelu_quick": elementwise_unary_ops.GeluQuick,
 }
 
 # Reduce ops: reduce along an axis, output shape has reduced dim = 1
@@ -155,7 +148,6 @@ SOFTMAX: dict[
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 
 __all__ = [
-    "ACTIVATIONS",
     "BINARY_ELEMENTWISE",
     "BINARY_ELEMENTWISE_COMPARISON",
     "REDUCE",

@@ -248,28 +248,64 @@ struct Negative(ElementwiseUnaryOp):
         return -x
 
 
-@compiler.register("mo.activation")
-struct Activation:
+@compiler.register("mo.relu")
+struct ReLU(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
         width: SIMDSize,
-        activation: StaticString,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime if activation == "relu":
-            return relu(x)
-        elif activation == "gelu":
-            return gelu(x)
-        elif activation == "gelu_tanh":
-            return gelu_tanh(x)
-        elif activation == "gelu_quick":
-            return gelu_quick(x)
-        elif activation == "sigmoid":
-            return sigmoid(x)
-        elif activation == "silu":
-            return silu(x)
-        else:
-            comptime assert False, "unknown mo.activation name"
+        return relu(x)
+
+
+@compiler.register("mo.gelu")
+struct Gelu(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return gelu(x)
+
+
+@compiler.register("mo.gelu_tanh")
+struct GeluTanh(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return gelu_tanh(x)
+
+
+@compiler.register("mo.gelu_quick")
+struct GeluQuick(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return gelu_quick(x)
+
+
+@compiler.register("mo.sigmoid")
+struct Sigmoid(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return sigmoid(x)
+
+
+@compiler.register("mo.silu")
+struct Silu(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return silu(x)
 
 
 @compiler.register("mo.ceil")

@@ -15,8 +15,9 @@
 
 This module contains unary all-dtype ops (Negative, Abs, Relu, Ceil, Floor,
 Round), unary float-only ops (Exp, Log, Log1p, Sqrt, Rsqrt, Tanh, ATanh, Sin,
-Cos, Erf, Trunc), the activation ops backing `mo.activation` (Relu, Sigmoid,
-Silu, Gelu, GeluTanh, GeluQuick), unary boolean ops (Not), and unary predicate
+Cos, Erf, Trunc), the activation ops (Relu backing `mo.relu`, and Sigmoid,
+Silu, Gelu, GeluTanh, GeluQuick backing `mo.sigmoid`/`mo.silu`/`mo.gelu`/
+`mo.gelu_tanh`/`mo.gelu_quick`), unary boolean ops (Not), and unary predicate
 ops (IsNan, IsInf).
 """
 
@@ -63,10 +64,10 @@ from nn.activations import (
 from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 
-# Activation ops. `mo.relu` and the Python-level sigmoid/silu/gelu compositions
-# were unified into a single `mo.activation` op selected by an `activation`
-# string attribute. The interpreter exposes one struct per activation name and
-# the Python handler dispatches on the attribute.
+# Activation ops. Each activation has its own dedicated op (`mo.relu`,
+# `mo.gelu`, `mo.gelu_tanh`, `mo.gelu_quick`, `mo.sigmoid`, `mo.silu`); the
+# interpreter exposes one struct per activation, registered against its op type
+# in `_interpreter_ops/__init__.py`.
 struct Relu(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[

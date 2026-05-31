@@ -15,7 +15,7 @@
 from collections.abc import Callable
 
 from max._core import Operation
-from max._core.dialects import builtin, kgen, rmo
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
 
 from .. import dtype_promotion
@@ -489,32 +489,21 @@ def _elementwise_unary_predicate(
     return elementwise_op
 
 
-def _activation(x: TensorValueLike, name: str) -> TensorValue:
-    """Builds a single fused ``mo.activation`` op for the named activation.
+def _activation(x: TensorValueLike, op_type: type[Operation]) -> TensorValue:
+    """Builds a single fused activation op of the given type.
 
-    All elementwise activation functions (``relu``, ``gelu`` and its
-    approximations, ``sigmoid``, ``silu``) lower to this one op, which carries
-    the activation name as an ``activation`` string attribute. The Mojo
-    ``mo.activation`` kernel dispatches on that attribute at compile time, so
-    the activation is a single fused elementwise op rather than a Python-level
-    composition of ``exp``/``erf``/etc.
+    Each elementwise activation function (``relu``, ``gelu`` and its
+    approximations, ``sigmoid``, ``silu``) has its own dedicated op, backed by a
+    hardware-optimized fused Mojo kernel, rather than a Python-level composition
+    of ``exp``/``erf``/etc.
     """
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     return Graph.current._add_op_generated(
-        rmo.MoActivationOp,
+        op_type,
         result=x.type,
         input=x,
-        activation=builtin.StringAttr(name),
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
-
-
-def _activation_unary(name: str):  # noqa: ANN202
-    def activation_op(x: TensorValueLike) -> TensorValue:
-        return _activation(x, name)
-
-    activation_op.__name__ = name
-    return activation_op
 
 
 abs = _elementwise_unary(rmo.MoAbsOp, "abs")
@@ -616,11 +605,11 @@ def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
         ValueError: If the approximation method is invalid.
     """
     if approximate == "none":
-        return _activation(x, "gelu")
+        return _activation(x, rmo.MoGeluOp)
     if approximate == "tanh":
-        return _activation(x, "gelu_tanh")
+        return _activation(x, rmo.MoGeluTanhOp)
     if approximate == "quick":
-        return _activation(x, "gelu_quick")
+        return _activation(x, rmo.MoGeluQuickOp)
 
     raise ValueError(f"Invalid approximation method: {approximate}")
 
@@ -719,7 +708,7 @@ Raises:
     Error: If the input is not a tensor.
 """
 
-relu = _activation_unary("relu")
+relu = _elementwise_unary(rmo.MoReluOp, "relu")
 relu.__doc__ = """Applies the ReLU (Rectified Linear Unit) activation element-wise.
 
 ReLU is defined as ``relu(x) = max(0, x)``: negative values are set to zero
@@ -769,7 +758,7 @@ def sigmoid(x: TensorValue) -> TensorValue:
     Raises:
         Error: If the input doesn't represent a tensor.
     """
-    return _activation(x, "sigmoid")
+    return _activation(x, rmo.MoSigmoidOp)
 
 
 def silu(x: TensorValue):  # noqa: ANN201
@@ -793,7 +782,7 @@ def silu(x: TensorValue):  # noqa: ANN201
     Raises:
         Error: If the input doesn't represent a tensor.
     """
-    return _activation(x, "silu")
+    return _activation(x, rmo.MoSiluOp)
 
 
 softmax = _softmax_like(rmo.MoReduceSoftmaxOp, "softmax")
