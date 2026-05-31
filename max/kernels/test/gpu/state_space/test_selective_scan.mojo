@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from layout import (
     Idx,
@@ -28,10 +27,9 @@ from state_space.selective_scan import (
     selective_scan_fwd_cpu,
     selective_scan_fwd_gpu,
     selective_scan_update_cpu,
+    selective_scan_update_decode_block_dim,
+    selective_scan_update_decode_grid_dim_x,
     selective_scan_update_gpu,
-    _DECODE_WARPS_PER_BLOCK,
-    _DECODE_ROWS_PER_THREAD,
-    _WARP_COOP_BLOCK,
     Strides1D,
     Strides2D,
     Strides3D,
@@ -464,8 +462,6 @@ def run_selective_scan_gpu[
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
-    from std.math import ceildiv
-
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
     var compiled_kernel = ctx.compile_function[
@@ -851,26 +847,14 @@ def run_selective_scan_update_gpu[
             D_strides,
             z_strides,
             dt_bias_strides,
-            # Launch matches selective_scan_ops dispatch: 2D grid (x tiles dim,
-            # y is batch). Warp-per-row (4 rows/block along dim) when
-            # DSTATE > WARP_SIZE, else warp-cooperative (128 threads,
-            # 128/lanes_per_row rows/block along dim).
+            # 2D grid (x tiles dim, y is batch), matching selective_scan_ops
+            # dispatch; the layout-dependent tiling math is shared via the
+            # selective_scan launch helpers.
             grid_dim=(
-                ceildiv(dim, _DECODE_WARPS_PER_BLOCK) if DSTATE
-                > WARP_SIZE else ceildiv(
-                    dim,
-                    (
-                        _WARP_COOP_BLOCK
-                        // (DSTATE // (4 if DSTATE >= 4 else DSTATE))
-                    )
-                    * _DECODE_ROWS_PER_THREAD,
-                ),
+                selective_scan_update_decode_grid_dim_x(dim, DSTATE),
                 batch,
             ),
-            block_dim=(
-                _DECODE_WARPS_PER_BLOCK * WARP_SIZE if DSTATE
-                > WARP_SIZE else _WARP_COOP_BLOCK,
-            ),
+            block_dim=(selective_scan_update_decode_block_dim(DSTATE),),
         )
 
     # Copy results back from device

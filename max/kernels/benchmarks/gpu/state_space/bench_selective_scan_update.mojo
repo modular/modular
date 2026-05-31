@@ -25,19 +25,15 @@ spans <0.2 s and the 10 kHz sampler misses the kernels (see
 
 from layout import TileTensor, row_major
 from std.gpu.host import DeviceContext
-from std.math import ceildiv
 from std.time import perf_counter_ns
-
-from std.gpu import WARP_SIZE
 
 from state_space.selective_scan import (
     Strides1D,
     Strides2D,
     Strides3D,
+    selective_scan_update_decode_block_dim,
+    selective_scan_update_decode_grid_dim_x,
     selective_scan_update_gpu,
-    _DECODE_WARPS_PER_BLOCK,
-    _DECODE_ROWS_PER_THREAD,
-    _WARP_COOP_BLOCK,
 )
 
 
@@ -51,19 +47,11 @@ def time_one[
 ](ctx: DeviceContext, warmups: Int, iters: Int) raises:
     var group_size = dim // n_groups
     var total_batch_dim = batch * dim
-    # Launch matches selective_scan_ops dispatch: warp-per-row (one warp per
-    # (batch, dim) row, 4 rows/block) for d_state > WARP_SIZE, else
-    # warp-cooperative (_WARP_COOP_BLOCK threads, (block/d_state)*rpt rows/block).
-    # 2D grid: x tiles dim, y is batch (kernel recovers b,d with no divmod).
-    comptime block_coop = d_state > WARP_SIZE
-    comptime launch_block = _DECODE_WARPS_PER_BLOCK * WARP_SIZE if block_coop else _WARP_COOP_BLOCK
-    comptime ept = d_state if d_state < 4 else 4
-    comptime lanes_per_row = d_state // ept
-    var launch_grid_x = ceildiv(
-        dim, _DECODE_WARPS_PER_BLOCK
-    ) if block_coop else ceildiv(
-        dim, (_WARP_COOP_BLOCK // lanes_per_row) * _DECODE_ROWS_PER_THREAD
-    )
+    # 2D grid (x tiles dim, y is batch), matching the op dispatch; the
+    # layout-dependent tiling math is shared via the selective_scan launch
+    # helpers so this stays in lockstep with the kernel.
+    var launch_grid_x = selective_scan_update_decode_grid_dim_x(dim, d_state)
+    var launch_block = selective_scan_update_decode_block_dim(d_state)
 
     # Full decode path: D skip-connection, z gating and dt_bias all present
     # (this is what a real Mamba decode step launches).

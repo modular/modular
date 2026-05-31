@@ -71,6 +71,52 @@ comptime Strides4D = IndexList[4]
 
 
 # ===----------------------------------------------------------------------=== #
+# selective_scan_update decode launch configuration
+# ===----------------------------------------------------------------------=== #
+#
+# The decode launch uses a 2D grid -- (grid_dim_x, batch) -- where the x extent
+# tiles the dim axis. The two helpers below own that tiling math so the op
+# dispatch, the microbenchmark, and the test all derive grid/block from one
+# place (next to the _DECODE_* / _WARP_COOP_BLOCK constants they depend on)
+# instead of each re-deriving it. d_state is a plain runtime argument so the
+# same helpers serve both the op dispatch (runtime d_state) and the comptime
+# call sites.
+
+
+def selective_scan_update_decode_grid_dim_x(dim: Int, d_state: Int) -> Int:
+    """X extent of the selective_scan_update decode grid (the grid is 2D:
+    `(this, batch)`).
+
+    Tiles the dim axis by the rows-per-block of the layout selected for
+    `d_state`: `_DECODE_WARPS_PER_BLOCK` rows in the warp-per-row layout
+    (`d_state > WARP_SIZE`), else `(_WARP_COOP_BLOCK / lanes_per_row) *
+    _DECODE_ROWS_PER_THREAD` rows in the warp-cooperative layout.
+    """
+    if d_state > WARP_SIZE:
+        return ceildiv(dim, _DECODE_WARPS_PER_BLOCK)
+    var ept = (
+        d_state if d_state
+        < _DECODE_ELEMS_PER_THREAD else _DECODE_ELEMS_PER_THREAD
+    )
+    var lanes_per_row = d_state // ept
+    var rows_per_block = (
+        _WARP_COOP_BLOCK // lanes_per_row
+    ) * _DECODE_ROWS_PER_THREAD
+    return ceildiv(dim, rows_per_block)
+
+
+def selective_scan_update_decode_block_dim(d_state: Int) -> Int:
+    """Threads per block for the selective_scan_update decode launch:
+    `_DECODE_WARPS_PER_BLOCK` warps in the warp-per-row layout
+    (`d_state > WARP_SIZE`), else `_WARP_COOP_BLOCK` threads in the
+    warp-cooperative layout.
+    """
+    if d_state > WARP_SIZE:
+        return _DECODE_WARPS_PER_BLOCK * WARP_SIZE
+    return _WARP_COOP_BLOCK
+
+
+# ===----------------------------------------------------------------------=== #
 # Activation Functions
 # ===----------------------------------------------------------------------=== #
 
@@ -654,13 +700,13 @@ def _decode_row_prologue[
     dt_strides: Strides2D,
     dt_bias_strides: Strides1D,
     x_strides: Strides2D,
-) -> Tuple[Float32, Float32, Float32]:
+) -> Tuple[Float32, Float32]:
     """Per-row scalar prologue shared by both decode layouts.
 
     Loads `dt[b, d]` (+ bias, softplus) and `x[b, d]`; returns
-    `(dt_val, x_val, dt_val * x_val)` in float32. The work is identical in the
-    warp-per-row and warp-cooperative paths, so factoring it out leaves the two
-    layout arms differing only in indexing and the cross-lane reduction.
+    `(dt_val, x_val)` in float32. The work is identical in the warp-per-row and
+    warp-cooperative paths, so factoring it out leaves the two layout arms
+    differing only in indexing and the cross-lane reduction.
     """
     var dt_offset = UInt32(b * dt_strides[0] + d * dt_strides[1])
     var dt_val = Scalar[kernel_dtype](dt.raw_load(dt_offset)).cast[
@@ -676,7 +722,7 @@ def _decode_row_prologue[
         dt_val = softplus(dt_val)
     var x_offset = UInt32(b * x_strides[0] + d * x_strides[1])
     var x_val = Scalar[kernel_dtype](x.raw_load(x_offset)).cast[DType.float32]()
-    return (dt_val, x_val, dt_val * x_val)
+    return (dt_val, x_val)
 
 
 @always_inline
@@ -694,7 +740,7 @@ def _decode_row_recur[
     n0: Int,
     group_id: Int,
     dt_val: Float32,
-    dt_x: Float32,
+    x_val: Float32,
     A: TileTensor[kernel_dtype, A_LT, MutExternalOrigin],
     B: TileTensor[kernel_dtype, B_LT, MutExternalOrigin],
     state_in: TileTensor[kernel_dtype, state_in_LT, MutExternalOrigin],
@@ -747,6 +793,7 @@ def _decode_row_recur[
     ]()
 
     # Now consume: dA = exp(A*dt), state = state*dA + (B*dt)*x.
+    var dt_x = dt_val * x_val
     var dA_v = exp2(A_v * LOG2E * dt_val)  # elementwise
     state_v = state_v * dA_v + B_v * dt_x
 
@@ -911,7 +958,7 @@ def selective_scan_update_gpu[
         # always 0, so skip the integer division on the per-row critical path.
         var group_id = 0 if group_size >= dim else d // group_size
 
-        var pro = _decode_row_prologue(
+        var dt_val, x_val = _decode_row_prologue(
             b,
             d,
             delta_softplus,
@@ -922,16 +969,17 @@ def selective_scan_update_gpu[
             dt_bias_strides,
             x_strides,
         )
-        # Lane L owns the contiguous block [L*EPT : (L+1)*EPT], so the 32 lanes
-        # tile [0 : D_STATE] and the warp's loads stay coalesced.
+        # Lane L owns the contiguous block
+        # [L*ELEMS_PER_THREAD : (L+1)*ELEMS_PER_THREAD], so the 32 lanes tile
+        # [0 : D_STATE] and the warp's loads stay coalesced.
         var n0 = lane * ELEMS_PER_THREAD
         var partial = _decode_row_recur[ELEMS_PER_THREAD](
             b,
             d,
             n0,
             group_id,
-            pro[0],  # dt_val
-            pro[2],  # dt_x
+            dt_val,
+            x_val,
             A,
             B,
             state_in,
@@ -952,7 +1000,7 @@ def selective_scan_update_gpu[
                 b,
                 d,
                 out_val,
-                pro[1],  # x_val
+                x_val,
                 D,
                 z,
                 output,
@@ -994,7 +1042,8 @@ def selective_scan_update_gpu[
             if valid:
                 # n_groups == 1 (group_size >= dim) -> group_id 0, no division.
                 var group_id = 0 if group_size >= dim else d // group_size
-                var pro = _decode_row_prologue(
+                var dt_val: Float32
+                dt_val, x_val = _decode_row_prologue(
                     b,
                     d,
                     delta_softplus,
@@ -1005,14 +1054,13 @@ def selective_scan_update_gpu[
                     dt_bias_strides,
                     x_strides,
                 )
-                x_val = pro[1]
                 partial = _decode_row_recur[EPT](
                     b,
                     d,
                     n0,
                     group_id,
-                    pro[0],  # dt_val
-                    pro[2],  # dt_x
+                    dt_val,
+                    x_val,
                     A,
                     B,
                     state_in,
