@@ -40,9 +40,7 @@ from max.pipelines.speculative.config import (
 )
 
 from .config import (
-    AudioGenerationConfig,
     PipelineConfig,
-    PrependPromptSpeechTokens,
     PrometheusMetricsMode,
 )
 from .lora_config import LoRAConfig
@@ -55,7 +53,6 @@ from .profiling_config import ProfilingConfig
 
 __all__ = [
     "DEFAULT_MAX_BATCH_INPUT_TOKENS",
-    "AudioGenerationConfig",
     "DenoisingCacheConfig",
     "KVCacheConfig",
     "KVConnectorConfig",
@@ -65,7 +62,6 @@ __all__ = [
     "MAXModelConfigBase",
     "PipelineConfig",
     "PipelineRole",
-    "PrependPromptSpeechTokens",
     "ProfilingConfig",
     "PrometheusMetricsMode",
     "RepoType",

@@ -519,9 +519,9 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
         input_fn,
         output_fn,
         output_dyn.LayoutType,
+        axis=axis,
         target="gpu",
     ](
-        axis,
         StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
         output_dyn.as_any_origin(),
         ctx,

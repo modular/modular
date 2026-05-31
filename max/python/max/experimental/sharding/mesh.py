@@ -15,7 +15,9 @@
 
 from __future__ import annotations
 
+import contextvars
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from max.driver import CPU, Device
@@ -23,15 +25,7 @@ from max.driver import CPU, Device
 
 @dataclass(frozen=True)
 class DeviceMesh:
-    """An N-dimensional logical grid of devices.
-
-    Args:
-        devices: A flat tuple of devices in row-major order.
-        mesh_shape: The shape of the logical grid (for example, ``(2, 4)``
-            for DP=2, TP=4).
-        axis_names: The human-readable names for each axis (for example,
-            ``("dp", "tp")``).
-    """
+    """An N-dimensional logical grid of devices."""
 
     devices: tuple[Device, ...]
     """The devices in the mesh, in row-major order."""
@@ -41,6 +35,9 @@ class DeviceMesh:
 
     axis_names: tuple[str, ...]
     """The human-readable name for each mesh axis."""
+
+    memory_budget_bytes_per_device: float | Mapping[Device, float] | None = None
+    """Per-device input-bytes ceiling. Hard filter on per-op actions."""
 
     def __post_init__(self) -> None:
         if len(self.devices) == 0:
@@ -60,10 +57,6 @@ class DeviceMesh:
             raise ValueError(
                 f"axis_names must be unique, got {self.axis_names}"
             )
-        # Device homogeneity: either all devices are the same physical
-        # device (simulated multi-device on one CPU/GPU) or all devices
-        # are distinct (real multi-device).  Mixed meshes (some repeated,
-        # some different) are not supported.
         if len(self.devices) > 1:
             unique = set(self.devices)
             n_unique = len(unique)
@@ -88,15 +81,8 @@ class DeviceMesh:
     def axis_size(self, axis: str | int) -> int:
         """Returns the size of a mesh axis by name or index.
 
-        Args:
-            axis: The mesh axis to look up, either by name or by integer
-                index.
-
-        Returns:
-            The number of devices along the requested axis.
-
         Raises:
-            ValueError: If ``axis`` is a name that doesn't exist on the mesh.
+            ValueError: If ``axis`` is a name not on the mesh.
             IndexError: If ``axis`` is an integer outside ``[0, ndim)``.
         """
         idx = self._resolve_axis(axis)
@@ -157,11 +143,7 @@ class DeviceMesh:
 
     @staticmethod
     def single(device: Device) -> DeviceMesh:
-        """Creates a trivial single-device mesh.
-
-        Args:
-            device: The single device the mesh wraps.
-        """
+        """Creates a trivial single-device mesh."""
         return DeviceMesh(devices=(device,), mesh_shape=(1,), axis_names=("_",))
 
     @staticmethod
@@ -174,11 +156,59 @@ class DeviceMesh:
         """Returns ``True`` if this mesh contains exactly one device."""
         return self.num_devices == 1
 
+    def memory_budget_for(self, device: Device) -> float | None:
+        """Returns the per-rank input-bytes budget for ``device``, or ``None`` if unbounded."""
+        budget = self.memory_budget_bytes_per_device
+        if budget is None:
+            return None
+        if isinstance(budget, Mapping):
+            if device not in budget:
+                raise KeyError(
+                    f"memory_budget_bytes_per_device does not cover "
+                    f"{device!r}; provide an entry for every mesh device."
+                )
+            return float(budget[device])
+        return float(budget)
+
     @property
     def is_simulated(self) -> bool:
         """Returns ``True`` if all mesh slots reference the same device.
 
-        A simulated mesh uses graph-level ops (add, concat, split) to
-        emulate multi-device collectives on a single CPU or GPU.
+        A simulated mesh uses graph-level ops to emulate multi-device
+        collectives on a single CPU or GPU.
         """
         return self.num_devices > 1 and len(set(self.devices)) == 1
+
+
+_active_mesh: contextvars.ContextVar[DeviceMesh | None] = (
+    contextvars.ContextVar("active_mesh", default=None)
+)
+
+
+def get_active_mesh() -> DeviceMesh | None:
+    """Returns the mesh from the current :class:`MeshContext`, or ``None``."""
+    return _active_mesh.get(None)
+
+
+class MeshContext:
+    """Context manager that publishes a mesh to spec-first :class:`NamedMapping` constructions.
+
+    JAX-style: when a :class:`NamedMapping` is created without an explicit
+    mesh inside this block, it picks up ``mesh`` from this context and
+    resolves the spec against it.
+
+    .. code-block:: python
+
+        with MeshContext(mesh):
+            model = Transformer(...)  # all weights resolve against ``mesh``
+    """
+
+    def __init__(self, mesh: DeviceMesh) -> None:
+        self.mesh = mesh
+
+    def __enter__(self) -> DeviceMesh:
+        self._token = _active_mesh.set(self.mesh)
+        return self.mesh
+
+    def __exit__(self, *exc: object) -> None:
+        _active_mesh.reset(self._token)

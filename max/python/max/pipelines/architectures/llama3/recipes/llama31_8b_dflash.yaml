@@ -30,4 +30,4 @@ speculative:
 runtime:
   max_num_steps: 1
   max_batch_input_tokens: 4096
-  device_graph_capture: false
+  device_graph_capture: true

@@ -224,11 +224,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             Self.config.decoding_warp_split_k,
         ],
     ) -> Int:
-        comptime _W: Int = Int(
-            Self.MaskType.mask_strategies[Self.BM, Self.BN_QK]()[
-                0
-            ]._upper_triangular_window_size
-        )
+        comptime _W: Int = Self.MaskType.sliding_window_size()
         var global_lo = max(offset_position.cache_len() + 1 - _W, 0)
         var local_lo = max(global_lo - offset_position.kv_start_row, 0)
         return local_lo // Self.BN_QK
@@ -313,11 +309,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         comptime SlidingWindowMask: Bool = (
             MaskTypeName == "SlidingWindowCausalMask"
         )
-        comptime _sliding_window_size: Int = Int(
-            Self.MaskType.mask_strategies[Self.BM, Self.BN_QK]()[
-                0
-            ]._upper_triangular_window_size
-        )
+        comptime _sliding_window_size: Int = Self.MaskType.sliding_window_size()
 
         # S TMEM base / stride (matches mma()).
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
@@ -895,11 +887,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
         )
         comptime if _sliding_window_mask_corr:
-            comptime _W_corr: Int = Int(
-                Self.MaskType.mask_strategies[Self.BM, Self.BN_QK]()[
-                    0
-                ]._upper_triangular_window_size
-            )
+            comptime _W_corr: Int = Self.MaskType.sliding_window_size()
             var _global_lo_corr = max(
                 offset_position.cache_len() + 1 - _W_corr, 0
             )

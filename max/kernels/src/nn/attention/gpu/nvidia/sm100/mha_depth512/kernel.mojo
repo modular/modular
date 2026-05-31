@@ -287,6 +287,7 @@ struct SM100MHADepth512[
                 Self.page_size,
             ](
                 smem,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -327,6 +328,7 @@ struct SM100MHADepth512[
                 Self.page_size,
             ](
                 smem,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -369,6 +371,7 @@ struct SM100MHADepth512[
                 Self.page_size,
             ](
                 smem,
+                seq_info.prompt_idx,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -457,9 +460,13 @@ struct SM100MHADepth512[
     @staticmethod
     @always_inline
     def mask_status(
-        mask: Self.MaskType, score_row: UInt32, kv_row: UInt32
+        mask: Self.MaskType,
+        seq_id: UInt32,
+        score_row: UInt32,
+        kv_row: UInt32,
     ) -> TileMaskStatus:
         return mask.status(
+            seq_id,
             Index[dtype=DType.int32](
                 Int(score_row),
                 Int(kv_row),

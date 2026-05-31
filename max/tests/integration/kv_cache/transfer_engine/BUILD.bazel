@@ -90,7 +90,7 @@ modular_py_test(
         exclude = _4X_GPU_TESTS,
     ),
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "4",
     },
     gpu_constraints = [
         "//:has_gpu",

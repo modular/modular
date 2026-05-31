@@ -100,7 +100,7 @@ modular_py_test(
         ],
     ) + ["conftest.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "3",
+        "test.resources:gpu-memory": "4",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

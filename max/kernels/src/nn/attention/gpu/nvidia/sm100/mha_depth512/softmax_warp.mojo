@@ -232,6 +232,7 @@ def depth512_softmax[
     page_size: Int,
 ](
     smem: Depth512AttentionSMem[config=config],
+    seq_id: UInt32,
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
@@ -323,7 +324,7 @@ def depth512_softmax[
 
     # ---- Iteration bounds (must match MMA and load warps) ----------------
     var kv_row: UInt32 = mask.start_column[PairBM_mask, BN, page_size](
-        score_row
+        seq_id, score_row
     )
 
     comptime mask_sets = MaskType.nonfull_sets[PairBM_mask, BN]()
@@ -335,7 +336,7 @@ def depth512_softmax[
     comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
         mask_ends = mask.masked_set_ends[
             BM=PairBM_mask, BN=BN, page_size=page_size
-        ](score_row, num_keys)
+        ](seq_id, score_row, num_keys)
         mask_iters[0] = mask_ends[0]
         comptime for i in range(1, num_sets):
             mask_iters[i] = mask_ends[i] - mask_ends[i - 1]
@@ -728,6 +729,7 @@ def depth512_softmax[
             if kv_row >= num_keys:
                 break
             cur_mask_status = mask.status(
+                seq_id,
                 Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                 Index[dtype=DType.int32](PairBM_mask, BN),
             )

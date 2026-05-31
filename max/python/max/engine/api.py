@@ -414,18 +414,32 @@ class CompiledModel:
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
 
-    You need an instance of this to load a model as a :class:`~max.engine.Model` object.
+    You need an ``InferenceSession`` instance to load a model as a
+    :class:`~max.engine.Model` object. For example:
+
+    .. code-block:: python
+
+        session = engine.InferenceSession(devices=[CPU()])
+        model = session.load(model_path)
+
+    For workflows that need to separate compilation from weight binding,
+    use :meth:`compile` followed by :meth:`init` or :meth:`init_all`.
     For example:
 
     .. code-block:: python
 
         session = engine.InferenceSession(devices=[CPU()])
-        model_path = Path('bert-base-uncased')
-        model = session.load(model_path)
+        compiled = session.compile(model_path)
+        model = session.init(compiled)
 
-    For workflows that need to separate compilation from weight binding,
-    use :meth:`compile` followed by
-    :meth:`init` or :meth:`init_all` instead of :meth:`load`.
+    Args:
+        devices: A list of devices on which to run inference. The host CPU
+            is always included automatically.
+        num_threads: The number of execution threads. Defaults to ``None``,
+            which lets the runtime choose automatically.
+        custom_extensions: The extensions to load for the model. Supports
+            paths to a ``.mojoc``/``.mojopkg`` custom ops library or a
+            ``.mojo`` source file.
     """
 
     _impl: _InferenceSession
@@ -444,17 +458,6 @@ class InferenceSession:
         *,
         custom_extensions: CustomExtensionsType | None = None,
     ) -> None:
-        """Construct an inference session.
-
-        Args:
-            num_threads: Number of threads to use for the inference session.
-              This defaults to the number of physical cores on your machine.
-            devices: A list of devices on which to run inference. The host CPU
-              is always included automatically.
-            custom_extensions: The extensions to load for the model.
-              Supports paths to a `.mojoc`/`.mojopkg` custom ops library or a `.mojo`
-              source file.
-        """
         self.num_threads = num_threads
 
         # Process the provided iterable `devices`.
@@ -550,18 +553,27 @@ class InferenceSession:
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
+        .. note::
+
+            This method combines compilation and weight binding in a single
+            call and will be deprecated over time. New code should call
+            :meth:`compile` followed by :meth:`init` instead, which separates
+            the two steps and lets you reuse a compiled artifact across
+            multiple initializations.
+
         Args:
-            model: Path to a model.
+            model: A :class:`Graph` instance, or the path to a saved model
+                file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-              Supports paths to `.mojoc`/`.mojopkg` custom ops.
+                Supports paths to ``.mojoc``/``.mojopkg`` custom ops.
 
-            weights_registry: Model weight names mapped to
-              their values. The values should be dlpack
-              arrays. If an array is a read-only numpy array, you must
-              ensure that its lifetime extends beyond the lifetime of the model.
-              Although ``weights_registry`` is technically optional, you'll always
-              need to load weights in practice.
+            weights_registry: A mapping from model weight names to their
+                values. The values should be DLPack arrays. If an array is a
+                read-only NumPy array, you must ensure that its lifetime
+                extends beyond the lifetime of the model. Although
+                ``weights_registry`` is technically optional, you'll always
+                need to load weights in practice.
 
         Returns:
             The loaded model, compiled and ready to execute.
@@ -588,29 +600,37 @@ class InferenceSession:
         custom_extensions: CustomExtensionsType | None = None,
         weights_registry: Mapping[str, DLPackArray] | None = None,
     ) -> dict[str, Model]:
-        """Loads all trained models and compiles them for inference.
+        """Loads multiple models and compiles them for inference.
 
-        A compiled MEF artifact may contain more than one model (for example a
-        vision encoder and a language model compiled together).  This method
-        returns one :class:`Model` per model encoded in the artifact, keyed by
-        the ``sym_name`` of the corresponding ``mo.graph`` op (preserved
-        through MEF serialization). For single-model artifacts the returned
-        dict has exactly one entry.
+        A compiled ``.mef`` artifact may contain more than one model (for
+        example, a vision encoder and a language model compiled together).
+        This method returns one :class:`Model` per model encoded in the
+        artifact, keyed by the ``sym_name`` of the corresponding ``mo.graph``
+        op (preserved through MEF serialization). For single-model
+        artifacts, the returned dict has exactly one entry.
+
+        .. note::
+
+            This method combines compilation and weight binding in a single
+            call and will be deprecated over time. New code should call
+            :meth:`compile` followed by :meth:`init_all` instead, which
+            separates the two steps and lets you reuse a compiled artifact
+            across multiple initializations.
 
         Args:
-            model: Path to a compiled model artifact, a
-              :class:`max.graph.Module` containing one or more ``mo.graph``
-              ops, or a :class:`Graph`.
+            model: A :class:`max.graph.Module` containing one or more
+                ``mo.graph`` ops, the path to a saved multi-model file (for
+                example, a ``.mef`` file), or a single :class:`Graph`.
 
             custom_extensions: The extensions to load for the model.
-              Supports paths to `.mojoc`/`.mojopkg` custom ops.
+                Supports paths to ``.mojoc``/``.mojopkg`` custom ops.
 
-            weights_registry: Model weight names mapped to
-              their values. The values should be dlpack
-              arrays. If an array is a read-only numpy array, you must
-              ensure that its lifetime extends beyond the lifetime of the model.
-              Although ``weights_registry`` is technically optional, you'll always
-              need to load weights in practice.
+            weights_registry: A mapping from model weight names to their
+                values. The values should be DLPack arrays. If an array is a
+                read-only NumPy array, you must ensure that its lifetime
+                extends beyond the lifetime of the model. Although
+                ``weights_registry`` is technically optional, you'll always
+                need to load weights in practice.
 
         Returns:
             A mapping from each model's ``sym_name`` to its loaded
@@ -630,27 +650,27 @@ class InferenceSession:
     ) -> CompiledModel:
         """Compiles a model without binding weights or device memory.
 
-        Use this when you want to separate compilation from initialization,
-        for example to populate a compile cache ahead of time,
-        including in cross-compilation scenarios where the target device may
-        not be attached. The returned :class:`CompiledModel` is not directly
-        executable; pass it to :meth:`init` or :meth:`init_all` to produce an
-        executable :class:`Model`.
+        Use this when you want to separate compilation from initialization, for
+        example to populate a compile cache ahead of time, including in
+        cross-compilation scenarios where the target device may not be
+        attached. The returned :class:`CompiledModel` requires initialization
+        before execution. Pass it to :meth:`init` or :meth:`init_all` to
+        produce an executable :class:`Model`.
 
         Args:
-            model: Path to a compiled model artifact, a
-              :class:`max.graph.Module` containing one or more ``mo.graph``
-              ops, or a :class:`Graph`.
+            model: A :class:`Graph` instance, a :class:`max.graph.Module`
+                containing one or more ``mo.graph`` ops, or the path to a
+                saved model file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-              Supports paths to `.mojopkg` custom ops.
+                Supports paths to ``.mojopkg`` custom ops.
 
         Returns:
             A :class:`CompiledModel` artifact ready to be initialized.
 
         Raises:
             RuntimeError: If the path provided is invalid or compilation
-              fails.
+                fails.
         """
         custom_extensions_final: list[CustomExtensionType] = []
         if custom_extensions is not None:
@@ -725,12 +745,12 @@ class InferenceSession:
         Args:
             compiled: The compiled artifact returned by :meth:`compile`.
 
-            weights_registry: Model weight names mapped to their values. The
-              values should be dlpack arrays. If an array is a read-only numpy
-              array, you must ensure that its lifetime extends beyond the
-              lifetime of the model. Although ``weights_registry`` is
-              technically optional, you'll always need to load weights in
-              practice.
+            weights_registry: A mapping from model weight names to their
+                values. The values should be DLPack arrays. If an array is a
+                read-only NumPy array, you must ensure that its lifetime
+                extends beyond the lifetime of the model. Although
+                ``weights_registry`` is technically optional, you'll always
+                need to load weights in practice.
 
         Returns:
             The initialized :class:`Model`, ready to execute.
@@ -759,8 +779,8 @@ class InferenceSession:
         Args:
             compiled: The compiled artifact returned by :meth:`compile`.
 
-            weights_registry: Model weight names mapped to their values. See
-              :meth:`init` for details.
+            weights_registry: A mapping from model weight names to their
+                values. See :meth:`init` for details.
 
         Returns:
             A mapping from each model's ``sym_name`` to its initialized
@@ -834,9 +854,9 @@ class InferenceSession:
         module: Module,
         custom_extensions_final: list[CustomExtensionType],
     ) -> _AsyncValue[_CompiledModels]:
-        """Compile an MLIR Module under the session's compilation lock.
+        """Compiles an MLIR module under the session's compilation lock.
 
-        Wraps any compilation failure in a RuntimeError pointing at the
+        Wraps any compilation failure in a ``RuntimeError`` pointing at the
         ``max-debug.source-tracebacks`` config key for richer diagnostics.
         """
         with self._compilation_lock:
@@ -869,30 +889,36 @@ class InferenceSession:
     ) -> None:
         """Sets the debug print options.
 
-        See `Value.print`.
+        Affects debug printing across all model execution using the same
+        :class:`InferenceSession`. See :meth:`~max.graph.TensorValue.print`.
 
-        This affects debug printing across all model execution using the same
-        InferenceSession.
+        Tensors saved with ``BINARY`` can be loaded using
+        :meth:`max.driver.Buffer.mmap`, but you'll have to provide the
+        expected dtype and shape. Tensors saved with ``BINARY_MAX_CHECKPOINT``
+        are saved with the shape and dtype information and can be loaded with
+        :func:`max.driver.buffer.load_max_buffer`.
 
-        Tensors saved with `BINARY` can be loaded using
-        `max.driver.Buffer.mmap()`, but you will have to provide the expected
-        dtype and shape.
+        .. note::
 
-        Tensors saved with `BINARY_MAX_CHECKPOINT` are saved with the shape and
-        dtype information, and can be loaded with
-        `max.driver.buffer.load_max_buffer()`.
-
-        Warning: Even with style set to `NONE`, debug print ops in the graph can
-        stop optimizations. If you see performance issues, try fully removing
-        debug print ops.
+            Even with ``style`` set to ``NONE``, debug print ops in the graph
+            can prevent optimization. If you see performance issues, try fully
+            removing debug print ops.
 
         Args:
-            style: How the values will be printed. Can be `COMPACT`, `FULL`,
-                `BINARY`, `BINARY_MAX_CHECKPOINT` or `NONE`.
-            precision: If the style is `FULL`, the digits of precision in the
-                output.
-            output_directory: If the style is `BINARY`, the directory to store
-                output tensors.
+            style: The print style for tensor values. One of ``COMPACT``,
+                ``FULL``, ``BINARY``, ``BINARY_MAX_CHECKPOINT``, or ``NONE``.
+            precision: The digits of precision in the output, used when
+                ``style`` is ``FULL``.
+            output_directory: The directory to store output tensors, used
+                when ``style`` is ``BINARY`` or ``BINARY_MAX_CHECKPOINT``.
+
+        Raises:
+            TypeError: If ``style`` is not a valid :class:`PrintStyle`, if
+                ``precision`` is not an ``int`` when ``style`` is ``FULL``,
+                or if ``output_directory`` is not a ``str`` or
+                :class:`~pathlib.Path`.
+            ValueError: If ``output_directory`` is empty when ``style`` is
+                ``BINARY`` or ``BINARY_MAX_CHECKPOINT``.
         """
         if isinstance(style, str):
             style = cast(str | PrintStyle, getattr(PrintStyle, style, style))
@@ -926,7 +952,16 @@ class InferenceSession:
     def set_split_k_reduction_precision(
         self, precision: str | SplitKReductionPrecision
     ) -> None:
-        """Sets the accumulation precision for split k reductions in large matmuls."""
+        """Sets the accumulation precision for split-k reductions in large matmuls.
+
+        Args:
+            precision: The accumulation precision to use, given as a
+                ``SplitKReductionPrecision`` member or its name as a string.
+
+        Raises:
+            TypeError: If ``precision`` is not a valid
+                ``SplitKReductionPrecision`` member or name.
+        """
         if not isinstance(precision, SplitKReductionPrecision):
             try:
                 precision = SplitKReductionPrecision[precision]
@@ -938,7 +973,16 @@ class InferenceSession:
         self._set_mojo_define("SPLITK_REDUCTION_SCHEME", precision)
 
     def set_mojo_log_level(self, level: str | LogLevel) -> None:
-        """Sets the verbosity of mojo logging in the compiled model."""
+        """Sets the verbosity of Mojo logging in the compiled model.
+
+        Args:
+            level: The log level to use, given as a :class:`LogLevel` member
+                or its name as a string.
+
+        Raises:
+            TypeError: If ``level`` is not a valid :class:`LogLevel` member
+                or name.
+        """
         if not isinstance(level, LogLevel):
             try:
                 level = LogLevel[level]
@@ -950,25 +994,31 @@ class InferenceSession:
         self._set_mojo_define("LOGGING_LEVEL", level)
 
     def set_mojo_assert_level(self, level: AssertLevel) -> None:
-        """Sets which mojo asserts are kept in the compiled model.
+        """Sets which Mojo asserts are kept in the compiled model.
 
-        Note:
+        .. note::
+
             Not all kernels are runnable with asserts enabled. If model
             compilation or execution fails at higher assert levels, retry with
             ``AssertLevel.NONE``.
+
+        Args:
+            level: The assert level to use. One of ``AssertLevel.NONE``,
+                ``AssertLevel.WARN``, ``AssertLevel.SAFE``, or
+                ``AssertLevel.ALL``.
         """
         self._set_mojo_define("ASSERT", level)
 
     def gpu_profiling(self, mode: GPUProfilingMode) -> None:
         """Enables GPU profiling instrumentation for the session.
 
-        This enables GPU profiling instrumentation that works with NVIDIA
-        Nsight Systems and Nsight Compute. When enabled, the runtime adds CUDA
-        driver calls and NVTX markers that allow profiling tools to correlate
-        GPU kernel executions with host-side code.
+        Works with NVIDIA Nsight Systems and Nsight Compute. When enabled,
+        the runtime adds CUDA driver calls and NVTX markers that allow
+        profiling tools to correlate GPU kernel executions with host-side
+        code.
 
-        For example, to enable detailed profiling for Nsight Systems analysis,
-        call ``gpu_profiling()`` before ``load()``:
+        For example, to enable detailed profiling for Nsight Systems
+        analysis, call :meth:`gpu_profiling` before :meth:`load`:
 
         .. code-block:: python
 
@@ -985,18 +1035,21 @@ class InferenceSession:
 
             nsys profile --trace=cuda,nvtx python example.py
 
-        Or, instead of calling ``session.gpu_profiling()`` in the code, you can
-        set the ``MODULAR_ENABLE_PROFILING`` environment variable when you call
+        Instead of calling :meth:`gpu_profiling` in code, you can set the
+        ``MODULAR_ENABLE_PROFILING`` environment variable when you call
         ``nsys profile``:
 
         .. code-block:: bash
 
             MODULAR_ENABLE_PROFILING=detailed nsys profile --trace=cuda,nvtx python script.py
 
-        Beware that ``gpu_profiling()`` overrides the
+        Be aware that :meth:`gpu_profiling` overrides the
         ``MODULAR_ENABLE_PROFILING`` environment variable if also used.
 
-        Note:
+        Learn more in `GPU profiling with Nsight Systems </max/gpu-system-profiling>`_.
+
+        .. note::
+
             Profiling instrumentation adds runtime overhead and should be
             disabled for production deployments.
 
@@ -1004,13 +1057,10 @@ class InferenceSession:
             mode: The profiling mode to set. One of:
 
                 - ``off``: Disable profiling (default).
-                - ``on``: Enable basic profiling with
-                  NVTX markers for kernel correlation.
-                - ``detailed``: Enable detailed profiling
-                  with additional Python-level NVTX markers.
-
-        See Also:
-            - `GPU profiling with Nsight Systems </max/gpu-system-profiling>`_
+                - ``on``: Enable basic profiling with NVTX markers for
+                  kernel correlation.
+                - ``detailed``: Enable detailed profiling with additional
+                  Python-level NVTX markers.
         """
         if mode == "off":
             return
@@ -1023,14 +1073,16 @@ class InferenceSession:
         set_gpu_profiling_state(mode)
 
     def use_old_top_k_kernel(self, mode: str) -> None:
-        """Enables the old top-k kernel.
+        """Falls back to the previous top-k kernel implementation.
 
-        Default is to use the new top-k kernel to keep it consistent with
-        max/kernels/src/nn/topk.mojo
+        By default, the session uses a newer top-k kernel. Use this
+        fallback only if you encounter correctness or performance issues
+        with the default kernel.
 
         Args:
-            mode: String to enable/disable. Accepts "false", "off", "no", "0"
-                to disable, any other value to enable.
+            mode: The enable/disable flag. Accepts ``"false"``, ``"off"``,
+                ``"no"``, or ``"0"`` to disable. Any other value enables the
+                old top-k kernel.
         """
         if mode.lower() in ("false", "off", "no", "0"):
             return
@@ -1041,8 +1093,9 @@ class InferenceSession:
         """Enables the fused-inference top-k kernel.
 
         Args:
-            mode: String to enable/disable. Accepts "false", "off", "no", "0"
-                to disable, any other value to enable.
+            mode: The enable/disable flag. Accepts ``"false"``, ``"off"``,
+                ``"no"``, or ``"0"`` to disable. Any other value enables the
+                fused-inference top-k kernel.
         """
         if mode.lower() in ("false", "off", "no", "0"):
             return
@@ -1053,8 +1106,9 @@ class InferenceSession:
         """Enables per-tensor FP8 quantization.
 
         Args:
-            mode: String to enable/disable. Accepts "false", "off", "no", "0"
-                to disable, any other value to enable.
+            mode: The enable/disable flag. Accepts ``"false"``, ``"off"``,
+                ``"no"``, or ``"0"`` to disable. Any other value enables
+                per-tensor FP8 quantization.
         """
         if mode.lower() in ("false", "off", "no", "0"):
             return
@@ -1108,5 +1162,5 @@ class InferenceSession:
 
     @property
     def devices(self) -> list[Device]:
-        """A list of available devices."""
+        """The devices available to the session, including the host CPU."""
         return self._impl.devices

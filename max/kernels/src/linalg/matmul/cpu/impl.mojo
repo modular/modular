@@ -622,9 +622,10 @@ def matmul[
 
     comptime kernel_id = select_inner_kernel[a.dtype, b.dtype, c.dtype]()
 
-    @parameter
     @always_inline
-    def dispatch_on_kernel_type[kernel_type: Bool]() raises:
+    def dispatch_on_kernel_type[
+        kernel_type: Bool
+    ]() raises {c, a, b, num_threads, ctx}:
         comptime config = get_kernel_config[
             a.dtype,
             b.dtype,
@@ -698,7 +699,7 @@ def matmul[
     var shape = GemmShape.get[transpose_b](c, a, b)
     var n = shape.N
     var k = shape.K
-    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+    dispatch_get_kernel_type(dispatch_on_kernel_type, kernel_type_m, n, k)
 
 
 def _submatmul_sequential_sync[

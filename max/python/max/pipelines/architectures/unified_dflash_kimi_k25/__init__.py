@@ -10,14 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for AudioGenerationConfig."""
+"""DFlash speculative decoding for Kimi K2.5 with unified graph compilation."""
 
-from max.pipelines.lib import AudioGenerationConfig
+from .arch import unified_dflash_kimi_k25_arch
+from .model import (
+    UnifiedDflashKimiK25Inputs,
+    UnifiedDflashKimiK25Model,
+)
+from .model_config import UnifiedDflashKimiK25Config
+from .unified_dflash_kimi_k25 import UnifiedDflashKimiK25
 
-
-def test_audio_generation_config_field_descriptions() -> None:
-    """Ensure AudioGenerationConfig exposes field descriptions for CLI help."""
-    assert (
-        AudioGenerationConfig.model_fields["audio_decoder"].description
-        == "The name of the audio decoder model architecture."
-    )
+__all__ = [
+    "UnifiedDflashKimiK25",
+    "UnifiedDflashKimiK25Config",
+    "UnifiedDflashKimiK25Inputs",
+    "UnifiedDflashKimiK25Model",
+    "unified_dflash_kimi_k25_arch",
+]

@@ -23,19 +23,23 @@ from __future__ import annotations
 import mojo.importer
 
 from .buffer import Buffer
+from .bundle import Bundle
 from .context import Context
 from .device import Device
 from .driver import Driver
 from .event import Event
+from .function import Function
 from .queue import Queue
 from .stream import Stream
 
 __all__ = [
     "Buffer",
+    "Bundle",
     "Context",
     "Device",
     "Driver",
     "Event",
+    "Function",
     "Queue",
     "Stream",
 ]

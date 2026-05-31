@@ -63,7 +63,7 @@ modular_py_test(
     size = "enormous",
     srcs = ["test_pipelines_cli_gpu_structured_output.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "5",
+        "test.resources:gpu-memory": "6",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411

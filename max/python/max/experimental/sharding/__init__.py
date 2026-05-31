@@ -11,46 +11,91 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Placement types and sharding specifications for distributed tensors.
+"""Distributed-tensor sharding: how a tensor is laid out across a device mesh.
 
-This package is the single source of truth for describing how tensor data is
-distributed across a :class:`DeviceMesh`. It contains:
+Describes, for every op, what redistribution to perform before the op runs.
+The pipeline is deliberately local: per-op rules over a placement vocabulary
+(:class:`Replicated`, :class:`Sharded`, :class:`Partial`), scored by a single
+cost model, with one pluggable :class:`Solver` making the choice at each
+dispatch. There is no whole-graph trace.
 
-**Placement types** (mesh-axis-indexed primitives):
+A ``mode(...)`` block selects the solver for the ops inside it:
 
-* :class:`Replicated`: every device holds a full copy.
-* :class:`Sharded`: tensor is split along a dimension.
-* :class:`Partial`: each device holds a partial result needing reduction.
+.. code-block:: python
 
-**Sharding specifications** (high-level wrappers):
+    from max.experimental.functional import matmul, relu
+    from max.experimental.sharding import GreedyReshard, mode
 
-* :class:`PlacementMapping`, **mesh-axis-indexed** (PyTorch DTensor style).
-  One :class:`Placement` per mesh axis. Suitable for eager dispatch.
-* :class:`NamedMapping`, **tensor-dimension-indexed** (JAX PartitionSpec
-  style). One entry per tensor dimension names the mesh axis that shards it.
-  Suitable for compiler-driven sharding propagation.
+    with mode(GreedyReshard(on_reshard="warn")):
+        y = relu(matmul(a, b))
 
-Both spec types share the same :class:`DeviceMesh` and can be converted to
-each other for the standard placement vocabulary. Conversions that would
-lose information raise :class:`ConversionError`.
+Shipped solvers: :class:`GreedyReshard` (cheapest feasible action),
+:class:`NoReshard` (first feasible, prefers passthrough), and
+:class:`PartialsOnly` (only ``Partial -> Replicated`` resolutions).
+
+This module avoids the overloaded word "rank". A *device* is one accelerator;
+a *mesh axis* is one named dimension of the :class:`DeviceMesh` grid; a
+*shard* is one device's piece of a tensor; a *tensor axis* is a dimension of
+the tensor itself.
 """
 
+from .action import (
+    Action,
+    ActionSet,
+    AxisAssignment,
+    PerShard,
+)
+from .cost import (
+    FeasibilityContext,
+    P,
+    R,
+    build_action_set,
+    force_replicated_action_set,
+    transition_cost,
+)
 from .mappings import (
     ConversionError,
     DeviceMapping,
     NamedMapping,
     PlacementMapping,
     SpecEntry,
+    is_fully_replicated,
 )
-from .mesh import DeviceMesh
-from .placements import Partial, Placement, ReduceOp, Replicated, Sharded
-from .shapes import (
+from .mesh import DeviceMesh, MeshContext, get_active_mesh
+
+# Re-export so ``sharding.mode(...)`` resolves to the function, not the submodule.
+from .mode import ShardingError, current_solver, isolated_solver, mode
+from .per_shard_dim import (
+    PerShardDim,
+    cell_at,
+    global_dim,
+    global_shape,
+    is_one,
+    is_per_shard_dim,
+    make_per_shard_dim,
+    shape_at,
+)
+from .picker import (
+    GreedyReshard,
+    NoReshard,
+    PartialsOnly,
+    ReshardBehavior,
+    Solver,
+    cheapest_action,
+    enumerate_feasible_actions,
+)
+from .placements import (
+    Collective,
+    Partial,
+    Placement,
+    ReduceOp,
+    Replicated,
+    Sharded,
     _shard_sizes_along_axis,
-    global_shape_from_local,
     local_shard_shape_from_global,
     shard_shape,
-    sharded_symbolic_dim,
 )
+from .rules import *
 from .types import (
     DistributedBufferType,
     DistributedTensorType,
@@ -59,24 +104,55 @@ from .types import (
 )
 
 __all__ = [
+    "Action",
+    "ActionSet",
+    "AxisAssignment",
+    "Collective",
     "ConversionError",
     "DeviceMapping",
     "DeviceMesh",
     "DistributedBufferType",
     "DistributedTensorType",
     "DistributedType",
+    "FeasibilityContext",
+    "GreedyReshard",
+    "MeshContext",
     "NamedMapping",
+    "NoReshard",
+    "P",
     "Partial",
+    "PartialsOnly",
+    "PerShard",
+    "PerShardDim",
     "Placement",
     "PlacementMapping",
+    "R",
     "ReduceOp",
     "Replicated",
+    "ReshardBehavior",
     "Sharded",
+    "ShardingError",
+    "Solver",
     "SpecEntry",
     "TensorLayout",
     "_shard_sizes_along_axis",
-    "global_shape_from_local",
+    "build_action_set",
+    "cell_at",
+    "cheapest_action",
+    "current_solver",
+    "enumerate_feasible_actions",
+    "force_replicated_action_set",
+    "get_active_mesh",
+    "global_dim",
+    "global_shape",
+    "is_fully_replicated",
+    "is_one",
+    "is_per_shard_dim",
+    "isolated_solver",
     "local_shard_shape_from_global",
+    "make_per_shard_dim",
+    "mode",
+    "shape_at",
     "shard_shape",
-    "sharded_symbolic_dim",
+    "transition_cost",
 ]

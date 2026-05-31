@@ -275,11 +275,11 @@ def depth512_load[
         )
 
     var kv_row: UInt32 = mask.start_column[PairBM_mask, BN, page_size](
-        score_row
+        seq_info.prompt_idx, score_row
     )
     var iter_count: UInt32 = (
         mask.last_masked_set_end[PairBM_mask, BN, page_size](
-            score_row, num_keys
+            seq_info.prompt_idx, score_row, num_keys
         )
         - 1
     )
@@ -520,6 +520,7 @@ def depth512_load[
         comptime if check_mask:
             if (
                 mask.status(
+                    seq_info.prompt_idx,
                     Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                     Index[dtype=DType.int32](PairBM_mask, BN),
                 )
@@ -575,6 +576,7 @@ def depth512_load[
             comptime if check_mask:
                 if (
                     mask.status(
+                        seq_info.prompt_idx,
                         Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                         Index[dtype=DType.int32](PairBM_mask, BN),
                     )

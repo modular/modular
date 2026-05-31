@@ -60,20 +60,6 @@ Embeddings
    EmbeddingsGenerationInputs
    EmbeddingsGenerationOutput
 
-Audio generation
-----------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   AudioGenerationContextType
-   AudioGenerationInputs
-   AudioGenerationMetadata
-   AudioGenerationOutput
-   AudioGenerationRequest
-
 Image generation
 ----------------
 
