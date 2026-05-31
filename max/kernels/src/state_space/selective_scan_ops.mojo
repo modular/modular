@@ -21,6 +21,7 @@ This module registers the following ops:
 from std.math import ceildiv
 
 import extensibility as compiler
+from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext, Dim
 from std.gpu.host.info import is_cpu, is_gpu
 
@@ -42,6 +43,15 @@ from state_space.selective_scan import (
 )
 
 comptime _GPU_BLOCK_SIZE = 128
+# Must match _WARP_COOP_BLOCK in selective_scan.mojo (warp-cooperative decode
+# block size for d_state <= WARP_SIZE).
+comptime _WARP_COOP_BLOCK = 128
+# Must match _DECODE_WARPS_PER_BLOCK in selective_scan.mojo (warp-per-row decode
+# block packs this many rows = warps for d_state >= WARP_SIZE).
+comptime _DECODE_WARPS_PER_BLOCK = 4
+# Must match _DECODE_ROWS_PER_THREAD in selective_scan.mojo (M-direction rows
+# each thread walks in the warp-cooperative decode path, d_state <= WARP_SIZE).
+comptime _DECODE_ROWS_PER_THREAD = 1
 
 
 @fieldwise_init
@@ -883,10 +893,30 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         var grid_dim: Dim
         var block_dim: Dim
         comptime if is_gpu[target]():
-            var num_blocks = ceildiv(batch * dim, _GPU_BLOCK_SIZE)
             total_batch_dim = batch * dim
-            grid_dim = (num_blocks,)
-            block_dim = (_GPU_BLOCK_SIZE,)
+            # 2D grid: x tiles the dim axis, y is the batch index -> the kernel
+            # recovers (b, d) from block indices with no per-thread divmod.
+            if d_state > WARP_SIZE:
+                # Warp-per-row (Mamba2/3, d_state in {64,128,256}): one warp
+                # owns a (batch, dim) row; each lane handles d_state/WARP_SIZE
+                # contiguous state elements (vectorized) and the output sum over
+                # n is a single warp.sum (no shared mem, no barrier). A block
+                # packs _DECODE_WARPS_PER_BLOCK rows along dim.
+                grid_dim = (ceildiv(dim, _DECODE_WARPS_PER_BLOCK), batch)
+                block_dim = (_DECODE_WARPS_PER_BLOCK * WARP_SIZE,)
+            else:
+                # Warp-cooperative (Mamba1/2, d_state in {2..32}): each lane
+                # owns min(4, d_state) contiguous dstate, so LANES_PER_ROW =
+                # d_state / that; block = _WARP_COOP_BLOCK threads holding
+                # (block / LANES_PER_ROW) rows along dim, each thread walking
+                # _DECODE_ROWS_PER_THREAD of them.
+                var ept = 4 if d_state >= 4 else d_state
+                var lanes_per_row = d_state // ept
+                var rows_per_block = (
+                    _WARP_COOP_BLOCK // lanes_per_row
+                ) * _DECODE_ROWS_PER_THREAD
+                grid_dim = (ceildiv(dim, rows_per_block), batch)
+                block_dim = (_WARP_COOP_BLOCK,)
         else:
             total_batch_dim = 0
             grid_dim = (1,)

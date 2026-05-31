@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
 from layout import (
     Idx,
@@ -28,6 +29,9 @@ from state_space.selective_scan import (
     selective_scan_fwd_gpu,
     selective_scan_update_cpu,
     selective_scan_update_gpu,
+    _DECODE_WARPS_PER_BLOCK,
+    _DECODE_ROWS_PER_THREAD,
+    _WARP_COOP_BLOCK,
     Strides1D,
     Strides2D,
     Strides3D,
@@ -561,7 +565,7 @@ def run_selective_scan_update_gpu[
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan update GPU kernel against CPU reference."""
-    comptime assert DSTATE <= 16, "DSTATE exceeds kernel limit"
+    comptime assert DSTATE <= 256, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -847,8 +851,26 @@ def run_selective_scan_update_gpu[
             D_strides,
             z_strides,
             dt_bias_strides,
-            grid_dim=(ceildiv(total_batch_dim, 256),),
-            block_dim=(256,),
+            # Launch matches selective_scan_ops dispatch: 2D grid (x tiles dim,
+            # y is batch). Warp-per-row (4 rows/block along dim) when
+            # DSTATE > WARP_SIZE, else warp-cooperative (128 threads,
+            # 128/lanes_per_row rows/block along dim).
+            grid_dim=(
+                ceildiv(dim, _DECODE_WARPS_PER_BLOCK) if DSTATE
+                > WARP_SIZE else ceildiv(
+                    dim,
+                    (
+                        _WARP_COOP_BLOCK
+                        // (DSTATE // (4 if DSTATE >= 4 else DSTATE))
+                    )
+                    * _DECODE_ROWS_PER_THREAD,
+                ),
+                batch,
+            ),
+            block_dim=(
+                _DECODE_WARPS_PER_BLOCK * WARP_SIZE if DSTATE
+                > WARP_SIZE else _WARP_COOP_BLOCK,
+            ),
         )
 
     # Copy results back from device
@@ -1145,3 +1167,36 @@ def test_selective_scan_update_gpu_larger_dimensions() raises:
         has_delta_bias=True,
         delta_softplus=False,
     ](batch=2, dim=4, n_groups=1, ctx=ctx)
+
+
+def test_selective_scan_update_gpu_mamba1_130m() raises:
+    """Mamba1-130m decode regression guard: real dims (d_inner=1536,
+    d_state=16, n_groups=1). d_state < WARP_SIZE -> scalar dispatch path."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_update_gpu[
+        DType.float32,
+        16,  # DSTATE (Mamba1-130m)
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=2, dim=1536, n_groups=1, ctx=ctx)
+
+
+def test_selective_scan_update_gpu_mamba2_130m() raises:
+    """Mamba2-130m decode regression guard: real dims (d_inner=1536,
+    head_dim=64 * n_heads=24, d_state=128, n_groups=1). d_state >= WARP_SIZE
+    -> cooperative dispatch path."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_update_gpu[
+        DType.float32,
+        128,  # DSTATE (Mamba2-130m)
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=2, dim=1536, n_groups=1, ctx=ctx)

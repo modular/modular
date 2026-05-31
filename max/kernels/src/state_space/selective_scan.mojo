@@ -12,14 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import (
+    WARP_SIZE,
     block_dim,
     block_idx,
     thread_idx,
 )
+from std.gpu.primitives import warp
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from std.utils.index import IndexList
 from std.algorithm import sync_parallelize
 from std.gpu.host import DeviceContext
+from std.sys import align_of
 import std.math
 from std.math import ceildiv, exp, exp2, rsqrt
 from state_space.causal_conv1d import silu
@@ -29,14 +32,36 @@ from state_space.causal_conv1d import silu
 # ===----------------------------------------------------------------------=== #
 
 comptime LOG2E = 1.4426950408889634  # For converting exp to exp2 (faster on GPU)
-# Bumped from 16 -> 128 -> 256 to admit Mamba2 decode paths up to d_state=256.
-# Mamba1 callers (d_state in {8, 16}) still work — they only use the leading
-# elements of each SIMD register and never read past their compile-time
-# D_STATE_VAL. Trade-off: every state SIMD now occupies up to 16x the registers
-# of the d_state=16 case, which can spill on small GPUs. If Mamba1 perf
-# regresses materially we should parameterize MAX_D_STATE on D_STATE_VAL
-# rather than carry both costs.
+# Max d_state for the prefill kernel's SIMD state registers. Admits Mamba2
+# decode paths up to d_state=256. NOTE: the decode kernel
+# (selective_scan_update_gpu) no longer carries SIMD[MAX_D_STATE] state -- it
+# parallelizes over the state dim instead (see that kernel's docstring), so it
+# is unaffected by this cap. Only the prefill path below still uses it.
 comptime MAX_D_STATE = 256
+
+# Threads per block for the warp-cooperative decode layout (d_state <=
+# WARP_SIZE). A warp holds WARP_SIZE // d_state rows; 256 keeps 8 warps/block
+# (good occupancy) and is divisible by every small d_state (2,4,8,16,32).
+comptime _WARP_COOP_BLOCK = 128
+
+# Warps (= rows) per block for the warp-per-row decode layout (d_state >=
+# WARP_SIZE). One warp owns a row; 4 warps -> 128-thread blocks, matching
+# Triton's BLOCK_SIZE_M=4 tiling for d_state=128. Must match
+# _DECODE_WARPS_PER_BLOCK in selective_scan_ops.mojo.
+comptime _DECODE_WARPS_PER_BLOCK = 4
+
+# Contiguous state elements each thread owns in the warp-cooperative decode
+# layout (d_state <= WARP_SIZE), loaded as one vectorized SIMD load -- matching
+# how the state-spaces/mamba Triton kernel gives each thread 4 dstate elements
+# (a 128-bit float4 load) and reduces with a narrow d_state/4-wide cross-lane
+# sum. min(4, d_state) keeps the load 16-byte aligned and the reduction cheap.
+comptime _DECODE_ELEMS_PER_THREAD = 4
+
+# Rows each thread processes in the dim (M) direction in the warp-cooperative
+# layout. 1 = Triton's config (BLOCK_SIZE_M rows / 128-thread block, one row
+# per thread). >1 adds M-direction MLP; measured no better on GB10. Must match
+# selective_scan_ops.mojo.
+comptime _DECODE_ROWS_PER_THREAD = 1
 
 # Stride types for passing tensor strides to kernels
 comptime Strides1D = IndexList[1]
@@ -656,142 +681,321 @@ def selective_scan_update_gpu[
     z_strides: Strides2D,
     dt_bias_strides: Strides1D,
 ):
-    """GPU kernel for selective scan update (single step).
+    """GPU kernel for selective scan update (single decode step).
 
-    Each thread processes one (batch, dim) pair.
-    Reads initial state from state_in, writes updated state to state_out.
+    Two compile-time layouts, chosen by D_STATE. Both give each lane a block of
+    contiguous state elements loaded as one vectorized SIMD (a 128-bit float4
+    where d_state allows), keep consecutive lanes on consecutive elements so the
+    loads stay coalesced, hold O(1) registers/thread, and use no shared memory
+    or barriers:
+
+    * `D_STATE > WARP_SIZE` (Mamba2/3, d_state in {64, 128, 256}):
+      WARP-per-row. One warp owns a (batch, dim) row; each lane owns
+      D_STATE // WARP_SIZE CONTIGUOUS state elements (one vectorized load),
+      sums them in-register, and the output sum over n finishes with a single
+      `warp.sum`. A block packs `_DECODE_WARPS_PER_BLOCK` rows (128-thread
+      blocks), matching the Triton BLOCK_SIZE_M tiling. This replaced a
+      cross-warp `block.sum` (one row per block); dropping the barrier/shared
+      reduction and vectorizing the loads took d_state=128 from ~1.10x behind
+      Triton to parity/ahead at the batched decode profile.
+
+    * `D_STATE <= WARP_SIZE` (Mamba1/2, d_state in {2..32}): WARP-cooperative.
+      Each lane owns min(4, D_STATE) contiguous elements (a float4 load),
+      LANES_PER_ROW = D_STATE / that lanes cooperate on a row, and the row sum
+      finishes with a narrow `lane_group_sum`. A 128-thread block holds many
+      rows; full warps even at tiny d_state. (Matches Triton's d_state<=16
+      tiling: 4 dstate/thread, d_state/4-wide reduction.)
+
+    The original kernel used one thread per (batch, dim) row for ALL d_state
+    and held four SIMD[d_state] vectors (A/B/C/state) live at once: at
+    d_state >= 64 that overflowed the 255-register cap and spilled (~3.6 MB
+    local round-trip, ~8% occupancy), and consecutive threads read
+    state[b, d+1, n] a full d_state stride apart -> uncoalesced, ~78%
+    memory-bound and ~3x off the Triton selective_state_update reference at
+    the batched profile.
     """
-    # Calculate which (batch, dim) this thread is responsible for
-    var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    if thread_id >= total_batch_dim:
-        return
 
-    var b, d = divmod(thread_id, dim)
+    comptime if D_STATE > WARP_SIZE:
+        # -- Warp-per-row: one warp owns a (batch, dim) row; each lane handles
+        # D_STATE // WARP_SIZE state elements (strided by WARP_SIZE so each step
+        # is coalesced across the warp). The output sum over n is a single
+        # warp.sum -- no shared memory, no barrier. This beats both the
+        # cross-warp block.sum (one row per block) and the multi-row shared-mem
+        # segmented reduction, which carry barrier/shared cost GB10 dislikes. A
+        # block packs _DECODE_WARPS_PER_BLOCK rows (matching Triton's tiling). --
+        comptime ELEMS_PER_THREAD = D_STATE // WARP_SIZE
+        var warp_in_block = Int(thread_idx.x) // WARP_SIZE
+        var lane = Int(thread_idx.x) % WARP_SIZE
+        # 2D grid: block_idx.x tiles the dim axis, block_idx.y is the batch
+        # index. Recovering (b, d) this way avoids a per-thread divmod by the
+        # runtime `dim` (a ~20-instruction integer division on the critical path
+        # before any address can be formed); the state-spaces/mamba Triton
+        # kernel indexes the same way.
+        var d = Int(block_idx.x) * _DECODE_WARPS_PER_BLOCK + warp_in_block
+        var b = Int(block_idx.y)
+        # d is uniform across the warp, so the whole warp returns together --
+        # safe even though warp.sum below is warp-collective.
+        if d >= dim:
+            return
 
-    # Additional bounds checking
-    if b >= batch or d >= dim:
-        return
+        # group_size >= dim iff n_groups == 1 (the common case) -> group_id is
+        # always 0, so skip the integer division on the per-row critical path.
+        var group_id = 0 if group_size >= dim else d // group_size
 
-    # Compute group_id for this dimension
-    var group_id = d // group_size
-
-    # Load dt value
-    var dt_offset = UInt32(b * dt_strides[0] + d * dt_strides[1])
-    var dt_val = Scalar[kernel_dtype](dt.raw_load(dt_offset)).cast[
-        DType.float32
-    ]()
-
-    # Apply dt_bias if present
-    var has_dt_bias = Int(dt_bias.dim[0]()) > 0
-    if has_dt_bias:
-        var bias_offset = UInt32(d * dt_bias_strides[0])
-        var bias_val = Scalar[kernel_dtype](dt_bias.raw_load(bias_offset)).cast[
+        # dt[b, d] (+ bias, softplus): one address, broadcast across the warp.
+        var dt_offset = UInt32(b * dt_strides[0] + d * dt_strides[1])
+        var dt_val = Scalar[kernel_dtype](dt.raw_load(dt_offset)).cast[
             DType.float32
         ]()
-        dt_val += bias_val
+        var has_dt_bias = Int(dt_bias.dim[0]()) > 0
+        if has_dt_bias:
+            var bias_offset = UInt32(d * dt_bias_strides[0])
+            dt_val += Scalar[kernel_dtype](dt_bias.raw_load(bias_offset)).cast[
+                DType.float32
+            ]()
+        if Bool(Int(delta_softplus) != 0):
+            dt_val = softplus(dt_val)
 
-    # Apply softplus if requested
-    var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
-    if delta_softplus_bool:
-        dt_val = softplus(dt_val)
+        var x_offset = UInt32(b * x_strides[0] + d * x_strides[1])
+        var x_val = Scalar[kernel_dtype](x.raw_load(x_offset)).cast[
+            DType.float32
+        ]()
+        var dt_x = dt_val * x_val
 
-    # Load x value
-    var x_offset = UInt32(b * x_strides[0] + d * x_strides[1])
-    var x_val = Scalar[kernel_dtype](x.raw_load(x_offset)).cast[DType.float32]()
+        # This lane owns the ELEMS_PER_THREAD CONTIGUOUS elements
+        # n0 .. n0+ELEMS_PER_THREAD, loaded as one vectorized SIMD (e.g. a
+        # 128-bit float4 at d_state=128). Lane L owns [L*EPT : (L+1)*EPT], so
+        # the 32 lanes tile [0 : D_STATE] contiguously -> the warp's loads are
+        # coalesced and each lane issues a single wide load instead of EPT
+        # scalar ones. NOTE: assumes the state axis (n) is contiguous (stride
+        # 1) -- true for every call site.
+        var n0 = lane * ELEMS_PER_THREAD
+        # 16-byte-aligned width-EPT loads emit a single vectorized access
+        # (LD.E.128 for f32x4) instead of EPT scalar loads -- without the
+        # alignment hint the default 4-byte alignment forces scalar loads and
+        # ~EPT x the L1 sector traffic. n0 is a multiple of EPT and the inner
+        # stride is 1, so every access is naturally EPT-aligned.
+        comptime VEC_ALIGN = align_of[SIMD[kernel_dtype, ELEMS_PER_THREAD]]()
 
-    # Load A values for this dim and pre-multiply by LOG2E for faster exp2
-    var A_vals = SIMD[DType.float32, MAX_D_STATE](0.0)
-
-    comptime for n in range(D_STATE):
-        var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
-        A_vals[n] = (
-            Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
-            * LOG2E
-        )
-
-    # Compute dA = exp2(A * LOG2E * dt) = exp(A * dt)
-    var dA = exp2(A_vals * dt_val)
-
-    # Load B values using group_id
-    var B_vals = SIMD[DType.float32, MAX_D_STATE](0.0)
-
-    comptime for n in range(D_STATE):
+        # Issue ALL FOUR global loads (A, B, state, C) before consuming any --
+        # the kernel is long-scoreboard (global-load-latency) bound, so 4 loads
+        # in flight share one latency stall instead of serializing four.
+        var A_offset = UInt32(d * A_strides[0] + n0 * A_strides[1])
+        var A_v = A.raw_load[width=ELEMS_PER_THREAD, alignment=VEC_ALIGN](
+            A_offset
+        ).cast[DType.float32]()
         var B_offset = UInt32(
-            b * B_strides[0] + group_id * B_strides[1] + n * B_strides[2]
+            b * B_strides[0] + group_id * B_strides[1] + n0 * B_strides[2]
         )
-        B_vals[n] = Scalar[kernel_dtype](B.raw_load(B_offset)).cast[
-            DType.float32
-        ]()
-
-    # Compute dB = B * dt
-    var dB = B_vals * dt_val
-
-    # Load current state from state_in
-    var state_vals = SIMD[DType.float32, MAX_D_STATE](0.0)
-
-    comptime for n in range(D_STATE):
-        var state_offset = UInt32(
+        var B_v = B.raw_load[width=ELEMS_PER_THREAD, alignment=VEC_ALIGN](
+            B_offset
+        ).cast[DType.float32]()
+        var state_in_offset = UInt32(
             b * state_in_strides[0]
             + d * state_in_strides[1]
-            + n * state_in_strides[2]
+            + n0 * state_in_strides[2]
         )
-        state_vals[n] = Scalar[kernel_dtype](
-            state_in.raw_load(state_offset)
+        var state_v = state_in.raw_load[
+            width=ELEMS_PER_THREAD, alignment=VEC_ALIGN
+        ](state_in_offset).cast[DType.float32]()
+        var C_offset = UInt32(
+            b * C_strides[0] + group_id * C_strides[1] + n0 * C_strides[2]
+        )
+        var C_v = C.raw_load[width=ELEMS_PER_THREAD, alignment=VEC_ALIGN](
+            C_offset
         ).cast[DType.float32]()
 
-    # Update state: state = state * dA + dB * x
-    state_vals = state_vals * dA + dB * x_val
+        # Now consume: dA = exp(A*dt), state = state*dA + (B*dt)*x.
+        var dA_v = exp2(A_v * LOG2E * dt_val)  # elementwise
+        state_v = state_v * dA_v + B_v * dt_x
 
-    # Store updated state to state_out
-    comptime for n in range(D_STATE):
-        var state_offset = UInt32(
+        var state_out_offset = UInt32(
             b * state_out_strides[0]
             + d * state_out_strides[1]
-            + n * state_out_strides[2]
+            + n0 * state_out_strides[2]
         )
-        state_out.raw_store(
-            state_offset,
-            Scalar[kernel_dtype](state_vals[n].cast[kernel_dtype]()),
+        state_out.raw_store[width=ELEMS_PER_THREAD, alignment=VEC_ALIGN](
+            state_out_offset, state_v.cast[kernel_dtype]()
         )
-    # Load C values using group_id
-    var C_vals = SIMD[DType.float32, MAX_D_STATE](0.0)
+        # In-register sum of this lane's EPT products, then across the warp.
+        var partial = (state_v * C_v).reduce_add()
 
-    comptime for n in range(D_STATE):
-        var C_offset = UInt32(
-            b * C_strides[0] + group_id * C_strides[1] + n * C_strides[2]
-        )
-        C_vals[n] = Scalar[kernel_dtype](C.raw_load(C_offset)).cast[
-            DType.float32
-        ]()
+        # out[b, d] = sum_n (state * C), reduced across the warp's lanes.
+        var out_val = warp.sum(partial)
 
-    # Compute output: out = sum(state * C, axis=-1)
-    var out_val = (state_vals * C_vals).reduce_add()
+        if lane == 0:
+            var has_D = Int(D.dim[0]()) > 0
+            if has_D:
+                var D_offset = UInt32(d * D_strides[0])
+                out_val += (
+                    x_val
+                    * Scalar[kernel_dtype](D.raw_load(D_offset)).cast[
+                        DType.float32
+                    ]()
+                )
 
-    # Add skip connection if D is present
-    var has_D = Int(D.dim[0]()) > 0
-    if has_D:
-        var D_offset = UInt32(d * D_strides[0])
-        var D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[
-            DType.float32
-        ]()
-        out_val += x_val * D_val
+            # Gating: out *= z * sigmoid(z) = silu(z).
+            var has_z = Int(z.dim[0]()) > 0
+            if has_z:
+                var z_offset = UInt32(b * z_strides[0] + d * z_strides[1])
+                var z_val = Scalar[kernel_dtype](z.raw_load(z_offset)).cast[
+                    DType.float32
+                ]()
+                out_val *= z_val * sigmoid(z_val)
 
-    # Apply gating if z is present
-    var has_z = Int(z.dim[0]()) > 0
-    if has_z:
-        var z_offset = UInt32(b * z_strides[0] + d * z_strides[1])
-        var z_val = Scalar[kernel_dtype](z.raw_load(z_offset)).cast[
-            DType.float32
-        ]()
-        out_val *= z_val * sigmoid(
-            z_val
-        )  # z * sigmoid(z) = silu(z) but formulated differently
+            var out_offset = UInt32(
+                b * output_strides[0] + d * output_strides[1]
+            )
+            output.raw_store(
+                out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
+            )
+    else:
+        # -- Warp-cooperative, vectorized: each lane owns EPT = min(4, D_STATE)
+        # CONTIGUOUS state elements (one 128-bit float4 load for state/A/B/C),
+        # sums them in-register, then a narrow lane_group_sum over
+        # LANES_PER_ROW = D_STATE/EPT lanes finishes the row -- no shared
+        # memory, no barriers. This is the state-spaces/mamba Triton tiling
+        # (BLOCK_SIZE_M rows / 128-thread block, 4 dstate/thread, d_state/4-wide
+        # reduction; e.g. d_state=16 -> 4 lanes/row, 32 rows/block). The
+        # vectorized load cuts the load-instruction count 4x and the narrow
+        # reduction is cheaper than the old 1-elem-per-lane D_STATE-wide sum,
+        # which together attack the latency/issue bound at small d_state. NOTE:
+        # the float4 loads assume the state axis (n) is contiguous (stride 1) --
+        # true for every call site. Each thread also walks
+        # _DECODE_ROWS_PER_THREAD rows in the dim (M) direction. --
+        comptime EPT = D_STATE if D_STATE < _DECODE_ELEMS_PER_THREAD else _DECODE_ELEMS_PER_THREAD
+        comptime LANES_PER_ROW = D_STATE // EPT
+        comptime ROWS_IN_FLIGHT = _WARP_COOP_BLOCK // LANES_PER_ROW
+        comptime ROWS_PER_BLOCK = ROWS_IN_FLIGHT * _DECODE_ROWS_PER_THREAD
+        var tid = Int(thread_idx.x)
+        var lane_in_row = tid % LANES_PER_ROW
+        var n0 = lane_in_row * EPT  # this lane owns dstate [n0 : n0 + EPT]
+        var slot = tid // LANES_PER_ROW
+        # 2D grid: block_idx.x tiles the dim axis, block_idx.y is the batch
+        # index -> (b, d) without a per-thread divmod by the runtime `dim`
+        # (a ~20-instruction integer division on the critical path). Matches the
+        # state-spaces/mamba Triton indexing.
+        var b = Int(block_idx.y)
+        var d_base = Int(block_idx.x) * ROWS_PER_BLOCK + slot
 
-    # Store output
-    var out_offset = UInt32(b * output_strides[0] + d * output_strides[1])
-    output.raw_store(
-        out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
-    )
+        comptime for r in range(_DECODE_ROWS_PER_THREAD):
+            var d = d_base + r * ROWS_IN_FLIGHT
+            var valid = d < dim
+
+            # Pre-declared so the group leader can finalize after the reduction.
+            var x_val = Scalar[DType.float32](0.0)
+            var partial = Scalar[DType.float32](0.0)
+
+            if valid:
+                # n_groups == 1 (group_size >= dim) -> group_id 0, no division.
+                var group_id = 0 if group_size >= dim else d // group_size
+
+                var dt_offset = UInt32(b * dt_strides[0] + d * dt_strides[1])
+                var dt_val = Scalar[kernel_dtype](dt.raw_load(dt_offset)).cast[
+                    DType.float32
+                ]()
+                var has_dt_bias = Int(dt_bias.dim[0]()) > 0
+                if has_dt_bias:
+                    var bias_offset = UInt32(d * dt_bias_strides[0])
+                    dt_val += Scalar[kernel_dtype](
+                        dt_bias.raw_load(bias_offset)
+                    ).cast[DType.float32]()
+                if Bool(Int(delta_softplus) != 0):
+                    dt_val = softplus(dt_val)
+
+                var x_offset = UInt32(b * x_strides[0] + d * x_strides[1])
+                x_val = Scalar[kernel_dtype](x.raw_load(x_offset)).cast[
+                    DType.float32
+                ]()
+                var dt_x = dt_val * x_val
+
+                # Vectorized contiguous loads over the EPT dstate elements n0..
+                # 16-byte-aligned (n0 is a multiple of EPT, inner stride 1) so
+                # each emits one LD.E.128 instead of EPT scalar loads -- without
+                # the hint the default 4-byte alignment forces scalar loads and
+                # ~EPT x the L1 sector traffic (measured 3.6x on GB10).
+                comptime VEC_ALIGN = align_of[SIMD[kernel_dtype, EPT]]()
+                # Issue ALL FOUR global loads (A, B, state, C) back-to-back
+                # before consuming any of them. The kernel is long-scoreboard
+                # (global-load-latency) bound at ~99% occupancy (ncu: ~78 of ~83
+                # stall cycles), so the win is memory-level parallelism: 4 loads
+                # in flight share ONE latency stall instead of serializing four.
+                # (Previously exp2(A) consumed A before B/state/C were issued.)
+                var A_offset = UInt32(d * A_strides[0] + n0 * A_strides[1])
+                var A_v = A.raw_load[width=EPT, alignment=VEC_ALIGN](
+                    A_offset
+                ).cast[DType.float32]()
+                var B_offset = UInt32(
+                    b * B_strides[0]
+                    + group_id * B_strides[1]
+                    + n0 * B_strides[2]
+                )
+                var B_v = B.raw_load[width=EPT, alignment=VEC_ALIGN](
+                    B_offset
+                ).cast[DType.float32]()
+                var state_in_offset = UInt32(
+                    b * state_in_strides[0]
+                    + d * state_in_strides[1]
+                    + n0 * state_in_strides[2]
+                )
+                var state_v = state_in.raw_load[width=EPT, alignment=VEC_ALIGN](
+                    state_in_offset
+                ).cast[DType.float32]()
+                var C_offset = UInt32(
+                    b * C_strides[0]
+                    + group_id * C_strides[1]
+                    + n0 * C_strides[2]
+                )
+                var C_v = C.raw_load[width=EPT, alignment=VEC_ALIGN](
+                    C_offset
+                ).cast[DType.float32]()
+
+                # Now consume: dA = exp(A*dt), state = state*dA + (B*dt)*x.
+                var dA_v = exp2(A_v * LOG2E * dt_val)  # elementwise
+                state_v = state_v * dA_v + B_v * dt_x
+
+                var state_out_offset = UInt32(
+                    b * state_out_strides[0]
+                    + d * state_out_strides[1]
+                    + n0 * state_out_strides[2]
+                )
+                state_out.raw_store[width=EPT, alignment=VEC_ALIGN](
+                    state_out_offset, state_v.cast[kernel_dtype]()
+                )
+                # In-register sum of this lane's EPT products.
+                partial = (state_v * C_v).reduce_add()
+
+            # Finish the row's sum across its LANES_PER_ROW lanes (out-of-range
+            # rows contribute 0). Warp-uniform: every lane participates.
+            var out_val = warp.lane_group_sum[num_lanes=LANES_PER_ROW](partial)
+
+            # Group leader (lane 0 of an in-range row) finalizes and stores.
+            if valid and lane_in_row == 0:
+                var has_D = Int(D.dim[0]()) > 0
+                if has_D:
+                    var D_offset = UInt32(d * D_strides[0])
+                    out_val += (
+                        x_val
+                        * Scalar[kernel_dtype](D.raw_load(D_offset)).cast[
+                            DType.float32
+                        ]()
+                    )
+
+                var has_z = Int(z.dim[0]()) > 0
+                if has_z:
+                    var z_offset = UInt32(b * z_strides[0] + d * z_strides[1])
+                    var z_val = Scalar[kernel_dtype](z.raw_load(z_offset)).cast[
+                        DType.float32
+                    ]()
+                    out_val *= z_val * sigmoid(z_val)
+
+                var out_offset = UInt32(
+                    b * output_strides[0] + d * output_strides[1]
+                )
+                output.raw_store(
+                    out_offset,
+                    Scalar[kernel_dtype](out_val.cast[kernel_dtype]()),
+                )
 
 
 def selective_scan_update_cpu[
