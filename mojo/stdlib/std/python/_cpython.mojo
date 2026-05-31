@@ -1623,35 +1623,27 @@ struct CPython(Defaultable, Movable):
         else:
             # PyObject *Py_None
             self._Py_None = PyObjectPtr(
-                upcast_from=rebind[_CPointer[PyObject, MutExternalOrigin]](
-                    self.lib.get_symbol[PyObject]("_Py_NoneStruct")
-                )
+                upcast_from=self.lib.get_symbol[PyObject]("_Py_NoneStruct")
             )
         # Integer Objects
         # PyTypeObject PyLong_Type
-        self._PyLong_Type = (
-            self.lib.get_symbol[PyTypeObject]("PyLong_Type")
-            .value()
-            .unsafe_origin_cast[MutExternalOrigin]()
-        )
+        self._PyLong_Type = self.lib.get_symbol[PyTypeObject](
+            "PyLong_Type"
+        ).value()
         self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib.borrow())
         self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib.borrow())
         self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib.borrow())
         # Boolean Objects
         # PyTypeObject PyBool_Type
-        self._PyBool_Type = (
-            self.lib.get_symbol[PyTypeObject]("PyBool_Type")
-            .value()
-            .unsafe_origin_cast[MutExternalOrigin]()
-        )
+        self._PyBool_Type = self.lib.get_symbol[PyTypeObject](
+            "PyBool_Type"
+        ).value()
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib.borrow())
         # Floating-Point Objects
         # PyTypeObject PyFloat_Type
-        self._PyFloat_Type = (
-            self.lib.get_symbol[PyTypeObject]("PyFloat_Type")
-            .value()
-            .unsafe_origin_cast[MutExternalOrigin]()
-        )
+        self._PyFloat_Type = self.lib.get_symbol[PyTypeObject](
+            "PyFloat_Type"
+        ).value()
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib.borrow())
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib.borrow())
         # Unicode Objects and Codecs
@@ -1671,11 +1663,9 @@ struct CPython(Defaultable, Movable):
         self._PyList_SetItem = PyList_SetItem.load(self.lib.borrow())
         # Dictionary Objects
         # PyTypeObject PyDict_Type
-        self._PyDict_Type = (
-            self.lib.get_symbol[PyTypeObject]("PyDict_Type")
-            .value()
-            .unsafe_origin_cast[MutExternalOrigin]()
-        )
+        self._PyDict_Type = self.lib.get_symbol[PyTypeObject](
+            "PyDict_Type"
+        ).value()
         self._PyDict_New = PyDict_New.load(self.lib.borrow())
         self._PyDict_SetItem = PyDict_SetItem.load(self.lib.borrow())
         self._PyDict_GetItemWithError = PyDict_GetItemWithError.load(
