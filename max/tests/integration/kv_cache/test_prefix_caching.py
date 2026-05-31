@@ -78,6 +78,7 @@ def create_kv_cache(
         enable_prefix_caching=True,
         page_size=page_size,
         devices=[DeviceRef.CPU()],
+        data_parallel_degree=1,
     )
 
     session = InferenceSession(devices=[CPU()])
@@ -168,7 +169,7 @@ async def test_prefix_caching_basic() -> None:
         kv_manager.step([batch])
 
     # first and second ce have 5 + 4 tokens
-    metrics = kv_manager.get_metrics(replica_idx=0)
+    metrics = kv_manager.get_metrics_aggregated()
     assert metrics.prompt_tokens == 9
     # second ce gets cache hit on 3 tokens
     assert metrics.cache_tokens == 3
@@ -192,18 +193,18 @@ async def test_prefix_caching_reset_prefix_cache() -> None:
         kv_manager.runtime_inputs([[context_1]])
         context_1.update(15)
         kv_manager.step([[context_1]])
-    assert kv_manager.get_metrics(replica_idx=0).cache_tokens == 0
+    assert kv_manager.get_metrics_aggregated().cache_tokens == 0
 
     # Get cache hit of 4 tokens
     with kv_manager.reserve([[context_2]], num_steps=1):
         pass
-    assert kv_manager.get_metrics(replica_idx=0).cache_tokens == 4
+    assert kv_manager.get_metrics_aggregated().cache_tokens == 4
 
     # Get cache hit of 0 tokens since we reset the prefix cache
     kv_manager.reset_prefix_cache()
     with kv_manager.reserve([[context_3]], num_steps=1):
         pass
-    assert kv_manager.get_metrics(replica_idx=0).cache_tokens == 4
+    assert kv_manager.get_metrics_aggregated().cache_tokens == 4
 
 
 @pytest.mark.asyncio
@@ -238,7 +239,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
                 available_blocks += 1
 
     # cache hit rate is ~= 4 / 5 tokens
-    assert kv_manager.get_metrics(replica_idx=0).cache_hit_rate > 0.79
+    assert kv_manager.get_metrics_aggregated().cache_hit_rate > 0.79
 
 
 @pytest.mark.asyncio
@@ -261,7 +262,7 @@ async def test_prefix_caching_with_no_release() -> None:
 
             # We intentionally do not release the sequence here!
 
-    assert kv_manager.get_metrics(replica_idx=0).cache_hit_rate > 0.1
+    assert kv_manager.get_metrics_aggregated().cache_hit_rate > 0.1
 
 
 @pytest.mark.asyncio
@@ -384,7 +385,7 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
         batch[0].update(tok)
     kv_manager.step([batch])
 
-    assert kv_manager.get_metrics(replica_idx=0).cache_hit_rate == 0.0
+    assert kv_manager.get_metrics_aggregated().cache_hit_rate == 0.0
 
 
 @pytest.mark.asyncio
@@ -429,7 +430,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     batch[0].update(17)
     kv_manager.step([batch])
 
-    assert kv_manager.get_metrics(replica_idx=0).cache_hit_rate == 0.0
+    assert kv_manager.get_metrics_aggregated().cache_hit_rate == 0.0
 
 
 @pytest.mark.asyncio
@@ -642,7 +643,7 @@ async def test_prefix_caching_grouped_prefixes(
 
     # Since our prompts have large grouped prefixes, we should have a high cache
     # hit rate.
-    cache_hit_rate = kv_manager.get_metrics(replica_idx=0).cache_hit_rate
+    cache_hit_rate = kv_manager.get_metrics_aggregated().cache_hit_rate
     if shared_prefix_len > 0:
         assert cache_hit_rate > 0.45
 
@@ -785,8 +786,9 @@ async def test_prefix_caching_chunked_prefill() -> None:
     blocks = kv_manager.get_req_blocks(ctx_2.request_id, replica_idx=0)
     assert 2 not in blocks
 
-    assert kv_manager.get_metrics(replica_idx=0).cache_tokens == 6
-    assert kv_manager.get_metrics(replica_idx=0).cache_hit_rate > 0.2
+    metrics = kv_manager.get_metrics_aggregated()
+    assert metrics.cache_tokens == 6
+    assert metrics.cache_hit_rate > 0.2
 
 
 def run_and_check_num_cached_tokens(
@@ -803,7 +805,7 @@ def run_and_check_num_cached_tokens(
     if do_step:
         ctx.update(magic_token_value)
         kv_manager.step([[ctx]])
-    return kv_manager.get_metrics(replica_idx=0).cache_tokens
+    return kv_manager.get_metrics_aggregated().cache_tokens
 
 
 @pytest.mark.asyncio

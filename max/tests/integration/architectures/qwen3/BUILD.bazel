@@ -26,7 +26,7 @@ modular_py_test(
         ),
     },
     exec_properties = {
-        "test.resources:gpu-memory": "1.5",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

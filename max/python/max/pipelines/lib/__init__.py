@@ -34,7 +34,6 @@ from .bfloat16_utils import (
     float32_to_bfloat16_as_uint16,
 )
 from .config import (
-    AudioGenerationConfig,
     DenoisingCacheConfig,
     KVCacheConfig,
     KVConnectorConfig,
@@ -86,7 +85,6 @@ from .sampling import (
     rejection_sampler_with_residuals,
     token_sampler,
 )
-from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
     TextAndVisionTokenizer,
@@ -99,7 +97,6 @@ from .utils import CompilationTimer, upper_bounded_default
 __all__ = [
     "PIPELINE_REGISTRY",
     "AlwaysSignalBuffersMixin",
-    "AudioGenerationConfig",
     "CompilationTimer",
     "DenoisingCacheConfig",
     "EmbeddingsPipeline",
@@ -132,7 +129,6 @@ __all__ = [
     "RopeType",
     "SamplingConfig",
     "SpeculativeConfig",
-    "SpeechTokenGenerationPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TextAndVisionTokenizer",

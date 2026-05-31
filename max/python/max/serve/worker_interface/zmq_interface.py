@@ -227,20 +227,14 @@ def _response_type_for_task(
     """Maps a PipelineTask to the correct msgspec response type for ZMQ deserialization."""
     from max.pipelines.modeling.types.generation import GenerationOutput
     from max.pipelines.modeling.types.pipeline_variants import (
-        AudioGenerationOutput,
         EmbeddingsGenerationOutput,
         TextGenerationOutput,
     )
 
-    if pipeline_task in (
-        PipelineTask.TEXT_GENERATION,
-        PipelineTask.SPEECH_TOKEN_GENERATION,
-    ):
+    if pipeline_task == PipelineTask.TEXT_GENERATION:
         return dict[RequestID, SchedulerResult[TextGenerationOutput]]
     elif pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
         return dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
-    elif pipeline_task == PipelineTask.AUDIO_GENERATION:
-        return dict[RequestID, SchedulerResult[AudioGenerationOutput]]
     elif pipeline_task == PipelineTask.PIXEL_GENERATION:
         return dict[RequestID, SchedulerResult[GenerationOutput]]
     else:

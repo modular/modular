@@ -43,7 +43,6 @@ modular_py_library(
         "//max/python/max/pipelines/request",
         "//max/python/max/pipelines/speculative",
         "//max/python/max/profiler",
-        "//max/python/max/serve/telemetry",
         "//max/python/max/serve/worker_interface",
         "//max/python/max/support",
         requirement("hf-transfer"),

@@ -269,7 +269,9 @@ class LatentAttentionWithRope(Module[..., Tensor]):
         else:
             result = mla_prefill_decode_graph(**attn_kwargs)
 
-        return result.reshape([result.shape[0], self.n_heads * self.v_head_dim])
+        return result.reshape(
+            [result.per_rank_shape[0], self.n_heads * self.v_head_dim]
+        )
 
     def forward(
         self,

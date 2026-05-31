@@ -226,10 +226,12 @@ __extension Attention:
 
         # Calculate iteration bounds using mask helpers.
         var score_row = UInt32(self.mask_block_row + UInt32(self.start_pos))
-        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](score_row)
+        var start_col = self.mask.start_column[Self.BM, Self.BN, 1](
+            UInt32(self.batch_idx), score_row
+        )
         var num_tiles = Int(
             self.mask.last_masked_set_end[Self.BM, Self.BN, 1](
-                score_row, UInt32(self.num_keys)
+                UInt32(self.batch_idx), score_row, UInt32(self.num_keys)
             )
         )
 

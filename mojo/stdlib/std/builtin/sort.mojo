@@ -55,7 +55,7 @@ def _insertion_sort[
         (array + j).init_pointee_move(value^)
 
 
-# put everything thats "<" to the left of pivot
+# put everything that's "<" to the left of pivot
 @always_inline
 def _quicksort_partition_right[
     T: Copyable,
@@ -84,7 +84,7 @@ def _quicksort_partition_right[
         right -= 1
 
 
-# put everything thats "<=" to the left of pivot
+# put everything that's "<=" to the left of pivot
 @always_inline
 def _quicksort_partition_left[
     T: Copyable,

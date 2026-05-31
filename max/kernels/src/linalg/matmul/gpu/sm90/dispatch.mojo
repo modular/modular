@@ -3272,7 +3272,7 @@ def _find_largest_bn_for_sm90_matmul[dtype: DType, N: Int]() -> Int:
     comptime if N % 8 != 0:
         return -1
 
-    def _get_max_bn() capturing -> Int:
+    def _get_max_bn() -> Int:
         # For float8_e4m3fn maximum BN that will not result in register spilling is 160
         var BN = 160 if dtype == DType.float8_e4m3fn else 256
         while BN >= 8:

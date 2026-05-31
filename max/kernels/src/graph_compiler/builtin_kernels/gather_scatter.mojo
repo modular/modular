@@ -40,7 +40,7 @@ from nn.gather_scatter import (
     gather_nd_shape,
     gather_reduce,
     gather_shape,
-    normalize_neg_index,
+    _unsafe_normalize_neg_index as normalize_neg_index,
     scatter_elements,
     scatter_elements_shape,
     scatter_nd,
@@ -101,6 +101,34 @@ from .kernels import (
     _SliceStrideTypes,
     _TransposeStrideTypes,
 )
+
+
+@always_inline
+def check_axis_in_range[idx: Int, dim_size: Int]() raises:
+    """Indices passed to gather and scatter ops may be negative. This performs
+    a check to see if the axis is valid.
+
+    Raises:
+        If the index is out of range [-dim_size, dim_size).
+    """
+    comptime if -dim_size <= idx < dim_size:
+        return
+
+    raise Error("indices must be in range [-dim_size, dim_size)")
+
+
+@always_inline
+def check_axis_in_range[dim_size: Int](idx: Int) raises:
+    """Indices passed to gather and scatter ops may be negative. This performs
+    a check to see if the axis is valid.
+
+    Raises:
+        If the index is out of range [-dim_size, dim_size).
+    """
+    if -dim_size <= idx < dim_size:
+        return
+
+    raise Error("indices must be in range [-dim_size, dim_size)")
 
 
 @compiler.register("mo.squeeze_shape")
@@ -527,6 +555,8 @@ struct Scatter:
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
+        check_axis_in_range[output.rank](Int(axis))
+
         @always_inline
         @parameter
         def reduce_func[
@@ -575,6 +605,8 @@ struct ScatterAdd:
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
+        check_axis_in_range[output.rank](Int(axis))
+
         @always_inline
         @parameter
         def reduce_func[
@@ -623,6 +655,8 @@ struct ScatterMax:
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
+        check_axis_in_range[output.rank](Int(axis))
+
         @always_inline
         @parameter
         def reduce_func[
@@ -671,6 +705,8 @@ struct ScatterMin:
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
+        check_axis_in_range[output.rank](Int(axis))
+
         @always_inline
         @parameter
         def reduce_func[
@@ -719,6 +755,8 @@ struct ScatterMul:
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
+        check_axis_in_range[output.rank](Int(axis))
+
         @always_inline
         @parameter
         def reduce_func[
@@ -1541,6 +1579,8 @@ struct Concat:
     ) capturing raises:
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
+        check_axis_in_range[axis, output.rank]()
+
         comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
 
@@ -1571,9 +1611,9 @@ struct Concat:
             rank,
             inputs_lambda,
             epilogue_wrapper,
+            axis=normalize_neg_index(axis, rank),
             target=target,
         ](
-            normalize_neg_index(axis, rank),
             input_shapes,
             output.to_tile_tensor[DType.int64](),
             ctx,
@@ -1607,6 +1647,8 @@ struct FusedConcatSlice:
         ctx: DeviceContext,
     ) capturing raises:
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+
+        check_axis_in_range[axis, rank]()
 
         comptime for i in range(inputs.size):
             input_shapes[i] = inputs[i].shape()
@@ -1686,9 +1728,9 @@ struct FusedConcatSlice:
             rank,
             inputs_lambda,
             epilogue_wrapper,
+            axis=normalize_neg_index(axis, rank),
             target=target,
         ](
-            normalize_neg_index(axis, rank),
             input_shapes,
             concat_output.to_tile_tensor[DType.int64](),
             ctx,
@@ -1717,6 +1759,7 @@ struct DualFusedConcatSlice:
         ctx: DeviceContext,
     ) capturing raises:
         comptime num_inputs_1 = inputs.size - num_inputs_0
+        check_axis_in_range[axis, rank]()
 
         var input_shapes_0 = StaticTuple[IndexList[rank], num_inputs_0]()
         comptime for i in range(num_inputs_0):
@@ -1901,6 +1944,8 @@ struct Split:
         # runtime strides.
         comptime stride_types = DynamicCoord[DType.int64, rank].element_types
 
+        check_axis_in_range[output.rank](Int(axis))
+
         var output_bufs = StaticTuple[
             TileTensor[
                 output.dtype,
@@ -1957,6 +2002,9 @@ struct SplitOutputShapeHelper:
                 "[split] output index must be within range [0,"
                 " len(split_sizes))"
             )
+
+        check_axis_in_range[rank](Int(split_axis))
+
         var output_split_size = Int(split_sizes_buf[Int(output_idx)])
 
         var normalized_split_axis = normalize_neg_index(Int(split_axis), rank)

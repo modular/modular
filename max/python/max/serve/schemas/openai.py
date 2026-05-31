@@ -309,30 +309,6 @@ class CreateEmbeddingRequest(_EmbeddingParamsBase):  # type: ignore[misc,valid-t
 # ---------------------------------------------------------------------------
 
 
-class CreateAudioGenerationRequest(BaseModel):
-    """Audio generation request used by ``/v1/audio/speech``.
-
-    Note: this is a MAX-specific shape, not the OpenAI ``/v1/audio/speech``
-    schema. We may align with the OpenAI spec in a follow-up.
-    """
-
-    model_config = _FORBID_EXTRA
-
-    model: str
-    input: str
-    audio_prompt_tokens: list[int]
-    audio_prompt_transcription: str
-    instructions: str | None = None
-    response_format: Literal["wav", "mp3", "pcm"] | None = None
-    speed: float | None = None
-    min_tokens: int = 0
-
-
-class CreateAudioGenerationResponse(BaseModel):
-    audio_data: bytes
-    metadata: dict[str, Any]
-
-
 class LoadLoraRequest(BaseModel):
     """MAX-only request to dynamically load a LoRA adapter."""
 

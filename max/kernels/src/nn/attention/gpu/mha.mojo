@@ -1046,7 +1046,12 @@ def flash_attention_dispatch[
                     if partition_num_keys > 0:
                         partition_num_keys -= Int(
                             mask_functor.start_column[BM, BN, k_t.page_size](
-                                UInt32(partition_num_keys - 1)
+                                # Pre-launch dispatch is batch-aggregate; no
+                                # per-sequence id is available. Masks whose
+                                # start_column depends on seq_id should not
+                                # be used through this decode path.
+                                UInt32(0),
+                                UInt32(partition_num_keys - 1),
                             )
                         )
                         if partition_num_keys <= 0:
@@ -2313,6 +2318,7 @@ def mha_single_batch[
     ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
+                UInt32(batch_idx),
                 Index[dtype=DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     kv_tile_start_row,
@@ -2514,6 +2520,7 @@ def mha_single_batch[
 
         unswitch[_apply_mask](
             mask.status(
+                UInt32(batch_idx),
                 Index[dtype=DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     kv_tile_start_row,
@@ -3001,6 +3008,7 @@ def mha_single_batch_pipelined[
     ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
+                UInt32(batch_idx),
                 Index[dtype=DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     kv_tile_start_row,
@@ -3215,6 +3223,7 @@ def mha_single_batch_pipelined[
 
         unswitch[_apply_mask](
             mask.status(
+                UInt32(batch_idx),
                 Index[dtype=DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
                     kv_tile_start_row,

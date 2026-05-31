@@ -207,7 +207,7 @@ modular_py_test(
     timeout = "long",
     srcs = ["test_mla_probe_strategy_gpu.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "1.2",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

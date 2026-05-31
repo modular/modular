@@ -94,7 +94,10 @@ struct QRegisterBuffer[
     comptime num_mmas = ceildiv(Self.WM, Self.MMA_M)
     comptime num_k_tiles = ceildiv(Self.BK, Self.MMA_K)
 
-    comptime num_tiles = Self.depth // Self.BK
+    # ceildiv (not floor div): when depth is not a multiple of BK, the
+    # partial tile is loaded via OOB-clamped buffer_load (returns 0 for
+    # out-of-range elements) and the MFMA sees zero-padded Q.
+    comptime num_tiles = ceildiv(Self.depth, Self.BK)
     comptime _total_rows = Self.num_mmas * Self.num_k_tiles * Self.num_tiles
     comptime _rows_per_tile = Self.num_mmas * Self.num_k_tiles
 
@@ -129,6 +132,11 @@ struct QRegisterBuffer[
         self.reg_tile = stack_allocation[Self.dtype, AddressSpace.LOCAL](
             Self.reg_layout
         )
+        # Zero before DMA: the partial-tile case (depth % BK != 0) loads OOB
+        # cols via buffer_load whose OOB-clamp-to-zero behavior is the
+        # only thing keeping the rope-tail fragment zero.  Defensive: explicit
+        # zero matches the K SMEM zero-init via buffer_load and is cheap.
+        _ = self.reg_tile.fill(0)
 
         var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
         # Warp's portion of Q: [WM, depth] sub-tile at (warp_row, 0).
@@ -153,6 +161,66 @@ struct QRegisterBuffer[
             reg_loader.load(
                 dst,
                 src.vectorize[1, load_width](),
+            )
+        # Q partial-tile pad zero (AITER-style, mirrors K's
+        # `zero_partial_tile_pad` in `kv_buffer.mojo`).
+        #
+        # NOTE: keep in sync with `KVBuffer.zero_partial_tile_pad`.  Both
+        # sites compute the same `valid_per_lane` / `zero_per_lane` split
+        # and share the upper-half-is-pad assumption (asserted below).  A
+        # future config that violates that assumption (`valid_cols >
+        # BK/2`) needs a different zero pattern in both sites.
+        #
+        # When `depth % BK != 0`, the partial Q-tile (i = depth // BK)
+        # spans `BK` MFMA-K positions but only `valid_cols = depth -
+        # i*BK` are valid; the trailing `BK - valid_cols` are pad and
+        # must read as zero in the MFMA.
+        #
+        # The per-thread fragment from `RegTileLoader`'s
+        # `col_major[thread_rows, thread_cols]` distribute over the
+        # `(WM, BK/load_width)` vector grid is (M=1, N=2) per lane and
+        # gets stored row-major: fragment element [0..load_width) is
+        # the lower-K vector and [load_width..2*load_width) is the
+        # upper-K vector, with the two vectors offset by `BK/2`
+        # source-cols.  So every lane's upper-half fragment elements
+        # correspond to MFMA-K positions in [BK/2, BK), and for the
+        # partial tile those positions land at global depth >=
+        # `BK/2 + valid_cols` -- the pad portion -- when
+        # `valid_cols <= BK/2`.  Zero the upper portion per lane.
+        #
+        # NOTE: zeroing whole lanes >= some thread_col threshold is
+        # WRONG — it also clears valid data in those lanes' lower half
+        # (those MFMA-K positions are valid for the partial tile).
+        # Sparse inputs can mask this; random inputs expose it.
+        comptime if Self.depth % Self.BK != 0:
+            comptime _partial_tile_idx = Self.depth // Self.BK
+            comptime _valid_cols_in_partial = Self.depth - (
+                _partial_tile_idx * Self.BK
+            )
+            # The upper-half-is-pad layout assumption above only holds
+            # when the valid portion fits into the lower-K half of each
+            # lane's fragment.  Today (depth=576, BK=128) `valid_cols`
+            # is exactly BK/2; a future config with `valid_cols > BK/2`
+            # would need a different zero pattern.
+            comptime assert _valid_cols_in_partial <= Self.BK // 2, (
+                "Q partial-tile zero assumes valid cols fit in the"
+                " lower-K half of the per-lane fragment"
+            )
+            comptime _valid_per_lane = (
+                Self.input_frag_size * _valid_cols_in_partial // Self.BK
+            )
+            comptime _zero_per_lane = (Self.input_frag_size - _valid_per_lane)
+            comptime assert (
+                _zero_per_lane > 0
+            ), "Q partial-tile pad zero: _zero_per_lane must be positive"
+            # Zero cols [_valid_per_lane .. input_frag_size) of every
+            # lane's partial-tile fragment slot.
+            _ = (
+                self.reg_tile.tile[Self._rows_per_tile, Self.input_frag_size](
+                    _partial_tile_idx, 0
+                )
+                .tile[Self._rows_per_tile, _zero_per_lane](0, 1)
+                .fill(0)
             )
 
     @always_inline
@@ -795,15 +863,25 @@ struct PRegisterBuffer[
             var warp_offset = smem_offset + warp_row * Self.WM * Self.BK
 
             comptime if Self.p_swizzle:
-                # Interleaved P layout for 16-byte reads: each 8-element
-                # group = [warp0_frag(4), warp1_frag(4)].
-                comptime simd_w = simd_width_of[Self.dtype]()
+                # Match the reader's load_a granularity:
+                # `simd_w = num_matrix_reg(mma_m, mma_k)` elements per lane.
+                # Per row, 4 (= BK / simd_w) 32-element vecs.  Each vec is
+                # owned by ONE warp (`vec_idx = r * (BK/simd_w) +
+                # n_mma_in_block`) and filled by that warp's 4 lanes ×
+                # num_n_mmas fragments — lane offset within vec is
+                # `c * frag_w + n_mma * (simd_w / num_n_mmas)`.
+                comptime simd_w = num_matrix_reg[
+                    Self.mma_shape[0], Self.mma_shape[2]
+                ]()
                 comptime warp_m = Self.mma_shape[0]
                 var r = umod(lane_id(), warp_m)
                 var c = ufloordiv(lane_id(), warp_m)
                 var block_base = self.smem_tile.tile[Self.BM, Self.BK](
                     block_idx, 0
                 ).ptr
+
+                var group_idx = r * (Self.BK // simd_w) + n_mma_in_block
+                var swizzled_group = Self.p_swizzle.value()(group_idx)
 
                 comptime for m_mma in range(Self.num_m_mmas):
                     comptime for n_mma in range(Self.num_n_mmas):
@@ -813,10 +891,10 @@ struct PRegisterBuffer[
                             width=p_reg_tile.element_size
                         ](0).cast[Self.dtype]()
 
-                        var group_idx = r * (Self.BK // simd_w) + c
-                        var swizzled_group = Self.p_swizzle.value()(group_idx)
                         var elem_off = (
-                            swizzled_group * simd_w + n_mma_in_block * frag_w
+                            swizzled_group * simd_w
+                            + c * frag_w
+                            + n_mma * (simd_w // Self.num_n_mmas)
                         )
                         (block_base + elem_off).store[width=frag_w](reg_val)
             else:

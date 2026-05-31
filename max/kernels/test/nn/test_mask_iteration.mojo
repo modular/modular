@@ -24,9 +24,11 @@ from std.testing import assert_equal, assert_true
 def compute_total_iters0[
     MaskType: MHAMask, //, BM: Int, BN: Int
 ](mask: MaskType, q_row: UInt32, end: UInt32) -> UInt32:
+    comptime seq_id: UInt32 = 0
     var kv_row: UInt32 = 0
     while (
         mask.status(
+            seq_id,
             Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
             Index[dtype=DType.int32](BM, BN),
         )
@@ -40,6 +42,7 @@ def compute_total_iters0[
             break
         if (
             mask.status(
+                seq_id,
                 Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
                 Index[dtype=DType.int32](BM, BN),
             )
@@ -53,12 +56,14 @@ def compute_total_iters0[
 def compute_total_iters1[
     MaskType: MHAMask, //, BM: Int, BN: Int
 ](mask: MaskType, q_row: UInt32, end: UInt32) -> UInt32:
+    comptime seq_id: UInt32 = 0
     var iter_count: UInt32 = 0
     var kv_row: UInt32 = 0
     while kv_row < end:
         iter_count += UInt32(
             Int(
                 mask.status(
+                    seq_id,
                     Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
                     Index[dtype=DType.int32](BM, BN),
                 )
@@ -73,6 +78,7 @@ def status[
     MaskType: MHAMask, //, BM: Int, BN: Int
 ](mask: MaskType, q_row: UInt32, kv_row: UInt32) -> TileMaskStatus:
     return mask.status(
+        UInt32(0),
         Index[dtype=DType.int32](q_row, kv_row),
         Index[dtype=DType.int32](BM, BN),
     )
@@ -81,11 +87,12 @@ def status[
 def test_mask[
     MaskType: MHAMask, //, BM: Int, BN: Int, page_size: Int = 1
 ](mask: MaskType, q_row: UInt32, end: UInt32) raises:
-    var kv_row: UInt32 = mask.start_column[BM, BN, page_size](q_row)
+    comptime seq_id: UInt32 = 0
+    var kv_row: UInt32 = mask.start_column[BM, BN, page_size](seq_id, q_row)
     comptime mask_sets = MaskType.nonfull_sets[BM, BN]()
     comptime num_sets = len(mask_sets)
     mask_ends = mask.masked_set_ends[BM=BM, BN=BN, page_size=page_size](
-        q_row, end
+        seq_id, q_row, end
     )
 
     var ref_mask: TileMaskStatus
@@ -127,7 +134,7 @@ def test_mask[
         ref_mask = status[BM, BN](mask, q_row, kv_row)
         assert_equal(TileMaskStatus.FULL_MASK, ref_mask)
 
-    calc_total_iter = mask.total_iters[BM, BN, page_size](q_row, end)
+    calc_total_iter = mask.total_iters[BM, BN, page_size](seq_id, q_row, end)
     if total_iters != calc_total_iter:
         print("mask_ends = [", end="")
         for i in range(num_sets):
@@ -137,9 +144,14 @@ def test_mask[
         print("]")
         print("q_row =", q_row)
         print("num_keys =", end)
-        print("start_col =", mask.start_column[BM, BN, page_size](q_row))
+        print(
+            "start_col =",
+            mask.start_column[BM, BN, page_size](seq_id, q_row),
+        )
         print("calc_total_iter =", calc_total_iter)
-    assert_equal(total_iters, mask.total_iters[BM, BN, page_size](q_row, end))
+    assert_equal(
+        total_iters, mask.total_iters[BM, BN, page_size](seq_id, q_row, end)
+    )
 
 
 def main() raises:
@@ -178,11 +190,11 @@ def main() raises:
                 chunked_causal_mask, UInt32(q_row), UInt32(num_keys)
             )
             count2 = chunked_causal_mask.total_iters[BM=BM, BN=BN, page_size=1](
-                UInt32(q_row), UInt32(num_keys)
+                UInt32(0), UInt32(q_row), UInt32(num_keys)
             )
             count3 = chunked_causal_mask.total_iters[
                 BM=BM, BN=BN, page_size=512
-            ](UInt32(q_row), UInt32(num_keys))
+            ](UInt32(0), UInt32(q_row), UInt32(num_keys))
             if count0 != count1 or count0 != count2 or count0 != count3:
                 print("q_row, num_keys =", q_row, num_keys)
                 print(

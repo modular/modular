@@ -24,18 +24,15 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.pipelines.core import TTSContext
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
-    AudioGenerationConfig,
     PipelineConfig,
 )
 from max.pipelines.modeling.types import (
-    AudioGenerationOutput,
     BaseContext,
     PipelineOutput,
     PipelinesFactory,
@@ -45,10 +42,7 @@ from max.pipelines.modeling.types import (
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.media import GeneratedMediaStore
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
-from max.serve.pipelines.llm import (
-    AudioGeneratorPipeline,
-    TokenGeneratorPipeline,
-)
+from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheFrontend
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
@@ -63,7 +57,6 @@ from max.serve.router import (
 )
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
-from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
@@ -149,13 +142,6 @@ async def lifespan(
         # start model worker
 
         override_architecture: str | None = None
-        if serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
-            if isinstance(
-                serving_settings.pipeline_config, AudioGenerationConfig
-            ):
-                override_architecture = (
-                    serving_settings.pipeline_config.audio_decoder
-                )
 
         model_worker_interface = ZmqModelWorkerInterface[
             BaseContext, PipelineOutput
@@ -204,15 +190,6 @@ async def lifespan(
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
                 model_worker=model_worker,
-            ),
-            PipelineTask.AUDIO_GENERATION: lambda: AudioGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.models.model_name,
-                tokenizer=serving_settings.tokenizer,
-                lora_queue=lora_queue,
-                model_worker=cast(
-                    ModelWorkerProxy[TTSContext, AudioGenerationOutput],
-                    model_worker,
-                ),
             ),
             # Pixel generation uses only the OpenResponses API via GeneralPipelineHandler
             PipelineTask.PIXEL_GENERATION: lambda: GeneralPipelineHandler(

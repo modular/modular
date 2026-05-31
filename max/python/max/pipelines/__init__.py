@@ -16,16 +16,14 @@
 from max.pipelines.modeling.weights.hf_utils import download_weight_files
 
 from .architectures import register_all_models
-from .core import PixelContext, TextAndVisionContext, TextContext, TTSContext
+from .core import PixelContext, TextAndVisionContext, TextContext
 from .diffusion.pipeline import PixelGenerationPipeline
 from .lib.config import (
-    AudioGenerationConfig,
     KVCacheConfig,
     LoRAConfig,
     MAXModelConfig,
     PipelineConfig,
     PipelineRole,
-    PrependPromptSpeechTokens,
     ProfilingConfig,
     PrometheusMetricsMode,
     RepoType,
@@ -54,7 +52,6 @@ from .lib.pipeline_variants.text_generation import (
 )
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .lib.sampling.sampling_config import SamplingConfig
-from .lib.speech_token_pipeline import SpeechTokenGenerationPipeline
 from .lib.tokenizer import (
     IdentityPipelineTokenizer,
     TextAndVisionTokenizer,
@@ -68,7 +65,6 @@ register_all_models()
 __all__ = [
     "ADAPTER_CONFIG_FILE",
     "PIPELINE_REGISTRY",
-    "AudioGenerationConfig",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
     "GenerateMixin",
@@ -84,17 +80,14 @@ __all__ = [
     "PipelineRole",
     "PixelContext",
     "PixelGenerationPipeline",
-    "PrependPromptSpeechTokens",
     "ProfilingConfig",
     "PrometheusMetricsMode",
     "RepoType",
     "RopeType",
     "SamplingConfig",
     "SpeculativeConfig",
-    "SpeechTokenGenerationPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
-    "TTSContext",
     "TextAndVisionContext",
     "TextAndVisionTokenizer",
     "TextContext",
