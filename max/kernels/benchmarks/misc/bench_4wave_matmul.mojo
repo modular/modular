@@ -436,15 +436,6 @@ def bench_matmul[
             elementwise_compute_lambda_type
         ](test_lambda_add_coords_prod) if enable_compute_epilogue else None
 
-        # create a dummy buffer to force using the mojo the matmul kernel to output values
-        # in the correct c_type
-        var c_dummy = TileTensor(
-            UnsafePointer[
-                Scalar[DType.bfloat16], MutExternalOrigin
-            ].unsafe_dangling(),
-            row_major(shape_c),
-        )
-
         @always_inline
         @parameter
         @__copy_capture(tensor_c)
