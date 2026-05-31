@@ -1033,6 +1033,42 @@ class AbsOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
 
+class ActivationOp(max._core.Operation):
+    """
+    Applies the elementwise activation function named by the `activation`
+    attribute to the input tensor. The supported names are `"relu"`,
+    `"gelu"`, `"gelu_tanh"`, `"gelu_quick"`, `"sigmoid"`, and `"silu"`.
+
+    The implementation lives in the `mo.activation` kernel, which dispatches
+    on the `activation` attribute at compile time, so this single op replaces
+    the per-activation ops (e.g. `mo.relu`) and the Python-level compositions
+    of `mo.exp`/`mo.erf`/etc. used by `sigmoid`/`silu`/`gelu`.
+
+    Example:
+
+    ```mlir
+      %arg: !mo.tensor<[2, 3], f32>
+      %res = mo.activation(%arg) {activation = "relu"} : !mo.tensor<[2, 3], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        activation: max._core.dialects.builtin.StringAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def activation(self) -> str: ...
+    @activation.setter
+    def activation(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+
 class AddOp(max._core.Operation):
     """
     Returns `x + y`, where `x` and `y` are input tensors.
@@ -5169,7 +5205,7 @@ class ParallelOp(max._core.Operation):
     %dt = mo.tensor.bundle(%a, %b) : (...) -> (...)
     %res = mo.parallel (%arg) in (%dt : !mo.bundle<[...]>)
         -> (!mo.bundle<[...]>) {
-      %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
+      %1 = mo.activation(%arg) {activation = "relu"} : !mo.tensor<[3], f32, gpu:0>
       mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
     }
     ```
@@ -6013,28 +6049,6 @@ class DistributedReducescatterSumOp(max._core.Operation):
     def axis(self) -> int: ...
     @axis.setter
     def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
-
-class ReluOp(max._core.Operation):
-    """
-    Returns `max(0, x)`, where `x` is the input tensor.
-
-    Example:
-
-    ```mlir
-      %arg: !mo.tensor<[2, 3], f32>
-      %res = mo.relu(%arg) : !mo.tensor<[2, 3], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
 
 class ReshapeOp(max._core.Operation):
     """

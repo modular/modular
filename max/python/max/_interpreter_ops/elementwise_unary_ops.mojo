@@ -13,10 +13,11 @@
 
 """Mojo kernel wrappers for unary elementwise MO interpreter operations.
 
-This module contains unary all-dtype ops (Negative, Abs, ReLU, Ceil, Floor,
+This module contains unary all-dtype ops (Negative, Abs, Relu, Ceil, Floor,
 Round), unary float-only ops (Exp, Log, Log1p, Sqrt, Rsqrt, Tanh, ATanh, Sin,
-Cos, Erf, Trunc), unary boolean ops (Not), and unary predicate ops (IsNan,
-IsInf).
+Cos, Erf, Trunc), the activation ops backing `mo.activation` (Relu, Sigmoid,
+Silu, Gelu, GeluTanh, GeluQuick), unary boolean ops (Not), and unary predicate
+ops (IsNan, IsInf).
 """
 
 from std.os import abort
@@ -32,7 +33,6 @@ from extensibility import ElementwiseUnaryOp, ElementwiseUnaryMixedOp
 from builtin_kernels import (
     Negative,
     Abs,
-    ReLU,
     Ceil,
     Floor,
     Round,
@@ -51,13 +51,73 @@ from builtin_kernels import (
     IsNan,
     IsInf,
 )
+from nn.activations import (
+    gelu as _gelu,
+    gelu_quick as _gelu_quick,
+    gelu_tanh as _gelu_tanh,
+    relu as _relu,
+    sigmoid as _sigmoid,
+    silu as _silu,
+)
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 
+# Activation ops. `mo.relu` and the Python-level sigmoid/silu/gelu compositions
+# were unified into a single `mo.activation` op selected by an `activation`
+# string attribute. The interpreter exposes one struct per activation name and
+# the Python handler dispatches on the attribute.
+struct Relu(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType, width: SIMDSize
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return _relu(x)
+
+
+struct Sigmoid(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType, width: SIMDSize
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return _sigmoid(x)
+
+
+struct Silu(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType, width: SIMDSize
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return _silu(x)
+
+
+struct Gelu(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType, width: SIMDSize
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return _gelu(x)
+
+
+struct GeluTanh(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType, width: SIMDSize
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return _gelu_tanh(x)
+
+
+struct GeluQuick(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType, width: SIMDSize
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return _gelu_quick(x)
+
+
 # Unary elementwise operations (all dtypes)
 comptime UNARY_ELEMENTWISE_OPS = TypeList.of[
-    Trait=ElementwiseUnaryOp, Negative, Abs, ReLU, Ceil, Floor, Round
+    Trait=ElementwiseUnaryOp, Negative, Abs, Relu, Ceil, Floor, Round
 ]()
 
 # Unary elementwise operations (float only)
@@ -74,6 +134,11 @@ comptime UNARY_FLOAT_ONLY_OPS = TypeList.of[
     Cos,
     Erf,
     Trunc,
+    Sigmoid,
+    Silu,
+    Gelu,
+    GeluTanh,
+    GeluQuick,
 ]()
 
 # Unary mixed-type predicate operations (float input -> bool output)
@@ -94,7 +159,7 @@ def _is_gpu_allowed_unary_op[op: ElementwiseUnaryOp]() -> Bool:
     return (
         name == "Negative"
         or name == "Abs"
-        or name == "ReLU"
+        or name == "Relu"
         or name == "Ceil"
         or name == "Floor"
         or name == "Round"
@@ -107,6 +172,11 @@ def _is_gpu_allowed_unary_op[op: ElementwiseUnaryOp]() -> Bool:
         or name == "Sin"
         or name == "Cos"
         or name == "Not"
+        # Activation ops (Gelu uses erf via libm and is CPU-only, like Erf).
+        or name == "Sigmoid"
+        or name == "Silu"
+        or name == "GeluTanh"
+        or name == "GeluQuick"
     )
 
 

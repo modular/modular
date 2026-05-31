@@ -36,6 +36,7 @@ EXTRA_DEPS = {
     "elementwise_unary_ops": [
         "//max:extensibility",
         "//max:builtin_kernels",
+        "//max:nn",
     ],
     "group_norm_ops": [
         "//max:extensibility",

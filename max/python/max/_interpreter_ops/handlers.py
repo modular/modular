@@ -797,6 +797,29 @@ for op_type in ops.UNARY_ELEMENTWISE:
     register_op_handler(op_type)(unary_elementwise_handler(op_type))
 
 
+@register_op_handler(mo.ActivationOp)
+def activation_handler(
+    op: mo.ActivationOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer]:
+    """Handles `mo.activation` by dispatching on the `activation` attribute."""
+    assert isinstance(inputs[0], Buffer)
+
+    target_device = _get_target_device(op)
+    _check_buffers_on_device(inputs, target_device)
+
+    output = Buffer(
+        shape=inputs[0].shape,
+        dtype=inputs[0].dtype,
+        device=target_device,
+    )
+
+    op_binding = ops.ACTIVATIONS[op.activation]
+    op_binding(output, inputs[0], target_device._device_context_ptr())
+
+    return [output]
+
+
 # Unary mixed-dtype operations (cast, is_nan, is_inf)
 
 

@@ -39,7 +39,14 @@ import extensibility as compiler
 # ===-----------------------------------------------------------------------===#
 from std.builtin.simd import _pow
 
-from nn.activations import relu
+from nn.activations import (
+    gelu,
+    gelu_quick,
+    gelu_tanh,
+    relu,
+    sigmoid,
+    silu,
+)
 from extensibility import (
     ElementwiseBinaryComparisonOp,
     ElementwiseBinaryOp,
@@ -241,14 +248,28 @@ struct Negative(ElementwiseUnaryOp):
         return -x
 
 
-@compiler.register("mo.relu")
-struct ReLU(ElementwiseUnaryOp):
+@compiler.register("mo.activation")
+struct Activation:
     @staticmethod
     def elementwise[
         dtype: DType,
         width: SIMDSize,
+        activation: StaticString,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return relu(x)
+        comptime if activation == "relu":
+            return relu(x)
+        elif activation == "gelu":
+            return gelu(x)
+        elif activation == "gelu_tanh":
+            return gelu_tanh(x)
+        elif activation == "gelu_quick":
+            return gelu_quick(x)
+        elif activation == "sigmoid":
+            return sigmoid(x)
+        elif activation == "silu":
+            return silu(x)
+        else:
+            comptime assert False, "unknown mo.activation name"
 
 
 @compiler.register("mo.ceil")
