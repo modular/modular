@@ -183,14 +183,13 @@ struct Mean:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var axis_val = axis
-
         mean[
             output.dtype,
             input_fn,
             output_fn,
             target=target,
-        ](input.shape(), axis_val, output.shape(), ctx)
+            reduce_dim=axis,
+        ](input.shape(), output.shape(), ctx)
 
     @staticmethod
     def shape[
@@ -234,14 +233,13 @@ struct ReduceAdd:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var axis_val = axis
-
         sum[
             output.dtype,
             input_fn,
             output_fn,
             target=target,
-        ](input.shape(), axis_val, ctx)
+            reduce_dim=axis,
+        ](input.shape(), ctx)
 
     @staticmethod
     def shape[
@@ -285,14 +283,13 @@ struct ReduceMul:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var axis_val = axis
-
         product[
             output.dtype,
             input_fn,
             output_fn,
             target=target,
-        ](input.shape(), axis_val, ctx)
+            reduce_dim=axis,
+        ](input.shape(), ctx)
 
     @staticmethod
     def shape[
@@ -336,14 +333,13 @@ struct ReduceMax:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var axis_val = axis
-
         reduce_max[
             output.dtype,
             input_fn,
             output_fn,
             target=target,
-        ](input.shape(), axis_val, ctx)
+            reduce_dim=axis,
+        ](input.shape(), ctx)
 
     @staticmethod
     def shape[
@@ -387,14 +383,13 @@ struct ReduceMin:
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        var axis_val = axis
-
         reduce_min[
             output.dtype,
             input_fn,
             output_fn,
             target=target,
-        ](input.shape(), axis_val, ctx)
+            reduce_dim=axis,
+        ](input.shape(), ctx)
 
     @staticmethod
     def shape[
@@ -715,7 +710,10 @@ struct ReduceMinAndMax:
         """
 
         comptime num_reductions = 2
-        var norm_axis = normalize_neg_index(axis, rank)
+        comptime norm_axis = axis + rank if axis < 0 else axis
+        comptime assert (
+            0 <= norm_axis < rank
+        ), "axis must be between [0, <input rank>)"
 
         @parameter
         @always_inline
@@ -794,13 +792,12 @@ struct ReduceMinAndMax:
             output_0_fn_wrapper,
             reduce_fn,
             target=target,
+            reduce_dim=norm_axis,
         ](
             input.shape(),
             init=init,
-            reduce_dim=norm_axis,
             context=Optional[DeviceContext](ctx),
         )
-        _ = norm_axis
 
     @staticmethod
     def shape[

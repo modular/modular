@@ -440,10 +440,10 @@ def _softmax_3_pass_base[
         input_fn,
         output_fn,
         reduce_impl,
+        reduce_dim=0,
     ](
         IndexList[1](output.num_elements()),
         init=Scalar[dtype].MIN,
-        reduce_dim=0,
     )
 
     var max_val = max_buff[0]
@@ -758,7 +758,8 @@ def softmax_kernel[
                 1,
                 rank,
                 accum_type=accum_type,
-            ](row_coords, axis, Scalar[dtype].MIN, row_size)
+                axis=axis,
+            ](row_coords, Scalar[dtype].MIN, row_size)
 
             comptime if sink:
                 row_max = max(row_max, sink_val)

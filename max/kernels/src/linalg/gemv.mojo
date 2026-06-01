@@ -1179,10 +1179,10 @@ def gemv[
         input_fn,
         output_fn,
         reduce_impl,
+        reduce_dim=1,
     ](
         Index(M, K),
         init=Scalar[c_type](0),
-        reduce_dim=1,
     )
 
 

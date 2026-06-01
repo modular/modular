@@ -72,6 +72,13 @@ This version is still a work in progress.
 
 ## Library changes
 
+- The reduction axis of the `std.algorithm` reductions (`sum`, `product`,
+  `mean`, `max`, `min`, and the underlying `_reduce_generator` plus the CPU
+  and GPU backends) is now a keyword-only compile-time parameter named
+  `reduce_dim` instead of a runtime argument. This covers the
+  `mo.reduce.{mean,add,mul,max,min,reduce_min_and_max}` ops. Pass it in the
+  parameter list, e.g. `sum[..., reduce_dim=axis](shape, ctx)`.
+
 - The `ImplicitlyCopyable`, `Intable`, and `Equatable` traits no longer
   inherit from `ImplicitlyDestructible`. Generic code that relied on
   receiving the destructor bound transitively through these traits (or
