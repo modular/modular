@@ -113,6 +113,9 @@ class MiniMaxM2TransformerBlock(Module):
         )
         self.devices = config.devices
         num_devices = len(config.devices)
+        # TP mode: data_parallel_degree=1 with multiple devices.
+        # DP+EP mode: data_parallel_degree=num_devices.
+        self.tp_mode = config.data_parallel_degree == 1 and num_devices > 1
 
         attn_dtype = config.attn_dtype or config.dtype
         attn_is_quantized = (
@@ -136,17 +139,31 @@ class MiniMaxM2TransformerBlock(Module):
             norm_dtype=config.norm_dtype or config.dtype,
             quant_config=attn_quant_config,
         )
-        self.self_attn.sharding_strategy = ShardingStrategy.replicate(
-            num_devices
-        )
+        if self.tp_mode:
+            # TP: heads sharded across devices; allreduce after o_proj
+            self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
+                num_devices
+            )
+        else:
+            # DP+EP: attention replicated, batch split across devices
+            self.self_attn.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
         self.self_attn_shards = self.self_attn.shard(config.devices)
 
         # MoE layer (all layers are MoE in MiniMax-M2)
         self.ep_manager = ep_manager
         self.mlp = self._get_mlp(config, linear_cls)
-        self.mlp.sharding_strategy = ShardingStrategy.expert_parallel(
-            num_devices
-        )
+        if self.tp_mode:
+            # TP: expert intermediate dim split across devices; allreduce after
+            self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                num_devices
+            )
+        else:
+            # DP+EP: experts distributed across devices via EP dispatch
+            self.mlp.sharding_strategy = ShardingStrategy.expert_parallel(
+                num_devices
+            )
         self.mlp_shards = self.mlp.shard(config.devices)
 
         # Layer norms (replicated)
@@ -231,17 +248,45 @@ class MiniMaxM2TransformerBlock(Module):
         # Input layer norm
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
-        # Self-attention (replicated — no allreduce needed)
-        attn_outs = [
-            shard(
-                layer_idx,
-                norm_xs[i],
-                kv_collections[i],
-                freqs_cis[i],
-                input_row_offsets[i],
-            )
-            for i, shard in enumerate(self.self_attn_shards)
-        ]
+        # Self-attention (TP: heads sharded + allreduce; DP: replicated)
+        if self.tp_mode:
+            # The per-layer QK RMSNorm is a cross-head norm over the full Q/K
+            # projection, but each device holds only a head slice. Project
+            # locally, all-reduce the per-token norm statistics so every rank
+            # gets the global RMS, then finish attention with the correct norm.
+            num_devices = len(self.self_attn_shards)
+            projected = [
+                shard.tp_project(norm_xs[i], input_row_offsets[i])
+                for i, shard in enumerate(self.self_attn_shards)
+            ]
+            qk_var_local = [p[3] for p in projected]
+            qk_var_global = ops.allreduce.sum(qk_var_local, signal_buffers)
+            attn_outs = [
+                shard.tp_finish(
+                    layer_idx,
+                    projected[i][0],
+                    projected[i][1],
+                    projected[i][2],
+                    qk_var_global[i] * (1.0 / num_devices),
+                    kv_collections[i],
+                    freqs_cis[i],
+                    input_row_offsets[i],
+                )
+                for i, shard in enumerate(self.self_attn_shards)
+            ]
+            # Sum partial o_proj outputs across devices
+            attn_outs = ops.allreduce.sum(attn_outs, signal_buffers)
+        else:
+            attn_outs = [
+                shard(
+                    layer_idx,
+                    norm_xs[i],
+                    kv_collections[i],
+                    freqs_cis[i],
+                    input_row_offsets[i],
+                )
+                for i, shard in enumerate(self.self_attn_shards)
+            ]
 
         # Residual connection
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
@@ -255,8 +300,11 @@ class MiniMaxM2TransformerBlock(Module):
         if self.ep_manager is not None and ep_inputs is not None:
             self.ep_manager.fetch_buffers(ep_inputs)
 
-        # MoE (EP dispatch/combine handles routing — no allreduce needed)
+        # MoE forward (TP: partial intermediate outputs; DP+EP: EP dispatch)
         mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
+        if self.tp_mode:
+            # Sum partial expert intermediate outputs across devices
+            mlp_outs = ops.allreduce.sum(mlp_outs, signal_buffers)
 
         # Residual connection
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
@@ -265,15 +313,18 @@ class MiniMaxM2TransformerBlock(Module):
 
 
 class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
-    """MiniMax-M2 model supporting single-GPU and multi-GPU TP inference."""
+    """MiniMax-M2 model supporting single-GPU, DP+EP, and TP inference."""
 
     def __init__(self, config: MiniMaxM2Config) -> None:
         super().__init__()
         self.config = config
         self.devices = config.devices
         self.num_devices = len(config.devices)
+        # TP mode: data_parallel_degree=1 with multiple devices.
+        # DP+EP mode: data_parallel_degree=num_devices.
+        self.tp_mode = config.data_parallel_degree == 1 and self.num_devices > 1
         self.ep_manager: EPBatchManager | None = None
-        if config.ep_config is not None:
+        if config.ep_config is not None and not self.tp_mode:
             self.ep_manager = EPBatchManager(config.ep_config)
 
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
@@ -398,16 +449,22 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
             input_row_offsets.to(self.devices[0]), signal_buffers
         )
 
-        # Split replicated batch across GPUs for DP
-        assert data_parallel_splits is not None
-        assert host_input_row_offsets is not None
-        h, input_row_offsets_list = split_batch_replicated(
-            self.devices,
-            h,
-            input_row_offsets_list,
-            host_input_row_offsets.cast(DType.int64),
-            data_parallel_splits,
-        )
+        if self.tp_mode:
+            # TP mode: all devices process the full batch — no split needed.
+            # h and input_row_offsets_list are already replicated on all devices
+            # by VocabParallelEmbedding + distributed_broadcast above.
+            pass
+        else:
+            # DP+EP mode: split replicated batch across GPUs
+            assert data_parallel_splits is not None
+            assert host_input_row_offsets is not None
+            h, input_row_offsets_list = split_batch_replicated(
+                self.devices,
+                h,
+                input_row_offsets_list,
+                host_input_row_offsets.cast(DType.int64),
+                data_parallel_splits,
+            )
 
         # Unpack KV collections for subgraph compatibility
         (
@@ -445,17 +502,26 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
             initial_hidden_states=h,
         )
 
-        # DP logit postprocessing: allgather last tokens then lm_head
+        # Logit postprocessing: gather last token per sequence, norm, lm_head
         last_token_per_dev = [
             ops.gather(h[i], input_row_offsets_list[i][1:] - 1, axis=0)
             for i in range(len(self.devices))
         ]
-        last_token_distributed = ops.allgather(
-            last_token_per_dev, signal_buffers
-        )
-        norm_last_token = forward_sharded_layers(
-            self.norm_shards, last_token_distributed
-        )
+        if self.tp_mode:
+            # TP mode: all devices have the full batch (no allgather needed).
+            # Each device already holds all last tokens.
+            norm_last_token = forward_sharded_layers(
+                self.norm_shards, last_token_per_dev
+            )
+        else:
+            # DP mode: allgather last tokens from each DP rank so every
+            # device sees the full batch before lm_head.
+            last_token_distributed = ops.allgather(
+                last_token_per_dev, signal_buffers
+            )
+            norm_last_token = forward_sharded_layers(
+                self.norm_shards, last_token_distributed
+            )
         last_logits = ops.cast(
             self.lm_head(norm_last_token, signal_buffers)[0],
             DType.float32,
@@ -477,6 +543,22 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
+
+        kv_inputs = kv_params.get_symbolic_inputs()
+        signals = Signals(devices=self.devices)
+        signal_buffer_types = signals.input_types()
+        flattened_kv_types = kv_inputs.flatten()
+
+        if self.tp_mode:
+            # TP mode: no batch-split tensors, no EP inputs
+            base_inputs: list[TensorType | BufferType] = [
+                tokens_type,
+                input_row_offsets_type,
+                return_n_logits_type,
+            ]
+            return tuple(base_inputs + signal_buffer_types + flattened_kv_types)
+
+        # DP+EP mode: include batch-split tensors and EP inputs
         data_parallel_splits_type = TensorType(
             DType.int64,
             shape=["data_parallel_splits_len"],
@@ -487,21 +569,13 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
             shape=["input_row_offsets_len"],
             device=DeviceRef.CPU(),
         )
-
-        kv_inputs = kv_params.get_symbolic_inputs()
-
-        base_inputs: list[TensorType | BufferType] = [
+        base_inputs = [
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
             data_parallel_splits_type,
             host_input_row_offsets_type,
         ]
-
-        signals = Signals(devices=self.devices)
-        signal_buffer_types = signals.input_types()
-        flattened_kv_types = kv_inputs.flatten()
-
         ep_input_types: list[TensorType | BufferType] = []
         if self.ep_manager is not None:
             ep_input_types = list(self.ep_manager.input_types())
