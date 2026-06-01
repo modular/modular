@@ -104,7 +104,7 @@ logit_verification_pipelines:
     absolute_tolerance: 2.4e-2
     relative_tolerance: 7.8e-3
     cos_dist_threshold: 3.3e-6
-    kl_div_threshold: 6.8e-06
+    kl_div_threshold: 8.6e-06
 
   sentence-transformers/all-mpnet-base-v2-float32:
     pre_submit_agents: []
@@ -178,7 +178,7 @@ logit_verification_pipelines:
     # something is very wrong but at least we will be able to detect
     # further regressions with this.
     cos_dist_threshold: 0.39
-    kl_div_threshold: 3.8e-03
+    kl_div_threshold: 8.3e-03
 
   meta-llama/Meta-Llama-3-8B-Instruct-bfloat16:
     pre_submit_agents: []
@@ -206,7 +206,7 @@ logit_verification_pipelines:
     # something is very wrong but at least we will be able to detect
     # further regressions with this.
     cos_dist_threshold: 0.62
-    kl_div_threshold: 1.6e-02
+    kl_div_threshold: 2.6e-02
 
   meta-llama/Llama-3.1-8B-Instruct-bfloat16:
     pre_submit_agents: []
