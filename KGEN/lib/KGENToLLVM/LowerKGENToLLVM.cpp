@@ -33,6 +33,7 @@
 #include "mlir/IR/Threading.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/AMDGPUAddrSpace.h"
 
 using namespace M;
 using namespace KGEN;
@@ -709,6 +710,67 @@ static bool isEmptyType(Type type) {
       .Default([](Type /* default */) { return false; });
 }
 
+/// Promotes AMDGPU kernel `byref` args whose pointee is a struct from flat
+/// (addrspace 0) to the kernarg/constant address space (addrspace 4), and
+/// inserts an `addrspacecast` back to flat at the entry block so the body
+/// keeps operating on flat pointers.
+///
+/// This matches Clang's HIP/OpenCL lowering and lets
+/// `AMDGPUPromoteKernelArguments` + `InferAddressSpaces` recognize loads
+/// through the kernarg struct as kernarg-origin pointers, enabling
+/// `s_load_dwordx2` for the kernarg itself and `global_load_*` for
+/// downstream dereferences instead of falling back to flat memory ops.
+///
+/// Must run AFTER the KGEN→LLVM dialect conversion finishes — mutating
+/// block-arg types mid-conversion would race with the driver's recorded
+/// type mapping and surface as stray `unrealized_conversion_cast` ops in
+/// downstream uses.
+static void promoteAMDGPUKernArgStructByRefToConstantAS(LLVM::LLVMFuncOp func) {
+  if (func.getCConv() != mlir::LLVM::cconv::CConv::AMDGPU_KERNEL)
+    return;
+
+  MLIRContext *ctx = func.getContext();
+  auto flatPtrTy = LLVM::LLVMPointerType::get(ctx, /*addressSpace=*/0);
+  auto kernArgPtrTy = LLVM::LLVMPointerType::get(
+      ctx, /*addressSpace=*/llvm::AMDGPUAS::CONSTANT_ADDRESS);
+  auto byrefName = StringAttr::get(ctx, LLVM::LLVMDialect::getByRefAttrName());
+
+  LLVM::LLVMFunctionType origFnTy = func.getFunctionType();
+  SmallVector<Type> newInputs(origFnTy.getParams().begin(),
+                              origFnTy.getParams().end());
+  Block *entry = func.getBody().empty() ? nullptr : &func.getBody().front();
+  bool anyChanged = false;
+
+  for (unsigned i = 0, e = newInputs.size(); i != e; ++i) {
+    // Only promote byref kernargs whose pointee is a struct.
+    auto byrefAttr = dyn_cast_or_null<TypeAttr>(func.getArgAttr(i, byrefName));
+    if (!byrefAttr)
+      continue;
+    if (!isa<LLVM::LLVMStructType>(byrefAttr.getValue()))
+      continue;
+    if (!isa<LLVM::LLVMPointerType>(newInputs[i]))
+      continue;
+
+    newInputs[i] = kernArgPtrTy;
+    anyChanged = true;
+    if (entry) {
+      BlockArgument arg = entry->getArgument(i);
+      arg.setType(kernArgPtrTy);
+      OpBuilder builder(ctx);
+      builder.setInsertionPointToStart(entry);
+      auto cast =
+          LLVM::AddrSpaceCastOp::create(builder, func.getLoc(), flatPtrTy, arg);
+      arg.replaceAllUsesExcept(cast.getResult(), cast);
+    }
+  }
+
+  if (anyChanged) {
+    auto newFnTy = LLVM::LLVMFunctionType::get(origFnTy.getReturnType(),
+                                               newInputs, origFnTy.isVarArg());
+    func.setFunctionType(newFnTy);
+  }
+}
+
 /// Drops empty struct arguments from funcOp and replace usage with an undef
 /// struct.
 static void dropEmptyStructArguments(LLVM::LLVMFuncOp &func,
@@ -1377,6 +1439,13 @@ void LowerKGENToLLVMPass::runOnOperation() {
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
     return signalPassFailure();
+
+  // Promote AMDGPU kernel struct-pointee `byref` args to the kernarg /
+  // constant address space (addrspace 4).
+  if (typeConverter.getTarget().getTriple().isAMDGPU()) {
+    for (auto funcOp : theModule.getOps<LLVM::LLVMFuncOp>())
+      promoteAMDGPUKernArgStructByRefToConstantAS(funcOp);
+  }
 
   // Apply C ABI to abi("C") function definitions. This rewrites the function
   // entry (C ABI args → Mojo types) and exits (Mojo return → C ABI), making
