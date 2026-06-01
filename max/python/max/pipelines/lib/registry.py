@@ -927,15 +927,6 @@ class PipelineRegistry:
             factory_kwargs["draft_pipeline_model"] = draft_arch.pipeline_model
             factory_kwargs["draft_weight_adapters"] = draft_arch.weight_adapters
 
-        # TODO: Running with overlap results in a CUDA_ILLEGAL_ADDRESS error.
-        # The source of this error is in the realize_future_tokens graph where
-        # garbage values are passed to the scatter_nd_skip_oob_indices custom op even though the inputs to the graph are correct.
-        if (
-            pipeline_config.speculative is not None
-            and pipeline_config.speculative.is_dflash()
-        ):
-            factory_kwargs["disable_overlap"] = True
-
         pipeline_factory = cast(
             Callable[[], PipelineTypes],
             functools.partial(pipeline_class, **factory_kwargs),

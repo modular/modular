@@ -848,6 +848,8 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
     prev_generated_draft_tokens: _Tensor
     prev_draft_tokens: _Tensor
     prev_num_accepted_draft_tokens: _Tensor
+    # Workaround for possible graph compiler bug.
+    scratch_zeros_int64: _Tensor | None = None
 
     def flatten(self) -> list[_Tensor | _Buffer]:
         return [
@@ -862,6 +864,11 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
             self.prev_generated_draft_tokens,
             self.prev_draft_tokens,
             self.prev_num_accepted_draft_tokens,
+            *(
+                (self.scratch_zeros_int64,)
+                if self.scratch_zeros_int64 is not None
+                else ()
+            ),
         ]
 
     def unflatten(
@@ -881,6 +888,9 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
             prev_generated_draft_tokens=next(it),
             prev_draft_tokens=next(it),
             prev_num_accepted_draft_tokens=next(it),
+            scratch_zeros_int64=next(it)
+            if self.scratch_zeros_int64 is not None
+            else None,
         )
 
 
@@ -930,9 +940,15 @@ def build_realize_future_token_graph(
     devices: Sequence[DeviceRef],
     enable_dp: int,
     num_speculative_tokens: int,
+    use_scratch_workaround: bool = False,
+    max_batch_size: int | None = None,
 ) -> Graph:
     """Builds a graph that prepares the input for the next batch."""
     device0 = devices[0]
+    if use_scratch_workaround and max_batch_size is None:
+        raise ValueError(
+            "max_batch_size must be provided when use_scratch_workaround=True"
+        )
     if num_speculative_tokens > 0:
         spec_decode_input_types = _RealizeFutureTokenSpecDecodeInputs[
             TensorType, BufferType
@@ -991,6 +1007,15 @@ def build_realize_future_token_graph(
                 shape=[SymbolicDim("prev_batch_size")],
                 device=device0,
             ),
+            scratch_zeros_int64=(
+                TensorType(
+                    DType.int64,
+                    shape=[SymbolicDim("max_batch_size_scratch")],
+                    device=device0,
+                )
+                if use_scratch_workaround
+                else None
+            ),
         )
     else:
         spec_decode_input_types = None
@@ -1039,10 +1064,24 @@ def build_realize_future_token_graph(
             curr_input_row_offsets[1:] - 1, ["curr_batch_size"]
         )
 
-        oob_idx = ops.constant(_OOB_IDX, dtype=DType.int64, device=device0)
-
-        # scatter the prev generated tokens into the curr tokens
-        prev_to_curr_token_indices = oob_idx.broadcast_to(("prev_batch_size",))
+        if use_scratch_workaround:
+            # Workaround for possible graph compiler bug.
+            assert max_batch_size is not None
+            _oob_max_batch = ops.constant(
+                np.full(max_batch_size, _OOB_IDX, dtype=np.int64),
+                dtype=DType.int64,
+                device=device0,
+            )
+            prev_to_curr_token_indices = ops.rebind(
+                _oob_max_batch[: input_values.prev_to_curr_map.shape[0]],
+                ["prev_batch_size"],
+            )
+        else:
+            oob_idx = ops.constant(_OOB_IDX, dtype=DType.int64, device=device0)
+            # scatter the prev generated tokens into the curr tokens
+            prev_to_curr_token_indices = oob_idx.broadcast_to(
+                ("prev_batch_size",)
+            )
         prev_to_curr_token_indices = kernels.scatter_nd_skip_oob_indices(
             input=prev_to_curr_token_indices,
             updates=possible_future_token_indices.cast(DType.int64),
@@ -1099,10 +1138,20 @@ def build_realize_future_token_graph(
             # Per-sequence increments in int64 (may be negative), then fold into
             # uint32 cache lengths to match :class:`~max.nn.kv_cache.KVCacheParams`
             # paged-cache ``cache_lengths`` dtype.
-            batch_increments_i64 = ops.broadcast_to(
-                ops.constant(0, dtype=DType.int64, device=device0),
-                ["curr_batch_size"],
-            )
+            if use_scratch_workaround:
+                # Workaround for possible graph compiler bug.
+                assert spec_decode.scratch_zeros_int64 is not None
+                batch_increments_i64 = ops.rebind(
+                    spec_decode.scratch_zeros_int64[
+                        : input_values.curr_to_prev_map.shape[0]
+                    ],
+                    ["curr_batch_size"],
+                )
+            else:
+                batch_increments_i64 = ops.broadcast_to(
+                    ops.constant(0, dtype=DType.int64, device=device0),
+                    ["curr_batch_size"],
+                )
 
             # The curr cache lengths already account for the draft tokens optimistically
             # (full speculative depth). Subtract that depth using the configured
@@ -1211,16 +1260,32 @@ class RealizeFutureTokenProcessor:
         devices: Sequence[DeviceRef],
         num_speculative_tokens: int = 0,
         enable_dp: bool = False,
+        use_scratch_workaround: bool = False,
+        max_batch_size: int | None = None,
     ) -> None:
+        if use_scratch_workaround and max_batch_size is None:
+            raise ValueError(
+                "max_batch_size must be provided when use_scratch_workaround=True"
+            )
         with CompilationTimer("realize_future_token") as timer:
             graph = build_realize_future_token_graph(
                 devices=devices,
                 num_speculative_tokens=num_speculative_tokens,
                 enable_dp=enable_dp,
+                use_scratch_workaround=use_scratch_workaround,
+                max_batch_size=max_batch_size,
             )
             timer.mark_build_complete()
             self._graph = session.load(graph)
         self._enable_dp = enable_dp
+        self._use_scratch_workaround = use_scratch_workaround
+        # Workaround for possible graph compiler bug.
+        self._scratch_zeros_int64: Buffer | None = None
+        if use_scratch_workaround and num_speculative_tokens > 0:
+            assert max_batch_size is not None
+            self._scratch_zeros_int64 = Buffer.from_numpy(
+                np.zeros(max_batch_size, dtype=np.int64)
+            ).to(devices[0].to_device())
         self._num_speculative_tokens = num_speculative_tokens
 
     def _compute_mappings(
@@ -1346,6 +1411,12 @@ class RealizeFutureTokenProcessor:
                     device=device,
                 )
 
+            if self._use_scratch_workaround:
+                assert self._scratch_zeros_int64 is not None, (
+                    "scratch_zeros_int64 must be allocated when "
+                    "use_scratch_workaround=True and "
+                    "num_speculative_tokens > 0"
+                )
             spec_decode: (
                 _RealizeFutureTokenSpecDecodeInputs[Buffer, Buffer] | None
             ) = _RealizeFutureTokenSpecDecodeInputs(
@@ -1356,6 +1427,7 @@ class RealizeFutureTokenProcessor:
                 prev_generated_draft_tokens=prev_generated_draft_tokens,
                 prev_draft_tokens=prev_draft_tokens,
                 prev_num_accepted_draft_tokens=num_accepted_draft_tokens,
+                scratch_zeros_int64=self._scratch_zeros_int64,
             )
         else:
             spec_decode = None
@@ -1674,6 +1746,21 @@ class OverlapTextGenerationPipeline(
             if self._spec_decode_state is not None
             else 0
         )
+        use_scratch_workaround = (
+            pipeline_config.speculative is not None
+            and pipeline_config.speculative.is_dflash()
+        )
+        scratch_max_batch_size: int | None = None
+        if use_scratch_workaround:
+            runtime_max_batch_size = (
+                self._pipeline_config.runtime.max_batch_size
+            )
+            assert runtime_max_batch_size is not None, (
+                "max_batch_size must be set"
+            )
+            scratch_max_batch_size = (
+                runtime_max_batch_size * model_config.data_parallel_degree
+            )
         self._realize_future_token_processor: (
             RealizeFutureTokenProcessor | None
         ) = (
@@ -1684,6 +1771,8 @@ class OverlapTextGenerationPipeline(
                 ],
                 num_speculative_tokens=num_speculative_tokens,
                 enable_dp=model_config.data_parallel_degree > 1,
+                use_scratch_workaround=use_scratch_workaround,
+                max_batch_size=scratch_max_batch_size,
             )
             if self._pipeline_config.runtime.pipeline_role
             in ("prefill_and_decode", "decode_only")
