@@ -37,17 +37,16 @@ from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
     BaseRequestFuncOutput,
     ChatMessage,
-    ProgressBarRequestDriver,
     RequestCounter,
     RequestDriver,
     RequestFuncInput,
     RequestFuncOutput,
+    progressbar_request_driver,
 )
 from max.benchmark.benchmark_shared.utils import (
     deadline_remaining_s,
     exceeds_deadline,
 )
-from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
@@ -299,25 +298,20 @@ async def prerun_warmup_turns(
         " requests to seed the prefix cache..."
     )
 
-    pbar = (
-        None
-        if disable_tqdm
-        else tqdm(total=len(requests_to_fire), desc="warmup")
-    )
-    if pbar is not None:
-        request_driver = ProgressBarRequestDriver(request_driver, pbar)
-
     semaphore = asyncio.Semaphore(max_concurrency)
 
-    async def _fire(req: RequestFuncInput) -> None:
-        async with semaphore:
-            await request_driver.request(req)
+    with progressbar_request_driver(
+        request_driver,
+        len(requests_to_fire),
+        disable_tqdm=disable_tqdm,
+        desc="warmup",
+    ) as driver:
 
-    try:
+        async def _fire(req: RequestFuncInput) -> None:
+            async with semaphore:
+                await driver.request(req)
+
         await asyncio.gather(*(_fire(r) for r in requests_to_fire))
-    finally:
-        if pbar is not None:
-            pbar.close()
     logger.info("[warmup-prerun] complete.")
 
 
