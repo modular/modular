@@ -25,7 +25,6 @@ from linalg.utils import (
 
 
 from layout import TileTensor, Coord, Idx, row_major
-from internal_utils import ScalarArray
 
 comptime dtype = DType.float32
 comptime simd_size = simd_width_of[dtype]()
@@ -193,23 +192,20 @@ def main() raises:
     print("x", end="")
     print(k)
 
-    var a_ptr = ScalarArray[dtype](count=m * k, alignment=alignment)
+    var a_ptr = alloc[Scalar[dtype]](m * k, alignment=alignment)
+    var b_ptr = alloc[Scalar[dtype]](k * n, alignment=alignment)
+    var b2_ptr = alloc[Scalar[dtype]](k * n, alignment=alignment)
+    var c_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
+    var c2_ptr = alloc[Scalar[dtype]](m * n, alignment=alignment)
+    var a = TileTensor(a_ptr, row_major(m * k))
+    var b = TileTensor(b_ptr, row_major(k * n))
+    var b2 = TileTensor(b2_ptr, row_major(k * n))
+    var c = TileTensor(c_ptr, row_major(m * n))
+    var c2 = TileTensor(c2_ptr, row_major(m * n))
 
-    var b_ptr = ScalarArray[dtype](count=k * n, alignment=alignment)
-    var b2_ptr = ScalarArray[dtype](count=k * n, alignment=alignment)
-
-    var c_ptr = ScalarArray[dtype](count=m * n, alignment=alignment)
-    var c2_ptr = ScalarArray[dtype](count=m * n, alignment=alignment)
-
-    var a = TileTensor(a_ptr.unsafe_ptr(), row_major(m * k))
-    var b = TileTensor(b_ptr.unsafe_ptr(), row_major(k * n))
-    var b2 = TileTensor(b2_ptr.unsafe_ptr(), row_major(k * n))
-    var c = TileTensor(c_ptr.unsafe_ptr(), row_major(m * n))
-    var c2 = TileTensor(c2_ptr.unsafe_ptr(), row_major(m * n))
-
-    var am = TileTensor(a_ptr.unsafe_ptr(), row_major(m, k))
-    var bm = TileTensor(b_ptr.unsafe_ptr(), row_major(k, n))
-    var cm = TileTensor(c_ptr.unsafe_ptr(), row_major(m, n))
+    var am = TileTensor(a_ptr, row_major(m, k))
+    var bm = TileTensor(b_ptr, row_major(k, n))
+    var cm = TileTensor(c_ptr, row_major(m, n))
 
     for i in range(m * k):
         a[i] = Scalar[dtype](i)
@@ -250,4 +246,8 @@ def main() raises:
     print(rpeak, end="")
     print(" measured/peak FLOPS assuming 2.9 GHz")
 
-    _ = (a_ptr^, b_ptr^, b2_ptr^, c_ptr^, c2_ptr^)
+    a_ptr.free()
+    b_ptr.free()
+    b2_ptr.free()
+    c_ptr.free()
+    c2_ptr.free()

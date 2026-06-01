@@ -19,7 +19,6 @@ from std.sys.defines import get_defined_int, get_defined_string
 from std.benchmark import *
 from std.benchmark import keep
 from layout import Layout, LayoutTensor, RuntimeLayout
-from internal_utils import ScalarArray
 from nn.conv.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv.conv_utils import (
     ConvShape,
@@ -90,18 +89,18 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.
-    var input_ptr = ScalarArray[input_type](
-        count=input_alloc_size * num_copies, alignment=alignment
+    var input_ptr = alloc[Scalar[input_type]](
+        input_alloc_size * num_copies, alignment=alignment
     )
-    var filter_ptr = ScalarArray[filter_type](
-        count=num_copies * filter_alloc_size, alignment=alignment
+    var filter_ptr = alloc[Scalar[filter_type]](
+        num_copies * filter_alloc_size, alignment=alignment
     )
-    var output_ptr = ScalarArray[output_type](
-        count=num_copies * output_alloc_size, alignment=alignment
+    var output_ptr = alloc[Scalar[output_type]](
+        num_copies * output_alloc_size, alignment=alignment
     )
 
-    rand(input_ptr.as_span())
-    rand(filter_ptr.as_span())
+    rand[input_type](input_ptr, num_copies * input_alloc_size)
+    rand[filter_type](filter_ptr, num_copies * filter_alloc_size)
 
     var pad_d = IndexList[2](0)
     var pad_h = IndexList[2](0)
@@ -146,18 +145,15 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
             comptime layout_2 = Layout.row_major[spec.static_info.rank + 2]()
             comptime layout_3 = Layout.row_major[spec.static_info.rank + 3]()
             var input = LayoutTensor[input_type, layout_2](
-                input_ptr.unsafe_ptr()
-                + (counter % num_copies) * input_alloc_size,
+                input_ptr + (counter % num_copies) * input_alloc_size,
                 RuntimeLayout[layout_2].row_major(input_shape),
             )
             var filter = LayoutTensor[filter_type, layout_3](
-                filter_ptr.unsafe_ptr()
-                + (counter % num_copies) * filter_alloc_size,
+                filter_ptr + (counter % num_copies) * filter_alloc_size,
                 RuntimeLayout[layout_3].row_major(packed_filter_shape),
             )
             var output = LayoutTensor[output_type, layout_2](
-                output_ptr.unsafe_ptr()
-                + (counter % num_copies) * output_alloc_size,
+                output_ptr + (counter % num_copies) * output_alloc_size,
                 RuntimeLayout[layout_2].row_major(output_shape),
             )
 
@@ -194,7 +190,9 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
         [ThroughputMeasure(BenchMetric.elements, spec.flops())],
     )
 
-    _ = (input_ptr^, filter_ptr^, output_ptr^)
+    input_ptr.free()
+    filter_ptr.free()
+    output_ptr.free()
 
 
 @fieldwise_init
