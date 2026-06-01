@@ -408,7 +408,6 @@ def gemv_split_k[
     var acc = tt_stack_allocation[
         dtype=accum_type, address_space=AddressSpace.LOCAL
     ](row_major[tile_m, tile_n]()).fill(0)
-    var output_idx = tile_id_m * n + tile_id_n
     var iteration = 0
     comptime WeightVecType = SIMD[b_type, simd_width]
 
@@ -505,28 +504,29 @@ def gemv_split_k[
                     shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
                 )
 
-        var base_idx = output_idx + mid * n
+        var row = tile_id_m + mid
+        var col = tile_id_n
 
         comptime if check_bounds:
             comptime for ni in range(tile_n):
-                if base_idx + ni < n:
+                if col + ni < n:
                     comptime if elementwise_lambda_fn:
                         comptime elementwise_lambda = (
                             elementwise_lambda_fn.value()
                         )
                         elementwise_lambda(
-                            Index(0, base_idx + ni),
+                            Index(row, col + ni),
                             vals[ni].cast[c_type](),
                         )
                     else:
-                        output[0, base_idx + ni] = vals[ni].cast[c_type]()
+                        output[row, col + ni] = vals[ni].cast[c_type]()
         else:
             comptime if elementwise_lambda_fn:
                 comptime elementwise_lambda = elementwise_lambda_fn.value()
-                elementwise_lambda(Index(0, base_idx), vals.cast[c_type]())
+                elementwise_lambda(Index(row, col), vals.cast[c_type]())
             else:
                 comptime for ni in range(tile_n):
-                    output[0, base_idx + ni] = vals[ni].cast[c_type]()
+                    output[row, col + ni] = vals[ni].cast[c_type]()
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
