@@ -76,7 +76,10 @@ from nn.attention.gpu.nvidia.sm100.mha_fp8_kv import (
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     compute_mla_dispatch_scalars,
 )
-from nn.attention.gpu.nvidia.sm100.mla_prefill import mla_sm100_prefill_sparse
+from nn.attention.gpu.nvidia.sm100.mla_prefill import (
+    mla_sm100_prefill_sparse,
+    mla_sm100_prefill_sparse_fp8,
+)
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import DynamicTensor, InputTensor, OutputTensor
 from extensibility import (
@@ -2746,6 +2749,111 @@ struct Struct_mla_prefill_sparse_paged:
                 indices_tt,
                 topk_lengths_tt,
                 attn_sink_ptr,
+                scale,
+                context,
+            )
+
+
+@compiler.register("mo.mla.prefill.sparse.paged.fp8")
+struct Struct_mla_prefill_sparse_paged_fp8:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+        indices_stride: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=DType.float8_e4m3fn, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
+        topk_lengths: InputTensor[dtype=DType.int32, rank=1, ...],
+        attn_sink: InputTensor[dtype=DType.float32, rank=1, ...],
+        kv_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        scale: Float32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.prefill.sparse.paged.fp8 is only supported on GPU"
+
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime num_q_heads = Int(q.static_spec.shape_tuple[1])
+        comptime qk_depth = Int(q.static_spec.shape_tuple[2])
+        comptime v_depth = Int(output.static_spec.shape_tuple[2])
+        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+
+        var dev_ctx = context
+        var num_indices_sparse = sparse_indices.size()
+
+        var attn_sink_ptr = UnsafePointer[
+            Scalar[DType.float32], origin=ImmutAnyOrigin
+        ](attn_sink.to_layout_tensor().ptr)
+
+        var scales_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
+            kv_scales.to_layout_tensor().ptr
+        )
+
+        var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.prefill.sparse.paged.fp8",
+            task_id=get_safe_task_id(context),
+        ):
+            var scratch_sparse_indices = dev_ctx.enqueue_create_buffer[
+                DType.int32
+            ](num_indices_sparse)
+            paged_sparse_kv_index_remap[
+                target, mla_page_size, indices_stride, DType.float8_e4m3fn
+            ](
+                scratch_sparse_indices.unsafe_ptr(),
+                sparse_indices,
+                input_row_offsets,
+                kv_lookup_table,
+                kv_blocks,
+                context,
+            )
+
+            var indices_tt = TileTensor(
+                scratch_sparse_indices.unsafe_ptr().bitcast[
+                    Scalar[DType.uint32]
+                ](),
+                row_major(num_indices_sparse),
+            )
+            var topk_lengths_tt = TileTensor(
+                topk_lengths.to_layout_tensor().ptr.bitcast[
+                    Scalar[DType.uint32]
+                ](),
+                row_major(Int(topk_lengths.dim_size(0))),
+            )
+
+            mla_sm100_prefill_sparse_fp8[
+                num_q_heads=num_q_heads,
+                qk_depth=qk_depth,
+                v_depth=v_depth,
+                indices_stride=indices_stride,
+                scale_block_size=qk_depth,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_ptr,
+                scales_ptr,
                 scale,
                 context,
             )
