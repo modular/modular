@@ -79,6 +79,10 @@ from std.utils import Variant
 from std.utils._serialize import _serialize_elements
 
 from .info import GPUInfo
+from ._device_context_metal import (
+    call_with_pack_checked_metal,
+    call_with_pack_metal,
+)
 
 
 # Create empty structs to ensure dtype checking when using the C++ handles.
@@ -1210,27 +1214,6 @@ struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
         value.unsafe_ptr()._to_device_type(self, target)
 
 
-@fieldwise_init
-struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
-    """Provides a Metal specific implementation of the `DeviceTypeEncoder`
-    trait."""
-
-    def encode_device_ptr(
-        mut self, value: DevicePointer, target: MutOpaquePointer[_]
-    ):
-        """Encodes a `DevicePointer` into `target`.
-
-        By default treat `DevicePointer` as `UnsafePointer`, works for USM
-        targets such as CUDA and HIP.
-
-        Args:
-            value: The `DevicePointer` instance to encode into `target`.
-            target: The opaque destination pointer to encode into.
-        """
-        # TODO: GEX-3712: Implement Metal specific encoding.
-        value.unsafe_ptr()._to_device_type(self, target)
-
-
 struct DeviceBuffer[dtype: DType](
     DevicePassable, ImplicitlyCopyable, Sized, Writable
 ):
@@ -1892,7 +1875,7 @@ trait _FunctionEnqueuer:
         num_attributes: Int,
         args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
         arg_count: UInt32,
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
     ) -> _CString[]:
         """Dispatches a kernel launch via the AsyncRT C ABI.
 
@@ -1911,7 +1894,9 @@ trait _FunctionEnqueuer:
             num_attributes: Number of entries in `attributes`.
             args: Pointer to the array of argument value pointers.
             arg_count: Number of entries in `args`.
-            arg_sizes: Pointer to the array of per-argument sizes in bytes.
+            arg_sizes: Optional pointer to the per-argument sizes in bytes.
+                Metal sources sizes from `MetalEnqueueFunctionArgs` instead
+                and accepts `None` here; other backends ignore the value.
 
         Returns:
             A C-string carrying an error message on failure, or an empty
@@ -1962,7 +1947,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         num_attributes: Int,
         args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
         arg_count: UInt32,
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
     ) -> _CString[]:
         """Enqueues a kernel launch on this stream.
 
@@ -1979,7 +1964,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
             num_attributes: Number of entries in `attributes`.
             args: Pointer to the array of argument value pointers.
             arg_count: Number of entries in `args`.
-            arg_sizes: Pointer to the array of per-argument sizes in bytes.
+            arg_sizes: Optional pointer to the per-argument sizes in bytes.
 
         Returns:
             A C-string carrying an error message on failure, or an empty
@@ -2975,21 +2960,43 @@ struct DeviceFunction[
             var capture_args_start = dense_args_addrs + num_args
             populate(capture_args_start.bitcast[NoneType]())
 
-        _checked_call[Self.func](
-            ctx.enqueue(
-                self._handle,
-                grid_dim,
-                block_dim,
-                shared_mem_bytes.or_else(0),
-                attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
-                len(attributes),
-                dense_args_addrs,
-                UInt32(num_args + num_captures),
-                dense_args_sizes,
-            ),
-            device_context=self._context,
-            location=location.or_else(call_location()),
-        )
+        if self._context.api() == "metal":
+            call_with_pack_metal[
+                Self.func,
+                num_args=num_args,
+                num_captures_static=num_captures_static,
+            ](
+                ctx,
+                func_handle=self._handle,
+                device_context=self._context,
+                num_captures=num_captures,
+                dense_args_addrs=dense_args_addrs,
+                dense_args_sizes=dense_args_sizes,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                shared_mem_bytes=shared_mem_bytes.or_else(0),
+                attributes_ptr=attributes.unsafe_ptr().unsafe_origin_cast[
+                    MutAnyOrigin
+                ](),
+                num_attributes=len(attributes),
+                location=location.or_else(call_location()),
+            )
+        else:
+            _checked_call[Self.func](
+                ctx.enqueue(
+                    self._handle,
+                    grid_dim,
+                    block_dim,
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+                    len(attributes),
+                    dense_args_addrs,
+                    UInt32(num_args + num_captures),
+                    dense_args_sizes,
+                ),
+                device_context=self._context,
+                location=location.or_else(call_location()),
+            )
 
         if num_captures > num_captures_static:
             free(dense_args_addrs, {count = num_captures + num_args})
@@ -3136,68 +3143,14 @@ struct DeviceFunction[
         comptime args_size = calculate_args_size()
 
         # Space to store the arguments to the kernel that have been converted
-        # from host dtype to device dtype.
+        # from host dtype to device dtype. Shared by both the Metal and the
+        # default branch below.
         var translated_args = InlineArray[Byte, args_size](uninitialized=True)
         var start_addr = Int(translated_args.unsafe_ptr())
         var extra_align = align_up(start_addr, 8) - start_addr
 
-        # NOTE: Manual short buffer optimization. We could use a
-        # Variant[List, InlineArray] instead, but it would look a lot more
-        # verbose. This way, however, we need to conditionally free at the end.
-        var dense_args_addrs: UnsafePointer[
-            OpaquePointer[MutAnyOrigin], MutExternalOrigin
-        ]
-        var dense_args_sizes: UnsafePointer[UInt64, MutExternalOrigin]
-        if num_captures > num_captures_static:
-            dense_args_addrs = alloc(
-                Layout[OpaquePointer[MutAnyOrigin]](
-                    count=num_captures + num_passed_args
-                )
-            )
-            dense_args_sizes = alloc(
-                Layout[UInt64](count=num_captures + num_passed_args)
-            )
-            for i in range(num_captures + num_passed_args):
-                dense_args_sizes[i] = 0
-        else:
-            dense_args_addrs = stack_allocation[
-                num_captures_static + num_passed_args,
-                OpaquePointer[MutAnyOrigin],
-            ]()
-            dense_args_sizes = stack_allocation[
-                num_captures_static + num_passed_args, UInt64
-            ]()
-            for i in range(num_captures_static + num_passed_args):
-                dense_args_sizes[i] = 0
-
-        # Since we skip over zero sized declared dtypes when passing arguments
-        # we need to know the current count of arguments pushed.
-        var translated_arg_idx = 0
-
-        # The device type encoder is passed into
-        # `DevicePassable._to_device_type()` to enable target specific encoding
-        # of device types.
-        var device_type_encoder = DefaultDeviceTypeEncoder()
-
-        comptime for i in range(num_passed_args):
-            # If the arg offset is negative then the corresponding declared
-            # dtype is zero sized and we do not push the argument to the kernel.
-            var translated_arg_offset = translated_arg_offsets[i]
-            if translated_arg_offset >= 0:
-                comptime actual_arg_type = Ts[i]
-                var first_word_addr = UnsafePointer(
-                    to=translated_args.unsafe_ptr()[
-                        translated_arg_offset + extra_align
-                    ]
-                ).bitcast[NoneType]()
-                args[i]._to_device_type(device_type_encoder, first_word_addr)
-
-                dense_args_addrs[translated_arg_idx] = first_word_addr
-                dense_args_sizes[translated_arg_idx] = UInt64(
-                    size_of[actual_arg_type.device_type]()
-                )
-                translated_arg_idx += 1
-
+        # Launch attributes and constant-memory copies are independent of the
+        # arg-encoding scheme, so apply them once before branching on backend.
         if cluster_dim:
             attributes.append(
                 LaunchAttribute.from_cluster_dim(cluster_dim.value())
@@ -3207,41 +3160,110 @@ struct DeviceFunction[
             for i in range(len(constant_memory)):
                 self._copy_to_constant_memory(constant_memory[i])
 
+        # NOTE: Manual short buffer optimization. We could use a
+        # Variant[List, InlineArray] instead, but it would look a lot more
+        # verbose. This way, however, we need to conditionally free at the end.
+        var dense_args_addrs: UnsafePointer[
+            OpaquePointer[MutAnyOrigin], MutExternalOrigin
+        ]
+        if num_captures > num_captures_static:
+            dense_args_addrs = alloc(
+                Layout[OpaquePointer[MutAnyOrigin]](
+                    count=num_captures + num_passed_args
+                )
+            )
+        else:
+            dense_args_addrs = stack_allocation[
+                num_captures_static + num_passed_args,
+                OpaquePointer[MutAnyOrigin],
+            ]()
+
         if num_captures > 0:
-            for i in range(num_captures):
-                dense_args_sizes[
-                    num_passed_args + i
-                ] = self._func_impl.capture_sizes[i]
-            # Call the populate function to initialize the captured values in the arguments array.
             # The captured values are always at the end of the argument list.
-            # This function (generated by the compiler) has to be inlined here
-            # and be in the same scope as the user of dense_args_addr
-            # (i.e. the following external_call).
-            # Because this closure uses stack allocated ptrs
-            # to store the captured values in dense_args_addrs, they need to
-            # not go out of the scope before dense_args_addr is being use.
+            # `populate` is generated by the compiler and inlined here; it
+            # stack-allocates storage for each capture and stores pointers to
+            # those slots into `dense_args_addrs[num_translated_args..]`. The
+            # allocations live for the rest of this function, so it is safe
+            # to call `populate` here even though `ctx.enqueue` below is
+            # nested inside the per-backend branch.
             var capture_args_start = dense_args_addrs + num_translated_args
             populate(capture_args_start.bitcast[NoneType]())
 
-        _checked_call[Self.func](
-            ctx.enqueue(
-                self._handle,
-                grid_dim,
-                block_dim,
-                shared_mem_bytes.or_else(0),
-                attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
-                len(attributes),
-                dense_args_addrs,
-                UInt32(num_translated_args + num_captures),
-                dense_args_sizes,
-            ),
-            device_context=self._context,
-            location=location.or_else(call_location()),
-        )
+        if self._context.api() == "metal":
+            call_with_pack_checked_metal[
+                Self.func,
+                num_passed_args=num_passed_args,
+                num_captures_static=num_captures_static,
+            ](
+                ctx,
+                *args,
+                func_handle=self._handle,
+                device_context=self._context,
+                capture_sizes=self._func_impl.capture_sizes,
+                num_captures=num_captures,
+                num_translated_args=num_translated_args,
+                translated_arg_offsets=translated_arg_offsets,
+                extra_align=extra_align,
+                translated_args_ptr=translated_args.unsafe_ptr().unsafe_origin_cast[
+                    MutAnyOrigin
+                ](),
+                dense_args_addrs=dense_args_addrs,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                shared_mem_bytes=shared_mem_bytes.or_else(0),
+                attributes_ptr=attributes.unsafe_ptr().unsafe_origin_cast[
+                    MutAnyOrigin
+                ](),
+                num_attributes=len(attributes),
+                location=location.or_else(call_location()),
+            )
+
+        else:
+            # Since we skip over zero sized declared dtypes when passing
+            # arguments we need to know the current count of arguments pushed.
+            var translated_arg_idx = 0
+
+            # The device type encoder is passed into
+            # `DevicePassable._to_device_type()` to enable target specific
+            # encoding of device types.
+            var device_type_encoder = DefaultDeviceTypeEncoder()
+
+            comptime for i in range(num_passed_args):
+                # If the arg offset is negative then the corresponding declared
+                # dtype is zero sized and we do not push the argument to the
+                # kernel.
+                var translated_arg_offset = translated_arg_offsets[i]
+                if translated_arg_offset >= 0:
+                    var first_word_addr = UnsafePointer(
+                        to=translated_args.unsafe_ptr()[
+                            translated_arg_offset + extra_align
+                        ]
+                    ).bitcast[NoneType]()
+                    args[i]._to_device_type(
+                        device_type_encoder, first_word_addr
+                    )
+
+                    dense_args_addrs[translated_arg_idx] = first_word_addr
+                    translated_arg_idx += 1
+
+            _checked_call[Self.func](
+                ctx.enqueue(
+                    self._handle,
+                    grid_dim,
+                    block_dim,
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+                    len(attributes),
+                    dense_args_addrs,
+                    UInt32(num_translated_args + num_captures),
+                    None,
+                ),
+                device_context=self._context,
+                location=location.or_else(call_location()),
+            )
 
         if num_captures > num_captures_static:
             free(dense_args_addrs, {count = num_captures + num_passed_args})
-            free(dense_args_sizes, {count = num_captures + num_passed_args})
 
     @always_inline
     def get_attribute(self, attr: Attribute) raises -> Int:
@@ -4472,7 +4494,7 @@ struct _DeviceGraphBuilderEnqueuer[
         num_attributes: Int,
         args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
         arg_count: UInt32,
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
     ) -> _CString[]:
         """Adds a kernel-dispatch node to the borrowed graph builder.
 
@@ -4490,7 +4512,7 @@ struct _DeviceGraphBuilderEnqueuer[
             num_attributes: Number of entries in `attributes`.
             args: Pointer to the array of argument value pointers.
             arg_count: Number of entries in `args`.
-            arg_sizes: Pointer to the array of per-argument sizes in bytes.
+            arg_sizes: Optional pointer to the per-argument sizes in bytes.
 
         Returns:
             A C-string carrying an error message on failure, or an empty
@@ -4576,7 +4598,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         num_attributes: Int,
         args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
         arg_count: UInt32,
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
     ) -> _CString[]:
         """Enqueues a kernel launch on this context's default stream.
 
@@ -4592,7 +4614,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             num_attributes: Number of entries in `attributes`.
             args: Pointer to the array of argument value pointers.
             arg_count: Number of entries in `args`.
-            arg_sizes: Pointer to the array of per-argument sizes in bytes.
+            arg_sizes: Optional pointer to the per-argument sizes in bytes.
 
         Returns:
             A C-string carrying an error message on failure, or an empty
