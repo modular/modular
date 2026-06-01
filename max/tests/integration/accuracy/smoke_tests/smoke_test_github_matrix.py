@@ -116,6 +116,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "unsloth/gpt-oss-20b-BF16__modulev3": DISABLE,  # TODO(MXF-121)
     "microsoft/Phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
+    "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": MULTI,
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": NON_XL | {"4xMI355"},

@@ -410,6 +410,7 @@
               "items": [
                 "max/api/python/pipelines.architectures.bert",
                 "max/api/python/pipelines.architectures.deepseekV2",
+                "max/api/python/pipelines.architectures.deepseekV2_modulev3",
                 "max/api/python/pipelines.architectures.deepseekV3",
                 "max/api/python/pipelines.architectures.deepseekV3_2",
                 "max/api/python/pipelines.architectures.deepseekV3_nextn",
@@ -664,6 +665,140 @@
               ]
             },
             "__AUTOGEN:max.pipelines__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.kv_cache",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.kv_cache"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.kv_cache__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.lib.registry",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.lib.registry"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.lib.registry__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.core",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.core"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.core__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.lib",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.lib"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.lib__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.lib.interfaces",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.lib.interfaces"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.lib.interfaces__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.lib.log_probabilities",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.lib.log_probabilities"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.lib.log_probabilities__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.architectures",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.architectures"
+          },
+          "items": [
+            "max/api/python/pipelines.architectures.bert",
+            "max/api/python/pipelines.architectures.deepseekV2",
+            "max/api/python/pipelines.architectures.deepseekV2_modulev3",
+            "max/api/python/pipelines.architectures.deepseekV3",
+            "max/api/python/pipelines.architectures.deepseekV3_2",
+            "max/api/python/pipelines.architectures.deepseekV3_nextn",
+            "max/api/python/pipelines.architectures.dflash_llama3",
+            "max/api/python/pipelines.architectures.eagle3_deepseekV3",
+            "max/api/python/pipelines.architectures.eagle_llama3",
+            "max/api/python/pipelines.architectures.exaone",
+            "max/api/python/pipelines.architectures.exaone_modulev3",
+            "max/api/python/pipelines.architectures.flux2",
+            "max/api/python/pipelines.architectures.gemma3",
+            "max/api/python/pipelines.architectures.gemma3_modulev3",
+            "max/api/python/pipelines.architectures.gemma3multimodal",
+            "max/api/python/pipelines.architectures.gemma3multimodal_modulev3",
+            "max/api/python/pipelines.architectures.gemma4",
+            "max/api/python/pipelines.architectures.gpt_oss",
+            "max/api/python/pipelines.architectures.gpt_oss_modulev3",
+            "max/api/python/pipelines.architectures.granite",
+            "max/api/python/pipelines.architectures.granite_modulev3",
+            "max/api/python/pipelines.architectures.idefics3",
+            "max/api/python/pipelines.architectures.idefics3_modulev3",
+            "max/api/python/pipelines.architectures.internvl",
+            "max/api/python/pipelines.architectures.kimik2_5",
+            "max/api/python/pipelines.architectures.lfm2",
+            "max/api/python/pipelines.architectures.llama3",
+            "max/api/python/pipelines.architectures.llama3_modulev3",
+            "max/api/python/pipelines.architectures.mamba",
+            "max/api/python/pipelines.architectures.minimax_m2",
+            "max/api/python/pipelines.architectures.mistral",
+            "max/api/python/pipelines.architectures.mistral3",
+            "max/api/python/pipelines.architectures.mpnet",
+            "max/api/python/pipelines.architectures.mpnet_modulev3",
+            "max/api/python/pipelines.architectures.olmo",
+            "max/api/python/pipelines.architectures.olmo2",
+            "max/api/python/pipelines.architectures.olmo2_modulev3",
+            "max/api/python/pipelines.architectures.olmo3",
+            "max/api/python/pipelines.architectures.olmo_modulev3",
+            "max/api/python/pipelines.architectures.phi3",
+            "max/api/python/pipelines.architectures.phi3_modulev3",
+            "max/api/python/pipelines.architectures.pixtral",
+            "max/api/python/pipelines.architectures.pixtral_modulev3",
+            "max/api/python/pipelines.architectures.qwen2",
+            "max/api/python/pipelines.architectures.qwen2_5vl",
+            "max/api/python/pipelines.architectures.qwen3",
+            "max/api/python/pipelines.architectures.qwen3_5",
+            "max/api/python/pipelines.architectures.qwen3_embedding",
+            "max/api/python/pipelines.architectures.qwen3_embedding_modulev3",
+            "max/api/python/pipelines.architectures.qwen3vl_moe",
+            "max/api/python/pipelines.architectures.qwen_image",
+            "max/api/python/pipelines.architectures.qwen_image_edit",
+            "max/api/python/pipelines.architectures.step3p5",
+            "max/api/python/pipelines.architectures.unified_dflash_llama3",
+            "max/api/python/pipelines.architectures.unified_eagle_llama3",
+            "max/api/python/pipelines.architectures.unified_mtp_deepseekV3",
+            "max/api/python/pipelines.architectures.wan",
+            "max/api/python/pipelines.architectures.z_image_modulev3"
           ]
         },
         {

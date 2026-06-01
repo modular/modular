@@ -20,6 +20,7 @@ family.
 
    pipelines.architectures.bert
    pipelines.architectures.deepseekV2
+   pipelines.architectures.deepseekV2_modulev3
    pipelines.architectures.deepseekV3
    pipelines.architectures.deepseekV3_2
    pipelines.architectures.deepseekV3_nextn
@@ -86,6 +87,7 @@ Text generation
    :nosignatures:
 
    ~max.pipelines.architectures.deepseekV2
+   ~max.pipelines.architectures.deepseekV2_modulev3
    ~max.pipelines.architectures.deepseekV3
    ~max.pipelines.architectures.deepseekV3_2
    ~max.pipelines.architectures.deepseekV3_nextn

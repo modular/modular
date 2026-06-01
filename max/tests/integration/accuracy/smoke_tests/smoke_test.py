@@ -84,6 +84,7 @@ def _metrics_url(framework: str) -> str:
 # fmt: off
 MODEL_RECIPES = CaseInsensitiveDict({
     "deepseek-ai/DeepSeek-R1-0528": "max/pipelines/architectures/deepseekV3/recipes/r1_0528_8x_b200.yaml",
+    "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
     "google/gemma-4-26B-A4B-it__no_dgc": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_no_dgc.yaml",
     "google/gemma-4-26B-A4B-it__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_localkv.yaml",
