@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pytest
 from tests.util import assert_mojo_format
 
 
@@ -189,3 +190,76 @@ def test_numeric_literal_case_normalization():
         "    print(0x_DE__AD)\n"
     )
     assert_mojo_format(source, expected)
+
+
+def test_trailing_underscore():
+    """A simple example of a trailing underscore."""
+    source = (
+        "def main():\n"
+        "    var x = 1_000_000\n"
+        "    var y = 2_000_000_\n"
+        "\n"
+        "    print(x + y)\n"
+    )
+    assert_mojo_format(source, source)
+
+
+# Valid-Mojo literals with stable round-trip formatting.
+NORMALIZATION_STABLE_LITERALS = [
+    "2_000_000_",  # decimal, trailing
+    "1_000__",  # decimal, trailing double underscore
+    "0_",  # lone zero, trailing
+    "00",  # bare zero, interior zero
+    "0_0",  # bare zero, interior underscore
+    "0__0_",  # bare zero, interior and trailing underscores
+    "0xFF_",  # hex, trailing
+    "0x_FF",  # hex, leading-after-prefix (already worked)
+    "0xF__F",  # hex, embedded double underscore (already worked)
+    "0b101_",  # binary, trailing
+    "0o17_",  # octal, trailing
+    "1.5_",  # float fraction, trailing
+    "1_.5",  # float, underscore before the dot
+    "1e10_",  # exponent, trailing
+    "1_e10",  # mantissa, underscore before the exponent
+    "1.5_e3",  # float fraction, trailing before exponent
+    "1.0e1_0_",  # exponent, trailing
+]
+
+
+@pytest.mark.parametrize("literal", NORMALIZATION_STABLE_LITERALS)
+def test_trailing_underscore_preserved(literal):
+    """Trailing/embedded underscores parse and survive formatting unchanged."""
+    source = f"def main():\n    var v = {literal}\n"
+    assert_mojo_format(source, source)
+
+
+def test_fractional_only_gets_leading_zero():
+    """`.5_` parses; normalization adds the leading zero but keeps the `_`."""
+    source = "def main():\n    var v = .5_\n"
+    expected = "def main():\n    var v = 0.5_\n"
+    assert_mojo_format(source, expected)
+
+
+def test_underscore_before_dot_without_fraction():
+    """`1_.` parses; normalization adds the trailing zero but keeps the `_`."""
+    source = "def main():\n    var v = 1_.\n"
+    expected = "def main():\n    var v = 1_.0\n"
+    assert_mojo_format(source, expected)
+
+
+def test_trailing_underscore_with_comment():
+    """A trailing comment after the literal is preserved."""
+    source = "def main():\n    var v = 2_000_000_  # a comment\n"
+    assert_mojo_format(source, source)
+
+
+def test_trailing_underscore_in_expression():
+    """A trailing-underscore literal inside a larger expression parses."""
+    source = "def main():\n    var v = 2_000_000_ + 3_\n"
+    assert_mojo_format(source, source)
+
+
+def test_underscore_in_string_literal_untouched():
+    """Number-like text inside a string is not treated as a numeric literal."""
+    source = 'def main():\n    var v = "2_000_000_"\n'
+    assert_mojo_format(source, source)

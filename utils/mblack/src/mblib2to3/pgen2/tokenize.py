@@ -95,16 +95,22 @@ Name = (  # this is invalid but it's fine because Name comes after Number in all
     r"[^\s#\(\)\[\]\{\}+\-*/!@$%^&=|;:'\",\.<>/?~\\]+"
 )
 
-Binnumber = r"0[bB]_*[01]+(?:_+[01]+)*"
-Hexnumber = r"0[xX]_*[\da-fA-F]+(?:_+[\da-fA-F]+)*[lL]?"
-Octnumber = r"0[oO]?_*[0-7]+(?:_+[0-7]+)*[lL]?"
-Decnumber = group(r"[1-9]\d*(?:_+\d+)*[lL]?", "0[lL]?")
+# Unlike Python, Mojo accepts trailing underscores in numeric literals (e.g.
+# `2_000_000_`, `0xFF_`, `1.5_e3`). Each digit run therefore ends with a
+# trailing `_*`. Underscores still may not lead a number, follow `.` or the
+# exponent marker directly, or stand alone after a base prefix. The bare-zero
+# decimal form likewise allows interior zeros/underscores (`00`, `0_0`), all of
+# which Mojo reads as zero.
+Binnumber = r"0[bB]_*[01]+(?:_+[01]+)*_*"
+Hexnumber = r"0[xX]_*[\da-fA-F]+(?:_+[\da-fA-F]+)*_*[lL]?"
+Octnumber = r"0[oO]?_*[0-7]+(?:_+[0-7]+)*_*[lL]?"
+Decnumber = group(r"[1-9]\d*(?:_+\d+)*_*[lL]?", "0[0_]*[lL]?")
 Intnumber = group(Binnumber, Hexnumber, Octnumber, Decnumber)
-Exponent = r"[eE][-+]?\d+(?:_+\d+)*"
+Exponent = r"[eE][-+]?\d+(?:_+\d+)*_*"
 Pointfloat = group(
-    r"\d+(?:_+\d+)*\.(?:\d+(?:_+\d+)*)?", r"\.\d+(?:_+\d+)*"
+    r"\d+(?:_+\d+)*_*\.(?:\d+(?:_+\d+)*_*)?", r"\.\d+(?:_+\d+)*_*"
 ) + maybe(Exponent)
-Expfloat = r"\d+(?:_+\d+)*" + Exponent
+Expfloat = r"\d+(?:_+\d+)*_*" + Exponent
 Floatnumber = group(Pointfloat, Expfloat)
 Imagnumber = group(r"\d+(?:_\d+)*[jJ]", Floatnumber + r"[jJ]")
 Number = group(Imagnumber, Floatnumber, Intnumber)
