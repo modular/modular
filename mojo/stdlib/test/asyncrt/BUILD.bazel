@@ -31,6 +31,7 @@ _EXTRA_CONSTRAINTS = {
     "test_host_func.mojo": ["//:nvidia_gpu"],
     "test_copies.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2562
     "test_smoke.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2554
+    "test_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-4091
 }
 
 # TODO(GEX-3549): asyncrt CPU `DeviceContext` memcpy path returns garbage
