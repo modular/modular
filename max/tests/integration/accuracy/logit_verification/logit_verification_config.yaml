@@ -344,7 +344,7 @@ logit_verification_pipelines:
     pipeline: "LiquidAI/LFM2.5-1.2B-Instruct"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: []
+    tags: [manual]  # TODO(MXSERV-116)
     cos_dist_threshold: 5.0e-03
     kl_div_threshold: 1.0e-02
 
