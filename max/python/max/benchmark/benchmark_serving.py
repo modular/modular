@@ -451,6 +451,7 @@ async def benchmark(
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or len(chat_sessions),
                 rng=np.random.default_rng(args.seed),
+                delay_biased=args.warmup_delay_biased,
             )
             if report is not None:
                 log_warmup_sampling_report(report)
@@ -619,9 +620,10 @@ async def benchmark(
                 lora_manager=session.lora_manager,
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 sampling=args.sampling,
-                randomize_session_start=args.randomize_session_start,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
+                request_rate=request_rate,
+                burstiness=args.burstiness,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -664,9 +666,10 @@ async def benchmark(
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 max_concurrency=max_concurrency,
                 sampling=args.sampling,
-                randomize_session_start=args.randomize_session_start,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
+                request_rate=request_rate,
+                burstiness=args.burstiness,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -1216,6 +1219,7 @@ def _run_dry_run_sweep(
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or 0,
                 rng=rng,
+                delay_biased=args.warmup_delay_biased,
             )
             if report is not None:
                 log_warmup_sampling_report(report)

@@ -13,8 +13,15 @@
 
 """Warmup population sampling for multi-turn benchmarks.
 
-Provides length-biased session selection to seed the server's KV cache before
+Provides size-biased session selection to seed the server's KV cache before
 the measured benchmark window, avoiding cold-start bias in steady-state metrics.
+
+When inter-turn delays are configured, session selection is weighted by total
+think time (sum of inter-turn delays) and the starting turn within each session
+is sampled proportional to its delay.  This matches the ergodic steady state:
+a session is ``delay_k / sum(delays)`` likely to be sleeping through turn k,
+and the resulting initial firing rate equals the steady-state rate N/E[D] rather
+than the burst rate N*E[1/D] produced by uniform turn selection.
 """
 
 from __future__ import annotations
@@ -28,6 +35,51 @@ import numpy as np
 from max.benchmark.benchmark_shared.datasets import ChatSession
 
 logger = logging.getLogger(__name__)
+
+
+def _prefix_delays_ms(s: ChatSession) -> np.ndarray:
+    """Return the inter-turn delay (ms) available at each valid prefix position.
+
+    The returned array has length ``T-1`` where ``T = s.num_turns``.  Index
+    ``k`` (0-based) corresponds to ``prefix_turns = k+1``: the session has
+    completed ``k+1`` turns and is currently sleeping through the delay on
+    the assistant message of turn ``k`` before sending turn ``k+1``.
+
+    The phase-spread in ``chat_session_driver`` reads
+    ``messages[prefix_turns * 2 - 1].delay_until_next_message``, which is
+    exactly ``out[prefix_turns - 1]`` here.  Zero or missing delays are
+    stored as 0.0; single-turn sessions return an empty array.
+    """
+    T = s.num_turns
+    if T <= 1:
+        return np.zeros(0, dtype=np.float64)
+    out = np.zeros(T - 1, dtype=np.float64)
+    for k in range(1, T):  # prefix_turns = k → assistant msg at index 2k-1
+        msg_idx = 2 * k - 1
+        if msg_idx < len(s.messages):
+            d = s.messages[msg_idx].delay_until_next_message
+            if d is not None and d > 0.0:
+                out[k - 1] = float(d)
+    return out
+
+
+def _session_weights(
+    sessions: Sequence[ChatSession], use_delay_bias: bool
+) -> np.ndarray:
+    """Size-bias weight per session: total think time or turn count.
+
+    When ``use_delay_bias`` is set, the weight is the sum of inter-turn delays
+    (clamped to ``>= 1`` so zero-delay sessions still draw). Otherwise it is the
+    turn count (clamped to ``>= 1``). The same weighting drives the PPS draw and
+    the logged ``target_mean`` / ``realized_mean`` diagnostics so they stay
+    directly comparable.
+    """
+    if use_delay_bias:
+        delay_sums = np.array(
+            [_prefix_delays_ms(s).sum() for s in sessions], dtype=np.float64
+        )
+        return np.maximum(delay_sums, 1.0)
+    return np.array([max(1, s.num_turns) for s in sessions], dtype=np.float64)
 
 
 def systematic_probability_proportional_to_size(
@@ -142,6 +194,13 @@ class _WarmupSamplingReport:
     ideal_total: int
     # ``len(chat_sessions)``. If less than ``ideal_total``, both pools shrank.
     available_total: int
+    # True when delay-sum weights were used for session selection and
+    # delay-proportional sampling was used for prefix-turn assignment.
+    # False means the original turn-count-based behaviour was used (no delays
+    # configured or all delay sums are zero).
+    delay_biased: bool = False
+    # Unit label for target_mean / realized_mean in log output.
+    weight_unit: str = "turns"
 
 
 def pick_warmup_population(
@@ -152,20 +211,35 @@ def pick_warmup_population(
     warmup_oversample_factor: int,
     main_pool_target: int,
     rng: np.random.Generator,
+    delay_biased: bool = False,
 ) -> tuple[list[ChatSession], _WarmupSamplingReport | None]:
     """Build the runner's task list with warmup picks at the head.
 
     When ``warmup_to_steady_state=True`` and ``warmup_count > 0``, the
     helper picks ``warmup_count`` warmup sessions from the leading
     ``factor * warmup_count`` candidates (clamped to what's available)
-    and assigns each a random ``prefix_turns`` in ``[0, T-1)``. The
-    remaining trailing slice is the main benchmark sessions (untouched,
-    preserves natural P(T)). For ``factor >= 2`` the picks are length-biased
-    via :func:`systematic_probability_proportional_to_size`, which gives
-    inclusion probability ``min(1, K * T_i / sum(T))`` exactly — no
-    depletion bias. For ``factor < 2`` we don't have headroom for a
-    weighted draw so the picks are uniform; the report's target/realized
-    split lets users see the residual bias.
+    and assigns each a ``prefix_turns`` value. The remaining trailing
+    slice is the main benchmark sessions (untouched, preserves natural
+    P(T)).
+
+    Delay biasing is opt-in via ``delay_biased`` and only takes effect
+    when inter-turn delays are actually configured; otherwise selection
+    falls back to turn-count weighting.
+
+    **Session selection**: with delay bias, sessions are selected with
+    probability proportional to their total think time (sum of
+    inter-turn delays); without it, proportional to turn count.
+    For ``factor >= 2`` this is done via
+    :func:`systematic_probability_proportional_to_size`; for
+    ``factor < 2`` the picks are uniform.
+
+    **Starting-turn selection**: with delay bias, ``prefix_turns`` is
+    sampled proportional to the delay at each candidate position — turns
+    with longer delays are more likely to be the one "in progress." This
+    matches the ergodic steady state (a session is ``D_k / sum(D)``
+    likely to be sleeping through turn k) and eliminates the initial
+    burst produced by uniform turn selection. Without delay bias, falls
+    back to the original uniform draw over ``{0, …, T-1}``.
 
     Returns ``(reordered_sessions, report)``. ``report`` is ``None``
     only when warmup is off (``warmup_to_steady_state=False`` or
@@ -208,9 +282,18 @@ def pick_warmup_population(
         chat_sessions[candidate_pool : candidate_pool + main_count]
     )
 
-    turn_counts = np.array(
-        [max(1, s.num_turns) for s in candidates], dtype=np.int64
+    # Per-session delay arrays (one entry per valid prefix position) drive the
+    # delay-biased starting-turn selection below. Delay bias is opt-in and only
+    # meaningful when delays are actually present; otherwise weight by turn
+    # count. The same weights drive the PPS draw and the logged diagnostics.
+    all_prefix_delays = [_prefix_delays_ms(s) for s in candidates]
+    use_delay_bias = delay_biased and any(
+        d.sum() > 0.0 for d in all_prefix_delays
     )
+    candidate_weights = _session_weights(candidates, use_delay_bias)
+    full_weights = _session_weights(chat_sessions, use_delay_bias)
+    weight_unit = "delay-ms" if use_delay_bias else "turns"
+
     # Length-biased only when factor>=2 AND we have headroom to pick from.
     # Otherwise fall back to a plain uniform pick — at factor<2 we don't
     # have enough candidates above ``actual_warmup_count`` to do a
@@ -221,7 +304,7 @@ def pick_warmup_population(
     )
     if use_length_bias:
         warmup_idx = systematic_probability_proportional_to_size(
-            turn_counts, actual_warmup_count, rng
+            candidate_weights, actual_warmup_count, rng
         )
     else:
         warmup_idx = rng.choice(
@@ -232,37 +315,45 @@ def pick_warmup_population(
     for i in warmup_idx:
         s = candidates[int(i)]
         total_turns = max(1, s.num_turns)
-        prefix_turns = (
-            int(rng.integers(0, total_turns)) if total_turns > 1 else 0
-        )
+        if total_turns <= 1:
+            prefix_turns = 0
+        elif use_delay_bias:
+            delays = all_prefix_delays[int(i)]
+            delay_total = float(delays.sum())
+            if delay_total > 0.0:
+                # Sample prefix_turns ∝ D_k: sessions sleeping through a
+                # longer window are proportionally more likely to be observed.
+                probs = delays / delay_total
+                prefix_turns = int(rng.choice(total_turns - 1, p=probs)) + 1
+            else:
+                # This session has no delays; use uniform over {1, ..., T-1}.
+                prefix_turns = int(rng.integers(1, total_turns))
+        else:
+            prefix_turns = int(rng.integers(0, total_turns))
         warmup_sessions.append(
             dataclasses.replace(s, prefix_turns=prefix_turns)
         )
 
-    # ``target_mean`` is the size-biased mean of the *full* dataset (warmup
-    # candidates + main pool), so it reflects steady-state for the workload
-    # as a whole — not just the candidate slice the picker drew from.
-    full_turn_counts = np.array(
-        [max(1, s.num_turns) for s in chat_sessions],
-        dtype=np.int64,
-    )
-    full_sum = float(full_turn_counts.sum())
-    target_mean = float((full_turn_counts**2).sum() / full_sum)
-    realized_mean = float(turn_counts[list(warmup_idx)].mean())
+    # ``target_mean`` uses the *full* dataset so it reflects the whole workload,
+    # not just the candidate slice; ``realized_mean`` uses the same weighting
+    # over what was actually drawn, so the two are directly comparable.
+    full_sum = float(full_weights.sum())
+    target_mean = float((full_weights**2).sum() / full_sum)
+    realized_mean = float(candidate_weights[list(warmup_idx)].mean())
 
     # Per-draw stdev on ``realized_mean`` under a with-replacement bound.
-    # Variance of a single length-biased pick is
-    #   E[T^2 | size-bias] - sb_mean^2 = sum(T^3)/sum(T) - target_mean^2;
+    # Variance of a single size-biased pick is
+    #   E[w^2 | size-bias] - sb_mean^2 = sum(w^3)/sum(w) - target_mean^2;
     # K independent picks scale Var by 1/K. Systematic PPS picks are
     # negatively correlated, so this overestimates by ~2x — that's in the
     # safe direction: if ``|realized - target| / stdev`` is below ~1 even
     # under this conservative bound, it's unambiguously noise.
-    sb_var = (full_turn_counts**3).sum() / full_sum - target_mean**2
+    sb_var = (full_weights**3).sum() / full_sum - target_mean**2
     sb_var = max(0.0, float(sb_var))
     realized_mean_stdev = float(np.sqrt(sb_var / max(1, actual_warmup_count)))
 
-    cap_threshold = float(turn_counts.sum()) / actual_warmup_count
-    cap_count = int((turn_counts > cap_threshold).sum())
+    cap_threshold = float(candidate_weights.sum()) / actual_warmup_count
+    cap_count = int((candidate_weights > cap_threshold).sum())
 
     report = _WarmupSamplingReport(
         warmup_pool=candidate_pool,
@@ -275,6 +366,8 @@ def pick_warmup_population(
         cap_count=cap_count,
         ideal_total=ideal_total,
         available_total=n_total,
+        delay_biased=use_delay_bias,
+        weight_unit=weight_unit,
     )
     return warmup_sessions + main_sessions, report
 
@@ -296,15 +389,19 @@ def log_warmup_sampling_report(report: _WarmupSamplingReport) -> None:
     else:
         stdev_str = "stdev n/a"
 
+    bias_mode = "delay-biased" if report.delay_biased else "turn-biased"
     logger.info(
-        "[warmup-sampling] warmup_pool=%d main_pool=%d M=%d factor=%d\n"
-        "  target mean from samples:                      %.2f\n"
+        "[warmup-sampling] warmup_pool=%d main_pool=%d M=%d factor=%d"
+        " mode=%s\n"
+        "  target mean (%s) from samples:                 %.2f\n"
         "  realized warmup mean (one draw):               %.2f  (%s, %s)\n"
         "  always-picked sessions (too long for pool):    %d / %d",
         report.warmup_pool,
         report.main_pool,
         report.warmup_count,
         report.factor,
+        bias_mode,
+        report.weight_unit,
         report.target_mean,
         report.realized_mean,
         _pct(report.realized_mean, report.target_mean),

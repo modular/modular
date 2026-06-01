@@ -603,15 +603,15 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    warmup_concurrency: int = Field(
-        default=128,
-        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
+    warmup_delay_biased: bool = Field(
+        default=False,
+        description="Bias warmup session/turn selection by inter-turn think time (sum of delays) instead of turn count. Requires delays to be configured; falls back to turn-based when none are present.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    randomize_session_start: bool = Field(
-        default=True,
-        description="Add a random sleep (0 to inter-turn delay) before each session's first measured query to spread out the initial wave of requests.",
+    warmup_concurrency: int = Field(
+        default=128,
+        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
         json_schema_extra={"group": "Traffic Control"},
     )
 

@@ -46,6 +46,11 @@ def exceeds_deadline(seconds: float, deadline_ns: int | None) -> bool:
     return time.perf_counter_ns() + int(seconds * 1e9) > deadline_ns
 
 
+def deadline_passed(end_time_ns: int | None) -> bool:
+    """Return True if the ``perf_counter_ns`` deadline has been reached."""
+    return end_time_ns is not None and time.perf_counter_ns() >= end_time_ns
+
+
 def wait_for_server_ready(
     host: str,
     port: int,
