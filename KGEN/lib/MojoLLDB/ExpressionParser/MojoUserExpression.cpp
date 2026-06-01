@@ -363,7 +363,8 @@ static void dumpTraceOnSignal(void *cookie) {
   generateNonFatalDump();
 
   // Pull the type system out of the current target.
-  lldb::TargetSP currentTarget = debugger->GetSelectedTarget();
+  lldb::TargetSP currentTarget =
+      debugger->GetSelectedExecutionContext(false).GetTargetSP();
   if (!currentTarget)
     return;
 
