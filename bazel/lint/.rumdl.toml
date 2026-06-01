@@ -20,6 +20,7 @@ exclude = [
     "third-party",
     "oss/mojo-gpu-puzzles/book",
     "Faux/mojo_llm_from_scratch",
+    "CloudInfra/workloads/max-product-dashboard",
 ]
 
 [ul-style]
