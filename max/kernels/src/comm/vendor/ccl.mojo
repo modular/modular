@@ -28,6 +28,7 @@ from std.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS, Signal
 from comm.allreduce import elementwise_epilogue_type
 from std.gpu.primitives.grid_controls import PDLLevel
+from std.utils.coord import Coord
 
 comptime ncclComm_t = _CPointer[NoneType, MutExternalOrigin]
 
@@ -361,16 +362,14 @@ def allreduce[
 
         @parameter
         @__copy_capture(output_tensor)
-        def epilogue_wrapper[
-            simd_width: Int, _rank: Int, alignment: Int = 1
-        ](idx: IndexList[_rank]):
-            var flat_idx = idx[0]
+        def epilogue_wrapper[simd_width: Int, alignment: Int = 1](idx: Coord):
+            var flat_idx = idx[0].value()
             var val = output_tensor.raw_load[
                 width=simd_width,
                 alignment=alignment * size_of[dtype](),
             ](flat_idx)
             epilogue[dtype, simd_width, alignment=alignment](
-                output_tensor.layout.idx2crd(flat_idx),
+                output_tensor.layout.idx2crd(Int(flat_idx)),
                 val,
             )
 
@@ -379,7 +378,7 @@ def allreduce[
             simd_size,
             target="gpu",
             _trace_description="ccl_epilogue",
-        ](IndexList[1](output_tensor.num_elements()), ctx)
+        ](Coord(output_tensor.num_elements()), ctx)
 
 
 @parameter

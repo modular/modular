@@ -3670,13 +3670,11 @@ def generic_kv_cache_radd_dispatch[
 
     @parameter
     @__copy_capture(k_cache, v_cache, input_row_offsets)
-    def do_radd[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        comptime assert rank == 2, "Rank must be 2"
+    def do_radd[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 2, "Rank must be 2"
 
         # we could be slicing the batch, so we need to add the offset to get the actual index in the flattened batch
-        var corrected_token_idx = UInt32(idx[0]) + input_row_offsets[0]
+        var corrected_token_idx = UInt32(idx[0].value()) + input_row_offsets[0]
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, Int(corrected_token_idx)
         )
@@ -3687,12 +3685,12 @@ def generic_kv_cache_radd_dispatch[
 
         var cache: collection_t.CacheType
         var corrected_dim: Int
-        if idx[1] < hidden_size:
+        if Int(idx[1].value()) < hidden_size:
             cache = k_cache
-            corrected_dim = idx[1]
+            corrected_dim = Int(idx[1].value())
         else:
             cache = v_cache
-            corrected_dim = idx[1] - hidden_size
+            corrected_dim = Int(idx[1].value()) - hidden_size
 
         var h_idx: Int
         var hd_idx: Int
@@ -3704,7 +3702,9 @@ def generic_kv_cache_radd_dispatch[
         var old_val = cache.load[width=width](
             Int(corrected_batch_idx), h_idx, cache_token_idx, hd_idx
         )
-        var a_val = rebind[type_of(old_val)](a.load[width=width](idx))
+        var a_val = rebind[type_of(old_val)](
+            a.load[width=width](coord_to_index_list(idx))
+        )
 
         cache.store(
             Int(corrected_batch_idx),
@@ -3719,14 +3719,14 @@ def generic_kv_cache_radd_dispatch[
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
-            a.runtime_layout.shape.value.canonicalize(), ctx
+            Coord(a.runtime_layout.shape.value), ctx
         )
     else:
         comptime compile_target = _current_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
-            a.runtime_layout.shape.value.canonicalize(), ctx
+            Coord(a.runtime_layout.shape.value), ctx
         )
 
 
@@ -3754,16 +3754,20 @@ def kv_cache_store_ragged[
     @__copy_capture(cache, input_row_offsets)
     def write_to_cache[
         width: Int,
-        rank: Int,
         alignment: Int = 1,
-    ](idx: IndexList[rank]) capturing:
-        var loaded_val = input_fn[width=width, alignment=alignment](
-            rebind[IndexList[3]](idx)
+    ](idx: Coord) capturing:
+        var input_idx = IndexList[3](
+            Int(idx[0].value()), Int(idx[1].value()), Int(idx[2].value())
         )
-        var batch_idx = get_batch_from_row_offsets(input_row_offsets, idx[0])
-        var token_idx = Int(UInt32(idx[0]) - input_row_offsets[batch_idx])
-        var h_idx = idx[1]
-        var hd_idx = idx[2]
+        var loaded_val = input_fn[width=width, alignment=alignment](input_idx)
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, Int(idx[0].value())
+        )
+        var token_idx = Int(
+            UInt32(idx[0].value()) - input_row_offsets[batch_idx]
+        )
+        var h_idx = Int(idx[1].value())
+        var hd_idx = Int(idx[2].value())
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
         cache.store(
@@ -3781,7 +3785,7 @@ def kv_cache_store_ragged[
         ]()
 
         elementwise[write_to_cache, simd_width, target=target](
-            input_shape, context
+            Coord(input_shape), context
         )
     else:
         comptime compile_target = _current_target()
@@ -3790,7 +3794,7 @@ def kv_cache_store_ragged[
         ]()
 
         elementwise[write_to_cache, simd_width, target=target](
-            input_shape, context
+            Coord(input_shape), context
         )
 
 
@@ -3816,19 +3820,21 @@ def kv_cache_store_padded[
     @parameter
     @__copy_capture(cache, valid_lengths)
     @always_inline
-    def write_to_cache[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) capturing:
-        var batch_idx = idx[0]
-        var token_idx = idx[1]
+    def write_to_cache[width: Int, alignment: Int = 1](idx: Coord) capturing:
+        var batch_idx = Int(idx[0].value())
+        var token_idx = Int(idx[1].value())
         var valid_len = Int(valid_lengths[batch_idx])
         if token_idx >= valid_len:
             return
-        var loaded_val = input_fn[width=width, alignment=alignment](
-            rebind[IndexList[4]](idx)
+        var input_idx = IndexList[4](
+            batch_idx,
+            token_idx,
+            Int(idx[2].value()),
+            Int(idx[3].value()),
         )
-        var h_idx = idx[2]
-        var hd_idx = idx[3]
+        var loaded_val = input_fn[width=width, alignment=alignment](input_idx)
+        var h_idx = Int(idx[2].value())
+        var hd_idx = Int(idx[3].value())
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
         cache.store(
@@ -3846,7 +3852,7 @@ def kv_cache_store_padded[
         ]()
 
         elementwise[write_to_cache, simd_width, target=target](
-            input_shape, context
+            Coord(input_shape), context
         )
     else:
         comptime compile_target = _current_target()
@@ -3855,7 +3861,7 @@ def kv_cache_store_padded[
         ]()
 
         elementwise[write_to_cache, simd_width, target=target](
-            input_shape, context
+            Coord(input_shape), context
         )
 
 
@@ -3921,25 +3927,27 @@ def kv_cache_2m_iadd_dispatch[
 
     @parameter
     @__copy_capture(kv, k_cache, v_cache, input_row_offsets, m, M)
-    def iadd[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        comptime assert rank == 2, "Rank must be 2"
+    def iadd[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 2, "Rank must be 2"
 
         var cache: collection_t.CacheType
         var row_idx: Int
 
-        if idx[0] < m:
+        if Int(idx[0].value()) < m:
             cache = k_cache
-            row_idx = idx[0]
+            row_idx = Int(idx[0].value())
         else:
             cache = v_cache
-            row_idx = idx[0] - m
+            row_idx = Int(idx[0].value()) - m
 
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
         var tok_idx = Int(UInt32(row_idx) - input_row_offsets[batch_idx])
 
         var h_idx: Int
         var hd_idx: Int
-        h_idx, hd_idx = udivmod(idx[1], collection_t.kv_params.head_size)
+        h_idx, hd_idx = udivmod(
+            Int(idx[1].value()), collection_t.kv_params.head_size
+        )
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = tok_idx + cache_length
@@ -3948,7 +3956,7 @@ def kv_cache_2m_iadd_dispatch[
             batch_idx, h_idx, cache_token_idx, hd_idx
         )
         var a_val = rebind[type_of(old_val)](
-            kv.load[width=width](idx[0], idx[1])
+            kv.load[width=width](Int(idx[0].value()), Int(idx[1].value()))
         )
 
         cache.store(
@@ -3967,9 +3975,13 @@ def kv_cache_2m_iadd_dispatch[
             comptime compile_target = get_gpu_target()
             comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-            elementwise[iadd, simd_width, target=target](elementwise_shape, ctx)
+            elementwise[iadd, simd_width, target=target](
+                Coord(elementwise_shape), ctx
+            )
     else:
         comptime compile_target = _current_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[iadd, simd_width, target=target](elementwise_shape, ctx)
+        elementwise[iadd, simd_width, target=target](
+            Coord(elementwise_shape), ctx
+        )

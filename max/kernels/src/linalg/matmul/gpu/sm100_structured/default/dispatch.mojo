@@ -1037,18 +1037,17 @@ def _matmul_dispatch_sm100[
             @parameter
             @__copy_capture(c_tt)
             def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
+                simd_width: Int, alignment: Int = 1
+            ](idx: Coord):
                 comptime assert c_tt.flat_rank >= 2
-                comptime assert idx.element_type.is_integral()
-                var c_coord = Coord(idx[0], idx[1])
                 var c_val = c_tt.load[
                     width=simd_width,
                     # load_alignment is in bytes, lambda alignment is in elements
                     alignment=alignment * size_of[c_type](),
-                ](c_coord)
+                ](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
-                    IndexList[2](idx[0], idx[1]), c_val
+                    IndexList[2](Int(idx[0].value()), Int(idx[1].value())),
+                    c_val,
                 )
 
             blackwell_matmul_tma_umma_warp_specialized[
@@ -1064,9 +1063,7 @@ def _matmul_dispatch_sm100[
                 epilogue_tensor=epilogue_tensor,
             )
 
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
+            elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.

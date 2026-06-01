@@ -28,7 +28,14 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from layout.tile_tensor import row_major
 from std.gpu.host.info import is_gpu
 from kv_cache.types import KVCacheStaticParams
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, row_major
+from layout import (
+    Coord,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import (
     copy_kv_pages_d2h,
@@ -189,20 +196,25 @@ struct Struct_kv_cache_store_k_scales_paged:
         @__copy_capture(k_cache, input_row_offsets_tt, input_row_offsets)
         def write_scale_to_cache[
             width: Int,
-            rank: Int,
             alignment: Int = 1,
-        ](idx: IndexList[rank]) capturing:
+        ](idx: Coord) capturing:
             var loaded_val = input_k_scales._lambda_load[
                 width=width, element_alignment=alignment
             ](
-                rebind[IndexList[3]](idx),
+                IndexList[3](
+                    Int(idx[0].value()),
+                    Int(idx[1].value()),
+                    Int(idx[2].value()),
+                ),
             )
             var batch_idx = get_batch_from_row_offsets(
-                input_row_offsets_tt, idx[0]
+                input_row_offsets_tt, Int(idx[0].value())
             )
-            var token_idx = Int(UInt32(idx[0]) - input_row_offsets[batch_idx])
-            var h_idx = idx[1]
-            var hd_idx = idx[2]
+            var token_idx = Int(
+                UInt32(idx[0].value()) - input_row_offsets[batch_idx]
+            )
+            var h_idx = Int(idx[1].value())
+            var hd_idx = Int(idx[2].value())
             var cache_length = k_cache.cache_length(batch_idx)
             var cache_token_idx = token_idx + cache_length
             k_cache.store_scale(
@@ -221,7 +233,7 @@ struct Struct_kv_cache_store_k_scales_paged:
         ]()
 
         elementwise[write_scale_to_cache, simd_width, target=target](
-            input_k_scales.shape(), context
+            Coord(input_k_scales.shape()), context
         )
 
 

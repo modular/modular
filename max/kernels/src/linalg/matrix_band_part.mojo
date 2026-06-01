@@ -18,6 +18,7 @@ from std.gpu.host import DeviceContext
 from layout import TileTensor
 
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
@@ -96,15 +97,10 @@ def _matrix_band_part_impl[
     comptime assert rank >= 2, "Matrix band only supports rank >=2"
 
     @always_inline
-    def func[
-        simd_width: Int, inner_rank: Int, alignment: Int = 1
-    ](index: IndexList[inner_rank]) {
-        var lower_diagonal_index,
-        var upper_diagonal_index,
-        var output,
-        var input_0_fn,
-    }:
-        var idx = rebind[IndexList[rank]](index)
+    def func[simd_width: Int, alignment: Int = 1](index: Coord) {var}:
+        var idx = IndexList[rank]()
+        comptime for i in range(rank):
+            idx[i] = Int(index[i].value())
 
         var row = idx[rank - 2]
         var col = idx[rank - 1]
@@ -118,7 +114,7 @@ def _matrix_band_part_impl[
 
         if in_band:
             output.store_linear(
-                idx, rebind[Scalar[dtype]](input_0_fn[simd_width, rank](idx))
+                idx, rebind[Scalar[dtype]](input_0_fn[1, rank](idx))
             )
         else:
             output.store_linear(idx, Scalar[dtype](0))
@@ -126,4 +122,4 @@ def _matrix_band_part_impl[
     elementwise[
         simd_width=1,
         target=target,
-    ](func, input_shape, ctx)
+    ](func, output.layout.shape_coord(), ctx)

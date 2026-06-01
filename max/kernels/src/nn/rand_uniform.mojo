@@ -17,6 +17,7 @@ from std.random import Random
 from extensibility import _dot_prod
 
 from std.utils import IndexList
+from std.utils.coord import Coord, coord_to_index_list
 
 
 def random_uniform[
@@ -62,12 +63,12 @@ def random_uniform[
     @parameter
     @always_inline
     @__copy_capture(strides, delta, seed_ptr)
-    def generate[
-        width: Int, _rank: Int, alignment: Int = 1
-    ](idx: IndexList[_rank],):
+    def generate[width: Int, alignment: Int = 1](idx: Coord):
         comptime assert width <= 4
 
-        var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
+        var offset = _dot_prod(
+            rebind[type_of(strides)](coord_to_index_list(idx)), strides
+        )
 
         var seed_value = seed_ptr[0]
 
@@ -76,6 +77,8 @@ def random_uniform[
         var values: SIMD[DType.float32, 4] = generator.step_uniform()
         values = values * delta + Float32(lower_bound)
 
-        output_fn[width=width](idx, values.cast[dtype]().slice[width]())
+        output_fn[width=width](
+            coord_to_index_list(idx), values.cast[dtype]().slice[width]()
+        )
 
-    elementwise[generate, simd_width=4, target=target](shape, ctx)
+    elementwise[generate, simd_width=4, target=target](Coord(shape), ctx)

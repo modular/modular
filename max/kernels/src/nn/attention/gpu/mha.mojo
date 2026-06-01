@@ -67,6 +67,7 @@ from layout import (
     UNKNOWN_VALUE,
     lt_to_tt,
     row_major,
+    coord_to_index_list,
 )
 from layout.layout import *
 from layout.layout_tensor import (
@@ -5966,22 +5967,20 @@ def _naive_attention[
     @__copy_capture(score)
     @parameter
     @always_inline
-    def scale_and_mask[
-        width: Int, _rank: Int, alignment: Int = 1
-    ](coords: IndexList[_rank]):
-        var vec = score.load_linear[width, alignment=alignment](
-            rebind[IndexList[4]](coords)
-        )
+    def scale_and_mask[width: Int, alignment: Int = 1](coords: Coord):
+        var score_idx = coord_to_index_list(coords)
+        var vec = score.load_linear[width, alignment=alignment](score_idx)
         vec = vec * scale.cast[dtype]()
         vec = vec + mask.load[width=width](
-            Index(coords[_rank - 2], coords[_rank - 1])
+            IndexList[2](
+                Int(coords[coords.rank - 2].value()),
+                Int(coords[coords.rank - 1].value()),
+            )
         )
-        score.store_linear[width, alignment=alignment](
-            rebind[IndexList[4]](coords), vec
-        )
+        score.store_linear[width, alignment=alignment](score_idx, vec)
 
     elementwise[scale_and_mask, simd_size](
-        Index(batch_size, num_heads, seq_len, num_keys), ctx
+        (batch_size, num_heads, seq_len, num_keys), ctx
     )
 
     softmax[dtype, simd_size, 4](score, score, axis=3)

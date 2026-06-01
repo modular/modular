@@ -20,6 +20,7 @@ from std.random import NormalRandom, Random
 from std.testing import *
 from std.sys import has_apple_gpu_accelerator
 
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 
 from layout import TileTensor, Idx, row_major
@@ -41,39 +42,39 @@ def run_elementwise[
     @always_inline
     @__copy_capture(out_buffer)
     @parameter
-    def func_uniform[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var rng_state = Random(seed=UInt64(idx0[0]))
+    def func_uniform[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var rng_state = Random(seed=UInt64(idx0[0].value()))
         var rng = rng_state.step_uniform()
 
         # idx0[0] is safe because we are working on rank 1 buffers
         comptime if simd_width == 1:
-            out_buffer[idx0[0]] = rng[0].cast[dtype]()
+            out_buffer[idx0[0].value()] = rng[0].cast[dtype]()
         else:
             comptime for i in range(simd_width):
-                out_buffer[idx0[0] + i] = rng[i % len(rng)].cast[dtype]()
+                out_buffer[Int(idx0[0].value()) + i] = rng[i % len(rng)].cast[
+                    dtype
+                ]()
 
     @always_inline
     @__copy_capture(out_buffer)
     @parameter
-    def func_normal[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var rng_state = NormalRandom(seed=UInt64(idx0[0]))
+    def func_normal[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var rng_state = NormalRandom(seed=UInt64(idx0[0].value()))
         var rng = rng_state.step_normal()
 
         # idx0[0] is safe because we are working on rank 1 buffers
         comptime if simd_width == 1:
-            out_buffer[idx0[0]] = rng[0].cast[dtype]()
+            out_buffer[idx0[0].value()] = rng[0].cast[dtype]()
         else:
             comptime for i in range(simd_width):
-                out_buffer[idx0[0] + i] = rng[i % len(rng)].cast[dtype]()
+                out_buffer[Int(idx0[0].value()) + i] = rng[i % len(rng)].cast[
+                    dtype
+                ]()
 
     comptime if distribution == "uniform":
-        elementwise[func_uniform, 4, target="gpu"](Index(length), ctx)
+        elementwise[func_uniform, 4, target="gpu"](Coord(length), ctx)
     else:
-        elementwise[func_normal, 4, target="gpu"](Index(length), ctx)
+        elementwise[func_normal, 4, target="gpu"](Coord(length), ctx)
 
     ctx.enqueue_copy(out_host.ptr, out_device)
     ctx.synchronize()

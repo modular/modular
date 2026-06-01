@@ -36,6 +36,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
+from std.utils.coord import Coord
 
 
 from op_utils import (
@@ -129,8 +130,8 @@ def pad_constant_op[
         in_strides,
         rank,
     )
-    def func[width: Int, rank_: Int, alignment: Int = 1](idx: IndexList[rank_]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem = i
         var in_flat = 0
         var in_bounds = True
@@ -149,12 +150,10 @@ def pad_constant_op[
             out_ptr[i] = constant
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](total), ctx)
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 
@@ -214,8 +213,8 @@ def pad_reflect_op[
         in_strides,
         rank,
     )
-    def func[width: Int, rank_: Int, alignment: Int = 1](idx: IndexList[rank_]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem = i
         var in_flat = 0
         for d in range(rank):
@@ -230,7 +229,7 @@ def pad_reflect_op[
             in_flat += input_coord * in_strides[d]
         out_ptr[i] = in_ptr[in_flat]
 
-    elementwise[func, simd_width=1](IndexList[1](total), ctx)
+    elementwise[func, simd_width=1](Coord(total), ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -287,8 +286,8 @@ def pad_repeat_op[
         in_strides,
         rank,
     )
-    def func[width: Int, rank_: Int, alignment: Int = 1](idx: IndexList[rank_]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem = i
         var in_flat = 0
         for d in range(rank):
@@ -300,7 +299,7 @@ def pad_repeat_op[
             in_flat += input_coord * in_strides[d]
         out_ptr[i] = in_ptr[in_flat]
 
-    elementwise[func, simd_width=1](IndexList[1](total), ctx)
+    elementwise[func, simd_width=1](Coord(total), ctx)
 
 
 # ===----------------------------------------------------------------------=== #

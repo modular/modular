@@ -240,6 +240,9 @@ This version is still a work in progress.
   dispatched the same way, with a single worker used automatically when the
   problem size is small. The dedicated small-tensor `concat` fast path has been
   removed in favor of the existing serial/parallel dispatch.
+- Updated `elementwise` call sites across MAX kernels and benchmarks to use
+  `Coord`-native indexing, fixing compile failures caused by invalid
+  `Coord`/`IndexList` conversions.
 
 ## Breaking changes
 

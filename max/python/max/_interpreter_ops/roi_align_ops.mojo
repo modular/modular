@@ -25,6 +25,7 @@ from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
+from std.utils.coord import Coord
 from std.utils.numerics import min_or_neg_inf
 
 from std.algorithm.functional import elementwise, IndexList
@@ -121,10 +122,8 @@ def roi_align_op[
         mode_flag,
         offset,
     )
-    def func[
-        width_param: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank],):
-        var i = idx[0]
+    def func[width_param: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem, c = divmod(i, channels)
         var rem2, pw = divmod(rem, out_w)
         var ri, ph = divmod(rem2, out_h)
@@ -261,12 +260,10 @@ def roi_align_op[
             out_ptr[i] = pool_val
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](total), ctx)
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 

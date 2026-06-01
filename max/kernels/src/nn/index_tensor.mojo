@@ -284,9 +284,11 @@ def _index_tensor_impl[
     # output to an index in the input
     @parameter
     def index_tensor_elementwise_fn[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](output_idx_arg: IndexList[rank]) capturing -> None:
-        var output_idx = rebind[IndexList[output.rank]](output_idx_arg)
+        simd_width: Int, alignment: Int = 1
+    ](output_idx_arg: Coord) capturing -> None:
+        var output_idx = IndexList[output.rank]()
+        comptime for i in range(output.rank):
+            output_idx[i] = Int(output_idx_arg[i].value())
         var data_idx = IndexList[data.rank]()
         var indices_idx = IndexList[indices.rank]()
         var indices_last_dim = Int(indices.dim[indices.rank - 1]())
@@ -347,13 +349,13 @@ def _index_tensor_impl[
                 index_tensor_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cpu_ctx)
+            ](output.layout.shape_coord(), cpu_ctx)
         else:
             elementwise[
                 index_tensor_elementwise_fn,
                 1,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cpu_ctx)
+            ](output.layout.shape_coord(), cpu_ctx)
     else:
         assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
@@ -362,13 +364,13 @@ def _index_tensor_impl[
                 index_tensor_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
+            ](output.layout.shape_coord(), cuda_ctx)
         else:
             elementwise[
                 index_tensor_elementwise_fn,
                 1,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
+            ](output.layout.shape_coord(), cuda_ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -487,34 +489,34 @@ def advanced_indexing_getitem[
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
-        out_tensor_rank: Int,
         alignment: Int = 1,
-    ](output_index: IndexList[out_tensor_rank]) capturing:
+    ](output_index: Coord) capturing:
         input_index = IndexList[input_rank]()
 
         # Find the associated output index from input index
         comptime for input_dim in range(input_rank):
             comptime if input_dim < start_axis:
-                input_index[input_dim] = output_index[input_dim]
+                input_index[input_dim] = Int(output_index[input_dim].value())
             elif input_dim >= start_axis + num_index_tensors:
-                input_index[input_dim] = output_index[
-                    input_dim - num_index_tensors + index_rank
-                ]
+                input_index[input_dim] = Int(
+                    output_index[
+                        input_dim - num_index_tensors + index_rank
+                    ].value()
+                )
             else:
                 comptime index_tensor_offset = input_dim - start_axis
                 var index_tensor_indices = IndexList[index_rank]()
 
                 comptime for offset in range(index_rank):
-                    index_tensor_indices[offset] = output_index[
-                        offset + start_axis
-                    ]
+                    index_tensor_indices[offset] = Int(
+                        output_index[offset + start_axis].value()
+                    )
                 input_index[input_dim] = Int(
                     indices_fn[index_tensor_offset](index_tensor_indices)
                 )
 
-        var out_coord = Coord(output_index)
         out_tensor.store[width=width, alignment=1](
-            out_coord,
+            output_index,
             input_tensor_fn[width=width](input_index),
         )
 
@@ -536,14 +538,14 @@ def advanced_indexing_getitem[
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(out_tensor.layout.shape_coord()), ctx)
+        ](out_tensor.layout.shape_coord(), ctx)
     else:
         elementwise[
             elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(out_tensor.layout.shape_coord()), ctx)
+        ](out_tensor.layout.shape_coord(), ctx)
 
 
 @always_inline
@@ -703,24 +705,29 @@ def advanced_indexing_setitem_inplace[
     @parameter
     @always_inline
     def elementwise_fn_wrapper[
-        width: Int, iteration_rank: Int, alignment: Int = 1
-    ](iteration_indices: IndexList[iteration_rank]) capturing:
+        width: Int, alignment: Int = 1
+    ](iteration_indices: Coord) capturing:
         var index_tensor_indices = IndexList[index_rank]()
 
         # Find the index into the indexing tensors from the common index
         comptime for i in range(index_rank):
-            index_tensor_indices[i] = iteration_indices[i + start_axis]
+            index_tensor_indices[i] = Int(
+                iteration_indices[i + start_axis].value()
+            )
 
         # Find the index into the inputs from the common index
         var input_tensor_indices = IndexList[input_tensor.rank]()
 
         comptime for i in range(input_tensor.rank):
             comptime if i < start_axis:
-                input_tensor_indices[i] = iteration_indices[i]
+                input_tensor_indices[i] = Int(iteration_indices[i].value())
             elif i >= start_axis + num_index_tensors:
-                input_tensor_indices[i] = iteration_indices[
-                    i - num_index_tensors + index_rank
-                ]
+                input_tensor_indices[i] = Int(
+                    iteration_indices[
+                        i - num_index_tensors + index_rank
+                    ].value()
+                )
+
             else:
                 comptime index_tensor_offset = i - start_axis
                 input_tensor_indices[i] = Int(
@@ -728,11 +735,12 @@ def advanced_indexing_setitem_inplace[
                 )
 
         var input_tensor_coord = Coord(input_tensor_indices)
+        var updates_indices = IndexList[updates_rank]()
+        comptime for i in range(updates_rank):
+            updates_indices[i] = Int(iteration_indices[i].value())
         input_tensor.store[width=width, alignment=1](
             input_tensor_coord,
-            updates_tensor_fn[width=width](
-                rebind[IndexList[updates_rank]](iteration_indices)
-            ),
+            updates_tensor_fn[width=width](updates_indices),
         )
 
     # We can vectorize the assignment only if we are
@@ -756,11 +764,11 @@ def advanced_indexing_setitem_inplace[
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](iteration_shape, ctx)
+        ](Coord(iteration_shape), ctx)
     else:
         elementwise[
             elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](iteration_shape, ctx)
+        ](Coord(iteration_shape), ctx)

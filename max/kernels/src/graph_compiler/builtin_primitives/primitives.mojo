@@ -36,6 +36,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     row_major,
+    coord_to_index_list,
 )
 from std.memory import memcpy
 from std.memory.unsafe_pointer import unsafe_cast
@@ -1445,18 +1446,18 @@ def foreach[
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
-        rank: Int,
         alignment: Int = 1,
-    ](index: IndexList[rank]) capturing:
-        var val = func[width, alignment](rebind[IndexList[tensor.rank]](index))
-        tensor._fused_store[element_alignment=alignment](index, val)
+    ](index: Coord) capturing:
+        var idx = coord_to_index_list(index)
+        var val = func[width, alignment](rebind[IndexList[tensor.rank]](idx))
+        tensor._fused_store[element_alignment=alignment](idx, val)
 
     std.algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape(), ctx)
+    ](Coord(tensor.shape()), ctx)
 
 
 @register_internal("mogg.elemwise_for_each")
@@ -1505,9 +1506,9 @@ def foreach[
     # store can route through `_fused_store` when output-store fusion is
     # present.
     def wrapper[
-        width: Int, _rank: Int, alignment: Int = 1
-    ](index: IndexList[_rank]) {var func^, var tensor}:
-        var idx = rebind[IndexList[rank]](index)
+        width: Int, alignment: Int = 1
+    ](index: Coord) {var func^, var tensor}:
+        var idx = rebind[IndexList[rank]](coord_to_index_list(index))
         var val = func[width, alignment](idx)
         tensor._fused_store[element_alignment=alignment](idx, val)
 
@@ -1515,7 +1516,7 @@ def foreach[
         simd_width=simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](wrapper, tensor.shape(), ctx)
+    ](wrapper, Coord(tensor.shape()), ctx)
 
 
 @register_internal("mogg.call.foreach")
@@ -1599,10 +1600,8 @@ def foreach_out_func[
 
     @parameter
     @always_inline
-    def out_func_shim[
-        _width: Int, _rank: Int, _alignment: Int = 1
-    ](index: IndexList[_rank]) capturing:
-        idx = rebind[IndexList[rank]](index)
+    def out_func_shim[_width: Int, _alignment: Int = 1](index: Coord) capturing:
+        idx = rebind[IndexList[rank]](coord_to_index_list(index))
         out_func[_width](idx)
 
     std.algorithm.functional.elementwise[
@@ -1610,7 +1609,7 @@ def foreach_out_func[
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape(), ctx)
+    ](Coord(tensor.shape()), ctx)
 
 
 # TensorCopy intrinsic used by view kernels.

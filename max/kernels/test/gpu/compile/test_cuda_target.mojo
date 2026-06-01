@@ -34,6 +34,7 @@ from std.gpu.host.compile import _compile_code
 from std.memory import memset_zero, stack_allocation
 from std.testing import *
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
@@ -122,10 +123,8 @@ def erf_elementwise(
     @always_inline
     @__copy_capture(tid)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        var offset = tid + idx[0]
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+        var offset = tid + Int(idx[0].value())
         if offset >= len:
             return
         buf[offset] = erf(buf[offset])

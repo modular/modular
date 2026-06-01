@@ -1542,17 +1542,15 @@ def conv_transposed_gpu[
         @parameter
         @__copy_capture(output_tmp)
         @always_inline
-        def epilogue_wrapper[
-            _width: Int, _rank: Int, alignment: Int = 1
-        ](coords: IndexList[_rank]):
+        def epilogue_wrapper[_width: Int, alignment: Int = 1](coords: Coord):
             comptime align = align_of[SIMD[output_type, _width]]()
-            var idx = output_tmp.layout((Coord(coords)))
+            var idx = output_tmp.layout(coords)
             vec = output_tmp.raw_load[width=_width, alignment=align](idx)
-            epilogue(coords, vec)
+            epilogue(coord_to_index_list(coords), vec)
 
         elementwise[
             epilogue_wrapper, simd_width_of[output_type](), target="gpu"
-        ](coord_to_index_list(output.layout.shape_coord()), ctx)
+        ](output.layout.shape_coord(), ctx)
 
         _ = output_tmp_data^
 

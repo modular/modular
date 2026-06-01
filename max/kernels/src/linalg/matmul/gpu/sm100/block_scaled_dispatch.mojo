@@ -316,14 +316,13 @@ def _block_scaled_matmul_with_epilogue[
         # can't be proved when c's layout type is fully inferred.
         @parameter
         @__copy_capture(c, n)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
+        def epilogue_wrapper[simd_width: Int, alignment: Int = 1](idx: Coord):
             var c_val = rebind[SIMD[c_type, simd_width]](
-                c.load[width=simd_width](Coord(c_coord))
+                c.load[width=simd_width](idx)
             )
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
+            epilogue[c_type, simd_width, alignment=alignment](
+                Index(idx[0].value(), idx[1].value()), c_val
+            )
 
         blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
@@ -340,7 +339,7 @@ def _block_scaled_matmul_with_epilogue[
             ctx,
             alpha=tensor_sf,
         )
-        elementwise[epilogue_wrapper, simd_size, target="gpu"](Index(m, n), ctx)
+        elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
 
 
 def _vendor_blas_block_scaled_matmul_with_epilogue[
@@ -425,14 +424,13 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
             @parameter
             @__copy_capture(c_tt)
             def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
+                simd_width: Int, alignment: Int = 1
+            ](idx: Coord):
                 var c_val = rebind[SIMD[c_type, simd_width]](
-                    c_tt.load[width=simd_width](Coord(c_coord))
+                    c_tt.load[width=simd_width](idx)
                 )
                 epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
+                    Index(idx[0].value(), idx[1].value()), c_val
                 )
 
             matmul(
@@ -446,9 +444,7 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
                 transpose_b=True,
                 c_row_major=True,
             )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
+            elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.

@@ -54,10 +54,7 @@ def bench_add[
     @parameter
     @always_inline
     @__copy_capture(input0, input1, output)
-    def add[
-        simd_width: Int, _rank: Int, alignment: Int = 1
-    ](out_index: IndexList[_rank]):
-        var idx = Coord(out_index)
+    def add[simd_width: Int, alignment: Int = 1](idx: Coord):
         comptime assert input0.flat_rank >= idx.flat_rank
         var val = input0.load[width=simd_width](idx) + input1.load[
             width=simd_width
@@ -70,7 +67,9 @@ def bench_add[
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            elementwise[add, simd_width=unroll_by, target="gpu"](shape, ctx)
+            elementwise[add, simd_width=unroll_by, target="gpu"](
+                Coord(shape), ctx
+            )
 
         b.iter_custom[kernel_launch](ctx)
 

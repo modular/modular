@@ -24,7 +24,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu.host import DeviceContext
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, row_major, coord_to_index_list
 from nn.concat import _concat_gpu_elementwise
 
 from std.utils import IndexList, StaticTuple
@@ -156,19 +156,16 @@ def bench_concat[
         var input_shape = shapes[i]
 
         @parameter
-        def check[
-            width: Int, _rank: Int, alignment: Int = 1
-        ](coords: IndexList[_rank]):
-            var out_coords = coords
+        def check[width: Int, alignment: Int = 1](coords: Coord):
+            var out_coords = coord_to_index_list(coords)
             out_coords[axis] += offset
             var out_coord = Coord(out_coords)
-            var in_coord = Coord(coords)
             if output_host.load[width=1](out_coord) != input.load[width=1](
-                in_coord
+                coords
             ):
                 abort(String("mismatch at coords ", out_coords))
 
-        elementwise[check, 1](input_shape, ctx)
+        elementwise[check, 1](Coord(input_shape), ctx)
         offset += input_shape[axis]
 
     _ = input0_device_buffer

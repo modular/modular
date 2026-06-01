@@ -593,8 +593,8 @@ def gather[
 
         @always_inline
         def gather_elementwise_fn[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]) {
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {
             var axis,
             var input_shape,
             var indices_shape,
@@ -619,7 +619,7 @@ def gather[
                 input_shape.canonicalize(),
                 indices_shape.canonicalize(),
                 output_shape.canonicalize(),
-                idx,
+                coord_to_index_list(idx),
                 error_index_ptr,
             )
 
@@ -631,7 +631,7 @@ def gather[
                 _trace_description="gather",
             ](
                 gather_elementwise_fn,
-                output_shape.canonicalize(),
+                Coord(output_shape),
                 context,
             )
         else:
@@ -641,7 +641,7 @@ def gather[
                 _trace_description="gather",
             ](
                 gather_elementwise_fn,
-                output_shape.canonicalize(),
+                Coord(output_shape),
                 context,
             )
 
@@ -813,15 +813,14 @@ def scatter_nd_generator[
         @parameter
         def update_func[
             simd_width: Int,
-            _rank: Int,
             alignment: Int = 1,
-        ](_indices_coords: IndexList[_rank]):
+        ](_indices_coords: Coord):
             # Calculate how many elements to copy (this is from the innermost
             # dimensions, and is continuous memory locations).
             var count_copy = 1
             for i in range(r_minus_m):
                 count_copy = count_copy * data_shape[data.rank - 1 - i]
-            var indices_coords = rebind[IndexList[_rank]](_indices_coords)
+            var indices_coords = coord_to_index_list(_indices_coords)
 
             # Stores the full index on output, where to copy updates to.
             # Zeroing here to avoid doing it selectively within the nested loop below.
@@ -832,7 +831,7 @@ def scatter_nd_generator[
             var updates_index_tensor = IndexList[updates.rank](0)
 
             # Construct the full index on updates tensor, i.e., where to copy from.
-            for dim in range(_rank):
+            for dim in range(_indices_coords.rank):
                 updates_index_tensor[dim] = indices_coords[dim]
 
             # Construct the output_index_tensor whose elements contain the indices
@@ -846,7 +845,7 @@ def scatter_nd_generator[
                 # Used to compare to index on this dimension (idx_on_axis).
                 var input_ax_dim = data_shape[dim]
 
-                for i in range(_rank):
+                for i in range(_indices_coords.rank):
                     indices_index[i] = indices_coords[i]
                 indices_index[indices.rank - 1] = dim
 
@@ -901,22 +900,21 @@ def scatter_nd_generator[
                         updates_offset + i
                     ]
 
-        # TODO: SEE: simd_width > 1
-        var iter_shape = IndexList[indices.rank - 1]()
-
-        comptime for i in range(indices.rank - 1):
-            iter_shape[i] = Int(indices.dim[i]())
-
         comptime trace_description_str = get_static_string[
             "elementwise_impl_" + _trace_description
         ]()
+
+        # Iterate over indices.shape[:-1], i.e. one update vector per index row.
+        var iter_shape = IndexList[indices.rank - 1]()
+        comptime for i in range(indices.rank - 1):
+            iter_shape[i] = Int(indices.dim[i]())
 
         elementwise[
             update_func,
             simd_width=1,
             target=target,
             _trace_description=trace_description_str,
-        ](iter_shape, context)
+        ](Coord(iter_shape), context)
 
 
 @always_inline
@@ -1113,22 +1111,19 @@ def scatter_elements[
 
     @__copy_capture(axis, input_ax_dim)
     @parameter
-    def update_func[
-        simd_width: Int, _rank: Int, alignment: Int = 1
-    ](_indices_coords: IndexList[_rank]):
-        var indices_coords = rebind[IndexList[rank]](_indices_coords)
-        var idx_on_axis = indices[indices_coords]
-        var output_coords = indices_coords
+    def update_func[simd_width: Int, alignment: Int = 1](indices_coords: Coord):
+        var idx_on_axis = indices.to_tile_tensor()[indices_coords]
+        var output_coords = coord_to_index_list(indices_coords)
         output_coords[axis] = Int(
             _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
-        var curr = output[output_coords]
-        output[output_coords] = reduce_fn[input_type, 1](
-            curr, updates[indices_coords]
-        )
+        var curr = output.to_tile_tensor()[Coord(output_coords)]
+        output.to_tile_tensor()[Coord(output_coords)] = reduce_fn[
+            input_type, 1
+        ](curr, updates.to_tile_tensor()[indices_coords])
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[update_func, 1](indices.shape(), ctx)
+    elementwise[update_func, 1](Coord(indices.shape()), ctx)
 
 
 @always_inline
@@ -1225,14 +1220,11 @@ def gather_elements[
 
     @__copy_capture(input_ax_dim, axis)
     @parameter
-    def gather_func[
-        simd_width: Int, _rank: Int, alignment: Int = 1
-    ](_output_coords: IndexList[_rank]):
-        var output_coords = Coord(_output_coords)
+    def gather_func[simd_width: Int, alignment: Int = 1](output_coords: Coord):
         comptime assert indices.flat_rank >= output_coords.flat_rank
         comptime assert output.flat_rank >= output_coords.flat_rank
         var idx_on_axis = indices.load[width=1](output_coords)
-        var input_idx = _output_coords
+        var input_idx = coord_to_index_list(output_coords)
         input_idx[axis] = Int(
             _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
@@ -1241,9 +1233,7 @@ def gather_elements[
         output.store(output_coords, input.load[width=1](input_coords))
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[gather_func, 1](
-        coord_to_index_list(output.layout.shape_coord()), ctx
-    )
+    elementwise[gather_func, 1](output.layout.shape_coord(), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1386,9 +1376,9 @@ def _gather_nd_impl[
     # output to an index in the input
     @parameter
     def gather_nd_elementwise_fn[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](output_idx_arg: IndexList[rank]):
-        var output_idx = rebind[IndexList[output.rank]](output_idx_arg)
+        simd_width: Int, alignment: Int = 1
+    ](output_idx_arg: Coord):
+        var output_idx = coord_to_index_list(output_idx_arg)
         var data_idx = IndexList[data.rank]()
         var indices_idx = IndexList[indices.rank]()
         var indices_last_dim = Int(indices.dim[indices.rank - 1]())
@@ -1420,9 +1410,9 @@ def _gather_nd_impl[
             ), "data index out of bounds"
 
         comptime for i in range(output.rank):
-            assert output_idx[i] >= 0 and output_idx[i] < Int(
-                output.dim[i]()
-            ), "output index out of bounds"
+            assert Int(output_idx[i].value()) >= 0 and Int(
+                output_idx[i].value()
+            ) < Int(output.dim[i]()), "output index out of bounds"
 
         var data_coord = Coord(data_idx)
         var output_coord = Coord(output_idx)
@@ -1459,13 +1449,13 @@ def _gather_nd_impl[
                 gather_nd_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cpu_ctx)
+            ](output.layout.shape_coord(), cpu_ctx)
         else:
             elementwise[
                 gather_nd_elementwise_fn,
                 1,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cpu_ctx)
+            ](output.layout.shape_coord(), cpu_ctx)
     else:
         assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
@@ -1474,13 +1464,13 @@ def _gather_nd_impl[
                 gather_nd_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
+            ](output.layout.shape_coord(), cuda_ctx)
         else:
             elementwise[
                 gather_nd_elementwise_fn,
                 1,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
+            ](output.layout.shape_coord(), cuda_ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1539,14 +1529,12 @@ def scatter_set_constant[
 
     @always_inline
     @parameter
-    def scatter_set_constant_fn[
-        width: Int, rank_: Int, alignment: Int = 1
-    ](idx: IndexList[rank_]):
-        comptime assert rank_ == 1, "scatter_set_constant_fn: rank must be 1"
+    def scatter_set_constant_fn[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 1, "scatter_set_constant_fn: rank must be 1"
 
         data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value
 
-    var dispatch_shape = IndexList[1](Int(indices.dim[0]()))
+    var dispatch_shape = Coord(Int(indices.dim[0]()))
     elementwise[
         func=scatter_set_constant_fn,
         simd_width=1,

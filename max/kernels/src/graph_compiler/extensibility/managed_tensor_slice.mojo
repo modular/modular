@@ -47,6 +47,7 @@ from layout import (
     Layout,
     LayoutTensor,
     TileTensor,
+    coord_to_index_list,
 )
 from layout.coord import (
     ComptimeInt,
@@ -2279,18 +2280,18 @@ def foreach[
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
-        rank: Int,
         alignment: Int = 1,
-    ](index: IndexList[rank]) capturing:
-        var val = func[width](rebind[IndexList[tensor.rank]](index))
-        tensor._fused_store[element_alignment=alignment](index, val)
+    ](index: Coord) capturing:
+        var idx = rebind[IndexList[rank]](coord_to_index_list(index))
+        var val = func[width](idx)
+        tensor._fused_store[element_alignment=alignment](idx, val)
 
     std.algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape(), ctx)
+    ](Coord(tensor.shape()), ctx)
 
 
 def _shape_types_compatible[

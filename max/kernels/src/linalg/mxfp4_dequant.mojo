@@ -36,6 +36,7 @@ from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
 from std.algorithm.functional import elementwise
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import Index, IndexList
 from std.sys.info import simd_width_of
 
@@ -238,17 +239,11 @@ def _cast_bf16_to_fp8(
     @always_inline
     @__copy_capture(out_tt, in_tt)
     @parameter
-    def cast_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank],):
-        comptime assert rank == 2, "cast_fn only supports rank-2 tensors"
-        var idx = rebind[IndexList[2]](idx_arg)
-        var coord = Coord(idx)
-        comptime assert in_tt.flat_rank >= coord.flat_rank
-        comptime assert out_tt.flat_rank >= coord.flat_rank
+    def cast_fn[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 2, "cast_fn only supports rank-2 tensors"
         out_tt.store[width=width](
-            coord,
-            in_tt.load[width=width](coord).cast[out_tt.dtype](),
+            idx,
+            in_tt.load[width=width](idx).cast[out_tt.dtype](),
         )
 
     elementwise[
@@ -256,4 +251,4 @@ def _cast_bf16_to_fp8(
         simd_width_of[input.dtype](),
         target="gpu",
         _trace_description="mxfp4_dequant_cast",
-    ](Index(num_rows, num_cols), ctx)
+    ]((num_rows, num_cols), ctx)

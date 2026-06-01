@@ -21,18 +21,17 @@ from std.utils.index import IndexList
 
 
 def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
-    var shape = coord_to_index_list(tensor.layout.shape_coord())
+    var shape = tensor.layout.shape_coord()
     var stride = coord_to_index_list(tensor.layout.stride_coord())
-    print("New shape:", shape)
+    print("New shape:", coord_to_index_list(shape))
     print("New strides:", stride)
 
     @always_inline
     @parameter
     def print_elements_lambda[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](coords: IndexList[rank]):
-        var index = rebind[IndexList[tensor.rank]](coords)
-        var idx = tensor.layout(Coord(index))
+        simd_width: Int, alignment: Int = 1
+    ](coords: Coord):
+        var idx = tensor.layout(coords)
         print(tensor.raw_load(idx))
 
     elementwise[print_elements_lambda, 1](shape, DeviceContext(api="cpu"))

@@ -18,6 +18,7 @@ from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
+from std.utils.coord import Coord
 
 from std.algorithm.functional import elementwise, IndexList
 
@@ -122,8 +123,8 @@ def gather_op[
         out_axis_stride,
         inner_size,
     )
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var outer_idx, rem = divmod(i, out_axis_stride)
         var idx_pos, inner_idx = divmod(rem, inner_size)
         var gather_idx = Int(indices_ptr[idx_pos])
@@ -133,12 +134,10 @@ def gather_op[
         out_ptr[i] = in_ptr[in_flat]
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](total), ctx)
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 
@@ -327,8 +326,8 @@ def gather_nd_op[
         s3,
         s4,
     )
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var batch_idx, rem = divmod(i, out_batch_stride)
         var indices_outer_idx, suffix_idx = divmod(rem, suffix_size)
 
@@ -354,12 +353,10 @@ def gather_nd_op[
         out_ptr[i] = in_ptr[in_offset]
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](total), ctx)
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 
@@ -1492,8 +1489,8 @@ def scatter_nd_op[
         s3,
         s4,
     )
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var batch_idx, rem = divmod(i, in_batch_stride)
         var outer_idx, suffix_idx = divmod(rem, suffix_size)
 
@@ -1515,12 +1512,10 @@ def scatter_nd_op[
         out_ptr[out_offset] = updates_ptr[i]
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](total), ctx)
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 

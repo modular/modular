@@ -34,6 +34,7 @@ from layout import (
     RowMajorLayout,
     TensorLayout,
     TileTensor,
+    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.fused_qk_rope import rope_value
@@ -134,10 +135,10 @@ def _rope_split_store_ragged_impl[
             input_row_offsets,
         )
         def rope_split_store_fn[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx_arg: IndexList[rank]):
-            comptime assert rank == 2
-            var idx = rebind[IndexList[2]](idx_arg)
+            simd_width: Int, alignment: Int = 1
+        ](idx_arg: Coord):
+            comptime assert idx_arg.rank == 2
+            var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
             var global_token_idx = idx[0]
             var col = idx[1]
 
@@ -282,7 +283,7 @@ def _rope_split_store_ragged_impl[
                     rebind[SIMD[kv_type, simd_width]](val),
                 )
 
-        var launch_shape = IndexList[2](total_seq_len, combined_dim)
+        var launch_shape = (total_seq_len, combined_dim)
         comptime compile_target = _current_target() if is_cpu[
             target
         ]() else get_gpu_target()
@@ -381,11 +382,9 @@ def _rope_split_store_ragged_impl[
             q_out_ptr,
             input_row_offsets,
         )
-        def rope_q_fn[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx_arg: IndexList[rank]):
-            comptime assert rank == 2
-            var idx = rebind[IndexList[2]](idx_arg)
+        def rope_q_fn[simd_width: Int, alignment: Int = 1](idx_arg: Coord):
+            comptime assert idx_arg.rank == 2
+            var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
             var global_token_idx = idx[0]
             var col = idx[1]
             comptime if simd_width >= 2:
@@ -431,7 +430,7 @@ def _rope_split_store_ragged_impl[
                     var res = rope_value(val, freq)
                     (q_out_ptr + q_base).store(res)
 
-        var q_launch_shape = IndexList[2](total_seq_len, q_dim)
+        var q_launch_shape = (total_seq_len, q_dim)
         var q_device_ctx = context.value() if context else DeviceContext(
             api="cpu"
         )
@@ -474,9 +473,9 @@ def _rope_split_store_ragged_impl[
             input_row_offsets,
         )
         def rope_split_store_fp8_fn[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx_arg: IndexList[rank]):
-            comptime assert rank == 2
+            simd_width: Int, alignment: Int = 1
+        ](idx_arg: Coord):
+            comptime assert idx_arg.rank == 2
             # `elementwise` may instantiate this function at smaller
             # widths (notably width=1) for the uneven-SIMD tail. The fp8
             # block-quantize body is only meaningful at the launch width
@@ -484,7 +483,7 @@ def _rope_split_store_ragged_impl[
             # type system doesn't have to handle width=1 cases that
             # would break rope_value's width/2 internals.
             comptime if simd_width == kv_simd_width:
-                var idx = rebind[IndexList[2]](idx_arg)
+                var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
                 var global_token_idx = idx[0]
                 # col here ranges over flattened [k_dim + v_dim] in element
                 # units (elementwise scaled by simd_width so col is the
@@ -628,9 +627,7 @@ def _rope_split_store_ragged_impl[
                     )
 
         # KV launch: one thread per block. Range scaled by simd_width.
-        var kv_launch_shape = IndexList[2](
-            total_seq_len, num_kv_blocks_per_token
-        )
+        var kv_launch_shape = (total_seq_len, num_kv_blocks_per_token)
         var device_ctx = context.value() if context else DeviceContext(
             api="cpu"
         )

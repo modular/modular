@@ -1328,23 +1328,19 @@ def split_k_reduce[
 ) raises:
     comptime c_type = c.dtype
     comptime simd_width = simd_width_of[c_type, target=get_gpu_target()]()
-    var c_lt = c.to_layout_tensor()
-    var ws_lt = work_space.to_layout_tensor()
-    var num_partitions = ws_lt.dim[0]()
-    var M = c_lt.dim[0]()
-    var N = c_lt.dim[1]()
+    var num_partitions = Int(work_space.dim[0]())
+    var M = Int(c.dim[0]())
+    var N = Int(c.dim[1]())
 
     @always_inline
-    @__copy_capture(c_lt, ws_lt, num_partitions)
+    @__copy_capture(c, work_space, num_partitions)
     @parameter
-    def _reduce[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](c_coord: IndexList[rank]):
-        var idx = Index(0, c_coord[0], c_coord[1])
-        var vec = ws_lt.load[width=simd_width](idx)
+    def _reduce[simd_width: Int, alignment: Int = 1](c_coord: Coord):
+        var idx = Coord(Idx[0], c_coord[0], c_coord[1])
+        var vec = work_space.load[width=simd_width](idx)
         for k in range(1, num_partitions):
-            vec += ws_lt.load[width=simd_width](
-                Index(k, c_coord[0], c_coord[1])
+            vec += work_space.load[width=simd_width](
+                (k, c_coord[0], c_coord[1])
             )
 
         comptime align = align_of[SIMD[c_type, simd_width]]()
@@ -1352,14 +1348,15 @@ def split_k_reduce[
         comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             epilogue[alignment=align](
-                rebind[IndexList[2]](c_coord), vec.cast[c_type]()
+                IndexList[2](Int(c_coord[0].value()), Int(c_coord[1].value())),
+                vec.cast[c_type](),
             )
         else:
-            c_lt.store[width=simd_width](
-                c_coord[0], c_coord[1], vec.cast[c_type]()
+            c.store[width=simd_width](
+                (c_coord[0], c_coord[1]), vec.cast[c_type]()
             )
 
-    elementwise[_reduce, simd_width, target="gpu"](Index(M, N), ctx)
+    elementwise[_reduce, simd_width, target="gpu"]((M, N), ctx)
 
 
 def multistage_gemm[
