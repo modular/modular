@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -52,6 +53,33 @@ if TYPE_CHECKING:
     from max.pipelines.modeling.types import PipelineTokenizer
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _count_token_subsequence(
+    content: Sequence[int], special_tags: Sequence[int]
+) -> int:
+    """Counts non-overlapping occurrences of ``special_tags`` in ``content``.
+
+    Used only on the matcher-rejection diagnostic path to count how many
+    tool-call section markers were already committed. ``special_tags`` is the
+    section-begin (or -end) token-id sequence — a single token for most
+    parsers, so this is effectively a count. Runs O(len(content)); acceptable
+    because it fires only when a rejection has already occurred.
+    """
+    width = len(special_tags)
+    if width == 0:
+        return 0
+    tag_ids = list(special_tags)
+    count = 0
+    i = 0
+    last_start = len(content) - width
+    while i <= last_start:
+        if list(content[i : i + width]) == tag_ids:
+            count += 1
+            i += width
+        else:
+            i += 1
+    return count
 
 
 class _TikTokenAdapter:
@@ -767,6 +795,63 @@ class StructuredOutputHelper:
             ctx.matcher.rollback(tokens_consumed)
         ctx.restore_grammar_state(fsm_snap)
 
+    def _rejection_diagnostics(
+        self,
+        ctx: TextGenerationContextType,
+        committed_tokens: list[int],
+        committed_idx: int,
+    ) -> str:
+        """Best-effort extra state for the matcher-rejection error log.
+
+        Runs only on the (rare) rejection path and is fully guarded so a
+        diagnostic failure can never crash the async worker thread. Surfaces
+        whether the rejection landed in the middle of a tool call (a desync
+        signature) versus at a clean grammar boundary:
+
+        * ``matcher_accepting=False`` means the matcher was mid-structure
+          (inside a call header / args), not at a stoppable boundary.
+        * ``open_sections>0`` means more ``<|tool_calls_section_begin|>`` than
+          ``...section_end|>`` are committed, i.e. an open tool-call section.
+        * ``committed_token_ids`` is this spec-decode step's accepted-drafts +
+          bonus token, as raw token IDs, so the exact desyncing batch can be
+          reconstructed offline against the tokenizer.
+
+        Only token IDs are logged (no decoded text), so no model output text
+        reaches the logs; reconstruct decoded forms after the fact.
+        """
+        try:
+            matcher = ctx.matcher
+            snapshot = ctx.snapshot_grammar_state()
+
+            # "Inside an open tool-call section": section-begins minus
+            # section-ends committed so far.
+            delims = self.tool_call_region_delimiters
+            open_sections = -1
+            if (
+                delims is not None
+                and delims.start_token_ids
+                and delims.end_token_ids
+            ):
+                generated = [int(t) for t in ctx.tokens.generated]
+                open_sections = _count_token_subsequence(
+                    generated, delims.start_token_ids
+                ) - _count_token_subsequence(generated, delims.end_token_ids)
+
+            return (
+                f"reject_idx={committed_idx}/{len(committed_tokens)} "
+                f"matcher_accepting="
+                f"{matcher.is_accepting() if matcher is not None else '?'} "
+                f"matcher_stopped="
+                f"{matcher.is_stopped() if matcher is not None else '?'} "
+                f"enforced={ctx.grammar_enforced} "
+                f"tools_forced={ctx.tools_forced} "
+                f"in_thinking_region={snapshot.in_thinking_region} "
+                f"open_sections={open_sections} "
+                f"committed_token_ids={list(committed_tokens)}"
+            )
+        except Exception as e:
+            return f"<diagnostics unavailable: {e!r}>"
+
     @traced
     def advance_fsm_and_compute_bitmasks(
         self,
@@ -865,12 +950,15 @@ class StructuredOutputHelper:
                             "Async matcher rejected token %d "
                             "(request %s, role=%s); disabling enforcement "
                             "for the rest of the request. "
-                            "matcher_errors=%s matcher_warnings=%s",
+                            "matcher_errors=%s matcher_warnings=%s %s",
                             token,
                             ctx.request_id,
                             role,
                             ctx.matcher.get_error(),
                             ctx.matcher.get_grammar_warnings(),
+                            self._rejection_diagnostics(
+                                ctx, committed_tokens, committed_idx
+                            ),
                         )
                         ctx.grammar_enforced = False
 

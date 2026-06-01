@@ -2521,10 +2521,20 @@ class OverlapTextGenerationPipeline(
                 # ``finally`` (dispatch failure, AsyncRT shutdown) degrades
                 # to a noisy bitmask race instead of a silent hang.
                 if not prev_evt.wait(timeout=5.0):
+                    batch_request_ids = [
+                        str(ctx.request_id) for ctx in context_batch
+                    ]
+                    callback_request_ids = [
+                        str(rid)
+                        for rid in (spec_state.callback_request_ids or [])
+                    ]
                     logger.error(
                         "Async bitmask callback's done_event was not set "
                         "within 5s; proceeding with sync_prime — pinned "
-                        "bitmask may have been stomped by the worker."
+                        "bitmask may have been stomped by the worker. "
+                        "batch_request_ids=%s callback_request_ids=%s",
+                        batch_request_ids,
+                        callback_request_ids,
                     )
             # Cleared here so the next sync_prime doesn't re-wait on this
             # already-consumed event after a callback-less iter (e.g.

@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
-from max.pipelines.core import TextContext
+from max.pipelines.core import StructuredOutputRegionDelimiters, TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
@@ -27,7 +27,10 @@ from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
     AsyncBatch,
 )
-from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
+from max.pipelines.lib.pipeline_variants.utils import (
+    StructuredOutputHelper,
+    _count_token_subsequence,
+)
 from max.pipelines.lib.registry import get_pipeline_for_task
 from max.pipelines.modeling.types import (
     PipelineTask,
@@ -35,6 +38,79 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
     TokenBuffer,
 )
+
+
+@pytest.mark.parametrize(
+    "content,special_tags,expected",
+    [
+        ([5, 1, 2, 5, 3, 5], [5], 3),  # single-token marker (Kimi case)
+        ([1, 2, 3], [5], 0),
+        ([], [5], 0),
+        ([1, 2, 3], [], 0),  # empty tags never match
+        ([9, 8, 1, 9, 8], [9, 8], 2),  # multi-token marker
+        ([7, 7, 7, 7], [7, 7], 2),  # no double-counting overlaps
+    ],
+)
+def test_count_token_subsequence(
+    content: list[int], special_tags: list[int], expected: int
+) -> None:
+    assert _count_token_subsequence(content, special_tags) == expected
+
+
+class _FakeMatcher:
+    def __init__(self, accepting: bool, stopped: bool) -> None:
+        self._a, self._s = accepting, stopped
+
+    def is_accepting(self) -> bool:
+        return self._a
+
+    def is_stopped(self) -> bool:
+        return self._s
+
+
+def _fake_ctx(matcher: object, generated: list[int]) -> MagicMock:
+    ctx = MagicMock()
+    ctx.matcher = matcher
+    ctx.grammar_enforced = True
+    ctx.tools_forced = True
+    ctx.snapshot_grammar_state.return_value.in_thinking_region = False
+    ctx.tokens.generated = generated
+    return ctx
+
+
+def test_rejection_diagnostics_reports_mid_tool_call_state() -> None:
+    """Diagnostics surface open-section + non-accepting (mid-tool-call) state.
+
+    Logs raw token IDs only (no decoded text); the desyncing batch is
+    reconstructable offline from ``committed_token_ids``.
+    """
+    helper = StructuredOutputHelper(
+        enabled=True,
+        tool_call_region_delimiters=StructuredOutputRegionDelimiters(
+            start_token_ids=[256], end_token_ids=[257]
+        ),
+    )
+    # One section-begin (256), no section-end -> open_sections == 1.
+    ctx = _fake_ctx(_FakeMatcher(accepting=False, stopped=False), [256, 10, 11])
+    diag = helper._rejection_diagnostics(
+        ctx, committed_tokens=[1, 2, 27], committed_idx=2
+    )
+    assert "matcher_accepting=False" in diag
+    assert "open_sections=1" in diag
+    assert "reject_idx=2/3" in diag
+    assert "committed_token_ids=[1, 2, 27]" in diag
+
+
+def test_rejection_diagnostics_never_raises() -> None:
+    """A diagnostic failure degrades to a placeholder, never crashes."""
+    helper = StructuredOutputHelper(enabled=True)
+    bad_matcher = MagicMock()
+    bad_matcher.is_accepting.side_effect = RuntimeError("boom")
+    ctx = _fake_ctx(bad_matcher, [1, 2, 3])
+    diag = helper._rejection_diagnostics(
+        ctx, committed_tokens=[5], committed_idx=0
+    )
+    assert diag.startswith("<diagnostics unavailable")
 
 
 def test_throws_if_num_steps_gt_1() -> None:
