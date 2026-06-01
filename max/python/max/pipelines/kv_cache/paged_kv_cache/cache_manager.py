@@ -639,12 +639,30 @@ class PagedKVCacheManager:
         # `k.max_context_length()` in flash attention corresponds to the
         # max cached context length for this step (including active prompt
         # tokens), i.e. `max_cached_len` here.
-        resolved_metadata = (
-            replica.attention_dispatch_resolver.resolve_for_replica(
-                batch_size,
-                max_prompt_len,
-                absolute_max_cached_len,
+        (
+            resolved_metadata,
+            mla_num_partitions,
+            mla_effective_split_len,
+        ) = replica.attention_dispatch_resolver.resolve_for_replica_with_scalars(
+            batch_size,
+            max_prompt_len,
+            absolute_max_cached_len,
+        )
+
+        # Wrap the MLA capturable scalars into 1-element host buffers
+        # exactly once per fetch, then share them across shards. None for
+        # MHA / degenerate paths.
+        mla_num_partitions_buf: Buffer | None = (
+            Buffer.from_numpy(np.array([mla_num_partitions], dtype=np.int64))
+            if mla_num_partitions is not None
+            else None
+        )
+        mla_effective_split_len_buf: Buffer | None = (
+            Buffer.from_numpy(
+                np.array([mla_effective_split_len], dtype=np.int64)
             )
+            if mla_effective_split_len is not None
+            else None
         )
 
         if self.params.num_draft_tokens > 0:
@@ -652,15 +670,36 @@ class PagedKVCacheManager:
                 replica.draft_attention_dispatch_resolver
                 or replica.attention_dispatch_resolver
             )
+            (
+                draft_resolved_metadata_,
+                draft_mla_num_partitions,
+                draft_mla_effective_split_len,
+            ) = draft_resolver.resolve_for_replica_with_scalars(
+                batch_size,
+                self.params.num_draft_tokens_per_step,
+                absolute_max_cached_len,
+            )
             draft_resolved_metadata: list[Buffer] | None = (
-                draft_resolver.resolve_for_replica(
-                    batch_size,
-                    self.params.num_draft_tokens_per_step,
-                    absolute_max_cached_len,
+                draft_resolved_metadata_
+            )
+            draft_mla_num_partitions_buf: Buffer | None = (
+                Buffer.from_numpy(
+                    np.array([draft_mla_num_partitions], dtype=np.int64)
                 )
+                if draft_mla_num_partitions is not None
+                else None
+            )
+            draft_mla_effective_split_len_buf: Buffer | None = (
+                Buffer.from_numpy(
+                    np.array([draft_mla_effective_split_len], dtype=np.int64)
+                )
+                if draft_mla_effective_split_len is not None
+                else None
             )
         else:
             draft_resolved_metadata = None
+            draft_mla_num_partitions_buf = None
+            draft_mla_effective_split_len_buf = None
 
         ret_list: list[KVCacheInputsPerDevice] = []
         for cache_idx in range(self._num_caches):
@@ -695,6 +734,12 @@ class PagedKVCacheManager:
                         ),
                         attention_dispatch_metadata=metadata,
                         draft_attention_dispatch_metadata=draft_metadata,
+                        mla_num_partitions=mla_num_partitions_buf,
+                        mla_effective_split_len=mla_effective_split_len_buf,
+                        draft_mla_num_partitions=draft_mla_num_partitions_buf,
+                        draft_mla_effective_split_len=(
+                            draft_mla_effective_split_len_buf
+                        ),
                     )
                 )
 

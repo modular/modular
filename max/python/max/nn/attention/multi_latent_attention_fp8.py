@@ -721,6 +721,14 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             attn_kwargs["scalar_args"] = (
                 kv_collection.attention_dispatch_metadata
             )
+            assert kv_collection.mla_num_partitions is not None
+            assert kv_collection.mla_effective_split_len is not None
+            attn_kwargs["num_partitions_scalar"] = (
+                kv_collection.mla_num_partitions
+            )
+            attn_kwargs["effective_split_len_scalar"] = (
+                kv_collection.mla_effective_split_len
+            )
 
         if self.graph_mode == "prefill":
             result = mla_prefill_graph(**attn_kwargs)

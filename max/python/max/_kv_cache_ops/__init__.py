@@ -46,8 +46,15 @@ def mla_dispatch_args_scalar(
     num_heads: int,
     is_fp8_kv: bool,
     device: Device,
-) -> tuple[int, int, int]:
-    """Returns the MLA dispatch metadata scalars for the given request."""
+) -> tuple[int, int, int, int]:
+    """Returns the MLA dispatch metadata scalars for the given request.
+
+    Returns ``(batch_size, q_max_seq_len, num_partitions, effective_split_len)``.
+    The first three values populate the size-3 device-side buffer that the
+    kernel reads as ``scalar_args``; the fourth is consumed only on the
+    capturable-graph path so the host-side grid sizing matches the kernel's
+    device-side divmod on ``scalar_args[2]``.
+    """
     result = _mla_dispatch_args_scalar(
         batch_size,
         max_cache_valid_length,
@@ -56,7 +63,7 @@ def mla_dispatch_args_scalar(
         is_fp8_kv,
         device._device_context_ptr(),
     )
-    return int(result[0]), int(result[1]), int(result[2])
+    return int(result[0]), int(result[1]), int(result[2]), int(result[3])
 
 
 __all__ = ["mha_decode_num_partitions", "mla_dispatch_args_scalar"]

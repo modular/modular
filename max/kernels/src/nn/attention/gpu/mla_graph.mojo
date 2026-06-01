@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections import OptionalReg
+from std.collections import Optional, OptionalReg
 from std.math import align_up, ceildiv
 
 from std.sys import simd_width_of, size_of
@@ -1064,6 +1064,9 @@ def mla_decode_branch_fp8[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1128,6 +1131,8 @@ def mla_decode_branch_fp8[
         extra_indices_stride: Stride for ``extra_d_indices``.
         extra_topk_lengths: Extra-stream per-batch lengths.
         extra_scales_ptr: Extra-stream scales.
+        num_partitions_in: Capturable-graph num_partitions override.
+        effective_split_len_in: Capturable-graph effective_split_len override.
     """
 
     comptime kv_params = collection_t.kv_params
@@ -1275,6 +1280,8 @@ def mla_decode_branch_fp8[
         extra_indices_stride=extra_indices_stride,
         extra_topk_lengths=extra_topk_lengths,
         extra_scales_ptr=extra_scales_ptr,
+        num_partitions_in=num_partitions_in,
+        effective_split_len_in=effective_split_len_in,
     )
 
     # Create a view of the output tensor with logical shape
@@ -1373,6 +1380,9 @@ def mla_prefill_decode_graph_fp8[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1419,6 +1429,8 @@ def mla_prefill_decode_graph_fp8[
             extra_indices_stride,
             extra_topk_lengths,
             extra_scales_ptr,
+            num_partitions_in,
+            effective_split_len_in,
         )
 
     else:
@@ -1817,6 +1829,9 @@ def mla_decode_branch_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA decode path.
 
@@ -1947,6 +1962,8 @@ def mla_decode_branch_bf16[
         raw_output,
         scalar_args_buf,
         ctx,
+        num_partitions_in=num_partitions_in,
+        effective_split_len_in=effective_split_len_in,
     )
 
     # Create a view of the raw output tensor with logical shape
@@ -2017,6 +2034,9 @@ def mla_prefill_decode_graph_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA prefill/decode graph.
 
@@ -2047,6 +2067,8 @@ def mla_prefill_decode_graph_bf16[
             w_uv,
             scalar_args_buf,
             ctx,
+            num_partitions_in=num_partitions_in,
+            effective_split_len_in=effective_split_len_in,
         )
     else:
         mla_prefill_branch_bf16[

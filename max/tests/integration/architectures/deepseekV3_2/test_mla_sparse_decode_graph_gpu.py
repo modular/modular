@@ -235,7 +235,11 @@ def test_mla_decode_graph_sparse_smoke() -> None:
                 kv_params, list(g.inputs[6:])
             )
             assert kv_collection.attention_dispatch_metadata is not None
+            assert kv_collection.mla_num_partitions is not None
+            assert kv_collection.mla_effective_split_len is not None
             scalar_args = kv_collection.attention_dispatch_metadata
+            num_partitions_scalar = kv_collection.mla_num_partitions
+            effective_split_len_scalar = kv_collection.mla_effective_split_len
 
             w_uk, w_uk_scale = attn.w_uk
             w_uv, w_uv_scale = attn.w_uv
@@ -259,6 +263,8 @@ def test_mla_decode_graph_sparse_smoke() -> None:
                 1e-6,
                 v_head_dim,
                 scalar_args,
+                num_partitions_scalar,
+                effective_split_len_scalar,
                 w_uk_scale=w_uk_scale,
                 w_uv_scale=w_uv_scale,
                 quant_config=quant_config,
@@ -412,7 +418,11 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
                 kv_params, list(g.inputs[7:])
             )
             assert kv_collection.attention_dispatch_metadata is not None
+            assert kv_collection.mla_num_partitions is not None
+            assert kv_collection.mla_effective_split_len is not None
             scalar_args = kv_collection.attention_dispatch_metadata
+            num_partitions_scalar = kv_collection.mla_num_partitions
+            effective_split_len_scalar = kv_collection.mla_effective_split_len
 
             w_k, w_k_scale = attn.w_k
             w_uk, w_uk_scale = attn.w_uk
@@ -450,6 +460,8 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
                 1e-6,
                 v_head_dim,
                 scalar_args,
+                num_partitions_scalar,
+                effective_split_len_scalar,
                 w_k_scale=w_k_scale,
                 w_uk_scale=w_uk_scale,
                 w_uv_scale=w_uv_scale,
