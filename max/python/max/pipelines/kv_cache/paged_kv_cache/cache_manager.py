@@ -303,11 +303,12 @@ class PagedKVCacheManager:
                         is_fp8_kv=draft_params.is_fp8_kv_dtype,
                     )
 
-            # TODO(SERVOPT-1254): Connector uses primary cache buffer only.
             replica_params = primary_params.copy_as_dp_1(
                 replica_idx=replica_idx
             )
-            device_buffers_to_offload = replica_device_buffers[0].all_buffers
+            device_buffers_to_offload: list[Buffer] = []
+            for cache_buffer in replica_device_buffers:
+                device_buffers_to_offload.extend(cache_buffer.all_buffers)
             if other_kv_managers_device_buffers_per_replica is not None:
                 device_buffers_to_offload.extend(
                     other_kv_managers_device_buffers_per_replica[replica_idx]
