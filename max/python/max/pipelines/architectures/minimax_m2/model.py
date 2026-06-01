@@ -63,32 +63,34 @@ class MiniMaxM2Inputs(Llama3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        data_parallel_splits = self.data_parallel_splits
+        # Must match MiniMaxM2.input_types / the graph-input unpacking:
+        #   tokens, input_row_offsets, return_n_logits,
+        #   [data_parallel_splits, host_input_row_offsets]  (DP attention only),
+        #   *signals, *kv,
+        #   *ep_inputs                                       (EP MoE only)
         assert self.kv_cache_inputs is not None
         kv_flat = self.kv_cache_inputs.flatten()
-        if data_parallel_splits is None:
-            # TP mode: graph expects (tokens, row_offsets, return_n_logits, *signals, *kv)
-            return (
-                self.tokens,
-                self.input_row_offsets,
-                self.return_n_logits,
-                *self.signal_buffers,
-                *kv_flat,
-            )
-        # DP+EP mode
-        host_input_row_offsets = self.host_input_row_offsets
-        assert isinstance(data_parallel_splits, Buffer)
-        assert host_input_row_offsets is not None
-        return (
+        result: tuple[Buffer, ...] = (
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
-            data_parallel_splits,
-            host_input_row_offsets,
-            *self.signal_buffers,
-            *kv_flat,
-            *self.ep_inputs,
         )
+
+        data_parallel_splits = self.data_parallel_splits
+        if data_parallel_splits is not None:
+            # DP attention: include the batch-split tensors.
+            host_input_row_offsets = self.host_input_row_offsets
+            assert isinstance(data_parallel_splits, Buffer)
+            assert host_input_row_offsets is not None
+            result += (data_parallel_splits, host_input_row_offsets)
+
+        result += (*self.signal_buffers, *kv_flat)
+
+        if self.ep_inputs:
+            # EP MoE (TP+EP or DP+EP): include the EP communication buffers.
+            result += (*self.ep_inputs,)
+
+        return result
 
 
 class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
@@ -124,11 +126,13 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         ep_buffer_memory = 0
         moe_activation_memory = 0
         ep_size = pipeline_config.runtime.ep_size
+        ep_use_allreduce = pipeline_config.runtime.ep_use_allreduce
         if ep_size > 1 and encoding is not None:
             ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
                 max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
                 ep_size=ep_size,
                 data_parallel_degree=pipeline_config.model.data_parallel_degree,
+                use_allreduce=ep_use_allreduce,
             )
             ep_dispatch_dtype = supported_encoding_dtype(encoding)
 
@@ -166,6 +170,7 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 n_nodes=n_nodes,
                 n_gpus_per_node=n_gpus_per_node,
                 top_k=top_k,
+                use_allreduce=ep_use_allreduce,
             )
             # EPCommInitializer double-buffers (NUM_GROUPS=2) the SHMEM
             # dispatch/combine buffers.
@@ -277,8 +282,8 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         device_tokens.inplace_copy_from(host_tokens)
         device_row_offsets.inplace_copy_from(host_row_offsets)
 
-        tp_mode = dp == 1 and len(self.devices) > 1
-
+        # host_input_row_offsets / data_parallel_splits are only needed for DP
+        # attention (data_parallel_degree > 1). TP / single-GPU omit them.
         if dp > 1:
             data_parallel_splits = Buffer.from_numpy(
                 compute_data_parallel_splits(replica_batches)
@@ -300,7 +305,7 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             return_n_logits=return_n_logits_tensor,
             data_parallel_splits=data_parallel_splits,
             ep_inputs=ep_inputs,
-            host_input_row_offsets=None if tp_mode else host_row_offsets,
+            host_input_row_offsets=host_row_offsets if dp > 1 else None,
         )
 
     @override
@@ -314,15 +319,14 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             next_tokens, prev_model_inputs
         )
         dp = self.pipeline_config.model.data_parallel_degree
-        tp_mode = dp == 1 and len(self.devices) > 1
         host_input_row_offsets = (
-            None
-            if tp_mode
-            else Buffer.from_numpy(
+            Buffer.from_numpy(
                 np.arange(
                     llama_inputs.input_row_offsets.shape[0], dtype=np.uint32
                 )
             )
+            if dp > 1
+            else None
         )
         return MiniMaxM2Inputs(
             tokens=llama_inputs.tokens,
@@ -390,19 +394,29 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 break
 
         num_devices = len(self.devices)
-        tp_mode = (
-            self.pipeline_config.model.data_parallel_degree == 1
-            and num_devices > 1
-        )
+        data_parallel_degree = self.pipeline_config.model.data_parallel_degree
+        ep_size = self.pipeline_config.runtime.ep_size
+        ep_use_allreduce = self.pipeline_config.runtime.ep_use_allreduce
+        # EP is enabled (for both DP+EP and TP+EP) whenever ep_size > 1 on a
+        # multi-GPU node. The attention strategy is chosen separately by
+        # data_parallel_degree (==1 -> TP attention, ==num_devices -> DP).
+        ep_enabled = num_devices > 1 and ep_size > 1
 
         self.ep_comm_initializer: EPCommInitializer | None = None
-        if not tp_mode and num_devices > 1:
-            # DP+EP mode: create EP config for multi-GPU MoE dispatch
-            ep_size = num_devices
+        if ep_enabled:
+            if ep_size % num_devices != 0:
+                raise ValueError(
+                    f"ep_size={ep_size} is not divisible by the number of GPUs"
+                    f" on this node ({num_devices}). ep_size must equal"
+                    f" n_gpus_per_node * n_nodes. For a single-node deployment"
+                    f" set ep_size={num_devices}."
+                )
+            n_nodes = ep_size // num_devices
             ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
                 max_batch_input_tokens=self.pipeline_config.runtime.max_batch_input_tokens,
                 ep_size=ep_size,
-                data_parallel_degree=self.pipeline_config.model.data_parallel_degree,
+                data_parallel_degree=data_parallel_degree,
+                use_allreduce=ep_use_allreduce,
             )
             is_mxfp4 = (
                 model_config.quant_config is not None
@@ -416,15 +430,20 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 n_experts=model_config.num_local_experts,
                 max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_gpus_per_node=num_devices,
-                n_nodes=1,
+                n_nodes=n_nodes,
                 dispatch_quant_config=model_config.quant_config,
+                use_allreduce=ep_use_allreduce,
             )
             assert session is not None
             self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
             self.ep_comm_initializer.ep_init(session)
+            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
             logger.info(
-                "EP initialized: node_id=%s, n_gpus=%s, n_nodes=%s, "
+                "MiniMax-M2 EP initialized (%s-attention + EP-MoE,"
+                " use_allreduce=%s): node_id=%s, n_gpus=%s, n_nodes=%s, "
                 "n_experts=%s, max_tokens_per_rank=%s",
+                attn_strategy,
+                ep_use_allreduce,
                 model_config.ep_config.node_id,
                 model_config.ep_config.n_gpus_per_node,
                 model_config.ep_config.n_nodes,
@@ -450,66 +469,53 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         self.state_dict = nn_model.state_dict()
 
         with Graph("minimax_m2", input_types=graph_inputs) as graph:
-            variadic_args_iter: Any
-            if tp_mode:
-                (
-                    tokens,
-                    input_row_offsets,
-                    return_n_logits,
-                    *variadic_args,
-                ) = graph.inputs
-                variadic_args_iter = iter(variadic_args)
-                signal_buffers = [
-                    next(variadic_args_iter).buffer for _ in range(num_devices)
-                ]
-                num_kv_inputs = len(
-                    nn_model.kv_params.get_symbolic_inputs().flatten()
-                )
-                kv_cache_inputs = [
-                    next(variadic_args_iter) for _ in range(num_kv_inputs)
-                ]
-                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-                outputs = nn_model(
-                    tokens.tensor,
-                    kv_collections,
-                    return_n_logits.tensor,
-                    input_row_offsets.tensor,
-                    signal_buffers,
-                    None,
-                    None,
-                    None,
-                )
-            else:
-                (
-                    tokens,
-                    input_row_offsets,
-                    return_n_logits,
-                    data_parallel_splits,
-                    host_input_row_offsets,
-                    *variadic_args,
-                ) = graph.inputs
-                variadic_args_iter = iter(variadic_args)
-                signal_buffers = [
-                    next(variadic_args_iter).buffer for _ in range(num_devices)
-                ]
-                num_kv_inputs = len(
-                    nn_model.kv_params.get_symbolic_inputs().flatten()
-                )
-                kv_cache_inputs = [
-                    next(variadic_args_iter) for _ in range(num_kv_inputs)
-                ]
-                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-                ep_inputs = list(variadic_args_iter)
-                outputs = nn_model(
-                    tokens.tensor,
-                    kv_collections,
-                    return_n_logits.tensor,
-                    input_row_offsets.tensor,
-                    signal_buffers,
-                    ep_inputs,
-                    data_parallel_splits.tensor,
-                    host_input_row_offsets.tensor,
-                )
+            # Unpack inputs in the exact order declared by
+            # MiniMaxM2.input_types (and produced by MiniMaxM2Inputs.buffers):
+            #   tokens, input_row_offsets, return_n_logits,
+            #   [data_parallel_splits, host_input_row_offsets]  (DP only),
+            #   *signals, *kv, *ep_inputs                       (EP only)
+            graph_inputs_iter = iter(graph.inputs)
+            tokens = next(graph_inputs_iter)
+            input_row_offsets = next(graph_inputs_iter)
+            return_n_logits = next(graph_inputs_iter)
+
+            data_parallel_splits = None
+            host_input_row_offsets = None
+            # Gate on the same predicate input_types used to declare these, so
+            # the declaration and this unpacking stay in lockstep (dp_attention
+            # is equivalent to data_parallel_degree > 1).
+            if nn_model.dp_attention:
+                data_parallel_splits = next(graph_inputs_iter)
+                host_input_row_offsets = next(graph_inputs_iter)
+
+            signal_buffers = [
+                next(graph_inputs_iter).buffer for _ in range(num_devices)
+            ]
+            num_kv_inputs = len(
+                nn_model.kv_params.get_symbolic_inputs().flatten()
+            )
+            kv_cache_inputs = [
+                next(graph_inputs_iter) for _ in range(num_kv_inputs)
+            ]
+            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
+
+            # Remaining inputs (if any) are the EP communication buffers.
+            ep_inputs = list(graph_inputs_iter) if ep_enabled else None
+
+            outputs = nn_model(
+                tokens.tensor,
+                kv_collections,
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
+                signal_buffers,
+                ep_inputs,
+                data_parallel_splits.tensor
+                if data_parallel_splits is not None
+                else None,
+                host_input_row_offsets.tensor
+                if host_input_row_offsets is not None
+                else None,
+            )
 
             graph.output(*outputs)
             return graph

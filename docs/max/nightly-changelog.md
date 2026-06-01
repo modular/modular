@@ -17,6 +17,11 @@ This version is still a work in progress.
   tensor-parallel attention and expert-parallel MoE.
 - Added NVFP4 quantization support for Gemma 4.
 - Added MXFP4 quantization support for MiniMax-M2.
+- Added tensor-parallel attention + expert-parallel MoE (TP+EP) support for
+  MiniMax-M2. Set `data_parallel_degree: 1` with `runtime.ep_size > 1` to
+  shard attention heads across GPUs while distributing MoE experts via
+  expert parallelism. Both reduce-scatter (default) and allreduce
+  (`runtime.ep_use_allreduce: true`) collective strategies are supported.
 - Kimi K2.5 tool calling now supports interleaved thinking: a single
   assistant turn may interleave multiple `<think>...</think>` reasoning
   blocks with multiple tool-call sections and end with `<|im_end|>`. The
