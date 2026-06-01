@@ -568,7 +568,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
-            sink_weights=sinks_device.get_immutable(),
+            sink_weights=sinks_device.get_immutable().as_any_origin(),
         )
 
     launch(ctx)

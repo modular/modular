@@ -221,12 +221,34 @@ def run_text_generation(
                 ]
             else:
                 mm_items = pil_images
+            # Build the prompt from messages with the tokenizer chat template
+            # so vLLM's prefill tokens match what MAX produces from the same
+            # messages. The template preserves the image placeholder, so vLLM
+            # still binds multi_modal_data to it.
+            if request.messages:
+                mm_prompt = tokenizer.apply_chat_template(
+                    request.messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            else:
+                mm_prompt = request.prompt
             prompts.append(
                 {
-                    "prompt": request.prompt,
+                    "prompt": mm_prompt,
                     "multi_modal_data": {mm_data_key: mm_items},
                 }
             )
+        elif request.messages:
+            # Build the prompt from messages with the tokenizer chat template
+            # so vLLM's tokens match what MAX's tokenizer produces from the
+            # same messages.
+            templated = tokenizer.apply_chat_template(
+                request.messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            prompts.append(templated)
         else:
             prompts.append(request.prompt)
 

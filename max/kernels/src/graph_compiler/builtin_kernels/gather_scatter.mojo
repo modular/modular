@@ -547,15 +547,15 @@ struct Scatter:
     @staticmethod
     def execute[
         target: StaticString,
+        axis: Int,
     ](
         output: OutputTensor[...],
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         indices: InputTensor[rank=output.rank, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) raises:
-        check_axis_in_range[output.rank](Int(axis))
+        check_axis_in_range[output.rank](axis)
 
         @always_inline
         @parameter
@@ -570,24 +570,25 @@ struct Scatter:
             input,
             indices,
             updates,
-            normalize_neg_index(Int(axis), output.rank),
+            normalize_neg_index(axis, output.rank),
             output,
             ctx,
         )
 
     @staticmethod
-    def shape(
+    def shape[
+        axis: Int,
+    ](
         input: InputTensor[...],
         updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
         indices: InputTensor[rank=input.rank, ...],
-        axis: Scalar,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             scatter_elements_shape(
                 input.to_tile_tensor[DType.int64](),
                 updates.to_tile_tensor[DType.int64](),
                 indices.to_tile_tensor[DType.int64](),
-                Int(axis),
+                axis,
             )
         )
 
@@ -1421,11 +1422,11 @@ struct Gather:
     def execute[
         target: StaticString,
         _trace_name: StaticString,
+        axis: Int,
     ](
         output: FusedOutputTensor[...],
         input: FusedInputTensor[dtype=output.dtype, ...],
         indices: FusedInputTensor[...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
         @always_inline
@@ -1462,7 +1463,7 @@ struct Gather:
             indices.dtype,
             target=target,
         ](
-            Axis(Int(axis), input.rank),
+            Axis(axis, input.rank),
             input.shape(),
             indices.shape(),
             output.shape(),
@@ -1475,15 +1476,17 @@ struct Gather:
     @staticmethod
     def shape[
         output_rank: Int,
+        axis: Int,
     ](
         input: InputTensor[...],
         indices: InputTensor[...],
-        axis: Scalar,
-    ) raises -> IndexList[output_rank]:
+    ) raises -> IndexList[
+        output_rank
+    ]:
         return gather_shape[output_rank=output_rank](
             input.to_tile_tensor[DType.int64](),
             indices.to_tile_tensor[DType.int64](),
-            Int(axis),
+            axis,
         )
 
 
@@ -1932,11 +1935,11 @@ struct Split:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        axis: Int,
     ](
         output: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         split_sizes: InputTensor[rank=1, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) raises:
         comptime shape_types = DynamicCoord[DType.int64, rank].element_types
@@ -1944,7 +1947,7 @@ struct Split:
         # runtime strides.
         comptime stride_types = DynamicCoord[DType.int64, rank].element_types
 
-        check_axis_in_range[output.rank](Int(axis))
+        check_axis_in_range[output.rank](axis)
 
         var output_bufs = StaticTuple[
             TileTensor[
@@ -1967,7 +1970,7 @@ struct Split:
 
         split[dtype, target=target, trace_description=_trace_name](
             input.to_tile_tensor[DType.int64](),
-            normalize_neg_index(Int(axis), rank),
+            normalize_neg_index(axis, rank),
             output_bufs,
             ctx,
         )

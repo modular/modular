@@ -13,12 +13,14 @@
 model:
   model_path: amd/Kimi-K2.5-MXFP4
   device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
-  data_parallel_degree: 8
+  data_parallel_degree: 1
   max_length: 262144
   trust_remote_code: true
   kv_cache:
-    device_memory_utilization: 0.8
+    device_memory_utilization: 0.7
+    enable_prefix_caching: true
+    kv_cache_format: float8_e4m3fn
 
 runtime:
   ep_size: 8
-  max_batch_input_tokens: 1024
+  max_batch_input_tokens: 4096

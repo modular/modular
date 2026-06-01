@@ -985,9 +985,9 @@ def blackwell_kernel_8[
     cta_group: Int = 1,
     num_clc_pipeline_stages: Int = 2,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()

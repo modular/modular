@@ -84,6 +84,8 @@ struct ReductionMode(TrivialRegisterPassable):
 
 
 struct SplitKTileScheduler[
+    locks_origin: MutOrigin,
+    //,
     problem_shape_nk: IndexList[2],
     tile_shape: IndexList[3],
     splits: UInt32,
@@ -108,7 +110,7 @@ struct SplitKTileScheduler[
 
     var cluster_blk_major: UInt32
 
-    var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
+    var locks_ptr: UnsafePointer[Int32, Self.locks_origin]
 
     comptime k_tiles_per_output_tile = UInt32(
         ceildiv(Self.problem_shape_nk[1], Self.tile_shape[2])
@@ -131,7 +133,7 @@ struct SplitKTileScheduler[
         out self,
         prob_shape: IndexList[3],
         block_id_in_cluster: IndexList[2],
-        locks_ptr: UnsafePointer[mut=True, UInt8, _],
+        locks_ptr: UnsafePointer[UInt8, Self.locks_origin],
     ):
         _check_scheduler_constraints[
             Self.problem_shape_nk,
@@ -146,10 +148,7 @@ struct SplitKTileScheduler[
 
         self.prob_shape = prob_shape
         self.block_id_in_cluster = block_id_in_cluster
-
-        self.locks_ptr = rebind[UnsafePointer[Int32, MutAnyOrigin]](
-            locks_ptr.bitcast[Int32]()
-        )
+        self.locks_ptr = locks_ptr.bitcast[Int32]()
 
         var problem_blocks = Self.get_problem_blocks_shape(
             prob_shape, Self.tile_shape, Self.cluster_shape

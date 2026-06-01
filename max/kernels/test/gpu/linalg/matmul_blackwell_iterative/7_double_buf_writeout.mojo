@@ -788,9 +788,9 @@ def blackwell_kernel_7[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, _],
+    a: LayoutTensor[a_type, a_layout, _],
+    b: LayoutTensor[b_type, b_layout, _],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()
@@ -985,9 +985,9 @@ def test_blackwell_kernel_7[
         b_swizzle=b_swizzle,
         cta_group=2,
     ](
-        c_tt.to_layout_tensor().as_any_origin(),
-        a_tt.to_layout_tensor().as_any_origin(),
-        b_tt.to_layout_tensor().as_any_origin(),
+        c_tt.to_layout_tensor(),
+        a_tt.to_layout_tensor(),
+        b_tt.to_layout_tensor(),
         ctx,
     )
 
@@ -1007,9 +1007,9 @@ def test_blackwell_kernel_7[
                 b_swizzle=b_swizzle,
                 cta_group=2,
             ](
-                c_tt.to_layout_tensor().as_any_origin(),
-                a_tt.to_layout_tensor().as_any_origin(),
-                b_tt.to_layout_tensor().as_any_origin(),
+                c_tt.to_layout_tensor(),
+                a_tt.to_layout_tensor(),
+                b_tt.to_layout_tensor(),
                 ctx,
             )
 

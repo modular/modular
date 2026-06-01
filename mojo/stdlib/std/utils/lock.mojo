@@ -101,18 +101,18 @@ struct BlockingSpinLock(Defaultable):
         return True
 
 
-struct BlockingScopedLock:
+struct BlockingScopedLock[origin: MutOrigin, //]:
     """A scope adapter for BlockingSpinLock."""
 
     comptime LockType = BlockingSpinLock
     """The type of the lock."""
 
-    var lock: UnsafePointer[Self.LockType, MutAnyOrigin]
+    var lock: UnsafePointer[Self.LockType, Self.origin]
     """The underlying lock instance."""
 
     def __init__(
         out self,
-        lock: UnsafePointer[Self.LockType, MutAnyOrigin],
+        lock: UnsafePointer[Self.LockType, Self.origin],
     ):
         """Primary constructor.
 
@@ -122,17 +122,14 @@ struct BlockingScopedLock:
 
         self.lock = lock
 
-    def __init__(
-        out self,
-        mut lock: Self.LockType,
-    ):
+    def __init__(out self, ref[Self.origin] lock: Self.LockType):
         """Secondary constructor.
 
         Args:
             lock: A mutable reference to the underlying lock.
         """
 
-        self.lock = UnsafePointer(to=lock).as_any_origin()
+        self.lock = UnsafePointer(to=lock)
 
     @no_inline
     def __enter__(mut self):

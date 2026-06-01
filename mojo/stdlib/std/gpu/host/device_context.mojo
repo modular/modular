@@ -352,7 +352,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         dtype: Data type to be stored in the buffer.
     """
 
-    comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
 
     # We cache the pointer of the buffer here to provide access to elements.
     var _host_ptr: Self._HostPtr
@@ -514,7 +514,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
         var new_host_ptr = Optional[
-            UnsafePointer[Scalar[view_type], MutAnyOrigin]
+            UnsafePointer[Scalar[view_type], MutExternalOrigin]
         ]()
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
@@ -1274,7 +1274,7 @@ struct DeviceBuffer[dtype: DType](
         """
         return String(t"DeviceBuffer[{Self.dtype}]")
 
-    comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
@@ -1402,15 +1402,15 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[_dtype]()
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
-        var device_ptr = rebind[UnsafePointer[Scalar[_dtype], MutAnyOrigin]](
-            ptr
-        )
+        var device_ptr = rebind[
+            UnsafePointer[Scalar[_dtype], MutExternalOrigin]
+        ](ptr)
         external_call[
             "AsyncRT_DeviceContext_createBuffer_owning",
             NoneType,
             UnsafePointer[_DeviceBufferPtr[mut=True], origin_of(cpp_handle)],
             _DeviceContextPtr[mut=True],
-            UnsafePointer[Scalar[_dtype], MutAnyOrigin],
+            UnsafePointer[Scalar[_dtype], MutExternalOrigin],
             c_size_t,
             c_size_t,
             Bool,
@@ -1519,7 +1519,7 @@ struct DeviceBuffer[dtype: DType](
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
         var new_device_ptr: Optional[
-            UnsafePointer[Scalar[view_type], MutAnyOrigin]
+            UnsafePointer[Scalar[view_type], MutExternalOrigin]
         ] = {}
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
@@ -3669,7 +3669,7 @@ struct _GraphDepArgs(TrivialRegisterPassable):
     side never dereferences it).
     """
 
-    var ids: UnsafePointer[Int32, ImmutAnyOrigin]
+    var ids: UnsafePointer[Int32, ImmutExternalOrigin]
     var count: Int64
 
 
@@ -3687,7 +3687,9 @@ def _pack_dep_args(deps: List[DeviceGraphNode]) -> _GraphDepArgs:
     valid for as long as `deps` is alive at the call site.
     """
     return _GraphDepArgs(
-        ids=deps.unsafe_ptr().bitcast[Int32](),
+        ids=deps.unsafe_ptr()
+        .bitcast[Int32]()
+        .unsafe_origin_cast[ImmutExternalOrigin](),
         count=Int64(len(deps)),
     )
 
@@ -8574,9 +8576,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_unicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr[mut=True]()
-        var buf_ptr = Optional[
-            UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        ]()
+        var buf_ptr = Optional[DeviceBuffer[Self.dtype]._DevicePtr]()
 
         _checked(
             external_call[
@@ -8598,9 +8598,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_multicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr[mut=True]()
-        var buf_ptr = Optional[
-            UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        ]()
+        var buf_ptr = Optional[DeviceBuffer[Self.dtype]._DevicePtr]()
 
         _checked(
             external_call[

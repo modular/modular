@@ -29,10 +29,7 @@ from comm import MAX_GPUS, Signal
 from comm.allreduce import elementwise_epilogue_type
 from std.gpu.primitives.grid_controls import PDLLevel
 
-# Safety: don't use `ExternalOrigin` here as that will turn of extending the
-# lifetime of any Mojo structs that pass an internal pointer to the functions
-# below.
-comptime ncclComm_t = _CPointer[NoneType, AnyOrigin[mut=True]]
+comptime ncclComm_t = _CPointer[NoneType, MutExternalOrigin]
 
 
 @fieldwise_init

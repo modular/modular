@@ -52,7 +52,7 @@ struct _Accumulator[
     comptime _size = Self.num_rows * Self.num_cols * Self.simd_width
 
     # The output buffer, should have num_rows x num_cols x simd_width.
-    var _storage: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    var _storage: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
 
     @always_inline
     def __init__(out self):
@@ -64,7 +64,7 @@ struct _Accumulator[
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
         self._storage = stack_allocation[
             Self._size, Self.dtype, alignment=alignment
-        ]().unsafe_origin_cast[MutAnyOrigin]()
+        ]()
 
     @always_inline
     def __init__(
@@ -76,7 +76,7 @@ struct _Accumulator[
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
         )
-        self._storage = other_storage
+        self._storage = other_storage.unsafe_origin_cast[MutExternalOrigin]()
 
     # NOTE: This is NOT a deepcopy; self uses the same _storage as copy.
     @always_inline
