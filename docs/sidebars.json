@@ -517,6 +517,17 @@
             },
             {
               "type": "category",
+              "label": "lora",
+              "link": {
+                "type": "doc",
+                "id": "max/api/python/pipelines.lora"
+              },
+              "items": [
+                "__AUTOGEN:max.pipelines.lora__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "lib",
               "link": {
                 "type": "doc",

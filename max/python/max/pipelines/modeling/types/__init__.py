@@ -38,15 +38,6 @@ from .logit_processors_type import (
     LogitsProcessor,
     ProcessorInputs,
 )
-from .lora import (
-    LORA_REQUEST_ENDPOINT,
-    LORA_RESPONSE_ENDPOINT,
-    LoRAOperation,
-    LoRARequest,
-    LoRAResponse,
-    LoRAStatus,
-    LoRAType,
-)
 from .pipeline import (
     Pipeline,
     PipelineInputs,
@@ -118,8 +109,6 @@ Example:
 
 __all__ = [
     "DUMMY_REQUEST_ID",
-    "LORA_REQUEST_ENDPOINT",
-    "LORA_RESPONSE_ENDPOINT",
     "BaseContext",
     "BaseContextType",
     "BatchLogitsProcessor",
@@ -136,11 +125,6 @@ __all__ = [
     "ImageContentPart",
     "ImageMetadata",
     "InputModality",
-    "LoRAOperation",
-    "LoRARequest",
-    "LoRAResponse",
-    "LoRAStatus",
-    "LoRAType",
     "LogProbabilities",
     "LogitsProcessor",
     "MessageContent",

@@ -41,12 +41,7 @@ from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.lora import SupportsLoRA
-from max.pipelines.lib.config.lora_config import LoRAConfig
-from max.pipelines.modeling.types import (
-    LoRAStatus,
-    LoRAType,
-    TextGenerationContextType,
-)
+from max.pipelines.modeling.types import TextGenerationContextType
 from max.pipelines.modeling.types.pipeline import (
     Pipeline,
     PipelineInputsType,
@@ -54,12 +49,15 @@ from max.pipelines.modeling.types.pipeline import (
 )
 from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 
-logger = logging.getLogger("max.serve")
+from .config import LoRAConfig
+from .lora_types import LoRAStatus, LoRAType
+
+_logger = logging.getLogger("max.serve")
 
 ADAPTER_CONFIG_FILE = "adapter_config.json"
 
 
-class LoRALRUCache:
+class _LoRALRUCache:
     """LRU cache for managing active LoRA models and their slot assignments.
 
     This cache maintains a maximum number of active LoRA models and evicts
@@ -199,7 +197,7 @@ class LoRALRUCache:
         return list(self._cache.items())
 
 
-def is_lora_kind(key: str) -> bool:
+def _is_lora_kind(key: str) -> bool:
     """Returns whether the key denotes a LoRA kind."""
     return bool(
         LoRAType.A.value in key
@@ -735,7 +733,7 @@ class LoRAManager:
         self.head_dim = head_dim
 
         self._loras: dict[str, LoRAModel] = dict()
-        self._active_loras: LoRALRUCache = LoRALRUCache(
+        self._active_loras: _LoRALRUCache = _LoRALRUCache(
             max_size=self.max_num_loras
         )
 
@@ -979,7 +977,7 @@ class LoRAManager:
             return LoRAStatus.SUCCESS
 
         except Exception as e:
-            logger.exception(
+            _logger.exception(
                 f"Unexpected error loading LoRA adapter from '{path}': {e}"
             )
             return LoRAStatus.LOAD_ERROR
@@ -1010,7 +1008,7 @@ class LoRAManager:
 
             return LoRAStatus.SUCCESS
         except Exception as e:
-            logger.exception(f"Error unloading LoRA adapter '{name}': {e}")
+            _logger.exception(f"Error unloading LoRA adapter '{name}': {e}")
             return LoRAStatus.UNLOAD_ERROR
 
     def activate_adapter(self, name: str) -> None:
@@ -1151,7 +1149,7 @@ class LoRAManager:
 
         for key, layer in self._lora_layers.items():
             for weight_key, base_weight in layer.layer_weights.items():
-                if not is_lora_kind(weight_key):
+                if not _is_lora_kind(weight_key):
                     continue
 
                 state_key = f"{key}.{weight_key}"

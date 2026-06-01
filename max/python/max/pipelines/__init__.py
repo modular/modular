@@ -44,7 +44,6 @@ from .lib.interfaces import (
     ModelOutputs,
     PipelineModel,
 )
-from .lib.lora import ADAPTER_CONFIG_FILE
 from .lib.memory_estimation import MemoryEstimator
 from .lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
@@ -58,6 +57,7 @@ from .lib.tokenizer import (
     TextTokenizer,
 )
 from .lib.utils import upper_bounded_default
+from .lora import ADAPTER_CONFIG_FILE
 
 # Hydrate the registry.
 register_all_models()

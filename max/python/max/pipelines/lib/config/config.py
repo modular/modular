@@ -50,6 +50,7 @@ from max.pipelines.lib.registry import (
     get_pipeline_for_task,
 )
 from max.pipelines.lib.sampling import SamplingConfig
+from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.kv_cache_config import (
     KVCacheConfig,
     KVConnectorConfig,
@@ -68,7 +69,6 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig, _format_config_entries
 from .profiling_config import ProfilingConfig
 

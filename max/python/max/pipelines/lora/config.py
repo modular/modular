@@ -19,7 +19,7 @@ import logging
 from max.config import ConfigFileModel
 from pydantic import Field
 
-logger = logging.getLogger("max.pipelines")
+_logger = logging.getLogger("max.pipelines")
 
 
 class LoRAConfig(ConfigFileModel):

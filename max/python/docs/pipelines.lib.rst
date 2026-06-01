@@ -76,7 +76,6 @@ LoRA
    :template: autosummary/class.rst
 
    LoRAManager
-   LoRARequestProcessor
 
 Utilities
 ---------

@@ -37,7 +37,7 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.lora import LoRAManager
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.pipelines.modeling.kv_cache_config import KVCacheConfig
 from max.pipelines.modeling.types import BaseContextType, LogProbabilities

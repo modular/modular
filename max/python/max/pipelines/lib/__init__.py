@@ -20,6 +20,7 @@ from max.config import (
     get_default_max_config_file_section_name,
     resolve_max_config_inheritance,
 )
+from max.pipelines.lora import LoRAManager
 from max.pipelines.modeling.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
@@ -63,8 +64,6 @@ from .interfaces import (
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
 )
-from .lora import LoRAManager
-from .lora_request_processor import LoRARequestProcessor
 from .memory_estimation import MemoryEstimator
 from .model_manifest import ModelManifest
 from .pipeline_runtime_config import PipelineRuntimeConfig
@@ -107,7 +106,6 @@ __all__ = [
     "KVConnectorConfig",
     "LoRAConfig",
     "LoRAManager",
-    "LoRARequestProcessor",
     "MAXConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",

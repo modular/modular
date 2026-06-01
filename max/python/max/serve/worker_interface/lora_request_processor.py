@@ -19,8 +19,7 @@ import logging
 import queue
 from typing import TYPE_CHECKING
 
-from max.pipelines.modeling.types import RequestID
-from max.pipelines.modeling.types.lora import (
+from max.pipelines.lora import (
     LORA_REQUEST_ENDPOINT,
     LORA_RESPONSE_ENDPOINT,
     LoRAOperation,
@@ -28,12 +27,16 @@ from max.pipelines.modeling.types.lora import (
     LoRAResponse,
     LoRAStatus,
 )
-from max.serve.worker_interface.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.pipelines.request import RequestID
+
+from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 if TYPE_CHECKING:
-    from .lora import LoRAManager
+    from max.pipelines.lora import LoRAManager
 
-logger = logging.getLogger("max.serve")
+_logger = logging.getLogger("max.serve")
+
+__all__ = ["LoRARequestProcessor"]
 
 
 class LoRARequestProcessor:
@@ -89,7 +92,7 @@ class LoRARequestProcessor:
             else:
                 return self._handle_unload_request(request)
         except Exception as e:
-            logger.exception(
+            _logger.exception(
                 f"Unexpected error handling LoRA request {request}: {e}"
             )
             error_detail = str(e) if str(e) else "Unknown error"

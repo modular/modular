@@ -34,12 +34,12 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     SamplingConfig,
 )
-from max.pipelines.lib.lora import LoRAManager, LoRAModel
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
 )
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
+from max.pipelines.lora import LoRAManager, LoRAModel
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,

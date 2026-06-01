@@ -44,12 +44,10 @@ from max.pipelines.lib.tool_parsing import (
     name_from_tool,
     names_from_tools,
 )
+from max.pipelines.lora import LoRAOperation, LoRARequest, LoRAStatus
 from max.pipelines.modeling.types import (
     GenerationStatus,
     ImageContentPart,
-    LoRAOperation,
-    LoRARequest,
-    LoRAStatus,
     MessageContent,
     ParsedToolResponse,
     PipelineTokenizer,

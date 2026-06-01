@@ -32,7 +32,7 @@ from max.nn.linear import MLP, GPTQLinear, Linear
 from max.nn.lora import AttentionWithRopeAndLoRA
 from max.nn.norm import ConstantLayerNorm, RMSNorm
 from max.nn.transformer import Transformer, TransformerBlock
-from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.lora import LoRAManager
 
 from .model_config import Llama3Config, create_rope_embedding
 

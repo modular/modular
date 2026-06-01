@@ -18,6 +18,7 @@ from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.lib.pipeline_runtime_config import (
     DEFAULT_MAX_BATCH_INPUT_TOKENS,
 )
+from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.config_enums import (
     PipelineRole,
     RepoType,
@@ -43,7 +44,6 @@ from .config import (
     PipelineConfig,
     PrometheusMetricsMode,
 )
-from .lora_config import LoRAConfig
 from .model_config import (
     MAXModelConfig,
     MAXModelConfigBase,

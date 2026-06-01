@@ -23,7 +23,7 @@ import numpy.typing as npt
 import pytest
 from max.driver import Buffer
 from max.dtype import DType
-from max.pipelines.lib.lora import LoRAModel
+from max.pipelines.lora.lora import LoRAModel
 from safetensors.numpy import save_file
 
 LoRAWeights = dict[str, npt.NDArray[Any]]
