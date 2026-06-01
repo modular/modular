@@ -35,6 +35,15 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Fixed a KV cache offloading correctness bug that corrupted output for
+  multi-cache models (such as Gemma 4's interleaved sliding-window plus
+  global attention) when the `local` or `tiered` KV connector was enabled.
+  These models share one block pool across all of their caches, but the
+  connector only offloaded and reloaded the primary cache, so a prefix-cache
+  block served from host or disk restored only the primary cache's data and
+  left the other caches' halves stale, degrading accuracy. The connector now
+  offloads and restores every cache.
+
 - MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
   normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
   o1/o3 chat-completion spec uses `developer` in place of `system`, and
