@@ -44,6 +44,7 @@ from std.sys.compile import DebugLevel, OptimizationLevel
 from std.sys.info import (
     CompilationTarget,
     _accelerator_arch,
+    _current_target,
     _TargetType,
     is_triple,
 )
@@ -1199,19 +1200,28 @@ struct DevicePointer[dtype: DType](
 struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
     """Provides a default implementation of the `DeviceTypeEncoder` trait."""
 
+    @staticmethod
+    def target() -> _TargetType:
+        """Returns the target architecture this encoder is encoding for.
+
+        Returns:
+            The target architecture this encoder is encoding for.
+        """
+        return _current_target()
+
     def encode_device_ptr(
-        mut self, value: DevicePointer, target: MutOpaquePointer[_]
+        mut self, value: DevicePointer, dst: MutOpaquePointer[_]
     ):
-        """Encodes a `DevicePointer` into `target`.
+        """Encodes a `DevicePointer` into `dst`.
 
         By default treat `DevicePointer` as `UnsafePointer`, works for Unified
         Memory targets such as CUDA and HIP.
 
         Args:
-            value: The `DevicePointer` instance to encode into `target`.
-            target: The opaque destination pointer to encode into.
+            value: The `DevicePointer` instance to encode into `dst`.
+            dst: The opaque destination pointer to encode into.
         """
-        value.unsafe_ptr()._to_device_type(self, target)
+        value.unsafe_ptr()._to_device_type(self, dst)
 
 
 struct DeviceBuffer[dtype: DType](
@@ -3076,7 +3086,8 @@ struct DeviceFunction[
                     "') does not match the declared function argument type",
                 )
             var aligned_type_size = align_up(
-                size_of[actual_arg_type.device_type](), 8
+                size_of[actual_arg_type.device_type, target=Self.target](),
+                8,
             )
             if aligned_type_size != 0:
                 num_translated_args += 1
@@ -3136,7 +3147,8 @@ struct DeviceFunction[
             comptime for i in range(num_passed_args):
                 comptime actual_arg_type = Ts[i]
                 tmp_args_size += align_up(
-                    size_of[actual_arg_type.device_type](), 8
+                    size_of[actual_arg_type.device_type, target=Self.target](),
+                    8,
                 )
             return tmp_args_size
 

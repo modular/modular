@@ -16,6 +16,7 @@ from std.collections.optional import Optional
 from std.memory import Layout, stack_allocation, alloc, free
 from std.reflection import SourceLocation
 from std.sys import size_of
+from std.sys.info import _current_target, _TargetType
 
 from .device_context import (
     _checked_call,
@@ -56,19 +57,28 @@ struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
         """Initializes the encoder with an empty buffer list."""
         self._buffers = []
 
+    @staticmethod
+    def target() -> _TargetType:
+        """Returns the target architecture this encoder is encoding for.
+
+        Returns:
+            The target architecture this encoder is encoding for.
+        """
+        return _current_target()
+
     def encode_device_ptr(
-        mut self, value: DevicePointer, target: MutOpaquePointer[_]
+        mut self, value: DevicePointer, dst: MutOpaquePointer[_]
     ):
-        """Encodes a `DevicePointer` into `target`.
+        """Encodes a `DevicePointer` into `dst`.
 
         By default treat `DevicePointer` as `UnsafePointer`, works for USM
         targets such as CUDA and HIP.
 
         Args:
-            value: The `DevicePointer` instance to encode into `target`.
-            target: The opaque destination pointer to encode into.
+            value: The `DevicePointer` instance to encode into `dst`.
+            dst: The opaque destination pointer to encode into.
         """
-        value.unsafe_ptr()._to_device_type(self, target)
+        value.unsafe_ptr()._to_device_type(self, dst)
         self._buffers.append(value.buffer()._handle.value().as_any_origin())
 
 
@@ -309,7 +319,10 @@ def call_with_pack_checked_metal[
             var buffers_before = len(device_type_encoder._buffers)
             args[i]._to_device_type(device_type_encoder, first_word_addr)
 
-            var arg_size = size_of[actual_arg_type.device_type]()
+            var arg_size = size_of[
+                actual_arg_type.device_type,
+                target=device_type_encoder.target(),
+            ]()
             dense_args_addrs[translated_arg_idx] = first_word_addr
             dense_args_sizes[translated_arg_idx] = UInt64(arg_size)
             dense_args_is_device_ptr[translated_arg_idx] = (

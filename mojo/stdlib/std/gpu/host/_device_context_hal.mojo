@@ -1138,7 +1138,10 @@ struct DeviceFunction[
                 args[i]._to_device_type(device_type_encoder, first_word_addr)
                 dense_args_addrs[translated_arg_idx] = first_word_addr
                 dense_args_sizes[translated_arg_idx] = UInt64(
-                    size_of[actual_arg_type.device_type]()
+                    size_of[
+                        actual_arg_type.device_type,
+                        target=device_type_encoder.target(),
+                    ]()
                 )
                 translated_arg_idx += 1
 
