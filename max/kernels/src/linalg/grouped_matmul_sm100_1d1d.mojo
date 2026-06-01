@@ -1909,7 +1909,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     var load_mma_pipeline = ProducerConsumerPipeline[
         config.num_pipeline_stages // config.k_group_size
     ](
-        tma_mma_mbars_storage.unsafe_ptr(),
+        tma_mma_mbars_storage.unsafe_ptr().unsafe_origin_cast[
+            MutExternalOrigin
+        ](),
     )
 
     # MMA warp as producer and Output warp as consumer.
@@ -1917,7 +1919,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
     ](
-        accum_mbars_storage.unsafe_ptr(),
+        accum_mbars_storage.unsafe_ptr().unsafe_origin_cast[
+            MutExternalOrigin
+        ](),
     )
 
     var ptr_tmem_addr = tmem_addr_storage.unsafe_ptr()

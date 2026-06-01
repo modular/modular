@@ -362,9 +362,9 @@ def blackwell_kernel_3[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutExternalOrigin],
+    a: LayoutTensor[a_type, a_layout, MutExternalOrigin],
+    b: LayoutTensor[b_type, b_layout, MutExternalOrigin],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()

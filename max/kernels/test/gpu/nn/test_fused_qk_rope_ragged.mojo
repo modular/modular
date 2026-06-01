@@ -1088,6 +1088,9 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                                     ],
                                 )
 
+    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
+    _ = UnsafePointer(to=kv_block_out_host_ptr).as_any_origin()[]
+
     # Explicitly free device buffers to return memory to the buffer cache
     _ = q_ragged_device^
     _ = q_ragged_device_64^

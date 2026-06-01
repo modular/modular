@@ -17,7 +17,7 @@ from std.os import abort
 
 @fieldwise_init
 struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
+    var _value: OptionalReg[OpaquePointer[MutExternalOrigin]]
 
     def __init__(out self):
         self._value = None

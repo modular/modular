@@ -91,7 +91,6 @@ UNARY_ELEMENTWISE: dict[
 ] = {
     mo.NegativeOp: elementwise_unary_ops.Negative,
     mo.AbsOp: elementwise_unary_ops.Abs,
-    mo.ReluOp: elementwise_unary_ops.ReLU,
     mo.CeilOp: elementwise_unary_ops.Ceil,
     mo.FloorOp: elementwise_unary_ops.Floor,
     mo.RoundOp: elementwise_unary_ops.Round,
@@ -106,6 +105,11 @@ UNARY_ELEMENTWISE: dict[
     mo.SinOp: elementwise_unary_ops.Sin,
     mo.CosOp: elementwise_unary_ops.Cos,
     mo.ErfOp: elementwise_unary_ops.Erf,
+    mo.SigmoidOp: elementwise_unary_ops.Sigmoid,
+    mo.SiluOp: elementwise_unary_ops.Silu,
+    mo.GeluOp: elementwise_unary_ops.Gelu,
+    mo.GeluTanhOp: elementwise_unary_ops.GeluTanh,
+    mo.GeluQuickOp: elementwise_unary_ops.GeluQuick,
     mo.NotOp: elementwise_unary_ops.Not,
 }
 

@@ -564,7 +564,7 @@ struct PythonTypeBuilder(Copyable):
     var basicsize: Int
     """The required allocation size to hold an instance of this type as a Python object."""
 
-    var _slots: Dict[Int, _CPointer[NoneType, MutAnyOrigin]]
+    var _slots: Dict[Int, _CPointer[NoneType, MutExternalOrigin]]
     """Dictionary of Python type slots that define the behavior of the type, mapping slot number to function pointer."""
 
     var methods: List[PyMethodDef]
@@ -670,7 +670,7 @@ struct PythonTypeBuilder(Copyable):
             0,
             Py_TPFLAGS_DEFAULT,
             # Note: This pointer is only "read-only" by PyType_FromSpec.
-            slots.unsafe_ptr(),
+            slots.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
         )
 
         # Construct a Python 'type' object from our type spec.

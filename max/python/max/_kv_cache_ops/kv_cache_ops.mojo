@@ -45,7 +45,7 @@ def PyInit_kv_cache_ops() -> PythonObject:
         abort(t"failed to create kv cache op bindings module: {e}")
 
 
-def _make_int_list(values: InlineArray[Int, 3]) -> PythonObject:
+def _make_int_list(values: InlineArray[Int, 4]) -> PythonObject:
     ref cpython = Python().cpython()
     var result_py_list = cpython.PyList_New(len(values))
     for i in range(len(values)):
@@ -133,8 +133,9 @@ def mla_dispatch_args_scalar(
         is_fp8_kv,
         device_ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
     )
-    var result = InlineArray[Int, 3](uninitialized=True)
+    var result = InlineArray[Int, 4](uninitialized=True)
     result[0] = scalars[0]
     result[1] = scalars[1]
     result[2] = scalars[2]
+    result[3] = scalars[3]
     return _make_int_list(result)

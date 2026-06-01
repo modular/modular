@@ -748,6 +748,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
     ](ctx, c)
 
     comptime scheduler = SplitKTileScheduler[
+        locks_origin=MutAnyOrigin,
         Index(N, K),
         config.block_tile_shape,
         UInt32(splits),

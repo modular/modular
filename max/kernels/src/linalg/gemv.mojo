@@ -1207,6 +1207,8 @@ def naive_gemv(
 
 
 struct _MmaCpAsyncGmemLoaderA[
+    origin: Origin,
+    //,
     a_type: DType,
     a_layout: TensorLayout,
     tile_m: Int,
@@ -1226,7 +1228,7 @@ struct _MmaCpAsyncGmemLoaderA[
         Self.a_type, Self.tile_m, Self.tile_k, Self.stage_cnt
     ]
     comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
-    comptime ActTensor = TileTensor[Self.a_type, Self.a_layout, ImmutAnyOrigin]
+    comptime ActTensor = TileTensor[Self.a_type, Self.a_layout, Self.origin]
     comptime swizzle = make_swizzle[8, Self.tile_k, 8]()
 
     @always_inline
@@ -1326,6 +1328,8 @@ struct _MmaCpAsyncGmemLoaderA[
 
 
 struct _MmaCpAsyncGmemLoaderB[
+    weight_origin: ImmutOrigin,
+    //,
     b_type: DType,
     b_layout: TensorLayout,
     tile_n: Int,
@@ -1346,7 +1350,7 @@ struct _MmaCpAsyncGmemLoaderB[
     ]
     comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
     comptime WeightTensor = TileTensor[
-        Self.b_type, Self.b_layout, ImmutAnyOrigin
+        Self.b_type, Self.b_layout, Self.weight_origin
     ]
     comptime swizzle = make_swizzle[8, Self.tile_k, 8]()
 
@@ -1465,6 +1469,8 @@ struct _MmaCpAsyncGmemLoaderB[
 
 
 struct _MmaCpAsyncMmaComputer[
+    out_origin: MutOrigin,
+    //,
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1494,7 +1500,7 @@ struct _MmaCpAsyncMmaComputer[
     var smem_a: Self.SmemTilesA
     var smem_b: Self.SmemTilesB
     var smem_barrier: Self.Barriers
-    var out_ptr: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin]
+    var out_ptr: UnsafePointer[Scalar[Self.c_type], Self.out_origin]
     var compute_warp: Int
     var lane_idx: Int
     var warp_k_off: Int
@@ -1511,7 +1517,7 @@ struct _MmaCpAsyncMmaComputer[
         smem_a: Self.SmemTilesA,
         smem_b: Self.SmemTilesB,
         smem_barrier: Self.Barriers,
-        out_ptr: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin],
+        out_ptr: UnsafePointer[Scalar[Self.c_type], Self.out_origin],
         compute_warp: Int,
         lane_idx: Int,
         warp_k_off: Int,
@@ -1756,7 +1762,12 @@ def gemm_mma_cpasync_kernel[
 
     elif warp_idx_ < 4:
         comptime LoaderB = _MmaCpAsyncGmemLoaderB[
-            a_type, type_of(weight).LayoutType, tile_n, tile_k, stage_cnt
+            weight_origin=weight.origin,
+            a_type,
+            type_of(weight).LayoutType,
+            tile_n,
+            tile_k,
+            stage_cnt,
         ]
         var loader = LoaderB(
             rebind[LoaderB.WeightTensor](weight),
