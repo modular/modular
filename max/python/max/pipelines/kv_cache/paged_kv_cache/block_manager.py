@@ -54,6 +54,7 @@ def _compute_seq_len(
     ctx: TextGenerationContext,
     num_steps: int,
     num_draft_tokens: int,
+    num_draft_tokens_per_step: int = 1,
 ) -> int:
     # Each term accounts for one category of tokens that need a KV slot:
     #
@@ -66,11 +67,24 @@ def _compute_seq_len(
     #   num_steps                     : regular decode steps
     #   -1                            : the last generated token has no KV entry
     #
+    # Block-draft correction (DFlash): the draft model's ``forward_block``
+    # writes ``num_draft_tokens_per_step + 1`` positions in a single batched
+    # call, starting at ``bumped_cache_length = pre_cache_length +
+    # commit_lengths``. Compared to the autoregressive-draft accounting above
+    # (which assumes one draft KV per step), that's an extra position past the
+    # bonus token — exactly the slot the ``- 1`` here was reclaiming under the
+    # "last generated token has no KV entry" optimization. For block drafts
+    # that bonus position *does* get a KV entry (forward_block writes it as
+    # part of the speculative tail), so we add it back.
+    block_draft_extra = (
+        1 if num_draft_tokens_per_step == num_draft_tokens else 0
+    )
     seq_len = (
         len(ctx.tokens)
         + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
         + 2 * num_draft_tokens
         + num_steps
+        + block_draft_extra
         - 1
     )
     return seq_len
@@ -522,6 +536,7 @@ class BlockManager:
         ctx: TextGenerationContext,
         num_steps: int = 1,
         num_draft_tokens: int = 0,
+        num_draft_tokens_per_step: int = 1,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
@@ -535,6 +550,13 @@ class BlockManager:
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
+            num_draft_tokens_per_step: Number of draft KV positions written
+                per draft forward. One for autoregressive drafts
+                (``eagle``, ``mtp``, ``standalone``); equal to
+                ``num_draft_tokens`` for block drafts (``dflash``). Used by
+                ``_compute_seq_len`` to size the cache for block drafts,
+                whose ``forward_block`` writes one extra position past the
+                bonus token.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -565,6 +587,7 @@ class BlockManager:
             ctx,
             num_steps,
             num_draft_tokens,
+            num_draft_tokens_per_step,
         )
 
         # Verify that committed tokens fit within the currently allocated
@@ -602,6 +625,7 @@ class BlockManager:
         ctx: TextGenerationContext,
         num_steps: int = 1,
         num_draft_tokens: int = 0,
+        num_draft_tokens_per_step: int = 1,
     ) -> int:
         """Calculates the number of new blocks to allocate for a request.
 
@@ -610,6 +634,13 @@ class BlockManager:
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
+            num_draft_tokens_per_step: Number of draft KV positions written
+                per draft forward. One for autoregressive drafts
+                (``eagle``, ``mtp``, ``standalone``); equal to
+                ``num_draft_tokens`` for block drafts (``dflash``). Used by
+                ``_compute_seq_len`` to size the cache for block drafts,
+                whose ``forward_block`` writes one extra position past the
+                bonus token.
 
         Returns:
             The number of new blocks to allocate.
@@ -620,6 +651,7 @@ class BlockManager:
             ctx,
             num_steps,
             num_draft_tokens,
+            num_draft_tokens_per_step,
         )
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
         num_new_blocks = num_required_blocks - num_current_blocks

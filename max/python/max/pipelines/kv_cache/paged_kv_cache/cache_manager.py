@@ -391,7 +391,12 @@ class PagedKVCacheManager:
         block_manager = self._replica[replica_idx].block_manager
         num_needed_blocks = (
             self.get_num_used_pages(replica_idx)
-            + block_manager.num_blocks_to_allocate(ctx, num_steps)
+            + block_manager.num_blocks_to_allocate(
+                ctx,
+                num_steps,
+                self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
+            )
             - block_manager.count_full_blocks_from_prefix_caches(ctx)
         )
         return min(
@@ -427,6 +432,7 @@ class PagedKVCacheManager:
             data,
             num_steps,
             self.params.num_draft_tokens,
+            self.params.num_draft_tokens_per_step,
         )
 
     def _does_req_need_more_blocks(
@@ -442,6 +448,7 @@ class PagedKVCacheManager:
             ctx,
             num_steps,
             self.params.num_draft_tokens,
+            self.params.num_draft_tokens_per_step,
         )
         num_blocks = len(block_manager.req_to_blocks[ctx.request_id])
         return seq_len > num_blocks * self.params.page_size
@@ -488,6 +495,7 @@ class PagedKVCacheManager:
                 ctx,
                 num_steps,
                 self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
             )
             max_seq_len = max(max_seq_len, seq_len)
 
@@ -587,6 +595,7 @@ class PagedKVCacheManager:
                 ctx,
                 num_steps,
                 self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
             )
             num_required_blocks = ceildiv(seq_len, self.params.page_size)
             assert len(blocks) >= num_required_blocks
