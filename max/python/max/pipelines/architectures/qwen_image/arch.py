@@ -42,7 +42,16 @@ class QwenImageArchConfig(ArchConfig):
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
     ) -> Self:
-        if len(pipeline_config.model.device_specs) != 1:
+        if model_config is None:
+            model_config = pipeline_config.models.get("transformer")
+        if model_config is None and "main" in pipeline_config.models:
+            model_config = pipeline_config.model
+        if model_config is None:
+            raise ValueError(
+                "QwenImage requires a 'transformer' model component in "
+                "pipeline_config.models."
+            )
+        if len(model_config.device_specs) != 1:
             raise ValueError("QwenImage is only supported on a single device")
         return cls(pipeline_config=pipeline_config)
 
