@@ -66,6 +66,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _metrics_url(framework: str) -> str:
+    """Prometheus ``/metrics`` URL for the given framework (MAX uses port 8001, others 8000)."""
+    port = 8001 if framework in ("max", "max-ci", "max-nightly") else 8000
+    return f"http://127.0.0.1:{port}/metrics"
+
+
 # Maps alias model names to reusable MAX recipe configs. Aliases let the same
 # weights be tested under different configurations while keeping results
 # separate in dashboards. Paths use the portable ``max/pipelines/architectures/``
@@ -401,6 +407,7 @@ def get_server_cmd(
         "sglang.launch_server",
         "--attention-backend",
         sglang_backend,
+        "--enable-metrics",
     ]
     # limit-mm-per-prompt.video is for InternVL3 on B200
     VLLM = [
@@ -630,6 +637,7 @@ def smoke_test(
         # TODO(GEX-3508): Reduce timeout once model build time is optimized
         timeout = 2700
 
+    metrics_url = _metrics_url(framework)
     with start_server(cmd, timeout) as server:
         logger.info(f"Server started in {server.startup_time:.2f} seconds")
         write_github_output("startup_time", f"{server.startup_time:.2f}")
@@ -645,7 +653,9 @@ def smoke_test(
                 max_concurrent=max_concurrent,
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
+                metrics_url=metrics_url,
             )
+
             if print_responses:
                 print_samples(samples, print_cot)
 
