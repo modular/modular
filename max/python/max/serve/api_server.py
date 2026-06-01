@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
@@ -55,6 +56,7 @@ from max.serve.router import (
     openresponses_routes,
     sagemaker_routes,
 )
+from max.serve.schemas.openai import Error, ErrorResponse
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface.lora_queue import LoRAQueue
@@ -255,6 +257,48 @@ def make_metrics_app() -> Callable[..., Any]:
     return make_asgi_app()
 
 
+_OPENAI_ERROR_TYPES: dict[int, str] = {
+    400: "invalid_request_error",
+    401: "authentication_error",
+    403: "permission_error",
+    404: "not_found_error",
+    409: "conflict_error",
+    422: "invalid_request_error",
+    429: "rate_limit_error",
+}
+
+
+def _openai_error_body(status_code: int, message: str) -> dict[str, Any]:
+    error_type = _OPENAI_ERROR_TYPES.get(
+        status_code,
+        "invalid_request_error" if status_code < 500 else "api_error",
+    )
+    return ErrorResponse(
+        error=Error(
+            code=str(status_code), message=message, param="", type=error_type
+        )
+    ).model_dump()
+
+
+async def _openai_http_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    assert isinstance(exc, HTTPException)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_openai_error_body(exc.status_code, str(exc.detail)),
+        headers=getattr(exc, "headers", None),
+    )
+
+
+async def _openai_validation_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content=_openai_error_body(422, str(exc))
+    )
+
+
 def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
@@ -329,6 +373,11 @@ def fastapi_app(
 
     app.state.settings = settings
     register_request(app)
+
+    app.add_exception_handler(HTTPException, _openai_http_exception_handler)
+    app.add_exception_handler(
+        RequestValidationError, _openai_validation_exception_handler
+    )
 
     return app
 

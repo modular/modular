@@ -60,6 +60,7 @@ modular_py_library(
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/recordreplay",
         "//max/python/max/serve/router",
+        "//max/python/max/serve/schemas",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve/worker_interface",
         requirement("fastapi"),
