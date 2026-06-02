@@ -119,6 +119,7 @@ def test_warmup_pre_ready_releases_capture_outputs(
         num_q_heads_per_device=1,
         is_fp8_kv_dtype=False,
         data_parallel_degree=1,
+        num_draft_tokens_per_step=1,
     )
     runner = ServeGraphCaptureRunner(
         model=cast(Model, model),
@@ -157,6 +158,7 @@ def test_release_graph_drops_entry_and_forwards_to_model(
         num_q_heads_per_device=1,
         is_fp8_kv_dtype=False,
         data_parallel_degree=1,
+        num_draft_tokens_per_step=1,
     )
     runner = ServeGraphCaptureRunner(
         model=cast(Model, model),

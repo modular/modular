@@ -137,7 +137,7 @@ from .nvidia.sm100.mla_prefill_per_token_scale import (
 # Max query tokens per sequence the decode branch handles. Only NVIDIA's
 # decode kernel takes more than one (MTP / speculative decode); AMD's is
 # token-generation only.
-comptime MLA_DECODE_MAX_SEQ_LEN = 6 if has_nvidia_gpu_accelerator() else 1
+comptime MLA_DECODE_MAX_SEQ_LEN = 8 if has_nvidia_gpu_accelerator() else 1
 
 
 # entrypoint for MLA decoding kernels

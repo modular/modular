@@ -634,6 +634,7 @@ def test_warmup_eagle_outputs_vs_model_outputs() -> None:
         kv_params.data_parallel_degree = 1
         kv_params.num_q_heads_per_device = 1
         kv_params.is_fp8_kv_dtype = False
+        kv_params.num_draft_tokens_per_step = 1
 
         mock_inputs = MockModelInputs(
             active_batch_size=1,
