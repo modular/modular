@@ -128,7 +128,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": DISABLE,  # MXSERV-84
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": DISABLE,  # SERVSYS-1248
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": NON_XL | {"4xMI355"},
     "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
     "google/gemma-4-26B-A4B-it__localkv": MULTI,
     "google/gemma-4-26B-A4B-it__tieredkv": MULTI,
