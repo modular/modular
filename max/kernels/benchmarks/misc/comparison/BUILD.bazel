@@ -153,6 +153,21 @@ modular_py_binary(
     ],
 )
 
+modular_py_binary(
+    name = "bench_mla_prefill_sparse_fp8",
+    srcs = ["bench_blackwell_mla_prefill_sparse_fp8.py"],
+    main = "bench_blackwell_mla_prefill_sparse_fp8.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        ":bench_baseline_lib",
+        requirement("torch"),
+    ],
+)
+
 # Expert Parallelism (EP) benchmark: MAX EP dispatch/combine operations
 modular_py_binary(
     name = "bench_ep_baseline",
