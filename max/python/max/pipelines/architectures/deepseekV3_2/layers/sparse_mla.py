@@ -24,7 +24,9 @@ from max.graph import (
     ops,
 )
 from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.attention.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
@@ -96,8 +98,8 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             index_topk=index_topk,
             q_lora_rank=q_lora_rank,
             devices=self.devices,
-            activation_quant_config=self.quant_config,
-            weight_quant_config=self.quant_config,
+            quant_config=self.quant_config,
+            k_norm_dtype=norm_dtype,
         )
 
     @LatentAttentionWithRopeFp8.sharding_strategy.setter  # type: ignore[attr-defined]
@@ -148,6 +150,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             "scale": self.scale,
             "v_head_dim": self.v_head_dim,
             "quant_config": self.quant_config,
+            "scale_granularity_override": self._b_scale_granularity,
         }
 
         w_k, w_k_scale = self.w_k
