@@ -117,6 +117,14 @@ This version is still a work in progress.
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
 - Removed the `default` value for `--devices`; omit `--devices` to use the model
   or config default.
+- The serving benchmark entrypoint (`benchmark_serving`) now defaults `--seed`
+  to a fixed value instead of drawing a fresh random seed on each run. The seed
+  drives the workload generator (input/output lengths, session structure,
+  content), so a fixed default makes repeated and scheduled runs reproducible
+  and keeps run-to-run deltas reflecting the change under test rather than
+  workload-draw variance. To opt back into a fresh seed, pass `--seed none` on
+  the CLI (or `seed: null` in a workload/config YAML); the drawn seed is logged
+  and recorded with the results so the run stays reproducible after the fact.
 
 ### Python API
 

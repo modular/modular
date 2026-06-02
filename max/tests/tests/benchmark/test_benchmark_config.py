@@ -20,8 +20,13 @@ from typing import Any
 
 import pytest
 import yaml
-from max.benchmark.benchmark_serving import main_with_parsed_args
+from max.benchmark.benchmark_serving import (
+    _resolve_seed,
+    main_with_parsed_args,
+    parse_args,
+)
 from max.benchmark.benchmark_shared.config import (
+    DEFAULT_BENCHMARK_SEED,
     ServingBenchmarkConfig,
 )
 
@@ -307,3 +312,87 @@ class TestWorkloadMaxConcurrency:
         results = list(main_with_parsed_args(config))
         assert len(results) == 1
         assert results[0].max_concurrency == 4
+
+
+# ===----------------------------------------------------------------------=== #
+# Seed handling (PERF-2587)
+# ===----------------------------------------------------------------------=== #
+
+
+class TestSeedDefaultAndOverride:
+    """The seed is pinned by default; ``none`` opts into a fresh random draw."""
+
+    def test_default_seed_is_pinned(self) -> None:
+        """An unset seed defaults to the fixed constant, not ``None``."""
+        assert ServingBenchmarkConfig().seed == DEFAULT_BENCHMARK_SEED
+
+    def test_explicit_int_is_kept(self) -> None:
+        """An explicit integer seed is preserved verbatim."""
+        assert ServingBenchmarkConfig(seed=1234).seed == 1234
+
+    def test_explicit_none_is_kept(self) -> None:
+        """A ``null`` seed (Python ``None``) is preserved as ``None``."""
+        assert ServingBenchmarkConfig(seed=None).seed is None
+
+    def test_parse_args_default(self) -> None:
+        """``parse_args`` with no ``--seed`` yields the pinned default."""
+        assert parse_args(["--model", "m"]).seed == DEFAULT_BENCHMARK_SEED
+
+    def test_parse_args_int(self) -> None:
+        """``--seed 7`` parses to the integer 7."""
+        assert parse_args(["--model", "m", "--seed", "7"]).seed == 7
+
+    @pytest.mark.parametrize("value", ["none", "None", "NONE"])
+    def test_cli_none_maps_to_random(self, value: str) -> None:
+        """``--seed none`` (any case) parses to ``None`` (draw a random seed)."""
+        assert parse_args(["--model", "m", "--seed", value]).seed is None
+
+
+class TestSeedConfigFileLoading:
+    """Seed loaded from a YAML config/workload file."""
+
+    def test_yaml_null_maps_to_random(self, tmp_path: Path) -> None:
+        """YAML ``seed: null`` loads as ``None`` (draw a random seed)."""
+        cfg_path = tmp_path / "serving.yaml"
+        cfg_path.write_text("model: myorg/llama\nseed: null\n")
+
+        assert ServingBenchmarkConfig(config_file=str(cfg_path)).seed is None
+
+    def test_yaml_string_none_maps_to_random(self, tmp_path: Path) -> None:
+        """YAML ``seed: none`` (string) loads as ``None`` via the validator."""
+        cfg_path = tmp_path / "serving.yaml"
+        cfg_path.write_text("model: myorg/llama\nseed: none\n")
+
+        assert ServingBenchmarkConfig(config_file=str(cfg_path)).seed is None
+
+    def test_yaml_int_is_kept(self, tmp_path: Path) -> None:
+        """YAML ``seed: 1234`` loads as the integer 1234."""
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(cfg_path, {"model": "myorg/llama", "seed": 1234})
+
+        assert ServingBenchmarkConfig(config_file=str(cfg_path)).seed == 1234
+
+    def test_yaml_unset_uses_pinned_default(self, tmp_path: Path) -> None:
+        """A YAML file that omits ``seed`` uses the pinned default."""
+        cfg_path = tmp_path / "serving.yaml"
+        _write_yaml(cfg_path, {"model": "myorg/llama"})
+
+        config = ServingBenchmarkConfig(config_file=str(cfg_path))
+        assert config.seed == DEFAULT_BENCHMARK_SEED
+
+
+class TestResolveSeed:
+    """``_resolve_seed`` draws a concrete seed only when one was not pinned."""
+
+    def test_random_seed_is_drawn(self) -> None:
+        """A ``None`` seed is resolved to a concrete int in ``[0, 10000)``."""
+        config = ServingBenchmarkConfig(model="m", seed=None)
+        _resolve_seed(config)
+        assert isinstance(config.seed, int)
+        assert 0 <= config.seed < 10000
+
+    def test_pinned_seed_is_unchanged(self) -> None:
+        """A pinned seed is left exactly as supplied."""
+        config = ServingBenchmarkConfig(model="m", seed=1234)
+        _resolve_seed(config)
+        assert config.seed == 1234

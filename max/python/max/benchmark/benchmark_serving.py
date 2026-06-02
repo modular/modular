@@ -1070,6 +1070,22 @@ def _apply_dynamic_num_prompts(
     return use_dynamic_num_prompts
 
 
+def _resolve_seed(args: ServingBenchmarkConfig) -> None:
+    """Draw and record a random seed when one was not pinned.
+
+    ``args.seed`` defaults to a fixed value so scheduled and repeated runs are
+    reproducible. A caller can opt into a fresh draw with ``--seed none`` (which
+    sets ``args.seed`` to ``None``); this resolves that draw to a concrete value
+    *before* the workload is sampled, so the run stays reproducible from the
+    recorded seed.
+    """
+    if args.seed is None:
+        args.seed = int(np.random.default_rng().integers(0, 10000))
+        logger.info("Drew a fresh random seed=%d", args.seed)
+    else:
+        logger.info("Using pinned seed=%d", args.seed)
+
+
 def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     assert args.model is not None
     random.seed(args.seed)
@@ -1267,8 +1283,6 @@ def _run_benchmark_sweep(
                         args.backend, args.host, args.port, args.dry_run
                     )
 
-                if args.seed is None:
-                    args.seed = int(np.random.randint(0, 10000))
                 logger.info("mc=%s seed=%d", mc, args.seed)
 
                 result, ok = asyncio.run(benchmark(args, session, mc, rr))
@@ -1336,6 +1350,7 @@ def main_with_parsed_args(
 
     _load_workload_yaml(args)
     _apply_run_length_defaults(args)
+    _resolve_seed(args)
 
     use_dynamic_num_prompts = _apply_dynamic_num_prompts(
         args, args.max_concurrency
