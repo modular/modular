@@ -269,7 +269,7 @@ Before submitting your custom architecture to the repo:
 - Check out these other docs:
 
   - [Debug MAX model accuracy](/max/docs/accuracy-debugging.md)
-  - [Op logging in MAX](/max/docs/modeling/op-logging.md)
+  - [Op logging in MAX](/max/docs/op-logging.md)
   - [GPU profiling with Nsight Systems](https://docs.modular.com/max/gpu-system-profiling)
 
 - For detailed examples, explore the existing architecture implementations in
