@@ -392,29 +392,18 @@ def _elementwise_impl[
 
 @always_inline
 def dual_elementwise[
-    rank: Int,
-    //,
-    func_0: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
-    func_1: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
+    func_0: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
+    func_1: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
     simd_width: Int,
     *,
     target: StaticString = "gpu",
     _trace_description: StaticString = "dual_elementwise",
-](
-    shape_0: IndexList[rank],
-    shape_1: IndexList[rank],
-    context: DeviceContext,
-) raises:
+](shape_0: Coord, shape_1: Coord, context: DeviceContext,) raises:
     """Executes two elementwise functions over their respective shapes in a
     single GPU kernel launch. Each thread processes elements from both shapes,
     fusing two independent elementwise passes into one.
 
     Parameters:
-        rank: The rank of the buffers.
         func_0: The first body function.
         func_1: The second body function.
         simd_width: The SIMD vector width to use.
@@ -430,15 +419,11 @@ def dual_elementwise[
         If the operation fails.
     """
 
-    def func_0_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) {}:
-        func_0[width, rank, alignment](indices)
+    def func_0_unified[width: Int, alignment: Int = 1](indices: Coord) {}:
+        func_0[width, alignment](indices)
 
-    def func_1_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) {}:
-        func_1[width, rank, alignment](indices)
+    def func_1_unified[width: Int, alignment: Int = 1](indices: Coord) {}:
+        func_1[width, alignment](indices)
 
     _dual_elementwise_impl[
         simd_width,
@@ -449,15 +434,13 @@ def dual_elementwise[
 
 @always_inline
 def _dual_elementwise_impl[
-    rank: Int,
-    //,
     simd_width: Int,
     Func0Type: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     Func1Type: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
     /,
     *,
     target: StaticString = "gpu",
@@ -465,15 +448,15 @@ def _dual_elementwise_impl[
 ](
     func_0: Func0Type,
     func_1: Func1Type,
-    shape_0: IndexList[rank],
-    shape_1: IndexList[rank],
+    shape_0: Coord,
+    shape_1: Coord,
     context: DeviceContext,
 ) raises:
     @always_inline
     @parameter
     def description_fn() -> String:
-        var s0 = trace_arg("shape_0", shape_0)
-        var s1 = trace_arg("shape_1", shape_1)
+        var s0 = trace_arg("shape_0", coord_to_index_list(shape_0))
+        var s1 = trace_arg("shape_1", coord_to_index_list(shape_1))
         var vw = String(t"vector_width={simd_width}")
         return ";".join(Span([s0^, s1^, vw^]))
 

@@ -1311,19 +1311,20 @@ def _fused_dual_concat_gpu_elementwise[
     @parameter
     @always_inline
     def per_output_elem_0[
-        simd_width: Int, _rank: Int, alignment: Int = 1
-    ](out_index: IndexList[_rank]):
-        var in_index = out_index
+        simd_width: Int, alignment: Int = 1
+    ](out_index: Coord):
+        var in_index = coord_to_index_list(out_index)
+        var out_idx = in_index
         comptime for i in range(size_0):
             var input_shape = input_shapes_0[i]
-            if in_index[axis] < input_shape[axis]:
+            if Int(in_index[axis].value()) < Int(input_shape[axis].value()):
                 output_0_fn[
-                    dtype, _rank, width=simd_width, alignment=alignment
+                    dtype, out_index.rank, width=simd_width, alignment=alignment
                 ](
-                    out_index,
-                    input_fn_0[i, simd_width, _rank, alignment=alignment](
-                        in_index
-                    ),
+                    out_idx,
+                    input_fn_0[
+                        i, simd_width, out_index.rank, alignment=alignment
+                    ](in_index),
                 )
                 return
             in_index[axis] -= input_shape[axis]
@@ -1331,19 +1332,20 @@ def _fused_dual_concat_gpu_elementwise[
     @parameter
     @always_inline
     def per_output_elem_1[
-        simd_width: Int, _rank: Int, alignment: Int = 1
-    ](out_index: IndexList[_rank]):
-        var in_index = out_index
+        simd_width: Int, alignment: Int = 1
+    ](out_index: Coord):
+        var in_index = coord_to_index_list(out_index)
+        var out_idx = in_index
         comptime for i in range(size_1):
             var input_shape = input_shapes_1[i]
             if in_index[axis] < input_shape[axis]:
                 output_1_fn[
-                    dtype, _rank, width=simd_width, alignment=alignment
+                    dtype, out_index.rank, width=simd_width, alignment=alignment
                 ](
-                    out_index,
-                    input_fn_1[i, simd_width, _rank, alignment=alignment](
-                        in_index
-                    ),
+                    out_idx,
+                    input_fn_1[
+                        i, simd_width, out_index.rank, alignment=alignment
+                    ](in_index),
                 )
                 return
             in_index[axis] -= input_shape[axis]
@@ -1370,7 +1372,7 @@ def _fused_dual_concat_gpu_elementwise[
                 _vec_width,
                 target="gpu",
                 _trace_description="dual_concat_fused",
-            ](output_shape_0, output_shape_1, ctx)
+            ](Coord(output_shape_0), Coord(output_shape_1), ctx)
         elif inner_size % 4 == 0:
             dual_elementwise[
                 per_output_elem_0,
@@ -1378,7 +1380,7 @@ def _fused_dual_concat_gpu_elementwise[
                 4,
                 target="gpu",
                 _trace_description="dual_concat_fused",
-            ](output_shape_0, output_shape_1, ctx)
+            ](Coord(output_shape_0), Coord(output_shape_1), ctx)
         else:
             dual_elementwise[
                 per_output_elem_0,
@@ -1386,7 +1388,7 @@ def _fused_dual_concat_gpu_elementwise[
                 1,
                 target="gpu",
                 _trace_description="dual_concat_fused",
-            ](output_shape_0, output_shape_1, ctx)
+            ](Coord(output_shape_0), Coord(output_shape_1), ctx)
     else:
         comptime simd_width = preferred_simd_width[dtype]()
 
@@ -1406,7 +1408,7 @@ def _fused_dual_concat_gpu_elementwise[
                 simd_width,
                 target="gpu",
                 _trace_description="dual_concat_fused",
-            ](output_shape_0, output_shape_1, ctx)
+            ](Coord(output_shape_0), Coord(output_shape_1), ctx)
         else:
             dual_elementwise[
                 per_output_elem_0,
@@ -1414,7 +1416,7 @@ def _fused_dual_concat_gpu_elementwise[
                 1,
                 target="gpu",
                 _trace_description="dual_concat_fused",
-            ](output_shape_0, output_shape_1, ctx)
+            ](Coord(output_shape_0), Coord(output_shape_1), ctx)
 
 
 @always_inline
