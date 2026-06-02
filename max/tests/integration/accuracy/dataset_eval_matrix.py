@@ -32,37 +32,37 @@ SMOKE_TEST_PIPELINE = "sentence-transformers/all-mpnet-base-v2"
 PIPELINES: list[PipelineEntry] = [
     PipelineEntry(
         pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
-        runner="modrunner-h100",
+        runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.h100.1",
+        instance_type="bm.gpu.b200.1",
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
         pipeline="OpenGVLab/InternVL3-8B-Instruct",
-        runner="modrunner-h100",
+        runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.h100.1",
+        instance_type="bm.gpu.b200.1",
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
         pipeline="modularai/Llama-3.1-8B-Instruct-GGUF",
-        runner="modrunner-h100",
+        runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.h100.1",
+        instance_type="bm.gpu.b200.1",
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
         pipeline="sentence-transformers/all-mpnet-base-v2",
-        runner="modrunner-h100",
+        runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.h100.1",
+        instance_type="bm.gpu.b200.1",
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
         pipeline="LiquidAI/LFM2.5-1.2B-Instruct",
-        runner="modrunner-h100",
+        runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.h100.1",
+        instance_type="bm.gpu.b200.1",
         # LFM2 requires batch_size=1 (SSM/conv state can't be batched across
         # sequences in the same way as pure-attention models), so all evaluation
         # tasks run sequentially rather than in parallel batches.  3 hours
@@ -71,30 +71,30 @@ PIPELINES: list[PipelineEntry] = [
     ),
     PipelineEntry(
         pipeline="Qwen/Qwen2.5-VL-3B-Instruct",
-        runner="modrunner-h100",
+        runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.h100.1",
+        instance_type="bm.gpu.b200.1",
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
         pipeline="Qwen/Qwen2.5-VL-7B-Instruct",
-        runner="modrunner-h100",
+        runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.h100.1",
+        instance_type="bm.gpu.b200.1",
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
         pipeline="OpenGVLab/InternVL3-38B-Instruct",
-        runner="modrunner-h100-2x",
+        runner="modrunner-b200-2x",
         gpu_flag="--devices gpu:0,1",
-        instance_type="bm.gpu.h100.2",
+        instance_type="bm.gpu.b200.2",
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
         pipeline="Qwen/Qwen2.5-VL-32B-Instruct",
-        runner="modrunner-h100-2x",
+        runner="modrunner-b200-2x",
         gpu_flag="--devices gpu:0,1",
-        instance_type="bm.gpu.h100.2",
+        instance_type="bm.gpu.b200.2",
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
