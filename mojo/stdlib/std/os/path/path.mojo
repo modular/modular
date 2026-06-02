@@ -666,6 +666,70 @@ def splitroot[
 
 
 # ===----------------------------------------------------------------------=== #
+# normpath
+# ===----------------------------------------------------------------------=== #
+
+
+def normpath[PathLike: os.PathLike, //](path: PathLike) -> String:
+    """Normalizes a pathname by collapsing redundant separators and up-level
+    references, so that `A//B`, `A/B/`, `A/./B` and `A/foo/../B` all become
+    `A/B`. On POSIX, two leading slashes are preserved as a special case.
+
+    This string manipulation may change the meaning of a path that contains
+    symbolic links.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to normalize.
+
+    Returns:
+        The normalized path.
+
+    Examples:
+
+    ```mojo
+    from std.os.path import normpath
+
+    print(normpath("foo//bar"))      # "foo/bar"
+    print(normpath("foo/./bar"))     # "foo/bar"
+    print(normpath("foo/../bar"))    # "bar"
+    print(normpath("//foo//bar"))    # "//foo/bar"
+    print(normpath("/.."))           # "/"
+    print(normpath(""))              # "."
+    ```
+    """
+    comptime sep_slice = StringSlice(sep)
+    comptime dot = StringSlice(".")
+    comptime dotdot = StringSlice("..")
+    comptime dot_str = "."
+
+    var path_str = path.__fspath__()
+    if not path_str:
+        return dot_str
+
+    var _, root, tail = splitroot(path_str)
+
+    var comps = tail.split(sep_slice)
+    var new_comps = List[String]()
+    for comp in comps:
+        if not comp or comp == dot:
+            continue
+        if (
+            comp != dotdot
+            or (not root and not new_comps)
+            or (new_comps and new_comps[len(new_comps) - 1] == dotdot)
+        ):
+            new_comps.append(String(comp))
+        elif new_comps:
+            _ = new_comps.pop()
+
+    var new_path_str = root + sep.join(new_comps)
+    return new_path_str or dot_str
+
+
+# ===----------------------------------------------------------------------=== #
 # expandvars
 # ===----------------------------------------------------------------------=== #
 
