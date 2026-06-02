@@ -51,40 +51,20 @@ linter(
     binary = ":ruff_wrapper",
 )
 
-alias(
-    name = "rumdl",
-    actual = select({
-        "//:linux_x86_64": "@rumdl-x86_64-unknown-linux-musl//:rumdl",
-        "//:linux_aarch64": "@rumdl-aarch64-unknown-linux-musl//:rumdl",
-        "@platforms//os:macos": "@rumdl-aarch64-apple-darwin//:rumdl",
+modular_py_binary(
+    name = "rumdl_wrapper",
+    srcs = ["rumdl_wrapper.py"],
+    data = select({
+        "//:linux_x86_64": ["@rumdl-x86_64-unknown-linux-musl//:rumdl"],
+        "//:linux_aarch64": ["@rumdl-aarch64-unknown-linux-musl//:rumdl"],
+        "@platforms//os:macos": ["@rumdl-aarch64-apple-darwin//:rumdl"],
     }),
-    tags = ["maybe-unused"],  # TODO: Remove when used
+    deps = [":lint_helpers"],
 )
 
-command(
-    name = "rumdl.check",
-    arguments = [
-        "check",
-        ".",
-        "--config",
-        "$(location :.rumdl.toml)",
-    ],
-    command = ":rumdl",
-    data = [":.rumdl.toml"],
-    run_from_workspace_root = True,
-)
-
-command(
-    name = "rumdl.fix",
-    arguments = [
-        "fmt",
-        ".",
-        "--config",
-        "$(location :.rumdl.toml)",
-    ],
-    command = ":rumdl",
-    data = [":.rumdl.toml"],
-    run_from_workspace_root = True,
+linter(
+    base_name = "rumdl",
+    binary = ":rumdl_wrapper",
 )
 
 modular_py_binary(
