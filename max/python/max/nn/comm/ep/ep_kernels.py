@@ -633,6 +633,8 @@ def call_ep_dispatch(
                 )
             op_name += ".nvfp4"
             input_vals.append(1.0 / input_scales.to(device_ref))
+        elif quant_config.is_mxfp4:
+            op_name += ".mxfp4"
         else:
             raise ValueError(
                 f"Unsupported dispatch dtype: {config.dispatch_dtype}"

@@ -950,6 +950,75 @@ struct Struct_ep_dispatch_nvfp4:
         )
 
 
+@compiler.register("ep.dispatch.mxfp4")
+struct Struct_ep_dispatch_mxfp4:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        //,
+        target: StaticString,
+    ](
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        """Execute the fused Expert Parallelism MXFP4 dispatch kernel. Tokens
+        are dispatched in MXFP4 format.
+        """
+        var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
+        var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
+
+        var format_handler = MXFP4TokenFormat[hidden_size, top_k](
+            output_tokens_tensor,
+            output_scales_tensor,
+        )
+
+        ep_fused_dispatch_kernel_api[
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            fused_shared_expert,
+            target,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            format_handler,
+            row_offsets.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            src_info.to_tile_tensor[DType.int64](),
+            atomic_counters.to_tile_tensor[DType.int64](),
+            input_tokens.to_tile_tensor[DType.int64](),
+            topk_ids.to_tile_tensor[DType.int64](),
+            send_ptrs.to_tile_tensor[DType.int64](),
+            recv_ptrs.to_tile_tensor[DType.int64](),
+            recv_count_ptrs.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
 @compiler.register("mo.distributed.ep.dispatch.nvfp4")
 struct DistributedEPDispatchNVFP4:
     @staticmethod
