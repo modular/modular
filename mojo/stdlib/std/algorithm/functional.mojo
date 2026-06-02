@@ -333,7 +333,7 @@ def _elementwise_impl[
     /,
     *,
     target: StaticString = "cpu",
-    trace_description: StaticString = "elementwise",
+    trace_description: StaticString,
 ](func: FuncType, shape: Coord, context: DeviceContext) raises:
     @always_inline
     @parameter
@@ -461,7 +461,7 @@ def _dual_elementwise_impl[
     /,
     *,
     target: StaticString = "gpu",
-    trace_description: StaticString = "dual_elementwise",
+    trace_description: StaticString,
 ](
     func_0: Func0Type,
     func_1: Func1Type,

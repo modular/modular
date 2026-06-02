@@ -761,7 +761,7 @@ def _elementwise_impl_gpu[
     FuncType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int = 1](Coord) -> None,
-    trace_description: StaticString = "",
+    trace_description: StaticString,
 ](func: FuncType, *, shape: Coord, ctx: DeviceContext) raises:
     """Executes `func[width](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
@@ -909,7 +909,7 @@ def _dual_elementwise_impl_gpu[
     & RegisterPassable
     & def[width: Int, rank: Int, alignment: Int = 1](IndexList[rank]) -> None,
     *,
-    trace_description: StaticString = "",
+    trace_description: StaticString,
 ](
     func_0: Func0Type,
     func_1: Func1Type,

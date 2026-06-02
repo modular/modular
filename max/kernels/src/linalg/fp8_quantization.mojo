@@ -113,7 +113,10 @@ def quantize_static_scaled_fp8[
     def scaled_fp8_quant_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
         scaled_fp8_quant[width, idx.rank, alignment](coord_to_index_list(idx))
 
-    _elementwise_impl_gpu[simd_width=target_simd_width](
+    _elementwise_impl_gpu[
+        simd_width=target_simd_width,
+        trace_description="scaled_fp8_quant",
+    ](
         scaled_fp8_quant_unified,
         shape=(Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
         ctx=context,
@@ -1659,7 +1662,10 @@ def convert_e4m3fn_to_e4m3fnuz(
     def convert_kernel_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
         convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
-    _elementwise_impl_gpu[simd_width=target_simd_width](
+    _elementwise_impl_gpu[
+        simd_width=target_simd_width,
+        trace_description="fp8_e4m3fn_to_e4m3fnuz_convert",
+    ](
         convert_kernel_unified,
         shape=(
             Int(input_buffer.dim[0]()),

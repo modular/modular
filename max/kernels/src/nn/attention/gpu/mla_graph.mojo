@@ -1494,7 +1494,10 @@ def convert_bf16_to_fp8_e4m3fn(
         convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     comptime if input_buffer.rank == 2:
-        _elementwise_impl_gpu[simd_width=target_simd_width](
+        _elementwise_impl_gpu[
+            simd_width=target_simd_width,
+            trace_description="mla_bf16_to_fp8_convert",
+        ](
             convert_kernel_unified,
             shape=(
                 Int(input_buffer.dim[0]()),
@@ -1503,7 +1506,10 @@ def convert_bf16_to_fp8_e4m3fn(
             ctx=context,
         )
     else:
-        _elementwise_impl_gpu[simd_width=target_simd_width](
+        _elementwise_impl_gpu[
+            simd_width=target_simd_width,
+            trace_description="mla_bf16_to_fp8_convert",
+        ](
             convert_kernel_unified,
             shape=(
                 Int(input_buffer.dim[0]()),
