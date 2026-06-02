@@ -220,6 +220,7 @@ _B200_TESTS = [
     "test_matmul_sm100_1sm_bf16_rmsnorm.mojo",
     "test_matmul_sm100_1sm_bf16_bias.mojo",
     "test_matmul_sm100_2sm_bf16_bias.mojo",
+    "test_matmul_sm100_fused_bias_residual_dispatch.mojo",
 ]
 
 _GPU_MEMORY = {
@@ -270,6 +271,7 @@ _GPU_MEMORY = {
     "test_ping_pong_shapes.mojo": "2",
     "test_matmul_sm100_1sm_bf16_bias.mojo": "3",
     "test_matmul_sm100_2sm_bf16_bias.mojo": "3",
+    "test_matmul_sm100_fused_bias_residual_dispatch.mojo": "3",
 }
 
 [

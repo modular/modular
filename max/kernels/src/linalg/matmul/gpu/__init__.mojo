@@ -39,7 +39,6 @@ from layout import (
     Coord,
     Idx,
     LayoutTensor,
-    RowMajorLayout,
     RuntimeLayout,
     TensorLayout,
     TileTensor,
@@ -415,20 +414,11 @@ def _matmul_gpu[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
-    has_epilogue_tensor: Bool = False,
-    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
     b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
-    epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
-    ] = None,
 ) raises:
     """GPU matmul dispatch entry point. Routes to the appropriate kernel
     based on hardware capabilities and tensor properties.
@@ -566,9 +556,7 @@ def _matmul_gpu[
             elementwise_lambda_wrapper=elementwise_lambda_wrapper,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=PDLLevel.ON,
-            has_epilogue_tensor=has_epilogue_tensor,
-            epilogue_is_1d=epilogue_is_1d,
-        ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
+        ](c, a, b, ctx)
 
     comptime if ctx.default_device_info == H100:
         var status = matmul_dispatch_sm90[

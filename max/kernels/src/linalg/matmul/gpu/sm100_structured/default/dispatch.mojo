@@ -166,20 +166,11 @@ def dispatch_gemv[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
-    has_epilogue_tensor: Bool = False,
-    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
-    epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
-    ] = None,
 ) raises:
     """Dispatch M=1 (or N=1) matmul to GEMV or SM100 GEMM based on (N, K).
 
@@ -203,14 +194,12 @@ def dispatch_gemv[
     ]
 
     comptime if static_NK in SM100_GEMV_SHAPES:
-        var status = heuristic_and_outliers_dispatch[
+        var status = sm100_heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-            has_epilogue_tensor=has_epilogue_tensor,
-            epilogue_is_1d=epilogue_is_1d,
-        ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
+        ](c, a, b, ctx)
 
         if status:
             logger.info("------ Executing SM100 GEMV kernel ------")
@@ -236,20 +225,11 @@ def matmul_dispatch_sm100[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
-    has_epilogue_tensor: Bool = False,
-    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
-    epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
-    ] = None,
 ) raises:
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
@@ -291,14 +271,13 @@ def matmul_dispatch_sm100[
             cta_group=CTA_GROUP,
             AB_swapped=AB_SWAPPED,
             k_group_size=K_GROUP_SIZE,
-            use_tma_epilogue_load=has_epilogue_tensor,
-            epilogue_is_1d=epilogue_is_1d,
+            use_tma_epilogue_load=False,
         )
 
         return blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=config,
-        ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
+        ](c, a, b, ctx)
 
     # M = 1(or N = 1) : dispatch to GEMV or SM100 based on(N, K).
     # For certain large(N, K) shapes SM100 GEMM outperforms GEMV even at M = 1.
@@ -310,9 +289,7 @@ def matmul_dispatch_sm100[
                 elementwise_lambda_wrapper=elementwise_lambda_wrapper,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-                has_epilogue_tensor=has_epilogue_tensor,
-                epilogue_is_1d=epilogue_is_1d,
-            ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
+            ](c, a, b, ctx)
             return
 
     comptime if _vendor_blas_fallback_disabled():
@@ -327,9 +304,7 @@ def matmul_dispatch_sm100[
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-                has_epilogue_tensor=has_epilogue_tensor,
-                epilogue_is_1d=epilogue_is_1d,
-            ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
+            ](c, a, b, ctx)
             if status:
                 return
             else:
@@ -389,9 +364,7 @@ def matmul_dispatch_sm100[
                 elementwise_lambda_wrapper=elementwise_lambda_wrapper,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-                has_epilogue_tensor=has_epilogue_tensor,
-                epilogue_is_1d=epilogue_is_1d,
-            ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
+            ](c, a, b, ctx)
 
         elif a_type == b_type == DType.float8_e4m3fn:
             status = matmul_dispatch_sm100_fp8[
@@ -769,20 +742,11 @@ def matmul_dispatch_sm100_bf16[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
-    has_epilogue_tensor: Bool = False,
-    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
-    epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
-    ] = None,
 ) raises -> Int:
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
@@ -839,9 +803,7 @@ def matmul_dispatch_sm100_bf16[
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         pdl_level=pdl_level,
-        has_epilogue_tensor=has_epilogue_tensor,
-        epilogue_is_1d=epilogue_is_1d,
-    ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
+    ](c, a, b, ctx)
 
 
 # NOTE: Vendor BLAS, naive matmul, and multistage GEMM do not support compute

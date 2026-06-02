@@ -49,6 +49,9 @@ from linalg.grouped_matmul_block_scaled_dispatch import (
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_swiglu_nvfp4_dispatch,
 )
+from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
+    fused_bias_residual_matmul_dispatch_sm100,
+)
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100
@@ -316,8 +319,7 @@ struct FusedMatmulAdd:
             residual.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
         ).as_immut()
 
-        _matmul_gpu[
-            use_tensor_core=True,
+        fused_bias_residual_matmul_dispatch_sm100[
             transpose_b=transpose_b,
             has_epilogue_tensor=True,
             epilogue_is_1d=epilogue_is_1d,
@@ -325,8 +327,8 @@ struct FusedMatmulAdd:
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
+            epilogue,
             ctx,
-            epilogue_tensor=OptionalReg(epilogue),
         )
 
 

@@ -53,6 +53,9 @@ from layout import (
     row_major,
 )
 from linalg.matmul.gpu import _matmul_gpu
+from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
+    fused_bias_residual_matmul_dispatch_sm100,
+)
 from std.utils import IndexList
 
 
@@ -297,24 +300,20 @@ def bench_matmul_tma_epilogue[
             ](tensor_c, tensor_a, tensor_b, ctx)
 
         else:  # "tma_bias"
-            # Build epilogue TileTensor with RowMajorLayout[Int64, Int64]
-            # to exactly match _matmul_gpu's epilogue_tensor parameter type. Int returns
-            # Scalar[DType.int] which mismatches; use Int64 directly.
+            # Build epilogue TileTensor with RowMajorLayout[Int64, Int64] to
+            # match the fused dispatcher's epilogue_tensor parameter type. Int
+            # returns Scalar[DType.int] which mismatches; use Int64 directly.
             var epi_m = Int64(epilogue_shape[0].value())
             var epi_n = Int64(epilogue_shape[1].value())
             var epilogue_for_gpu = TileTensor(
                 tensor_epilogue.ptr, row_major(Coord(epi_m, epi_n))
             ).as_immut()
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=transpose_b,
-                has_epilogue_tensor=True,
-            ](
+            fused_bias_residual_matmul_dispatch_sm100[transpose_b=transpose_b,](
                 tensor_c,
                 tensor_a,
                 tensor_b,
+                epilogue_for_gpu.as_any_origin(),
                 ctx,
-                epilogue_tensor=epilogue_for_gpu.as_any_origin(),
             )
 
     @parameter
@@ -426,16 +425,12 @@ def bench_matmul_tma_epilogue[
             var epilogue_for_ver = TileTensor(
                 epilogue_ver_dev.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
             ).as_immut()
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=transpose_b,
-                has_epilogue_tensor=True,
-            ](
+            fused_bias_residual_matmul_dispatch_sm100[transpose_b=transpose_b,](
                 c_kernel_nd,
                 a_ver_nd,
                 b_ver_nd,
+                epilogue_for_ver.as_any_origin(),
                 ctx,
-                epilogue_tensor=epilogue_for_ver.as_any_origin(),
             )
 
         comptime if variant != "plain":
