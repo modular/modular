@@ -29,14 +29,14 @@ import os
 from collections import defaultdict
 from collections.abc import Iterable
 
-from max.interfaces import (
+from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import KVConnector
+from max.pipelines.kv_cache.memory_tier import MemoryTier
+from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationContext,
     VLMTextGenerationContext,
 )
-from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.pipelines.kv_cache.kv_connector import KVConnector
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 from max.support.math import ceildiv
 
@@ -51,7 +51,10 @@ logger = logging.getLogger("max.pipelines")
 
 
 def _compute_seq_len(
-    ctx: TextGenerationContext, num_steps: int, num_speculative_steps: int
+    ctx: TextGenerationContext,
+    num_steps: int,
+    num_draft_tokens: int,
+    num_draft_tokens_per_step: int = 1,
 ) -> int:
     # Each term accounts for one category of tokens that need a KV slot:
     #
@@ -59,20 +62,29 @@ def _compute_seq_len(
     #   maybe_accepted_draft_tokens   : draft tokens being verified in the
     #                                   *previous* batch (overlap scheduler);
     #                                   conservative: assume all are accepted
-    #   num_speculative_steps (x1)    : draft tokens to verify in the *next* batch
-    #   num_speculative_steps (x1)    : draft tokens generated *during* that batch
+    #   2 * num_draft_tokens          : drafts to verify *next* batch
+    #                                   + drafts written *during* that batch
     #   num_steps                     : regular decode steps
     #   -1                            : the last generated token has no KV entry
     #
-    # NOTE: `draft_tokens_to_verify` is intentionally excluded. Using
-    # `2 * num_speculative_steps` unconditionally is always correct and
-    # avoids an under-allocation when `draft_tokens_to_verify` is empty but
-    # the pipeline populates it with dummy draft tokens (_MAGIC_DRAFT_TOKEN_ID).
+    # Block-draft correction (DFlash): the draft model's ``forward_block``
+    # writes ``num_draft_tokens_per_step + 1`` positions in a single batched
+    # call, starting at ``bumped_cache_length = pre_cache_length +
+    # commit_lengths``. Compared to the autoregressive-draft accounting above
+    # (which assumes one draft KV per step), that's an extra position past the
+    # bonus token — exactly the slot the ``- 1`` here was reclaiming under the
+    # "last generated token has no KV entry" optimization. For block drafts
+    # that bonus position *does* get a KV entry (forward_block writes it as
+    # part of the speculative tail), so we add it back.
+    block_draft_extra = (
+        1 if num_draft_tokens_per_step == num_draft_tokens else 0
+    )
     seq_len = (
         len(ctx.tokens)
         + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
-        + 2 * num_speculative_steps
+        + 2 * num_draft_tokens
         + num_steps
+        + block_draft_extra
         - 1
     )
     return seq_len
@@ -298,7 +310,7 @@ class BlockManager:
     ) -> int:
         """Returns the count of device and host blocks with the desired hashes."""
         # Count the number of device block hashes that are in the device prefix cache.
-        device_prefix_cache = self.device_block_pool.hash_to_committed_block
+        device_prefix_cache = self.device_block_pool.prefix_cache
 
         device_prefix_cache_hits = []
         desired_host_hashes = []
@@ -325,7 +337,7 @@ class BlockManager:
         if self._only_use_kv_connector_last_level_cache:
             return []
 
-        device_prefix_cache = self.device_block_pool.hash_to_committed_block
+        device_prefix_cache = self.device_block_pool.prefix_cache
 
         blocks = []
         for block_hash in desired_hashes:
@@ -352,7 +364,7 @@ class BlockManager:
 
         # Limit by available device blocks.
         num_hashes_to_load = min(
-            len(desired_hashes), len(self.device_block_pool.free_block_queue)
+            len(desired_hashes), self.device_block_pool.num_free_blocks
         )
         desired_hashes = desired_hashes[:num_hashes_to_load]
         blocks = [
@@ -371,7 +383,7 @@ class BlockManager:
 
         # Commit the device blocks into the device prefix cache.
         for block, block_hash in zip(loaded_blocks, loaded_hashes, strict=True):
-            if block_hash in self.device_block_pool.hash_to_committed_block:
+            if block_hash in self.device_block_pool.prefix_cache:
                 # When this env var is set, we may perform host/disk -> device
                 # transfers of blocks already resident in the device prefix cache.
                 # If the block is already in the device prefix cache, we skip the
@@ -486,7 +498,7 @@ class BlockManager:
         """Offload the blocks to the connector."""
         block_ids = []
         block_hashes = []
-        prefix_cache = self.device_block_pool.hash_to_committed_block
+        prefix_cache = self.device_block_pool.prefix_cache
         for block_hash in self._hashes_to_offload:
             # It is possible that the hash is no longer available in the prefix
             # cache since the corresponding block has been evicted.
@@ -523,7 +535,8 @@ class BlockManager:
         self,
         ctx: TextGenerationContext,
         num_steps: int = 1,
-        num_speculative_steps: int = 0,
+        num_draft_tokens: int = 0,
+        num_draft_tokens_per_step: int = 1,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
@@ -535,7 +548,15 @@ class BlockManager:
         Args:
             ctx: The request context containing sequence information and token indices.
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
-            num_speculative_steps: Number of speculative steps to allocate blocks for. Defaults to 0.
+            num_draft_tokens: Total draft tokens generated per speculative
+                iteration. Zero for non-speculative decode.
+            num_draft_tokens_per_step: Number of draft KV positions written
+                per draft forward. One for autoregressive drafts
+                (``eagle``, ``mtp``, ``standalone``); equal to
+                ``num_draft_tokens`` for block drafts (``dflash``). Used by
+                ``_compute_seq_len`` to size the cache for block drafts,
+                whose ``forward_block`` writes one extra position past the
+                bonus token.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -563,7 +584,10 @@ class BlockManager:
 
         # Determine number of new blocks to allocate.
         num_new_blocks = self.num_blocks_to_allocate(
-            ctx, num_steps, num_speculative_steps
+            ctx,
+            num_steps,
+            num_draft_tokens,
+            num_draft_tokens_per_step,
         )
 
         # Verify that committed tokens fit within the currently allocated
@@ -581,8 +605,8 @@ class BlockManager:
         )
 
         # Check that we have enough free blocks to allocate the new blocks.
-        if num_new_blocks > len(self.device_block_pool.free_block_queue):
-            free = len(self.device_block_pool.free_block_queue)
+        if num_new_blocks > self.device_block_pool.num_free_blocks:
+            free = self.device_block_pool.num_free_blocks
             in_use = self.total_num_blocks - free
             raise InsufficientBlocksError(
                 f"Cannot get {num_new_blocks} free blocks from the free block queue"
@@ -600,14 +624,23 @@ class BlockManager:
         self,
         ctx: TextGenerationContext,
         num_steps: int = 1,
-        num_speculative_steps: int = 0,
+        num_draft_tokens: int = 0,
+        num_draft_tokens_per_step: int = 1,
     ) -> int:
         """Calculates the number of new blocks to allocate for a request.
 
         Args:
             ctx: The request context containing sequence information and token indices.
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
-            num_speculative_steps: Number of speculative steps to allocate blocks for. Defaults to 0.
+            num_draft_tokens: Total draft tokens generated per speculative
+                iteration. Zero for non-speculative decode.
+            num_draft_tokens_per_step: Number of draft KV positions written
+                per draft forward. One for autoregressive drafts
+                (``eagle``, ``mtp``, ``standalone``); equal to
+                ``num_draft_tokens`` for block drafts (``dflash``). Used by
+                ``_compute_seq_len`` to size the cache for block drafts,
+                whose ``forward_block`` writes one extra position past the
+                bonus token.
 
         Returns:
             The number of new blocks to allocate.
@@ -615,7 +648,10 @@ class BlockManager:
         current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
         current_seq_len = _compute_seq_len(
-            ctx, num_steps, num_speculative_steps
+            ctx,
+            num_steps,
+            num_draft_tokens,
+            num_draft_tokens_per_step,
         )
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
         num_new_blocks = num_required_blocks - num_current_blocks

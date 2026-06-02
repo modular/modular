@@ -27,24 +27,23 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
-from max.interfaces import (
+from max.pipelines.core import PixelContext
+from max.pipelines.diffusion.schedulers import SchedulerFactory
+from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TokenBuffer,
 )
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    PixelProviderOptionsBase,
-)
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import (
+from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import (
     InputImageContent,
     InputTextContent,
 )
-from max.pipelines.core import PixelContext
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    PixelProviderOptionsBase,
+)
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
-
-from .diffusion_schedulers import SchedulerFactory
 
 if TYPE_CHECKING:
     import PIL.Image
@@ -149,6 +148,8 @@ class PipelineClassName(str, Enum):
     ZIMAGE = "ZImagePipeline"
     WAN = "WanPipeline"
     WAN_I2V = "WanImageToVideoPipeline"
+    QWEN_IMAGE_EDIT = "QwenImageEditPipeline"
+    QWEN_IMAGE_EDIT_PLUS = "QwenImageEditPlusPipeline"
 
     @classmethod
     def from_class_name(cls, class_name: str) -> PipelineClassName:

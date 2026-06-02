@@ -65,7 +65,7 @@ def partial_simd_load[
 
 @always_inline
 def partial_simd_store[
-    dtype: DType, //, width: Int
+    dtype: DType, //, width: SIMDSize
 ](
     storage: UnsafePointer[mut=True, Scalar[dtype], ...],
     lbound: Int,
@@ -687,8 +687,8 @@ def get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
 
 
 def dispatch_get_kernel_type[
-    func: def[x: Bool]() raises capturing[_] -> None,
-](m: Int, n: Int, k: Int) raises:
+    FuncType: ImplicitlyCopyable & def[x: Bool]() raises -> None,
+](func: FuncType, m: Int, n: Int, k: Int) raises:
     if get_kernel_type(m, n, k):
         func[True]()
     else:
@@ -696,8 +696,8 @@ def dispatch_get_kernel_type[
 
 
 def dispatch_get_kernel_type[
-    func: def[x: Bool]() capturing[_] -> None,
-](m: Int, n: Int, k: Int):
+    FuncType: ImplicitlyCopyable & def[x: Bool]() -> None,
+](func: FuncType, m: Int, n: Int, k: Int):
     if get_kernel_type(m, n, k):
         func[True]()
     else:

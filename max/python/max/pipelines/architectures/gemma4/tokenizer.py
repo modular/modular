@@ -19,20 +19,22 @@ import io
 import json
 import re
 from collections.abc import Sequence
+from enum import Enum
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import to_rgb
+from max.pipelines.core.context import GrammarEnforcementState
+from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.modeling.types import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TokenBuffer,
 )
-from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import to_rgb
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
-from max.pipelines.lib.config import PipelineConfig
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoTokenizer, GenerationConfig
@@ -40,14 +42,20 @@ from transformers import AutoTokenizer, GenerationConfig
 from .context import Gemma4Context
 from .image_processor import Gemma4ImageProcessor
 from .processing_utils import load_processor_config
-from .reasoning import EMPTY_THINKING_BLOCK
-from .tool_parser import (
-    STRING_DELIM,
-    TOOL_CALL_END,
-    TOOL_CALL_START,
-    prompt_for_tool_choice,
-)
 from .video_processor import Gemma4VideoProcessor, VideoMetadata
+
+
+class SpecialToken(str, Enum):
+    """Gemma4 special tokens for tool calls."""
+
+    TOOL_CALL_START = "<|tool_call>"
+    TOOL_CALL_END = "<tool_call|>"
+    TOOL_START = "<|tool>"
+    TOOL_END = "<tool|>"
+    TOOL_RESPONSE_START = "<|tool_response>"
+    TOOL_RESPONSE_END = "<tool_response|>"
+    STRING_DELIM = '<|"|>'
+    TURN_END = "<turn|>"
 
 
 class Gemma4Tokenizer(TextAndVisionTokenizer):
@@ -65,6 +73,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
+        chat_template: str | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -75,6 +84,9 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             trust_remote_code=trust_remote_code,
             model_max_length=max_length,
         )
+
+        if chat_template is not None:
+            self.delegate.chat_template = chat_template
         self.max_length = max_length or self.delegate.model_max_length
 
         config = pipeline_config.model.huggingface_config
@@ -123,7 +135,6 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         self.enable_vision_caching = (
             pipeline_config.runtime.max_vision_cache_entries > 0
         )
-
         # Image token IDs — try both naming conventions
         self.image_token_id: int = _require_attr(
             config, "image_token_id", "image_token_index"
@@ -183,9 +194,9 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         # the model emits it we want it silenced rather than leaked as
         # text. Strip them.
         tool_token_strings = [
-            TOOL_CALL_START,
-            TOOL_CALL_END,
-            STRING_DELIM,
+            SpecialToken.TOOL_CALL_START,
+            SpecialToken.TOOL_CALL_END,
+            SpecialToken.STRING_DELIM,
         ]
         tool_token_ids = {
             self.delegate.convert_tokens_to_ids(token)
@@ -240,7 +251,6 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         tools: list[TextGenerationRequestTool] | None = None,
         **chat_template_options: Any,
     ) -> str:
-        tool_choice = chat_template_options.pop("tool_choice", None)
         chat_template_options = {
             "add_generation_prompt": True,
             **chat_template_options,
@@ -252,23 +262,6 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             **chat_template_options,
         )
         assert isinstance(templated_message, str)
-
-        tool_choice_prompt = (
-            prompt_for_tool_choice(tool_choice) if tool_choice else None
-        )
-        if tool_choice_prompt is None:
-            return templated_message
-
-        # TODO(MXSERV-86): Support tool_choice=required with thinking.
-        # When thinking is enabled the template does NOT pre-fill a
-        # closed thinking block, so the model tries to reason first
-        # and never produces the expected tool-call continuation.
-        # Inject an empty closed channel to suppress thinking.
-        thinking_enabled = chat_template_options.get("enable_thinking", True)
-        if thinking_enabled:
-            templated_message += EMPTY_THINKING_BLOCK
-
-        templated_message += tool_choice_prompt
         return templated_message
 
     async def decode(
@@ -432,7 +425,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         )
 
         response_format_schema = (
-            request.response_format.get("json_schema")
+            request.response_format.json_schema
             if request.response_format
             else None
         )
@@ -440,6 +433,14 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             json.dumps(response_format_schema)
             if response_format_schema
             else None
+        )
+
+        grammar = (
+            request.response_format.grammar if request.response_format else None
+        )
+
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
@@ -475,7 +476,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         ]
 
         eos_tracker = await self.create_eos_tracker(request)
-        return Gemma4Context(
+        context = Gemma4Context(
             request_id=request.request_id,
             eos_tracker=eos_tracker,
             target_endpoint=request.target_endpoint,
@@ -493,10 +494,14 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            grammar=grammar,
+            grammar_state=grammar_state,
             sampling_params=request.sampling_params,
             images=image_metadata,
             vision_token_ids=self.vision_token_ids,
         )
+
+        return context
 
 
 def _require_attr(config: Any, *names: str) -> int:

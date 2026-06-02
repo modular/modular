@@ -46,6 +46,11 @@ def exceeds_deadline(seconds: float, deadline_ns: int | None) -> bool:
     return time.perf_counter_ns() + int(seconds * 1e9) > deadline_ns
 
 
+def deadline_passed(end_time_ns: int | None) -> bool:
+    """Return True if the ``perf_counter_ns`` deadline has been reached."""
+    return end_time_ns is not None and time.perf_counter_ns() >= end_time_ns
+
+
 def wait_for_server_ready(
     host: str,
     port: int,
@@ -53,6 +58,7 @@ def wait_for_server_ready(
     *,
     timeout_s: int = 120 * 60,
     interval_s: float = 5.0,
+    backend: str,
 ) -> float:
     """Polls ``http://<host>:<port>/<path>`` until it responds with HTTP 200.
 
@@ -61,7 +67,13 @@ def wait_for_server_ready(
     Returns the elapsed seconds; raises :class:`RuntimeError` on timeout.
     Stdlib-only so both the orchestrator (``benchmark.py``) and the load
     generator (``benchmark_serving.py``) can share one implementation.
+
+    When *backend* is ``"mcloud"``, the server is externally managed and
+    assumed ready, so the function returns ``0.0`` immediately.
     """
+    # TODO: remove once BENTO-168 is fixed
+    if backend == "mcloud":
+        return 0.0
     url = f"http://{host}:{port}/{path}"
     start = time.monotonic()
     deadline = start + timeout_s

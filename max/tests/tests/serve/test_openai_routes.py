@@ -13,6 +13,7 @@
 
 
 import asyncio
+import io
 import json
 import logging
 import sys
@@ -27,14 +28,6 @@ import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi import FastAPI
 from fastapi.testclient import TestClient as SyncTestClient
-from max.interfaces import (
-    BaseContext,
-    GenerationStatus,
-    PipelineTask,
-    RequestID,
-    TextGenerationRequestTool,
-    TextGenerationResponseFormat,
-)
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
 from max.pipelines.core import TextContext
 from max.pipelines.core.exceptions import InputError
@@ -42,6 +35,14 @@ from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     PipelineConfig,
     PipelineRuntimeConfig,
+)
+from max.pipelines.modeling.types import (
+    BaseContext,
+    GenerationStatus,
+    PipelineTask,
+    RequestID,
+    TextGenerationRequestTool,
+    TextGenerationResponseFormat,
 )
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
@@ -59,6 +60,7 @@ from max.serve.router.openai_routes import (
     _create_response_format,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
+    _validate_decodable_images,
     get_tool_parser,
     openai_create_chat_completion,
 )
@@ -74,6 +76,7 @@ from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
 from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
+from PIL import Image
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -245,7 +248,44 @@ async def test_openai_chat_completion_input_error_returns_400(app) -> None:  # n
         )
 
         assert response_json.status_code == 400
-        assert response_json.json()["detail"] == "invalid image input"
+        assert response_json.json()["error"]["message"] == "invalid image input"
+        assert response_json.json()["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
+async def test_openai_error_envelope_shape(app) -> None:  # noqa: ANN001
+    """HTTP errors are returned in the OpenAI ``{"error": {...}}`` envelope."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline.all_tokens = AsyncMock(
+            side_effect=InputError("bad request")
+        )
+
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="test data"),
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"]["message"] == "bad request"
+        assert body["error"]["type"] == "invalid_request_error"
+        assert body["error"]["code"] == "400"
+        assert "detail" not in body
+
+
+def test_validate_decodable_images_rejects_bad_bytes() -> None:
+    # Empty / non-image bytes must raise (the request handler maps this to a
+    # 400), not reach the worker and crash it later with an unhandled
+    # PIL.UnidentifiedImageError (HTTP 500).
+    for bad in (b"", b"tiny", b"\x00\x01\x02\x03"):
+        with pytest.raises(InputError):
+            _validate_decodable_images([bad])
+
+
+def test_validate_decodable_images_accepts_valid_image() -> None:
+    buf = io.BytesIO()
+    Image.new("RGB", (1, 1)).save(buf, format="PNG")
+    _validate_decodable_images([buf.getvalue()])  # must not raise
 
 
 def test_vllm_response_deserialization() -> None:
@@ -1197,13 +1237,15 @@ async def test_openai_chat_stream_kimi_tool_prefix_maps_to_delta_content(
 
 def test_create_response_format_json_object() -> None:
     """Test that json_object format is converted to json_schema with permissive schema."""
-    result = _create_response_format({"type": "json_object"})
+    result = _create_response_format(
+        {"type": "json_object"}, enable_response_format_schema=True
+    )
 
     assert result is not None
     # json_object should be normalized to json_schema internally
-    assert result["type"] == "json_schema"
+    assert result.type == "json_schema"
     # Should use a permissive schema that accepts any JSON object
-    assert result["json_schema"] == {"type": "object"}
+    assert result.json_schema == {"type": "object"}
 
 
 def test_create_response_format_json_schema() -> None:
@@ -1221,30 +1263,58 @@ def test_create_response_format_json_schema() -> None:
         {
             "type": "json_schema",
             "json_schema": {"name": "person", "schema": person_schema},
-        }
+        },
+        enable_response_format_schema=True,
     )
 
     assert result is not None
-    assert result["type"] == "json_schema"
+    assert result.type == "json_schema"
     # Schema should contain the provided JSON schema
-    assert "properties" in result["json_schema"]
-    assert "name" in result["json_schema"]["properties"]
-    assert "age" in result["json_schema"]["properties"]
+    assert "properties" in result.json_schema
+    assert "name" in result.json_schema["properties"]
+    assert "age" in result.json_schema["properties"]
 
 
 def test_create_response_format_text() -> None:
     """Test that text format returns empty json_schema."""
-    result = _create_response_format({"type": "text"})
+    result = _create_response_format(
+        {"type": "text"}, enable_response_format_schema=False
+    )
 
     assert result is not None
-    assert result["type"] == "text"
-    assert result["json_schema"] == {}
+    assert result.type == "text"
+    assert result.json_schema == {}
 
 
 def test_create_response_format_none() -> None:
     """Test that None input returns None."""
-    result = _create_response_format(None)
+    result = _create_response_format(None, enable_response_format_schema=False)
     assert result is None
+
+
+@pytest.mark.parametrize("response_type", ["json_schema", "json_object"])
+def test_create_response_format_rejects_schema_without_flag(
+    response_type: str,
+) -> None:
+    """Reject json_schema / json_object at the route boundary when the
+    server was not started with --enable-structured-output.
+
+    Without this guard the worker hits the same condition later in
+    ``StructuredOutputHelper.update_context`` and the InputError escapes
+    the scheduler loop, killing the worker (MXSERV-106).
+    """
+    response_format: dict[str, Any] = {"type": response_type}
+    if response_type == "json_schema":
+        response_format["json_schema"] = {
+            "name": "person",
+            "schema": {"type": "object"},
+        }
+
+    with pytest.raises(InputError, match=r"--enable-structured-output"):
+        _create_response_format(
+            response_format,  # type: ignore[arg-type]
+            enable_response_format_schema=False,
+        )
 
 
 # ============================================================================
@@ -1281,7 +1351,7 @@ def test_resolve_grammar_constraints_tools_required() -> None:
     tools = _make_tools(["get_weather", "search"])
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema, tools_forced, enforce_from_start = (
+    grammar_tools, schema, tools_forced, enforce_from_start = (
         _resolve_grammar_constraints(
             tools=tools,
             tool_choice="required",
@@ -1289,7 +1359,7 @@ def test_resolve_grammar_constraints_tools_required() -> None:
         )
     )
 
-    assert tool_names == ["get_weather", "search"]
+    assert grammar_tools == tools
     assert schema is None  # response_format ignored when tools forced
     assert tools_forced is True  # tool_choice=required forces tools
     assert (
@@ -1302,7 +1372,7 @@ def test_resolve_grammar_constraints_named_function() -> None:
     tools = _make_tools(["get_weather", "search"])
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema, tools_forced, enforce_from_start = (
+    grammar_tools, schema, tools_forced, enforce_from_start = (
         _resolve_grammar_constraints(
             tools=tools,
             tool_choice={
@@ -1313,7 +1383,9 @@ def test_resolve_grammar_constraints_named_function() -> None:
         )
     )
 
-    assert tool_names == ["get_weather"]
+    assert grammar_tools is not None
+    assert len(grammar_tools) == 1
+    assert grammar_tools[0]["function"]["name"] == "get_weather"
     assert schema is None  # response_format ignored when tools forced
     assert tools_forced is True  # specific function forces tools
     assert enforce_from_start is True
@@ -1324,7 +1396,7 @@ def test_resolve_grammar_constraints_auto_with_response_format() -> None:
     tools = _make_tools(["get_weather", "search"])
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema, tools_forced, enforce_from_start = (
+    grammar_tools, schema, tools_forced, enforce_from_start = (
         _resolve_grammar_constraints(
             tools=tools,
             tool_choice="auto",
@@ -1332,7 +1404,7 @@ def test_resolve_grammar_constraints_auto_with_response_format() -> None:
         )
     )
 
-    assert tool_names == ["get_weather", "search"]
+    assert grammar_tools == tools
     assert schema == {"type": "object"}
     assert tools_forced is False  # auto mode doesn't force tools
     # auto + response_format: enforce from start since schema is in play
@@ -1343,7 +1415,7 @@ def test_resolve_grammar_constraints_auto_no_response_format() -> None:
     """Auto mode + no response_format: grammar generated for conditional enforcement."""
     tools = _make_tools(["get_weather", "search"])
 
-    tool_names, schema, tools_forced, enforce_from_start = (
+    grammar_tools, schema, tools_forced, enforce_from_start = (
         _resolve_grammar_constraints(
             tools=tools,
             tool_choice="auto",
@@ -1353,7 +1425,7 @@ def test_resolve_grammar_constraints_auto_no_response_format() -> None:
 
     # auto with tools now generates a grammar so the bitmask can engage
     # conditionally once a tool-call start token is detected.
-    assert tool_names == ["get_weather", "search"]
+    assert grammar_tools == tools
     assert schema is None
     assert tools_forced is False
     assert enforce_from_start is False  # conditional enforcement
@@ -1363,7 +1435,7 @@ def test_resolve_grammar_constraints_response_format_only() -> None:
     """Response format only (no tools): constrain to JSON schema."""
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema, tools_forced, enforce_from_start = (
+    grammar_tools, schema, tools_forced, enforce_from_start = (
         _resolve_grammar_constraints(
             tools=None,
             tool_choice=None,
@@ -1371,7 +1443,7 @@ def test_resolve_grammar_constraints_response_format_only() -> None:
         )
     )
 
-    assert tool_names is None
+    assert grammar_tools is None
     assert schema == {"type": "object"}
     assert tools_forced is False
     assert enforce_from_start is False  # no tools, no grammar to enforce
@@ -1379,7 +1451,7 @@ def test_resolve_grammar_constraints_response_format_only() -> None:
 
 def test_resolve_grammar_constraints_no_constraints() -> None:
     """No tools, no response_format: no grammar generated."""
-    tool_names, schema, tools_forced, enforce_from_start = (
+    grammar_tools, schema, tools_forced, enforce_from_start = (
         _resolve_grammar_constraints(
             tools=None,
             tool_choice=None,
@@ -1387,7 +1459,7 @@ def test_resolve_grammar_constraints_no_constraints() -> None:
         )
     )
 
-    assert tool_names is None
+    assert grammar_tools is None
     assert schema is None
     assert tools_forced is False
     assert enforce_from_start is False
@@ -1596,7 +1668,7 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_defau
         response = await client.post("/v1/chat/completions", json=body)
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["detail"].lower()
+    assert "overlap" in response.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -1637,7 +1709,7 @@ async def test_chat_completion_extra_field_rejected_by_default(
         response = await client.post("/v1/chat/completions", json=body)
 
     assert response.status_code == 400
-    assert "dynamic_temperature" in response.json()["detail"]
+    assert "dynamic_temperature" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -1677,7 +1749,7 @@ async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
         )
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["detail"].lower()
+    assert "overlap" in response.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -1725,7 +1797,7 @@ async def test_completion_extra_field_rejected_by_default(
         )
 
     assert response.status_code == 400
-    assert "dynamic_temperature" in response.json()["detail"]
+    assert "dynamic_temperature" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

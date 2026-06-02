@@ -147,6 +147,15 @@ The default search paths take the following precedence:
 
 :::
 
+## Weight loading
+
+The following variable controls how MAX handles dtype mismatches when loading
+model weights from a checkpoint.
+
+| Variable                    | Description                                                                                                                                                  | Values          | Default |
+|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------|---------|
+| `MODULAR_AUTO_CAST_WEIGHTS` | Auto-cast loaded weights between `float32` and `bfloat16` when checkpoint and module dtypes mismatch (shape must match). Other dtype mismatches still raise. | `true`, `false` | `true`  |
+
 ## Hugging Face
 
 Configure your Hugging Face integration with the following environment variable:

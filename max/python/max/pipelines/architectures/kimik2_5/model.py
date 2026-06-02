@@ -35,7 +35,6 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.interfaces.request import RequestID
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import (
@@ -54,16 +53,17 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     upper_bounded_default,
 )
-from max.pipelines.lib.config.config_enums import (
-    is_float4_encoding,
-    supported_encoding_dtype,
-)
-from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.pipelines.lib.vision_encoder_cache import (
     VisionEncoderCache,
     concat_device_buffers,
 )
+from max.pipelines.modeling.config_enums import (
+    is_float4_encoding,
+    supported_encoding_dtype,
+)
+from max.pipelines.request import RequestID
+from max.pipelines.weights.quant import parse_quant_config
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
@@ -73,6 +73,7 @@ from .context import KimiK2_5TextAndVisionContext
 from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .kimik2_5 import KimiK2_5
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig, VisionConfig
+from .weight_adapters import preshuffle_mxfp4_b_experts
 
 logger = logging.getLogger("max.pipelines")
 
@@ -286,6 +287,15 @@ class KimiK2_5Model(
 
         dtype = self.dtype
         quant_config = parse_quant_config(config, state_dict, dtype)
+
+        # Kimi K2.5 expects expert B weights in the 5D layout that the AMD
+        # `mxfp4_grouped_matmul_amd_preb` kernel reads. The OG weight
+        # adapter only renames keys, so do the CPU preshuffle here and
+        # flip the QuantConfig flag so `MoEQuantized` dispatches to the
+        # preb path. Must stay in lockstep with the weight adapter.
+        if quant_config is not None and quant_config.is_mxfp4:
+            preshuffle_mxfp4_b_experts(state_dict)
+            quant_config = replace(quant_config, mxfp4_preshuffled_b=True)
         shared_experts_weight_dtype, dense_mlp_layers_without_quant = (
             infer_kimi_nvfp4_weight_flags(
                 state_dict,

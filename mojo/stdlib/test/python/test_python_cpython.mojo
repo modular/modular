@@ -354,7 +354,7 @@ def _test_capsule_api(cpy: CPython) raises:
     var capsule_impl_layout = Layout[UInt64].single()
     var capsule_impl = alloc(capsule_impl_layout)
 
-    def empty_dtor(capsule: PyObjectPtr):
+    def empty_dtor(capsule: PyObjectPtr) abi("C"):
         pass
 
     var capsule = cpy.PyCapsule_New(
@@ -371,7 +371,7 @@ def _test_capsule_api(cpy: CPython) raises:
 
 def _test_memory_management_api(cpy: CPython) raises:
     var ptr = cpy.lib.call[
-        "PyObject_Malloc", _CPointer[NoneType, AnyOrigin[mut=True]]
+        "PyObject_Malloc", _CPointer[NoneType, MutExternalOrigin]
     ](64)
     assert_true(ptr)
 

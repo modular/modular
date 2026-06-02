@@ -119,7 +119,7 @@ modular_py_test(
         "module/test_*_simulated_gpu.py",
     ]),
     exec_properties = {
-        "test.resources:gpu-memory": "1",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"],
     imports = ["."],

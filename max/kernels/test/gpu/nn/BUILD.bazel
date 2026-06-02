@@ -10,11 +10,12 @@ _EXTRA_CONSTRAINTS = {
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
-    # + chiplet/L2 swizzle; not compileable on other AMD parts.
+    # + chiplet/L2 swizzle; not compilable on other AMD parts.
     "test_amd_4wave_conv_dtypes.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_miopen.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_residual.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_rt_hw.mojo": ["//:mi355_gpu"],
+    "test_amd_4wave_conv3d.mojo": ["//:mi355_gpu"],
     "test_conv2d_sm100.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -154,6 +155,23 @@ _EXTRA_CONSTRAINTS = {
     "test_rope_split_store.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
+    }),
+    # FP8 quantize+store path is SM100-only (uses float8_e4m3fn).
+    "test_rope_split_store_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # SM100 MHA with fp8 KV via dequant-staging + existing bf16 FA4 path.
+    # SM100-only.
+    "attention/test_mha_sm100_fp8_kv_d256.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Same dequant-staging path at head_dim=512 (Gemma4-global shape).
+    # SM100-only.
+    "attention/test_mha_sm100_fp8_kv_d512.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     # TODO(KERN-2410): Investigate and enable on macOS
     "test_bicubic.mojo": select({

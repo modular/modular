@@ -234,4 +234,4 @@ class TestMultiKVCacheParamsProperties:
         multi_params = MultiKVCacheParams.from_params(params)
 
         with pytest.raises(AttributeError):
-            multi_params.params = []  # type: ignore[misc]
+            multi_params.params = []  # type: ignore[misc]  # ty:ignore[invalid-assignment]

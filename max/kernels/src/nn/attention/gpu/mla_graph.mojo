@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections import OptionalReg
+from std.collections import Optional, OptionalReg
 from std.math import align_up, ceildiv
 
 from std.sys import simd_width_of, size_of
@@ -34,6 +34,7 @@ from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
+from std.utils.coord import Coord, Idx, coord_to_index_list
 from layout import (
     Coord,
     Idx,
@@ -707,8 +708,12 @@ def mla_prefill_branch_fp8[
 
     comptime assert m_scale_granularity == 1, "m_scale_granularity should be 1"
     comptime assert (
-        n_scale_granularity == k_scale_granularity == 128
-    ), "n, k scale_granularity should be 128"
+        n_scale_granularity == k_scale_granularity
+        and n_scale_granularity in (64, 128)
+    ), (
+        "n_scale_granularity and k_scale_granularity must be equal and in"
+        " (64, 128)"
+    )
 
     # Return early if we have no tokens to process.
     if buffer_length == 0:
@@ -725,8 +730,8 @@ def mla_prefill_branch_fp8[
     var q_rope = TileTensor(
         q.ptr + qk_nope_head_dim,
         TileLayout(
-            (seq_len, Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         ),
     )
 
@@ -734,8 +739,8 @@ def mla_prefill_branch_fp8[
     var q_rope_mut = TileTensor(
         q_rope.ptr.mut_cast[True](),
         TileLayout(
-            (seq_len, Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         ),
     )
 
@@ -762,7 +767,7 @@ def mla_prefill_branch_fp8[
     )
     var k_latent = TileTensor(
         k_latent_buf,
-        row_major(buffer_length, Idx[kv_latent_dim]()),
+        row_major(buffer_length, Idx[kv_latent_dim]),
     )
 
     # copy the k cache to the latent buffer
@@ -784,19 +789,19 @@ def mla_prefill_branch_fp8[
     )
     var fp8_k_latent = TileTensor(
         fp8_k_latent_buf,
-        row_major(buffer_length, Idx[kv_latent_dim]()),
+        row_major(buffer_length, Idx[kv_latent_dim]),
     )
 
     # the scales are stored in a transposed, padded format
     comptime scales_m_padding = 16 // size_of[fp8_scale_dtype]()
     var scales_padded_m = align_up(buffer_length, scales_m_padding)
     var fp8_k_latent_scale_buf = ctx.enqueue_create_buffer[fp8_scale_dtype](
-        scales_padded_m * kv_latent_dim // k_scale_granularity
+        scales_padded_m * ceildiv(kv_latent_dim, k_scale_granularity)
     )
     var fp8_k_latent_scale = TileTensor(
         fp8_k_latent_scale_buf,
         row_major(
-            (Idx[kv_latent_dim // k_scale_granularity](), scales_padded_m)
+            (Idx[ceildiv(kv_latent_dim, k_scale_granularity)], scales_padded_m)
         ),
     )
 
@@ -824,7 +829,7 @@ def mla_prefill_branch_fp8[
     )
     var k_flat = TileTensor(
         k_buf,
-        row_major(buffer_length, Idx[num_heads * qk_nope_head_dim]()),
+        row_major(buffer_length, Idx[num_heads * qk_nope_head_dim]),
     )
     matmul_dynamic_scaled_fp8[
         input_scale_granularity="block",
@@ -846,14 +851,14 @@ def mla_prefill_branch_fp8[
     # Reuse decode's rank-3 w_uv by flattening [H, Dv, K] -> [H*Dv, K].
     var w_v = TileTensor(
         w_uv.ptr,
-        row_major(Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]()),
+        row_major(Idx[num_heads * v_head_dim], Idx[kv_latent_dim]),
     )
     var w_v_scale = TileTensor(
         w_uv_scale.ptr,
         row_major(
             (
-                Idx[num_heads * (v_head_dim // n_scale_granularity)](),
-                Idx[kv_latent_dim // k_scale_granularity](),
+                Idx[num_heads * (v_head_dim // n_scale_granularity)],
+                Idx[kv_latent_dim // k_scale_granularity],
             )
         ),
     )
@@ -864,7 +869,7 @@ def mla_prefill_branch_fp8[
     )
     var v_flat = TileTensor(
         v_buf,
-        row_major(buffer_length, Idx[num_heads * v_head_dim]()),
+        row_major(buffer_length, Idx[num_heads * v_head_dim]),
     )
     matmul_dynamic_scaled_fp8[
         input_scale_granularity="block",
@@ -885,11 +890,11 @@ def mla_prefill_branch_fp8[
 
     var k = TileTensor(
         k_buf,
-        row_major((buffer_length, Idx[num_heads](), Idx[qk_nope_head_dim]())),
+        row_major((buffer_length, Idx[num_heads], Idx[qk_nope_head_dim])),
     )
     var v = TileTensor(
         v_buf,
-        row_major(buffer_length, Idx[num_heads](), Idx[v_head_dim]()),
+        row_major(buffer_length, Idx[num_heads], Idx[v_head_dim]),
     )
 
     generic_flare_mla_prefill_kv_cache_ragged[
@@ -949,17 +954,19 @@ def quantize_and_bmm_fp8_helper[
 
     # allocate buffers for quantized a and its scales
     var fp8_a_buf = ctx.enqueue_create_buffer[fp8_dtype](B * m * K)
-    var fp8_a = TileTensor(fp8_a_buf, row_major(Idx[B](), m, Idx[K]()))
+    var fp8_a = TileTensor(fp8_a_buf, row_major(Idx[B], m, Idx[K]))
 
     # the scales are stored in a transposed, padded format
     comptime scales_m_padding = 16 // size_of[fp8_scale_dtype]()
     var scales_padded_m = align_up(m, scales_m_padding)
     var fp8_a_scale_buf = ctx.enqueue_create_buffer[fp8_scale_dtype](
-        B * (K // k_scale_granularity) * scales_padded_m
+        B * ceildiv(K, k_scale_granularity) * scales_padded_m
     )
     var fp8_a_scale = TileTensor(
         fp8_a_scale_buf,
-        row_major((Idx[B](), Idx[K // k_scale_granularity](), scales_padded_m)),
+        row_major(
+            (Idx[B], Idx[ceildiv(K, k_scale_granularity)], scales_padded_m)
+        ),
     )
 
     @parameter
@@ -1057,6 +1064,9 @@ def mla_decode_branch_fp8[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1121,6 +1131,8 @@ def mla_decode_branch_fp8[
         extra_indices_stride: Stride for ``extra_d_indices``.
         extra_topk_lengths: Extra-stream per-batch lengths.
         extra_scales_ptr: Extra-stream scales.
+        num_partitions_in: Capturable-graph num_partitions override.
+        effective_split_len_in: Capturable-graph effective_split_len override.
     """
 
     comptime kv_params = collection_t.kv_params
@@ -1159,7 +1171,7 @@ def mla_decode_branch_fp8[
     )
     var mla_decode_input = TileTensor(
         mla_decode_input_buf,
-        row_major(seq_len, Idx[num_heads](), Idx[k_cache_dim]()),
+        row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
     )
 
     # =========================================================================#
@@ -1174,8 +1186,8 @@ def mla_decode_branch_fp8[
     var q_nope = TileTensor(
         q.ptr,
         TileLayout(
-            (seq_len, Idx[num_heads](), Idx[qk_nope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
+            (seq_len, Idx[num_heads], Idx[qk_nope_head_dim]),
+            (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         ),
     )
 
@@ -1184,8 +1196,8 @@ def mla_decode_branch_fp8[
     var mla_decode_input_nope = TileTensor(
         mla_decode_input.ptr,
         TileLayout(
-            (Idx[num_heads](), seq_len, Idx[kv_latent_dim]()),
-            (Idx[k_cache_dim](), Idx[num_heads * k_cache_dim](), Idx[1]()),
+            (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
+            (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
         ),
     )
 
@@ -1207,8 +1219,8 @@ def mla_decode_branch_fp8[
     var q_rope = TileTensor(
         q.ptr + qk_nope_head_dim,
         TileLayout(
-            (seq_len, Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         ),
     )
 
@@ -1217,8 +1229,8 @@ def mla_decode_branch_fp8[
     var mla_decode_input_rope = TileTensor(
         mla_decode_input.ptr + kv_latent_dim,
         TileLayout(
-            (seq_len, Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * k_cache_dim](), Idx[k_cache_dim](), Idx[1]()),
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
         ),
     )
 
@@ -1243,7 +1255,7 @@ def mla_decode_branch_fp8[
     )
     var raw_output = TileTensor(
         raw_output_buf,
-        row_major(seq_len, Idx[num_heads](), Idx[kv_latent_dim]()),
+        row_major(seq_len, Idx[num_heads], Idx[kv_latent_dim]),
     )
 
     generic_flare_mla_decode_kv_cache_ragged[
@@ -1268,6 +1280,8 @@ def mla_decode_branch_fp8[
         extra_indices_stride=extra_indices_stride,
         extra_topk_lengths=extra_topk_lengths,
         extra_scales_ptr=extra_scales_ptr,
+        num_partitions_in=num_partitions_in,
+        effective_split_len_in=effective_split_len_in,
     )
 
     # Create a view of the output tensor with logical shape
@@ -1276,8 +1290,8 @@ def mla_decode_branch_fp8[
     var output_t = TileTensor(
         output.ptr,
         TileLayout(
-            (Idx[num_heads](), seq_len, Idx[v_head_dim]()),
-            (Idx[v_head_dim](), Idx[num_heads * v_head_dim](), Idx[1]()),
+            (Idx[num_heads], seq_len, Idx[v_head_dim]),
+            (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
         ),
     )
 
@@ -1366,6 +1380,9 @@ def mla_prefill_decode_graph_fp8[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1412,6 +1429,8 @@ def mla_prefill_decode_graph_fp8[
             extra_indices_stride,
             extra_topk_lengths,
             extra_scales_ptr,
+            num_partitions_in,
+            effective_split_len_in,
         )
 
     else:
@@ -1478,15 +1497,13 @@ def convert_bf16_to_fp8_e4m3fn(
         DType.bfloat16, target=get_gpu_target()
     ]()
 
-    def convert_kernel_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) register_passable {}:
-        convert_kernel[width, rank, alignment](idx)
+    def convert_kernel_unified[width: Int, alignment: Int = 1](idx: Coord):
+        convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     comptime if input_buffer.rank == 2:
         _elementwise_impl_gpu[simd_width=target_simd_width](
             convert_kernel_unified,
-            shape=IndexList[2](
+            shape=(
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
             ),
@@ -1495,7 +1512,7 @@ def convert_bf16_to_fp8_e4m3fn(
     else:
         _elementwise_impl_gpu[simd_width=target_simd_width](
             convert_kernel_unified,
-            shape=IndexList[3](
+            shape=(
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
                 Int(input_buffer.dim[2]()),
@@ -1589,8 +1606,8 @@ def mla_prefill_branch_bf16[
     var q_rope = TileTensor(
         q.ptr + qk_nope_head_dim,
         TileLayout(
-            (seq_len, Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         ),
     )
 
@@ -1598,8 +1615,8 @@ def mla_prefill_branch_bf16[
     var q_rope_mut = TileTensor(
         q_rope.ptr.mut_cast[True](),
         TileLayout(
-            (seq_len, Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         ),
     )
 
@@ -1621,7 +1638,7 @@ def mla_prefill_branch_bf16[
     )
     var k_latent = TileTensor(
         k_latent_buf,
-        row_major(buffer_length, Idx[kv_latent_dim]()),
+        row_major(buffer_length, Idx[kv_latent_dim]),
     )
 
     var buffer_length_int = Int(buffer_length)
@@ -1643,7 +1660,7 @@ def mla_prefill_branch_bf16[
         )
         var k_fp8_flat = TileTensor(
             k_fp8_buf,
-            row_major((buffer_length, Idx[num_heads * qk_nope_head_dim]())),
+            row_major((buffer_length, Idx[num_heads * qk_nope_head_dim])),
         )
 
         var v_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
@@ -1651,7 +1668,7 @@ def mla_prefill_branch_bf16[
         )
         var v_fp8_flat = TileTensor(
             v_fp8_buf,
-            row_major(buffer_length, Idx[num_heads * v_head_dim]()),
+            row_major(buffer_length, Idx[num_heads * v_head_dim]),
         )
 
         # K matmul with internal FP8 conversion
@@ -1667,7 +1684,7 @@ def mla_prefill_branch_bf16[
 
         var w_v = TileTensor(
             w_uv.ptr,
-            row_major(Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]()),
+            row_major(Idx[num_heads * v_head_dim], Idx[kv_latent_dim]),
         )
 
         # V matmul with internal FP8 conversion
@@ -1684,13 +1701,11 @@ def mla_prefill_branch_bf16[
         # Create 3D views for attention kernel
         var k_fp8 = TileTensor(
             k_fp8_buf,
-            row_major(
-                (buffer_length, Idx[num_heads](), Idx[qk_nope_head_dim]())
-            ),
+            row_major((buffer_length, Idx[num_heads], Idx[qk_nope_head_dim])),
         )
         var v_fp8 = TileTensor(
             v_fp8_buf,
-            row_major((buffer_length, Idx[num_heads](), Idx[v_head_dim]())),
+            row_major((buffer_length, Idx[num_heads], Idx[v_head_dim])),
         )
 
         # Allocate FP8 buffer for Q and convert
@@ -1699,7 +1714,7 @@ def mla_prefill_branch_bf16[
         )
         var q_fp8 = TileTensor(
             q_fp8_buf,
-            row_major(seq_len, Idx[num_heads](), Idx[q_head_dim]()),
+            row_major(seq_len, Idx[num_heads], Idx[q_head_dim]),
         )
         convert_bf16_to_fp8_e4m3fn(q, q_fp8, ctx)
 
@@ -1727,7 +1742,7 @@ def mla_prefill_branch_bf16[
         )
         var k_flat = TileTensor(
             k_buf,
-            row_major((buffer_length, Idx[num_heads * qk_nope_head_dim]())),
+            row_major((buffer_length, Idx[num_heads * qk_nope_head_dim])),
         )
         matmul[target=target, transpose_b=True](
             k_flat,
@@ -1738,14 +1753,14 @@ def mla_prefill_branch_bf16[
 
         var w_v = TileTensor(
             w_uv.ptr,
-            row_major(Idx[num_heads * v_head_dim](), Idx[kv_latent_dim]()),
+            row_major(Idx[num_heads * v_head_dim], Idx[kv_latent_dim]),
         )
         var v_buf = ctx.enqueue_create_buffer[DType.bfloat16](
             buffer_length * num_heads * v_head_dim
         )
         var v_flat = TileTensor(
             v_buf,
-            row_major(buffer_length, Idx[num_heads * v_head_dim]()),
+            row_major(buffer_length, Idx[num_heads * v_head_dim]),
         )
         matmul[target=target, transpose_b=True](
             v_flat,
@@ -1756,13 +1771,11 @@ def mla_prefill_branch_bf16[
 
         var k = TileTensor(
             k_buf,
-            row_major(
-                (buffer_length, Idx[num_heads](), Idx[qk_nope_head_dim]())
-            ),
+            row_major((buffer_length, Idx[num_heads], Idx[qk_nope_head_dim])),
         )
         var v = TileTensor(
             v_buf,
-            row_major((buffer_length, Idx[num_heads](), Idx[v_head_dim]())),
+            row_major((buffer_length, Idx[num_heads], Idx[v_head_dim])),
         )
 
         generic_flare_mla_prefill_kv_cache_ragged[
@@ -1816,6 +1829,9 @@ def mla_decode_branch_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA decode path.
 
@@ -1857,7 +1873,7 @@ def mla_decode_branch_bf16[
     ](seq_len * num_heads * k_cache_dim)
     var mla_decode_input = TileTensor(
         mla_decode_input_buf,
-        row_major(seq_len, Idx[num_heads](), Idx[k_cache_dim]()),
+        row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
     )
 
     # =========================================================================#
@@ -1869,8 +1885,8 @@ def mla_decode_branch_bf16[
     var q_rope = TileTensor(
         q.ptr + qk_nope_head_dim,
         TileLayout(
-            (seq_len, Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
         ),
     )
 
@@ -1879,8 +1895,8 @@ def mla_decode_branch_bf16[
     var mla_decode_input_rope = TileTensor(
         mla_decode_input.ptr + kv_latent_dim,
         TileLayout(
-            (seq_len, Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * k_cache_dim](), Idx[k_cache_dim](), Idx[1]()),
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
         ),
     )
 
@@ -1906,8 +1922,8 @@ def mla_decode_branch_bf16[
     var q_nope_t = TileTensor(
         q.ptr,
         TileLayout(
-            (Idx[num_heads](), seq_len, Idx[qk_nope_head_dim]()),
-            (Idx[q_head_dim](), Idx[num_heads * q_head_dim](), Idx[1]()),
+            (Idx[num_heads], seq_len, Idx[qk_nope_head_dim]),
+            (Idx[q_head_dim], Idx[num_heads * q_head_dim], Idx[1]),
         ),
     )
 
@@ -1916,8 +1932,8 @@ def mla_decode_branch_bf16[
     var mla_decode_input_nope = TileTensor(
         mla_decode_input.ptr,
         TileLayout(
-            (Idx[num_heads](), seq_len, Idx[kv_latent_dim]()),
-            (Idx[k_cache_dim](), Idx[num_heads * k_cache_dim](), Idx[1]()),
+            (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
+            (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
         ),
     )
 
@@ -1931,7 +1947,7 @@ def mla_decode_branch_bf16[
     )
     var raw_output = TileTensor(
         raw_output_buf,
-        row_major(seq_len, Idx[num_heads](), Idx[kv_latent_dim]()),
+        row_major(seq_len, Idx[num_heads], Idx[kv_latent_dim]),
     )
 
     generic_flare_mla_decode_kv_cache_ragged[
@@ -1946,6 +1962,8 @@ def mla_decode_branch_bf16[
         raw_output,
         scalar_args_buf,
         ctx,
+        num_partitions_in=num_partitions_in,
+        effective_split_len_in=effective_split_len_in,
     )
 
     # Create a view of the raw output tensor with logical shape
@@ -1954,8 +1972,8 @@ def mla_decode_branch_bf16[
     var raw_output_t = TileTensor(
         raw_output_buf,
         TileLayout(
-            (Idx[num_heads](), seq_len, Idx[kv_latent_dim]()),
-            (Idx[kv_latent_dim](), Idx[num_heads * kv_latent_dim](), Idx[1]()),
+            (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
+            (Idx[kv_latent_dim], Idx[num_heads * kv_latent_dim], Idx[1]),
         ),
     )
 
@@ -1965,8 +1983,8 @@ def mla_decode_branch_bf16[
     var output_t = TileTensor(
         output.ptr,
         TileLayout(
-            (Idx[num_heads](), seq_len, Idx[v_head_dim]()),
-            (Idx[v_head_dim](), Idx[num_heads * v_head_dim](), Idx[1]()),
+            (Idx[num_heads], seq_len, Idx[v_head_dim]),
+            (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
         ),
     )
 
@@ -2016,6 +2034,9 @@ def mla_prefill_decode_graph_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA prefill/decode graph.
 
@@ -2046,6 +2067,8 @@ def mla_prefill_decode_graph_bf16[
             w_uv,
             scalar_args_buf,
             ctx,
+            num_partitions_in=num_partitions_in,
+            effective_split_len_in=effective_split_len_in,
         )
     else:
         mla_prefill_branch_bf16[

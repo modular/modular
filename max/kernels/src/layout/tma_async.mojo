@@ -5050,7 +5050,7 @@ struct TMATensorTileArray[
             to accommodate hardware requirements like WGMMA.
     """
 
-    var tensormaps_ptr: UnsafePointer[UInt8, MutAnyOrigin]
+    var tensormaps_ptr: UnsafePointer[UInt8, MutExternalOrigin]
     """A static tuple of pointers to TMA descriptors.
 
     This field stores an array of pointers to `TMATensorTile` instances, where each pointer
@@ -5835,7 +5835,7 @@ struct RaggedTensorMap[
         # starting us at (75 + 32) - 64 = 43, and allowing us to only load 32 sequences
 
         comptime if using_max_descriptor_size:
-            # if the max length is the same as the descriptor size we dont need to do
+            # if the max length is the same as the descriptor size we don't need to do
             # multiple stores and generate multiple coords so we can avoid unnecessary
             # branching in this case.
             var cumulative_length = preceding_cumulative_length + store_length

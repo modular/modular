@@ -23,13 +23,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 from max.driver import CPU, Device
-from max.interfaces import (
-    GenerationStatus,
-    RequestID,
-    TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
-)
 from max.nn.kv_cache import KVConnectorType
 from max.pipelines.core import TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
@@ -37,10 +30,17 @@ from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngineMetadata,
 )
 from max.pipelines.lib import OverlapTextGenerationPipeline
-from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.pipeline_variants.utils import (
     update_spec_decode_context_and_prepare_responses,
 )
+from max.pipelines.modeling.types import (
+    GenerationStatus,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+    TokenBuffer,
+)
+from max.pipelines.speculative.config import SpeculativeConfig
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,

@@ -88,12 +88,13 @@ Graph.debug.source_tracebacks = True
 g = Graph("my_model")
 
 
-# Set before session.load() compiles the graph
+# Set before session.compile() compiles the graph
 InferenceSession.debug.nan_check = True
 InferenceSession.debug.op_log_level = "trace"
 
 session = InferenceSession()
-model = session.load(g)
+compiled = session.compile(g)
+model = session.init(compiled)
 
 # Set before calling execute()
 InferenceSession.debug.device_sync_mode = True

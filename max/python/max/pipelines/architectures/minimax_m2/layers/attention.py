@@ -37,6 +37,8 @@ from max.nn.kernels import (
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
+    store_k_cache_ragged,
+    store_v_cache_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
@@ -166,19 +168,44 @@ class MiniMaxM2Attention(Module, Shardable):
 
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        if not strategy.is_replicate:
-            raise ValueError(
-                "MiniMaxM2Attention only supports replicate sharding "
-                "(DP+EP mode). TP is not supported."
+        if strategy.is_replicate:
+            self.q_proj.sharding_strategy = strategy
+            self.k_proj.sharding_strategy = strategy
+            self.v_proj.sharding_strategy = strategy
+            self.o_proj.sharding_strategy = strategy
+            self.q_norm.sharding_strategy = strategy
+            self.k_norm.sharding_strategy = strategy
+        elif strategy.is_tensor_parallel:
+            num_devices = strategy.num_devices
+            # Q/K/V: column-shard by head groups (output dim split across devices)
+            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
             )
-
-        self.q_proj.sharding_strategy = strategy
-        self.k_proj.sharding_strategy = strategy
-        self.v_proj.sharding_strategy = strategy
-        self.o_proj.sharding_strategy = strategy
-        self.q_norm.sharding_strategy = strategy
-        self.k_norm.sharding_strategy = strategy
-
+            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
+            )
+            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
+            )
+            # O proj: row-shard (input dim = partial head outputs, output summed
+            # via allreduce in the containing block)
+            self.o_proj.sharding_strategy = (
+                ShardingStrategy.head_aware_columnwise(
+                    num_devices, self.n_heads, self.kv_params.head_dim
+                )
+            )
+            # QK norms: shard head-dim slice matching Q/K head split
+            self.q_norm.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
+            )
+            self.k_norm.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
+            )
+        else:
+            raise ValueError(
+                "MiniMaxM2Attention supports replicate (DP+EP) or "
+                f"tensor_parallel sharding only. Got: {strategy}"
+            )
         self._sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[MiniMaxM2Attention]:
@@ -340,5 +367,98 @@ class MiniMaxM2Attention(Module, Shardable):
         )
 
         # Output projection
+        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+        return self.o_proj(attn_out)
+
+    def tp_project(
+        self,
+        x: TensorValue,
+        input_row_offsets: TensorValue,
+    ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+        """TP phase 1: project Q/K/V and compute local q/k norm statistics.
+
+        Under tensor parallelism the per-layer QK RMSNorm is a cross-head norm
+        over the *full* Q (n_heads * head_dim) and K (n_kv_heads * head_dim)
+        projections, but each device only holds a slice of the heads. This
+        returns the unnormalized Q/K/V (head slices for this device) along with
+        the per-token mean of squares over the *local* head slice. The caller
+        all-reduces these statistics across TP ranks so the global RMS can be
+        applied in :meth:`tp_finish`.
+
+        Returns:
+            Tuple of (q, k, v, qk_var_local) where q/k/v are flat projections
+            [total_seq_len, local_dim] and qk_var_local is [total_seq_len, 2]
+            holding (mean(q^2), mean(k^2)) over local dims in float32.
+        """
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+
+        qf = ops.cast(q, DType.float32)
+        kf = ops.cast(k, DType.float32)
+        q_var = ops.mean(qf * qf, axis=-1)  # [total_seq_len, 1]
+        k_var = ops.mean(kf * kf, axis=-1)  # [total_seq_len, 1]
+        qk_var_local = ops.concat([q_var, k_var], axis=-1)  # [total_seq_len, 2]
+        return q, k, v, qk_var_local
+
+    def tp_finish(
+        self,
+        layer_idx: TensorValue,
+        q: TensorValue,
+        k: TensorValue,
+        v: TensorValue,
+        qk_var_global: TensorValue,
+        kv_collection: PagedCacheValues,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
+    ) -> TensorValue:
+        """TP phase 2: apply cross-rank QK norm, then attention and o_proj.
+
+        Args:
+            qk_var_global: [total_seq_len, 2] holding the globally-reduced mean
+                of squares for Q and K (already averaged across TP ranks).
+        """
+        head_dim = self.kv_params.head_dim
+        q_var = ops.slice_tensor(qk_var_global, [slice(None), slice(0, 1)])
+        k_var = ops.slice_tensor(qk_var_global, [slice(None), slice(1, 2)])
+
+        # Normalize with global RMS scale, then apply the local gamma slice.
+        gamma_q = ops.cast(self.q_norm.to(q.device), DType.float32)
+        gamma_k = ops.cast(self.k_norm.to(k.device), DType.float32)
+        qf = ops.cast(q, DType.float32) * ops.rsqrt(q_var + self.qk_norm_eps)
+        kf = ops.cast(k, DType.float32) * ops.rsqrt(k_var + self.qk_norm_eps)
+        q = ops.cast(qf * gamma_q, self.dtype)
+        k = ops.cast(kf * gamma_k, self.dtype)
+
+        total_seq_len = q.shape[0]
+        q = ops.reshape(q, shape=[-1, self.n_heads, head_dim])
+        k = ops.reshape(k, shape=[-1, self.num_key_value_heads, head_dim])
+        v = ops.reshape(v, shape=[-1, self.num_key_value_heads, head_dim])
+
+        # Store normed (un-roped) K and V; rope rotates K in-cache below.
+        store_k_cache_ragged(kv_collection, k, input_row_offsets, layer_idx)
+        store_v_cache_ragged(kv_collection, v, input_row_offsets, layer_idx)
+
+        freqs_cis = ops.cast(freqs_cis, q.dtype).to(q.device)
+        q = fused_qk_ragged_rope(
+            self.kv_params,
+            q,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved=self.rope.interleaved,
+        )
+
+        attn_out = flash_attention_ragged(
+            self.kv_params,
+            input=q,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            input_row_offsets=input_row_offsets,
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=self.scale,
+        )
+
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         return self.o_proj(attn_out)

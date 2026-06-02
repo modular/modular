@@ -401,8 +401,9 @@ class SOAdvanced(BaseScenario):
             )
 
         # -- 3. ref_circular ---------------------------------------------------
-        # Tree structure with recursive $ref. Should either compile and produce
-        # valid output, or cleanly reject with a 400 error.
+        # Tree structure with recursive $ref. Grammar backends (xgrammar,
+        # llguidance) support recursive schemas with depth limits, so the
+        # server should compile and produce valid output.
         try:
             schema = {
                 "type": "object",
@@ -476,8 +477,16 @@ class SOAdvanced(BaseScenario):
                         )
             except Exception as inner_e:
                 err_str = str(inner_e).lower()
-                # Clean rejection of recursive schema is acceptable
-                if (
+                if "500" in err_str or "internal" in err_str:
+                    results.append(
+                        self.make_result(
+                            self.name,
+                            "ref_circular",
+                            Verdict.FAIL,
+                            detail=f"server crashed on recursive schema: {inner_e}",
+                        )
+                    )
+                elif (
                     "400" in err_str
                     or "recursive" in err_str
                     or "unsupported" in err_str
@@ -486,17 +495,8 @@ class SOAdvanced(BaseScenario):
                         self.make_result(
                             self.name,
                             "ref_circular",
-                            Verdict.PASS,
-                            detail=f"server cleanly rejected recursive schema: {inner_e}",
-                        )
-                    )
-                elif "500" in err_str or "internal" in err_str:
-                    results.append(
-                        self.make_result(
-                            self.name,
-                            "ref_circular",
-                            Verdict.FAIL,
-                            detail=f"server crashed on recursive schema: {inner_e}",
+                            Verdict.INTERESTING,
+                            detail=f"server rejected recursive schema (should be supported): {inner_e}",
                         )
                     )
                 else:

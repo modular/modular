@@ -33,12 +33,12 @@ from max.pipelines.lib import (
     PipelineConfig,
     upper_bounded_default,
 )
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -98,7 +98,10 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             num_layers=cls.get_num_layers(huggingface_config),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            num_eagle_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            speculative_method=pipeline_config.speculative.speculative_method
+            if pipeline_config.speculative
+            else None,
+            num_draft_tokens=pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative
             else 0,
         )

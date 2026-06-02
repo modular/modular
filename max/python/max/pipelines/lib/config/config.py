@@ -21,17 +21,20 @@ import logging
 import os
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
-from max.interfaces.task import PipelineTask
+from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
-from max.pipelines.lib.hf_utils import is_diffusion_pipeline
-from max.pipelines.lib.interfaces import PipelineModel
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.lib.interfaces import (
+    ArchConfig,
+    ArchConfigWithKVCache,
+    PipelineModel,
+)
 from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
     to_human_readable_bytes,
@@ -47,6 +50,14 @@ from max.pipelines.lib.registry import (
     get_pipeline_for_task,
 )
 from max.pipelines.lib.sampling import SamplingConfig
+from max.pipelines.lora import LoRAConfig
+from max.pipelines.modeling.kv_cache_config import (
+    KVCacheConfig,
+    KVConnectorConfig,
+)
+from max.pipelines.modeling.types.task import PipelineTask
+from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.weights.hf_utils import is_diffusion_pipeline
 from pydantic import (
     ConfigDict,
     Field,
@@ -56,13 +67,10 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Self, override
+from typing_extensions import Self
 
-from .kv_cache_config import KVCacheConfig, KVConnectorConfig
-from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig, _format_config_entries
 from .profiling_config import ProfilingConfig
-from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -141,6 +149,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedDflashLlama3ForCausalLM",
+    "UnifiedDflashKimiK25ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",
     "Eagle3DeepseekV3ForCausalLM",
@@ -298,6 +307,26 @@ class PipelineConfig(ConfigFileModel):
     )
     """The model-agnostic runtime settings for pipeline execution."""
 
+    @property
+    def needs_bitmask_constraints(self) -> bool:
+        """Whether constrained decoding can fire and requires the bitmask path.
+
+        True if the user enabled ``--enable-structured-output`` (for
+        user-supplied ``response_format=json_schema``) or a tool parser is
+        configured (tool-call grammars work without the flag — they are
+        server-generated and gated on having a parser that can both produce
+        the grammar and parse the resulting output).
+
+        Drives whether model / sampler graphs are compiled with a bitmask
+        input and whether the D2H pinned buffer is allocated. Distinct from
+        ``sampling.enable_structured_output``, which is the user-facing
+        flag and only gates honoring user-supplied JSON schemas.
+        """
+        return (
+            self.sampling.enable_structured_output
+            or self.runtime.tool_parser is not None
+        )
+
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -313,6 +342,59 @@ class PipelineConfig(ConfigFileModel):
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
         session._use_vendor_ccl(self.runtime.use_vendor_ccl)
+
+    def estimate_signal_buffer_memory(
+        self, arch_config: ArchConfig | None = None
+    ) -> int:
+        """Estimates total signal-buffer memory across all devices.
+
+        Signal buffers are fixed-size (:attr:`~max.nn.comm.allreduce.Signals.NUM_BYTES`)
+        per-GPU allocations used by P2P collectives. Each independent allocation
+        site contributes one set of ``ngpus`` buffers. The base estimate counts
+        the sites visible from :class:`PipelineConfig`:
+
+        - main model graph (multi-GPU only),
+        - :class:`BlockOffloadEngine` for KV-cache offloading, *only* when its
+          ``replicate_kv_across_tp`` path is active (MLA model with DP=1 and
+          multi-device TP). See ``block_copy_engine.py`` / ``transfer_engine.py``.
+
+        Returns 0 for single-device pipelines. Architecture-specific outliers
+        (e.g. always-allreduce mixins, Flux2, multimodal encoders) should
+        override :meth:`~max.pipelines.lib.interfaces.PipelineModel.estimate_signal_buffer_memory`.
+
+        Args:
+            arch_config: Optional architecture config. When provided and it
+                exposes KV params, the BCE term is gated on the actual
+                ``replicates_kv_across_tp`` flag rather than only the
+                ``kv_connector`` setting. Without it, the BCE term is added
+                whenever a connector is configured (conservative).
+
+        Returns:
+            Estimated total signal-buffer memory in bytes (across all devices).
+        """
+        ngpus = len(self.model.device_specs)
+        if ngpus <= 1:
+            return 0
+
+        count_per_gpu = 1  # main model
+        if self.model.kv_cache.kv_connector in {
+            KVConnectorType.tiered,
+            KVConnectorType.local,
+        }:
+            # BlockOffloadEngine only allocates signal buffers when its
+            # broadcast path is active (replicate_kv_across_tp = is_mla AND
+            # dp==1 AND n_devices>1; see block_copy_engine.py:242-306).
+            # Without arch_config we can't tell, so be conservative and add
+            # the set; with arch_config, gate precisely.
+            bce_allocates = True
+            if isinstance(arch_config, ArchConfigWithKVCache):
+                bce_allocates = (
+                    arch_config.get_kv_params().replicates_kv_across_tp
+                )
+            if bce_allocates:
+                count_per_gpu += 1  # BlockOffloadEngine
+
+        return Signals.NUM_BYTES * count_per_gpu * ngpus
 
     @staticmethod
     def _extract_kwargs_for_config(
@@ -1010,7 +1092,9 @@ class PipelineConfig(ConfigFileModel):
                     if self.draft_model is not None
                     else None
                 )
-                if draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                if self.speculative.is_dflash():
+                    target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
+                elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
                     # MLA target + MHA (Llama-style) Eagle3 draft.
                     target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
                 else:
@@ -1520,6 +1604,9 @@ class PipelineConfig(ConfigFileModel):
         activation_size = arch.pipeline_model.estimate_activation_memory(
             self, model_config.huggingface_config
         )
+        signal_buffer_size = arch.pipeline_model.estimate_signal_buffer_memory(
+            self, arch_config
+        )
 
         MemoryEstimator.estimate_memory_footprint(
             self,
@@ -1528,6 +1615,7 @@ class PipelineConfig(ConfigFileModel):
             devices,
             weights_size,
             activation_size,
+            signal_buffer_size,
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
@@ -1536,6 +1624,7 @@ class PipelineConfig(ConfigFileModel):
             model_config,
             devices,
             arch_config,
+            signal_buffer_size,
         ):
             if self.model.max_length is None:
                 self.model.max_length = clamped_max_seq_len
@@ -1697,8 +1786,6 @@ class PipelineConfig(ConfigFileModel):
         # Get reserved memory info from KVCache config (only for tasks that use KV cache)
         kv_cache_tasks = {
             PipelineTask.TEXT_GENERATION,
-            PipelineTask.AUDIO_GENERATION,
-            PipelineTask.SPEECH_TOKEN_GENERATION,
         }
 
         memory_str = None
@@ -1789,19 +1876,6 @@ def _parse_flag_int(value: str, flag_name: str) -> int:
         ) from exc
 
 
-PrependPromptSpeechTokens = Literal["never", "once", "rolling"]
-"""Controls whether prompt speech tokens are prepended to the audio decoder.
-
-``"never"``
-    Never prepend the prompt speech tokens sent to the audio decoder.
-``"once"``
-    Prepend the prompt speech tokens to the first block of the audio decoder.
-``"rolling"``
-    Prepend the prompt speech tokens to the first block of the audio decoder,
-    and to later blocks to reach the requested buffer size.
-"""
-
-
 PrometheusMetricsMode = Literal[
     "instrument_only", "launch_server", "launch_multiproc_server"
 ]
@@ -1815,192 +1889,3 @@ PrometheusMetricsMode = Literal[
 ``"launch_multiproc_server"``
     Launch a Prometheus server in multiprocess mode to report metrics.
 """
-
-
-class AudioGenerationConfig(PipelineConfig):
-    """Configuration for an audio generation pipeline."""
-
-    # TODO: Make these flags more discoverable.
-    audio_decoder: str = Field(
-        default="",
-        description="The name of the audio decoder model architecture.",
-    )
-    """The name of the audio decoder model architecture."""
-
-    audio_decoder_weights: str = Field(
-        default="", description="The path to the audio decoder weights file."
-    )
-    """The path to the audio decoder weights file."""
-
-    chunk_size: list[int] | None = Field(
-        default=None,
-        description=(
-            "The chunk sizes to use for streaming. If this is an int, fixed-size "
-            "chunks of the given size are used. If this is a list, variable "
-            "chunk sizes are used."
-        ),
-    )
-    """The chunk sizes to use for streaming."""
-
-    buffer: int = Field(
-        default=0,
-        description=(
-            "The number of previous speech tokens to pass to the audio decoder "
-            "on each generation step."
-        ),
-    )
-    """The number of previous speech tokens to pass to the audio decoder on each generation step."""
-
-    block_causal: bool = Field(
-        default=False,
-        description=(
-            "Whether prior buffered tokens should attend to tokens in the "
-            "current block. Has no effect if buffer is not set."
-        ),
-    )
-    """Whether prior buffered tokens attend to tokens in the current block."""
-
-    prepend_prompt_speech_tokens: PrependPromptSpeechTokens = Field(
-        default="once",
-        description=(
-            "Whether the prompt speech tokens should be forwarded to the audio "
-            "decoder. Options: never, once, rolling."
-        ),
-    )
-    """Whether the prompt speech tokens are forwarded to the audio decoder."""
-
-    prepend_prompt_speech_tokens_causal: bool = Field(
-        default=False,
-        description=(
-            "Whether the prompt speech tokens should attend to tokens in the "
-            "currently generated audio block. Has no effect if "
-            "prepend_prompt_speech_tokens is never."
-        ),
-    )
-    """Whether the prompt speech tokens attend to tokens in the current audio block."""
-
-    audio_decoder_config: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Parameters to pass to the audio decoder model.",
-    )
-    """Parameters to pass to the audio decoder model."""
-
-    prometheus_metrics_mode: PrometheusMetricsMode = Field(
-        default="instrument_only",
-        description="The mode to use for Prometheus metrics.",
-    )
-    """The mode to use for Prometheus metrics."""
-
-    _run_model_test_mode: bool = PrivateAttr(default=False)
-    """Test-only flag that indicates that test parameters have been passed to
-    the model, such as leaving the audio decoder weights empty or using a
-    dummy speech language model."""
-
-    def __init__(
-        self,
-        audio_decoder: str,
-        audio_decoder_weights: str = "",
-        chunk_size: list[int] | None = None,
-        buffer: int = 0,
-        block_causal: bool = False,
-        prepend_prompt_speech_tokens: PrependPromptSpeechTokens = "never",
-        prepend_prompt_speech_tokens_causal: bool = False,
-        run_model_test_mode: bool = False,
-        prometheus_metrics_mode: PrometheusMetricsMode = "instrument_only",
-        **kwargs: Any,
-    ) -> None:
-        # Must call the superclass's __init__ first, otherwise PipelineConfig's
-        # init will override values defined in the AudioGenerationConfig.
-        PipelineConfig.__init__(self, **kwargs)
-        if block_causal:
-            raise NotImplementedError("Causal generation is not implemented")
-        if prepend_prompt_speech_tokens_causal:
-            raise NotImplementedError(
-                "Prepend prompt speech tokens causal is not implemented"
-            )
-
-        self.audio_decoder = audio_decoder
-        self.audio_decoder_weights = audio_decoder_weights
-        self.chunk_size = chunk_size
-        self.buffer = buffer
-        self.block_causal = block_causal
-        self.prepend_prompt_speech_tokens = prepend_prompt_speech_tokens
-        self.prepend_prompt_speech_tokens_causal = (
-            prepend_prompt_speech_tokens_causal
-        )
-        self._run_model_test_mode = run_model_test_mode
-        self.prometheus_metrics_mode = prometheus_metrics_mode
-
-    @classmethod
-    def from_flags(
-        cls, audio_flags: dict[str, str], **config_flags: Any
-    ) -> AudioGenerationConfig:
-        """Builds an :class:`~max.pipelines.lib.config.AudioGenerationConfig` from audio CLI flags and config kwargs."""
-        audio_decoder = audio_flags.pop("audio_decoder", "")
-        if not audio_decoder:
-            raise ValueError(
-                "When running the audio generation task, --audio-decoder must be specified"
-            )
-        audio_decoder_weights = audio_flags.pop("audio_decoder_weights", "")
-
-        # Configuration for audio generation streaming.
-        chunk_size_str = audio_flags.pop("chunk_size", "")
-        if not chunk_size_str:
-            chunk_size = None
-        else:
-            chunk_size = [int(size) for size in chunk_size_str.split(",")]
-
-        buffer = _parse_flag_int(audio_flags.pop("buffer", "0"), "buffer")
-
-        block_causal = _parse_flag_bool(
-            audio_flags.pop("block_causal", "false"), "block_causal"
-        )
-
-        prepend_prompt_speech_tokens = cast(
-            PrependPromptSpeechTokens,
-            audio_flags.pop("prepend_prompt_speech_tokens", "never"),
-        )
-
-        prepend_prompt_speech_tokens_causal = _parse_flag_bool(
-            audio_flags.pop("prepend_prompt_speech_tokens_causal", "false"),
-            "prepend_prompt_speech_tokens_causal",
-        )
-
-        run_model_test_mode = _parse_flag_bool(
-            audio_flags.pop("run_model_test_mode", "false"),
-            "run_model_test_mode",
-        )
-
-        prometheus_metrics_mode = cast(
-            PrometheusMetricsMode,
-            audio_flags.pop("prometheus_metrics_mode", "instrument_only"),
-        )
-
-        if audio_flags:
-            raise ValueError(
-                f"Unknown audio generation option(s): {audio_flags}"
-            )
-
-        return cls(
-            audio_decoder=audio_decoder,
-            audio_decoder_weights=audio_decoder_weights,
-            chunk_size=chunk_size,
-            buffer=buffer,
-            block_causal=block_causal,
-            prepend_prompt_speech_tokens=prepend_prompt_speech_tokens,
-            prepend_prompt_speech_tokens_causal=prepend_prompt_speech_tokens_causal,
-            run_model_test_mode=run_model_test_mode,
-            prometheus_metrics_mode=prometheus_metrics_mode,
-            **config_flags,
-        )
-
-    @override
-    def _validate_and_resolve_overlap_scheduler(self) -> None:
-        if self.runtime.force:
-            return
-
-        if self.runtime.enable_overlap_scheduler:
-            raise ValueError(
-                "The Overlap scheduler does not support Audio Generation. "
-                "Detected AudioGenerationConfig."
-            )

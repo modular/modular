@@ -31,7 +31,6 @@ from std.gpu.host import DeviceContext
 from std.gpu.primitives import block
 from internal_utils import (
     CacheBustingBuffer,
-    ScalarArray,
     arg_parse,
     pytorch_like_tolerances_for,
 )
@@ -138,10 +137,10 @@ def verify_matmul[
 
     # Initialize matmul operands
     comptime if not init_on_gpu:
-        var a_host_ptr = ScalarArray[a_type](count=a_size)
-        var b_host_ptr = ScalarArray[a_type](count=b_size)
-        var a_host = TileTensor(a_host_ptr.unsafe_ptr(), row_major(a_shape))
-        var b_host = TileTensor(b_host_ptr.unsafe_ptr(), row_major(b_shape))
+        var a_host_ptr = alloc[Scalar[a_type]](a_size)
+        var b_host_ptr = alloc[Scalar[a_type]](b_size)
+        var a_host = TileTensor(a_host_ptr, row_major(a_shape))
+        var b_host = TileTensor(b_host_ptr, row_major(b_shape))
 
         comptime if a_type.is_float8():
             rand(a_host.ptr, a_host.num_elements())
@@ -162,9 +161,11 @@ def verify_matmul[
                 for i in range(b_host.num_elements()):
                     b_host.raw_store(i, Scalar[a_type](i))
         # Move operands to the Device
-        ctx.enqueue_copy(a_device, a_host_ptr.unsafe_ptr())
-        ctx.enqueue_copy(b_device, b_host_ptr.unsafe_ptr())
-        _ = (a_host_ptr^, b_host_ptr^)
+        ctx.enqueue_copy(a_device, a_host_ptr)
+        ctx.enqueue_copy(b_device, b_host_ptr)
+        ctx.synchronize()
+        a_host_ptr.free()
+        b_host_ptr.free()
     else:
         init_vector_launch[a_type](a_device, a_size, init_type, ctx)
         init_vector_launch[a_type](b_device, b_size, init_type, ctx)
@@ -211,8 +212,8 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host = ScalarArray[DType.float32](count=NUM_BLOCKS * 5)
-    ctx.enqueue_copy(result_host.unsafe_ptr(), result_device)
+    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+    ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
     # Reduce partial results from all blocks
@@ -229,6 +230,8 @@ def verify_matmul[
         worst_violation = max(worst_violation, result_host[base + 2])
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
+
+    result_host.free()
 
     # Check zero/nonzero expectations
     var c_is_zeros = any_out_nz == 0
@@ -346,14 +349,10 @@ def bench_matmul[
     comptime init_on_gpu = True
 
     comptime if not init_on_gpu:
-        var a_host_ptr = ScalarArray[a_type](count=cb_a.alloc_size())
-        var b_host_ptr = ScalarArray[a_type](count=cb_b.alloc_size())
-        var a_host = TileTensor(
-            a_host_ptr.unsafe_ptr(), row_major(cb_a.alloc_size())
-        )
-        var b_host = TileTensor(
-            b_host_ptr.unsafe_ptr(), row_major(cb_b.alloc_size())
-        )
+        var a_host_ptr = alloc[Scalar[a_type]](cb_a.alloc_size())
+        var b_host_ptr = alloc[Scalar[a_type]](cb_b.alloc_size())
+        var a_host = TileTensor(a_host_ptr, row_major(cb_a.alloc_size()))
+        var b_host = TileTensor(b_host_ptr, row_major(cb_b.alloc_size()))
 
         comptime if a_type.is_float8():
             rand(a_host.ptr, a_host.num_elements())
@@ -374,10 +373,11 @@ def bench_matmul[
                 for i in range(b_host.num_elements()):
                     b_host.raw_store(i, Scalar[a_type](i))
 
-        ctx.enqueue_copy(cb_a.device_buffer(), a_host_ptr.unsafe_ptr())
-        ctx.enqueue_copy(cb_b.device_buffer(), b_host_ptr.unsafe_ptr())
+        ctx.enqueue_copy(cb_a.device_buffer(), a_host_ptr)
+        ctx.enqueue_copy(cb_b.device_buffer(), b_host_ptr)
         ctx.synchronize()
-        _ = (a_host_ptr^, b_host_ptr^)
+        a_host_ptr.free()
+        b_host_ptr.free()
     else:
         cb_a.init_on_device(init_type, ctx)
         cb_b.init_on_device(init_type, ctx)
@@ -435,15 +435,6 @@ def bench_matmul[
         comptime optional_compute_lambda_fn = Optional[
             elementwise_compute_lambda_type
         ](test_lambda_add_coords_prod) if enable_compute_epilogue else None
-
-        # create a dummy buffer to force using the mojo the matmul kernel to output values
-        # in the correct c_type
-        var c_dummy = TileTensor(
-            UnsafePointer[
-                Scalar[DType.bfloat16], MutExternalOrigin
-            ].unsafe_dangling(),
-            row_major(shape_c),
-        )
 
         @always_inline
         @parameter
@@ -531,8 +522,8 @@ def create_matmul_bench[
     run_benchmark: Bool,
 ) raises:
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
 
     bench_matmul[
@@ -594,8 +585,8 @@ def main() raises:
             ctx,
             m,
             M,
-            Idx[N](),
-            Idx[K](),
+            Idx[N],
+            Idx[K],
             init_type,
             verify,
             run_benchmark=run_benchmark,

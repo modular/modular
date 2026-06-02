@@ -13,13 +13,11 @@
 """Op implementation for gather."""
 
 from max._core.dialects import builtin, kgen, rmo
-from max.dtype import DType
 
 from ..dim import StaticDim
 from ..graph import Graph
-from ..type import DeviceRef, TensorType
+from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
-from .constant import constant
 from .validation import assert_same_device
 
 
@@ -55,7 +53,7 @@ def gather(
         result=TensorType(input.dtype, output_shape, input.device),
         input=input,
         indices=indices,
-        axis=constant(axis, DType.int64, DeviceRef.CPU()),
+        axis=builtin.IntegerAttr(builtin.IndexType(), axis),
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
@@ -68,7 +66,7 @@ def gather_nd(
     """Selects elements out of an input tensor by N-dimensional index.
 
     This operation performs N-dimensional indexing into ``input`` using ``indices``.
-    Unlike :obj:`gather()`, which indexes along a single axis, ``gather_nd()`` allows
+    Unlike :func:`gather`, which indexes along a single axis, ``gather_nd()`` allows
     indexing along multiple dimensions simultaneously.
 
     .. code-block:: python

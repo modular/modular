@@ -144,7 +144,7 @@ def test_rope_ragged[
 
     @always_inline
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
         q_out_tensor.store[width=width](Coord(idx), val)
 

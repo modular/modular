@@ -122,8 +122,6 @@ class ExportKind(enum.Enum):
 
     exported = 1
 
-    c_exported = 2
-
 class FnEffects(enum.Enum):
     none = 0
 
@@ -134,8 +132,6 @@ class FnEffects(enum.Enum):
     capturing = 4
 
     refresult = 32
-
-    register_passable = 128
 
     cabi = 512
 
@@ -316,15 +312,15 @@ class IndexRefAttrInterface(Protocol):
     For example, these two aliases have equal types:
 
     ```mojo
-    alias A: fn[T: AnyType](x: T)->None = ...
-    alias B: fn[Y: AnyType](x: Y)->None = ...
+    comptime A: def[T: AnyType](x: T)->None = ...
+    comptime B: def[Y: AnyType](x: Y)->None = ...
     ```
 
     ...if those param-refs use indexes instead of names like:
 
     ```mojo
-    alias A: fn[_: AnyType](x: *(0,0))->None = ...
-    alias B: fn[_: AnyType](x: *(0,0))->None = ...
+    comptime A: def[_: AnyType](x: *(0,0))->None = ...
+    comptime B: def[_: AnyType](x: *(0,0))->None = ...
     ```
 
     All types in Mojo use `IndexRefAttrInterface` instead of parameter names.
@@ -824,7 +820,7 @@ class FuncSymbolAttr(max._core.Attribute):
     match with the FuncType of the given `symbol` after instantiated with the
     `paramValues`.
 
-    TODO: Delete SymbolConstantAttr after fully migrate to FnLiteralType.
+    TODO: Delete SymbolConstantAttr after fully migrate to FuncLiteralType.
     """
 
     @overload
@@ -1423,10 +1419,10 @@ class ParamIndexRefAttr(max._core.Attribute):
     The latter would appear in something like this:
 
     ```
-    alias bar: fn[
+    comptime bar: def[
       D: DType,
       N: Int,
-      f: fn[Y: AnyType](Y, SIMD[N, D])->None
+      f: def[Y: AnyType](Y, SIMD[N, D])->None
     ](...) = ...
     ```
 
@@ -1437,7 +1433,7 @@ class ParamIndexRefAttr(max._core.Attribute):
 
     ```
     def foo[X: AnyType](x: X):
-        alias zork: def[...(
+        comptime zork: def[...(
           # Cannot have: #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
         )->None = ...
     ```
@@ -1793,6 +1789,47 @@ class PreservedAttr(max._core.Attribute):
     def __init__(self, value: max._core.Attribute) -> None: ...
     @property
     def value(self) -> max._core.Attribute | None: ...
+
+class SIMDAttr(max._core.Attribute):
+    """
+    The `#kgen.simd` attribute represents a constant SIMD vector value. It
+    contains `N` values of a particular dtype. Only integer, floating point, and
+    bool dtypes are supported.
+
+    Example:
+
+    ```mlir
+    #kgen.simd<1, 2> : !kgen.simd<2, si32>
+    #kgen.simd<1.5, 2.5> : !kgen.simd<2, f64>
+    #kgen.simd<true, false> : !kgen.simd<2, bool>
+    ```
+
+    When all values of the SIMD vector are equal, the attribute has a special
+    splat syntax:
+
+    ```mlir
+    #kgen<simd 0> : !kgen.simd<4, si32>
+    #kgen<simd "1.5"> : !kgen.simd<4, f32>
+    #kgen<simd false> : !kgen.simd<4, bool>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, values: Sequence[_DTypeValue], type: SIMDType
+    ) -> None: ...
+    @overload
+    def __init__(self, value: _DTypeValue, type: SIMDType) -> None: ...
+    @overload
+    def __init__(self, int_val: int, type: SIMDType) -> None: ...
+    @overload
+    def __init__(
+        self, values: Sequence[_DTypeValue], type: SIMDType
+    ) -> None: ...
+    @property
+    def values(self) -> Sequence[_DTypeValue]: ...
+    @property
+    def type(self) -> SIMDType: ...
 
 class SIMDSplatAttr(max._core.Attribute):
     """
@@ -2893,7 +2930,7 @@ class CostOfOp(max._core.Operation):
     Example:
 
     ```mlir
-    %loads, %stores, %additions, %comparisions, %divisions, %multiplications,
+    %loads, %stores, %additions, %comparisons, %divisions, %multiplications,
     %multiply_adds, %other = kgen.cost_of[(si8) -> si8: @foo]
     ```
     """
@@ -4514,13 +4551,13 @@ class ParameterScopeTypeInterface(Protocol):
 
     ```mojo
     def foo[T: AnyType]():
-      alias bork: def[
+      comptime bork: def[
         T: AnyType,
         inner_f: def[Y: AnyType](t: T, y: Y) -> None
       ] -> None = ...
     ```
 
-    The `fn` after `bork:` is a `kgen.generator` which is a
+    The `def` after `bork:` is a `kgen.generator` which is a
     `ParameterScopeTypeInterface`.
 
     `ParameterScopeTypeInterface` also causes the `depth` fields of
@@ -4752,8 +4789,8 @@ class NonStructTypeType(max._core.Type):
     comptime mlir_i1 = __mlir_type.i1
     # type_of(mlir_i1) == !kgen.non_struct_type
 
-    comptime fn_type = fn()->Int
-    # type_of(fn_type) == !kgen.non_struct_type
+    comptime def_type = def()->Int
+    # type_of(def_type) == !kgen.non_struct_type
 
     # Notably:
     # type_of(type_of(mlir_i1)) == !kgen.type
@@ -5194,6 +5231,10 @@ class FuncTypeGeneratorType(GeneratorType):
     ) -> None: ...
 
 class _KGENDType:
+    @staticmethod
+    def get_int(arg0: int, arg1: bool, /) -> _KGENDType: ...
+
+class _DTypeValue:
     pass
 
 class ParamDefValue:

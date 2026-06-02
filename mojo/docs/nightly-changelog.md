@@ -10,7 +10,7 @@ This version is still a work in progress.
 
 ## Language enhancements
 
-- Types can parameterize the `out` argument modifier when they want into being
+- Types can parameterize the `out` argument modifier when they want to be
   bindable to alternate address spaces, e.g.:
 
   ```mojo
@@ -37,6 +37,16 @@ This version is still a work in progress.
         return Pointer(to=b)
   ```
 
+- Types may now be conditionally "ImplicitlyDestructible" with a where clause:
+
+  ```mojo
+  @explicit_destroy("Message when implicitly destroyed")
+  struct ConditionallyLinearType[T: AnyType](
+      ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible)
+  ):
+      var data: Self.T
+  ```
+
 ## Language changes
 
 - Support for "set-only" accessors has been removed. You need to define a
@@ -49,7 +59,42 @@ This version is still a work in progress.
   thus no longer squats on these module names, paving the way for user modules
   named `algorithm`, `memory`, etc.
 
+- Specifying `ABI="C"` in an `@export` decorator is now deprecated; `abi("C")`
+  should be used instead.
+
+  ```mojo
+  @export("old", ABI="C")
+  def old(): pass
+
+  @export("new")
+  def new() abi("C"): pass
+  ```
+
 ## Library changes
+
+- The reduction axis of the `std.algorithm` reductions (`sum`, `product`,
+  `mean`, `max`, `min`, and the underlying `_reduce_generator` plus the CPU
+  and GPU backends) is now a keyword-only compile-time parameter named
+  `reduce_dim` instead of a runtime argument. This covers the
+  `mo.reduce.{mean,add,mul,max,min,reduce_min_and_max}` ops. Pass it in the
+  parameter list, e.g. `sum[..., reduce_dim=axis](shape, ctx)`.
+
+- The `ImplicitlyCopyable`, `Intable`, and `Equatable` traits no longer
+  inherit from `ImplicitlyDestructible`. Generic code that relied on
+  receiving the destructor bound transitively through these traits (or
+  through `Comparable`, which inherits from `Equatable`) must now spell it
+  out explicitly, for example
+  `T: ImplicitlyCopyable & ImplicitlyDestructible`. In practice, most
+  generic code should prefer `T: Copyable` instead, per the guidance in
+  `ImplicitlyCopyable`'s docstring.
+
+- Changed `Idx` to a `comptime` alias for `ComptimeInt`. Use `Idx[value]`
+  instead of `Idx[value]()` for compile-time coordinates.
+
+- Added `is_trivially_movable`, `is_trivially_copyable`, and
+  `is_trivially_destructible` to `std.memory`. These helper functions
+  return whether a type's move constructor, copy constructor, or destructor is
+  trivial (i.e., a bit-copy or a no-op).
 
 - Added `std.gpu.host.CompletionFlag`, a non-owning handle to an MLRT
   `M::Driver::CompletionFlag` (an 8-byte slot in pinned host memory mapped
@@ -100,9 +145,15 @@ This version is still a work in progress.
 - A new `BinaryHeap` collection has been added to the `std.collections` module.
   This is a list-backed binary max-heap.
 
-- `List[T]` no longer requires its type to be `Copyable`, but now works with
-  `Movable`-only types. Iteration still requires `Copyable` and will emit
-  a `comptime assert` if not satisfied.
+- The core collection types no longer require their element type to be
+  `Copyable` — `Movable & ImplicitlyDestructible` is now the minimum bound.
+  This applies to `List[T]`, `Deque[T]`, `LinkedList[T]`, `InlineArray[T,
+  size]`, both type parameters of `Dict[K, V, H]` (along with
+  `SwissTable`/`SwissTableEntry`/`OwnedKwargsDict` and the loosened
+  `KeyElement` trait), and `Set[T]`. Copy-requiring methods stay gated on
+  `Copyable`. `Counter[V]` is unchanged. `Dict.setdefault` and `Set.add`
+  now take their argument by `var T`; for move-only types call them as
+  `d.setdefault(key^, default)` or `set.add(value^)`.
 
 - `reflect[T]` is now a `comptime` alias for the `Reflected[T]` handle type
   rather than a function returning a zero-sized handle instance. All methods on
@@ -193,6 +244,17 @@ This version is still a work in progress.
   var missing = iter(l).nth(10)   # None (Optional)
   ```
 
+- `String` and `StringSlice` now expose a `bytes()` method that returns a new
+  `BytesIter`, an iterator over the raw UTF-8 bytes of the string. This
+  complements the existing `codepoints()` and `graphemes()` iterators by
+  operating at the byte level without interpreting multi-byte UTF-8 sequences.
+
+  ```mojo
+  var s = StringSlice("é")  # Encoded in UTF-8 as 0xC3 0xA9.
+  for b in s.bytes():
+      print(b)  # 195, 169
+  ```
+
 - `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
   that indexes by unicode codepoint offsets.
 
@@ -231,10 +293,30 @@ This version is still a work in progress.
       print(t"Hi, {a}!")
   ```
 
-- The `Intable` trait no longer inherits from `ImplicitlyDestructible`.
+- The CPython FFI bindings now carry the `abi("C")` effect. User-written Python
+  extension callbacks passed to `def_py_c_function`, `def_py_c_method`, or
+  `PyCapsule_New` must add `abi("C")` to their signatures, e.g.
+  `def my_func(self: PyObjectPtr, args: PyObjectPtr) abi("C") -> PyObjectPtr:`.
+  Functions registered through the higher-level `def_function`, `def_method`,
+  and `def_staticmethod` paths are unaffected.
+
+- Added `take()` and `drop()` iterator adapters to `std.itertools`.
+  `take(iter, n)` yields the first `n` elements, and
+  `drop(iter, n)` drops the first `n` elements. They compose
+  naturally to select sub-ranges of any iterable:
+
+  ```mojo
+  from std.itertools import take, drop
+
+  var nums = [1, 2, 3, 4, 5]
+  for x in take(drop(nums, 1), 3):
+      print(x)  # 2, 3, 4
+  ```
+
+- The `Indexer` trait no longer inherits from `ImplicitlyDestructible`.
   Generic code that relied on receiving the destructor bound transitively
   through this trait must now spell it out explicitly, for example
-  `T: Intable & ImplicitlyDestructible`.
+  `T: Indexer & ImplicitlyDestructible`.
 
 ## Tooling changes
 
@@ -265,6 +347,27 @@ This version is still a work in progress.
   max/kernels/src/layout/layout_tensor.mojo:2092: note: constraint declared here evaluated to False, expected 'mut'
   max/kernels/src/layout/layout_tensor.mojo:2090: note: function declared here
   ```
+
+- The `mojo` compiler now provides more useful diagnostics in the case that
+  source information is unavailable by synthesizing a declaration and
+  pretty-printing it.
+
+  For example, instead of the following, with no contextual information after
+  the 'here':
+
+  ```text
+  /path/to/file.mojo:2092: note: function declared here:
+  ```
+
+  The user will now see:
+
+  ```text
+  /path/to/file.mojo:2092: note: function declared here:
+  def __setitem__[*Tys: Indexer](self, *args: *Tys.values, *, val: SIMD[dtype, Self.element_size]) where mut
+  ```
+
+  The coverage and quality of diagnostics in such cases will continue to improve
+  in subsequent releases.
 
 - The `mojo package` command has renamed to `mojo precompile`. Similarly, the
   `.mojopkg` file extension has been deprecated; favor the `.mojoc` file
@@ -297,6 +400,11 @@ This version is still a work in progress.
 
   $ mojo --clear-cache -f   # no prompt
   ```
+
+- The Mojo compiler now reports call-related errors on the operand value that
+  causes the failure, instead of on the call overall. This makes it easier
+  to understand failures in calls with many arguments spread over multiple
+  lines.
 
 ## GPU programming
 
@@ -453,3 +561,11 @@ This version is still a work in progress.
   switching to a different `ptxas` CUBIN cache will not hit those were
   generated before the switch.
   ([Issue #6540](https://github.com/modular/modular/issues/6549))
+
+- Fixed the `mojo` compiler incorrectly emitting AVX-512 instructions on
+  hosts where the CPU model (e.g. `znver4`) advertises AVX-512 but the OS
+  has not enabled it in XCR0 — for example, inside Docker containers on
+  GitHub Actions. Host CPU features are now cross-checked against the
+  runtime CPUID view, so features the kernel withholds no longer cause
+  `SIGILL` at runtime.
+  ([Issue #6413](https://github.com/modular/modular/issues/6413))

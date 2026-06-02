@@ -21,7 +21,10 @@ from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import (
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.modeling.types import (
     BatchType,
     GenerationStatus,
     Pipeline,
@@ -30,9 +33,6 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
-from max.pipelines.core import TextContext
-from max.pipelines.kv_cache import PagedKVCacheManager
 from max.serve.queue import MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -109,7 +109,8 @@ def create_kv_cache(
         host_kvcache_swap_space_gb=999,
         data_parallel_degree=dp,
         devices=device_refs,
-        num_eagle_speculative_tokens=num_speculative_tokens,
+        speculative_method="eagle" if num_speculative_tokens > 0 else None,
+        num_draft_tokens=num_speculative_tokens,
         is_mla=is_mla,
         # num_q_heads must be divisible by the per-replica device count
         # (TP shards) when MLA is enabled.

@@ -30,6 +30,8 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
         "//max/python/max/serve/parser",
         requirement("click"),
         requirement("pyyaml"),
@@ -54,9 +56,9 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("pytest-asyncio"),
     ],

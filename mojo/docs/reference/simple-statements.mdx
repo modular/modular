@@ -23,28 +23,39 @@ Imports can appear at module level, inside functions, or inside other scopes.
 They don't need to appear at the top of a file.
 
 ```mojo
-import math
-from collections import Dict, Set
+import std.math
+from std.collections import Dict, Set
+```
+
+Use parentheses to import on multiple lines for readability and support
+clean commit diffs:
+
+```mojo
+from std.collections import (
+    Dict,
+    Set,
+    List,    # Trailing comma is legal
+)
 ```
 
 ### Module imports
 
 ```mojo
-import math
+import std.math
 import numpy as np            # Alias the module name to avoid collisions
 ```
 
 ### Selective imports
 
 ```mojo
-from math import sqrt, pi
-from collections import Dict as Dictionary   # Alias the imported name
+from std.math import sqrt, pi
+from std.collections import Dict as Dictionary   # Alias the imported name
 ```
 
 ### Wildcard imports
 
 ```mojo
-from math import *  # Imports all public names from the math module
+from std.math import *  # Imports all public names from the std.math module
 ```
 
 ## Expression statements
@@ -56,7 +67,7 @@ When the result is unused (other than `None`), the compiler warns:
 x + y              # Warning: result is unused
 ```
 
-The compiler does not warn when the result is `None`, which is common for
+The compiler doesn't warn when the result is `None`, which is common for
 functions called for their side effects:
 
 ```mojo
@@ -75,7 +86,8 @@ of methods.
 
 ## Assignment statements
 
-*Assignment statements* bind values to names with `=`:
+*Assignment statements* bind values to names with `=`.
+Use `var` declarations to declare new variables:
 
 ```mojo
 var x = 42
@@ -83,18 +95,20 @@ var name = "Alice"
 var result = compute()
 ```
 
-Using `var` is optional when the type can be inferred from the initializer,
-as in Python, but is discouraged. Explicit `var` (and `ref`) declarations
-show your intent to declare a new variable and are easy to scan.
+Use `ref` declarations to create reference bindings:
 
 ```mojo
-x = 42          # Type inferred as Int
-name = "Alice"  # Type inferred as String
+ref y = my_list[3]  # `y` is a reference to the value at `my_list[3]`
 ```
 
-### Annotated assignment
+The `y` reference binding does not create a new value. It creates a
+reference to the existing value at `my_list[3]`. Modifying `y`
+modifies the value in `my_list[3]`; modifying `my_list[3]` modifies
+what `y` reads.
 
-Annotated assignments bind a type to a name, with an optional initializer:
+Annotated assignments bind a type to a name, with an optional initializer.
+Type annotations aren't required, but they improve readability and catch
+errors:
 
 ```mojo
 x: Int = 42
@@ -102,20 +116,12 @@ name: String = "Alice"
 values: List[Float64] = []
 ```
 
-A `var` without both a type and an initializer is an error:
+A `var` without a type *and* without an initializer is an error:
 
 ```mojo
 var x        # Error: declaration must have either a type or an initializer
 var x: Int   # OK: type provided, value uninitialized
 var x = 42   # OK: type inferred from initializer
-```
-
-You don't need to type your variables, but it's a good practice to add type
-annotations for readability, to show intent, and to catch errors:
-
-```mojo
-var x: Int16 = 42
-var name: String = "Alice"
 ```
 
 When types are complex and long to write, you can use comptime aliases to
@@ -128,10 +134,59 @@ var position: Vec3 = [0.0, 0.0, 0.0]
 
 ### Multiple assignment
 
+Multiple assignments give you a concise syntax for initializing variables.
+
+Assign the same value to multiple names. This is right-associative.
+`z` is assigned first, then `y`, then `x`. If the RHS has side effects,
+they run once:
+
 ```mojo
-x = y = z = 0        # Assign the same value to multiple names
-a, b = 1, 2          # Destructuring assignment
-(a, b) = (1, 2)      # Equivalent destructuring, not "assign tuple to tuple"
+# Good for initializing counters/flags to the same literal.
+var x = y = z = "Hello"
+print(x, y, z) # Hello Hello Hello
+
+# Mixing conventions
+ref a = var b = var c = "Hello"
+print(a, b, c)
+
+a = "World"
+print(b) # World
+```
+
+Destructuring assignment:
+
+```mojo
+var a, b = 1, 2          # Destructuring assignment
+var (c, d) = (1, 2)      # Equivalent destructuring
+                         # not "assign tuple to tuple"
+print(a, b, c, d)  # 1 2 1 2
+
+def returns_pair() -> Tuple[Int, Int]:
+    return (1, 2)
+
+var e, f = returns_pair()
+print(e, f)  # 1 2
+```
+
+Avoid multiple assignments for destructuring unrelated values.
+
+```mojo
+var temperature, name = 98.6, "Bob"
+```
+
+reads worse than two lines:
+
+```mojo
+var temperature = 98.6
+var name = "Bob"
+```
+
+### Simple swaps
+
+```mojo
+var a, b, c = 1, 2, 3
+a, b, c = c, a, b
+print(a, b, c)  # 3 1 2
 ```
 
 ### Augmented assignment
@@ -170,15 +225,6 @@ struct Empty:
 
 `pass` is required in empty function and struct bodies to avoid syntax
 errors.
-
-:::note Ellipsis statement
-`...` is functionally equivalent to `pass` as a statement in most code.
-Prefer `pass` to `...` for readability.
-
-In trait definitions, `...` marks a method as required. Limiting your
-use of `...` to traits makes it easier to determine its role when
-reading code that uses it.
-:::
 
 ## The return statement
 
@@ -272,13 +318,12 @@ comptime SIZE = 256
 comptime MAX = SIZE * 2
 ```
 
-`comptime` assignments are also used to declare associated types
-in traits, and can be used to create type aliases and trait composition
-aliases:
+`comptime` is also used to declare associated types in traits, and can be
+used to create type aliases and trait composition aliases:
 
 ```mojo
 comptime Permissive = ImplicitlyCopyable & ImplicitlyDestructible
 
-trait SimpleTrait (Writable):  # `SimpleTrait` refines `Writable`
+trait SimpleTrait(Writable):  # `SimpleTrait` refines `Writable`
     comptime Element = Permissive  # Associated type with a comptime alias
 ```

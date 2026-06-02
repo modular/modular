@@ -15,7 +15,7 @@
 import json
 
 import pytest
-from max.interfaces.provider_options import (
+from max.pipelines.request.provider_options import (
     ImageProviderOptions,
     MaxProviderOptions,
     ProviderOptions,
@@ -89,6 +89,32 @@ def test_video_provider_options_guidance_scale() -> None:
     # Negative values are rejected (ge=0.0).
     with pytest.raises(ValidationError):
         VideoProviderOptions(guidance_scale=-1.0)
+
+
+def test_video_provider_options_flow_shift() -> None:
+    """VideoProviderOptions exposes flow_shift inherited from the base."""
+    # Default is None (defer to the pipeline's per-model default).
+    opts = VideoProviderOptions()
+    assert opts.flow_shift is None
+
+    # Accepts explicit positive values.
+    opts = VideoProviderOptions(flow_shift=5.0)
+    assert opts.flow_shift == 5.0
+
+    # gt=0.0: zero and negative values are rejected.
+    with pytest.raises(ValidationError):
+        VideoProviderOptions(flow_shift=0.0)
+    with pytest.raises(ValidationError):
+        VideoProviderOptions(flow_shift=-1.0)
+
+
+def test_image_provider_options_flow_shift_inherited() -> None:
+    """flow_shift is exposed on ImageProviderOptions via the shared base."""
+    opts = ImageProviderOptions()
+    assert opts.flow_shift is None
+
+    opts = ImageProviderOptions(flow_shift=3.0)
+    assert opts.flow_shift == 3.0
 
 
 def test_provider_options_empty() -> None:

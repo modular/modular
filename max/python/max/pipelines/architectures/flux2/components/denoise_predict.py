@@ -24,6 +24,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import Module as GraphModule
 from max.nn.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.model_manifest import ModelManifest
@@ -96,17 +97,23 @@ class DenoisePredict(CompiledComponent):
         session: InferenceSession,
         dtype: DType,
         device: Device,
+        *,
+        graphs_module: GraphModule | None = None,
     ) -> None:
-        super().__init__(manifest, session)
+        super().__init__(manifest, session, graphs_module=graphs_module)
 
         device_ref = DeviceRef.from_device(device)
         euler = EulerStepModule(dtype=dtype, device=device_ref)
 
-        with Graph("denoise_predict", input_types=euler.input_types()) as graph:
+        with Graph(
+            "denoise_predict",
+            input_types=euler.input_types(),
+            module=self._graphs_module,
+        ) as graph:
             outputs = euler(*(v.tensor for v in graph.inputs))
             graph.output(outputs)
 
-        self._model = self._load_graph(graph)
+        self._load_graph(graph)
 
     @traced(message="DenoisePredict.__call__")
     def __call__(

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import functools
 import logging
-import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
@@ -25,18 +24,18 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 import numpy as np
 import numpy.typing as npt
 from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.interfaces import (
+from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
+from max.pipelines.modeling.types import (
     EmbeddingsContext,
     InputModality,
     Pipeline,
     PipelineTask,
     PipelineTokenizer,
+    ReasoningParser,
     TextGenerationContext,
     TextGenerationRequest,
 )
-from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
 from transformers import (
-    AutoConfig,
     AutoTokenizer,
     PretrainedConfig,
     PreTrainedTokenizer,
@@ -44,22 +43,24 @@ from transformers import (
 )
 
 if TYPE_CHECKING:
-    from .audio_generator_pipeline import AudioGeneratorPipeline
     from .config import PipelineConfig
     from .pipeline_executor import PipelineExecutor
 
-from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config.config_enums import RopeType, SupportedEncoding
+from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
+from max.pipelines.lib._hf_config import load_huggingface_config
+from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
+from max.pipelines.speculative.standalone import (
+    _StandaloneSpeculativeDecodingPipeline,
+)
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
+
 from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceRepo
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
-from .pipeline_variants.pixel_generation import PixelGenerationPipeline
 from .pipeline_variants.text_generation import TextGenerationPipeline
-from .speculative_decoding import StandaloneSpeculativeDecodingPipeline
-from .speech_token_pipeline import SpeechTokenGenerationPipeline
+from .reasoning import get_parser_cls
 from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
@@ -71,77 +72,13 @@ PipelineModelType: TypeAlias = (
 )
 
 
-def _load_raw_config_json(huggingface_repo: HuggingFaceRepo) -> dict[str, Any]:
-    """Load and parse a raw ``config.json`` from a HuggingFace repository.
-
-    Handles both local directories and remote HuggingFace Hub repos,
-    respecting the ``subfolder`` field on *huggingface_repo*.
-
-    Args:
-        huggingface_repo: The repository handle to load from.
-
-    Returns:
-        The parsed JSON dictionary.
-
-    Raises:
-        FileNotFoundError: If no ``config.json`` can be found.
-    """
-    import json
-
-    # Diffusers schedulers use scheduler_config.json instead of config.json.
-    filenames = ["config.json", "scheduler_config.json"]
-
-    if huggingface_repo.repo_type == "local":
-        for filename in filenames:
-            parts = [huggingface_repo.repo_id]
-            if huggingface_repo.subfolder is not None:
-                parts.append(huggingface_repo.subfolder)
-            parts.append(filename)
-            config_path = os.path.join(*parts)
-            if os.path.isfile(config_path):
-                break
-        else:
-            raise FileNotFoundError(
-                f"No config.json or scheduler_config.json found at"
-                f" {os.path.join(huggingface_repo.repo_id, huggingface_repo.subfolder or '')}"
-            )
-    else:
-        from huggingface_hub import hf_hub_download
-
-        config_path = None
-        for filename in filenames:
-            hf_filename = filename
-            if huggingface_repo.subfolder is not None:
-                hf_filename = f"{huggingface_repo.subfolder}/{filename}"
-            try:
-                config_path = hf_hub_download(
-                    repo_id=huggingface_repo.repo_id,
-                    filename=hf_filename,
-                    revision=huggingface_repo.revision,
-                )
-                break
-            except Exception:
-                continue
-        if config_path is None:
-            raise FileNotFoundError(
-                f"No config.json or scheduler_config.json found in"
-                f" {huggingface_repo.repo_id}/{huggingface_repo.subfolder or ''}"
-            )
-
-    assert config_path is not None
-    with open(config_path) as f:
-        return json.load(f)
-
-
 def get_pipeline_for_task(
     task: PipelineTask, pipeline_config: PipelineConfig
 ) -> (
     type[TextGenerationPipeline[TextContext]]
     | type[EmbeddingsPipeline]
-    | type[AudioGeneratorPipeline]
     | type[PixelGenerationPipeline[Any]]
-    | type[StandaloneSpeculativeDecodingPipeline]
-    | type[SpeechTokenGenerationPipeline]
+    | type[_StandaloneSpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
 ):
     """Returns the pipeline class for the given task and config.
@@ -159,7 +96,7 @@ def get_pipeline_for_task(
     ):
         spec_method = pipeline_config.speculative.speculative_method
         if pipeline_config.speculative.is_standalone():
-            return StandaloneSpeculativeDecodingPipeline
+            return _StandaloneSpeculativeDecodingPipeline
         elif (
             pipeline_config.speculative.is_eagle()
             or pipeline_config.speculative.is_mtp()
@@ -179,10 +116,6 @@ def get_pipeline_for_task(
         return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
         return EmbeddingsPipeline
-    elif task == PipelineTask.AUDIO_GENERATION:
-        return AudioGeneratorPipeline
-    elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
-        return SpeechTokenGenerationPipeline
     elif task == PipelineTask.PIXEL_GENERATION:
         return PixelGenerationPipeline
     else:
@@ -425,6 +358,79 @@ def _apply_context_validators(
     tokenizer.new_context = wrapper  # type: ignore[method-assign]
 
 
+class _ThinkingRegionNewContext:
+    """Wraps ``new_context`` to configure the thinking region on each context.
+
+    When a reasoning parser is registered and the context uses constrained
+    decoding (grammar or json_schema), the model may start generation
+    inside a reasoning span. This wrapper detects that case and suspends
+    grammar enforcement until the reasoning-end token fires.
+
+    The reasoning parser and end-token ID are resolved lazily on the first
+    call (async), then cached for subsequent requests.
+    """
+
+    def __init__(
+        self,
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+        original_new_context: Callable[..., Any],
+        reasoning_parser_name: str,
+    ) -> None:
+        self._tokenizer = tokenizer
+        self._original = original_new_context
+        self._parser_name = reasoning_parser_name
+        self._parser: ReasoningParser | None = None
+        self._end_token_id: int | None = None
+        self._resolved = False
+
+    async def __call__(self, request: Any) -> Any:
+        context = await self._original(request)
+
+        if not self._resolved:
+            # Set immediately — no await between check and set, so no
+            # interleaving is possible in asyncio's cooperative model.
+            self._resolved = True
+            parser_cls = get_parser_cls(self._parser_name)
+            if parser_cls is not None:
+                self._parser = await parser_cls.from_tokenizer(self._tokenizer)
+                self._end_token_id = await parser_cls.reasoning_end_token_id(
+                    self._tokenizer
+                )
+
+        has_constrained_decoding = (
+            context.grammar is not None or context.json_schema is not None
+        )
+        if (
+            self._parser is not None
+            and self._end_token_id is not None
+            and has_constrained_decoding
+            and self._parser.will_reason_after_prompt(
+                context.tokens.prompt,
+            )
+        ):
+            context.set_thinking_region(None, [self._end_token_id])
+            context.grammar_state._in_thinking_region = True
+            context.grammar_state.grammar_enforced = False
+
+        return context
+
+
+def _apply_thinking_region(
+    tokenizer: PipelineTokenizer[Any, Any, Any],
+    reasoning_parser_name: str | None,
+) -> None:
+    """Wraps a tokenizer's ``new_context`` to configure thinking regions.
+
+    No-op when *reasoning_parser_name* is ``None``.
+    """
+    if reasoning_parser_name is None:
+        return
+    wrapper = _ThinkingRegionNewContext(
+        tokenizer, tokenizer.new_context, reasoning_parser_name
+    )
+    tokenizer.new_context = wrapper  # type: ignore[method-assign]
+
+
 class PipelineRegistry:
     """Registry for managing supported model architectures and their pipelines.
 
@@ -454,9 +460,6 @@ class PipelineRegistry:
         # Secondary lookup for architectures with duplicate names, keyed by (name, task)
         self._architectures_by_task: dict[
             tuple[str, PipelineTask], SupportedArchitecture
-        ] = {}
-        self._cached_huggingface_configs: dict[
-            HuggingFaceRepo, PretrainedConfig
         ] = {}
         self._cached_huggingface_tokenizers: dict[
             HuggingFaceRepo, PreTrainedTokenizer | PreTrainedTokenizerFast
@@ -589,36 +592,7 @@ class PipelineRegistry:
             FileNotFoundError: If no ``config.json`` can be found for the
                 given repo/subfolder combination.
         """
-        if huggingface_repo not in self._cached_huggingface_configs:
-            kwargs: dict[str, Any] = {
-                "trust_remote_code": huggingface_repo.trust_remote_code,
-                "revision": huggingface_repo.revision,
-            }
-            if huggingface_repo.subfolder is not None:
-                kwargs["subfolder"] = huggingface_repo.subfolder
-            try:
-                self._cached_huggingface_configs[huggingface_repo] = (
-                    AutoConfig.from_pretrained(
-                        huggingface_repo.repo_id,
-                        **kwargs,
-                    )
-                )
-            except Exception:
-                # Fallback for non-transformers models (e.g. diffusers
-                # components): load the raw config.json and wrap it in a
-                # PretrainedConfig so callers get uniform attribute access.
-                # If the config declares a model_type, re-raise so the
-                # user gets a clear error about the unrecognized type
-                # rather than a confusing downstream AttributeError from
-                # nested dicts.
-                config_dict = _load_raw_config_json(huggingface_repo)
-                if "model_type" in config_dict:
-                    raise
-                self._cached_huggingface_configs[huggingface_repo] = (
-                    PretrainedConfig.from_dict(config_dict)
-                )
-
-        return self._cached_huggingface_configs[huggingface_repo]
+        return load_huggingface_config(huggingface_repo)
 
     def get_active_tokenizer(
         self, huggingface_repo: HuggingFaceRepo
@@ -653,8 +627,7 @@ class PipelineRegistry:
     ) -> SupportedArchitecture | None:
         """Look up an architecture by name, optionally disambiguating by task.
 
-        When multiple architectures share the same name (e.g., a text generation
-        model and a TTS model both using LlamaForCausalLM), the task parameter
+        When multiple architectures share the same name, the task parameter
         allows selecting the correct one.
 
         Args:
@@ -903,6 +876,10 @@ class PipelineRegistry:
         if arch.context_validators:
             _apply_context_validators(tokenizer, arch.context_validators)
 
+        _apply_thinking_region(
+            tokenizer, pipeline_config.runtime.reasoning_parser
+        )
+
         # Cast tokenizer to the proper type for text generation pipeline compatibility
         typed_tokenizer = cast(
             PipelineTokenizer[
@@ -986,9 +963,7 @@ class PipelineRegistry:
         Args:
             pipeline_config: The configuration for the pipeline.
             override_architecture: Optional architecture name to use instead of looking up
-                based on the model repository. This is useful for cases like audio generation
-                where the pipeline uses a different architecture (e.g., audio decoder) than
-                the underlying model repository.
+                based on the model repository.
             task: Optional pipeline task to disambiguate when multiple architectures share
                 the same name but serve different tasks.
 

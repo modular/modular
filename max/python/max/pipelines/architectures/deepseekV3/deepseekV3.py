@@ -196,89 +196,50 @@ def deepseek_logits_postprocess(
     offsets = None
 
     if return_logits == ReturnLogits.VARIABLE:
+        # Compute the range on device 0 and broadcast to all devices.
+        # Using distributed_broadcast instead of per-device .to() copies
+        # avoids cross-stream D2D event sync that breaks CUDA graph
+        # capture. Per-device ops.range with a shared out_dim was also
+        # attempted and hit "input device gpu:0 must match result device
+        # gpu:1 in rebind()" — the shared symbolic dim triggers a cross-
+        # device rebind downstream.
+        return_n_logits_range = ops.range(
+            start=return_n_logits[0],
+            stop=0,
+            step=-1,
+            out_dim="return_n_logits_range",
+            dtype=DType.int64,
+            device=devices[0],
+        )
+        return_n_logits_range_per_dev = ops.distributed_broadcast(
+            return_n_logits_range, signal_buffers
+        )
+        variable_per_dev: list[TensorValue] = []
+        for dev_idx in range(len(devices)):
+            dev_offsets = (
+                ops.unsqueeze(input_row_offsets[dev_idx][1:], -1)
+                - return_n_logits_range_per_dev[dev_idx]
+            )
+            dev_indices = ops.reshape(dev_offsets, shape=(-1,))
+            variable_per_dev.append(ops.gather(h[dev_idx], dev_indices, axis=0))
         if is_data_parallel_attention:
-            # Compute the range on device 0 and broadcast to all devices.
-            # Using distributed_broadcast instead of per-device .to() copies
-            # avoids cross-stream D2D event sync that breaks CUDA graph
-            # capture. Per-device ops.range with a shared out_dim was also
-            # attempted and hit "input device gpu:0 must match result device
-            # gpu:1 in rebind()" — the shared symbolic dim triggers a cross-
-            # device rebind downstream.
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-            return_n_logits_range_per_dev = ops.distributed_broadcast(
-                return_n_logits_range, signal_buffers
-            )
-            variable_tokens_per_dev: list[TensorValue] = []
-            for dev_idx in range(len(devices)):
-                h0 = h[dev_idx]
-                dev_offsets = (
-                    ops.unsqueeze(input_row_offsets[dev_idx][1:], -1)
-                    - return_n_logits_range_per_dev[dev_idx]
-                )
-                indices = ops.reshape(dev_offsets, shape=(-1,))
-                variable_h = ops.gather(h0, indices, axis=0)
-                variable_tokens_per_dev.append(variable_h)
+            variable_per_dev = ops.allgather(variable_per_dev, signal_buffers)
 
-            variable_tokens_distributed = ops.allgather(
-                variable_tokens_per_dev, signal_buffers
-            )
-
-            norm_variable_tokens = forward_sharded_layers(
-                norm_shards, variable_tokens_distributed
-            )
-            logits = ops.cast(
-                lm_head(norm_variable_tokens, signal_buffers)[0],
-                DType.float32,
-            )
-
-            offsets = ops.range(
-                0,
-                TensorValue(logits.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-        else:
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=devices[0],
-            )
-            last_offsets = (
-                ops.unsqueeze(input_row_offsets[0][1:], -1)
-                - return_n_logits_range
-            )
-            last_indices = ops.reshape(last_offsets, shape=(-1,))
-            logits = ops.gather(
-                ops.cast(
-                    lm_head(
-                        forward_sharded_layers(norm_shards, h),
-                        signal_buffers,
-                    )[0],
-                    DType.float32,
-                ),
-                last_indices,
-                axis=0,
-            )
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=devices[0],
-            )
+        logits = ops.cast(
+            lm_head(
+                forward_sharded_layers(norm_shards, variable_per_dev),
+                signal_buffers,
+            )[0],
+            DType.float32,
+        )
+        offsets = ops.range(
+            0,
+            TensorValue(variable_per_dev[0].shape[0]) + return_n_logits[0],
+            return_n_logits[0],
+            out_dim="logit_offsets",
+            dtype=DType.int64,
+            device=devices[0],
+        )
     elif return_logits == ReturnLogits.ALL:
         if is_data_parallel_attention:
             h = ops.allgather(h, signal_buffers)
@@ -551,6 +512,8 @@ class DeepseekV3DecoderLayer(Module):
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
         mla_decode_scalar_args: list[TensorValue] | None = None,
+        mla_num_partitions_scalars: list[TensorValue] | None = None,
+        mla_effective_split_len_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
@@ -566,6 +529,12 @@ class DeepseekV3DecoderLayer(Module):
                 kv_scales=kv_scales[i] if kv_scales else None,
                 attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
+                else None,
+                mla_num_partitions=mla_num_partitions_scalars[i]
+                if mla_num_partitions_scalars is not None
+                else None,
+                mla_effective_split_len=mla_effective_split_len_scalars[i]
+                if mla_effective_split_len_scalars is not None
                 else None,
             )
             for i in range(num_devices)
@@ -897,6 +866,24 @@ class DeepseekV3(Module):
                 if kv.attention_dispatch_metadata is not None
             ]
 
+        # MLA capturable-graph scalars; same per-device list shape as
+        # mla_decode_scalar_args. When set, the SM100 dispatcher uses these
+        # to align grid-time partition decisions with the kernel's divmod.
+        mla_num_partitions_scalars: list[TensorValue] | None = None
+        mla_effective_split_len_scalars: list[TensorValue] | None = None
+        if kv_collections[0].mla_num_partitions is not None:
+            mla_num_partitions_scalars = [
+                kv.mla_num_partitions
+                for kv in kv_collections
+                if kv.mla_num_partitions is not None
+            ]
+        if kv_collections[0].mla_effective_split_len is not None:
+            mla_effective_split_len_scalars = [
+                kv.mla_effective_split_len
+                for kv in kv_collections
+                if kv.mla_effective_split_len is not None
+            ]
+
         # For EAGLE3 mode, capture hidden states
         eagle3_captured: list[list[TensorValue]] = []
         eagle3_capture_ids: set[int] = set()
@@ -929,6 +916,10 @@ class DeepseekV3(Module):
 
             if mla_decode_scalar_args is not None:
                 values.append(mla_decode_scalar_args)
+            if mla_num_partitions_scalars is not None:
+                values.append(mla_num_partitions_scalars)
+            if mla_effective_split_len_scalars is not None:
+                values.append(mla_effective_split_len_scalars)
 
             if ep_inputs is not None:
                 values.append(ep_inputs)
@@ -942,7 +933,9 @@ class DeepseekV3(Module):
         h = forward_sequential_layers(
             list(self.layers),
             inputs_for_layer=inputs_for_layer,
-            weight_prefix_for_layer=lambda i: f"{self.subgraph_layer_prefix}.{i}.",
+            weight_prefix_for_layer=lambda i: (
+                f"{self.subgraph_layer_prefix}.{i}."
+            ),
             subgraph_layer_groups=self.subgraph_layer_groups,
             name_for_subgraph=lambda g: f"dist_transformer_block_{g}",
             on_layer_output=capture_for_eagle3 if eagle3_capture_ids else None,

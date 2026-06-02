@@ -18,6 +18,7 @@ from std.gpu.host import DeviceContext
 from layout import TileTensor
 
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
@@ -27,12 +28,13 @@ def matrix_band_part[
     int_type: DType,
     cond_type: DType,
     rank: Int,
-    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[
-        _
-    ] -> SIMD[dtype, width],
     simd_width: Int,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
     target: StaticString = "cpu",
 ](
+    input_0_fn: InputFnType,
     input_shape: IndexList[rank],
     num_lower: TileTensor[dtype=int_type, ...],
     num_upper: TileTensor[dtype=int_type, ...],
@@ -44,7 +46,11 @@ def matrix_band_part[
     var upper_diagonal_index = Int(num_upper.load_linear[1](IndexList[1](0)))
 
     @__copy_capture(
-        input_shape, lower_diagonal_index, upper_diagonal_index, output
+        input_shape,
+        lower_diagonal_index,
+        upper_diagonal_index,
+        output,
+        input_0_fn,
     )
     @parameter
     def dispatch[exclude: Bool]() raises:
@@ -53,11 +59,17 @@ def matrix_band_part[
             int_type,
             cond_type,
             rank,
-            input_0_fn,
             simd_width,
             exclude=exclude,
             target=target,
-        ](input_shape, lower_diagonal_index, upper_diagonal_index, output, ctx)
+        ](
+            input_0_fn,
+            input_shape,
+            lower_diagonal_index,
+            upper_diagonal_index,
+            output,
+            ctx,
+        )
 
     unswitch[dispatch](exclude.load_linear[1](IndexList[1](0)) != 0)
 
@@ -68,13 +80,14 @@ def _matrix_band_part_impl[
     int_type: DType,
     cond_type: DType,
     rank: Int,
-    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing[
-        _
-    ] -> SIMD[dtype, width],
     simd_width: Int,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
     exclude: Bool,
     target: StaticString = "cpu",
 ](
+    input_0_fn: InputFnType,
     input_shape: IndexList[rank],
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
@@ -83,13 +96,11 @@ def _matrix_band_part_impl[
 ) raises:
     comptime assert rank >= 2, "Matrix band only supports rank >=2"
 
-    @__copy_capture(lower_diagonal_index, upper_diagonal_index, output)
-    @parameter
     @always_inline
-    def func[
-        simd_width: Int, inner_rank: Int, alignment: Int = 1
-    ](index: IndexList[inner_rank]):
-        var idx = rebind[IndexList[rank]](index)
+    def func[simd_width: Int, alignment: Int = 1](index: Coord) {var}:
+        var idx = IndexList[rank]()
+        comptime for i in range(rank):
+            idx[i] = Int(index[i].value())
 
         var row = idx[rank - 2]
         var col = idx[rank - 1]
@@ -103,13 +114,12 @@ def _matrix_band_part_impl[
 
         if in_band:
             output.store_linear(
-                idx, rebind[Scalar[dtype]](input_0_fn[simd_width, rank](idx))
+                idx, rebind[Scalar[dtype]](input_0_fn[1, rank](idx))
             )
         else:
             output.store_linear(idx, Scalar[dtype](0))
 
     elementwise[
-        func,
         simd_width=1,
         target=target,
-    ](input_shape, context=ctx)
+    ](func, output.layout.shape_coord(), ctx)

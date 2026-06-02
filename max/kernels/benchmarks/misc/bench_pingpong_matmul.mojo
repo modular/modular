@@ -136,7 +136,7 @@ def bench_matmul[
             @__copy_capture(tensor_c)
             def test_lambda_add_coords_prod[
                 _dtype: DType,
-                width: Int,
+                width: SIMDSize,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -244,8 +244,8 @@ def create_matmul_bench[
     init_type: InitializationType,
 ) raises:
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
 
     bench_matmul[
@@ -290,8 +290,8 @@ def main() raises:
             ctx,
             m,
             M,
-            Idx[N](),
-            Idx[K](),
+            Idx[N],
+            Idx[K],
             init_type,
         )
 

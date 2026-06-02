@@ -34,7 +34,9 @@ class Device:
 
     This is the base class for :class:`CPU` and :class:`Accelerator`.
     Do not instantiate this class directly; use :class:`CPU` for host
-    devices or :class:`Accelerator` for GPU devices.
+    devices, :class:`Accelerator` for any hardware accelerator (GPU
+    by default), or :class:`NPU` to explicitly select the NPU
+    dispatch path. :class:`NPU` is a subclass of :class:`Accelerator`.
 
     .. code-block:: python
 
@@ -42,6 +44,7 @@ class Device:
 
         cpu = driver.CPU()
         gpu = driver.Accelerator()
+        npu = driver.NPU()
     """
 
     def can_access(self, other: Device) -> bool:
@@ -283,7 +286,18 @@ class Accelerator(Device):
         """
         Creates an accelerator device with the specified ID and memory limit.
 
-        Provides access to GPU or other hardware accelerators in the system.
+        Represents any hardware accelerator (GPU or NPU) attached to the
+        host. Constructing ``Accelerator()`` directly produces a GPU-labeled
+        device, which is the dispatch path the graph compiler uses for
+        CUDA, HIP, Metal and any other GPU-class backend. Use the
+        :class:`NPU` subclass to explicitly select the NPU dispatch path
+        instead.
+
+        :class:`NPU` is a subclass of ``Accelerator``, so any
+        ``isinstance(device, Accelerator)`` check is satisfied by both GPU
+        and NPU devices. Treat ``Accelerator`` as "any non-CPU device"
+        when writing isinstance checks; use the concrete subclass when
+        you specifically need the GPU or NPU dispatch path.
 
         Repeated instantiations with a previously-used device-id will still
         refer to the first such instance that was created. This is especially
@@ -301,6 +315,8 @@ class Accelerator(Device):
           device = driver.Accelerator(id=1)  # Second GPU
           # Get device id
           device_id = device.id
+          # NPU is also an Accelerator
+          isinstance(driver.NPU(), driver.Accelerator)  # True
 
         Args:
             id (int, optional): The device ID to use. Defaults to -1, which selects
@@ -308,6 +324,37 @@ class Accelerator(Device):
 
         Returns:
             Accelerator: A new Accelerator device object.
+        """
+
+class NPU(Accelerator):
+    def __init__(self, id: int = -1) -> None:
+        """
+        Creates an NPU accelerator device.
+
+        ``NPU`` is a subclass of :class:`Accelerator`: an NPU **is an**
+        accelerator, and ``isinstance(device, Accelerator)`` returns
+        ``True`` for any ``NPU`` instance. The reason to construct an
+        ``NPU`` instead of a bare ``Accelerator`` is to select the NPU
+        dispatch path: the graph compiler stamps an ``"npu"`` device
+        label, emits ``target="npu"`` Mojo kernels, and routes through
+        the NPU plugin hook rather than the default GPU dispatch path.
+
+        On platforms without an NPU backend the device will still be
+        created, but downstream graph compilation will fail with an
+        unsupported target error.
+
+        .. code-block:: python
+
+            from max import driver
+            device = driver.NPU()
+            device = driver.NPU(id=0)
+
+        Args:
+            id (int, optional): The device ID to use. Defaults to -1, which
+                selects the first available NPU.
+
+        Returns:
+            NPU: A new NPU device object.
         """
 
 class CPU(Device):
@@ -631,6 +678,45 @@ class DeviceStream:
             RuntimeError: If the underlying device does not support
                 stream memory ops, or if the driver rejects the
                 enqueue.
+        """
+
+    def __unsafe_enqueue_async_py_host_func(
+        self, fn: Callable, flag: CompletionFlag, value: int, cpu: CPU
+    ) -> None:
+        """
+        Stream-targeted variant of ``Device.__unsafe_enqueue_async_py_host_func``.
+
+        Enqueues a kickoff host node on **this** stream that dispatches ``fn``
+        onto ``cpu``'s AsyncRT worker pool and returns immediately. When ``fn``
+        finishes, the worker atomic-stores ``value`` (release ordering) to the
+        64-bit memory at ``flag``. Pair with
+        ``DeviceStream.wait_for_host_value(flag, value)`` on a consumer stream
+        to gate downstream GPU work.
+
+        Use this overload when you need the host callback to run on a side
+        stream concurrently with the model stream's forward pass; the
+        ``Device`` overload always targets the default stream and therefore
+        serializes against any other default-stream work. As of this
+        writing no production caller dispatches via this stream
+        overload -- ``StructuredOutputOverlapState.enqueue_async_callback``
+        intentionally lands on the device default stream so the
+        trampoline's ``flag.reset()`` is naturally ordered against the
+        next iter's captured-graph wait. The stream variant is exposed
+        as future-facing API and exercised by the GPU integration test
+        (``test_structured_output_overlap_gpu.py``).
+
+        Args:
+            fn (Callable[[], None]): A zero-argument callable.
+            flag (CompletionFlag): The completion flag the worker will
+                signal when ``fn`` returns.
+            value (int): The 64-bit value to store on completion.
+            cpu (CPU): The CPU device whose AsyncRT worker pool will
+                execute ``fn``.
+
+        Raises:
+            RuntimeError: If the underlying device does not support host
+                callbacks, if the supplied ``cpu`` has no associated AsyncRT
+                CPUDevice, or if the driver rejects the enqueue.
         """
 
     @property

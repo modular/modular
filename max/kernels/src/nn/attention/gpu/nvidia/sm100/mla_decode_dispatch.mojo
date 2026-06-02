@@ -255,32 +255,16 @@ def _compute_num_partitions_64[
 
     target_partitions = min(target_partitions, half_sms)
 
-    # max_pages_per_split for single head group: 18 * 2 / 1 = 36
-    comptime _head_groups = 1
-    comptime _base_max_pages_per_split = 18
-    comptime max_pages_per_split = _base_max_pages_per_split * 2 // _head_groups
-    var min_partitions_for_work = ceildiv(
-        num_kv_cache_pages, max_pages_per_split
-    )
+    # Pages-per-CTA lower bound to avoid under-utilizing CTAs (per-CTA setup
+    # + combine-grid overhead would dominate if each CTA processed too few
+    # pages).
+    comptime _min_pages_per_split = 4
+    var max_np_for_min_pages = num_kv_cache_pages // _min_pages_per_split
 
-    # Single head group: use max(target_partitions, min_partitions_for_work).
-    # wave_aligned and page_constrained (num_kv_cache_pages//min_pages_per_split)
-    # are not used for single head group -- target_partitions dominates.
-    #
-    # Fold-active long-cache path: cap np at 8 only for bs≥16. At bs<16 the
-    # cap starves CTAs (target_partitions floor is needed for SM utilization).
-    # At bs≥16, combine grid overhead at np=16 dominates, and bs*8 ≈ SM count
-    # keeps decode CTAs sufficient.
-    var num_partitions: Int
-    if fold_active and batch_size >= 16 and effective_max_cache_len >= 8192:
-        # Long-cache + high-batch: combine grid overhead at np=16 dominates,
-        # and bs*8 ≈ SM count keeps decode CTAs sufficient. Cap np at 9 so
-        # bs=16 → 144 CTAs (vs 128 at np=8) — fills more SMs without hitting
-        # the np=16 combine-overhead cliff.
-        num_partitions = min(target_partitions, 9)
-    else:
-        # Default: maintain SM utilization (low batch needs higher np).
-        num_partitions = max(target_partitions, min_partitions_for_work)
+    # Policy: honor wave-aligned target_partitions, but cap np DOWN if it
+    # would leave too few pages per CTA (under-utilization). Long K-loops
+    # per CTA are FINE — they amortize fixed costs better than splitting.
+    var num_partitions: Int = min(target_partitions, max_np_for_min_pages)
 
     # Clamp: allow np=1 for very short cache + large batch, or when single
     # head group fills >= 80% of SMs.
@@ -524,10 +508,14 @@ def compute_mla_dispatch_scalars[
     max_cache_valid_length: Int,
     q_max_seq_len: Int,
     sm_count: Int,
-) -> Tuple[Int, Int, Int]:
-    """Pure computation of the packed 3-value MLA dispatch metadata.
+) -> Tuple[Int, Int, Int, Int]:
+    """Pure computation of the packed MLA dispatch metadata.
 
-    Returns ``(batch_size, q_max_seq_len, num_partitions)``.
+    Returns ``(batch_size, q_max_seq_len, num_partitions, effective_split_len)``.
+    The first three values are baked into the size-3 GPU buffer; the fourth
+    is exposed for callers that need to align grid-time partition decisions
+    (e.g. capturable graph dispatch) with the kernel's divmod on
+    ``scalar_args[2]``.
     """
     var effective = max_cache_valid_length
 
@@ -539,7 +527,7 @@ def compute_mla_dispatch_scalars[
         num_heads, is_fp8_kv, half_sms
     ](batch_size, effective, q_max_seq_len, split_page_size, sm_count)
 
-    return (batch_size, q_max_seq_len, num_partitions)
+    return (batch_size, q_max_seq_len, num_partitions, effective)
 
 
 def compute_mla_dispatch_scalars_runtime(
@@ -549,7 +537,7 @@ def compute_mla_dispatch_scalars_runtime(
     num_heads: Int,
     is_fp8_kv: Bool,
     sm_count: Int,
-) raises -> Tuple[Int, Int, Int]:
+) raises -> Tuple[Int, Int, Int, Int]:
     if is_fp8_kv:
         if num_heads == 8:
             return compute_mla_dispatch_scalars[8, is_fp8_kv=True](
@@ -681,6 +669,8 @@ struct MLADispatchScalarArgs[
             half_sms=_half_sms,
         ](batch_size, max_cache_len, q_max_seq_len, sm_count)
 
+        # Note: scalars[3] (effective_split_len) is only consumed by the
+        # capturable-graph dispatcher path, not by the legacy GPU buffer.
         var host_args = InlineArray[Int64, 3](uninitialized=True)
         host_args[0] = Int64(scalars[0])
         host_args[1] = Int64(scalars[1])
@@ -759,6 +749,12 @@ def mla_decode_sm100_dispatch[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Pre-computed grid-time scalars from the dispatcher input list (capturable
+    # graph path). When provided, both values bypass the local recompute so
+    # the host-side grid sizing matches the device-side divmod on
+    # scalar_args_buf[2].
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     var scales_ptr = k.scales_raw_ptr()
 
@@ -788,11 +784,7 @@ def mla_decode_sm100_dispatch[
     # window_size + q_max_seq_len so partition heuristics don't
     # over-split a region the kernel will skip anyway.
     comptime if mask_t.get_type_name() == "SlidingWindowCausalMask":
-        # BM/BN_QK values are immaterial for window_size extraction; use the
-        # MLA decode tile shape (BM=64, BN_QK=64) for consistency.
-        comptime _sw_window_size: Int = Int(
-            mask_t.mask_strategies[64, 64]()[0]._upper_triangular_window_size
-        )
+        comptime _sw_window_size: Int = mask_t.sliding_window_size()
         var sw_cap: Int = _sw_window_size + q_max_seq_len
         # at high batch (bs>=64) with a small SW cap
         # (<=2048), shrinking the effective_split_len to sw_cap forces the
@@ -800,6 +792,14 @@ def mla_decode_sm100_dispatch[
         if batch_size >= 64 and sw_cap <= 2048:
             sw_cap = 2048
         effective_split_len = min(effective_split_len, sw_cap)
+
+    # Capturable-graph override: when the dispatcher receives the worst-case
+    # effective_split_len from the Python resolver (the same value baked into
+    # scalar_args_buf[2] on the device), use it verbatim so the grid sizing
+    # matches the kernel's divmod. Avoids the multi-step recompute drift that
+    # caused MLA capturable hangs.
+    if effective_split_len_in:
+        effective_split_len = effective_split_len_in.value()
 
     var use_small_split_pages = effective_split_len <= 512 and batch_size >= 32
     var split_page_size = 64 if use_small_split_pages else 128
@@ -815,6 +815,9 @@ def mla_decode_sm100_dispatch[
         split_page_size,
         sm_count,
     )
+
+    if num_partitions_in:
+        num_partitions = num_partitions_in.value()
 
     # When sparse mode or sliding-window changes num_partitions, the GPU
     # scalar_args_buf (which was pre-computed from cache_len by the caller)

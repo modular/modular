@@ -103,7 +103,7 @@ def takes_2d(tensor2d: TileTensor[...]):
     # el0 = tensor2d[x]  # Compile-time error
 
 # OR
-def takes_2d_constrained(tensor2d: TileTensor[...] where tensor2d.flat_rank == 2):
+def takes_2d_constrained(tensor2d: TileTensor[...]) where tensor2d.flat_rank == 2:
     el0 = tensor2d[0, 0]
 ```
 
@@ -171,7 +171,7 @@ To access a value in a nested tensor, you can pass the nested coordinates as a
 `Coord` struct:
 
 ```mojo
-var el1 = tensor[Coord(Coord(Idx[1](), Idx[0]()), Coord(Idx[0](), Idx[1]()))]
+var el1 = tensor[Coord(Coord(Idx[1], Idx[0]), Coord(Idx[0], Idx[1]))]
 ```
 
 You can also pass a flattened version of the coordinates, either as a single

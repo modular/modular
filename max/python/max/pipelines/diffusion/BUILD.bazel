@@ -1,0 +1,34 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "diffusion",
+    srcs = glob(["**/*.py"]),
+    ignore_unresolved_imports = [
+        # TYPE_CHECKING-only; lib depends on diffusion at runtime so no dep possible
+        "max.pipelines.lib.config.PipelineConfig",
+        "max.pipelines.lib.pipeline_executor.PipelineExecutor",
+    ],
+    # lib depends on diffusion at runtime (DenoisingCacheConfig), so diffusion
+    # cannot depend on lib — creating a circular Bazel dep. The TYPE_CHECKING
+    # imports of PipelineConfig/PipelineExecutor from lib therefore cannot be
+    # resolved by mypy when building this target in isolation.
+    tags = ["no-mypy"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/config",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
+        requirement("numpy"),
+        requirement("pydantic"),
+        requirement("tqdm"),
+    ],
+)

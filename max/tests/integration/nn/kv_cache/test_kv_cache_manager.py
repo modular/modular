@@ -19,13 +19,13 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import RequestID
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.kv_cache import (
     IncrementCacheLengthsProcessor,
     PagedKVCacheManager,
 )
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import _padded_lut_cols
+from max.pipelines.modeling.types import RequestID
 from test_common.context_utils import create_text_context
 
 
@@ -242,7 +242,7 @@ async def test_alloc_num_speculative_steps_allocates_extra_blocks() -> None:
     page_size = 4
     kv_manager = _make_kv_manager(page_size=page_size, total_num_pages=16)
     kv_manager_spec = _make_kv_manager(
-        page_size=page_size, total_num_pages=16, num_eagle_speculative_tokens=4
+        page_size=page_size, total_num_pages=16, num_draft_tokens=4
     )
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
@@ -278,7 +278,7 @@ async def test_alloc_spec_decoding_empty_draft_tokens_allocates_same_as_dummy() 
     kv_manager = _make_kv_manager(
         page_size=page_size,
         total_num_pages=16,
-        num_eagle_speculative_tokens=num_speculative_tokens,
+        num_draft_tokens=num_speculative_tokens,
     )
 
     tokens = np.array([1, 2, 3], dtype=np.int64)
@@ -319,7 +319,7 @@ async def test_alloc_with_draft_tokens_to_verify_reserves_more_blocks() -> None:
     """alloc with speculative tokens reserves more blocks than without."""
     page_size = 4
     kv_manager = _make_kv_manager(
-        page_size=page_size, total_num_pages=16, num_eagle_speculative_tokens=4
+        page_size=page_size, total_num_pages=16, num_draft_tokens=4
     )
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
@@ -338,7 +338,7 @@ async def test_runtime_inputs_with_num_speculative_steps() -> None:
     """runtime_inputs passes through num_speculative_steps without error."""
     page_size = 4
     kv_manager = _make_kv_manager(
-        page_size=page_size, total_num_pages=16, num_eagle_speculative_tokens=4
+        page_size=page_size, total_num_pages=16, num_draft_tokens=4
     )
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))

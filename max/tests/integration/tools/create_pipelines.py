@@ -36,7 +36,6 @@ import transformers
 from idefics3 import torch_utils as idefics3_torch_utils
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
-from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
 from max.pipelines.architectures.flux2.flux2_executor import Flux2Executor
 from max.pipelines.architectures.flux2.flux2_klein_executor import (
@@ -44,6 +43,9 @@ from max.pipelines.architectures.flux2.flux2_klein_executor import (
 )
 from max.pipelines.architectures.flux2.tokenizer import Flux2Tokenizer
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
+from max.pipelines.architectures.qwen3.text_encoder import (
+    Qwen3TextEncoderKleinModel,
+)
 from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
 from max.pipelines.architectures.wan.wan_executor import WanExecutor
@@ -53,6 +55,7 @@ from max.pipelines.lib import (
     PixelGenerationPipeline,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
@@ -915,11 +918,19 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         device_specs: list[driver.DeviceSpec],
     ) -> VLLMPipeline:
         gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
+        # vLLM's kimi_k25 plugin exposes its multimodal input under the
+        # vision_chunk modality, so the image must be keyed and limited under
+        # vision_chunk to reach the model.
         return VLLMPipeline(
             model_path=self.model_path,
             trust_remote_code=self.trust_remote_code,
             encoding=encoding,
             tensor_parallel_size=max(1, gpu_count),
+            extra_kwargs={
+                "mm_encoder_tp_mode": "data",
+                "limit_mm_per_prompt": {"vision_chunk": 1},
+            },
+            mm_data_key="vision_chunk",
         )
 
 
@@ -975,6 +986,7 @@ class GenericOracle(PipelineOracle):
         weight_path_map: dict[str, str] | None = None,
         config_params: dict[str, Any] = {},  # noqa: B006
         prompts: list[str] | None = None,
+        apply_chat_template: bool = False,
         use_cache: bool = True,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
         auto_processor_cls: Any = transformers.AutoTokenizer,
@@ -986,6 +998,7 @@ class GenericOracle(PipelineOracle):
         self._weight_path_map = weight_path_map
         self.config_params = config_params
         self._prompts = prompts
+        self._apply_chat_template = apply_chat_template
         self.auto_model_cls = auto_model_cls
         self.auto_processor_cls = auto_processor_cls
         self.task = task
@@ -1123,18 +1136,64 @@ class GenericOracle(PipelineOracle):
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
-        return (
-            [
-                MockTextGenerationRequest.text_only(prompt=prompt)
-                for prompt in self._prompts
+        prompts = self._prompts if self._prompts else test_data.DEFAULT_PROMPTS
+        if self._apply_chat_template:
+            # Wrap each prompt in a chat message so the MAX tokenizer applies
+            # the model's chat template, matching a templated reference golden.
+            return [
+                MockTextGenerationRequest.with_messages(
+                    prompt=prompt,
+                    messages=[{"role": "user", "content": prompt}],
+                    is_multimodal=False,
+                )
+                for prompt in prompts
             ]
-            if self._prompts
-            else test_data.DEFAULT_TEXT_ONLY
-        )
+        return [
+            MockTextGenerationRequest.text_only(prompt=prompt)
+            for prompt in prompts
+        ]
 
     @property
     def use_cache(self) -> bool:
         return self._use_cache
+
+
+class ComponentModelOracle(GenericOracle):
+    """Oracle for verifying a MAX ComponentModel (e.g. a text encoder) against
+    a HuggingFace reference.
+
+    The MAX path runs the ComponentModel directly, bypassing the standard
+    text-generation pipeline. The Torch path uses the inherited GenericOracle
+    loader and routes through ``run_text_encode``, which captures the
+    pre-norm hidden state via a hook on ``model.model.norm``.
+
+    ``padded_length`` controls input padding for both sides. Set to an
+    integer to pad each prompt to that length via ``apply_chat_template`` +
+    tokenizer ``padding="max_length"``; set to ``None`` to tokenize each
+    prompt at its natural length with an all-ones attention mask.
+    """
+
+    def __init__(
+        self,
+        *,
+        component_model_class: type,
+        padded_length: int | None = 512,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.component_model_class = component_model_class
+        self.padded_length = padded_length
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        raise NotImplementedError(
+            "ComponentModelOracle does not use the standard MAX pipeline; "
+            "run_max_text_encoder is dispatched directly."
+        )
 
 
 class LoRAOracle(PipelineOracle):
@@ -1859,6 +1918,12 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         "Qwen/Qwen3-VL-4B-Instruct-FP8",
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
+    "Qwen/Qwen3-4B-text-encoder": ComponentModelOracle(
+        model_path="Qwen/Qwen3-4B",
+        component_model_class=Qwen3TextEncoderKleinModel,
+        padded_length=512,
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "Qwen/Qwen3-8B": GenericOracle(
         model_path="Qwen/Qwen3-8B",
         config_params={"max_length": 512},
@@ -2104,13 +2169,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "amd/MiniMax-M2.7-MXFP4": GenericOracle(
         model_path="amd/MiniMax-M2.7-MXFP4",
         config_params={
-            "max_length": 516,
+            # Chat-templating adds the system prompt and role markers, so the
+            # longest prompt grows past the raw 516-token budget to ~530.
+            "max_length": 640,
             "trust_remote_code": True,
-            "max_batch_input_tokens": 512,
-            "ep_size": 8,
-            "data_parallel_degree": 8,
+            "max_batch_input_tokens": 640,
+            "ep_size": 4,
+            "data_parallel_degree": 4,
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+        # The reference golden is chat-templated, so template the MAX side too.
+        apply_chat_template=True,
     ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",

@@ -312,22 +312,22 @@ comptime tile_layout_k_major_typed[
 ] = TileLayout(
     Coord(
         Coord(
-            Idx[_CM_NUM_ROWS](),
-            Idx[BM // _CM_NUM_ROWS](),
+            Idx[_CM_NUM_ROWS],
+            Idx[BM // _CM_NUM_ROWS],
         ),
         Coord(
-            Idx[_sw_K[dtype, swizzle_mode]](),
-            Idx[BK // _sw_K[dtype, swizzle_mode]](),
+            Idx[_sw_K[dtype, swizzle_mode]],
+            Idx[BK // _sw_K[dtype, swizzle_mode]],
         ),
     ),
     Coord(
         Coord(
-            Idx[_sw_K[dtype, swizzle_mode]](),
-            Idx[_CM_NUM_ROWS * _sw_K[dtype, swizzle_mode]](),
+            Idx[_sw_K[dtype, swizzle_mode]],
+            Idx[_CM_NUM_ROWS * _sw_K[dtype, swizzle_mode]],
         ),
         Coord(
-            Idx[1](),
-            Idx[_outer_k_stride[dtype, BM, BK, swizzle_mode]](),
+            Idx[1],
+            Idx[_outer_k_stride[dtype, BM, BK, swizzle_mode]],
         ),
     ),
 )

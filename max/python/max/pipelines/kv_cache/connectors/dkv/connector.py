@@ -34,15 +34,17 @@ from dataclasses import dataclass, field
 import msgspec
 from dkv import (
     BlockDescriptor,
+    BlockRef,
     DKVClient,
     DKVNotReadyError,
     DKVTransportError,
-    ReadBlocksResult,
+    G1Location,
+    G2Location,
     RequestState,
+    Tier,
 )
 from max._core import nixl
 from max.driver import Buffer, Device
-from max.interfaces import RequestID, TextGenerationContext
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
@@ -53,6 +55,7 @@ from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     TransferReqData,
     _get_nixl_backend_type,
 )
+from max.pipelines.modeling.types import RequestID, TextGenerationContext
 from max.profiler import traced
 
 logger = logging.getLogger("max.pipelines")
@@ -83,54 +86,35 @@ class _ConnectorState(enum.Enum):
 class DKVExternalBlockMetadata(
     msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
 ):
-    """Serializable block metadata for dKV-backed prefix caching.
+    """Marker that a block hash is referenced by the orchestrator hint.
 
-    This extends the raw dKV ``BlockDescriptor`` with optional MAX-native
-    transfer-engine metadata. When the transfer metadata is present, the
-    connector can reuse MAX's existing ``KVTransferEngine.connect()`` handshake
-    instead of inventing a dKV-specific read path.
+    The slim hint only carries seq_hash; the dKV server resolves slab
+    location and length when the connector calls ``read_blocks``. We
+    still wrap the hash in a typed struct so the context payload
+    survives the API-server → model-worker process boundary via
+    msgspec's tagged struct serialization.
+
+    The struct is intentionally retained even though it degenerates to
+    a single ``seq_hash`` field today. The orchestrator's hint shape is
+    expected to evolve to mix blocks from multiple source dKV instances
+    in a single hint (per-block — or per-block-series — ``instance_name``
+    for routing). When that lands, the new field hangs off this struct;
+    keeping the per-block container in place now lets mammoth flip the
+    wire format without re-introducing a context-side data structure.
     """
 
     seq_hash: int
-    agent_id: int
-    device_id: int
-    offset: int
-    length: int
-    transfer_engine: KVTransferEngineMetadata | None = None
-
-    @classmethod
-    def from_descriptor(
-        cls,
-        descriptor: BlockDescriptor,
-        *,
-        transfer_engine: KVTransferEngineMetadata | None = None,
-    ) -> DKVExternalBlockMetadata:
-        """Build metadata from a dKV client descriptor."""
-        return cls(
-            seq_hash=descriptor.seq_hash,
-            agent_id=descriptor.agent_id,
-            device_id=descriptor.device_id,
-            offset=descriptor.offset,
-            length=descriptor.length,
-            transfer_engine=transfer_engine,
-        )
-
-    def to_descriptor(self) -> BlockDescriptor:
-        """Convert back to the dKV client descriptor type."""
-        return BlockDescriptor(
-            seq_hash=self.seq_hash,
-            agent_id=self.agent_id,
-            device_id=self.device_id,
-            offset=self.offset,
-            length=self.length,
-        )
 
 
 @dataclass(frozen=True)
 class _PendingLoad:
-    """A block queued for NIXL READ from dKV."""
+    """A block queued for NIXL READ from dKV.
 
-    descriptor: BlockDescriptor
+    The orchestrator hint only carries block hashes; the dKV server
+    resolves the canonical slab offset and length in ``read_blocks``,
+    so we don't need a descriptor here.
+    """
+
     block_hash: int
     transfer_engine: KVTransferEngineMetadata
 
@@ -151,7 +135,8 @@ class _InflightRead:
     """A batch of blocks with an active NIXL READ transfer."""
 
     transfers: list[TransferReqData]
-    descriptors: list[BlockDescriptor] = field(default_factory=list)
+    block_count: int = 0
+    total_bytes: int = 0
     posted_at: float = field(default_factory=time.monotonic)
 
 
@@ -207,13 +192,21 @@ class DKVConnector:
         self._bytes_per_page: int = 0
         self._default_remote_metadata: KVTransferEngineMetadata | None = None
 
+        # Stable identifier the orchestrator's BlockIndexer uses for the
+        # local dKV instance (NodeInfo.name from the heartbeat). Discovered
+        # via ExchangeMetadata; empty until that handshake completes or
+        # when talking to a server that predates the field. Used in
+        # lookup() to short-circuit hints that name this same instance —
+        # those blocks are owned locally and don't need a dKV fetch.
+        self._instance_name: str = ""
+
         # Per-request pending loads: lookup() saves matched (descriptor, hash)
         # pairs here, load() consumes them. Same pattern as LocalConnector.
         self._pending_loads: dict[str, list[_PendingLoad]] = {}
         # Per-request inflight NIXL reads
         self._inflight_reads: dict[str, _InflightRead] = {}
         # Per-request read result (need decrement after the read transfer completes)
-        self._held_blocks: dict[str, ReadBlocksResult] = {}
+        self._held_blocks: dict[str, list[BlockRef]] = {}
 
         # Write pipeline: each entry is one save() call's
         # (parent_seq_hash, block_ids, hashes).
@@ -303,6 +296,11 @@ class DKVConnector:
             # back to local hostname for old servers that don't return
             # it, preserving existing intra-node behavior.
             dkv_hostname = resp.hostname or socket.gethostname()
+
+            # Stash the orchestrator-visible instance name (NodeInfo.name)
+            # so lookup() can recognize hints that name this same dKV as
+            # the cache source and skip the fetch. Empty on old servers.
+            self._instance_name = resp.instance_name
 
             dkv_agent = TensorAgentMetadata(
                 agent_name=resp.agent_name,
@@ -501,7 +499,7 @@ class DKVConnector:
 
         # Release dKV read pins (decrement read_ref_count).
         for held in self._held_blocks.values():
-            if held.dram_seq_hashes or held.disk_locations:
+            if held:
                 try:
                     self._client.decrement_blocks(held)
                 except Exception:
@@ -617,7 +615,7 @@ class DKVConnector:
 
         Reads ``external_block_metadata`` from the context (set by the
         Orchestrator) to determine which blocks are cached in dKV.
-        Saves matched descriptors into ``_pending_loads`` for ``load()``
+        Saves matched block hashes into ``_pending_loads`` for ``load()``
         to consume (same state-transfer pattern as LocalConnector).
         """
         if not self._is_healthy():
@@ -625,9 +623,27 @@ class DKVConnector:
         if not block_hashes:
             return 0
 
-        # external_block_metadata maps seq_hash -> raw BlockDescriptor, a
-        # richer DKVExternalBlockMetadata, or the decoded msgpack dict form of
-        # either type when the context crossed a process boundary.
+        # Self-skip: the hint names this same dKV instance, so the blocks
+        # are owned locally and MAX's own prefix cache will (or already
+        # did) find them in G0. Without a known local instance_name we
+        # can't make this call, so fall through to the normal path.
+        hint_instance = getattr(ctx, "dkv_hint_instance_name", "")
+        if (
+            hint_instance
+            and self._instance_name
+            and hint_instance == self._instance_name
+        ):
+            return 0
+
+        # Hint-driven fetch requires NIXL transfer metadata; without it
+        # the engine has no way to issue the read.
+        if self._default_remote_metadata is None:
+            return 0
+
+        # external_block_metadata is a set-like dict[seq_hash -> marker]
+        # populated from the orchestrator hint. The slim hint shape only
+        # carries hashes; offsets and lengths come from the dKV server in
+        # the read_blocks response.
         metadata: dict[int, object] | None = getattr(
             ctx, "external_block_metadata", None
         )
@@ -642,25 +658,13 @@ class DKVConnector:
         # Normalize signed Python hashes to uint64 to match dKV descriptor
         # keys (protobuf uint64 is always non-negative).
         hits: list[_PendingLoad] = []
+        transfer_engine = self._default_remote_metadata
         for block_hash in block_hashes:
             normalized = block_hash & _UINT64_MASK
             if normalized not in metadata:
                 break
-            descriptor, transfer_engine = self._resolve_external_block_metadata(
-                metadata[normalized]
-            )
-            if transfer_engine is None:
-                logger.debug(
-                    (
-                        "Skipping dKV lookup hit for seq_hash=%d because no"
-                        " transfer metadata is available"
-                    ),
-                    block_hash,
-                )
-                break
             hits.append(
                 _PendingLoad(
-                    descriptor=descriptor,
                     block_hash=block_hash,
                     transfer_engine=transfer_engine,
                 )
@@ -698,20 +702,81 @@ class DKVConnector:
         if len(pending) > len(target_block_ids):
             pending = pending[: len(target_block_ids)]
 
-        # Pair pending blocks with allocated device block IDs and group them by
-        # remote transfer-engine metadata so each group can reuse a single
-        # MAX-native handshake.
-        descriptors: list[BlockDescriptor] = []
+        # Pin blocks in dKV for reading (increment read_ref_count). The
+        # server resolves canonical slab locations (offset/length) here
+        # — we don't get those from the orchestrator hint anymore.
+        try:
+            t0 = time.monotonic()
+            seq_hashes = [pl.block_hash & _UINT64_MASK for pl in pending]
+            locations = self._client.read_blocks(seq_hashes)
+            self._rpc_read_latency_total_ms += (time.monotonic() - t0) * 1000
+            self._rpc_read_latency_count += 1
+        except (ConnectionError, TimeoutError) as exc:
+            self._set_needs_reconnect(f"read_blocks transport: {exc}")
+            logger.warning(
+                "Failed to pin %d blocks in dKV for reading",
+                len(pending),
+                exc_info=True,
+            )
+            return []
+        except Exception:
+            logger.warning(
+                "Failed to pin %d blocks in dKV for reading",
+                len(pending),
+                exc_info=True,
+            )
+            return []
+
+        held_refs: list[BlockRef] = [
+            BlockRef(
+                loc.seq_hash,
+                Tier.G1 if isinstance(loc, G1Location) else Tier.G2,
+            )
+            for loc in locations
+        ]
+
+        # NIXL transfers read from the DRAM slab, so bail if any block
+        # landed on G2 (disk). This can happen if the server offloaded
+        # the block between lookup() and read_blocks().
+        # TODO(CLIN-1097): implement the G2 read path — dKV exposes
+        # G2Location with file_id + file_offset that can be mmap'd from
+        # the shared host volume. Today we skip these blocks, which
+        # means any cached prefix that got spilled to disk is invisible
+        # to MAX. Blocks on disk surface as soon as DRAM pressure
+        # triggers offloading.
+        g2_count = sum(1 for loc in locations if isinstance(loc, G2Location))
+        if g2_count:
+            logger.warning(
+                "dKV returned %d disk-tier blocks which cannot be read over"
+                " NIXL; skipping load. Consider disabling G2 offload or"
+                " implementing a G2 read path.",
+                g2_count,
+            )
+            try:
+                if held_refs:
+                    self._client.decrement_blocks(held_refs)
+            except Exception:
+                logger.warning(
+                    "Failed to release dKV pins after G2 skip",
+                    exc_info=True,
+                )
+            return []
+
+        # Pair returned G1 locations with target device block ids in
+        # request order, group by remote transfer-engine metadata for
+        # one NIXL handshake per peer. read_blocks returns a contiguous
+        # prefix of the requested seq_hashes, in request order, so
+        # locations[i] corresponds to pending[i].
         loaded_hashes: list[int] = []
+        total_bytes: int = 0
         grouped_transfers: dict[
             str, tuple[KVTransferEngineMetadata, list[int], list[int]]
         ] = {}
-        for pending_load, device_bid in zip(
-            pending, target_block_ids, strict=True
-        ):
-            descriptors.append(pending_load.descriptor)
-            loaded_hashes.append(pending_load.block_hash)
-            src_idx = self._descriptor_to_page_idx(pending_load.descriptor)
+        for i, location in enumerate(locations):
+            pending_load = pending[i]
+            device_bid = target_block_ids[i]
+            assert isinstance(location, G1Location)  # G2 path bailed above
+            src_idx = self._location_to_page_idx(location)
             if pending_load.transfer_engine.name not in grouped_transfers:
                 grouped_transfers[pending_load.transfer_engine.name] = (
                     pending_load.transfer_engine,
@@ -723,11 +788,14 @@ class DKVConnector:
             ]
             src_idxs.append(src_idx)
             dst_idxs.append(device_bid)
+            loaded_hashes.append(pending_load.block_hash)
+            total_bytes += location.length
 
-        if not descriptors:
+        if not loaded_hashes:
             return []
 
-        # Classify blocks as local (default remote) vs remote (hint-derived).
+        # Classify blocks as local (default remote) vs remote (peer
+        # transfer-engine metadata not yet wired through the slim hint).
         default_name = (
             self._default_remote_metadata.name
             if self._default_remote_metadata is not None
@@ -743,54 +811,6 @@ class DKVConnector:
                 remote_count += n_blocks
         self._nixl_read_blocks_local += local_count
         self._nixl_read_blocks_remote += remote_count
-
-        # Pin blocks in dKV for reading (increment read_ref_count).
-        # The result carries the tier-split seq hashes needed for decrement.
-        try:
-            t0 = time.monotonic()
-            read_result = self._client.read_blocks(descriptors)
-            self._rpc_read_latency_total_ms += (time.monotonic() - t0) * 1000
-            self._rpc_read_latency_count += 1
-        except (ConnectionError, TimeoutError) as exc:
-            self._set_needs_reconnect(f"read_blocks transport: {exc}")
-            logger.warning(
-                "Failed to pin %d blocks in dKV for reading",
-                len(descriptors),
-                exc_info=True,
-            )
-            return []
-        except Exception:
-            logger.warning(
-                "Failed to pin %d blocks in dKV for reading",
-                len(descriptors),
-                exc_info=True,
-            )
-            return []
-
-        # NIXL transfers read from the DRAM slab, so bail if any block
-        # landed on G2 (disk). This can happen if the server offloaded
-        # the block between lookup() and read_blocks().
-        # TODO(CLIN-1097): implement the G2 read path — dKV exposes
-        # DiskLocation with file_id + offset that can be mmap'd from
-        # the shared host volume. Today we skip these blocks, which
-        # means any cached prefix that got spilled to disk is invisible
-        # to MAX. Blocks on disk surface as soon as DRAM pressure
-        # triggers offloading.
-        if read_result.disk_locations:
-            logger.warning(
-                "dKV returned %d disk-tier blocks which cannot be read over"
-                " NIXL; skipping load. Consider disabling G2 offload or"
-                " implementing a G2 read path.",
-                len(read_result.disk_locations),
-            )
-            try:
-                self._client.decrement_blocks(read_result)
-            except Exception:
-                logger.warning(
-                    "Failed to release dKV pins after G2 skip",
-                    exc_info=True,
-                )
-            return []
 
         try:
             transfers: list[TransferReqData] = []
@@ -815,11 +835,12 @@ class DKVConnector:
             self._set_needs_reconnect(f"initiate_read_transfer: {exc}")
             logger.warning(
                 "Failed to initiate NIXL READ transfers for %d dKV blocks",
-                len(descriptors),
+                len(loaded_hashes),
                 exc_info=True,
             )
             try:
-                self._client.decrement_blocks(read_result)
+                if held_refs:
+                    self._client.decrement_blocks(held_refs)
             except Exception:
                 logger.warning(
                     (
@@ -832,11 +853,12 @@ class DKVConnector:
         except Exception:
             logger.warning(
                 "Failed to initiate NIXL READ transfers for %d dKV blocks",
-                len(descriptors),
+                len(loaded_hashes),
                 exc_info=True,
             )
             try:
-                self._client.decrement_blocks(read_result)
+                if held_refs:
+                    self._client.decrement_blocks(held_refs)
             except Exception:
                 logger.warning(
                     (
@@ -847,12 +869,13 @@ class DKVConnector:
                 )
             return []
 
-        self._held_blocks[request_id] = read_result
+        self._held_blocks[request_id] = held_refs
         self._inflight_reads[request_id] = _InflightRead(
             transfers=transfers,
-            descriptors=descriptors,
+            block_count=len(loaded_hashes),
+            total_bytes=total_bytes,
         )
-        self._nixl_read_blocks += len(descriptors)
+        self._nixl_read_blocks += len(loaded_hashes)
 
         return loaded_hashes
 
@@ -906,13 +929,13 @@ class DKVConnector:
                 )
                 continue
             elapsed = time.monotonic() - inflight.posted_at
-            total_bytes = sum(d.length for d in inflight.descriptors)
+            total_bytes = inflight.total_bytes
             gib_s = (total_bytes / (1 << 30)) / elapsed if elapsed > 0 else 0
             logger.debug(
                 "NIXL READ confirmed: request=%s, %d blocks, %.1f MiB"
                 " in %.1f ms (%.3f GiB/s)",
                 request_id,
-                len(inflight.descriptors),
+                inflight.block_count,
                 total_bytes / (1 << 20),
                 elapsed * 1000,
                 gib_s,
@@ -1235,7 +1258,7 @@ class DKVConnector:
         # Decrement held blocks only if transfer handles are released.
         if handles_released:
             for held in self._held_blocks.values():
-                if held.dram_seq_hashes or held.disk_locations:
+                if held:
                     try:
                         self._client.decrement_blocks(held)
                     except Exception:
@@ -1293,40 +1316,26 @@ class DKVConnector:
             nixl_read_blocks_remote=self._nixl_read_blocks_remote,
         )
 
-    def _resolve_external_block_metadata(
-        self,
-        entry: object,
-    ) -> tuple[BlockDescriptor, KVTransferEngineMetadata | None]:
-        """Normalizes a context entry into a descriptor plus transfer metadata."""
-        if isinstance(entry, DKVExternalBlockMetadata):
-            return entry.to_descriptor(), (
-                entry.transfer_engine or self._default_remote_metadata
-            )
-        if isinstance(entry, Mapping):
-            metadata = msgspec.convert(entry, type=DKVExternalBlockMetadata)
-            return metadata.to_descriptor(), (
-                metadata.transfer_engine or self._default_remote_metadata
-            )
-        if not isinstance(entry, BlockDescriptor):
-            raise TypeError(
-                "external_block_metadata entries must be BlockDescriptor,"
-                " DKVExternalBlockMetadata, or their decoded msgpack mapping"
-                " form"
-            )
-        return entry, self._default_remote_metadata
-
     def _descriptor_to_page_idx(self, descriptor: BlockDescriptor) -> int:
         """Converts a dKV descriptor offset into a transfer-engine page index."""
+        return self._offset_to_page_idx(descriptor.offset)
+
+    def _location_to_page_idx(self, location: G1Location) -> int:
+        """Converts a G1Location offset into a transfer-engine page index."""
+        return self._offset_to_page_idx(location.offset)
+
+    def _offset_to_page_idx(self, offset: int) -> int:
+        """Converts a dKV slab byte offset into a transfer-engine page index."""
         bytes_per_page = self._bytes_per_page
         if not bytes_per_page:
             bytes_per_page = self._ensure_engine().bytes_per_page
-        if descriptor.offset % bytes_per_page != 0:
+        if offset % bytes_per_page != 0:
             raise ValueError(
                 "dKV block offset is not page-aligned with MAX transfer"
-                f" engine: offset={descriptor.offset},"
+                f" engine: offset={offset},"
                 f" bytes_per_page={bytes_per_page}"
             )
-        return descriptor.offset // bytes_per_page
+        return offset // bytes_per_page
 
     def _ensure_remote_connection(
         self, metadata: KVTransferEngineMetadata
@@ -1417,9 +1426,7 @@ class DKVConnector:
     def _decrement_held_blocks(self, request_id: str) -> None:
         """Release dKV read pins once transfers have completed."""
         held = self._held_blocks.pop(request_id, None)
-        if held is None or (
-            not held.dram_seq_hashes and not held.disk_locations
-        ):
+        if not held:
             return
 
         try:

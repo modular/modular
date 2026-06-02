@@ -14,7 +14,7 @@
 
 from std.builtin.rebind import downcast
 from std.os import abort
-from std.memory import memset_zero
+from std.memory import is_trivially_copyable, is_trivially_movable, memset_zero
 
 
 struct UnsafeMaybeUninit[T: AnyType](
@@ -118,7 +118,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         """
         comptime assert (
             conforms_to(Self.T, Copyable)
-            and downcast[Self.T, Copyable].__copy_ctor_is_trivial
+            and is_trivially_copyable[downcast[Self.T, Copyable]]()
         )
         self._array = copy._array
 
@@ -134,7 +134,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         """
         comptime assert (
             conforms_to(Self.T, Movable)
-            and downcast[Self.T, Movable].__move_ctor_is_trivial
+            and is_trivially_movable[downcast[Self.T, Movable]]()
         )
         self._array = take._array
 
@@ -217,12 +217,12 @@ struct UnsafeMaybeUninit[T: AnyType](
 @always_inline
 def _is_trivially_copyable[T: AnyType]() -> Bool:
     comptime if conforms_to(T, Copyable):
-        return downcast[T, Copyable].__copy_ctor_is_trivial
+        return is_trivially_copyable[downcast[T, Copyable]]()
     return False
 
 
 @always_inline
 def _is_trivially_movable[T: AnyType]() -> Bool:
     comptime if conforms_to(T, Movable):
-        return downcast[T, Movable].__move_ctor_is_trivial
+        return is_trivially_movable[downcast[T, Movable]]()
     return False

@@ -18,6 +18,7 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
+    MoveOnly,
     Observable,
     TriviallyCopyableMoveCounter,
     check_write_to,
@@ -1185,18 +1186,29 @@ def test_list_hash() raises:
     assert_true(conforms_to(List[String], Hashable))
 
 
-@fieldwise_init
-struct MoveOnlyInt(Equatable, Movable, Writable):
-    var n: Int
-
-
 def test_list_move_only() raises:
-    var l = [MoveOnlyInt(0), MoveOnlyInt(1)]
-    assert_equal(l[0], MoveOnlyInt(0))
-    assert_equal(l[1], MoveOnlyInt(1))
+    # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
+    # conformance path of `List[T: Movable]`.
+    assert_false(conforms_to(List[MoveOnly[Int]], Copyable))
 
-    l.append(MoveOnlyInt(2))
-    assert_equal(l[2], MoveOnlyInt(2))
+    var l = [MoveOnly[Int](0), MoveOnly[Int](1)]
+    assert_equal(l[0], MoveOnly[Int](0))
+    assert_equal(l[1], MoveOnly[Int](1))
+
+    l.append(MoveOnly[Int](2))
+    assert_equal(l[2], MoveOnly[Int](2))
+
+    # Methods that don't require `Copyable` still work on a move-only element.
+    var popped = l.pop()
+    assert_equal(popped, MoveOnly[Int](2))
+    assert_equal(len(l), 2)
+
+    l.insert(0, MoveOnly[Int](-1))
+    assert_equal(l[0], MoveOnly[Int](-1))
+    assert_equal(len(l), 3)
+
+    l.clear()
+    assert_equal(len(l), 0)
 
 
 # ===-------------------------------------------------------------------===#

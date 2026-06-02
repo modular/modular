@@ -90,14 +90,14 @@ def test_matmul_sm100_epilogue[
         )
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -134,7 +134,7 @@ def test_matmul_sm100_epilogue[
     @__copy_capture(c_tensor_lt)
     def test_lambda_add_coords_summ[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -215,7 +215,7 @@ def test_matmul_sm100_epilogue[
     @__copy_capture(c_tensor_host_lt)
     def test_lambda_add_coords_summ_local[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -311,14 +311,14 @@ def main() raises:
                         ](ctx, m, n, k)
 
                     # FASTER mode: 2 key test cases only
-                    run[4, 4](Int(1000), Idx[1024](), Idx[1024]())
+                    run[4, 4](Int(1000), Idx[1024], Idx[1024])
 
                     comptime if not FASTER_TEST:
-                        run[4, 4](Int(512), Idx[4096](), Idx[1024]())
-                        run[4, 4, k_group=2](Int(500), Idx[2048](), Idx[4096]())
-                        run[8, 2](Int(1024), Idx[256](), Idx[128]())
+                        run[4, 4](Int(512), Idx[4096], Idx[1024])
+                        run[4, 4, k_group=2](Int(500), Idx[2048], Idx[4096])
+                        run[8, 2](Int(1024), Idx[256], Idx[128])
 
-                    run[2, 2](Idx[1024](), Idx[1024](), Idx[2048]())
+                    run[2, 2](Idx[1024], Idx[1024], Idx[2048])
 
                     comptime if not FASTER_TEST:
-                        run[4, 4](Int(8192), Idx[2560](), Idx[8192]())
+                        run[4, 4](Int(8192), Idx[2560], Idx[8192])

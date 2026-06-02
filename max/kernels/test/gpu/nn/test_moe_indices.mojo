@@ -223,7 +223,7 @@ def test_moe_create_indices[
 
     var expert_usage_stats = TileTensor(
         expert_usage_stats_buffer,
-        row_major(Idx[2]()),
+        row_major(Idx[2]),
     )
 
     var top_k = TileTensor(

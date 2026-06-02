@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -26,13 +28,6 @@ import numpy as np
 import numpy.typing as npt
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
-from max.interfaces import (
-    GenerationStatus,
-    LogProbabilities,
-    RequestID,
-    TextGenerationContextType,
-    TextGenerationOutput,
-)
 from max.pipelines.core import StructuredOutputRegionDelimiters
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib.tool_parsing import (
@@ -40,7 +35,14 @@ from max.pipelines.lib.tool_parsing import (
     get_parser_cls,
 )
 from max.pipelines.lib.utils import upper_bounded_default
-from max.profiler import traced
+from max.pipelines.modeling.types import (
+    GenerationStatus,
+    LogProbabilities,
+    RequestID,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
+from max.profiler import Tracer, traced
 from transformers import (
     AutoConfig,
     PreTrainedTokenizerBase,
@@ -48,9 +50,36 @@ from transformers import (
 )
 
 if TYPE_CHECKING:
-    from max.interfaces import PipelineTokenizer
+    from max.pipelines.modeling.types import PipelineTokenizer
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _count_token_subsequence(
+    content: Sequence[int], special_tags: Sequence[int]
+) -> int:
+    """Counts non-overlapping occurrences of ``special_tags`` in ``content``.
+
+    Used only on the matcher-rejection diagnostic path to count how many
+    tool-call section markers were already committed. ``special_tags`` is the
+    section-begin (or -end) token-id sequence — a single token for most
+    parsers, so this is effectively a count. Runs O(len(content)); acceptable
+    because it fires only when a rejection has already occurred.
+    """
+    width = len(special_tags)
+    if width == 0:
+        return 0
+    tag_ids = list(special_tags)
+    count = 0
+    i = 0
+    last_start = len(content) - width
+    while i <= last_start:
+        if list(content[i : i + width]) == tag_ids:
+            count += 1
+            i += width
+        else:
+            i += 1
+    return count
 
 
 class _TikTokenAdapter:
@@ -400,35 +429,56 @@ class StructuredOutputHelper:
     Constrained decoding is used when:
     1. Feature enabled via feature flag (--enable-structured-output)
     2. Tool calling enforced via grammar (tool_choice=required, named function, or auto (conditional enforcement))
-
-    Attributes:
-        enabled: Whether constrained decoding is available (tokenizer info initialized).
-        enable_response_format_schema: Whether user-provided json_schema is allowed.
-        vocab_size: Vocabulary size from the tokenizer, or None if disabled.
-        tool_call_region_delimiters: Token sequences for tool call boundaries (conditional enforcement).
     """
 
     enabled: bool = False
+    """Whether constrained decoding is available (tokenizer info initialized)."""
     enable_response_format_schema: bool = False
+    """Whether user-provided json_schema is allowed."""
     vocab_size: int | None = None
+    """Vocabulary size from the tokenizer, or None if disabled."""
     _tokenizer_info: Any = field(default=None, repr=False)
     tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = None
+    """Token sequences for tool call boundaries (conditional enforcement)."""
+    # Serialises access to per-context ``ctx.matcher`` between the async
+    # FSM-advance host callback and the synchronous spec-decode bitmask
+    # path; concurrent calls into llguidance's ``LLInterpreter`` trip a
+    # ``RuntimeError: Already borrowed`` and kill the worker coroutine.
+    _matcher_lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False
+    )
 
     @staticmethod
-    def _get_tool_structural_tags(
+    def _get_tool_region_tags(
         tool_parser_name: str | None,
     ) -> tuple[str | None, str | None]:
-        """Extract tool call start/end tags from a registered parser.
+        """Extract tool-calling *region* start/end tags from a registered parser.
+
+        These tags control when ``GrammarEnforcementState`` toggles
+        ``grammar_enforced``.  The start tag tells the state machine
+        when to begin constraining (for ``tool_choice=auto`` where
+        enforcement doesn't start immediately).  The end tag, if
+        present, tells it when to stop.
+
+        For **section-wrapped** parsers (e.g. Kimi K2.5, DeepSeek V3)
+        that define ``SECTION_BEGIN``/``SECTION_END``, the outer
+        section pair is returned — enforcement spans all tool calls.
+
+        For **flat** parsers (e.g. Gemma 4) that only define
+        ``CALL_BEGIN``/``CALL_END``, only ``CALL_BEGIN`` is returned
+        as the start trigger; the end is ``None``.  ``CALL_END`` is a
+        per-call delimiter, not a region boundary — using it would
+        prematurely disable enforcement between consecutive tool calls,
+        causing the model to generate unconstrained tokens before the
+        next call.  With no end tag the grammar itself governs what
+        follows each ``CALL_END`` (another call, or a terminal like
+        ``<|tool_response>``).
 
         Args:
             tool_parser_name: Name of the registered tool parser, or None.
 
         Returns:
-            A (start, end) pair of structural tags. Prefers
-            ``SECTION_BEGIN``/``SECTION_END`` so the grammar stays enforced
-            across the whole tool-call section (no ``<think>`` between calls).
-            Falls back to ``CALL_BEGIN``/``CALL_END`` for parsers that only
-            define the per-call boundary. Returns ``(None, None)`` if neither.
+            A (start, end) pair of region tags.
         """
         parser_cls = get_parser_cls(tool_parser_name)
         if parser_cls is None:
@@ -442,8 +492,8 @@ class StructuredOutputHelper:
 
         if parser_cls.SECTION_BEGIN and parser_cls.SECTION_END:
             return (parser_cls.SECTION_BEGIN, parser_cls.SECTION_END)
-        if parser_cls.CALL_BEGIN and parser_cls.CALL_END:
-            return (parser_cls.CALL_BEGIN, parser_cls.CALL_END)
+        if parser_cls.CALL_BEGIN:
+            return (parser_cls.CALL_BEGIN, None)
 
         return (None, None)
 
@@ -486,7 +536,7 @@ class StructuredOutputHelper:
             tokenizer_info = LLTokenizer(wrapper, n_vocab=vocab_size)
 
         # Extract structural tags from tool parser if available
-        tool_start, tool_end = cls._get_tool_structural_tags(tool_parser_name)
+        tool_start, tool_end = cls._get_tool_region_tags(tool_parser_name)
 
         # Tokenize start/end tags to get token ID sequences
         tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = (
@@ -542,13 +592,13 @@ class StructuredOutputHelper:
             index: Position in the bitmask for this request.
 
         Raises:
-            ValueError: If a JSON schema is provided but structured output is
+            InputError: If a JSON schema is provided but structured output is
                 not enabled, or if constrained decoding is not available.
         """
         # Check for grammar first (e.g., tool call grammars from tool_choice=required)
         if context.grammar and context.matcher is None:
             if not self.enabled:
-                raise ValueError(
+                raise InputError(
                     "grammar provided but constrained decoding is not available."
                 )
 
@@ -560,7 +610,7 @@ class StructuredOutputHelper:
                 context.requires_structured_output_flag
                 and not self.enable_response_format_schema
             ):
-                raise ValueError(
+                raise InputError(
                     "response_format with a JSON schema requires "
                     "--enable-structured-output. Drop response_format to use "
                     "tool-call constraints only, or pass the flag to allow "
@@ -568,7 +618,8 @@ class StructuredOutputHelper:
                 )
 
             try:
-                matcher = LLMatcher(self._tokenizer_info, context.grammar)
+                with Tracer("tool_grammar_compile"):
+                    matcher = LLMatcher(self._tokenizer_info, context.grammar)
                 context.set_matcher(matcher)
                 self.set_context_tool_region(context)
             except Exception as e:
@@ -581,14 +632,17 @@ class StructuredOutputHelper:
         # json_schema requires enable_response_format_schema (--enable-structured-output flag)
         elif context.json_schema and context.matcher is None:
             if not self.enable_response_format_schema:
-                raise ValueError(
+                raise InputError(
                     "json_schema provided but structured output is not enabled. "
                     "Pass --enable-structured-output to enable this feature."
                 )
 
             try:
+                # Compact JSON (no structural whitespace) to match
+                # the tool-call grammar convention.
                 grammar = LLMatcher.grammar_from_json_schema(
                     context.json_schema,
+                    overrides={"whitespace_pattern": ""},
                 )
                 matcher = LLMatcher(self._tokenizer_info, grammar)
                 context.set_matcher(matcher)
@@ -665,6 +719,139 @@ class StructuredOutputHelper:
                 end_token_ids=self.tool_call_region_delimiters.end_token_ids,
             )
 
+    def _speculatively_fill_bitmask_window(
+        self,
+        ctx: TextGenerationContextType,
+        drafts: npt.NDArray[np.int64],
+        bitmask_window: npt.NDArray[np.int32],
+    ) -> None:
+        """Advance enforcement state through drafts, filling per-slot bitmasks.
+
+        A draft that flips enforcement on mid-window causes downstream
+        slots to be constrained: e.g. a ``</think>`` draft exits the
+        thinking region, so the slot immediately after it gets a filled
+        bitmask instead of staying unconstrained. Matcher and
+        enforcement state are rolled back at the end so committed-token
+        processing on the next batch replays the same transitions from
+        a clean state.
+
+        Out-of-vocab drafts stop the speculative advance and leave any
+        remaining slots unconstrained; they are not treated as errors.
+
+        Args:
+            ctx: The request context.
+            drafts: ``[K]`` candidate draft tokens for the next batch.
+            bitmask_window: ``[K+1, packed_vocab]``, pre-initialized to
+                ``-1`` (unconstrained). Slot 0 is the position
+                immediately after the committed tokens; slot ``i+1`` is
+                the position after consuming ``drafts[i]``. Slots stay
+                ``-1`` wherever grammar enforcement is off.
+        """
+        assert ctx.matcher is not None
+        fsm_snap = ctx.snapshot_grammar_state()
+
+        # Slot 0: state immediately after committed tokens.
+        if ctx.grammar_enforced:
+            llguidance.numpy.fill_next_token_bitmask(
+                ctx.matcher,
+                bitmask_window[0, :].reshape(1, -1),
+                index=0,
+            )
+
+        vocab_size = self.vocab_size or 0
+        tokens_consumed = 0
+        for i in range(drafts.shape[0]):
+            draft_token = int(drafts[i])
+            if draft_token < 0 or draft_token >= vocab_size:
+                break
+
+            # EOS-class tokens are not part of the grammar — they signal end of
+            # generation. Skip the matcher so it stays in a clean
+            # terminal state. The speculative state is rolled back at
+            # the end via ``restore_grammar_state``, so this flip is
+            # transient. Drafts past EOS are pointless (the request
+            # ended), so exit the loop and leave remaining slots
+            # unconstrained.
+            if draft_token in ctx.eos_tracker.eos_token_ids:
+                ctx.grammar_enforced = False
+                break
+
+            consumed = False
+            if ctx.update_enforcement_state(draft_token):
+                if ctx.matcher.try_consume_tokens([draft_token]) == 1:
+                    tokens_consumed += 1
+                    consumed = True
+                else:
+                    break
+
+            if consumed or ctx.grammar_enforced:
+                llguidance.numpy.fill_next_token_bitmask(
+                    ctx.matcher,
+                    bitmask_window[i + 1, :].reshape(1, -1),
+                    index=0,
+                )
+
+        if tokens_consumed > 0:
+            ctx.matcher.rollback(tokens_consumed)
+        ctx.restore_grammar_state(fsm_snap)
+
+    def _rejection_diagnostics(
+        self,
+        ctx: TextGenerationContextType,
+        committed_tokens: list[int],
+        committed_idx: int,
+    ) -> str:
+        """Best-effort extra state for the matcher-rejection error log.
+
+        Runs only on the (rare) rejection path and is fully guarded so a
+        diagnostic failure can never crash the async worker thread. Surfaces
+        whether the rejection landed in the middle of a tool call (a desync
+        signature) versus at a clean grammar boundary:
+
+        * ``matcher_accepting=False`` means the matcher was mid-structure
+          (inside a call header / args), not at a stoppable boundary.
+        * ``open_sections>0`` means more ``<|tool_calls_section_begin|>`` than
+          ``...section_end|>`` are committed, i.e. an open tool-call section.
+        * ``committed_token_ids`` is this spec-decode step's accepted-drafts +
+          bonus token, as raw token IDs, so the exact desyncing batch can be
+          reconstructed offline against the tokenizer.
+
+        Only token IDs are logged (no decoded text), so no model output text
+        reaches the logs; reconstruct decoded forms after the fact.
+        """
+        try:
+            matcher = ctx.matcher
+            snapshot = ctx.snapshot_grammar_state()
+
+            # "Inside an open tool-call section": section-begins minus
+            # section-ends committed so far.
+            delims = self.tool_call_region_delimiters
+            open_sections = -1
+            if (
+                delims is not None
+                and delims.start_token_ids
+                and delims.end_token_ids
+            ):
+                generated = [int(t) for t in ctx.tokens.generated]
+                open_sections = _count_token_subsequence(
+                    generated, delims.start_token_ids
+                ) - _count_token_subsequence(generated, delims.end_token_ids)
+
+            return (
+                f"reject_idx={committed_idx}/{len(committed_tokens)} "
+                f"matcher_accepting="
+                f"{matcher.is_accepting() if matcher is not None else '?'} "
+                f"matcher_stopped="
+                f"{matcher.is_stopped() if matcher is not None else '?'} "
+                f"enforced={ctx.grammar_enforced} "
+                f"tools_forced={ctx.tools_forced} "
+                f"in_thinking_region={snapshot.in_thinking_region} "
+                f"open_sections={open_sections} "
+                f"committed_token_ids={list(committed_tokens)}"
+            )
+        except Exception as e:
+            return f"<diagnostics unavailable: {e!r}>"
+
     @traced
     def advance_fsm_and_compute_bitmasks(
         self,
@@ -697,58 +884,92 @@ class StructuredOutputHelper:
             bitmask_out: Packed int32 bitmask output, shape [batch, K+1, packed_vocab].
                 Initialized to -1 (unconstrained) per context before filling.
         """
-        num_draft = next_draft_tokens.shape[1] if next_draft_tokens.size else 0
-        for ctx_idx, ctx in enumerate(context_batch):
-            bitmask_out[ctx_idx, :, :] = -1
+        # This method runs on an AsyncRT worker thread. The main thread
+        # may try to access the same ``ctx.matcher`` via
+        # ``compute_speculative_bitmasks`` for the next iter while this
+        # callback is still in flight; without serialisation llguidance
+        # raises ``RuntimeError: Already borrowed`` and the worker dies.
+        # See the comment on ``_matcher_lock``.
+        with self._matcher_lock:
+            for ctx_idx, ctx in enumerate(context_batch):
+                bitmask_out[ctx_idx, :, :] = -1
 
-            if ctx.matcher is None:
-                continue
+                if ctx.matcher is None:
+                    continue
 
-            # Part 1: Advance the enforcement state machine through committed
-            # tokens, one at a time so special tokens (e.g. tool-call
-            # structural tag) can flip grammar enforcement mid-sequence.
-            # Only advance the matcher while grammar is enforced — this keeps
-            # matcher/state-machine in sync.
-            n_accepted = int(num_accepted[ctx_idx])
-            bonus_token = int(bonus_tokens[ctx_idx])
-            committed_tokens = [
-                int(accepted_draft_tokens[ctx_idx, j])
-                for j in range(n_accepted)
-            ]
-            committed_tokens.append(bonus_token)
-            for token in committed_tokens:
-                ctx.update_enforcement_state(token)
-                if ctx.grammar_enforced:
-                    ctx.matcher.try_consume_tokens([token])
+                # Part 1: Advance the enforcement state machine through
+                # committed tokens, one at a time so special tokens (e.g.
+                # tool-call structural tags) can flip grammar enforcement
+                # mid-sequence. This mirrors the synchronous
+                # ``advance_fsm`` in ``context.py`` exactly:
+                #
+                #   * EOS-class tokens are not part of the grammar — they
+                #     signal end of generation. Skip the matcher so it
+                #     stays in a clean terminal state rather than getting
+                #     a spurious rejection.
+                #   * For everything else, gate on
+                #     ``update_enforcement_state``'s return value, not on
+                #     ``grammar_enforced``. The return value distinguishes
+                #     ``</think>`` (flip enforcement on, do NOT consume —
+                #     the thinking delimiter isn't grammar content) from
+                #     ``<|tool_calls_section_end|>`` (flip enforcement
+                #     off, DO consume — it's the grammar's terminal).
+                #   * If the matcher rejects, log and disable enforcement
+                #     for the rest of the request — continuing against a
+                #     desynced matcher produces schema-shaped nonsense.
+                n_accepted = int(num_accepted[ctx_idx])
+                bonus_token = int(bonus_tokens[ctx_idx])
+                committed_tokens = [
+                    int(accepted_draft_tokens[ctx_idx, j])
+                    for j in range(n_accepted)
+                ]
+                committed_tokens.append(bonus_token)
 
-            # Bitmask stays unconstrained (-1) while grammar isn't enforced.
-            if not ctx.grammar_enforced:
-                continue
+                for committed_idx, token in enumerate(committed_tokens):
+                    if token in ctx.eos_tracker.eos_token_ids:
+                        ctx.grammar_enforced = False
+                    elif (
+                        ctx.update_enforcement_state(token)
+                        and ctx.matcher.try_consume_tokens([token]) != 1
+                    ):
+                        # ``role`` distinguishes a rejection on the bonus
+                        # token (sampled by target *with* bitmask, so a
+                        # rejection here usually means a bitmask/matcher
+                        # desync) from a rejection on an accepted draft
+                        # (produced by the draft model and verified by
+                        # target, where rejection more often reflects the
+                        # target sampling outside the matcher's allowed
+                        # set on a draft slot the speculative walk did
+                        # not constrain).
+                        role = (
+                            "bonus"
+                            if committed_idx == len(committed_tokens) - 1
+                            else f"accepted_draft[{committed_idx}]"
+                        )
+                        logger.error(
+                            "Async matcher rejected token %d "
+                            "(request %s, role=%s); disabling enforcement "
+                            "for the rest of the request. "
+                            "matcher_errors=%s matcher_warnings=%s %s",
+                            token,
+                            ctx.request_id,
+                            role,
+                            ctx.matcher.get_error(),
+                            ctx.matcher.get_grammar_warnings(),
+                            self._rejection_diagnostics(
+                                ctx, committed_tokens, committed_idx
+                            ),
+                        )
+                        ctx.grammar_enforced = False
 
-            # Part 2: Speculative advance through next draft tokens + rollback.
-            llguidance.numpy.fill_next_token_bitmask(
-                ctx.matcher,
-                bitmask_out[ctx_idx, 0, :].reshape(1, -1),
-                index=0,
-            )
-
-            tokens_consumed = 0
-            for i in range(num_draft):
-                draft_token = int(next_draft_tokens[ctx_idx, i])
-                if draft_token < 0 or draft_token >= (self.vocab_size or 0):
-                    break
-                if ctx.matcher.try_consume_tokens([draft_token]) == 1:
-                    tokens_consumed += 1
-                    llguidance.numpy.fill_next_token_bitmask(
-                        ctx.matcher,
-                        bitmask_out[ctx_idx, i + 1, :].reshape(1, -1),
-                        index=0,
-                    )
-                else:
-                    break
-
-            if tokens_consumed > 0:
-                ctx.matcher.rollback(tokens_consumed)
+                # Part 2: speculative window for the next batch's bitmasks.
+                # A draft that flips enforcement on mid-window causes
+                # downstream slots to be constrained.
+                self._speculatively_fill_bitmask_window(
+                    ctx,
+                    drafts=next_draft_tokens[ctx_idx],
+                    bitmask_window=bitmask_out[ctx_idx],
+                )
 
     @traced
     def compute_speculative_bitmasks(
@@ -778,9 +999,6 @@ class StructuredOutputHelper:
             raise ValueError("vocab_size must be set for speculative bitmasks")
 
         batch_size = len(context_batch)
-        num_draft_tokens_to_verify = (
-            draft_tokens.shape[1] if draft_tokens.size else 0
-        )
 
         # Check if any context has structured output
         has_structured_output = any(
@@ -805,64 +1023,37 @@ class StructuredOutputHelper:
             batch_size, num_positions, packed_vocab_size
         )
 
-        # Initialize matchers for contexts with json_schema or grammar
-        for ctx in context_batch:
-            needs_matcher = ctx.matcher is None and (
-                ctx.json_schema or ctx.grammar is not None
-            )
-            if needs_matcher:
-                self.update_context(
-                    ctx,
-                    packed_bitmask[0, 0, :].reshape(
-                        1, -1
-                    ),  # Dummy, will be overwritten
-                    index=0,
+        # Serialise against the async FSM-advance host callback
+        # (``advance_fsm_and_compute_bitmasks``). Both paths touch the
+        # same ``ctx.matcher`` LLInterpreter; concurrent access trips
+        # llguidance's "Already borrowed" Rust panic and kills the
+        # worker. See the comment on ``_matcher_lock``.
+        with self._matcher_lock:
+            # Initialize matchers for contexts with json_schema or grammar
+            for ctx in context_batch:
+                needs_matcher = ctx.matcher is None and (
+                    ctx.json_schema or ctx.grammar is not None
                 )
-
-        # Fill bitmasks for each context and each draft position.
-        # The packed_bitmask is initialized to -1 (all bits set = all tokens valid),
-        # so we only need to call fill_next_token_bitmask for constrained contexts.
-        for ctx_idx, ctx in enumerate(context_batch):
-            # Skip if no matcher or grammar not enforced (e.g., inside thinking region)
-            if not ctx.matcher or not ctx.grammar_enforced:
-                continue  # Unconstrained: leave at initial -1 (all tokens valid)
-
-            # Position 0: valid tokens at current FSM state
-            llguidance.numpy.fill_next_token_bitmask(
-                ctx.matcher,
-                packed_bitmask[ctx_idx, 0, :].reshape(1, -1),
-                index=0,
-            )
-
-            # Positions 1..num_positions-1: advance FSM through draft tokens
-            # Position num_positions-1 is for the bonus token (after all drafts)
-            tokens_consumed = 0
-            for i in range(num_draft_tokens_to_verify):
-                draft_token = int(draft_tokens[ctx_idx, i])
-                # Skip invalid/placeholder tokens (negative or out of vocab range)
-                # These positions stay at -1 (unconstrained)
-                if draft_token < 0 or draft_token >= self.vocab_size:
-                    raise ValueError(
-                        f"Invalid draft token not in vocabulary: {draft_token}."
-                    )
-                # Check if the FSM accepts this token. If not, don't advance
-                # and leave position at -1 (unconstrained).
-                if ctx.matcher.try_consume_tokens([draft_token]) == 1:
-                    tokens_consumed += 1
-                    llguidance.numpy.fill_next_token_bitmask(
-                        ctx.matcher,
-                        packed_bitmask[ctx_idx, i + 1, :].reshape(1, -1),
+                if needs_matcher:
+                    self.update_context(
+                        ctx,
+                        packed_bitmask[0, 0, :].reshape(
+                            1, -1
+                        ),  # Dummy, will be overwritten
                         index=0,
                     )
-                else:
-                    # FSM rejected this token. Don't try consuming any of
-                    # the remaining draft tokens. Leave remaining
-                    # positions at -1 (unconstrained).
-                    break
 
-            # Rollback FSM to original state
-            if tokens_consumed > 0:
-                ctx.matcher.rollback(tokens_consumed)
+            # Fill bitmasks for each context. ``packed_bitmask`` is
+            # initialized to -1 (all bits set = all tokens valid), so the
+            # helper only needs to write slots where the FSM is enforced.
+            for ctx_idx, ctx in enumerate(context_batch):
+                if not ctx.matcher:
+                    continue
+                self._speculatively_fill_bitmask_window(
+                    ctx,
+                    drafts=draft_tokens[ctx_idx],
+                    bitmask_window=packed_bitmask[ctx_idx],
+                )
         # Unpack packed int32 bitmask to bool using vectorized bitwise ops.
         bits = 2 ** np.arange(32, dtype=np.int32)
         # Shape: [batch, num_positions, packed_vocab, 32]

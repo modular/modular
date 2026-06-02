@@ -140,7 +140,7 @@ class Gemma4TextDecoderLayer(Module):
         self.allreduce = Allreduce(num_accelerators=len(devices))
 
         self.layer_scalar = Weight(
-            "layer_scalar", unquantized_dtype, shape=[1], device=devices[0]
+            "layer_scalar", unquantized_dtype, shape=[1], device=DeviceRef.CPU()
         )
 
     def __call__(

@@ -15,17 +15,17 @@
 
 from __future__ import annotations
 
-import math
-import time
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import llguidance
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     EOSTracker,
     GenerationStatus,
+    GrammarEnforcementSnapshot,
     ImageMetadata,
     LogProbabilities,
     PixelGenerationContext,
@@ -34,14 +34,17 @@ from max.interfaces import (
     SpecDecodingState,
     TextGenerationContext,
     TextGenerationOutput,
+    TextGenerationResponseFormat,
     TokenBuffer,
     VLMTextGenerationContext,
 )
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.request.open_responses import OutputImageContent
+from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.request.open_responses import OutputImageContent
 
 CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
+
+logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
@@ -90,6 +93,18 @@ class GrammarEnforcementState:
     4. ``response_format: json_schema`` with thinking (thinking region set):
        - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
        - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
+
+    5. ``tool_choice=auto`` + ``response_format: json_schema`` + thinking:
+       - Combined grammar constrains to tool calls OR JSON schema
+       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
+       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
+         (``has_json_schema`` triggers re-enforcement even with ``tool_region`` set)
+
+    For section-wrapped parsers (e.g. Kimi K2.5, DeepSeek V3) that define
+    ``SECTION_BEGIN``/``SECTION_END``, the tool region end tag turns off
+    enforcement after the entire tool-calling section.  For flat parsers
+    (e.g. Gemma 4) the tool region has no end tag — the grammar handles
+    termination.
     """
 
     grammar_enforced: bool = False
@@ -115,6 +130,9 @@ class GrammarEnforcementState:
     pure tool-call grammars derived from the model's tool parser.
     """
 
+    has_json_schema: bool = False
+    """Whether this request includes a JSON schema response format."""
+
     tool_region: StructuredOutputRegionDelimiters | None = None
     """Token sequences defining tool call boundaries, if conditional enforcement."""
 
@@ -129,7 +147,7 @@ class GrammarEnforcementState:
 
     _in_thinking_region: bool = False
     """Whether currently inside a thinking region.
-    
+
     TODO: Consider consolidating with ``in_thinking_phase`` in text generation pipeline.
     """
 
@@ -138,6 +156,20 @@ class GrammarEnforcementState:
 
     _thinking_match_buffer: list[int] = field(default_factory=list)
     """Buffer for partial matching of thinking end sequence."""
+
+    @classmethod
+    def from_response_format(
+        cls, response_format: TextGenerationResponseFormat | None
+    ) -> GrammarEnforcementState:
+        """Creates a state from the given response format, or a default state."""
+        if not response_format:
+            return cls()
+        return cls(
+            grammar_enforced=response_format.grammar_enforced,
+            tools_forced=response_format.tools_forced,
+            requires_structured_output_flag=response_format.requires_structured_output_flag,
+            has_json_schema=response_format.has_json_schema,
+        )
 
     def update_enforcement_state(self, token: int) -> bool:
         """Update enforcement state based on sampled token.
@@ -150,13 +182,11 @@ class GrammarEnforcementState:
             token: The newly sampled token.
 
         Returns:
-            True if enforcement state changed.
+            True if the matcher should consume the token.
         """
-        changed = False
-
-        # Check thinking region transitions FIRST (higher priority)
-        # When thinking is enabled, we START in thinking region (template already
-        # emits <think>). We only detect </think> to exit.
+        # Check thinking region transitions FIRST (higher priority).
+        # Thinking-end delimiter is NOT grammar content — return False
+        # so the caller skips the matcher even though enforcement resumed.
         if (
             self.thinking_region_delimiters is not None
             and self._in_thinking_region
@@ -170,18 +200,16 @@ class GrammarEnforcementState:
                 )
             ):
                 self._in_thinking_region = False
-                # After thinking ends:
-                # - For required tools (tools_forced=True): immediately enforce
-                # - For json_schema without tools (tool_region is None):
-                #   immediately enforce
-                # - For auto tools: stay free, tool region logic will handle it
-                if self.tools_forced or self.tool_region is None:
+                if self.tools_forced or self.has_json_schema:
                     self.grammar_enforced = True
-                changed = True
+            return False
 
-        # Tool region logic (for tool_choice=auto)
-        if not changed and self.tool_region is not None:
-            # Check for start sequence (only when not enforcing)
+        # Tool region logic (for tool_choice=auto). Skipped when tools_forced
+        # is set: forced grammars enforce start-to-finish via the regex
+        # itself, so auto-mode toggles must not flip grammar_enforced.
+        # Both start and end tags ARE grammar content — return True so the
+        # caller feeds the token to the matcher before enforcement flips.
+        if self.tool_region is not None and not self.tools_forced:
             if not self.grammar_enforced:
                 if (
                     self.tool_region.start_token_ids is not None
@@ -190,8 +218,7 @@ class GrammarEnforcementState:
                     )
                 ):
                     self.grammar_enforced = True
-                    changed = True
-            # Check for end sequence (only when enforcing)
+                    return True
             else:
                 if (
                     self.tool_region.end_token_ids is not None
@@ -201,9 +228,32 @@ class GrammarEnforcementState:
                 ):
                     self.grammar_enforced = False
                     self._tool_calling_match_buffer.clear()
-                    changed = True
+                    return True
 
-        return changed
+        return self.grammar_enforced
+
+    def snapshot(self) -> GrammarEnforcementSnapshot:
+        """Capture state needed to roll back a speculative advance.
+
+        The speculative bitmask path walks the enforcement state through
+        draft tokens to compute downstream slot constraints, then
+        unwinds so that committed-token processing on the next batch
+        replays the same transitions from a clean state. The returned
+        snapshot is opaque to callers; pass it to `restore`.
+        """
+        return GrammarEnforcementSnapshot(
+            in_thinking_region=self._in_thinking_region,
+            grammar_enforced=self.grammar_enforced,
+            tool_calling_match_buffer=list(self._tool_calling_match_buffer),
+            thinking_match_buffer=list(self._thinking_match_buffer),
+        )
+
+    def restore(self, snapshot: GrammarEnforcementSnapshot) -> None:
+        """Restore state captured by :meth:`snapshot`."""
+        self._in_thinking_region = snapshot.in_thinking_region
+        self.grammar_enforced = snapshot.grammar_enforced
+        self._tool_calling_match_buffer[:] = snapshot.tool_calling_match_buffer
+        self._thinking_match_buffer[:] = snapshot.thinking_match_buffer
 
     def _check_sequence_match(self, token: int, target: list[int]) -> bool:
         """Check if token completes a target sequence using the default buffer."""
@@ -298,6 +348,15 @@ class TextContext:
 
     When set, the DKVConnector reads this during lookup() to determine
     which blocks are available in the external BlockStore system.
+    """
+
+    dkv_hint_instance_name: str = field(default="")
+    """Instance name from the Orchestrator's dkv_cache_hint identifying
+    the dKV instance that owns the cached blocks. The DKVConnector
+    compares this to its own instance name (learned via
+    ExchangeMetadata) and skips the fetch when they match — those
+    blocks are owned locally and surface through MAX's own prefix
+    cache instead.
     """
 
     cached_prefix_length: int | None = field(default=None)
@@ -472,18 +531,24 @@ class TextContext:
         """Advance the grammar-enforcement state machine by one token.
 
         Forwards to :meth:`GrammarEnforcementState.update_enforcement_state`.
-        Used by spec-decode paths that need to advance the state machine
-        without invoking ``matcher.consume_token`` (which asserts on
-        rejection); the matcher is advanced separately via
-        ``try_consume_tokens`` for tolerance.
 
         Args:
             token: The newly committed token.
 
         Returns:
-            True if enforcement state changed.
+            True if the matcher should consume the token.
         """
         return self.grammar_state.update_enforcement_state(token)
+
+    def snapshot_grammar_state(self) -> GrammarEnforcementSnapshot:
+        """Forwards to `GrammarEnforcementState.snapshot`."""
+        return self.grammar_state.snapshot()
+
+    def restore_grammar_state(
+        self, snapshot: GrammarEnforcementSnapshot
+    ) -> None:
+        """Forwards to `GrammarEnforcementState.restore`."""
+        self.grammar_state.restore(snapshot)
 
     def to_generation_output(self) -> TextGenerationOutput:
         """Get completion tokens that are ready to be returned to the user.
@@ -593,32 +658,45 @@ class TextContext:
         separately if token buffer advancement is needed, or use ``update()``
         for the common case of advancing both together.
 
+        Matcher rejection is not expected at this point (assuming the
+        bitmask was applied correctly). But if the matcher does reject
+        a token, enforcement is disabled for the rest of the request.
+        Continuing to enforce against a desynced matcher would produce schema-shaped nonsense
+        (every downstream bitmask would be filtered against a stale
+        grammar position with no relation to what was emitted).
+        Instead we let the request finish unconstrained.
+
         Args:
             token: The token to consume in the FSM.
 
         Returns:
-            True if the token was processed, False if no matcher is present.
-
-        Raises:
-            AssertionError: If the matcher rejects the token, indicating
-                a mismatch between the bitmask and FSM state.
+            True if the token was handled — either consumed by the FSM,
+            recognized as a state-transition delimiter (e.g. a
+            thinking-end token), or skipped because enforcement is
+            inactive. False only when no matcher is present.
         """
         if self.matcher is None:
             return False
 
-        # Update enforcement state (may toggle grammar_enforced)
-        self.grammar_state.update_enforcement_state(token)
-
-        # Only consume token in FSM if enforcement is active
-        # TODO: Does this need to raise an error if consumption fails?
-        if self.grammar_state.grammar_enforced:
-            try:
-                assert self.matcher.consume_token(token)
-            except Exception:
-                print(
-                    f"Matcher Errors: {self.matcher.get_error()} \nMatcher Warnings: {self.matcher.get_grammar_warnings()}"
-                )
-                raise
+        # EOS tokens are not part of the grammar — they signal the end of
+        # generation, not schema content.  Skip the matcher so it stays in
+        # a clean terminal state rather than logging a spurious rejection.
+        if token in self.eos_tracker.eos_token_ids:
+            self.grammar_state.grammar_enforced = False
+        elif (
+            self.grammar_state.update_enforcement_state(token)
+            and self.matcher.try_consume_tokens([token]) != 1
+        ):
+            logger.error(
+                "Matcher rejected token %d (request %s); disabling "
+                "enforcement for the rest of the request. "
+                "matcher_errors=%s matcher_warnings=%s",
+                token,
+                self.request_id,
+                self.matcher.get_error(),
+                self.matcher.get_grammar_warnings(),
+            )
+            self.grammar_state.grammar_enforced = False
 
         return True
 
@@ -867,136 +945,6 @@ class TextAndVisionContext(TextContext):
         """Updates the context with a new token and validates vision state."""
         super().update(new_token=new_token, log_probabilities=log_probabilities)
         self._validate_state()
-
-
-SPEECH_TOKEN_audio_chunk_size = 128
-
-
-@dataclass(kw_only=True)
-class TTSContext(TextContext):
-    """A context for Text-to-Speech (TTS) model inference.
-
-    This class extends TextContext to handle speech token generation and management.
-    It maintains buffers for audio prompt tokens and generated speech tokens, along
-    with tracking indices for decoding progress.
-
-    Configuration:
-        audio_prompt_tokens: Array of input audio prompt tokens used for voice cloning
-        streaming: Whether the request is streaming the audio to client
-        _speech_token_size: Size of the speech token buffer, defaults to SPEECH_TOKEN_audio_chunk_size
-        _speech_token_end_idx: Index marking the end of valid speech tokens
-        _speech_tokens: Buffer containing the generated speech tokens
-        _decoded_index: Index tracking how many tokens have been decoded to audio
-        _block_counter: Counter tracking number of speech token blocks generated
-    """
-
-    audio_prompt_tokens: npt.NDArray[np.integer[Any]] = field(
-        default_factory=lambda: np.array([], dtype=np.int32)
-    )
-
-    buffer_speech_tokens: npt.NDArray[np.integer[Any]] | None = field(
-        default=None
-    )
-
-    # For silence detection.
-    audio_buffer: npt.NDArray[np.floating[Any]] | None = field(default=None)
-    prev_samples_beyond_offset: int = field(default=0)
-
-    streaming: bool = field(default=False)
-
-    # Fields for tracking the state of speech token or audio generation.
-    _speech_token_size: int = field(default=SPEECH_TOKEN_audio_chunk_size)
-    _speech_token_end_idx: int = field(default=0)
-    _speech_tokens: npt.NDArray[np.integer[Any]] = field(
-        default_factory=lambda: np.zeros(
-            SPEECH_TOKEN_audio_chunk_size, dtype=np.int32
-        )
-    )
-    decoded_index: int = field(default=0)
-    _block_counter: int = field(default=0)
-    _arrival_time: float = field(default_factory=lambda: time.time())
-
-    audio_generation_status: GenerationStatus = field(
-        default=GenerationStatus.ACTIVE
-    )
-
-    def __post_init__(self) -> None:
-        """Initialize TTSContext state after deserialization or construction.
-
-        In addition, we ensure that the speech token buffer `_speech_tokens` is
-        writeable, copying only when necessary (e.g., after serialization).
-        """
-        super().__post_init__()
-
-        # Ensure the speech token buffer is writeable.
-        if not self._speech_tokens.flags.writeable:
-            self._speech_tokens = self._speech_tokens.copy()
-
-    @property
-    def is_done(self) -> bool:
-        """Whether audio generation has finished."""
-        return self.audio_generation_status.is_done
-
-    @property
-    def speech_tokens(self) -> npt.NDArray[np.integer[Any]]:
-        """The slice of generated speech tokens valid so far."""
-        return self._speech_tokens[: self._speech_token_end_idx]
-
-    @property
-    def block_counter(self) -> int:
-        """The number of speech token blocks generated."""
-        return self._block_counter
-
-    def update_speech_tokens(
-        self, new_tokens: npt.NDArray[np.integer[Any]]
-    ) -> None:
-        """Updates the buffer with new speech tokens."""
-        self._upsize_speech_tokens(len(new_tokens))
-        self._speech_tokens[
-            self._speech_token_end_idx : self._speech_token_end_idx
-            + len(new_tokens)
-        ] = new_tokens
-        self._speech_token_end_idx += len(new_tokens)
-        self._block_counter += 1
-
-    def _upsize_speech_tokens(self, new_size: int) -> None:
-        if self._speech_token_end_idx + new_size >= self._speech_token_size:
-            self._speech_token_size += (
-                math.ceil(new_size / SPEECH_TOKEN_audio_chunk_size)
-            ) * SPEECH_TOKEN_audio_chunk_size
-            self._speech_tokens = np.resize(
-                self._speech_tokens, self._speech_token_size
-            )
-
-    def next_speech_tokens(
-        self, audio_chunk_size: int | None = None, buffer: int | None = None
-    ) -> tuple[npt.NDArray[np.integer[Any]], int]:
-        """Returns a chunk of the next unseen speech tokens.
-
-        Calling this function will *not* update the index of the last seen
-        token. This must be done by setting `decoded_index` after the chunk
-        is processed.
-
-        Args:
-            audio_chunk_size: The number of speech tokens to return.
-            buffer: The number of previous speech tokens to pass to the audio
-                decoder on each generation step.
-
-        Returns:
-            A tuple of (chunk of speech tokens, buffer).
-        """
-        start_idx = self.decoded_index
-        if buffer is not None:
-            buffer = min(buffer, start_idx)
-            start_idx = max(0, start_idx - buffer)
-
-        end_idx = self._speech_token_end_idx
-        if audio_chunk_size is not None:
-            end_idx = min(end_idx, self.decoded_index + audio_chunk_size)
-
-        chunk = self._speech_tokens[start_idx:end_idx]
-
-        return chunk, buffer or 0
 
 
 @dataclass(kw_only=True)

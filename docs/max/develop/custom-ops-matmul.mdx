@@ -198,7 +198,8 @@ def matrix_multiplication(
         graph.output(output)
 
     print("Compiling...")
-    model = session.load(graph)
+    compiled = session.compile(graph)
+    model = session.init(compiled)
 
     print("Executing...")
     result = model.execute(a_tensor, b_tensor)[0]
@@ -209,7 +210,9 @@ A single `matrix_multiplication` operation is used, and the algorithm variant is
 specified by the `algorithm` compile-time parameter.
 
 The custom operation itself is defined in Mojo within the
-`operations/matrix_multiplication.mojo` file. The `MatrixMultiplication` struct
+`operations/matrix_multiplication.mojo` file. Tensor types such as
+`InputTensor`, `OutputTensor`, and `ManagedTensorSlice` are imported from the
+`extensibility` package. The `MatrixMultiplication` struct
 hosts all of the setup code for taking in the matrix tensors, branching
 execution based on whether the operation is running on CPU or GPU, and then
 selecting and running a specific algorithm. Mojo supports compile-time

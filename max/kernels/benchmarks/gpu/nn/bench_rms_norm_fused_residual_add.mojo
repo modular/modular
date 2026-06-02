@@ -89,7 +89,7 @@ def bench_rms_norm_fused_residual_add_gpu[
     @__copy_capture(output_buf)
     @parameter
     def output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         output_buf.store[alignment=alignment](Coord(coords), val)
 
@@ -97,7 +97,7 @@ def bench_rms_norm_fused_residual_add_gpu[
     @__copy_capture(residual_output_buf)
     @parameter
     def residual_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         residual_output_buf.store[alignment=alignment](Coord(coords), val)
 

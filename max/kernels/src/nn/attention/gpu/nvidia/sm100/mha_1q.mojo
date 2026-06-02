@@ -2374,13 +2374,13 @@ def _mha_sm100[
             k_desc = qk_desc.get_b()
             var tmem_addr: UInt32 = ptr_tmem_addr[0]
             var s_tmem: UInt32
-            var o_tmem: UInt32
+            # var o_tmem: UInt32
             comptime if use_p_smem:
-                o_tmem = tmem_addr  # bank 0
+                # o_tmem = tmem_addr  # bank 0
                 s_tmem = tmem_addr + UInt32(1 << 20)  # bank 1
             else:
                 s_tmem = tmem_addr
-                o_tmem = tmem_addr + UInt32(MMA_N0 * num_s)
+                # o_tmem = tmem_addr + UInt32(MMA_N0 * num_s)
             s_accumulator = UMMA0Type.c_t(s_tmem)
 
             @parameter
@@ -2409,7 +2409,7 @@ def _mha_sm100[
                 kv_tile_start_row += UInt32(BN)
 
             kv_pipeline_states = PipelineState[pipeline_stages]()
-            s_pipeline_states = PipelineState[pipeline_stages]()
+            # s_pipeline_states = PipelineState[pipeline_stages]()
             q_mul_k(
                 kv_pipeline_states.index(),
                 kv_pipeline_states.phase(),
@@ -2452,9 +2452,9 @@ def _mha_sm100[
             named_barrier[Int32(num_softmax_threads + 2 * WARP_SIZE)]()
             var tmem_addr: UInt32 = ptr_tmem_addr[0]
             if tid == 32:
-                var s_tmem: UInt32
-                var o_tmem: UInt32
-                var p_tmem: UInt32
+                var s_tmem: UInt32 = 0
+                var o_tmem: UInt32 = 0
+                var p_tmem: UInt32 = 0
 
                 @parameter
                 @always_inline("nodebug")

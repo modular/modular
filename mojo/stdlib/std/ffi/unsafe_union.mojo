@@ -27,7 +27,12 @@ type-checked sum types.
 
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, Named, TypeNames
-from std.memory import UnsafePointer
+from std.memory import (
+    UnsafePointer,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+)
 from std.sys import align_of, size_of
 from std.sys.intrinsics import _type_is_eq
 
@@ -55,7 +60,9 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], ImplicitlyDestructible):
-            if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
+            if not is_trivially_destructible[
+                downcast[Ts[i], ImplicitlyDestructible]
+            ]():
                 return False
         else:
             return False
@@ -67,7 +74,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
+            if not is_trivially_copyable[downcast[Ts[i], Copyable]]():
                 return False
         else:
             return False
@@ -79,7 +86,7 @@ def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
 
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
+            if not is_trivially_movable[downcast[Ts[i], Movable]]():
                 return False
         else:
             return False

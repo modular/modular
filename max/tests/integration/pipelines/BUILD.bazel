@@ -16,8 +16,8 @@ modular_py_test(
     tags = ["manual"],
     deps = [
         "//max/python/max/graph",
-        "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/weights",
         "//max/tests/integration/test_common:mocks",
     ],
 )
@@ -29,6 +29,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/weights",
     ],
 )
 
@@ -40,9 +41,9 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
     ],
@@ -58,7 +59,7 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/weights",
     ],
 )
 
@@ -66,8 +67,22 @@ modular_py_test(
     name = "test_model_manifest",
     srcs = ["test_model_manifest.py"],
     deps = [
+        "//max/python/max/graph",
         "//max/python/max/pipelines/lib",
         requirement("msgspec"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_weight_loader",
+    srcs = ["test_weight_loader.py"],
+    deps = [
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
     ],
 )
 
@@ -97,6 +112,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/weights",
         requirement("huggingface-hub"),
         requirement("transformers"),
     ],
@@ -118,6 +134,7 @@ modular_py_test(
             "test_structured_output_spec_decode_gpu.py",
             "test_model_manifest.py",
             "test_model_manifest_hf.py",
+            "test_weight_loader.py",
         ],
     ),
     tags = [
@@ -132,10 +149,11 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/lora",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/support",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
@@ -190,7 +208,7 @@ modular_py_test(
     timeout = "long",
     srcs = ["test_mla_probe_strategy_gpu.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "1.2",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -226,8 +244,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration/test_common:numerics",
         requirement("numpy"),
     ],
@@ -261,10 +279,10 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:lora_utils",
@@ -295,10 +313,10 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:registry",
         requirement("numpy"),

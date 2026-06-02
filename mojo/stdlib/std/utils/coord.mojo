@@ -182,70 +182,12 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         comptime assert False, "ComptimeInt is not a tuple type"
 
 
-def Idx(value: Int) -> Scalar[DType.int]:
-    """Helper to create runtime indices.
+comptime Idx[value: Int] = ComptimeInt[value]()
+"""A compile-time coordinate index value.
 
-    Args:
-        value: The integer value for the runtime index.
-
-    Returns:
-        A `Scalar` instance with the specified value.
-
-    Usage: `Idx(5)` creates a `Scalar` with value 5.
-    """
-    return Scalar[DType.int](value)
-
-
-def Idx[value: Int]() -> ComptimeInt[value]:
-    """Helper to create compile-time indices.
-
-    Parameters:
-        value: The compile-time integer value.
-
-    Returns:
-        A `ComptimeInt` instance with the specified compile-time value.
-
-    Usage: `Idx[5]()` creates a `ComptimeInt` with value 5.
-    """
-    return ComptimeInt[value]()
-
-
-def Idx(
-    value: IntLiteral,
-) -> ComptimeInt[
-    Int(
-        mlir_value=__mlir_attr[
-            `#kgen.cast_to_builtin<#pop.int_literal_convert<`,
-            value.value,
-            `> : !kgen.scalar<index>> : index`,
-        ]
-    )
-]:
-    """Helper to create compile-time indices.
-
-    Args:
-        value: The compile-time integer value.
-
-    Returns:
-        A `ComptimeInt` instance with the specified compile-time value.
-
-    Usage: `Idx[5]()` creates a `ComptimeInt` with value 5.
-    """
-    return {}
-
-
-def Idx(
-    value: Scalar,
-) -> Scalar[value.dtype] where value.dtype.is_integral():
-    """Create a runtime index from a scalar value.
-
-    Args:
-        value: The integer value for the runtime index.
-
-    Returns:
-        A `Scalar` instance with the specified value.
-    """
-    return Scalar[value.dtype](value)
+Parameters:
+    value: The compile-time integer value.
+"""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -687,12 +629,12 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             ```mojo
             from layout import Coord, Idx
             var nested = Coord(
-                Idx[5](),
-                Coord(Idx[3](), Idx[2]()),
+                Idx[5],
+                Coord(Idx[3], Idx[2]),
                 7
             )
             var flat = nested.flatten()
-            # flat is Coord(Idx[5](), Idx[3](), Idx[2](), 7)
+            # flat is Coord(Idx[5], Idx[3], Idx[2], 7)
             ```
         """
         comptime FlatTypes = _Flattened[*Self.element_types]
@@ -779,6 +721,44 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             comptime if i < Self.rank - 1:
                 w.write(", ")
         w.write(")")
+
+    @always_inline("nodebug")
+    def cast[
+        dtype: DType
+    ](self) -> Coord[*_CoordCast[dtype, Self.element_types]]:
+        """Cast runtime elements to `Scalar[dtype]`.
+
+        Compile-time elements are preserved as-is, so statically known
+        dimensions stay static after the cast.
+
+        Parameters:
+            dtype: The target data type for runtime elements.
+
+        Returns:
+            A new `Coord` where runtime elements use `dtype` and static
+            elements keep their original type.
+        """
+        comptime assert dtype.is_integral(), "the target type must be integral"
+        comptime assert Self.is_flat, "`Coord.cast` only supports flat `Coord`s"
+
+        comptime ResultTypes = _CoordCast[dtype, Self.element_types]
+        var result: Coord[*ResultTypes]
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result)
+        )
+
+        comptime for i in range(Self.__len__()):
+            comptime ResultType = ResultTypes[i]
+            comptime if ResultType.is_static_value:
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultType](self[i])
+                )
+            else:
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultType](Scalar[dtype](self[i].value()))
+                )
+
+        return result
 
 
 # Helper for flat indexing with nested shape/stride.
@@ -1343,7 +1323,7 @@ def _get_flattened[
         The value at the given flat index.
 
     Examples:
-        For `tuple = Coord(Idx[5](), Coord(Idx[3](), Idx[2]()), 7)`:
+        For `tuple = Coord(Idx[5], Coord(Idx[3], Idx[2]), 7)`:
         - `get_flattened[0](tuple)` returns 5  (first element)
         - `get_flattened[1](tuple)` returns 3  (first element of nested tuple)
         - `get_flattened[2](tuple)` returns 2  (second element of nested tuple)
@@ -1354,9 +1334,28 @@ def _get_flattened[
 
 comptime _IsStaticPredicate[T: CoordLike] = T.is_static_value
 
-comptime _AllStatic[*element_types: CoordLike] = element_types.all_satisfies[
+comptime _IsNotTuplePredicate[T: CoordLike] = not T.is_tuple
+
+comptime _IsFlat[*element_types: CoordLike] = element_types.all_satisfies[
+    _IsNotTuplePredicate,
+]()
+"""True iff no element in the variadic is a tuple. Single-pass; lets
+`_AllStatic` / `_StaticProduct` skip the multi-pass `_Flattened` rewrite
+on the (typical) flat path."""
+
+
+comptime _AllStaticFlat[
+    *element_types: CoordLike
+] = element_types.all_satisfies[
     _IsStaticPredicate,
 ]()
+
+
+comptime _AllStatic[*element_types: CoordLike] = _AllStaticFlat[
+    *element_types
+] if _IsFlat[*element_types] else _AllStaticFlat[*_Flattened[*element_types]]
+"""True iff every leaf element in the (possibly nested) variadic is a
+compile-time-known dim."""
 
 comptime _AllEqualPredicate[
     T1: AnyType, T2: type_of(T1)
@@ -1373,10 +1372,20 @@ comptime _StaticProductReducer[
     T: CoordLike,
 ] = Prev * T.static_value
 
-comptime _StaticProduct[*element_types: CoordLike] = element_types.reduce[
+comptime _StaticProductFlat[*element_types: CoordLike] = element_types.reduce[
     1,
     _StaticProductReducer,
 ]
+
+
+comptime _StaticProduct[*element_types: CoordLike] = _StaticProductFlat[
+    *element_types
+] if _IsFlat[*element_types] else _StaticProductFlat[
+    *_Flattened[*element_types]
+]
+"""Compile-time product of all leaf dimensions in the (possibly nested)
+variadic. Caller should gate on `_AllStatic` first — a dynamic leaf
+(`static_value == -1`) makes the product meaningless."""
 
 comptime _IntToComptimeIntMapper[
     idx: Int,
@@ -1707,7 +1716,7 @@ struct _RegTuple[*element_types: CoordLike](
 
         ```mojo
         from std.utils.coord import _RegTuple, ComptimeInt, Idx
-        var image_coords = _RegTuple[ComptimeInt[100], ComptimeInt[200]](Idx(100), Idx(200))
+        var image_coords = _RegTuple[ComptimeInt[100], ComptimeInt[200]](Idx[100], Idx[200])
         var screen_coords = image_coords.reverse()
         print(screen_coords[0].value(), screen_coords[1].value())  # output: 200, 100
         ```
@@ -1900,6 +1909,17 @@ comptime _CeilDiv[
     Lhs.size,
     _CeilDivTabulator[Lhs, Rhs, ...],
 ]()
+
+comptime _CoordCastMapper[
+    dtype: DType, type: CoordLike
+]: CoordLike = type if type.is_static_value else Scalar[dtype]
+"""Maps dynamic scalar elements to `Scalar[dtype]`, preserving static ones."""
+
+
+comptime _CoordCast[
+    dtype: DType, element_types: TypeList[Trait=CoordLike, ...]
+] = element_types.map[_CoordCastMapper[dtype, _]]()
+"""Computes the result element types for `Coord.cast[dtype]()`."""
 
 
 @always_inline

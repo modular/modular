@@ -8093,11 +8093,13 @@ struct LayoutTensorIter[
         # TODO: Temporary stop-gap to avoid refactoring all `LayoutTensor`s
         # to expect a non-null pointer. Do NOT copy this pattern; new code
         # should use a properly-initialized `UnsafePointer` instead.
+        # Or to explicitly model nullability, use `Optional[UnsafePointer]`.
+        var this_is_a_hack = 0
         self.ptr = UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
-        ](unsafe_from_address=0)
+        ](unsafe_from_address=this_is_a_hack)
         self.offset = 0
         self.stride = 0
         self.bound = 0

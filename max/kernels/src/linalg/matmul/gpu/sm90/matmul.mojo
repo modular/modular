@@ -622,7 +622,7 @@ def _get_c_smem_layout[
         + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
     )
 
-    def _get_max_wg_bn() capturing -> Int:
+    def _get_max_wg_bn() -> Int:
         var WG_BN = MAX_WG_BN
         while (
             available_c_smem_size < WG_BM * WG_BN * size_of[c_type]()
@@ -748,6 +748,7 @@ def warp_specialize_gemm_with_multicasting_splitk[
     ](ctx, c)
 
     comptime scheduler = SplitKTileScheduler[
+        locks_origin=MutAnyOrigin,
         Index(N, K),
         config.block_tile_shape,
         UInt32(splits),

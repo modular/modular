@@ -10,11 +10,17 @@ package(default_visibility = [
 modular_py_test(
     name = "test_vision_encoder_cache",
     srcs = ["test_vision_encoder_cache.py"],
+    # TODO(MODELS-1494): Times out at 600s on slow macOS BuildBuddy workers.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         requirement("numpy"),
     ],
 )
@@ -23,7 +29,7 @@ modular_py_test(
     name = "test_sampling_params",
     srcs = ["test_sampling_params.py"],
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -59,11 +65,13 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/lora",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
@@ -98,9 +106,11 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/lora",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
@@ -153,9 +163,10 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/entrypoints",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
@@ -194,11 +205,12 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/engine",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
@@ -236,10 +248,11 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/engine",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
         "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
     ],
@@ -269,8 +282,30 @@ modular_py_test(
     env = {
         "MODULAR_PATH": ".",
     },
+    # TODO(MODELS-1494): Times out at 300s (small) on slow macOS workers.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+# Graph-construction tests for token_sampler (no GPU required).
+modular_py_test(
+    name = "test-token-sampler-construction",
+    size = "small",
+    srcs = [
+        "sampling/test_token_sampler_construction.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
     ],
 )
 
@@ -286,7 +321,7 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "9",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
     tags = [
@@ -295,8 +330,8 @@ modular_py_test(
         "requires-network",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         requirement("llguidance"),
         requirement("transformers"),
@@ -323,8 +358,8 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
     ],
 )
@@ -366,7 +401,7 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "9",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
     tags = [
@@ -427,9 +462,9 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
     ],
@@ -447,7 +482,7 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "9",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
     tags = [

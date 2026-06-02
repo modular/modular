@@ -42,7 +42,7 @@ from std.utils.coord import Coord, CoordLike
 # ===----------------------------------------------------------------------=== #
 
 
-trait Indexer(ImplicitlyDestructible):
+trait Indexer:
     """
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling

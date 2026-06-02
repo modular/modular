@@ -24,7 +24,10 @@ modular_py_test(
             "test_video_processor.py",
             "test_vision_rotary_embedding.py",
         ],
-    ) + ["conftest.py"],
+    ) + [
+        "_attention_helpers.py",
+        "conftest.py",
+    ],
     data = [
         "//max/tests/integration/architectures/gemma4/testdata",
     ],
@@ -37,6 +40,10 @@ modular_py_test(
         "test.resources:gpu-memory": "16",
     },
     gpu_constraints = ["//:has_gpu"],
+    # test_attention.py: 4 tests, 4 shards = one test per shard, compiles run in parallel
+    per_test_shard_count = {
+        "test_attention.py": 4,
+    },
     tags = ["gpu"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -81,9 +88,9 @@ modular_py_test(
     name = "test_tokenizer",
     srcs = ["test_tokenizer.py"],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("pillow"),
         requirement("pytest-asyncio"),
@@ -105,8 +112,9 @@ modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/modeling",
+        requirement("llguidance"),
     ],
 )
 

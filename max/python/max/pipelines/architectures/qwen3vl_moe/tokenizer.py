@@ -25,16 +25,6 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import requests
-from max.interfaces import (
-    ImageContentPart,
-    ImageMetadata,
-    MessageContent,
-    TextContentPart,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
-    TextGenerationRequestTool,
-    TokenBuffer,
-)
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     mrope_pos_ids_3d,
 )
@@ -49,6 +39,16 @@ from max.pipelines.lib import (
     max_tokens_to_generate,
 )
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.modeling.types import (
+    ImageContentPart,
+    ImageMetadata,
+    MessageContent,
+    TextContentPart,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    TokenBuffer,
+)
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoTokenizer
@@ -625,8 +625,8 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
         # Handle JSON schema if provided
         json_schema = (
-            json.dumps(request.response_format.get("json_schema", None))
-            if request.response_format
+            json.dumps(request.response_format.json_schema)
+            if request.response_format and request.response_format.json_schema
             else None
         )
 

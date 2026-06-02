@@ -34,7 +34,6 @@ from max.graph import (
     TensorType,
     ops,
 )
-from max.interfaces import RequestID, TextGenerationInputs, TokenBuffer
 from max.nn import KVCacheInputs, kernels
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
@@ -49,6 +48,11 @@ from max.pipelines.lib import (
     SupportedEncoding,
 )
 from max.pipelines.lib.pipeline_variants import overlap_text_generation
+from max.pipelines.modeling.types import (
+    RequestID,
+    TextGenerationInputs,
+    TokenBuffer,
+)
 
 GPU_SECONDS = 0.5
 CPU_SECONDS = 0.2
@@ -160,6 +164,7 @@ class FakeRuntimeConfig(ConfigFileModel):
     max_batch_size: int = 999
     pipeline_role: str = "prefill_and_decode"
     reasoning_parser: str | None = None
+    tool_parser: str | None = None
 
 
 class FakeSpeculativeConfig(ConfigFileModel):
@@ -176,6 +181,13 @@ class FakePipelineConfig(ConfigFileModel):
 
     def configure_session(self, *args: Any, **kwargs: Any) -> None:
         pass
+
+    @property
+    def needs_bitmask_constraints(self) -> bool:
+        return (
+            self.sampling.enable_structured_output
+            or self.runtime.tool_parser is not None
+        )
 
 
 @dataclass

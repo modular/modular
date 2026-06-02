@@ -11,6 +11,28 @@ max.pipelines
 
 .. currentmodule:: max.pipelines
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   pipelines.architectures
+   pipelines.core
+   pipelines.diffusion
+   pipelines.kv_cache
+   pipelines.lib
+   pipelines.lib.interfaces
+   pipelines.lib.log_probabilities
+   pipelines.lib.registry
+   pipelines.modeling.base
+   pipelines.modeling.dataprocessing
+   pipelines.modeling.kv_cache_config
+   pipelines.modeling.types
+   pipelines.weights
+   pipelines.lora
+   pipelines.request
+   pipelines.speculative
 
 Configuration
 -------------
@@ -20,9 +42,7 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
-   AudioGenerationConfig
    KVCacheConfig
-   LoRAConfig
    MAXModelConfig
    PipelineConfig
    ProfilingConfig
@@ -39,7 +59,6 @@ Pipelines
 
    EmbeddingsPipeline
    PixelGenerationPipeline
-   SpeechTokenGenerationPipeline
    TextGenerationPipeline
    TextGenerationPipelineInterface
 
@@ -68,7 +87,6 @@ Context
    PixelContext
    TextAndVisionContext
    TextContext
-   TTSContext
 
 Tokenizers
 ----------
@@ -102,13 +120,6 @@ Utilities
 .. autosummary::
    :nosignatures:
    :toctree: generated
-   :template: autosummary/class.rst
-
-   PrependPromptSpeechTokens
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
    :template: autosummary/function.rst
 
    download_weight_files
@@ -127,16 +138,3 @@ Utilities
 
    ADAPTER_CONFIG_FILE
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   pipelines.architectures
-   pipelines.core
-   pipelines.kv_cache
-   pipelines.lib
-   pipelines.lib.interfaces
-   pipelines.lib.log_probabilities
-   pipelines.lib.registry

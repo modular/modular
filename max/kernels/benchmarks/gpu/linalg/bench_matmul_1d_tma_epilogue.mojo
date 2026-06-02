@@ -37,9 +37,9 @@ from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.info import _is_sm10x_gpu
 from std.gpu.primitives import block
+from std.memory import alloc
 from internal_utils import (
     CacheBustingBuffer,
-    ScalarArray,
     arg_parse,
     pytorch_like_tolerances_for,
 )
@@ -52,6 +52,9 @@ from layout import (
     row_major,
 )
 from linalg.matmul.gpu import _matmul_gpu
+from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
+    fused_bias_residual_matmul_dispatch_sm100,
+)
 from std.utils import IndexList
 
 
@@ -136,8 +139,8 @@ def _check_verification_result[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host = ScalarArray[DType.float32](count=NUM_BLOCKS * 5)
-    ctx.enqueue_copy(result_host.unsafe_ptr(), result_device)
+    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+    ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
     var total_abs_diff: Float32 = 0
@@ -153,6 +156,8 @@ def _check_verification_result[
         worst_violation = max(worst_violation, result_host[base + 2])
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
+
+    result_host.free()
 
     if any_out_nz == 0:
         raise String(label, ": kernel output is all zeros")
@@ -201,16 +206,16 @@ def bench_matmul_1d_tma_epilogue[
     comptime simd_size = 4
     comptime transpose_b = True
 
-    var shape_c = Coord(M, Idx[N]())
-    var shape_a = Coord(M, Idx[K]())
-    var shape_b = Coord(Idx[N](), Idx[K]())
+    var shape_c = Coord(M, Idx[N])
+    var shape_a = Coord(M, Idx[K])
+    var shape_b = Coord(Idx[N], Idx[K])
 
     var c_size = M * N
     var a_size = M * K
     var b_size = N * K
 
     # 1D bias layout: shape [N]
-    comptime bias_layout = row_major(Coord(Idx[N]()))
+    comptime bias_layout = row_major(Coord(Idx[N]))
 
     var cb_a = CacheBustingBuffer[dtype](a_size, simd_size, ctx)
     var cb_b = CacheBustingBuffer[dtype](b_size, simd_size, ctx)
@@ -249,7 +254,7 @@ def bench_matmul_1d_tma_epilogue[
             @__copy_capture(tensor_c, bias_tile)
             def epilogue_lambda[
                 _dtype: DType,
-                width: Int,
+                width: SIMDSize,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -268,25 +273,23 @@ def bench_matmul_1d_tma_epilogue[
             ](tensor_c, tensor_a, tensor_b, ctx)
 
         else:  # "tma_bias"
-            # Wrap 1D bias as a (1, N) TileTensor to match the 2D
-            # epilogue type _matmul_gpu expects. The kernel only
-            # uses the raw pointer for 1D bias.
+            # Wrap 1D bias as a (1, N) TileTensor to match the 2D epilogue
+            # type the fused dispatcher expects. The kernel only uses the raw
+            # pointer for 1D bias.
             var epi_1 = Int64(1)
             var epi_n = Int64(N)
             var epilogue_for_gpu = TileTensor(
                 bias_tile.ptr, row_major(Coord(epi_1, epi_n))
             ).as_immut()
-            _matmul_gpu[
-                use_tensor_core=True,
+            fused_bias_residual_matmul_dispatch_sm100[
                 transpose_b=transpose_b,
-                has_epilogue_tensor=True,
                 epilogue_is_1d=True,
             ](
                 tensor_c,
                 tensor_a,
                 tensor_b,
+                epilogue_for_gpu.as_any_origin(),
                 ctx,
-                epilogue_tensor=epilogue_for_gpu,
             )
 
     @parameter
@@ -363,7 +366,7 @@ def bench_matmul_1d_tma_epilogue[
             @__copy_capture(bias_ver_nd)
             def ver_epilogue_lambda[
                 _dtype: DType,
-                width: Int,
+                width: SIMDSize,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -387,25 +390,23 @@ def bench_matmul_1d_tma_epilogue[
                 bias_ver_dev.unsafe_ptr(),
                 row_major(Coord(ver_epi_1, ver_epi_n)),
             ).as_immut()
-            _matmul_gpu[
-                use_tensor_core=True,
+            fused_bias_residual_matmul_dispatch_sm100[
                 transpose_b=transpose_b,
-                has_epilogue_tensor=True,
                 epilogue_is_1d=True,
             ](
                 c_kernel_nd,
                 a_ver_nd,
                 b_ver_nd,
+                ver_epilogue.as_any_origin(),
                 ctx,
-                epilogue_tensor=ver_epilogue,
             )
 
         # Add 1D bias to reference output (broadcast across M rows).
         comptime if variant != "plain":
-            var bias_host = ScalarArray[dtype](count=N)
-            var c_ref_host = ScalarArray[dtype](count=c_size)
-            ctx.enqueue_copy(bias_host.unsafe_ptr(), bias_ver_dev)
-            ctx.enqueue_copy(c_ref_host.unsafe_ptr(), c_ref_dev)
+            var bias_host = alloc[Scalar[dtype]](N)
+            var c_ref_host = alloc[Scalar[dtype]](c_size)
+            ctx.enqueue_copy(bias_host, bias_ver_dev)
+            ctx.enqueue_copy(c_ref_host, c_ref_dev)
             ctx.synchronize()
 
             for i in range(M):
@@ -416,8 +417,10 @@ def bench_matmul_1d_tma_epilogue[
                         + bias_host[j].cast[DType.float32]()
                     ).cast[dtype]()
 
-            ctx.enqueue_copy(c_ref_dev, c_ref_host.unsafe_ptr())
-            _ = (bias_host^, c_ref_host^)
+            ctx.enqueue_copy(c_ref_dev, c_ref_host)
+            ctx.synchronize()
+            bias_host.free()
+            c_ref_host.free()
 
         comptime NUM_BLOCKS = 32
         comptime BLOCK_SIZE = 256

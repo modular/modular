@@ -128,7 +128,7 @@ def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
 
 def b64decode[
     *, validate: Bool = False
-](str: StringSlice[mut=False, _]) raises -> String:
+](str: StringSlice[mut=False, _]) raises -> List[Byte]:
     """Performs base64 decoding on the input string.
 
     Parameters:
@@ -138,7 +138,7 @@ def b64decode[
         str: A base64 encoded string.
 
     Returns:
-        The decoded string.
+        The decoded bytes.
 
     Raises:
         If the operation fails.
@@ -153,7 +153,7 @@ def b64decode[
                 "ValueError: Input length '", n, "' must be divisible by 4"
             )
 
-    var result = String(capacity=n)
+    var result = List[Byte](capacity=n)
 
     # This algorithm is based on https://arxiv.org/abs/1704.00605
     for i in range(0, n, 4):
@@ -162,13 +162,13 @@ def b64decode[
         var c = _ascii_to_value[validate](data[i + 2])
         var d = _ascii_to_value[validate](data[i + 3])
 
-        result._unsafe_append_byte((a << 2) | (b >> 4))
+        result.append((a << 2) | (b >> 4))
         if data[i + 2] == `=`:
             break
-        result._unsafe_append_byte(((b & 0x0F) << 4) | (c >> 2))
+        result.append(((b & 0x0F) << 4) | (c >> 2))
         if data[i + 3] == `=`:
             break
-        result._unsafe_append_byte(((c & 0x03) << 6) | d)
+        result.append(((c & 0x03) << 6) | d)
 
     return result^
 
@@ -209,14 +209,14 @@ def b16encode(str: StringSlice[mut=False, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-def b16decode(str: StringSlice[mut=False, _]) -> String:
+def b16decode(str: StringSlice[mut=False, _]) -> List[Byte]:
     """Performs base16 decoding on the input string.
 
     Args:
         str: A base16 encoded string.
 
     Returns:
-        The decoded string.
+        The decoded bytes.
     """
 
     comptime `A` = Byte(ord("A"))
@@ -243,11 +243,11 @@ def b16decode(str: StringSlice[mut=False, _]) -> String:
     var n = str.byte_length()
     debug_assert(n % 2 == 0, "Input length '", n, "' must be divisible by 2")
 
-    var result = String(capacity=n // 2)
+    var result = List[Byte](capacity=n // 2)
 
     for i in range(0, n, 2):
         var hi = data[i]
         var lo = data[i + 1]
-        result._unsafe_append_byte(decode(hi) << 4 | decode(lo))
+        result.append(decode(hi) << 4 | decode(lo))
 
     return result^

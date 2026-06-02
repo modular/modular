@@ -1,7 +1,7 @@
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("//bazel:api.bzl", "modular_py_binary", "mojo_binary", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "mojo_binary", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -11,7 +11,14 @@ _BUILDIFIER_IGNORES = [
     "./CloudInfra/go/pkg/*",
     "./third-party/llvm-project/*",
     "./oss/max-llm-book/.pixi/*",
+    "./oss/skills/port-an-llm-to-max/.pixi/*",
 ]
+
+modular_py_library(
+    name = "lint_helpers",
+    srcs = ["lint_helpers.py"],
+    imports = ["."],
+)
 
 buildifier(
     name = "buildifier.check",
@@ -27,33 +34,15 @@ buildifier(
     mode = "fix",
 )
 
-sh_binary(
-    name = "ruff-wrapper",
-    srcs = ["ruff-wrapper.sh"],
+modular_py_binary(
+    name = "ruff_wrapper",
+    srcs = ["ruff_wrapper.py"],
     data = select({
         "//:linux_x86_64": ["@ruff-x86_64-unknown-linux-gnu//:ruff"],
         "//:linux_aarch64": ["@ruff-aarch64-unknown-linux-gnu//:ruff"],
         "@platforms//os:macos": ["@ruff-aarch64-apple-darwin//:ruff"],
     }),
-)
-
-command(
-    name = "ruff.check",
-    arguments = ["check"],
-    command = ":ruff-wrapper",
-)
-
-command(
-    name = "ruff.fix",
-    arguments = ["fix"],
-    command = ":ruff-wrapper",
-)
-
-command(
-    name = "ruff.fix-fast",
-    arguments = ["fix"],
-    command = ":ruff-wrapper",
-    environment = {"FAST": "1"},
+    deps = [":lint_helpers"],
 )
 
 alias(
@@ -96,36 +85,39 @@ modular_py_binary(
     name = "mblack-wrapper",
     srcs = ["mblack-wrapper.py"],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
-    deps = ["@mblack"],
+    deps = [
+        ":lint_helpers",
+        "@mblack",
+    ],
+)
+
+[
+    command(
+        name = name + "." + ("check" if check else "fix") + ("-fast" if fast else ""),
+        command = base_command,
+        environment = {
+            "FAST": str(fast),
+            "CHECK": str(check),
+        },
+    )
+    for name, base_command in [
+        ("mblack", ":mblack-wrapper"),
+        ("ruff", ":ruff_wrapper"),
+    ]
+    for check in (True, False)
+    for fast in (True, False)
+]
+
+modular_py_binary(
+    name = "lint_docstrings",
+    srcs = ["lint_docstrings.py"],
+    deps = [":lint_helpers"],
 )
 
 command(
-    name = "mblack.check",
-    arguments = [
-        "--quiet",
-        "--check",
-        "--diff",
-        ".",
-    ],
-    command = ":mblack-wrapper",
-)
-
-command(
-    name = "mblack.fix",
-    arguments = [
-        "--quiet",
-        ".",
-    ],
-    command = ":mblack-wrapper",
-)
-
-command(
-    name = "mblack.fix-fast",
-    arguments = [
-        "--quiet",
-    ],
-    command = ":mblack-wrapper",
-    environment = {"FAST": "1"},
+    name = "lint-docstrings.check",
+    command = ":lint_docstrings",
+    run_from_workspace_root = True,
 )
 
 modular_py_binary(
@@ -159,25 +151,29 @@ command(
     run_from_workspace_root = True,
 )
 
-alias(
-    name = "shellcheck",
-    actual = select({
-        "//:linux_x86_64": "@shellcheck-linux.x86_64//:shellcheck",
-        "//:linux_aarch64": "@shellcheck-linux.aarch64//:shellcheck",
-        "@platforms//os:macos": "@shellcheck-darwin.aarch64//:shellcheck",
+modular_py_binary(
+    name = "shellcheck_wrapper",
+    srcs = ["shellcheck_wrapper.py"],
+    data = select({
+        "//:linux_x86_64": ["@shellcheck-linux.x86_64//:shellcheck"],
+        "//:linux_aarch64": ["@shellcheck-linux.aarch64//:shellcheck"],
+        "@platforms//os:macos": ["@shellcheck-darwin.aarch64//:shellcheck"],
     }),
+    deps = [":lint_helpers"],
 )
 
-sh_binary(
-    name = "shellcheck-wrapper",
-    srcs = ["shellcheck-wrapper.sh"],
-    data = [":shellcheck"],
-)
-
-command(
-    name = "shellcheck.check",
-    command = ":shellcheck-wrapper",
-)
+[
+    command(
+        name = "shellcheck.check" + ("-fast" if fast else ""),
+        command = ":shellcheck_wrapper",
+        environment = {
+            "CHECK": "true",
+            "FAST": str(fast),
+        },
+        tags = ["maybe-unused"],
+    )
+    for fast in (True, False)
+]
 
 multirun(
     name = "lint",

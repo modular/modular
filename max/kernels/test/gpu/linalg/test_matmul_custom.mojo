@@ -227,9 +227,9 @@ def run_matmul[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_tensor = TileTensor(a_device, row_major(Coord(Idx[M](), Idx[K]())))
-    var b_tensor = TileTensor(b_device, row_major(Coord(Idx[K](), Idx[N]())))
-    var c_tensor = TileTensor(c_device, row_major(Coord(Idx[M](), Idx[N]())))
+    var a_tensor = TileTensor(a_device, row_major(Coord(Idx[M], Idx[K])))
+    var b_tensor = TileTensor(b_device, row_major(Coord(Idx[K], Idx[N])))
+    var c_tensor = TileTensor(c_device, row_major(Coord(Idx[M], Idx[N])))
 
     var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device_n = ctx.enqueue_create_buffer[dtype](K * N)
@@ -367,9 +367,9 @@ def run_matmul_split_k[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](K * N)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_tensor = TileTensor(a_device, row_major(Coord(Idx[M](), Idx[K]())))
-    var b_tensor = TileTensor(b_device, row_major(Coord(Idx[K](), Idx[N]())))
-    var c_tensor = TileTensor(c_device, row_major(Coord(Idx[M](), Idx[N]())))
+    var a_tensor = TileTensor(a_device, row_major(Coord(Idx[M], Idx[K])))
+    var b_tensor = TileTensor(b_device, row_major(Coord(Idx[K], Idx[N])))
+    var c_tensor = TileTensor(c_device, row_major(Coord(Idx[M], Idx[N])))
 
     var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device_n = ctx.enqueue_create_buffer[dtype](K * N)
@@ -508,9 +508,9 @@ def run_matmul_transpose[
     var a_device = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device = ctx.enqueue_create_buffer[dtype](N * K)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var a_tensor = TileTensor(a_device, row_major(Coord(Idx[M](), Idx[K]())))
-    var b_tensor = TileTensor(b_device, row_major(Coord(Idx[N](), Idx[K]())))
-    var c_tensor = TileTensor(c_device, row_major(Coord(Idx[M](), Idx[N]())))
+    var a_tensor = TileTensor(a_device, row_major(Coord(Idx[M], Idx[K])))
+    var b_tensor = TileTensor(b_device, row_major(Coord(Idx[N], Idx[K])))
+    var c_tensor = TileTensor(c_device, row_major(Coord(Idx[M], Idx[N])))
 
     var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
     var b_device_n = ctx.enqueue_create_buffer[dtype](N * K)
@@ -676,7 +676,7 @@ def run_batched_matmul(
     @parameter
     def elementwise_epilogue_fn1[
         c_type: DType,
-        width: Int,
+        width: SIMDSize,
         rank: Int,
         *,
         alignment: Int = 1,
@@ -698,7 +698,7 @@ def run_batched_matmul(
     @parameter
     def elementwise_epilogue_fn2[
         c_type: DType,
-        width: Int,
+        width: SIMDSize,
         rank: Int,
         *,
         alignment: Int = 1,

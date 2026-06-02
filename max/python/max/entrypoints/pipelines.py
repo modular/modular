@@ -178,7 +178,11 @@ def configure_telemetry(color: str | None = None) -> None:
 
 
 def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
-    @click.option("--port", type=int, help="Port to run the server on.")
+    @click.option(
+        "--port",
+        type=int,
+        help="Port for the HTTP API. Defaults to ``8000``.",
+    )
     @click.option(
         "--headless",
         is_flag=True,
@@ -224,15 +228,17 @@ def cli_serve(
 ) -> None:
     """Start a model serving endpoint for inference.
 
-    This command launches a server that can handle inference requests for the
-    specified model. The server supports various performance optimization
-    options and monitoring capabilities.
+    Loads a model from a Hugging Face model ID or local path and
+    exposes OpenAI-compatible HTTP endpoints for inference requests.
     """
     from max.entrypoints.cli import serve_api_server_and_model_worker
-    from max.entrypoints.cli.config import parse_task_flags
     from max.entrypoints.workers import start_workers
-    from max.interfaces import PipelineTask, SamplingParams, SamplingParamsInput
-    from max.pipelines import AudioGenerationConfig, PipelineConfig
+    from max.pipelines import PipelineConfig
+    from max.pipelines.modeling.types import (
+        PipelineTask,
+        SamplingParams,
+        SamplingParamsInput,
+    )
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
 
@@ -251,13 +257,7 @@ def cli_serve(
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
-    pipeline_config: PipelineConfig
-    if task == PipelineTask.AUDIO_GENERATION:
-        pipeline_config = AudioGenerationConfig.from_flags(
-            parse_task_flags(task_arg), **config_kwargs
-        )
-    else:
-        pipeline_config = PipelineConfig(**config_kwargs)
+    pipeline_config = PipelineConfig(**config_kwargs)
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:
@@ -344,8 +344,8 @@ def cli_pipeline(
     accepting image inputs for multimodal models.
     """
     from max.entrypoints.cli import generate_text_for_pipeline
-    from max.interfaces import SamplingParams, SamplingParamsInput
     from max.pipelines import PipelineConfig
+    from max.pipelines.modeling.types import SamplingParams, SamplingParamsInput
 
     params = SamplingParamsInput(
         top_k=top_k,

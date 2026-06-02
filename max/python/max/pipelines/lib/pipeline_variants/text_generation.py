@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import copy
 import dataclasses
 import json
 import logging
@@ -29,6 +28,7 @@ from max.driver import (
     Buffer,
     Device,
     DevicePinnedBuffer,
+    is_virtual_device_mode,
     load_devices,
 )
 from max.dtype import DType
@@ -40,7 +40,17 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import (
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.pipelines.core.exceptions import (
+    InputError,  # noqa: F401 (for docstring)
+)
+from max.pipelines.kv_cache import (
+    IncrementCacheLengthsProcessor,
+    PagedKVCacheManager,
+    load_kv_manager,
+)
+from max.pipelines.modeling.types import (
     BatchLogitsProcessor,
     LogProbabilities,
     Pipeline,
@@ -51,13 +61,6 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
-)
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.pipelines.kv_cache import (
-    IncrementCacheLengthsProcessor,
-    PagedKVCacheManager,
-    load_kv_manager,
 )
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
@@ -84,6 +87,7 @@ from ..sampling import (
     apply_logits_processors,
     token_sampler,
 )
+from ..utils import CompilationTimer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -180,6 +184,10 @@ class TextGenerationPipeline(
         self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
         # Initialize structured output helper for constrained decoding.
+        # The helper's ``enable_response_format_schema`` mirrors the user
+        # flag and gates user-supplied JSON schemas; the bitmask-in-the-graph
+        # decisions below are gated separately on
+        # ``pipeline_config.needs_bitmask_constraints``.
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
@@ -241,39 +249,38 @@ class TextGenerationPipeline(
             )
         )
 
-        # Load sampler.
+        # Load sampler. The bitmask-aware sampler is loaded when constrained
+        # decoding could fire (see ``needs_bitmask_constraints``).
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
-        if pipeline_config.sampling.enable_structured_output:
-            self._sampler_with_bitmask = session.load(
-                token_sampler(
+        with_bitmask_graph = None
+        with CompilationTimer("sampler") as sampler_timer:
+            if pipeline_config.needs_bitmask_constraints:
+                with_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
                     device=DeviceRef.from_device(self._devices[0]),
+                    needs_bitmask_input=True,
                 )
+            without_bitmask_graph = token_sampler(
+                pipeline_config.sampling,
+                device=DeviceRef.from_device(self._devices[0]),
+                needs_bitmask_input=False,
             )
-            cfg_without_bitmask = copy.deepcopy(pipeline_config.sampling)
-            cfg_without_bitmask.enable_structured_output = False
-            self._sampler_without_bitmask = session.load(
-                token_sampler(
-                    cfg_without_bitmask,
-                    device=DeviceRef.from_device(self._devices[0]),
-                )
-            )
-        else:
-            self._sampler_without_bitmask = session.load(
-                token_sampler(
-                    pipeline_config.sampling,
-                    device=DeviceRef.from_device(self._devices[0]),
-                )
-            )
+            sampler_timer.mark_build_complete()
+            if with_bitmask_graph is not None:
+                self._sampler_with_bitmask = session.load(with_bitmask_graph)
+            self._sampler_without_bitmask = session.load(without_bitmask_graph)
 
-        # Pre-allocate pinned buffer for D2H token copies only when structured
-        # output is enabled. This buffer is used for async token transfers in
-        # the guided decoding path. Allocated once and reused across batches.
+        # Pre-allocate pinned buffer for D2H token copies only when the
+        # bitmask path is wired in. This buffer is used for async token
+        # transfers in the guided decoding path. Allocated once and reused
+        # across batches. Skip in virtual device mode (compile-only) since
+        # VirtualDevice does not support memory allocation.
         self._pinned_new_tokens: Buffer | None = None
         if (
-            pipeline_config.sampling.enable_structured_output
+            pipeline_config.needs_bitmask_constraints
             and not self._devices[0].is_host
+            and not is_virtual_device_mode()
         ):
             max_batch_size = pipeline_config.runtime.max_batch_size
             assert max_batch_size is not None, "max_batch_size must be set"
@@ -324,7 +331,7 @@ class TextGenerationPipeline(
             index: Global position into the bitmask for this request.
 
         Raises:
-            ValueError: If a JSON schema is provided but structured output is not
+            InputError: If a JSON schema is provided but structured output is not
                 enabled via sampling configuration.
         """
         self._structured_output.update_context(context, bitmask, index)

@@ -25,17 +25,17 @@ from max.driver import CPU, Buffer, Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType, ops
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.denoising_cache import (
+from max.pipelines.diffusion.cache import (
+    DenoisingCacheConfig,
     TaylorSeerBufferState,
     TaylorSeerCache,
 )
-from max.pipelines.lib.interfaces import TensorStruct
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.modeling.base import TensorStruct
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.profiler import Tracer, traced
 from typing_extensions import Self
 

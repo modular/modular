@@ -15,13 +15,11 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import NonCallableMock, patch
 
 import numpy as np
 from max.driver import CPU
 from max.dtype import DType
-from max.pipelines.lib.config.lora_config import LoRAConfig
-from max.pipelines.lib.lora import LoRAManager, LoRARequestProcessor
+from max.pipelines.lora import LoRAConfig, LoRAManager
 
 
 class MockTextContext:
@@ -68,17 +66,14 @@ def create_test_lora_manager(
         lora_paths=[],
     )
 
-    with patch("max.pipelines.lib.lora.LoRARequestProcessor") as mock_processor:
-        mock_processor.return_value = NonCallableMock(spec=LoRARequestProcessor)
-        manager = LoRAManager(
-            config=config,
-            base_model_path="base_model",
-            base_dtype=DType.bfloat16,
-            n_heads=32,
-            n_kv_heads=8,
-            head_dim=128,
-            zmq_endpoint_base="tcp://127.0.0.1:5555",
-        )
+    manager = LoRAManager(
+        config=config,
+        base_model_path="base_model",
+        base_dtype=DType.bfloat16,
+        n_heads=32,
+        n_kv_heads=8,
+        head_dim=128,
+    )
 
     if lora_configs:
         for lora_name, rank in lora_configs.items():

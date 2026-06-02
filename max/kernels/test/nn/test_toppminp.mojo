@@ -172,7 +172,7 @@ def test_case_sampling[
     )
     var token_ids = TileTensor(
         token_ids_ptr,
-        row_major(Coord(batch_size, Idx[1]())),
+        row_major(Coord(batch_size, Idx[1])),
     )
     var p_thresholds_ptr = List(length=batch_size, fill=Scalar[dtype](0))
     var p_thresholds = TileTensor(

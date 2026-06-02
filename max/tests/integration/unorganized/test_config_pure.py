@@ -23,7 +23,6 @@ import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.dtype import DType
 from max.entrypoints.cli.config import parse_task_flags
-from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -33,10 +32,10 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     SamplingConfig,
 )
-from max.pipelines.lib.config import AudioGenerationConfig
-from max.pipelines.lib.config.config_enums import SupportedEncoding
-from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
+from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (
     mock_estimate_memory_footprint,
     mock_pipeline_config_resolve,
@@ -452,6 +451,44 @@ class TestPipelineConfigUtilityMethods:
 
         assert config.runtime.max_batch_size == 4
         assert config.runtime.denoising_cache.first_block_caching is True
+
+
+class TestNeedsBitmaskConstraints:
+    """Tests for the ``PipelineConfig.needs_bitmask_constraints`` property.
+
+    The property drives whether the bitmask path is compiled into the
+    sampler graph, the unified Eagle graph, and the D2H pinned buffer.
+    Tool-call grammars are server-generated when a tool parser is
+    configured, so the bitmask path must wire in for that case even
+    without ``--enable-structured-output``.
+    """
+
+    @mock_pipeline_config_resolve
+    @pytest.mark.parametrize(
+        "enable_structured_output,tool_parser,expected",
+        [
+            (False, None, False),
+            (True, None, True),
+            (False, "kimik2_5", True),
+            (True, "kimik2_5", True),
+        ],
+    )
+    def test_truth_table(
+        self,
+        enable_structured_output: bool,
+        tool_parser: str | None,
+        expected: bool,
+    ) -> None:
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+            sampling=SamplingConfig(
+                enable_structured_output=enable_structured_output
+            ),
+            runtime=PipelineRuntimeConfig(tool_parser=tool_parser),
+        )
+        assert config.needs_bitmask_constraints is expected
 
 
 class TestDraftModelDefaultsInheritance:
@@ -1756,25 +1793,6 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     config._validate_and_resolve_overlap_scheduler()
     assert config.runtime.enable_overlap_scheduler is True
     assert config.runtime.max_num_steps == 1
-
-    # Error out if user tries to enable overlap scheduler with AudioGenerationConfig
-    config = AudioGenerationConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="test/model",
-                    device_specs=[DeviceSpec.accelerator()],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            pipeline_role="prefill_and_decode",
-            enable_overlap_scheduler=True,
-        ),
-        audio_decoder=Mock(),
-    )
-    with pytest.raises(ValueError):
-        config._validate_and_resolve_overlap_scheduler()
 
     # Error out if user tries to enable overlap scheduler with structured output
     config = PipelineConfig(

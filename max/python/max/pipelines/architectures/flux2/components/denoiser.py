@@ -29,6 +29,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.graph import Module as GraphModule
 from max.graph.weights import load_weights
 from max.nn.comm import Signals
 from max.nn.layer import Module
@@ -191,8 +192,10 @@ class Denoiser(CompiledComponent):
         self,
         manifest: ModelManifest,
         session: InferenceSession,
+        *,
+        graphs_module: GraphModule | None = None,
     ) -> None:
-        super().__init__(manifest, session)
+        super().__init__(manifest, session, graphs_module=graphs_module)
 
         config = manifest["transformer"]
         config_dict = config.huggingface_config.to_dict()
@@ -251,7 +254,11 @@ class Denoiser(CompiledComponent):
         else:
             self._signal_buffers = []
 
-        with Graph("denoise_step", input_types=input_types) as graph:
+        with Graph(
+            "denoise_step",
+            input_types=input_types,
+            module=self._graphs_module,
+        ) as graph:
             inputs = list(graph.inputs)
             tensor_inputs = inputs[: len(tensor_types)]
             buffer_inputs = inputs[len(tensor_types) :]
@@ -261,9 +268,7 @@ class Denoiser(CompiledComponent):
             )
             graph.output(outputs)
 
-        self._model = self._load_graph(
-            graph, weights_registry=fused.state_dict()
-        )
+        self._load_graph(graph, weights_registry=fused.state_dict())
 
     @traced(message="Denoiser.__call__")
     def __call__(

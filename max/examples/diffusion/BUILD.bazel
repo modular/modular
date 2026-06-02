@@ -19,10 +19,12 @@ modular_py_binary(
     srcs = ["flux2_comparison.py"],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         requirement("diffusers"),
         requirement("pillow"),
         requirement("pydantic"),
@@ -39,10 +41,12 @@ modular_py_binary(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         requirement("accelerate"),
         requirement("av"),
         requirement("diffusers"),
@@ -58,10 +62,12 @@ modular_py_binary(
     srcs = ["wan_mem_repro.py"],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         requirement("torch"),
     ],
 )
@@ -87,10 +93,10 @@ modular_py_binary(
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":profiler",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("pillow"),
         requirement("sentencepiece"),

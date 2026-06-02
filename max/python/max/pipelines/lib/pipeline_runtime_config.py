@@ -18,11 +18,9 @@ from __future__ import annotations
 import os
 
 from max.config import ConfigFileModel
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.modeling.config_enums import PipelineRole
 from pydantic import Field, PrivateAttr
-
-from .config.config_enums import PipelineRole
-from .interfaces.cache_mixin import DenoisingCacheConfig
 
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
@@ -71,8 +69,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Soft floor on the decode batch size. If the TG batch size is "
             "larger, the scheduler continues TG batches; if it falls below, the "
             "scheduler prioritizes CE. This is not a strict minimum. By "
-            "default, this is ``max_queue_size_tg``. Experimental for the TTS "
-            "scheduler."
+            "default, this is ``max_queue_size_tg``."
         ),
     )
 
@@ -95,8 +92,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     ce_delay_ms: float = Field(
         default=0.0,
         description=(
-            "Duration of scheduler sleep prior to starting a prefill batch. "
-            "Experimental for the TTS scheduler."
+            "Duration of scheduler sleep prior to starting a prefill batch."
         ),
     )
 
@@ -105,7 +101,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "When enabled, the scheduler always runs a TG batch immediately "
             "after a CE batch with the same requests. This may reduce "
-            "time-to-first-chunk latency. Experimental for the TTS scheduler."
+            "time-to-first-chunk latency."
         ),
     )
 
@@ -171,20 +167,11 @@ class PipelineRuntimeConfig(ConfigFileModel):
     custom_architectures: list[str] = Field(
         default_factory=list,
         description=(
-            "Custom architecture implementations to register. Each input can "
-            "either be a raw module name or an import path followed by a colon "
-            "and the module name. Each module must expose an ``ARCHITECTURES`` list "
-            "of architectures to register."
-        ),
-    )
-
-    zmq_endpoint_base: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description=(
-            "Prefix for ZMQ endpoints used for IPC. This ensures unique "
-            "endpoints across MAX Serve instances on the same host. Example: "
-            "``lora_request_zmq_endpoint = "
-            'f"{zmq_endpoint_base}-lora_request"``.'
+            "Custom architecture implementations to register. Each input is "
+            "either a path to a single custom-architecture module directory "
+            "or an ``IMPORT_PATH:MODULE_NAME`` colon-form. Each module must "
+            "expose a top-level ``ARCHITECTURES`` list of "
+            "``SupportedArchitecture`` instances."
         ),
     )
 

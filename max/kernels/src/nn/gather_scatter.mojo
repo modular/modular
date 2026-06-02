@@ -31,7 +31,7 @@ from layout import (
 from std.memory import memcpy
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from tensor import ManagedTensorSlice
+from extensibility import ManagedTensorSlice
 
 from std.utils import IndexList, StaticTuple
 from std.collections import OptionalReg
@@ -348,33 +348,30 @@ def gather[
             )
             input.prefetch(input_coords)
 
-    @parameter
     @always_inline
     def input_fn[
         width: Int, _rank: Int, element_alignment: Int
-    ](index: IndexList[_rank]) -> SIMD[dtype, width]:
+    ](index: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
         var coords = Coord(index)
         comptime assert input.flat_rank >= coords.flat_rank
         return input.load[
             width=width, alignment=element_alignment * align_of[dtype]()
         ](coords)
 
-    @parameter
     @always_inline
     def indices_fn[
         width: Int, _rank: Int
-    ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
+    ](index: IndexList[_rank]) {var indices} -> SIMD[indices_type, width]:
         var coords = Coord(index)
         comptime assert indices.flat_rank >= coords.flat_rank
         return indices.load[width=width, alignment=align_of[indices_type]()](
             coords
         )
 
-    @parameter
     @always_inline
     def output_fn[
         width: SIMDSize, _rank: Int, element_alignment: Int
-    ](index: IndexList[_rank], val: SIMD[dtype, width]):
+    ](index: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
         var coords = Coord(index)
         comptime assert output.flat_rank >= coords.flat_rank
         output.store[
@@ -382,9 +379,8 @@ def gather[
         ](coords, rebind[SIMD[dtype, width]](val))
 
     gather[
-        input_fn=input_fn,
-        indices_fn=indices_fn,
-        output_fn=output_fn,
+        dtype,
+        indices_type,
         prefetch_fn=prefetch_fn,
         target=target,
     ](
@@ -392,6 +388,9 @@ def gather[
         coord_to_index_list(input.layout.shape_coord()),
         coord_to_index_list(indices.layout.shape_coord()),
         coord_to_index_list(output.layout.shape_coord()),
+        input_fn=input_fn,
+        indices_fn=indices_fn,
+        output_fn=output_fn,
         context=context,
     )
 
@@ -426,111 +425,105 @@ def gather_guards(
         raise Error("gather: axis must be less than input rank")
 
 
-comptime error_index_fn_type = def(Int) capturing -> None
-
-
 @always_inline
 def gather_elementwise_fn_wrapper[
     dtype: DType,
     indices_type: DType,
-    //,
-    *,
-    input_fn: def[width: Int, rank: Int, element_alignment: Int](
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int, element_alignment: Int](
         IndexList[rank]
-    ) capturing -> SIMD[dtype, width],
-    indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        indices_type, width
-    ],
-    output_fn: def[width: SIMDSize, rank: Int, element_alignment: Int](
+    ) -> SIMD[dtype, width],
+    IndicesFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[indices_type, width],
+    OutputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDSize, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
-    ) capturing -> None,
+    ) -> None,
+    *,
     simd_width: Int,
     prefetch_fn: OptionalReg[
         def[
             input_rank: Int, indices_rank: Int
         ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
-    error_index_fn: Optional[error_index_fn_type] = None,
+    target: StaticString = "cpu",
     element_alignment: Int = 1,
 ](
+    input_fn: InputFnType,
+    indices_fn: IndicesFnType,
+    output_fn: OutputFnType,
     axis: Axis,
     input_shape: IndexList,
     indices_shape: IndexList,
     output_shape: IndexList,
     coords: IndexList,
+    error_index_ptr: OptionalReg[UnsafePointer[Int, MutAnyOrigin]] = None,
 ):
-    @parameter
-    @always_inline
-    def gather_elementwise_fn[
-        simd_width: Int, rank: Int
-    ](idx: IndexList[rank, ...]):
-        # out_coords consists of 3 chunks:
-        #   out_coords[0:axis] = input coords[0:axis]
-        #   out_coords[axis:axis+indices_rank] = indices_coords
-        #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
-        # and input_coords[axis] = indices[indices_coords]
-        # Get the gather indices.
-        var indices_index = IndexList[indices_shape.size]()
+    # out_coords consists of 3 chunks:
+    #   out_coords[0:axis] = input coords[0:axis]
+    #   out_coords[axis:axis+indices_rank] = indices_coords
+    #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
+    # and input_coords[axis] = indices[indices_coords]
+    # Get the gather indices.
+    var indices_index = IndexList[indices_shape.size]()
 
-        # Get the indices of the index.
-        comptime for i in range(indices_shape.size):
-            indices_index[i] = idx[i + Int(axis)]
+    # Get the indices of the index.
+    comptime for i in range(indices_shape.size):
+        indices_index[i] = coords[i + Int(axis)]
 
-        # The index we are gathering.
-        var data_index = indices_fn[1, indices_shape.size](indices_index)
+    # The index we are gathering.
+    var data_index = indices_fn[1, indices_shape.size](indices_index)
 
-        # Update the indices with the new data index.
-        var data_indices = IndexList[input_shape.size]()
+    # Update the indices with the new data index.
+    var data_indices = IndexList[input_shape.size]()
 
-        var skip_factor = indices_shape.size - 1
+    var skip_factor = indices_shape.size - 1
 
-        # Build the indices for the input. We have replaced in index in 'axis'
-        # with an index from the indices tensor.
-        comptime for i in range(input_shape.size):
-            if i == Int(axis):
-                var normalized_idx = _unsafe_normalize_neg_index(
-                    data_index, input_shape[axis]
-                )
-                data_indices[i] = Int(normalized_idx)
-
-                # Do a real bounds check and provide a nice message on CPU
-                # (where error_index_fn is provided). Use debug_assert to
-                # validate normalized index is within bounds on GPU and trap,
-                # as more detailed checking is costly on GPU.
-                comptime if error_index_fn:
-                    if not (0 <= Int(normalized_idx) < input_shape[axis]):
-                        comptime error_index_func = error_index_fn.value()
-                        # Store the invalid index for debugging
-                        error_index_func(Int(data_index))
-                        return  # Early return on bounds error
-
-                debug_assert[assert_mode="safe"](
-                    0 <= Int(normalized_idx) < input_shape[axis],
-                    (
-                        "Gather index out of bounds. Run on CPU for more"
-                        " detailed error checking."
-                    ),
-                )
-            elif i > Int(axis):
-                # Skip over any extra indices dimensions. These are essentially new dimensions.
-                data_indices[i] = idx[i + skip_factor]
-            else:
-                data_indices[i] = idx[i]
-
-        # Load the data.
-        comptime if prefetch_fn:
-            comptime func = prefetch_fn.value()
-            func[input_shape.size, indices_shape.size](
-                data_indices, indices_index
+    # Build the indices for the input. We have replaced in index in 'axis'
+    # with an index from the indices tensor.
+    comptime for i in range(input_shape.size):
+        if i == Int(axis):
+            var normalized_coords = _unsafe_normalize_neg_index(
+                data_index, input_shape[axis]
             )
-        var data = input_fn[simd_width, input_shape.size, element_alignment](
-            data_indices
-        )
+            data_indices[i] = Int(normalized_coords)
 
-        # Store it to the original index.
-        output_fn[simd_width, rank, element_alignment](idx.canonicalize(), data)
+            # Do a real bounds check and provide a nice message on CPU.
+            # Use debug_assert to validate normalized index is within bounds
+            # on GPU and trap, as more detailed checking is costly on GPU.
+            comptime if is_cpu[target]():
+                if not (0 <= Int(normalized_coords) < input_shape[axis]):
+                    error_index_ptr.value()[] = Int(data_index)
+                    return  # Early return on bounds error
 
-    gather_elementwise_fn[simd_width](coords)
+            debug_assert[assert_mode="safe"](
+                0 <= Int(normalized_coords) < input_shape[axis],
+                (
+                    "Gather index out of bounds. Run on CPU for more"
+                    " detailed error checking."
+                ),
+            )
+        elif i > Int(axis):
+            # Skip over any extra indices dimensions. These are essentially new dimensions.
+            data_indices[i] = coords[i + skip_factor]
+        else:
+            data_indices[i] = coords[i]
+
+    # Load the data.
+    comptime if prefetch_fn:
+        comptime func = prefetch_fn.value()
+        func[input_shape.size, indices_shape.size](data_indices, indices_index)
+    var data = input_fn[simd_width, input_shape.size, element_alignment](
+        data_indices
+    )
+
+    # Store it to the original index.
+    output_fn[simd_width, coords.size, element_alignment](
+        coords.canonicalize(), data
+    )
 
 
 # TODO: Delete / for testing purposes (test_gather.mojo)
@@ -538,17 +531,20 @@ def gather_elementwise_fn_wrapper[
 def gather[
     dtype: DType,
     indices_type: DType,
-    //,
-    *,
-    input_fn: def[width: Int, rank: Int, element_alignment: Int](
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int, element_alignment: Int](
         IndexList[rank]
-    ) capturing -> SIMD[dtype, width],
-    indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        indices_type, width
-    ],
-    output_fn: def[width: SIMDSize, rank: Int, element_alignment: Int](
+    ) -> SIMD[dtype, width],
+    IndicesFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[indices_type, width],
+    OutputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDSize, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
-    ) capturing -> None,
+    ) -> None,
+    *,
     prefetch_fn: OptionalReg[
         def[
             input_rank: Int, indices_rank: Int
@@ -561,6 +557,9 @@ def gather[
     indices_shape: IndexList,
     output_shape: IndexList,
     *,
+    input_fn: InputFnType,
+    indices_fn: IndicesFnType,
+    output_fn: OutputFnType,
     context: DeviceContext,
 ) raises:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
@@ -583,57 +582,66 @@ def gather[
             return
 
         # Create an error reporting location since we cannot raise from an elementwise lambda.
-        var error_index: Int = -1  # Initialize invalid index
+        var error_index: Int = -1
+        var error_index_ptr = OptionalReg[UnsafePointer[Int, MutAnyOrigin]](
+            None
+        )
+        comptime if is_cpu[target]():
+            error_index_ptr = OptionalReg[UnsafePointer[Int, MutAnyOrigin]](
+                UnsafePointer[Int, MutAnyOrigin](to=error_index)
+            )
 
-        @parameter
-        @always_inline
-        def error_index_fn(val: Int):
-            error_index = val
-
-        comptime error_fn = Optional[error_index_fn_type](
-            error_index_fn
-        ) if is_cpu[target]() else None
-
-        @parameter
         @always_inline
         def gather_elementwise_fn[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {
+            var axis,
+            var input_shape,
+            var indices_shape,
+            var output_shape,
+            var input_fn,
+            var indices_fn,
+            var output_fn,
+            var error_index_ptr,
+        }:
             gather_elementwise_fn_wrapper[
-                input_fn=input_fn,
-                indices_fn=indices_fn,
-                output_fn=output_fn,
+                dtype,
+                indices_type,
                 simd_width=simd_width,
                 prefetch_fn=prefetch_fn,
-                error_index_fn=error_fn,
+                target=target,
                 element_alignment=alignment,
             ](
+                input_fn,
+                indices_fn,
+                output_fn,
                 axis,
                 input_shape.canonicalize(),
                 indices_shape.canonicalize(),
                 output_shape.canonicalize(),
-                idx,
+                coord_to_index_list(idx),
+                error_index_ptr,
             )
 
         # If we are gathering on the last dimension then we have to be scalar.
         if Int(axis) == input_shape.size - 1:
             elementwise[
-                gather_elementwise_fn,
                 simd_width=1,
                 target=target,
                 _trace_description="gather",
             ](
-                output_shape.canonicalize(),
+                gather_elementwise_fn,
+                Coord(output_shape),
                 context,
             )
         else:
             elementwise[
-                gather_elementwise_fn,
                 simd_width=simd_width_of[dtype, target=compile_target](),
                 target=target,
                 _trace_description="gather",
             ](
-                output_shape.canonicalize(),
+                gather_elementwise_fn,
+                Coord(output_shape),
                 context,
             )
 
@@ -805,15 +813,14 @@ def scatter_nd_generator[
         @parameter
         def update_func[
             simd_width: Int,
-            _rank: Int,
             alignment: Int = 1,
-        ](_indices_coords: IndexList[_rank]):
+        ](_indices_coords: Coord):
             # Calculate how many elements to copy (this is from the innermost
             # dimensions, and is continuous memory locations).
             var count_copy = 1
             for i in range(r_minus_m):
                 count_copy = count_copy * data_shape[data.rank - 1 - i]
-            var indices_coords = rebind[IndexList[_rank]](_indices_coords)
+            var indices_coords = coord_to_index_list(_indices_coords)
 
             # Stores the full index on output, where to copy updates to.
             # Zeroing here to avoid doing it selectively within the nested loop below.
@@ -824,7 +831,7 @@ def scatter_nd_generator[
             var updates_index_tensor = IndexList[updates.rank](0)
 
             # Construct the full index on updates tensor, i.e., where to copy from.
-            for dim in range(_rank):
+            for dim in range(_indices_coords.rank):
                 updates_index_tensor[dim] = indices_coords[dim]
 
             # Construct the output_index_tensor whose elements contain the indices
@@ -838,7 +845,7 @@ def scatter_nd_generator[
                 # Used to compare to index on this dimension (idx_on_axis).
                 var input_ax_dim = data_shape[dim]
 
-                for i in range(_rank):
+                for i in range(_indices_coords.rank):
                     indices_index[i] = indices_coords[i]
                 indices_index[indices.rank - 1] = dim
 
@@ -893,22 +900,21 @@ def scatter_nd_generator[
                         updates_offset + i
                     ]
 
-        # TODO: SEE: simd_width > 1
-        var iter_shape = IndexList[indices.rank - 1]()
-
-        comptime for i in range(indices.rank - 1):
-            iter_shape[i] = Int(indices.dim[i]())
-
         comptime trace_description_str = get_static_string[
             "elementwise_impl_" + _trace_description
         ]()
+
+        # Iterate over indices.shape[:-1], i.e. one update vector per index row.
+        var iter_shape = IndexList[indices.rank - 1]()
+        comptime for i in range(indices.rank - 1):
+            iter_shape[i] = Int(indices.dim[i]())
 
         elementwise[
             update_func,
             simd_width=1,
             target=target,
             _trace_description=trace_description_str,
-        ](iter_shape, context)
+        ](Coord(iter_shape), context)
 
 
 @always_inline
@@ -1105,22 +1111,19 @@ def scatter_elements[
 
     @__copy_capture(axis, input_ax_dim)
     @parameter
-    def update_func[
-        simd_width: Int, _rank: Int, alignment: Int = 1
-    ](_indices_coords: IndexList[_rank]):
-        var indices_coords = rebind[IndexList[rank]](_indices_coords)
-        var idx_on_axis = indices[indices_coords]
-        var output_coords = indices_coords
+    def update_func[simd_width: Int, alignment: Int = 1](indices_coords: Coord):
+        var idx_on_axis = indices.to_tile_tensor()[indices_coords]
+        var output_coords = coord_to_index_list(indices_coords)
         output_coords[axis] = Int(
             _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
-        var curr = output[output_coords]
-        output[output_coords] = reduce_fn[input_type, 1](
-            curr, updates[indices_coords]
-        )
+        var curr = output.to_tile_tensor()[Coord(output_coords)]
+        output.to_tile_tensor()[Coord(output_coords)] = reduce_fn[
+            input_type, 1
+        ](curr, updates.to_tile_tensor()[indices_coords])
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[update_func, 1](indices.shape(), ctx)
+    elementwise[update_func, 1](Coord(indices.shape()), ctx)
 
 
 @always_inline
@@ -1217,14 +1220,11 @@ def gather_elements[
 
     @__copy_capture(input_ax_dim, axis)
     @parameter
-    def gather_func[
-        simd_width: Int, _rank: Int, alignment: Int = 1
-    ](_output_coords: IndexList[_rank]):
-        var output_coords = Coord(_output_coords)
+    def gather_func[simd_width: Int, alignment: Int = 1](output_coords: Coord):
         comptime assert indices.flat_rank >= output_coords.flat_rank
         comptime assert output.flat_rank >= output_coords.flat_rank
         var idx_on_axis = indices.load[width=1](output_coords)
-        var input_idx = _output_coords
+        var input_idx = coord_to_index_list(output_coords)
         input_idx[axis] = Int(
             _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
@@ -1233,9 +1233,7 @@ def gather_elements[
         output.store(output_coords, input.load[width=1](input_coords))
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[gather_func, 1](
-        coord_to_index_list(output.layout.shape_coord()), ctx
-    )
+    elementwise[gather_func, 1](output.layout.shape_coord(), ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1378,9 +1376,9 @@ def _gather_nd_impl[
     # output to an index in the input
     @parameter
     def gather_nd_elementwise_fn[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](output_idx_arg: IndexList[rank]):
-        var output_idx = rebind[IndexList[output.rank]](output_idx_arg)
+        simd_width: Int, alignment: Int = 1
+    ](output_idx_arg: Coord):
+        var output_idx = coord_to_index_list(output_idx_arg)
         var data_idx = IndexList[data.rank]()
         var indices_idx = IndexList[indices.rank]()
         var indices_last_dim = Int(indices.dim[indices.rank - 1]())
@@ -1412,9 +1410,9 @@ def _gather_nd_impl[
             ), "data index out of bounds"
 
         comptime for i in range(output.rank):
-            assert output_idx[i] >= 0 and output_idx[i] < Int(
-                output.dim[i]()
-            ), "output index out of bounds"
+            assert Int(output_idx[i].value()) >= 0 and Int(
+                output_idx[i].value()
+            ) < Int(output.dim[i]()), "output index out of bounds"
 
         var data_coord = Coord(data_idx)
         var output_coord = Coord(output_idx)
@@ -1451,13 +1449,13 @@ def _gather_nd_impl[
                 gather_nd_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cpu_ctx)
+            ](output.layout.shape_coord(), cpu_ctx)
         else:
             elementwise[
                 gather_nd_elementwise_fn,
                 1,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cpu_ctx)
+            ](output.layout.shape_coord(), cpu_ctx)
     else:
         assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
@@ -1466,13 +1464,13 @@ def _gather_nd_impl[
                 gather_nd_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
+            ](output.layout.shape_coord(), cuda_ctx)
         else:
             elementwise[
                 gather_nd_elementwise_fn,
                 1,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
+            ](output.layout.shape_coord(), cuda_ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1531,14 +1529,12 @@ def scatter_set_constant[
 
     @always_inline
     @parameter
-    def scatter_set_constant_fn[
-        width: Int, rank_: Int, alignment: Int = 1
-    ](idx: IndexList[rank_]):
-        comptime assert rank_ == 1, "scatter_set_constant_fn: rank must be 1"
+    def scatter_set_constant_fn[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 1, "scatter_set_constant_fn: rank must be 1"
 
         data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value
 
-    var dispatch_shape = IndexList[1](Int(indices.dim[0]()))
+    var dispatch_shape = Coord(Int(indices.dim[0]()))
     elementwise[
         func=scatter_set_constant_fn,
         simd_width=1,

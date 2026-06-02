@@ -436,9 +436,9 @@ struct AttentionRDNA[
             Self.KvTileLayout(
                 Coord(
                     Int64(kv_tile_num_rows),
-                    Idx[Self.depth](),
+                    Idx[Self.depth],
                 ),
-                Coord(Idx[Self._kv_stride0](), Idx[1]()),
+                Coord(Idx[Self._kv_stride0], Idx[1]),
             ),
         )
 
@@ -452,6 +452,7 @@ struct AttentionRDNA[
     ) -> TileMaskStatus:
         comptime if Self.token_gen:
             return self.mask.status(
+                UInt32(self.batch_idx),
                 IndexList[2, element_type=DType.uint32](
                     Int(self.num_keys - 1),
                     Int(kv_tile_start_row),
@@ -460,6 +461,7 @@ struct AttentionRDNA[
             )
         else:
             return self.mask.status(
+                UInt32(self.batch_idx),
                 IndexList[2, element_type=DType.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
@@ -603,9 +605,9 @@ struct AttentionRDNA[
             layout=Self.QTileLayout(
                 Coord(
                     Int64(valid_rows),
-                    Idx[Self.q_depth](),
+                    Idx[Self.q_depth],
                 ),
-                Coord(Idx[Self._q_stride0](), Idx[1]()),
+                Coord(Idx[Self._q_stride0], Idx[1]),
             ),
         )
         self.q_buffer = Self.QRegisterBufferType(q_tile, Int(valid_rows))
@@ -617,11 +619,11 @@ struct AttentionRDNA[
             layout=Self.OutputTileLayout(
                 Coord(
                     Int64(valid_rows),
-                    Idx[Self.output_depth](),
+                    Idx[Self.output_depth],
                 ),
                 Coord(
-                    Idx[Self._output_stride0](),
-                    Idx[1](),
+                    Idx[Self._output_stride0],
+                    Idx[1],
                 ),
             ),
         )

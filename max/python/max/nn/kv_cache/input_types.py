@@ -38,6 +38,13 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     kv_scales: _Buffer | None = None  # KV scales for FP8 quantization
     attention_dispatch_metadata: _Tensor | None = None
     draft_attention_dispatch_metadata: _Tensor | None = None
+    # Capturable-graph scalars: when present, the SM100 MLA dispatcher uses
+    # these to align grid-time partition decisions with the kernel's divmod
+    # on scalar_args[2]. Only populated for MLA paths; None otherwise.
+    mla_num_partitions: _Tensor | None = None
+    mla_effective_split_len: _Tensor | None = None
+    draft_mla_num_partitions: _Tensor | None = None
+    draft_mla_effective_split_len: _Tensor | None = None
 
     def __post_init__(self) -> None:
         tensor = self.attention_dispatch_metadata
@@ -52,6 +59,19 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
                     "expected attention_dispatch_metadata rank 1, got "
                     f"{tensor.rank}"
                 )
+        for name in (
+            "mla_num_partitions",
+            "mla_effective_split_len",
+            "draft_mla_num_partitions",
+            "draft_mla_effective_split_len",
+        ):
+            t = getattr(self, name)
+            if t is None:
+                continue
+            if t.dtype != DType.int64:
+                raise ValueError(f"expected {name} dtype int64, got {t.dtype}")
+            if t.rank != 1:
+                raise ValueError(f"expected {name} rank 1, got {t.rank}")
 
     def flatten(self) -> list[_Tensor | _Buffer]:
         return [
@@ -68,6 +88,22 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             *(
                 (self.draft_attention_dispatch_metadata,)
                 if self.draft_attention_dispatch_metadata
+                else ()
+            ),
+            *((self.mla_num_partitions,) if self.mla_num_partitions else ()),
+            *(
+                (self.mla_effective_split_len,)
+                if self.mla_effective_split_len
+                else ()
+            ),
+            *(
+                (self.draft_mla_num_partitions,)
+                if self.draft_mla_num_partitions
+                else ()
+            ),
+            *(
+                (self.draft_mla_effective_split_len,)
+                if self.draft_mla_effective_split_len
                 else ()
             ),
         ]
@@ -98,6 +134,16 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             else None,
             draft_attention_dispatch_metadata=next(it)
             if self.draft_attention_dispatch_metadata
+            else None,
+            mla_num_partitions=next(it) if self.mla_num_partitions else None,
+            mla_effective_split_len=next(it)
+            if self.mla_effective_split_len
+            else None,
+            draft_mla_num_partitions=next(it)
+            if self.draft_mla_num_partitions
+            else None,
+            draft_mla_effective_split_len=next(it)
+            if self.draft_mla_effective_split_len
             else None,
         )
 

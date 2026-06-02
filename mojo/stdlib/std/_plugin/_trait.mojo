@@ -53,6 +53,24 @@ trait PluginHooks:
         Elementwise `exp(x)` computed on the vendor backend.
     """
 
+    comptime tanh_fn[dtype: DType, width: Int]: Optional[
+        def[
+            dtype: DType, width: Int, //
+        ](SIMD[dtype, width]) thin -> SIMD[dtype, width]
+    ]
+    """Elementwise hyperbolic tangent override.
+
+    Parameters:
+        dtype: The `dtype` of the input and output SIMD vector.
+        width: The width of the input and output SIMD vector.
+
+    Args:
+        x: The input SIMD vector.
+
+    Returns:
+        Elementwise `tanh(x)` computed on the vendor backend.
+    """
+
     comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
         def[
             count: Int,
@@ -64,6 +82,17 @@ trait PluginHooks:
             type, MutExternalOrigin, address_space=address_space
         ]
     ]
+
+    comptime unsafe_dangling_fn: Optional[def[alignment: Int]() thin -> Int]
+    """`UnsafePointer.unsafe_dangling()` address override.
+
+    Parameters:
+        alignment: The natural alignment of the pointee type, which the
+            stdlib default uses as the dangling address.
+
+    Returns:
+        The raw integer address used to construct the dangling pointer.
+    """
 
     comptime print_emit_fn: Optional[PrintEmitFnType]
     """Plugin hook for emitting a `print()` UTF-8 byte buffer to a file
@@ -115,7 +144,7 @@ trait PluginHooks:
         func: Some[
             def[
                 width: Int, rank: Int, alignment: Int = 1
-            ](IndexList[rank]) register_passable -> None
+            ](IndexList[rank]) -> None
         ],
         shape: IndexList[rank, ...],
         ctx: DeviceContext,
@@ -182,6 +211,12 @@ struct DefaultPlugin(PluginHooks):
         ](SIMD[dtype, width]) thin -> SIMD[dtype, width]
     ] = None
 
+    comptime tanh_fn[dtype: DType, width: Int]: Optional[
+        def[
+            dtype: DType, width: Int, //
+        ](SIMD[dtype, width]) thin -> SIMD[dtype, width]
+    ] = None
+
     comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
         def[
             count: Int,
@@ -192,6 +227,10 @@ struct DefaultPlugin(PluginHooks):
         ]() thin -> UnsafePointer[
             type, MutExternalOrigin, address_space=address_space
         ]
+    ] = None
+
+    comptime unsafe_dangling_fn: Optional[
+        def[alignment: Int]() thin -> Int
     ] = None
 
     comptime print_emit_fn: Optional[PrintEmitFnType] = None
@@ -223,7 +262,7 @@ struct DefaultPlugin(PluginHooks):
         func: Some[
             def[
                 width: Int, rank: Int, alignment: Int = 1
-            ](IndexList[rank]) register_passable -> None
+            ](IndexList[rank]) -> None
         ],
         shape: IndexList[rank, ...],
         ctx: DeviceContext,

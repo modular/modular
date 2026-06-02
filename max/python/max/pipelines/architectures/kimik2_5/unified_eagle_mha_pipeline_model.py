@@ -31,7 +31,7 @@ from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, TensorValue, Value
+from max.graph import BufferValue, Graph, TensorValue, Value
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
@@ -78,12 +78,20 @@ class Eagle3MHAKimiK25Inputs(KimiK2_5ModelInputs):
     """Per-batch ``bool`` flag marking rows currently inside a
     ``<think>...</think>`` block; consumed by relaxed acceptance."""
 
-    token_bitmasks: Buffer | None = None
-    """Grammar constraint bitmask for structured output.
+    pinned_bitmask: Buffer | None = None
+    """Pinned host bitmask for constrained decoding.
 
-    Shape: [batch_size, num_speculative_tokens + 1, vocab_size]. ``None``
-    when structured output is not enabled.
+    Shape ``[batch_size, num_speculative_tokens + 1, vocab_size]``.
+    ``None`` when structured output is disabled.
     """
+
+    wait_payload: Buffer | None = None
+    """CPU ``int64[2]`` payload consumed by
+    ``mo.wait_host_value_with_dep``. ``None`` when off."""
+
+    device_bitmask_scratch: Buffer | None = None
+    """Device scratch buffer that receives the in-graph H2D from
+    ``pinned_bitmask``. ``None`` when off."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -128,8 +136,19 @@ class Eagle3MHAKimiK25Inputs(KimiK2_5ModelInputs):
                 self.min_top_p,
                 self.in_thinking_phase,
             )
-        if self.token_bitmasks is not None:
-            buffers += (self.token_bitmasks,)
+            # Constrained-decoding bitmask inputs are appended only on
+            # the spec-decode path. The bitmask triple's position in
+            # the tuple must match the order in ``input_types()``,
+            # which gates the bitmask inputs on both spec-decode and
+            # ``enable_structured_output``.
+            if self.pinned_bitmask is not None:
+                assert self.wait_payload is not None
+                assert self.device_bitmask_scratch is not None
+                buffers += (
+                    self.pinned_bitmask,
+                    self.wait_payload,
+                    self.device_bitmask_scratch,
+                )
         return buffers
 
 
@@ -254,7 +273,8 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
             data_parallel_degree=target_kv.data_parallel_degree,
             is_mla=False,
             num_q_heads=int(draft_hf.num_attention_heads),
-            num_eagle_speculative_tokens=target_kv.num_eagle_speculative_tokens,
+            speculative_method=target_kv.speculative_method,
+            num_draft_tokens=target_kv.num_draft_tokens,
         )
 
         draft_config = _build_mha_draft_config(
@@ -272,7 +292,7 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
             config,
             draft_config,
             speculative_config=self.pipeline_config.speculative,
-            enable_structured_output=self.pipeline_config.sampling.enable_structured_output,
+            enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
             enable_vision=True,
         )
 
@@ -434,9 +454,15 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
                 min_top_p = next(variadic_args_iter).tensor
                 in_thinking_phase = next(variadic_args_iter).tensor
 
-                token_bitmasks_graph: TensorValue | None = None
+                pinned_bitmask_graph: TensorValue | None = None
+                wait_payload_graph: BufferValue | None = None
+                device_bitmask_scratch_graph: BufferValue | None = None
                 if nn_model.enable_structured_output:
-                    token_bitmasks_graph = next(variadic_args_iter).tensor
+                    pinned_bitmask_graph = next(variadic_args_iter).tensor
+                    wait_payload_graph = next(variadic_args_iter).buffer
+                    device_bitmask_scratch_graph = next(
+                        variadic_args_iter
+                    ).buffer
 
                 outputs = nn_model(
                     tokens=tokens.tensor,
@@ -459,7 +485,9 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
                     image_token_indices=image_token_indices_in,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
-                    token_bitmasks=token_bitmasks_graph,
+                    pinned_bitmask=pinned_bitmask_graph,
+                    wait_payload=wait_payload_graph,
+                    device_bitmask_scratch=device_bitmask_scratch_graph,
                 )
                 graph.output(*outputs)
 

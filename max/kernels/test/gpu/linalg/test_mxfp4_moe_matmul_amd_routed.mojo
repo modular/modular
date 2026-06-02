@@ -347,10 +347,7 @@ def run_routed_test_case[
         n_e, expert_ids_input, topk, sort_block_m, sti_h, ei_h
     )
 
-    # ---- Host preshuffle (B per expert, SFB per expert, SFA per chunk) ----
-    var b_pre_hb = ctx.enqueue_create_host_buffer[DType.uint8](
-        num_experts * N * k_bytes
-    )
+    # ---- Host preshuffle (SFB per expert, SFA per chunk; B is preshuffled on-GPU below) ----
     var sfb_pre_hb = ctx.enqueue_create_host_buffer[DType.uint8](
         num_experts * sfb_per_expert_bytes
     )
@@ -362,17 +359,9 @@ def run_routed_test_case[
     )
     ctx.synchronize()
 
-    var b_h_tt = TileTensor(
-        b_h,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[k_bytes]())),
-    )
-    _ = Shuffler[num_experts].preshuffle_b_5d[N=N, K_BYTES=k_bytes](
-        b_h_tt, b_pre_hb
-    )
-
     var sfb_h_tt = TileTensor(
         sfb_h,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[k_scales]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[k_scales])),
     )
     _ = Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=k_scales](
         sfb_h_tt, sfb_pre_hb
@@ -402,7 +391,7 @@ def run_routed_test_case[
                     sfa_block_gathered[r * k_scales + kg] = UInt8(0)
         var sfa_block_tt = TileTensor(
             sfa_block_gathered,
-            row_major(Coord(Idx[1](), Idx[sort_block_m](), Idx[k_scales]())),
+            row_major(Coord(Idx[1], Idx[sort_block_m], Idx[k_scales])),
         )
         _ = Shuffler[1].preshuffle_scale_4d[MN=sort_block_m, K_SCALES=k_scales](
             sfa_block_tt, sfa_scratch_hb
@@ -412,6 +401,9 @@ def run_routed_test_case[
 
     # ---- Device buffers + copy ----
     var a_dev = ctx.enqueue_create_buffer[DType.uint8](num_input_rows * k_bytes)
+    var b_raw_dev = ctx.enqueue_create_buffer[DType.uint8](
+        num_experts * N * k_bytes
+    )
     var b_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
         num_experts * N * k_bytes
     )
@@ -428,37 +420,49 @@ def run_routed_test_case[
     var c_dev = ctx.enqueue_create_buffer[DType.float32](num_tokens * topk * N)
 
     ctx.enqueue_copy(a_dev, a_h)
-    ctx.enqueue_copy(b_pre_dev, b_pre_hb)
+    ctx.enqueue_copy(b_raw_dev, b_h)
     ctx.enqueue_copy(sfa_pre_dev, sfa_pre_hb)
     ctx.enqueue_copy(sfb_pre_dev, sfb_pre_hb)
     ctx.enqueue_copy(sti_dev, sti_h)
     ctx.enqueue_copy(ei_dev, ei_h)
+
+    # GPU-side preshuffle b_raw_dev → b_pre_dev.
+    var b_raw_dev_tt = TileTensor[mut=False](
+        b_raw_dev, row_major[num_experts, N, k_bytes]()
+    )
+    var b_pre_dev_tt = TileTensor[mut=True](
+        b_pre_dev,
+        Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=k_bytes],
+    )
+    Shuffler[num_experts].preshuffle_b_5d[N=N, K_BYTES=k_bytes](
+        b_raw_dev_tt, b_pre_dev_tt, ctx
+    )
 
     # Zero output buffer (sentinel rows / inactive blocks won't write).
     c_dev.enqueue_fill(Float32(0.0))
 
     # ---- TileTensors ----
     var a_tt = TileTensor[mut=False](
-        a_dev, row_major(Coord(num_input_rows, Idx[k_bytes]()))
+        a_dev, row_major(Coord(num_input_rows, Idx[k_bytes]))
     )
     var b_pre_tt = TileTensor[mut=False](
         b_pre_dev,
-        row_major(Coord(Idx[1](), Idx[num_experts * N * k_bytes]())),
+        row_major(Coord(Idx[1], Idx[num_experts * N * k_bytes])),
     )
     var sfa_pre_tt = TileTensor[mut=False](
         sfa_pre_dev,
-        row_major(Coord(Idx[1](), size_expert_ids * sfa_per_block_bytes)),
+        row_major(Coord(Idx[1], size_expert_ids * sfa_per_block_bytes)),
     )
     var sfb_pre_tt = TileTensor[mut=False](
         sfb_pre_dev,
-        row_major(Coord(Idx[1](), Idx[num_experts * sfb_per_expert_bytes]())),
+        row_major(Coord(Idx[1], Idx[num_experts * sfb_per_expert_bytes])),
     )
     var sti_tt = TileTensor[mut=False](
         sti_dev, row_major(Coord(size_expert_ids * sort_block_m))
     )
     var ei_tt = TileTensor[mut=False](ei_dev, row_major(Coord(size_expert_ids)))
     var c_tt = TileTensor[mut=True](
-        c_dev, row_major(Coord(num_tokens * topk, Idx[N]()))
+        c_dev, row_major(Coord(num_tokens * topk, Idx[N]))
     )
 
     # ---- Launch kernel ----
@@ -486,21 +490,21 @@ def run_routed_test_case[
     ctx.synchronize()
 
     var a_cpu_tt = TileTensor(
-        a_h, row_major(Coord(num_input_rows, Idx[k_bytes]()))
+        a_h, row_major(Coord(num_input_rows, Idx[k_bytes]))
     )
     var b_cpu_tt = TileTensor(
         b_h,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[k_bytes]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[k_bytes])),
     )
     var sfa_cpu_tt = TileTensor(
-        sfa_h, row_major(Coord(num_input_rows, Idx[k_scales]()))
+        sfa_h, row_major(Coord(num_input_rows, Idx[k_scales]))
     )
     var sfb_cpu_tt = TileTensor(
         sfb_h,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[k_scales]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[k_scales])),
     )
     var c_ref_tt = TileTensor(
-        c_ref_h, row_major(Coord(num_tokens * topk, Idx[N]()))
+        c_ref_h, row_major(Coord(num_tokens * topk, Idx[N]))
     )
     var pair_to_expert = build_pair_to_expert(
         n_e, expert_ids_input, num_tokens, topk

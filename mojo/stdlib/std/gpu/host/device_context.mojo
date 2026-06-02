@@ -44,6 +44,7 @@ from std.sys.compile import DebugLevel, OptimizationLevel
 from std.sys.info import (
     CompilationTarget,
     _accelerator_arch,
+    _current_target,
     _TargetType,
     is_triple,
 )
@@ -79,6 +80,10 @@ from std.utils import Variant
 from std.utils._serialize import _serialize_elements
 
 from .info import GPUInfo
+from ._device_context_metal import (
+    call_with_pack_checked_metal,
+    call_with_pack_metal,
+)
 
 
 # Create empty structs to ensure dtype checking when using the C++ handles.
@@ -352,7 +357,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         dtype: Data type to be stored in the buffer.
     """
 
-    comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
 
     # We cache the pointer of the buffer here to provide access to elements.
     var _host_ptr: Self._HostPtr
@@ -514,7 +519,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
         var new_host_ptr = Optional[
-            UnsafePointer[Scalar[view_type], MutAnyOrigin]
+            UnsafePointer[Scalar[view_type], MutExternalOrigin]
         ]()
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
@@ -1195,40 +1200,28 @@ struct DevicePointer[dtype: DType](
 struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
     """Provides a default implementation of the `DeviceTypeEncoder` trait."""
 
+    @staticmethod
+    def target() -> _TargetType:
+        """Returns the target architecture this encoder is encoding for.
+
+        Returns:
+            The target architecture this encoder is encoding for.
+        """
+        return _current_target()
+
     def encode_device_ptr(
-        mut self, value: DevicePointer, target: MutOpaquePointer[_]
+        mut self, value: DevicePointer, dst: MutOpaquePointer[_]
     ):
-        """Encodes a `DevicePointer` into `target`.
+        """Encodes a `DevicePointer` into `dst`.
 
         By default treat `DevicePointer` as `UnsafePointer`, works for Unified
         Memory targets such as CUDA and HIP.
 
         Args:
-            value: The `DevicePointer` instance to encode into `target`.
-            target: The opaque destination pointer to encode into.
+            value: The `DevicePointer` instance to encode into `dst`.
+            dst: The opaque destination pointer to encode into.
         """
-        value.unsafe_ptr()._to_device_type(self, target)
-
-
-@fieldwise_init
-struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
-    """Provides a Metal specific implementation of the `DeviceTypeEncoder`
-    trait."""
-
-    def encode_device_ptr(
-        mut self, value: DevicePointer, target: MutOpaquePointer[_]
-    ):
-        """Encodes a `DevicePointer` into `target`.
-
-        By default treat `DevicePointer` as `UnsafePointer`, works for USM
-        targets such as CUDA and HIP.
-
-        Args:
-            value: The `DevicePointer` instance to encode into `target`.
-            target: The opaque destination pointer to encode into.
-        """
-        # TODO: GEX-3712: Implement Metal specific encoding.
-        value.unsafe_ptr()._to_device_type(self, target)
+        value.unsafe_ptr()._to_device_type(self, dst)
 
 
 struct DeviceBuffer[dtype: DType](
@@ -1274,7 +1267,7 @@ struct DeviceBuffer[dtype: DType](
         """
         return String(t"DeviceBuffer[{Self.dtype}]")
 
-    comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
@@ -1402,15 +1395,15 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[_dtype]()
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
-        var device_ptr = rebind[UnsafePointer[Scalar[_dtype], MutAnyOrigin]](
-            ptr
-        )
+        var device_ptr = rebind[
+            UnsafePointer[Scalar[_dtype], MutExternalOrigin]
+        ](ptr)
         external_call[
             "AsyncRT_DeviceContext_createBuffer_owning",
             NoneType,
             UnsafePointer[_DeviceBufferPtr[mut=True], origin_of(cpp_handle)],
             _DeviceContextPtr[mut=True],
-            UnsafePointer[Scalar[_dtype], MutAnyOrigin],
+            UnsafePointer[Scalar[_dtype], MutExternalOrigin],
             c_size_t,
             c_size_t,
             Bool,
@@ -1519,7 +1512,7 @@ struct DeviceBuffer[dtype: DType](
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
         var new_device_ptr: Optional[
-            UnsafePointer[Scalar[view_type], MutAnyOrigin]
+            UnsafePointer[Scalar[view_type], MutExternalOrigin]
         ] = {}
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
@@ -1892,7 +1885,7 @@ trait _FunctionEnqueuer:
         num_attributes: Int,
         args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
         arg_count: UInt32,
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
     ) -> _CString[]:
         """Dispatches a kernel launch via the AsyncRT C ABI.
 
@@ -1911,7 +1904,9 @@ trait _FunctionEnqueuer:
             num_attributes: Number of entries in `attributes`.
             args: Pointer to the array of argument value pointers.
             arg_count: Number of entries in `args`.
-            arg_sizes: Pointer to the array of per-argument sizes in bytes.
+            arg_sizes: Optional pointer to the per-argument sizes in bytes.
+                Metal sources sizes from `MetalEnqueueFunctionArgs` instead
+                and accepts `None` here; other backends ignore the value.
 
         Returns:
             A C-string carrying an error message on failure, or an empty
@@ -1962,7 +1957,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
         num_attributes: Int,
         args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
         arg_count: UInt32,
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
     ) -> _CString[]:
         """Enqueues a kernel launch on this stream.
 
@@ -1979,7 +1974,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
             num_attributes: Number of entries in `attributes`.
             args: Pointer to the array of argument value pointers.
             arg_count: Number of entries in `args`.
-            arg_sizes: Pointer to the array of per-argument sizes in bytes.
+            arg_sizes: Optional pointer to the per-argument sizes in bytes.
 
         Returns:
             A C-string carrying an error message on failure, or an empty
@@ -2975,21 +2970,43 @@ struct DeviceFunction[
             var capture_args_start = dense_args_addrs + num_args
             populate(capture_args_start.bitcast[NoneType]())
 
-        _checked_call[Self.func](
-            ctx.enqueue(
-                self._handle,
-                grid_dim,
-                block_dim,
-                shared_mem_bytes.or_else(0),
-                attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
-                len(attributes),
-                dense_args_addrs,
-                UInt32(num_args + num_captures),
-                dense_args_sizes,
-            ),
-            device_context=self._context,
-            location=location.or_else(call_location()),
-        )
+        if self._context.api() == "metal":
+            call_with_pack_metal[
+                Self.func,
+                num_args=num_args,
+                num_captures_static=num_captures_static,
+            ](
+                ctx,
+                func_handle=self._handle,
+                device_context=self._context,
+                num_captures=num_captures,
+                dense_args_addrs=dense_args_addrs,
+                dense_args_sizes=dense_args_sizes,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                shared_mem_bytes=shared_mem_bytes.or_else(0),
+                attributes_ptr=attributes.unsafe_ptr().unsafe_origin_cast[
+                    MutAnyOrigin
+                ](),
+                num_attributes=len(attributes),
+                location=location.or_else(call_location()),
+            )
+        else:
+            _checked_call[Self.func](
+                ctx.enqueue(
+                    self._handle,
+                    grid_dim,
+                    block_dim,
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+                    len(attributes),
+                    dense_args_addrs,
+                    UInt32(num_args + num_captures),
+                    dense_args_sizes,
+                ),
+                device_context=self._context,
+                location=location.or_else(call_location()),
+            )
 
         if num_captures > num_captures_static:
             free(dense_args_addrs, {count = num_captures + num_args})
@@ -3069,7 +3086,8 @@ struct DeviceFunction[
                     "') does not match the declared function argument type",
                 )
             var aligned_type_size = align_up(
-                size_of[actual_arg_type.device_type](), 8
+                size_of[actual_arg_type.device_type, target=Self.target](),
+                8,
             )
             if aligned_type_size != 0:
                 num_translated_args += 1
@@ -3129,75 +3147,22 @@ struct DeviceFunction[
             comptime for i in range(num_passed_args):
                 comptime actual_arg_type = Ts[i]
                 tmp_args_size += align_up(
-                    size_of[actual_arg_type.device_type](), 8
+                    size_of[actual_arg_type.device_type, target=Self.target](),
+                    8,
                 )
             return tmp_args_size
 
         comptime args_size = calculate_args_size()
 
         # Space to store the arguments to the kernel that have been converted
-        # from host dtype to device dtype.
+        # from host dtype to device dtype. Shared by both the Metal and the
+        # default branch below.
         var translated_args = InlineArray[Byte, args_size](uninitialized=True)
         var start_addr = Int(translated_args.unsafe_ptr())
         var extra_align = align_up(start_addr, 8) - start_addr
 
-        # NOTE: Manual short buffer optimization. We could use a
-        # Variant[List, InlineArray] instead, but it would look a lot more
-        # verbose. This way, however, we need to conditionally free at the end.
-        var dense_args_addrs: UnsafePointer[
-            OpaquePointer[MutAnyOrigin], MutExternalOrigin
-        ]
-        var dense_args_sizes: UnsafePointer[UInt64, MutExternalOrigin]
-        if num_captures > num_captures_static:
-            dense_args_addrs = alloc(
-                Layout[OpaquePointer[MutAnyOrigin]](
-                    count=num_captures + num_passed_args
-                )
-            )
-            dense_args_sizes = alloc(
-                Layout[UInt64](count=num_captures + num_passed_args)
-            )
-            for i in range(num_captures + num_passed_args):
-                dense_args_sizes[i] = 0
-        else:
-            dense_args_addrs = stack_allocation[
-                num_captures_static + num_passed_args,
-                OpaquePointer[MutAnyOrigin],
-            ]()
-            dense_args_sizes = stack_allocation[
-                num_captures_static + num_passed_args, UInt64
-            ]()
-            for i in range(num_captures_static + num_passed_args):
-                dense_args_sizes[i] = 0
-
-        # Since we skip over zero sized declared dtypes when passing arguments
-        # we need to know the current count of arguments pushed.
-        var translated_arg_idx = 0
-
-        # The device type encoder is passed into
-        # `DevicePassable._to_device_type()` to enable target specific encoding
-        # of device types.
-        var device_type_encoder = DefaultDeviceTypeEncoder()
-
-        comptime for i in range(num_passed_args):
-            # If the arg offset is negative then the corresponding declared
-            # dtype is zero sized and we do not push the argument to the kernel.
-            var translated_arg_offset = translated_arg_offsets[i]
-            if translated_arg_offset >= 0:
-                comptime actual_arg_type = Ts[i]
-                var first_word_addr = UnsafePointer(
-                    to=translated_args.unsafe_ptr()[
-                        translated_arg_offset + extra_align
-                    ]
-                ).bitcast[NoneType]()
-                args[i]._to_device_type(device_type_encoder, first_word_addr)
-
-                dense_args_addrs[translated_arg_idx] = first_word_addr
-                dense_args_sizes[translated_arg_idx] = UInt64(
-                    size_of[actual_arg_type.device_type]()
-                )
-                translated_arg_idx += 1
-
+        # Launch attributes and constant-memory copies are independent of the
+        # arg-encoding scheme, so apply them once before branching on backend.
         if cluster_dim:
             attributes.append(
                 LaunchAttribute.from_cluster_dim(cluster_dim.value())
@@ -3207,41 +3172,110 @@ struct DeviceFunction[
             for i in range(len(constant_memory)):
                 self._copy_to_constant_memory(constant_memory[i])
 
+        # NOTE: Manual short buffer optimization. We could use a
+        # Variant[List, InlineArray] instead, but it would look a lot more
+        # verbose. This way, however, we need to conditionally free at the end.
+        var dense_args_addrs: UnsafePointer[
+            OpaquePointer[MutAnyOrigin], MutExternalOrigin
+        ]
+        if num_captures > num_captures_static:
+            dense_args_addrs = alloc(
+                Layout[OpaquePointer[MutAnyOrigin]](
+                    count=num_captures + num_passed_args
+                )
+            )
+        else:
+            dense_args_addrs = stack_allocation[
+                num_captures_static + num_passed_args,
+                OpaquePointer[MutAnyOrigin],
+            ]()
+
         if num_captures > 0:
-            for i in range(num_captures):
-                dense_args_sizes[
-                    num_passed_args + i
-                ] = self._func_impl.capture_sizes[i]
-            # Call the populate function to initialize the captured values in the arguments array.
             # The captured values are always at the end of the argument list.
-            # This function (generated by the compiler) has to be inlined here
-            # and be in the same scope as the user of dense_args_addr
-            # (i.e. the following external_call).
-            # Because this closure uses stack allocated ptrs
-            # to store the captured values in dense_args_addrs, they need to
-            # not go out of the scope before dense_args_addr is being use.
+            # `populate` is generated by the compiler and inlined here; it
+            # stack-allocates storage for each capture and stores pointers to
+            # those slots into `dense_args_addrs[num_translated_args..]`. The
+            # allocations live for the rest of this function, so it is safe
+            # to call `populate` here even though `ctx.enqueue` below is
+            # nested inside the per-backend branch.
             var capture_args_start = dense_args_addrs + num_translated_args
             populate(capture_args_start.bitcast[NoneType]())
 
-        _checked_call[Self.func](
-            ctx.enqueue(
-                self._handle,
-                grid_dim,
-                block_dim,
-                shared_mem_bytes.or_else(0),
-                attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
-                len(attributes),
-                dense_args_addrs,
-                UInt32(num_translated_args + num_captures),
-                dense_args_sizes,
-            ),
-            device_context=self._context,
-            location=location.or_else(call_location()),
-        )
+        if self._context.api() == "metal":
+            call_with_pack_checked_metal[
+                Self.func,
+                num_passed_args=num_passed_args,
+                num_captures_static=num_captures_static,
+            ](
+                ctx,
+                *args,
+                func_handle=self._handle,
+                device_context=self._context,
+                capture_sizes=self._func_impl.capture_sizes,
+                num_captures=num_captures,
+                num_translated_args=num_translated_args,
+                translated_arg_offsets=translated_arg_offsets,
+                extra_align=extra_align,
+                translated_args_ptr=translated_args.unsafe_ptr().unsafe_origin_cast[
+                    MutAnyOrigin
+                ](),
+                dense_args_addrs=dense_args_addrs,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                shared_mem_bytes=shared_mem_bytes.or_else(0),
+                attributes_ptr=attributes.unsafe_ptr().unsafe_origin_cast[
+                    MutAnyOrigin
+                ](),
+                num_attributes=len(attributes),
+                location=location.or_else(call_location()),
+            )
+
+        else:
+            # Since we skip over zero sized declared dtypes when passing
+            # arguments we need to know the current count of arguments pushed.
+            var translated_arg_idx = 0
+
+            # The device type encoder is passed into
+            # `DevicePassable._to_device_type()` to enable target specific
+            # encoding of device types.
+            var device_type_encoder = DefaultDeviceTypeEncoder()
+
+            comptime for i in range(num_passed_args):
+                # If the arg offset is negative then the corresponding declared
+                # dtype is zero sized and we do not push the argument to the
+                # kernel.
+                var translated_arg_offset = translated_arg_offsets[i]
+                if translated_arg_offset >= 0:
+                    var first_word_addr = UnsafePointer(
+                        to=translated_args.unsafe_ptr()[
+                            translated_arg_offset + extra_align
+                        ]
+                    ).bitcast[NoneType]()
+                    args[i]._to_device_type(
+                        device_type_encoder, first_word_addr
+                    )
+
+                    dense_args_addrs[translated_arg_idx] = first_word_addr
+                    translated_arg_idx += 1
+
+            _checked_call[Self.func](
+                ctx.enqueue(
+                    self._handle,
+                    grid_dim,
+                    block_dim,
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+                    len(attributes),
+                    dense_args_addrs,
+                    UInt32(num_translated_args + num_captures),
+                    None,
+                ),
+                device_context=self._context,
+                location=location.or_else(call_location()),
+            )
 
         if num_captures > num_captures_static:
             free(dense_args_addrs, {count = num_captures + num_passed_args})
-            free(dense_args_sizes, {count = num_captures + num_passed_args})
 
     @always_inline
     def get_attribute(self, attr: Attribute) raises -> Int:
@@ -3669,7 +3703,7 @@ struct _GraphDepArgs(TrivialRegisterPassable):
     side never dereferences it).
     """
 
-    var ids: UnsafePointer[Int32, ImmutAnyOrigin]
+    var ids: UnsafePointer[Int32, ImmutExternalOrigin]
     var count: Int64
 
 
@@ -3687,7 +3721,9 @@ def _pack_dep_args(deps: List[DeviceGraphNode]) -> _GraphDepArgs:
     valid for as long as `deps` is alive at the call site.
     """
     return _GraphDepArgs(
-        ids=deps.unsafe_ptr().bitcast[Int32](),
+        ids=deps.unsafe_ptr()
+        .bitcast[Int32]()
+        .unsafe_origin_cast[ImmutExternalOrigin](),
         count=Int64(len(deps)),
     )
 
@@ -3833,27 +3869,39 @@ struct DeviceGraphBuilder(Movable):
         ](self._handle)
 
     @doc_hidden
-    def _last_node(self) raises -> DeviceGraphNode:
-        """Returns a handle to the most recently added node.
+    def _last_node_id(self) -> Optional[Int32]:
+        """Returns the id of the most recently added node, or None if no
+        nodes have been added yet.
 
-        Used internally by the public `add_*` methods to retrieve the handle
-        of a node they just added.
-
-        Raises:
-            If no nodes have been added yet.
+        Cannot fail. Used by `_last_node` and `collect_dependencies`
+        to query the builder's current state.
         """
-        var id: Int32 = 0
-        # const char *AsyncRT_DeviceGraphBuilder_lastNodeId(
-        #     DeviceGraphBuilder *builder, int32_t *result)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceGraphBuilder_lastNodeId",
-                _CString[],
-                _DeviceGraphBuilderPtr[mut=True],
-                UnsafePointer[Int32, origin_of(id)],
-            ](self._handle, UnsafePointer(to=id))
-        )
-        return DeviceGraphNode(id)
+        # int32_t AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone(
+        #     DeviceGraphBuilder *builder)
+        var id = external_call[
+            "AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone",
+            Int32,
+            _DeviceGraphBuilderPtr[mut=True],
+        ](self._handle)
+
+        if id < 0:
+            return None
+        return id
+
+    @doc_hidden
+    def _last_node(self) -> Optional[DeviceGraphNode]:
+        """Returns a handle to the most recently added node, or `None`
+        if no nodes have been added yet.
+
+        Used internally by the public `add_*` methods to retrieve the
+        handle of a node they just added; those call sites always expect
+        a `Some` result and unwrap via `.value()`.
+        """
+
+        def to_device_node(id: Int32) -> DeviceGraphNode:
+            return DeviceGraphNode(id)
+
+        return self._last_node_id().map[To=DeviceGraphNode](to_device_node)
 
     @parameter
     @always_inline
@@ -3923,11 +3971,11 @@ struct DeviceGraphBuilder(Movable):
             constant_memory=constant_memory^,
             location=call_location(),
         )
-        return self._last_node()
+        return self._last_node().value()
 
     @always_inline
     def add_function[
-        FuncType: def() register_passable -> None,
+        FuncType: def() -> None,
         //,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4015,12 +4063,16 @@ struct DeviceGraphBuilder(Movable):
         _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
             block_dim, location=call_location()
         )
-        var compiled = self._ctx.compile_function_unchecked[
+        var compiled = DeviceFunction[
             FuncType.__call__,
+            None,
+            target=DeviceContext.default_device_info.target(),
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](self._ctx)
+        compiled.dump_rep[
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
         ]()
         # Build a transient enqueuer that pairs the builder handle with the
         # caller-supplied deps. It implements `_FunctionEnqueuer` so the
@@ -4039,9 +4091,8 @@ struct DeviceGraphBuilder(Movable):
             constant_memory=constant_memory^,
             location=call_location(),
         )
-        return self._last_node()
+        return self._last_node().value()
 
-    @always_inline
     def add_copy[
         dtype: DType
     ](
@@ -4089,9 +4140,8 @@ struct DeviceGraphBuilder(Movable):
                 dep_args.count,
             )
         )
-        return self._last_node()
+        return self._last_node().value()
 
-    @always_inline
     def add_copy[
         dtype: DType
     ](
@@ -4139,9 +4189,8 @@ struct DeviceGraphBuilder(Movable):
                 dep_args.count,
             )
         )
-        return self._last_node()
+        return self._last_node().value()
 
-    @always_inline
     def add_copy[
         dtype: DType
     ](
@@ -4191,9 +4240,8 @@ struct DeviceGraphBuilder(Movable):
                 dep_args.count,
             )
         )
-        return self._last_node()
+        return self._last_node().value()
 
-    @always_inline
     def add_memset[
         dtype: DType
     ](
@@ -4263,7 +4311,111 @@ struct DeviceGraphBuilder(Movable):
                 dep_args.count,
             )
         )
-        return self._last_node()
+        return self._last_node().value()
+
+    def add_empty(
+        self,
+        *,
+        var dependencies: List[DeviceGraphNode],
+    ) raises -> DeviceGraphNode:
+        """Adds an empty (no-op) node to the graph.
+
+        Empty nodes perform no work at execution time. They are used purely
+        for transitive ordering: a single empty node fanned in from `m`
+        predecessors and out to `n` successors expresses an `m`-to-`n`
+        barrier using `m + n` edges instead of `m * n`, and serves as a
+        stable handle for "the completion of this phase" when the producer
+        set is not visible to the consumer.
+
+        Args:
+            dependencies: Explicit list of predecessor node handles. An
+                empty list makes the new node a graph root with no
+                predecessors; a non-empty list uses those exact handles
+                as predecessors.
+
+        Returns:
+            A handle to the newly added empty node.
+
+        Raises:
+            If adding the node fails.
+        """
+        var dep_args = _pack_dep_args(dependencies)
+        # const char *AsyncRT_DeviceGraphBuilder_addEmpty(
+        #     DeviceGraphBuilder *builder, const int32_t *depIds,
+        #     int64_t numDeps)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_addEmpty",
+                _CString[],
+                _DeviceGraphBuilderPtr[mut=True],
+                UnsafePointer[Int32, ImmutAnyOrigin],
+                Int64,
+            ](self._handle, dep_args.ids, dep_args.count)
+        )
+        return self._last_node().value()
+
+    def collect_dependencies(
+        self, work: Some[def(Self) raises]
+    ) raises -> DeviceGraphNode:
+        """Runs `work` and returns a single empty node that joins every
+        node added to this builder during its execution.
+
+        The returned handle is suitable for use as a one-element
+        `dependencies=` entry on a downstream `add_*` call. The empty
+        node performs no work at execution time; it exists purely as a
+        fan-in barrier so the caller does not need to thread the
+        producer set's individual handles to every consumer.
+
+        Args:
+            work: Closure whose effects on this builder are captured. The
+                builder is passed as `work`'s sole argument; the closure
+                must not capture the same builder, since doing so would
+                alias with this method's receiver. The closure may add
+                any number of nodes (zero or more) via any of the
+                `add_*` methods.
+
+        Returns:
+            Handle of the empty node that joins every node added by
+            `work`.
+
+        Raises:
+            Anything `work` itself raises, or anything raised while
+            adding the join node.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext, DeviceGraphBuilder
+
+        with DeviceContext() as ctx:
+            var builder = ctx.create_graph_builder()
+
+            def add_producers(b: DeviceGraphBuilder) raises {read} -> None:
+                _ = b.add_memset(buf_a, UInt8(1), dependencies=[])
+                _ = b.add_memset(buf_b, UInt8(2), dependencies=[])
+
+            var producers_join = builder.collect_dependencies(add_producers)
+            _ = builder.add_copy(
+                buf_c, host_src, dependencies=[producers_join]
+            )
+            var graph = builder^.instantiate()
+            graph.replay()
+        ```
+        """
+        var start_id = self._last_node_id()
+        work(self)
+        var end_id = self._last_node_id()
+
+        var deps = List[DeviceGraphNode]()
+
+        if end_id:
+            var end_val = end_id.value()
+            var start_val = start_id.or_else(-1)
+            deps.reserve(Int(end_val) - Int(start_val))
+            for id in range(start_val + 1, end_val + 1):
+                deps.append(DeviceGraphNode(Int32(id)))
+
+        return self.add_empty(dependencies=deps^)
 
     def instantiate(var self) raises -> DeviceGraph:
         """Instantiates the constructed graph into an executable device graph.
@@ -4354,7 +4506,7 @@ struct _DeviceGraphBuilderEnqueuer[
         num_attributes: Int,
         args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
         arg_count: UInt32,
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
     ) -> _CString[]:
         """Adds a kernel-dispatch node to the borrowed graph builder.
 
@@ -4372,7 +4524,7 @@ struct _DeviceGraphBuilderEnqueuer[
             num_attributes: Number of entries in `attributes`.
             args: Pointer to the array of argument value pointers.
             arg_count: Number of entries in `args`.
-            arg_sizes: Pointer to the array of per-argument sizes in bytes.
+            arg_sizes: Optional pointer to the per-argument sizes in bytes.
 
         Returns:
             A C-string carrying an error message on failure, or an empty
@@ -4458,7 +4610,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         num_attributes: Int,
         args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
         arg_count: UInt32,
-        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
     ) -> _CString[]:
         """Enqueues a kernel launch on this context's default stream.
 
@@ -4474,7 +4626,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             num_attributes: Number of entries in `attributes`.
             args: Pointer to the array of argument value pointers.
             arg_count: Number of entries in `args`.
-            arg_sizes: Pointer to the array of per-argument sizes in bytes.
+            arg_sizes: Optional pointer to the per-argument sizes in bytes.
 
         Returns:
             A C-string carrying an error message on failure, or an empty
@@ -4853,89 +5005,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         ```
         """
         return HostBuffer[dtype](self, size)
-
-    @always_inline
-    def compile_function_unchecked[
-        func_type: TrivialRegisterPassable,
-        //,
-        func: func_type,
-        *,
-        compile_options: StaticString = CompilationTarget[
-            Self.default_device_info.target()
-        ].default_compile_options(),
-        link_options: StaticString = "",
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *,
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        out result: DeviceFunction[
-            func,
-            None,
-            target=Self.default_device_info.target(),
-            compile_options=compile_options,
-            link_options=link_options,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ],
-    ) raises:
-        """Compiles the provided function for execution on this device.
-
-        Parameters:
-            func_type: Type of the function.
-            func: The function to compile.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            func_attribute: An attribute to use when compiling the code (such
-                as maximum shared memory size).
-
-        Returns:
-            The compiled function via the `result` output parameter.
-
-        Raises:
-            If the operation fails.
-
-        Notes:
-
-        - This method doesn't perform compile-time type-checking of the kernel
-          function arguments. You will encounter run-time errors if the values
-          you pass don't conform to the expected argument types.
-        - This method will be deprecated and eventually removed.
-          Use `compile_function()` instead for type-checked kernel compilation.
-        """
-        assert (
-            not func_attribute
-            or func_attribute.value().attribute
-            != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-            or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
-        ), "Requested more than available shared memory."
-        comptime result_type = type_of(result)
-        result = result_type(
-            self,
-            func_attribute=func_attribute,
-        )
-
-        result.dump_rep[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-        ]()
 
     @deprecated("Pass the kernel only once: `compile_function[func]`.")
     @always_inline
@@ -5432,227 +5501,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             function_name=function_name^,
             asm=asm^,
             func_attribute=func_attribute,
-        )
-
-    @parameter
-    @always_inline
-    def enqueue_function_unchecked[
-        func_type: TrivialRegisterPassable,
-        //,
-        func: func_type,
-        *Ts: AnyType,
-        link_options: StaticString = "",
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        location: OptionalReg[SourceLocation] = None,
-    ) raises:
-        """Compiles and enqueues a kernel for execution on this device.
-
-        Parameters:
-            func_type: The dtype of the function to launch.
-            func: The function to launch.
-            Ts: The dtypes of the arguments being passed to the function.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            args: Variadic arguments which are passed to the `func`.
-            grid_dim: The grid dimensions.
-            block_dim: The block dimensions.
-            cluster_dim: The cluster dimensions.
-            shared_mem_bytes: Per-block memory shared between blocks.
-            attributes: A `List` of launch attributes.
-            constant_memory: A `List` of constant memory mappings.
-            func_attribute: `CUfunction_attribute` enum.
-            location: Source location for the function call.
-
-        You can pass the function directly to `enqueue_function_unchecked`
-        without compiling it first:
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            ctx.enqueue_function_unchecked[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
-        first to remove the overhead:
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function_unchecked[kernel]()
-            ctx.enqueue_function_unchecked(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function_unchecked(compiled_func, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        Raises:
-            If the operation fails.
-
-        Notes:
-
-        - This method doesn't perform compile-time type-checking of the kernel
-          function arguments. You will encounter run-time errors if the values
-          you pass don't conform to the expected argument types.
-        - This method will be deprecated and eventually removed.
-          Use `enqueue_function()` instead for type-checked kernel execution.
-        """
-        _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim["DeviceContext.enqueue_function_unchecked", "block_dim"](
-            block_dim, location=call_location()
-        )
-
-        var gpu_kernel = self.compile_function_unchecked[
-            func,
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            link_options=link_options,
-            _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=func_attribute)
-
-        gpu_kernel._call_with_pack(
-            self,
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location.or_else(call_location()),
-        )
-
-    @parameter
-    @always_inline
-    def enqueue_function_unchecked[
-        *Ts: AnyType
-    ](
-        self,
-        f: DeviceFunction,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        location: OptionalReg[SourceLocation] = None,
-    ) raises:
-        """Enqueues a compiled function for execution on this device.
-
-        Parameters:
-            Ts: Argument dtypes.
-
-        Args:
-            f: The compiled function to execute.
-            args: Arguments to pass to the function.
-            grid_dim: Dimensions of the compute grid, made up of thread
-                blocks.
-            block_dim: Dimensions of each thread block in the grid.
-            cluster_dim: Dimensions of clusters (if the thread blocks are
-                grouped into clusters).
-            shared_mem_bytes: Amount of shared memory per thread block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mapping.
-            location: Source location for the function call.
-
-        You can pass the function directly to `enqueue_function_unchecked`
-        without compiling it first:
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            ctx.enqueue_function_unchecked[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile
-        the function first to remove the overhead:
-
-        ```mojo
-        from std.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function_unchecked[kernel]()
-            ctx.enqueue_function_unchecked(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function_unchecked(compiled_func, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        Raises:
-            If the operation fails.
-
-        Notes:
-
-        - This method doesn't perform compile-time type-checking of the kernel
-          function arguments. You will encounter run-time errors if the values
-          you pass don't conform to the expected argument types.
-        - This method will be deprecated and eventually removed.
-          Use `enqueue_function()` instead for type-checked kernel execution.
-        """
-        _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim["DeviceContext.enqueue_function_unchecked", "block_dim"](
-            block_dim, location=call_location()
-        )
-
-        comptime assert (
-            not f.declared_arg_types
-        ), "A checked DeviceFunction should be called with `enqueue_function`."
-        f._call_with_pack(
-            self,
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location.or_else(call_location()),
         )
 
     @parameter
@@ -6286,7 +6134,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     @always_inline
     def enqueue_function[
-        FuncType: def() register_passable -> None,
+        FuncType: def() -> None,
         //,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -6377,13 +6225,20 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             block_dim, location=call_location()
         )
 
-        self.enqueue_function_unchecked[
+        var gpu_kernel = DeviceFunction[
             FuncType.__call__,
+            None,
+            target=Self.default_device_info.target(),
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](self)
+        gpu_kernel.dump_rep[
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](
+        ]()
+
+        gpu_kernel._call_with_pack(
+            self,
             func,
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -8755,9 +8610,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_unicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr[mut=True]()
-        var buf_ptr = Optional[
-            UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        ]()
+        var buf_ptr = Optional[DeviceBuffer[Self.dtype]._DevicePtr]()
 
         _checked(
             external_call[
@@ -8779,9 +8632,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_multicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr[mut=True]()
-        var buf_ptr = Optional[
-            UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        ]()
+        var buf_ptr = Optional[DeviceBuffer[Self.dtype]._DevicePtr]()
 
         _checked(
             external_call[

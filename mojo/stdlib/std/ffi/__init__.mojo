@@ -368,7 +368,7 @@ struct OwnedDLHandle(Movable):
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> Optional[
-        UnsafePointer[result_type, MutAnyOrigin]
+        UnsafePointer[result_type, MutExternalOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -387,7 +387,7 @@ struct OwnedDLHandle(Movable):
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> Optional[
-        UnsafePointer[result_type, MutAnyOrigin]
+        UnsafePointer[result_type, MutExternalOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -640,7 +640,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     def get_symbol[
         result_type: AnyType,
     ](self, name: StringSlice) -> Optional[
-        UnsafePointer[result_type, MutAnyOrigin]
+        UnsafePointer[result_type, MutExternalOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -662,7 +662,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
     def get_symbol[
         result_type: AnyType
     ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> Optional[
-        UnsafePointer[result_type, MutAnyOrigin]
+        UnsafePointer[result_type, MutExternalOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
@@ -713,8 +713,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
                 t"{StringSlice(unsafe_from_utf8=CStringSlice(unsafe_from_ptr=cstr_name))}"
             )
 
-        var ptr: UnsafePointer[result_type, MutAnyOrigin] = res.value()
-        return ptr
+        return res.value()
 
     @always_inline
     def call[

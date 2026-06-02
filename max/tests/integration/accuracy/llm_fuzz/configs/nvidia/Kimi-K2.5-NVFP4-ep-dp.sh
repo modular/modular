@@ -17,7 +17,7 @@ batch_size=64
 max_length=262144
 
 extra_pipelines_args=(
-  --device-memory-utilization=0.8
+  --device-memory-utilization=0.75
   --ep-size 8
   --data-parallel-degree 8
   --max-batch-input-tokens 4096
@@ -31,3 +31,4 @@ extra_pipelines_args=(
 model_profile=kimi-k2.5
 scenarios=
 k2vv_mode=full
+circuit_breaker=0

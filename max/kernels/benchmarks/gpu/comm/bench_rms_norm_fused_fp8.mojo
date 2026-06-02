@@ -144,7 +144,7 @@ def bench_rms_norm_fused_fp8[
             @__copy_capture(rms_output_buf_offset)
             @parameter
             def rms_output_fn[
-                width: Int, alignment: Int
+                width: SIMDSize, alignment: Int
             ](coords: IndexList[rank], val: SIMD[in_dtype, width]) -> None:
                 var idx = rms_output_buf_offset.layout(Coord(coords))
                 rms_output_buf_offset.raw_store[
@@ -202,7 +202,7 @@ def bench_rms_norm_fused_fp8[
                 UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
                     scales_base_ptr
                 ),
-                row_major(Coord(Idx[1](), rows)),
+                row_major(Coord(Idx[1], rows)),
             )
 
             quantize_dynamic_scaled_fp8[
@@ -341,7 +341,7 @@ def bench_rms_norm_fused_fp8[
     @__copy_capture(rms_output_buf_verify)
     @parameter
     def rms_output_fn_verify[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](coords: IndexList[rank], val: SIMD[in_dtype, width]) -> None:
         var idx = rms_output_buf_verify.layout(Coord(coords))
         rms_output_buf_verify.raw_store[width=width, alignment=alignment](
@@ -372,7 +372,7 @@ def bench_rms_norm_fused_fp8[
     )
     var scales_tt_verify = TileTensor(
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin](scales_base_ptr),
-        row_major(Coord(Idx[1](), rows)),
+        row_major(Coord(Idx[1], rows)),
     )
 
     quantize_dynamic_scaled_fp8[

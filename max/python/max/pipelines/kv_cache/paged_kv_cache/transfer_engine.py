@@ -110,9 +110,9 @@ def available_port(
     """Finds an available TCP port in the given range.
 
     Args:
-        start_port (int): The lower bound of the port range (inclusive).
-        end_port (int): The upper bound of the port range (inclusive).
-        max_attempts (int): Maximum number of attempts to find a free port.
+        start_port: The lower bound of the port range (inclusive).
+        end_port: The upper bound of the port range (inclusive).
+        max_attempts: Maximum number of attempts to find a free port.
 
     Returns:
         int: An available port number.

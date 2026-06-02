@@ -10,12 +10,52 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added support for the Tencent Hunyuan Hy3-preview (`HYV3ForCausalLM`)
+  architecture: a decoder-only mixture-of-experts model (192 routed experts,
+  top-8 plus one shared expert) with sigmoid plus correction-bias routing,
+  per-head query/key RMSNorm, and split-half RoPE. Runs multi-GPU with
+  tensor-parallel attention and expert-parallel MoE.
 - Added NVFP4 quantization support for Gemma 4.
 - Added MXFP4 quantization support for MiniMax-M2.
+- Added tensor-parallel attention + expert-parallel MoE (TP+EP) support for
+  MiniMax-M2. Set `data_parallel_degree: 1` with `runtime.ep_size > 1` to
+  shard attention heads across GPUs while distributing MoE experts via
+  expert parallelism. Both reduce-scatter (default) and allreduce
+  (`runtime.ep_use_allreduce: true`) collective strategies are supported.
+- Kimi K2.5 tool calling now supports interleaved thinking: a single
+  assistant turn may interleave multiple `<think>...</think>` reasoning
+  blocks with multiple tool-call sections and end with `<|im_end|>`. The
+  constrained-decoding grammar (used for `tool_choice` and JSON
+  `response_format`) admits up to eight tool-call sections with an optional
+  reasoning block before each, and lets the model stop before the cap. This
+  fixes a `tool_choice=auto` failure where a second tool-call section
+  disabled grammar enforcement for the rest of the request.
 
 ## MAX framework
 
 ### Inference server
+
+- Fixed a KV cache offloading correctness bug that corrupted output for
+  multi-cache models (such as Gemma 4's interleaved sliding-window plus
+  global attention) when the `local` or `tiered` KV connector was enabled.
+  These models share one block pool across all of their caches, but the
+  connector only offloaded and reloaded the primary cache, so a prefix-cache
+  block served from host or disk restored only the primary cache's data and
+  left the other caches' halves stale, degrading accuracy. The connector now
+  offloads and restores every cache.
+
+- MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
+  normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
+  o1/o3 chat-completion spec uses `developer` in place of `system`, and
+  recent OpenAI SDKs emit it by default. The previous behavior rejected
+  the request with a 422 (`literal_error` on the message role).
+
+- Fixed `CreateChatCompletionRequest` rejecting explicit `null` values for
+  optional fields such as `tool_choice`, `tools`, and `response_format`.
+  OpenAI-compatible clients (LangChain, JS SDKs, anything that serializes
+  a dataclass with a `None` field) that emit `"tool_choice": null` instead
+  of omitting the key are now accepted, matching the behavior of other
+  OpenAI-compatible inference servers.
 
 - Added two opt-in server flags for accepting OpenAI-compatible requests
   that the strict default behavior would reject:
@@ -53,6 +93,24 @@ This version is still a work in progress.
   and `--reasoning-parser`). Pass `none` (case-insensitive) to explicitly
   disable the parser, overriding any architecture-declared default. Leaving
   the field unset still applies the architecture default as before.
+
+- Added the `nemotron-opencode` benchmark dataset backed by
+  `nvidia/Nemotron-SFT-OpenCode-v1`. Each row is a full Qwen3-Coder OpenCode
+  trace (system prompt, multi-turn user/assistant/tool messages, and tool
+  schemas). Multi-GB per subset, so the loader streams via
+  `datasets.load_dataset(..., streaming=True)` and pulls only enough rows to
+  satisfy `--num-prompts`. Tool definitions per row are surfaced on
+  `NemotronOpenCodeBenchmarkDataset.last_loaded_tool_schemas` and (for
+  single-turn) attached to `SampledRequest.tools`.
+
+- Benchmark request payloads now forward an OpenAI-style `tools=[...]` field
+  on chat-completions requests. `SampledRequest` and `RequestFuncInput` gained
+  a `tools: list[dict] | None = None` field;
+  `OpenAIChatCompletionsRequestDriver` serialises it into the POST body when
+  set. Datasets that supply per-row tool schemas (currently
+  `nemotron-opencode`) now exercise the server's tool-call grammar /
+  structured-output path end-to-end. Pass `enable_tool_calls=False` on
+  Nemotron-OpenCode to suppress forwarding.
 
 ### `max` CLI
 
@@ -94,6 +152,22 @@ This version is still a work in progress.
   or `Device.__unsafe_enqueue_async_py_host_func` to issue the host
   work whose completion the consumer waits on.
 
+- Added two new nanobind types to `max._core.engine` that split the
+  compile-and-load pipeline at the type level:
+
+  - `CompiledModels` represents the compile artifact returned by
+    `compile_from_path` / `compile_from_object` on the
+    `max._core.engine.InferenceSession` binding (these methods don't exist on
+    the public `max.engine.InferenceSession` class). It holds the MEF bytes
+    and one or more sub-models; it is not directly executable.
+  - `ModelMetadata` exposes per-sub-model metadata (`name`,
+    `input_metadata`, `output_metadata`) and is yielded by iterating a
+    `CompiledModels` or indexing it with `[i]`.
+
+  `Model` continues to represent the runnable, post-init handle (still
+  produced by `InferenceSession._load_all`). The high-level
+  `max.engine.CompiledModel` wrapper now holds a `CompiledModels` instance
+  internally.
 - Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
   per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
   in `max.experimental.realization_context`). The previous 512 MiB scratch
@@ -180,6 +254,9 @@ This version is still a work in progress.
   dispatched the same way, with a single worker used automatically when the
   problem size is small. The dedicated small-tensor `concat` fast path has been
   removed in favor of the existing serial/parallel dispatch.
+- Updated `elementwise` call sites across MAX kernels and benchmarks to use
+  `Coord`-native indexing, fixing compile failures caused by invalid
+  `Coord`/`IndexList` conversions.
 
 ## Breaking changes
 
@@ -215,6 +292,15 @@ This version is still a work in progress.
   has been removed.
 
 ## Fixes
+
+- Fixed an expert-parallelism dispatch assertion (`Cannot dispatch EP
+  kernel with N input tokens when the maximum tokens per rank is N-1`)
+  that fired whenever `--max-batch-input-tokens` was not evenly
+  divisible by the tensor-parallel degree. The EP per-rank cap now uses
+  ceiling division to match the ragged binning of `reducescatter` in
+  TP-attention + EP-MoE mode, so the largest shard fits in the
+  dispatch buffer. Affects DeepSeek-V3, Kimi-K2.5, MiniMax-M2, Qwen3,
+  and Step3.5 deployments configured with non-divisible batch sizes.
 
 - `MODULAR_DEBUG=ir-output-dir=<dir>` (and the equivalent
   `[max-debug] ir-output-dir = <dir>` config-file entry and

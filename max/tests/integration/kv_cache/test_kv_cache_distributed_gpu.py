@@ -18,10 +18,10 @@ from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import TextGenerationContext
 from max.nn.kv_cache import KVCacheParams, KVConnectorType
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
+from max.pipelines.modeling.types import TextGenerationContext
 from test_common.context_utils import create_text_context
 
 
@@ -267,8 +267,9 @@ async def test_swapping_to_host_multi_gpu(
         expected_cache_hit_rates = np.array([0.0, 0.02, 0.03, 0.02, 0.03])
         expected_blocks_copied = np.array([0, 0])  # d2h, h2d
 
-    d2h_blocks_copied = kv_manager.get_metrics(replica_idx=0).d2h_blocks_copied
-    h2d_blocks_copied = kv_manager.get_metrics(replica_idx=0).h2d_blocks_copied
+    metrics_agg = kv_manager.get_metrics_aggregated()
+    d2h_blocks_copied = metrics_agg.d2h_blocks_copied
+    h2d_blocks_copied = metrics_agg.h2d_blocks_copied
     print(f"Blocks copied: D2H: {d2h_blocks_copied}, H2D: {h2d_blocks_copied}")
     blocks_copied_arr = np.array([d2h_blocks_copied, h2d_blocks_copied])
     assert np.allclose(blocks_copied_arr, expected_blocks_copied, atol=5)

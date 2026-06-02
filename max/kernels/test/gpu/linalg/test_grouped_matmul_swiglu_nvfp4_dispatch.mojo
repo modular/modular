@@ -156,12 +156,12 @@ def _build_shared_b[
 
     var b_scales_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[n_groups_b](),
-            Idx[k_groups](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[num_experts],
+            Idx[n_groups_b],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_total = b_scales_shape.product()
@@ -193,11 +193,11 @@ def _build_shared_b[
             b_scales_host_ptr + e * b_expert_sf_size,
             row_major(
                 Coord(
-                    Idx[n_groups_b](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups_b],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -230,11 +230,11 @@ def _build_shared_b[
             b_scales_host_ptr + e * b_expert_sf_size,
             row_major(
                 Coord(
-                    Idx[n_groups_b](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups_b],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -242,11 +242,11 @@ def _build_shared_b[
             b_scales_perm_host_ptr + e * b_expert_sf_size,
             row_major(
                 Coord(
-                    Idx[n_groups_b](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups_b],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -371,11 +371,9 @@ def _test_swiglu_dispatch[
     )
 
     # ---- Per-test A-side / output buffers (M-dependent) ----
-    var a_shape = row_major(Coord(Int(M), Idx[packed_K]()))
-    var b_shape = row_major(
-        Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())
-    )
-    var c_shape = row_major(Coord(Int(M), Idx[N]()))
+    var a_shape = row_major(Coord(Int(M), Idx[packed_K]))
+    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K]))
+    var c_shape = row_major(Coord(Int(M), Idx[N]))
 
     var a_size = M * packed_K
     var c_size = M * N
@@ -406,23 +404,23 @@ def _test_swiglu_dispatch[
     )
     var a_offsets_tensor = TileTensor(
         a_offsets_device,
-        row_major(Coord(Idx[num_experts + 1]())),
+        row_major(Coord(Idx[num_experts + 1])),
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device,
-        row_major(Coord(Idx[num_experts]())),
+        row_major(Coord(Idx[num_experts])),
     )
     var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](num_experts)
     var expert_ids_tensor = TileTensor(
         expert_ids_device,
-        row_major(Coord(Idx[num_experts]())),
+        row_major(Coord(Idx[num_experts])),
     )
     var input_scales_tensor = TileTensor(
         shared.input_scales,
-        row_major(Coord(Idx[num_experts]())),
+        row_major(Coord(Idx[num_experts])),
     )
 
     var a_scale_dim0 = 0
@@ -450,10 +448,10 @@ def _test_swiglu_dispatch[
     var a_scales_shape = row_major(
         Coord(
             Int(a_scale_dim0),
-            Idx[k_groups](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -468,15 +466,15 @@ def _test_swiglu_dispatch[
 
     # ---- SwiGLU output buffers (REF and TEST) ----
     comptime k_groups_swiglu = ceildiv(H, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
-    var O_shape = row_major(Coord(Int(M), Idx[packed_H]()))
+    var O_shape = row_major(Coord(Int(M), Idx[packed_H]))
     var O_size = M * packed_H
     var swiglu_scales_shape = row_major(
         Coord(
             Int(a_scale_dim0),
-            Idx[k_groups_swiglu](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[k_groups_swiglu],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var S_size = swiglu_scales_shape.product()
@@ -555,10 +553,10 @@ def _test_swiglu_dispatch[
         row_major(
             Coord(
                 Int64(a_scale_dim0),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -567,12 +565,12 @@ def _test_swiglu_dispatch[
         shared.b_scales_perm,
         row_major(
             Coord(
-                Idx[num_experts](),
-                Idx[n_groups_b](),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[num_experts],
+                Idx[n_groups_b],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()

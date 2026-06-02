@@ -13,12 +13,18 @@
 
 """Shared fixtures for pure-metadata placement rule tests.
 
-These tests never create Tensors or graph ops — they only call rule
-functions with (mappings, shapes, **kwargs) and check the output
-placements.
+These tests never create Tensors or graph ops directly — they call
+rule functions on :class:`TensorLayout` inputs and exercise the
+production :class:`GreedyReshard` to check what the picker selects.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    pass
 
 from max.driver import CPU
 from max.experimental.sharding import (
@@ -27,7 +33,9 @@ from max.experimental.sharding import (
     PlacementMapping,
     Replicated,
     Sharded,
+    TensorLayout,
 )
+from max.experimental.sharding.action import Action, ActionSet
 
 # ── Convenience aliases ──────────────────────────────────────────────
 
@@ -67,3 +75,48 @@ def M(
 ) -> PlacementMapping:
     """Shorthand: M(MESH_1D, S(0)) -> PlacementMapping(MESH_1D, (S(0),))."""
     return PlacementMapping(mesh, tuple(placements))
+
+
+# ── Solver-driven picker for rule tests ─────────────────────────────
+
+
+def pick(rule: Callable[..., ActionSet], *args: Any, **kwargs: Any) -> Action:
+    """Picks the cheapest :class:`Action` for ``rule(*args, **kwargs)``.
+
+    Test-only helper that bypasses the source-graph trace: invokes ``rule``
+    directly with the supplied :class:`TensorLayout`\\ s, enumerates the
+    feasible actions over the layouts' shared mesh, applies the per-device
+    memory-budget filter, and returns the cheapest by
+    :func:`pair_transition_cost`. Equivalent to one step of the
+    :class:`~max.experimental.sharding.picker.GreedyReshard`
+    but without going through a graph.
+    """
+    from max.experimental.sharding.picker import (
+        _filter_by_budget,
+        cheapest_action,
+        enumerate_feasible_actions,
+    )
+
+    def _flatten_layouts(value: Any) -> Any:
+        if isinstance(value, TensorLayout):
+            yield value
+        elif isinstance(value, (list, tuple)):
+            for v in value:
+                yield from _flatten_layouts(v)
+
+    in_layouts: list[TensorLayout] = []
+    for a in args:
+        in_layouts.extend(_flatten_layouts(a))
+    for v in kwargs.values():
+        in_layouts.extend(_flatten_layouts(v))
+    menu = rule(*args, **kwargs)
+    mesh = menu.mesh
+    actions = enumerate_feasible_actions(menu, mesh)
+    if not actions:
+        raise ValueError(f"pick: rule {rule.__name__!r} returned no actions.")
+    actions = _filter_by_budget(actions, in_layouts, mesh)
+    if not actions:
+        raise ValueError(
+            f"pick: rule {rule.__name__!r} actions all exceed memory budget."
+        )
+    return cheapest_action(actions, in_layouts, mesh)

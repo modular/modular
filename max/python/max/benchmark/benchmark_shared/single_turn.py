@@ -49,6 +49,7 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncInput,
     RequestDriver,
     RequestFuncInput,
+    progressbar_request_driver,
 )
 from max.benchmark.benchmark_shared.utils import (
     deadline_remaining_s,
@@ -137,6 +138,7 @@ def build_single_turn_request_input(
             max_tokens=max_tokens,
             ignore_eos=request.ignore_eos,
             response_format=request.response_format,
+            tools=request.tools,
         )
     if benchmark_task in PIXEL_GENERATION_TASKS:
         if not isinstance(request, PixelGenerationSampledRequest):
@@ -173,7 +175,7 @@ async def get_request(
             A list of input requests, each represented as a SampledRequest.
         request_rate:
             The rate at which requests are generated (requests/s).
-        burstiness (optional):
+        burstiness:
             The burstiness factor of the request generation.
             Only takes effect when request_rate is not inf.
             Default value is 1, which follows a Poisson process.
@@ -313,8 +315,10 @@ async def prime_shared_contexts(
     samples: Samples,
     request_driver: RequestDriver,
     sampling: SamplingConfig,
+    max_concurrency: int,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
+    disable_tqdm: bool = False,
 ) -> None:
     """Warm up prefix caching by sending each shared context for prefilling."""
     warmup_entries = samples.shared_contexts
@@ -371,13 +375,23 @@ async def prime_shared_contexts(
         warmup_inputs
     )
 
-    async def _run_warmup_index(idx: int, inp: RequestFuncInput) -> None:
-        warmup_results[idx] = await request_driver.request(inp)
+    semaphore = asyncio.Semaphore(max_concurrency)
 
     warmup_start = time.perf_counter()
-    async with TaskGroup() as tg:
-        for idx, inp in enumerate(warmup_inputs):
-            tg.create_task(_run_warmup_index(idx, inp))
+    with progressbar_request_driver(
+        request_driver,
+        len(warmup_inputs),
+        disable_tqdm=disable_tqdm,
+        desc="prefix-cache warmup",
+    ) as driver:
+
+        async def _run_warmup_index(idx: int, inp: RequestFuncInput) -> None:
+            async with semaphore:
+                warmup_results[idx] = await driver.request(inp)
+
+        async with TaskGroup() as tg:
+            for idx, inp in enumerate(warmup_inputs):
+                tg.create_task(_run_warmup_index(idx, inp))
     warmup_elapsed_s = time.perf_counter() - warmup_start
     for sys_idx, inp in enumerate(warmup_inputs):
         result = warmup_results[sys_idx]

@@ -303,7 +303,56 @@ def rope_split_store_ragged(
     )
 
     if kv_params.quantized_kv_cache:
-        raise ValueError("rope_split_store does not support quantized KV cache")
+        # FP8 KV cache with float32 blockwise scales is supported via the
+        # fp8_quantized op variant. All other quantized configs are still
+        # unsupported and will raise below.
+        if not (
+            kv_params.kvcache_quant_config is not None
+            and kv_params.kvcache_quant_config.scale_dtype == DType.float32
+            and kv_params.dtype == DType.float8_e4m3fn
+        ):
+            raise ValueError(
+                "rope_split_store does not support this quantized KV cache"
+                f" configuration: dtype={kv_params.dtype},"
+                f" scale_dtype={kv_params.kvcache_quant_config.scale_dtype if kv_params.kvcache_quant_config else None}"
+            )
+        # FP8 path: route to a fused rope+quantize+store op that writes
+        # fp8-quantized K/V and fp32 per-block scales to the paged cache.
+        _check_rank(2, freqs_cis=freqs_cis)
+        head_dim = kv_params.head_dim
+        q_dim = n_heads * head_dim
+        quant_gran = kv_params.kvcache_quant_config.quantization_granularity
+
+        parameters_fp8: dict[str, bool | int | str | DType] = {
+            "interleaved": interleaved,
+            "quantization_granularity": quant_gran,
+        }
+
+        if kv_collection.kv_scales is None:
+            raise ValueError(
+                "kv_collection.kv_scales is required for fp8 quantized"
+                " rope_split_store"
+            )
+
+        return ops.inplace_custom(
+            "mo.rope_split_store.ragged.paged.fp8_quantized",
+            device=qkv.device,
+            values=[
+                qkv,
+                input_row_offsets,
+                freqs_cis,
+                *kv_collection.flatten_without_attention_dispatch_metadata(),
+                layer_idx,
+            ],
+            out_types=[
+                TensorType(
+                    dtype=DType.bfloat16,
+                    shape=qkv.shape[:-1] + [q_dim],
+                    device=qkv.device,
+                )
+            ],
+            parameters=parameters_fp8,
+        )[0].tensor
 
     _check_rank(2, freqs_cis=freqs_cis)
 
@@ -396,6 +445,56 @@ def store_k_scale_cache_ragged(
         device=x_k_scale.device,
         values=[
             x_k_scale,
+            kv_collection.kv_blocks,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            input_row_offsets,
+            kv_collection.max_lengths,
+            kv_collection.kv_scales,
+            layer_idx,
+        ],
+        parameters={
+            "quantization_granularity": quantization_granularity,
+        },
+    )
+
+
+def store_v_scale_cache_ragged(
+    kv_collection: PagedCacheValues,
+    x_v_scale: TensorValue,
+    input_row_offsets: TensorValue,
+    layer_idx: TensorValue,
+    quantization_granularity: int,
+) -> None:
+    """Store value scale tensor into the paged KV cache.
+
+    Mirrors ``store_k_scale_cache_ragged`` but writes to the V side
+    (kv_idx=1) of the shared scales buffer.  This is the second half
+    of the two-call pattern that stores fp8 KV scales for models that
+    quantize K and V separately (e.g. Gemma4 FP8 KV path):
+
+    - K scales are written by the ``mo.rope_split_store.ragged.paged.fp8_quantized``
+      fused op (which runs rope → quantize → store for K) or by
+      ``store_k_scale_cache_ragged`` directly.
+    - V scales are written here via ``mo.kv_cache.store_v_scales.paged.ragged``.
+
+    Args:
+        kv_collection: Paged KV cache collection carrying the scale buffer.
+        x_v_scale: Per-token, per-head, per-block V scale tensor.
+        input_row_offsets: Ragged row offsets [batch_size + 1].
+        layer_idx: Layer index (uint32).
+        quantization_granularity: Block size along head_dim used for
+            quantization (e.g. 64).
+    """
+    if kv_collection.kv_scales is None:
+        raise ValueError(
+            "kv_collection.kv_scales is None, expected a buffer value"
+        )
+    ops.inplace_custom(
+        "mo.kv_cache.store_v_scales.paged.ragged",
+        device=x_v_scale.device,
+        values=[
+            x_v_scale,
             kv_collection.kv_blocks,
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
@@ -1442,6 +1541,18 @@ def rope_ragged(
     _check_rank(1, input_row_offsets=input_row_offsets, start_pos=start_pos)
     _check_rank(2, freqs_cis=freqs_cis)
 
+    # The rope kernel runs on ``input.device`` (a GPU). If ``freqs_cis`` lives
+    # on a different device -- commonly a CPU-resident frequency table that the
+    # caller sliced (e.g. ``freqs_cis[:seq_len]``) before passing it in --
+    # handing the cross-device value straight to ``ops.custom`` lets the graph
+    # compiler fuse the CPU view (the ``mo.slice``) directly into the GPU
+    # consumer. That fused view races on the implicit transfer's lifetime and
+    # intermittently reads out of bounds under host-side timing jitter. Insert
+    # an explicit transfer so the device crossing is a hard fusion barrier and
+    # the kernel reads a materialized on-device buffer instead of a fused view.
+    if freqs_cis.device != input.device:
+        freqs_cis = freqs_cis.to(input.device)
+
     parameters: dict[str, bool | int | str | DType] = {
         "interleaved": interleaved,
     }
@@ -1606,6 +1717,12 @@ def rope_ragged_with_position_ids(
 
     # Fast path: invoke kernel directly when mrope_section is not used.
     if mrope_section is None:
+        # Materialize freqs_cis on the kernel's device before handing it to
+        # ``ops.custom``; see the note in ``rope_ragged``. A cross-device
+        # (e.g. CPU-resident, sliced) freqs_cis fused into the GPU consumer
+        # races on the implicit transfer and reads out of bounds.
+        if freqs_cis.device != input.device:
+            freqs_cis = freqs_cis.to(input.device)
         total_tokens = ops.cast(
             ops.shape_to_tensor(input.shape)[0], DType.uint32
         ).to(input.device)
@@ -2077,7 +2194,15 @@ def flash_attention_ragged(
             f"expected input of rank {input_rank_expected} but got {input.rank}"
         )
 
-    if input.dtype != kv_params.dtype:
+    # Allow the FP8 KV cache pairing: bf16 Q input with fp8_e4m3fn KV cache.
+    # The dequant-staging path handles this in the MHA kernel by
+    # materialising a bf16 staging buffer before attention.
+    _fp8_kv_pairing = (
+        kv_params.quantized_kv_cache
+        and input.dtype == DType.bfloat16
+        and kv_params.dtype == DType.float8_e4m3fn
+    )
+    if input.dtype != kv_params.dtype and not _fp8_kv_pairing:
         raise ValueError(
             f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
         )
@@ -2109,8 +2234,38 @@ def flash_attention_ragged(
         mask_variant, local_window_size=local_window_size
     )
 
-    # Select kernel based on whether sink_weights is provided.
+    # Select kernel based on whether sink_weights is provided and whether this
+    # is the bf16-Q + fp8-KV dequant-staging path.
     op_name = "mo.mha.ragged.paged"
+
+    if _fp8_kv_pairing:
+        if kv_params.kvcache_quant_config is None:
+            raise ValueError(
+                "kvcache_quant_config is required for fp8_kv flash attention"
+            )
+        fp8_kv_parameters = {
+            **parameters,
+            "quantization_granularity": kv_params.kvcache_quant_config.quantization_granularity,
+        }
+        fp8_kv_values: MutableSequence[Value[Any]] = [
+            input,
+            input_row_offsets,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+            dispatch_metadata.tensor,
+        ]
+        return ops.inplace_custom(
+            "mo.mha.ragged.paged.fp8_kv",
+            device=input.device,
+            values=fp8_kv_values,
+            out_types=[
+                TensorType(
+                    dtype=input.dtype, shape=input.shape, device=input.device
+                )
+            ],
+            parameters=fp8_kv_parameters,
+        )[0].tensor
 
     if sink_weights is not None:
         op_name = "mo.mha.ragged.paged.sink_weights"
@@ -2629,6 +2784,32 @@ def _build_mla_prefill_decode_out_type(
     )
 
 
+def _fp8_mla_scale_params(
+    quant_config: QuantConfig,
+    override: int | None,
+) -> dict[str, int]:
+    """Returns the scale-granularity parameters the FP8 MLA kernel reads.
+
+    When `override` is `None` the kernel uses the on-disk
+    `weight_scale.block_size`. When the per-head row count straddles
+    that block, callers pass an explicit override (e.g. 64 vs the
+    on-disk 128); both N- and K-direction matmul granularities take the
+    same value because the straddling sits along the M-disk axis.
+    """
+    assert quant_config.input_scale.block_size is not None
+    assert quant_config.weight_scale.block_size is not None
+    gran = (
+        override
+        if override is not None
+        else quant_config.weight_scale.block_size[0]
+    )
+    return {
+        "m_scale_granularity": quant_config.input_scale.block_size[0],
+        "n_scale_granularity": gran,
+        "k_scale_granularity": gran,
+    }
+
+
 def mla_prefill_graph(
     q: TensorValue,
     kv: TensorValue,
@@ -2651,6 +2832,7 @@ def mla_prefill_graph(
     w_k_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     quant_config: QuantConfig | None = None,
+    scale_granularity_override: int | None = None,
 ) -> TensorValue:
     """This is a manually fused kernel that performs the following operations:
     - Apply RoPE to the query and the key cache (in-place).
@@ -2728,14 +2910,8 @@ def mla_prefill_graph(
 
     if quant_config is not None:
         assert w_k_scale is not None and w_uv_scale is not None
-        assert quant_config.input_scale.block_size is not None
-        assert quant_config.weight_scale.block_size is not None
         parameters.update(
-            {
-                "m_scale_granularity": quant_config.input_scale.block_size[0],
-                "n_scale_granularity": quant_config.weight_scale.block_size[0],
-                "k_scale_granularity": quant_config.weight_scale.block_size[1],
-            }
+            _fp8_mla_scale_params(quant_config, scale_granularity_override)
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uv_scale]
@@ -2848,10 +3024,13 @@ def mla_decode_graph(
     epsilon: float,
     v_head_dim: int,
     scalar_args: TensorValue,
+    num_partitions_scalar: TensorValue,
+    effective_split_len_scalar: TensorValue,
     *,
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     quant_config: QuantConfig | None = None,
+    scale_granularity_override: int | None = None,
     sparse_indices: TensorValue | None = None,
     sparse_topk_lengths: TensorValue | None = None,
     sparse_attn_sink: TensorValue | None = None,
@@ -2935,14 +3114,8 @@ def mla_decode_graph(
 
     if quant_config is not None:
         assert w_uk_scale is not None and w_uv_scale is not None
-        assert quant_config.input_scale.block_size is not None
-        assert quant_config.weight_scale.block_size is not None
         parameters.update(
-            {
-                "m_scale_granularity": quant_config.input_scale.block_size[0],
-                "n_scale_granularity": quant_config.weight_scale.block_size[0],
-                "k_scale_granularity": quant_config.weight_scale.block_size[1],
-            }
+            _fp8_mla_scale_params(quant_config, scale_granularity_override)
         )
         op_name += ".fp8"
         input_values += [w_uk_scale, w_uv_scale]
@@ -2983,6 +3156,11 @@ def mla_decode_graph(
             sparse_attn_sink,
         ]
 
+    # Capturable-graph scalars are appended after the optional sparse
+    # tensors so the input order matches the MoGG op signature
+    # (see graph_compiler/builtin_kernels/attention.mojo).
+    input_values += [num_partitions_scalar, effective_split_len_scalar]
+
     return ops.inplace_custom(
         op_name,
         device=q.device,
@@ -3012,11 +3190,14 @@ def mla_prefill_decode_graph(
     epsilon: float,
     v_head_dim: int,
     scalar_args: TensorValue,
+    num_partitions_scalar: TensorValue,
+    effective_split_len_scalar: TensorValue,
     *,
     w_k_scale: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     quant_config: QuantConfig | None = None,
+    scale_granularity_override: int | None = None,
     sparse_indices: TensorValue | None = None,
     sparse_topk_lengths: TensorValue | None = None,
     sparse_attn_sink: TensorValue | None = None,
@@ -3098,14 +3279,8 @@ def mla_prefill_decode_graph(
             and w_uk_scale is not None
             and w_uv_scale is not None
         )
-        assert quant_config.input_scale.block_size is not None
-        assert quant_config.weight_scale.block_size is not None
         parameters.update(
-            {
-                "m_scale_granularity": quant_config.input_scale.block_size[0],
-                "n_scale_granularity": quant_config.weight_scale.block_size[0],
-                "k_scale_granularity": quant_config.weight_scale.block_size[1],
-            }
+            _fp8_mla_scale_params(quant_config, scale_granularity_override)
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
@@ -3145,6 +3320,9 @@ def mla_prefill_decode_graph(
             sparse_topk_lengths,
             sparse_attn_sink,
         ]
+
+    # Capturable-graph scalars appended last (see MoGG op signature).
+    input_values += [num_partitions_scalar, effective_split_len_scalar]
 
     return ops.inplace_custom(
         op_name,
@@ -3733,6 +3911,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     expert_usage_stats_host: TensorValue,
     out_type: DType = DType.bfloat16,
     estimated_total_m: TensorValue | None = None,
+    preshuffled_b: bool = False,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -3844,6 +4023,16 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             f"[{weight.shape[0]}, {weight.shape[1]}, {b_scales_dim_2}] but got {b_scales.shape}"
         )
 
+    # `estimated_total_m` defaults to 0 (unknown). When `preshuffled_b` is
+    # True, the AMD preb kernel uses it to choose between persistent (small)
+    # and direct 3D-grid (large) dispatch paths. Ignored on the dense path.
+    if estimated_total_m is None:
+        estimated_total_m_arg = ops.constant(
+            0, dtype=DType.uint32, device=hidden_states.device
+        )
+    else:
+        estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
+
     output = ops.custom(
         "mo.grouped.matmul.block.scaled.mxfp4",
         device=hidden_states.device,
@@ -3856,6 +4045,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             expert_ids,
             expert_usage_stats_host[0],
             expert_usage_stats_host[1],
+            estimated_total_m_arg,
         ],
         out_types=[
             TensorType(
@@ -3864,6 +4054,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
                 device=hidden_states.device,
             ),
         ],
+        parameters={"preshuffled_b": preshuffled_b},
     )[0].tensor
 
     return output
@@ -4248,7 +4439,6 @@ def grouped_dynamic_scaled_fp8_matmul(
     input_scale_spec: InputScaleSpec,
     weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
-    tokens_padded_per_expert: bool = False,
 ) -> TensorValue:
     """Grouped blockwise scaled matmul used in MoE layer.
 
@@ -4266,8 +4456,6 @@ def grouped_dynamic_scaled_fp8_matmul(
         expert_usage_stats_host: The maximum number of tokens assigned to any expert, and the number of active experts.
         input_scale_spec: The scaling granularity for the input tensor.
         weight_scale_spec: The scaling granularity for the weight tensor.
-        tokens_padded_per_expert: If True, It's guaranteed that the number of tokens for each local expert will be
-            padded, so that `a_scales` is aligned to 16 bytes. This is needed by the optimized grouped matmul kernel.
 
     Returns:
         The result of the matmul operation.
@@ -4388,7 +4576,6 @@ def grouped_dynamic_scaled_fp8_matmul(
             "m_scale_granularity": input_scale_spec.block_size[0],
             "n_scale_granularity": weight_scale_spec.block_size[0],
             "k_scale_granularity": weight_scale_spec.block_size[1],
-            "tokens_padded_per_expert": tokens_padded_per_expert,
         },
     )[0].tensor
 
@@ -5392,6 +5579,45 @@ def block_scales_interleave(
     )[0].tensor
 
     return result
+
+
+def mxfp4_preshuffle_b_5d(b: TensorValue) -> TensorValue:
+    """Applies the AMD CDNA4 MXFP4 B 5D preshuffle to a rank-3 weight.
+
+    Reorders the packed-FP4 bytes from ``[E, N, K_BYTES]`` row-major into the
+    5D ``(E, N0, K0, KLane=4, NLane=16, KPack=16)`` byte layout expected by
+    the ``mxfp4_grouped_matmul_amd_preb`` reader. Output is byte-identical to
+    ``Shuffler[E].preshuffle_b_5d`` running on the same input.
+
+    Intended for eager invocation from weight adapters (one-shot graph), not
+    inside the main forward graph — the preb matmul kernel reads weights
+    that are already in this layout.
+
+    Args:
+        b: Rank-3 ``uint8`` tensor ``[E, N, K_BYTES]`` of packed FP4 weights.
+            ``N`` must be a multiple of 16 and ``K_BYTES`` a multiple of 64.
+
+    Returns:
+        Rank-3 ``uint8`` tensor with the same shape and total byte count as
+        ``b``, with bytes reordered to the 5D layout.
+    """
+    if b.rank != 3:
+        raise ValueError("b must be a rank 3 tensor [E, N, K_BYTES]")
+    if b.dtype != DType.uint8:
+        raise ValueError(f"b must be uint8 (packed MXFP4), got {b.dtype}")
+
+    return ops.custom(
+        "mo.mxfp4.preshuffle.b.5d",
+        device=b.device,
+        values=[b],
+        out_types=[
+            TensorType(
+                dtype=DType.uint8,
+                shape=b.shape,
+                device=b.device,
+            ),
+        ],
+    )[0].tensor
 
 
 def matmul_static_scaled_float8(
@@ -6653,6 +6879,52 @@ def launch_host_func(payload: BufferValue, device: DeviceRef) -> None:
         "mo.launch_host_func",
         device=device,
         values=[payload],
+        out_types=[],
+    )
+
+
+def wait_host_value_with_dep(
+    payload: BufferValue,
+    dep: BufferValue,
+    device: DeviceRef,
+) -> None:
+    """Variant of ``wait_host_value`` with a fake mutable dependency.
+
+    Wraps ``mo.wait_host_value_with_dep``. Behaves identically to
+    :func:`wait_host_value` at runtime, but threads ``dep`` through the
+    op as a mutated operand so any downstream op that mutates ``dep``
+    must chain after the wait completes.
+
+    Use this in place of :func:`wait_host_value` when the next op is an
+    :func:`inplace_memcpy` whose dst is the buffer that needs to
+    receive host-produced data. Without a shared operand the two
+    ``inplace_custom`` ops carry no data dependency, and the graph
+    compiler / cuGraph capture is free to parallelise them -- so the
+    in-graph H2D can complete before the host callback signals the
+    flag, producing one-iter-stale data at the consumer.
+
+    Args:
+        payload: CPU buffer of shape ``[2]`` and dtype ``int64`` holding
+            ``[CompletionFlag._unsafe_ptr, expected_value]``. Same as
+            :func:`wait_host_value`'s ``payload``.
+        dep: The buffer the downstream op mutates. Threaded through as
+            a fake mutable operand here to register a data dependency;
+            not otherwise touched by this op.
+        device: GPU device on whose stream to insert the wait node.
+    """
+    if payload.dtype != DType.int64:
+        raise ValueError(f"Expected payload dtype int64, got {payload.dtype}")
+    if payload.shape != [2]:
+        raise ValueError(f"Expected payload shape [2], got {payload.shape}")
+    if not device.is_gpu():
+        raise ValueError(
+            "wait_host_value_with_dep is only supported on GPU devices"
+        )
+
+    ops.inplace_custom(
+        "mo.wait_host_value_with_dep",
+        device=device,
+        values=[payload, dep],
         out_types=[],
     )
 

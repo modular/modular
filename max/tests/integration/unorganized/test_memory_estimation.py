@@ -17,9 +17,14 @@ import logging
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-from max.driver import CPU, load_devices
+from max.driver import CPU, DeviceSpec, load_devices
+from max.nn.comm import Signals
+from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib import MemoryEstimator
-from max.pipelines.lib.interfaces import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces import (
+    AlwaysSignalBuffersMixin,
+    ArchConfigWithKVCache,
+)
 from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import (
     DUMMY_LLAMA_ARCH,
@@ -289,3 +294,137 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
                     mock_config, mock_config.model.huggingface_config
                 ),
             )
+
+
+@pytest.mark.parametrize(
+    "device_specs,kv_connector,expected_count_per_gpu",
+    [
+        # Single-device: no signal buffers in the default path.
+        ([DeviceSpec.cpu()], KVConnectorType.null, 0),
+        ([DeviceSpec.accelerator(id=0)], KVConnectorType.null, 0),
+        # Multi-GPU baseline: one set per device for the main model.
+        (
+            [DeviceSpec.accelerator(id=i) for i in range(2)],
+            KVConnectorType.null,
+            1,
+        ),
+        (
+            [DeviceSpec.accelerator(id=i) for i in range(4)],
+            KVConnectorType.null,
+            1,
+        ),
+        (
+            [DeviceSpec.accelerator(id=i) for i in range(8)],
+            KVConnectorType.null,
+            1,
+        ),
+        # KV-offload adds BlockOffloadEngine's set.
+        (
+            [DeviceSpec.accelerator(id=i) for i in range(2)],
+            KVConnectorType.tiered,
+            2,
+        ),
+        (
+            [DeviceSpec.accelerator(id=i) for i in range(4)],
+            KVConnectorType.local,
+            2,
+        ),
+        (
+            [DeviceSpec.accelerator(id=i) for i in range(8)],
+            KVConnectorType.tiered,
+            2,
+        ),
+        # dkv connector doesn't allocate BlockOffloadEngine.
+        (
+            [DeviceSpec.accelerator(id=i) for i in range(2)],
+            KVConnectorType.dkv,
+            1,
+        ),
+    ],
+)
+def test_estimate_signal_buffer_memory__default(
+    device_specs: list[DeviceSpec],
+    kv_connector: KVConnectorType,
+    expected_count_per_gpu: int,
+) -> None:
+    """``PipelineConfig.estimate_signal_buffer_memory`` returns
+    ``NUM_BYTES * count_per_gpu * ngpus`` for the in-scope allocation sites."""
+    cfg = DummyPipelineConfig(
+        model_path="dummy",
+        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
+        max_batch_size=1,
+        max_length=1024,
+        device_specs=device_specs,
+    )
+    cfg.model.kv_cache.kv_connector = kv_connector
+
+    expected = Signals.NUM_BYTES * expected_count_per_gpu * len(device_specs)
+    assert cfg.estimate_signal_buffer_memory() == expected
+
+
+@pytest.mark.parametrize(
+    "ngpus,kv_connector,expected_count_per_gpu",
+    [
+        # Single-GPU: mixin allocates one set even though the default would not.
+        (1, KVConnectorType.null, 1),
+        # Multi-GPU: mixin matches the default.
+        (2, KVConnectorType.null, 1),
+        (4, KVConnectorType.tiered, 2),
+        (8, KVConnectorType.local, 2),
+    ],
+)
+def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
+    ngpus: int,
+    kv_connector: KVConnectorType,
+    expected_count_per_gpu: int,
+) -> None:
+    """``AlwaysSignalBuffersMixin`` allocates one set even at single-GPU,
+    and matches the default for multi-GPU."""
+    device_specs = [DeviceSpec.accelerator(id=i) for i in range(ngpus)]
+    cfg = DummyPipelineConfig(
+        model_path="dummy",
+        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
+        max_batch_size=1,
+        max_length=1024,
+        device_specs=device_specs,
+    )
+    cfg.model.kv_cache.kv_connector = kv_connector
+
+    got = AlwaysSignalBuffersMixin.estimate_signal_buffer_memory(cfg)
+    expected = Signals.NUM_BYTES * expected_count_per_gpu * max(ngpus, 1)
+    assert got == expected
+
+
+@pytest.mark.parametrize(
+    "replicates_kv_across_tp,expected_count_per_gpu",
+    [
+        # BlockOffloadEngine only allocates signal buffers when the KV cache
+        # is replicated across TP (is_mla AND dp==1 AND n_devices>1).
+        (True, 2),  # main model + BCE
+        (False, 1),  # main model only, BCE skips signal-buffer setup
+    ],
+)
+def test_estimate_signal_buffer_memory__bce_gated_by_kv_params(
+    replicates_kv_across_tp: bool,
+    expected_count_per_gpu: int,
+) -> None:
+    """With an ``arch_config`` exposing :class:`KVCacheParamInterface`,
+    the BCE term is gated on ``replicates_kv_across_tp``."""
+    device_specs = [DeviceSpec.accelerator(id=i) for i in range(4)]
+    cfg = DummyPipelineConfig(
+        model_path="dummy",
+        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
+        max_batch_size=1,
+        max_length=1024,
+        device_specs=device_specs,
+    )
+    cfg.model.kv_cache.kv_connector = KVConnectorType.tiered
+
+    arch_config = MagicMock(spec=ArchConfigWithKVCache)
+    arch_config.get_kv_params.return_value.replicates_kv_across_tp = (
+        replicates_kv_across_tp
+    )
+
+    got = cfg.estimate_signal_buffer_memory(arch_config)
+    expected = Signals.NUM_BYTES * expected_count_per_gpu * len(device_specs)
+    assert got == expected

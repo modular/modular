@@ -11,6 +11,15 @@ max.pipelines.lib
 
 .. currentmodule:: max.pipelines.lib
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   pipelines.lib.interfaces
+   pipelines.lib.log_probabilities
+
 Configuration
 -------------
 
@@ -35,7 +44,6 @@ Pipelines
 
    EmbeddingsPipelineType
    OverlapTextGenerationPipeline
-   StandaloneSpeculativeDecodingPipeline
 
 Model interface
 ---------------
@@ -68,7 +76,6 @@ LoRA
    :template: autosummary/class.rst
 
    LoRAManager
-   LoRARequestProcessor
 
 Utilities
 ---------
@@ -107,11 +114,3 @@ Functions
    try_to_load_from_cache
    validate_hf_repo_access
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   pipelines.lib.interfaces
-   pipelines.lib.log_probabilities

@@ -57,7 +57,7 @@ from .vnni import Inner_matmul_vnni
 # - _run_inner_loop_i8mm()
 
 
-trait InnerMatmulKernel(ImplicitlyCopyable):
+trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDestructible):
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
@@ -599,7 +599,7 @@ def matmul[
         @parameter
         @always_inline
         def cast_epilogue[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](coord: IndexList[2], val: SIMD[dtype, width]):
             var cast_val = val.cast[c.dtype]()
             comptime if elementwise_lambda_fn:
@@ -622,9 +622,10 @@ def matmul[
 
     comptime kernel_id = select_inner_kernel[a.dtype, b.dtype, c.dtype]()
 
-    @parameter
     @always_inline
-    def dispatch_on_kernel_type[kernel_type: Bool]() raises:
+    def dispatch_on_kernel_type[
+        kernel_type: Bool
+    ]() raises {c, a, b, num_threads, ctx}:
         comptime config = get_kernel_config[
             a.dtype,
             b.dtype,
@@ -698,7 +699,7 @@ def matmul[
     var shape = GemmShape.get[transpose_b](c, a, b)
     var n = shape.N
     var k = shape.K
-    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+    dispatch_get_kernel_type(dispatch_on_kernel_type, kernel_type_m, n, k)
 
 
 def _submatmul_sequential_sync[

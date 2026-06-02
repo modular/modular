@@ -694,8 +694,8 @@ def grouped_matmul_amd_kernel_launcher[
     # Only perform matmul if expert_id is not -1
     # AMD matmul kernel performs the epilogue function
     if expert_id != -1:
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N]())))
-        var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[K]())))
+        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
+        var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[K])))
         var b_tile = TileTensor(b_ptr, row_major[N, K]())
         AMDMatmul[
             a_type,
@@ -710,7 +710,7 @@ def grouped_matmul_amd_kernel_launcher[
 
     # Perform the epilogue function separately if expert_id is -1
     else:
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N]())))
+        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
         _ = c_tile.fill(0.0)
 
         comptime if elementwise_lambda_fn:
@@ -784,12 +784,14 @@ def dispatch_amd_matmul_by_block_shape[
     transpose_b: Bool,
     N: Int,
     K: Int,
-    launcher_fn: def[
-        config: MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ]() raises capturing -> None,
     default_block_tile_shape: IndexList[3],
     use_heuristic: Bool = False,
-](M: Int, ctx: DeviceContext) raises:
+    *,
+    LauncherFnType: ImplicitlyCopyable
+    & def[
+        config: MatmulConfig[a_type, b_type, c_type, transpose_b]
+    ]() raises -> None,
+](launcher_fn: LauncherFnType, M: Int, ctx: DeviceContext) raises:
     """Dispatches to the best kernel configuration based on runtime M dimension.
     """
 
@@ -917,8 +919,9 @@ def grouped_matmul_amd[
     comptime block_dim = 256
 
     @always_inline
-    @parameter
-    @__copy_capture(
+    def launch_kernel[
+        config: MatmulConfig[a_type, b_type, c_type, transpose_b]
+    ]() raises {
         c,
         a,
         b_2d,
@@ -926,10 +929,8 @@ def grouped_matmul_amd[
         expert_ids,
         num_active_experts,
         max_num_tokens_per_expert,
-    )
-    def launch_kernel[
-        config: MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ]() raises:
+        ctx,
+    }:
         comptime kernel = grouped_matmul_amd_kernel_launcher[
             c_type,
             a_type,
@@ -966,9 +967,8 @@ def grouped_matmul_amd[
         transpose_b,
         N,
         K,
-        launch_kernel,
         block_tile_shape,
-    ](total_M, ctx)
+    ](launch_kernel, total_M, ctx)
 
 
 # ===----------------------------------------------------------------------=== #

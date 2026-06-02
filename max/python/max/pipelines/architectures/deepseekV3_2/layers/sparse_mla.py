@@ -24,7 +24,9 @@ from max.graph import (
     ops,
 )
 from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.attention.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
@@ -97,6 +99,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             q_lora_rank=q_lora_rank,
             devices=self.devices,
             quant_config=self.quant_config,
+            k_norm_dtype=norm_dtype,
         )
 
     @LatentAttentionWithRopeFp8.sharding_strategy.setter  # type: ignore[attr-defined]
@@ -147,6 +150,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             "scale": self.scale,
             "v_head_dim": self.v_head_dim,
             "quant_config": self.quant_config,
+            "scale_granularity_override": self._b_scale_granularity,
         }
 
         w_k, w_k_scale = self.w_k
@@ -180,6 +184,14 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             assert kv_collection.attention_dispatch_metadata is not None
             attn_kwargs["scalar_args"] = (
                 kv_collection.attention_dispatch_metadata
+            )
+            assert kv_collection.mla_num_partitions is not None
+            assert kv_collection.mla_effective_split_len is not None
+            attn_kwargs["num_partitions_scalar"] = (
+                kv_collection.mla_num_partitions
+            )
+            attn_kwargs["effective_split_len_scalar"] = (
+                kv_collection.mla_effective_split_len
             )
 
         sparse_kw: dict[str, Any] = {}
@@ -355,6 +367,9 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 v_head_dim=self.v_head_dim,
                 buffer_size=self.BUFFER_TOK_SIZE,
                 norm_dtype=self.norm_dtype,
+                index_n_heads=self.indexer.n_heads,
+                index_head_dim=self.indexer.head_dim,
+                index_topk=self.indexer.index_topk,
             )
 
             replica.q_a_proj = q_a_proj_shards[shard_idx]

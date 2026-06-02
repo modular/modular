@@ -18,16 +18,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from max.interfaces import (
+from max.pipelines.lib.reasoning import register
+from max.pipelines.lib.tokenizer import convert_token_to_id
+from max.pipelines.modeling.types import (
     ParsedReasoningDelta,
     PipelineTokenizer,
     ReasoningParser,
     ReasoningSpan,
 )
-from max.pipelines.lib.reasoning import register
-from max.pipelines.lib.tokenizer import convert_token_to_id
 
-EMPTY_THINKING_BLOCK = "<|channel>thought\n<channel|>"
+from .tokenizer import SpecialToken
 
 
 @register("gemma4")
@@ -61,9 +61,11 @@ class Gemma4ReasoningParser(ReasoningParser):
         self.tool_call_start_token_id = tool_call_start_token_id
         self.think_token_id = think_token_id
         self._prefix_cursor = 0
+        self._channel_started = False
 
     def reset(self) -> None:
         self._prefix_cursor = 0
+        self._channel_started = False
 
     def _format_reasoning_text(self, reasoning: str) -> str | None:
         if self._prefix_cursor >= len(self.reasoning_prefix):
@@ -131,16 +133,27 @@ class Gemma4ReasoningParser(ReasoningParser):
                     end_token_idx = i
                     break
 
-        if start_token_idx is None and not is_currently_reasoning:
-            # No reasoning section in this chunk and we weren't already
-            # inside one. Empty span, all tokens are content.
+        if start_token_idx is not None:
+            self._channel_started = True
+
+        # Fall through to the main reasoning logic only for confirmed
+        # mid-reasoning continuations: the caller says we're inside a
+        # reasoning span AND we've actually seen ``<|channel>`` open
+        # the block.  Everything else — not reasoning, or pre-seeded
+        # but the model never emitted ``<|channel>`` (skipped thinking)
+        # — returns an empty reasoning span so tokens route to content.
+        if start_token_idx is None and not (
+            is_currently_reasoning and self._channel_started
+        ):
             empty_span = ReasoningSpan(
                 reasoning_with_delimiters=(0, 0),
                 reasoning=(0, 0),
             )
             return ParsedReasoningDelta(
                 span=empty_span,
-                is_still_reasoning=False,
+                is_still_reasoning=(
+                    is_currently_reasoning and not delta_token_ids
+                ),
                 reasoning_text_formatter=self._format_reasoning_text,
             )
 
@@ -176,41 +189,21 @@ class Gemma4ReasoningParser(ReasoningParser):
             reasoning_text_formatter=self._format_reasoning_text,
         )
 
-    def is_prompt_in_reasoning(
+    def will_reason_after_prompt(
         self,
         prompt_token_ids: Sequence[int],
     ) -> bool:
-        """Decide whether the next generated token is in a reasoning span.
+        """Predicts whether the model will emit reasoning after this prompt.
 
-        Gemma 4 chat templates can prefill multiple
-        ``<|channel>thought\\n...<channel|>`` blocks across a multi-turn
-        conversation, and ``<|think|>`` lives in the *system* message
-        merely to enable the behavior globally — its mere presence does
-        not mean the current assistant turn is mid-reasoning.
-
-        Scan right-to-left and return based on the first delimiter seen:
-
-        * ``<|channel>`` → reasoning is currently open → ``True``.
-        * ``<channel|>`` (or ``<|tool_call>``) → reasoning is currently
-          closed → ``False``.
-        * No delimiters → the model will self-generate ``<|channel>`` if
-          it wants to reason; we are not yet in reasoning → ``False``.
+        Gemma 4 enables thinking by injecting ``<|think|>`` in the
+        system message. When present, every assistant turn opens a
+        ``<|channel>thought\\n...`` block. Checking for ``<|think|>``
+        is the right signal — channel delimiters from prior turns are
+        irrelevant because a new thinking block always starts.
         """
-        end_token_ids: tuple[int, ...]
-        if self.tool_call_start_token_id is not None:
-            end_token_ids = (
-                self.channel_end_token_id,
-                self.tool_call_start_token_id,
-            )
-        else:
-            end_token_ids = (self.channel_end_token_id,)
-
-        for token_id in reversed(prompt_token_ids):
-            if token_id == self.channel_start_token_id:
-                return True
-            if token_id in end_token_ids:
-                return False
-        return False
+        if self.think_token_id is None:
+            return False
+        return self.think_token_id in prompt_token_ids
 
     @classmethod
     async def from_tokenizer(
@@ -228,7 +221,7 @@ class Gemma4ReasoningParser(ReasoningParser):
             )
 
         tool_call_start_id = await convert_token_to_id(
-            tokenizer, "<|tool_call>"
+            tokenizer, SpecialToken.TOOL_CALL_START
         )
         think_id = await convert_token_to_id(tokenizer, "<|think|>")
 

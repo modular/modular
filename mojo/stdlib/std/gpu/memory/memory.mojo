@@ -845,7 +845,7 @@ def external_memory[
     address_space: AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[dtype, MutAnyOrigin, address_space=address_space]:
+]() -> UnsafePointer[dtype, MutExternalOrigin, address_space=address_space]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -870,15 +870,12 @@ def external_memory[
     - The pointer is only valid within the GPU kernel execution context.
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
-    var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[dtype, 0], MutAnyOrigin, address_space=address_space
-    ](
+    comptime PtrTy = UnsafePointer[
+        StaticTuple[dtype, 0], MutExternalOrigin, address_space=address_space
+    ]
+    var extern_ptr_symbol = PtrTy(
         __mlir_op.`pop.extern_ptr_symbol`[
-            _type=UnsafePointer[
-                StaticTuple[dtype, 0],
-                MutAnyOrigin,
-                address_space=address_space,
-            ]._mlir_type,
+            _type=PtrTy._mlir_type,
             name=_get_kgen_string[name](),
             alignment=alignment._int_mlir_index(),
         ]()
@@ -3201,7 +3198,7 @@ def multimem_st[
     from std.gpu.memory.memory import multimem_st, Consistency
     from std.gpu.intrinsics import Scope
     from std.utils import StaticTuple
-    var addr = UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL](unsafe_from_address=0)
+    var addr = UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL].unsafe_dangling()
     %# val1, val2 = Float32(0), Float32(0)
     %# vec1, vec2, vec3, vec4 = Float16(0), Float16(0), Float16(0), Float16(0)
 

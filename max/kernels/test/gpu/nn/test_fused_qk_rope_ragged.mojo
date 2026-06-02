@@ -329,8 +329,8 @@ def execute_fused_qk_rope_ragged(
         row_major(
             (
                 true_ce_total_length,
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -339,8 +339,8 @@ def execute_fused_qk_rope_ragged(
         row_major(
             (
                 mixed_ce_total_length,
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -349,8 +349,8 @@ def execute_fused_qk_rope_ragged(
         row_major(
             (
                 true_ce_total_length,
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -359,8 +359,8 @@ def execute_fused_qk_rope_ragged(
         row_major(
             (
                 mixed_ce_total_length,
-                Idx[num_q_heads](),
-                Idx[kv_params.head_size](),
+                Idx[num_q_heads],
+                Idx[kv_params.head_size],
             )
         ),
     )
@@ -1087,6 +1087,9 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                                         head_dim_idx,
                                     ],
                                 )
+
+    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
+    _ = UnsafePointer(to=kv_block_out_host_ptr).as_any_origin()[]
 
     # Explicitly free device buffers to return memory to the buffer cache
     _ = q_ragged_device^

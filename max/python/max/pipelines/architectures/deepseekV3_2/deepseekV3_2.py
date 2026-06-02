@@ -30,7 +30,9 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.attention.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
@@ -42,11 +44,13 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import LayerList, Module
 from max.nn.linear import ColumnParallelLinear
+from max.nn.moe import MoE
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
+    RotaryEmbedding,
 )
 from max.nn.transformer import ReturnLogits, forward_sequential_layers
 from max.nn.transformer.distributed_transformer import (
@@ -54,7 +58,11 @@ from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 
-from .layers import DeepseekV3_2MLP, DeepseekV3_2MoE, DeepseekV3_2TopKRouter
+from .layers import (
+    DeepseekV3_2MLP,
+    DeepseekV3_2MoE,
+    DeepseekV3_2TopKRouter,
+)
 from .layers.sparse_mla import (
     DataParallelSparseLatentAttentionWithRopeFp8,
 )
@@ -128,14 +136,11 @@ def _validate_parallelism_config(config: DeepseekV3_2Config) -> None:
 
 
 class DeepseekV3_2DecoderLayer(Module):
-    """Decoder layer for DeepseekV3.2.
-
-    TODO(MODELS-968): Replace with new MLA layer that uses sparse attention indexer.
-    """
+    """Decoder layer for DeepseekV3.2."""
 
     def __init__(
         self,
-        rope: DeepseekYarnRotaryEmbedding,
+        rope: DeepseekYarnRotaryEmbedding | RotaryEmbedding,
         config: DeepseekV3_2Config,
         layer_idx: int,
         ep_manager: EPBatchManager | None = None,
@@ -145,21 +150,27 @@ class DeepseekV3_2DecoderLayer(Module):
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
 
-        self.mlp: DeepseekV3_2MLP | DeepseekV3_2MoE
+        self.mlp: DeepseekV3_2MLP | DeepseekV3_2MoE | MoE
         self.mlp_shards: list[DeepseekV3_2MLP | DeepseekV3_2MoE | Module]
 
         nvfp4_enabled = (
             config.quant_config is not None and config.quant_config.is_nvfp4
         )
         use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
+        if config.quant_config is None:
+            raise ValueError(
+                "DeepSeekV3.2 sparse attention requires a quantization config."
+            )
 
         if not use_fp8_mla:
             raise ValueError(
                 "DeepSeekV3.2 must be executed with fp8 (due to fp8 indexer)."
             )
+
         assert isinstance(config.kv_params, MultiKVCacheParams)
         mla_kv_params, _indexer_kv_params = config.kv_params.params
-        self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
+
+        sparse_attn_kwargs: dict[str, Any] = dict(
             rope=rope,
             num_attention_heads=config.num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,
@@ -171,13 +182,17 @@ class DeepseekV3_2DecoderLayer(Module):
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
-            graph_mode=config.graph_mode,
+            graph_mode="decode",
             buffer_size=config.max_batch_context_length,
-            norm_dtype=DType.float32,
-            quant_config=config.quant_config,
             index_n_heads=config.index_n_heads,
             index_head_dim=config.index_head_dim,
             index_topk=config.index_topk,
+        )
+
+        self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
+            norm_dtype=config.norm_dtype,
+            quant_config=config.quant_config,
+            **sparse_attn_kwargs,
         )
 
         # Create MLP or MoE layer
@@ -211,7 +226,7 @@ class DeepseekV3_2DecoderLayer(Module):
 
     def _get_mlp(
         self, config: DeepseekV3_2Config, layer_idx: int
-    ) -> DeepseekV3_2MLP | DeepseekV3_2MoE:
+    ) -> DeepseekV3_2MLP | DeepseekV3_2MoE | MoE:
         """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
         for the TransformerBlock's mlp depending on the layer idx.
 
@@ -222,6 +237,14 @@ class DeepseekV3_2DecoderLayer(Module):
         Returns:
             MLP or MoE module depending on the layer index and config
         """
+        quant_cfg = config.quant_config
+        mlp_quantized = (
+            quant_cfg is not None
+            and layer_idx in quant_cfg.mlp_quantized_layers
+        )
+        mlp_dtype = config.dtype if mlp_quantized else DType.bfloat16
+        layer_quant_config = quant_cfg if mlp_quantized else None
+
         if (
             config.n_routed_experts is not None
             and layer_idx >= config.first_k_dense_replace
@@ -234,7 +257,7 @@ class DeepseekV3_2DecoderLayer(Module):
             else:
                 ep_size = 1
 
-            moe = DeepseekV3_2MoE(
+            moe_kwargs: dict[str, Any] = dict(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
                 num_experts=config.n_routed_experts,
@@ -256,12 +279,23 @@ class DeepseekV3_2DecoderLayer(Module):
                 has_shared_experts=True,
                 shared_experts_dim=config.n_shared_experts
                 * config.moe_intermediate_size,
-                dtype=config.dtype,
+                dtype=mlp_dtype,
                 ep_size=ep_size,
                 apply_router_weight_first=False,
                 ep_batch_manager=self.ep_manager,
-                quant_config=config.quant_config,
+                quant_config=layer_quant_config,
+                shared_experts_dtype=(
+                    quant_cfg.shared_experts_dtype(mlp_dtype)
+                    if quant_cfg is not None
+                    else DType.bfloat16
+                ),
             )
+
+            moe: DeepseekV3_2MoE | MoE
+            if mlp_quantized:
+                moe = DeepseekV3_2MoE(**moe_kwargs)
+            else:
+                moe = MoE(**moe_kwargs)
 
             num_devices = len(config.devices)
             if num_devices > 1:
@@ -271,12 +305,12 @@ class DeepseekV3_2DecoderLayer(Module):
             return moe
         else:
             mlp = DeepseekV3_2MLP(
-                dtype=config.dtype,
+                dtype=mlp_dtype,
                 quantization_encoding=None,
                 hidden_dim=config.hidden_size,
                 feed_forward_length=config.intermediate_size,
                 devices=config.devices,
-                quant_config=config.quant_config,
+                quant_config=layer_quant_config,
             )
             mlp.sharding_strategy = ShardingStrategy.replicate(
                 len(config.devices)
@@ -302,6 +336,8 @@ class DeepseekV3_2DecoderLayer(Module):
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
         mla_decode_scalar_args: list[TensorValue] | None = None,
+        mla_num_partitions_scalars: list[TensorValue] | None = None,
+        mla_effective_split_len_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
@@ -317,6 +353,12 @@ class DeepseekV3_2DecoderLayer(Module):
                 mla_kv_cache_scales[i] if mla_kv_cache_scales else None,
                 attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
+                else None,
+                mla_num_partitions=mla_num_partitions_scalars[i]
+                if mla_num_partitions_scalars is not None
+                else None,
+                mla_effective_split_len=mla_effective_split_len_scalars[i]
+                if mla_effective_split_len_scalars is not None
                 else None,
             )
             for i in range(num_devices)
@@ -412,24 +454,35 @@ class DeepseekV3_2(Module):
             quantization_encoding=None,
         )
 
-        assert config.rope_scaling is not None
-        scaling_params = DeepseekYarnRopeScalingParams(
-            scaling_factor=config.rope_scaling["factor"],
-            original_max_position_embeddings=config.rope_scaling[
-                "original_max_position_embeddings"
-            ],
-            beta_fast=config.rope_scaling["beta_fast"],
-            beta_slow=config.rope_scaling["beta_slow"],
-            mscale=config.rope_scaling["mscale"],
-            mscale_all_dim=config.rope_scaling["mscale_all_dim"],
-        )
-        self.rope = DeepseekYarnRotaryEmbedding(
-            config.qk_rope_head_dim,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
-            max_seq_len=config.max_position_embeddings,
-            scaling_params=scaling_params,
-        )
+        if config.rope_scaling is not None:
+            scaling_params = DeepseekYarnRopeScalingParams(
+                scaling_factor=config.rope_scaling["factor"],
+                original_max_position_embeddings=config.rope_scaling[
+                    "original_max_position_embeddings"
+                ],
+                beta_fast=config.rope_scaling["beta_fast"],
+                beta_slow=config.rope_scaling["beta_slow"],
+                mscale=config.rope_scaling["mscale"],
+                mscale_all_dim=config.rope_scaling["mscale_all_dim"],
+            )
+            self.rope: DeepseekYarnRotaryEmbedding | RotaryEmbedding = (
+                DeepseekYarnRotaryEmbedding(
+                    config.qk_rope_head_dim,
+                    n_heads=config.num_attention_heads,
+                    theta=config.rope_theta,
+                    max_seq_len=config.max_position_embeddings,
+                    scaling_params=scaling_params,
+                )
+            )
+        else:
+            self.rope = RotaryEmbedding(
+                dim=config.qk_rope_head_dim,
+                n_heads=config.num_attention_heads,
+                theta=config.rope_theta,
+                max_seq_len=config.max_position_embeddings,
+                head_dim=config.qk_rope_head_dim,
+                interleaved=config.rope_interleave,
+            )
 
         self.ep_manager: EPBatchManager | None = None
         if config.ep_config is not None:
@@ -588,6 +641,21 @@ class DeepseekV3_2(Module):
                 if kv.attention_dispatch_metadata is not None
             ]
 
+        mla_num_partitions_scalars: list[TensorValue] | None = None
+        mla_effective_split_len_scalars: list[TensorValue] | None = None
+        if mla_kv_collections[0].mla_num_partitions is not None:
+            mla_num_partitions_scalars = [
+                kv.mla_num_partitions
+                for kv in mla_kv_collections
+                if kv.mla_num_partitions is not None
+            ]
+        if mla_kv_collections[0].mla_effective_split_len is not None:
+            mla_effective_split_len_scalars = [
+                kv.mla_effective_split_len
+                for kv in mla_kv_collections
+                if kv.mla_effective_split_len is not None
+            ]
+
         def inputs_for_layer(
             idx: int, h: list[TensorValue]
         ) -> list[Value[Any] | Sequence[Value[Any]]]:
@@ -611,6 +679,10 @@ class DeepseekV3_2(Module):
             ]
             if mla_decode_scalar_args is not None:
                 values.append(mla_decode_scalar_args)
+            if mla_num_partitions_scalars is not None:
+                values.append(mla_num_partitions_scalars)
+            if mla_effective_split_len_scalars is not None:
+                values.append(mla_effective_split_len_scalars)
             if ep_inputs is not None:
                 values.append(ep_inputs)
             return values

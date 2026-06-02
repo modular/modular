@@ -380,6 +380,7 @@ struct MHAPosition[
                 # In decoding, we have `group` rows, but these
                 # correspond to the same position w/ respect to the mask.
                 return mask.status(
+                    self.prompt_idx,
                     Index[dtype=DType.int32](
                         Int(self.num_keys - 1),
                         Int(kv_tile_start_row),
@@ -390,6 +391,7 @@ struct MHAPosition[
                 return TileMaskStatus.PARTIAL_MASK
         else:
             return mask.status(
+                self.prompt_idx,
                 Index[dtype=DType.int32](
                     Int(self.prompt_offset + self.start_pos),
                     Int(kv_tile_start_row),
@@ -429,7 +431,7 @@ struct MHAPosition[
         PartitionType: MHAPartitionScheme, MaskType: MHAMask, //, page_size: Int
     ](self, partition: PartitionType, mask: MaskType) -> Tuple[UInt32, UInt32]:
         var start_col: UInt32 = mask.start_column[Self.BM, Self.BN, page_size](
-            self.get_score_row()
+            self.prompt_idx, self.get_score_row()
         )
 
         comptime if PartitionType.do_partition:
@@ -1664,6 +1666,12 @@ def output_reg_to_smem_st_matrix[
     output_reg_tile: _LocalTT[accum_type, row_major[num_m_mmas, o_frag_size]()],
     accum_smem_tile: _SharedMemTT[output_type, row_major[BM, padded_depth]()],
 ):
+    # The store packs 8 elements per lane through bitcast<f32x4>, which is
+    # well-defined only when output_type is exactly bf16/f16.
+    comptime assert (
+        size_of[output_type]() == 2
+    ), "output_reg_to_smem_st_matrix only supports bf16/f16 output_type"
+
     comptime st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[
             output_type, padded_depth, num_m_mmas, num_consumer

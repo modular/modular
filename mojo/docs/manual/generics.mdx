@@ -389,7 +389,7 @@ on, you write one `Pair[T]` and let the compiler generate specialized
 versions for each concrete `T` you use.
 
 ```mojo
-comptime ComparableValue = Equatable & ImplicitlyCopyable
+comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDestructible
 
 @fieldwise_init
 struct Pair[T: ComparableValue](ComparableValue):
@@ -413,7 +413,7 @@ so `T` must be equatable. It also needs to assign and copy values in common
 operations, so it applies a trait composition conformance on `T`:
 
 ```mojo
-comptime ComparableValue = Equatable & ImplicitlyCopyable
+comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDestructible
 ```
 
 The `Pair` definition applies this conformance in two places: to the type
@@ -472,8 +472,12 @@ This pattern keeps behavior explicit and safe:
 
 ```mojo
 def process[T: AnyType](value: T):
-    comptime if conforms_to(T, Writable & ImplicitlyCopyable):
-        var w = trait_downcast[Writable & ImplicitlyCopyable](value)
+    comptime if conforms_to(
+        T, Writable & ImplicitlyCopyable & ImplicitlyDestructible
+    ):
+        var w = trait_downcast[
+            Writable & ImplicitlyCopyable & ImplicitlyDestructible
+        ](value)
         print(w)
     else:
         print("<not writable>")
@@ -482,8 +486,8 @@ def process[T: AnyType](value: T):
 
 Key points:
 
-- `conforms_to(T, Writable & ImplicitlyCopyable)` checks whether `T`
-  satisfies the trait composition.
+- `conforms_to(T, Writable & ImplicitlyCopyable & ImplicitlyDestructible)`
+  checks whether `T` satisfies the trait composition.
 - `trait_downcast()` rebinds the value to a trait-constrained view at
   compile time.
 

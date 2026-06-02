@@ -193,7 +193,7 @@ def test_matmul[
 
     comptime if do_benchmarking:
         var matmul_perf = bench_run[bench_fn_matmul]()
-        std.benchmark.keep(c[Coord(Idx[0](), Idx[0]())])
+        std.benchmark.keep(c[Coord(Idx[0], Idx[0])])
         print(
             "Apple Matmul GFLOP/s for (M, N, K) = (",
             m,
@@ -306,7 +306,7 @@ def test_matmul[
     @always_inline
     @__copy_capture(c)
     def epilogue_fn[
-        _type: DType, width: Int, *, alignment: Int = 1
+        _type: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_type, width]) -> None:
         c.store(Coord(idx), rebind[SIMD[c_type, width]](val + some_constant))
 
@@ -514,7 +514,7 @@ def test_batched_matmul[
     @__copy_capture(c)
     def epilogue_fn[
         _type: DType,
-        width: Int,
+        width: SIMDSize,
         rank: Int,
         *,
         alignment: Int = 1,
@@ -544,7 +544,7 @@ def test_batched_matmul[
 
     comptime if do_benchmarking:
         var batched_matmul_perf = bench_run[bench_fn_batched_matmul]()
-        std.benchmark.keep(c[Coord(Idx[0](), Idx[0](), Idx[0]())])
+        std.benchmark.keep(c[Coord(Idx[0], Idx[0], Idx[0])])
         print(
             "Apple Batched Matmul GFLOP/s for (BATCHES, M, N, K) = (",
             batches,

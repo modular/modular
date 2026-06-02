@@ -71,8 +71,8 @@ from std.gpu._utils import to_i32, to_i64
 from std.gpu.intrinsics import AMDBufferResource
 from std.memory import AddressSpace
 from std.memory.unsafe import bitcast
-from std.math import min
-from std.math.uutils import umod, ufloordiv
+from std.math import ceildiv, min
+from std.math.uutils import udivmod, umod, ufloordiv
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import readfirstlane
 from std.utils import IndexList
@@ -435,6 +435,126 @@ struct TiledMmaLoader[
 
     @staticmethod
     @always_inline
+    def load_v_fp8_strip_16[
+        BN: Int,
+        block_width: Int,
+        bk_tile: Int,
+        dt: Int,
+    ](
+        v_base: UnsafePointer[
+            Scalar[Self.in_type],
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ],
+        key_group: Int,
+        pair_idx: Int,
+        is_odd: Int,
+    ) -> SIMD[Self.in_type, 32]:
+        """FP8 V per-strip `ds_read_tr8_b64` load for one (bk_tile, dt),
+        sized for the 16x16x128 MFMA A-operand fragment layout.
+
+        Lane partition for a 64-lane wave (lane id `l`):
+          - key_group g    = l // 16     (0..3 — 16-lane "rows")
+          - pair_idx  p    = (l % 16)/2  (0..7 — pair within the row)
+          - is_odd    o    = l % 2       (0 or 1)
+
+        Per (bk_tile, dt), one MFMA tile of V is 16 depths * 128 keys
+        = 2048 FP8 = 64 lanes * 32 FP8/lane.  Four `ds_read_tr8_b64`
+        calls at `key_base ∈ {0, 8, 16, 24}` deliver 8 keys per lane
+        each, totaling 32 contiguous keys per lane at one depth.
+
+        Within one `ds_read_tr8_b64` call, each 16-lane row performs
+        **two interleaved 8x8 byte transposes** (one over the 8 even
+        lanes, one over the 8 odd lanes).  Per the AMD ISA, paired
+        even/odd lanes share a key and read 8 depths each:
+          - Even lane (p, o=0) reads V[g*32 + key_base + p, depth 0..7]
+          - Odd lane  (p, o=1) reads V[g*32 + key_base + p, depth 8..15]
+        After the transpose, even lane at pair_idx p in the row gets 8
+        keys (key_base..key_base+7 within the group) at depth p; odd
+        lane at pair_idx p gets the same 8 keys at depth p+8.
+
+        The per-lane output matches the scalar gather it replaces:
+        lane l holds V[key=g*32..g*32+31, depth=butterfly(l%16) + dt*16],
+        where `butterfly(p) = (p/2) + (p%2)*8`.  The depth axis is a
+        butterfly permutation of the linear ordering — the MFMA's
+        A-operand lane->m_h mapping for the 16x16x128 shape consumes
+        this permuted layout directly (no post-load permute needed).
+
+        Parameters:
+            BN: V block height in elements (keys per block).
+            block_width: SMEM block width in depth elements (caller's
+                `bk_smem` — not `BK` if the K-split path is active and
+                `bk_smem < BK`).
+            bk_tile: Which BK-tall row strip (always 0 here; kept for
+                API symmetry with the 32x32x64 variant).
+            dt: Which depth-tile within the strip
+                (0 .. depth/MMA_M - 1).
+
+        Args:
+            v_base: Pointer to V SMEM stage base (block 0).
+            key_group: Per-lane key-group index (lane_id // 16).
+            pair_idx: Per-lane pair index ((lane_id % 16) // 2).
+            is_odd: Per-lane parity (lane_id % 2).
+
+        Returns:
+            `SIMD[in_type, 32]` — 32 contiguous keys at one depth for
+            this lane's (bk_tile, dt).
+        """
+        comptime assert (
+            Self.mma_shape[0] == 16
+        ), "load_v_fp8_strip_16 requires MMA_M == 16"
+        # The 4 × `ds_read_tr8_b64` schedule below (key_base ∈
+        # {0, 8, 16, 24}) hard-encodes the 16x16x128 lane geometry —
+        # `num_matrix_reg[16, 128] = 32` per-lane elements as four
+        # 8-element joins.  A future shape change (e.g. 16x16x64)
+        # would need a different schedule.
+        comptime assert (
+            Self.mma_shape[2] == 128
+        ), "load_v_fp8_strip_16 requires MMA_K == 128"
+        # num_k_tiles == 1 for V in the current 16x16x128 wiring, so
+        # bk_tile is always 0.  Keep the parameter for API symmetry with
+        # the 32x32x64 variant, but assert until a caller actually
+        # exercises bk_tile > 0 and the row-stride math is verified.
+        comptime assert (
+            bk_tile == 0
+        ), "load_v_fp8_strip_16: bk_tile > 0 path is not yet validated"
+        comptime MMA_M = Self.mma_shape[0]
+        # Per-call key span is 128 (= 4 groups * 32 keys), so bk_tile
+        # shifts by 128 in key space.
+        comptime row_offset = bk_tile * 128
+        comptime depth_offset = dt * MMA_M
+        comptime blk = depth_offset // block_width
+        comptime d_in_blk = depth_offset % block_width
+        var block_base = v_base + blk * BN * block_width
+
+        comptime simd_w = simd_width_of[Self.in_type]()
+        # Even lanes (is_odd=0) read the low-half-depth-byte octet
+        # (d_in_blk + 0..7); odd lanes read the high-half octet
+        # (d_in_blk + 8..15).  The transpose then spreads these 16
+        # depth bytes across the 16 lanes of the row.
+        var depth_base = d_in_blk + is_odd * 8
+
+        @always_inline
+        @parameter
+        def _load_keys[key_base: Int]() -> SIMD[Self.in_type, 8]:
+            var key = row_offset + key_group * 32 + key_base + pair_idx
+            var byte_offset = key * block_width + depth_base
+            comptime if Self.swizzle:
+                var vec_idx, sub_vec = udivmod(byte_offset, simd_w)
+                var swizzled_vec = Self.swizzle.value()(vec_idx)
+                var addr = block_base + swizzled_vec * simd_w + sub_vec
+                return ds_read_tr8_b64(addr)
+            else:
+                return ds_read_tr8_b64(block_base + byte_offset)
+
+        var r0 = _load_keys[0]()
+        var r1 = _load_keys[8]()
+        var r2 = _load_keys[16]()
+        var r3 = _load_keys[24]()
+        return r0.join(r1).join(r2.join(r3))
+
+    @staticmethod
+    @always_inline
     def _load_b_tile[
         tile_mma_shape: IndexList[3],
         k_tile_idx: Int,
@@ -462,7 +582,7 @@ struct TiledMmaLoader[
         # `Self.in_type` scalar elements, so no ptr-to-int byte math is
         # needed.
         var sub_tile_res = src.tile_with_offset[MMA_M, MMA_K](
-            Coord(Idx[0](), k_tile_idx)
+            Coord(Idx[0], k_tile_idx)
         )
         var sub_tile = sub_tile_res[0]
         comptime idx_type = src.linear_idx_type
@@ -759,12 +879,25 @@ def load_lds_fragment[
     comptime reg_cols = reg_layout.static_shape[1]
     comptime reg_stride = reg_layout.static_stride[0]
     comptime MMA_M = smem_rows // num_mmas
+    comptime assert MMA_M >= 1 and smem_rows % num_mmas == 0, (
+        "load_lds_fragment: MMA_M = smem_rows // num_mmas must be >= 1"
+        " and divide evenly."
+    )
     comptime mma_frag_width = MMA_M * MMA_K // WARP_SIZE
+    comptime assert mma_frag_width >= 1, (
+        "load_lds_fragment: mma_frag_width = MMA_M * MMA_K // WARP_SIZE"
+        " floored to 0 — MMA shape too small for the wavefront."
+    )
     comptime use_fp8_split = (
         dtype.is_float8() and MMA_M == 16 and MMA_K == 128
     )
     comptime lds_frag_width = 16 if use_fp8_split else mma_frag_width
     comptime num_iterations = (num_mmas * reg_cols) // lds_frag_width
+    comptime assert num_iterations >= 1, (
+        "load_lds_fragment: num_iterations = (num_mmas * reg_cols) //"
+        " lds_frag_width floored to 0 — destination register tile too"
+        " small for the fragment width."
+    )
 
     # SMEM row stride: when the smem tile is a narrow sub-tile of a wider
     # allocation (stride > cols), use the physical stride. Otherwise use the
@@ -788,6 +921,10 @@ def load_lds_fragment[
     comptime FragElement = SIMD[dtype, lds_frag_width]
 
     comptime col_groups = WARP_SIZE // MMA_M
+    comptime assert col_groups >= 1, (
+        "load_lds_fragment: col_groups = WARP_SIZE // MMA_M floored to 0"
+        " (MMA_M > WARP_SIZE)."
+    )
     var lane = lane_id()
     var lane_offset = (
         Int(lane % MMA_M) * lds_row_stride + Int(lane // MMA_M) * lds_frag_width
@@ -799,6 +936,10 @@ def load_lds_fragment[
     comptime if use_split_k:
         comptime k_splits = lds_row_stride // elements_per_iter
         comptime m_positions = num_iterations // k_splits
+        comptime assert k_splits >= 1 and m_positions >= 1, (
+            "load_lds_fragment split-K: k_splits and m_positions must be"
+            " >= 1. Geometry inconsistent — would emit zero LDS reads."
+        )
         comptime k_stride = elements_per_iter
         comptime m_stride = lds_row_stride * MMA_M
 
@@ -1112,7 +1253,21 @@ struct TileLoaderLDS[
     comptime rows_per_iteration = Self.loading_threads // (
         Self.tile_cols // Self.load_width
     )
-    comptime num_iterations = Self.tile_rows // Self.rows_per_iteration
+    # `ceildiv` (not floor-div) so that under-supplied sub-tiles —
+    # `tile_rows < rows_per_iteration` (e.g. half_BM=32 + BK=32 + bf16
+    # where 256 loading threads can transfer the whole 32x32 sub-tile in
+    # ~half a wave) — get `num_iterations == 1`. Floor-div rounded this
+    # to 0, the `comptime for i in range(0)` unrolled 0 times, and the
+    # loader silently emitted zero `buffer_load_lds` — LDS uninit, MMA
+    # garbage. The `load_tile` body gates over-supplied warps via
+    # `warp_id < active_warps_this_iter` (computed per-iter from
+    # `total_warp_rows`) so warps mapped past the sub-tile boundary
+    # skip the load (vmcnt unaffected for them — s_waitcnt is a no-op).
+    comptime num_iterations = ceildiv(Self.tile_rows, Self.rows_per_iteration)
+    # Total warp-rows of work across all iterations; clamped against
+    # `num_iterations * num_loading_warps` from above. The per-iter
+    # `active_warps_this_iter` derives from this.
+    comptime total_warp_rows = ceildiv(Self.tile_rows, Self.rows_per_warp)
 
     comptime warp_subtile_bytes = Self.rows_per_warp * Self.tile_cols * size_of[
         Self.dtype
@@ -1168,6 +1323,49 @@ struct TileLoaderLDS[
             k_anchor: K-coordinate (column dim) of the block origin.
                 Added to `k_offset` at load time. Defaults to 0.
         """
+        # === Tier 2/3 sanity asserts: catch silently-zeroed counts ===
+        # The class body computes a chain of integer divisions
+        # (`subtile_cols // load_width`, `tile_cols // subtile_cols`,
+        # ..., `tile_rows // rows_per_iteration`). When any link
+        # flooris to 0, downstream `comptime for` loops unroll 0
+        # times — loader emits no `buffer_load_lds` at all, LDS stays
+        # uninitialized, MMA reads garbage. These asserts make every
+        # link's invariant explicit.
+        comptime assert Self.threads_per_row >= 1, (
+            "threads_per_row = subtile_cols // load_width must be >= 1"
+            " (subtile_cols >= load_width)."
+        )
+        comptime assert (
+            Self.subtile_cols % Self.load_width == 0
+        ), "subtile_cols must be a multiple of load_width."
+        comptime assert Self.num_warp_cols >= 1, (
+            "num_warp_cols = tile_cols // subtile_cols must be >= 1"
+            " (tile_cols >= subtile_cols)."
+        )
+        comptime assert (
+            Self.tile_cols % Self.subtile_cols == 0
+        ), "tile_cols must be a multiple of subtile_cols."
+        comptime assert Self.num_loading_warps % Self.num_warp_cols == 0, (
+            "num_loading_warps must be a multiple of num_warp_cols"
+            " (otherwise num_warp_rows loses warps)."
+        )
+        comptime assert Self.rows_per_warp >= 1, (
+            "rows_per_warp = WARP_SIZE * load_width // tile_cols must be"
+            " >= 1 (each warp must cover at least one row)."
+        )
+        comptime assert Self.rows_per_iteration >= 1, (
+            "rows_per_iteration must be >= 1 (loading_threads /"
+            " (tile_cols / load_width)). Sub-tile too narrow for"
+            " 4-wave coverage."
+        )
+        comptime assert Self.num_iterations >= 1, (
+            "num_iterations = ceildiv(tile_rows, rows_per_iteration) == 0"
+            " — tile_rows must be >= 1."
+        )
+        comptime assert Self.total_warp_rows >= 1, (
+            "total_warp_rows = ceildiv(tile_rows, rows_per_warp) == 0"
+            " — tile_rows must be >= 1."
+        )
         self.buffer = make_amd_buffer_resource(src)
         self.warp_id = warp_id
         self.lane_id = lane_id
@@ -1226,6 +1424,15 @@ struct TileLoaderLDS[
             var lane_byte = self.lane_id * Self.lane_load_bytes
 
             comptime for i in range(Self.num_iterations):
+                # When `tile_rows < num_loading_warps * rows_per_warp`,
+                # the last (or only) iteration covers fewer than the
+                # full warp grid. Gate over-supplied warps so they
+                # don't issue a load_to_lds past the sub-tile end.
+                # See `total_warp_rows` doc for rationale.
+                comptime active_warps_this_iter = min(
+                    Self.num_loading_warps,
+                    Self.total_warp_rows - i * Self.num_loading_warps,
+                )
                 var tile_idx = i * Self.num_loading_warps + self.warp_id
                 var warp_tile = dst.tile[Self.rows_per_warp, Self.tile_cols](
                     tile_idx, 0
@@ -1243,15 +1450,30 @@ struct TileLoaderLDS[
                 var lane_offset = swizzled_col + swizzled_row * Self.stride
                 var uniform_offset = k_eff + m_eff * Self.stride
 
-                self.buffer.load_to_lds[width=Self.load_width](
-                    Int32(lane_offset),
-                    smem_ptr,
-                    scalar_offset=Int32(uniform_offset),
-                )
+                comptime if active_warps_this_iter == Self.num_loading_warps:
+                    self.buffer.load_to_lds[width=Self.load_width](
+                        Int32(lane_offset),
+                        smem_ptr,
+                        scalar_offset=Int32(uniform_offset),
+                    )
+                else:
+                    # Wavefront-uniform SGPR branch (warp_id is warp-
+                    # scope). Gated warps never issue → vmcnt stays 0,
+                    # downstream s_waitcnt vmcnt(N) is a no-op for them.
+                    if Int(self.warp_id) < active_warps_this_iter:
+                        self.buffer.load_to_lds[width=Self.load_width](
+                            Int32(lane_offset),
+                            smem_ptr,
+                            scalar_offset=Int32(uniform_offset),
+                        )
         else:
             var lane_offset = self.thread_col + self.thread_row * Self.stride
 
             comptime for i in range(Self.num_iterations):
+                comptime active_warps_this_iter = min(
+                    Self.num_loading_warps,
+                    Self.total_warp_rows - i * Self.num_loading_warps,
+                )
                 var tile_idx = i * Self.num_loading_warps + self.warp_id
                 var warp_tile = dst.tile[Self.rows_per_warp, Self.tile_cols](
                     tile_idx, 0
@@ -1261,11 +1483,19 @@ struct TileLoaderLDS[
                 var tile_row = m_eff + i * Self.rows_per_iteration
                 var uniform_offset = k_eff + tile_row * Self.stride
 
-                self.buffer.load_to_lds[width=Self.load_width](
-                    Int32(lane_offset),
-                    smem_ptr,
-                    scalar_offset=Int32(uniform_offset),
-                )
+                comptime if active_warps_this_iter == Self.num_loading_warps:
+                    self.buffer.load_to_lds[width=Self.load_width](
+                        Int32(lane_offset),
+                        smem_ptr,
+                        scalar_offset=Int32(uniform_offset),
+                    )
+                else:
+                    if Int(self.warp_id) < active_warps_this_iter:
+                        self.buffer.load_to_lds[width=Self.load_width](
+                            Int32(lane_offset),
+                            smem_ptr,
+                            scalar_offset=Int32(uniform_offset),
+                        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1346,6 +1576,7 @@ struct SubTileLoaderLDS[
             Self.dtype, _, _, address_space=AddressSpace.SHARED, ...
         ],
         src: TileTensor[Self.dtype, ...],
+        worker_base: Int = 0,
     ):
         """Load a warp sub-tile from DRAM to LDS.
 
@@ -1356,6 +1587,19 @@ struct SubTileLoaderLDS[
         Args:
             dst: Destination TileTensor in shared memory.
             src: Source TileTensor in global memory (warp sub-tile).
+            worker_base: Sub-tile row-strip index for cooperative
+                half-sub-block loads (N-warps-per-subblock partition at
+                depths < 128). When a caller splits a `BM`-row sub-block
+                across N warps and passes each warp its own `M = BM/N`-row
+                strip, the loader's internal `m_sub_tile` collapses to
+                `{0}` and the swizzle would be computed as if the strip
+                were the FIRST sub-row — dropping the
+                `m_sub_tile * WARP_SIZE` worker offset that the two-XOR
+                `st_32x32_s` swizzle needs (the `Swizzle(1,0,6)` bit-0
+                flip keys off worker bit 6). Pass the strip's absolute
+                sub-row index here so the swizzle matches the consumer
+                read (`MhaMmaOp.load_K`). Default 0 = full sub-block load
+                (depth 128), unchanged.
         """
         comptime M = type_of(src).static_shape[0]
         comptime N = type_of(src).static_shape[1]
@@ -1396,7 +1640,9 @@ struct SubTileLoaderLDS[
             var src_partitions = src.tile[BM, BN](m_tile, n_tile).tile[
                 BM_SUB, BN
             ](m_sub_tile, 0)
-            var worker_idx_with_offset = worker_idx + m_sub_tile * WARP_SIZE
+            var worker_idx_with_offset = (
+                worker_idx + (m_sub_tile + worker_base) * WARP_SIZE
+            )
             var swizzled_worker_idx = worker_idx_with_offset
             comptime if Self.swizzle:
                 swizzled_worker_idx = Self.swizzle.value()(swizzled_worker_idx)

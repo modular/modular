@@ -41,7 +41,6 @@ import numpy as np
 import yaml
 from cyclopts import App, Parameter
 from cyclopts.config import Env
-from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
 
 if TYPE_CHECKING:
@@ -73,8 +72,7 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
 from max.benchmark.benchmark_shared.metrics import (
-    PixelGenerationBenchmarkResult,
-    TextGenerationBenchmarkResult,
+    BenchmarkResult,
     calculate_spec_decode_stats,
 )
 from max.benchmark.benchmark_shared.multi_turn import (
@@ -86,10 +84,10 @@ from max.benchmark.benchmark_shared.multi_turn import (
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncOutput,
     PixelGenerationRequestFuncOutput,
-    ProgressBarRequestDriver,
     RequestDriver,
     RequestFuncOutput,
     get_request_driver_class,
+    progressbar_request_driver,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
     collect_benchmark_metrics,
@@ -222,26 +220,13 @@ def under_nsys_tracing(
         subprocess.run(stop_cmd, check=True)
 
 
-def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
-    """Create a progress bar for benchmark runs.
-
-    Args:
-        disable_tqdm: Whether to disable the progress bar.
-        samples: Samples that will be benchmarked with.
-
-    Returns:
-        A tqdm progress bar instance or None if disabled.
-    """
-    if disable_tqdm:
-        return None
-
+def _benchmark_request_total(samples: Samples) -> int:
+    """Return the number of requests a benchmark run will issue for *samples*."""
     if isinstance(samples, RequestSamples):
         # single-turn chat scenario
-        return tqdm(total=len(samples.requests))
-    else:
-        # multi-turn chat scenario
-        num_qa_turns = [session.num_turns for session in samples.chat_sessions]
-        return tqdm(total=sum(num_qa_turns))
+        return len(samples.requests)
+    # multi-turn chat scenario
+    return sum(session.num_turns for session in samples.chat_sessions)
 
 
 def _resolve_skip_counts(
@@ -313,9 +298,7 @@ async def benchmark(
     session: BenchmarkSession,
     max_concurrency: int | None,
     request_rate: float,
-) -> tuple[
-    TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult, bool
-]:
+) -> tuple[BenchmarkResult, bool]:
     """Run a single benchmark invocation.
 
     ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
@@ -409,6 +392,8 @@ async def benchmark(
             sampling=args.sampling,
             run_prefix=run_prefix,
             run_prefix_len=run_prefix_len,
+            max_concurrency=args.warmup_concurrency,
+            disable_tqdm=args.disable_tqdm,
         )
 
     if not args.skip_test_prompt:
@@ -466,6 +451,7 @@ async def benchmark(
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or len(chat_sessions),
                 rng=np.random.default_rng(args.seed),
+                delay_biased=args.warmup_delay_biased,
             )
             if report is not None:
                 log_warmup_sampling_report(report)
@@ -487,6 +473,7 @@ async def benchmark(
             max_chat_len=session.tokenizer.model_max_length,
             sampling=args.sampling,
             disable_tqdm=args.disable_tqdm,
+            max_concurrency=args.warmup_concurrency,
         )
 
     # Capture baseline server metrics after priming so priming requests
@@ -503,7 +490,7 @@ async def benchmark(
 
     if session.benchmark_task == "text-generation":
         spec_decode_metrics_before = fetch_spec_decode_metrics(
-            backend, session.base_url
+            backend, session.base_url, metrics_urls=args.metrics_urls
         )
     else:
         spec_decode_metrics_before = None
@@ -550,13 +537,13 @@ async def benchmark(
             )
 
         # Create pbar for actual benchmark runs
-        request_driver = base_driver
-        pbar = create_benchmark_pbar(
-            disable_tqdm=args.disable_tqdm, samples=session.samples
+        request_driver = benchmark_stack.enter_context(
+            progressbar_request_driver(
+                base_driver,
+                _benchmark_request_total(session.samples),
+                disable_tqdm=args.disable_tqdm,
+            )
         )
-        if pbar is not None:
-            benchmark_stack.callback(pbar.close)
-            request_driver = ProgressBarRequestDriver(request_driver, pbar)
 
         # Marker consumed by utils/benchmarking/serving/analyze_batch_logs.py
         # to slice the batch log by concurrency and exclude warmup/test-prompt
@@ -633,9 +620,10 @@ async def benchmark(
                 lora_manager=session.lora_manager,
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 sampling=args.sampling,
-                randomize_session_start=args.randomize_session_start,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
+                request_rate=request_rate,
+                burstiness=args.burstiness,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -678,9 +666,10 @@ async def benchmark(
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 max_concurrency=max_concurrency,
                 sampling=args.sampling,
-                randomize_session_start=args.randomize_session_start,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
+                request_rate=request_rate,
+                burstiness=args.burstiness,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -692,7 +681,7 @@ async def benchmark(
 
     if session.benchmark_task == "text-generation":
         spec_decode_metrics_after = fetch_spec_decode_metrics(
-            backend, session.base_url
+            backend, session.base_url, metrics_urls=args.metrics_urls
         )
     else:
         spec_decode_metrics_after = None
@@ -763,7 +752,7 @@ async def benchmark(
 
     achieved_request_rate = 0.0
 
-    result: PixelGenerationBenchmarkResult | TextGenerationBenchmarkResult
+    result: BenchmarkResult
     if session.benchmark_task in PIXEL_GENERATION_TASKS:
         result = build_pixel_generation_result(
             outputs=all_outputs,
@@ -808,7 +797,7 @@ async def benchmark(
         result.lora_metrics = session.lora_manager.metrics
 
     print_benchmark_summary(
-        metrics=result.metrics,
+        metrics=result,
         request_rate=request_rate,
         max_concurrency=max_concurrency,
         achieved_request_rate=achieved_request_rate,
@@ -964,9 +953,7 @@ class BenchmarkRunResult:
     max_concurrency: int | None
     request_rate: float
     num_prompts: int
-    result: (
-        TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult | None
-    ) = None
+    result: BenchmarkResult | None = None
 
 
 @dataclass
@@ -1232,6 +1219,7 @@ def _run_dry_run_sweep(
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or 0,
                 rng=rng,
+                delay_biased=args.warmup_delay_biased,
             )
             if report is not None:
                 log_warmup_sampling_report(report)
@@ -1271,9 +1259,7 @@ def _run_benchmark_sweep(
             )
 
         for rr in args.request_rate:
-            iteration_results: list[
-                TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult
-            ] = []
+            iteration_results: list[BenchmarkResult] = []
             validation_passed = True
             for _iteration in range(args.num_iters):
                 if args.flush_prefix_cache:
@@ -1296,7 +1282,7 @@ def _run_benchmark_sweep(
                     [
                         agg.request_throughput
                         for r in iteration_results
-                        if (agg := r.metrics.aggregates) is not None
+                        if (agg := r.aggregates) is not None
                     ]
                 )
                 idx = argmedian(throughputs)
@@ -1369,7 +1355,10 @@ def main_with_parsed_args(
         return
 
     wait_for_server_ready(
-        args.host, args.port, timeout_s=args.server_ready_timeout_s
+        args.host,
+        args.port,
+        timeout_s=args.server_ready_timeout_s,
+        backend=args.backend,
     )
 
     yield from _run_benchmark_sweep(args, session, use_dynamic_num_prompts)

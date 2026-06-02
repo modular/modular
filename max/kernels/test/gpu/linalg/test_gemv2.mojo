@@ -22,14 +22,14 @@ from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 from std.utils import IndexList
 
 comptime epilogue_func_type = def[
-    type: DType, width: Int, *, alignment: Int = 1
+    type: DType, width: SIMDSize, *, alignment: Int = 1
 ](IndexList[2], IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
 
 
 @parameter
 @always_inline
 def epilogue_test_fn[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](
     idx: IndexList[2],
     dim_space: IndexList[2],
@@ -102,20 +102,20 @@ def test[
     comptime static_b_dim1 = K if transpose_b else N
     var a_tensor = TileTensor(
         a_dev,
-        row_major(Coord(m, Idx[K.value()]())),
+        row_major(Coord(m, Idx[K.value()])),
     )
     var b_tensor = TileTensor(
         b_dev,
         row_major(
             Coord(
-                Idx[static_b_dim0.value()](),
-                Idx[static_b_dim1.value()](),
+                Idx[static_b_dim0.value()],
+                Idx[static_b_dim1.value()],
             )
         ),
     )
     var c_tensor = TileTensor(
         c_dev,
-        row_major(Coord(m, Idx[N.value()]())),
+        row_major(Coord(m, Idx[N.value()])),
     )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](

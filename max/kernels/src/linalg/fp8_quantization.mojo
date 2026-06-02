@@ -43,6 +43,7 @@ from std.logger import Logger
 from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.algorithm import elementwise
+from std.utils.coord import Coord, Idx, coord_to_index_list
 from std.utils.index import Index, IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
@@ -109,14 +110,12 @@ def quantize_static_scaled_fp8[
         in_dtype, target=get_gpu_target()
     ]()
 
-    def scaled_fp8_quant_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) register_passable {}:
-        scaled_fp8_quant[width, rank, alignment](idx)
+    def scaled_fp8_quant_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
+        scaled_fp8_quant[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[simd_width=target_simd_width](
         scaled_fp8_quant_unified,
-        shape=IndexList[2](Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
+        shape=(Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
         ctx=context,
     )
 
@@ -964,17 +963,17 @@ def _matmul_dynamic_scaled_fp8_impl[
                 _dtype, width
             ]:
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), idx[0])
+                    Coord(Idx[0], idx[0])
                 ).cast[DType.float32]()
                 var b_scale: SIMD[DType.float32, width]
 
                 comptime if transpose_b:
                     b_scale = b_scales.load[width=width](
-                        Coord(idx[1], Idx[0]())
+                        Coord(idx[1], Idx[0])
                     ).cast[DType.float32]()
                 else:
                     b_scale = b_scales.load[width=width](
-                        Coord(Idx[0](), idx[1])
+                        Coord(Idx[0], idx[1])
                     ).cast[DType.float32]()
 
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
@@ -992,10 +991,10 @@ def _matmul_dynamic_scaled_fp8_impl[
                 _dtype, width
             ]:
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[DType.float32]()
                 var b_scale = b_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[DType.float32]()
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
                 return scaled_val.cast[_dtype]()
@@ -1026,17 +1025,17 @@ def _matmul_dynamic_scaled_fp8_impl[
                 dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), idx[0])
+                    Coord(Idx[0], idx[0])
                 ).cast[dtype]()
                 var b_scale: SIMD[dtype, width]
 
                 comptime if transpose_b:
                     b_scale = b_scales.load[width=width](
-                        Coord(idx[1], Idx[0]())
+                        Coord(idx[1], Idx[0])
                     ).cast[dtype]()
                 else:
                     b_scale = b_scales.load[width=width](
-                        Coord(Idx[0](), idx[1])
+                        Coord(Idx[0], idx[1])
                     ).cast[dtype]()
 
                 var scaled_val = val * a_scale * b_scale
@@ -1053,10 +1052,10 @@ def _matmul_dynamic_scaled_fp8_impl[
                 dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[dtype]()
                 var b_scale = b_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[dtype]()
                 var scaled_val = val * a_scale * b_scale
 
@@ -1077,7 +1076,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 )
                 var c_scratch = TileTensor(
                     scratch_buffer.unsafe_ptr(),
-                    row_major(Coord(M, Idx[b_N]())),
+                    row_major(Coord(M, Idx[b_N])),
                 )
 
                 comptime if input_scale_granularity == "tensor":
@@ -1657,15 +1656,14 @@ def convert_e4m3fn_to_e4m3fnuz(
         DType.float8_e4m3fn, target=get_gpu_target()
     ]()
 
-    def convert_kernel_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) register_passable {}:
-        convert_kernel[width, rank, alignment](idx)
+    def convert_kernel_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
+        convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[simd_width=target_simd_width](
         convert_kernel_unified,
-        shape=IndexList[2](
-            Int(input_buffer.dim[0]()), Int(input_buffer.dim[1]())
+        shape=(
+            Int(input_buffer.dim[0]()),
+            Int(input_buffer.dim[1]()),
         ),
         ctx=context,
     )
@@ -1707,18 +1705,24 @@ def blockwise_scaled_fp8_with_epilogue[
     the matmul result is written into `c` and then read back by the lambda.
     """
 
-    # 1D/2D (1x128)x(128x128) blockwise scaling
+    # 1D/2D blockwise scaling with (m, n, k) granularity in
+    # (1, {64,128}, 128).
     comptime if (
         _is_sm10x_gpu(ctx.default_device_info)
         and transpose_b
         and c_type == DType.bfloat16
         and scales_granularity_mnk[0] == 1
-        and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128
+        and scales_granularity_mnk[2] == 128
+        and scales_granularity_mnk[1] in (64, 128)
     ):
-        comptime BK = 128
+        comptime N_G = scales_granularity_mnk[1]
         comptime MMA_K = 32
-        comptime block_tile_shape = Index(64, 96, BK)
-        comptime umma_shape = Index(128, 192, MMA_K)
+        comptime block_tile_shape = Index(64, 96, 128)
+        # MMA_N must be <= 2 * n_scale_granularity because the accumulator
+        # only loads 2 b_scales per MMA tile.
+        comptime umma_shape = Index(128, 192, MMA_K) if N_G == 128 else Index(
+            128, 128, MMA_K
+        )
         comptime cluster_shape = Index(2, 1, 1)
         comptime matmul_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
@@ -1737,6 +1741,7 @@ def blockwise_scaled_fp8_with_epilogue[
                 a_scales_type=a_scales_type,
                 b_scales_type=b_scales_type,
                 config=matmul_config,
+                n_scale_granularity=scales_granularity_mnk[1],
             ](c, a, b, a_scales, b_scales, ctx)
         else:
             comptime epilogue = elementwise_lambda_fn.value()
@@ -1756,12 +1761,11 @@ def blockwise_scaled_fp8_with_epilogue[
             @parameter
             @__copy_capture(c)
             def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
-                var c_val = c.load_linear[simd_width](idx)
+                simd_width: Int, alignment: Int = 1
+            ](idx: Coord):
+                var c_val = c.load[simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
+                    Index(idx[0].value(), idx[1].value()), c_val
                 )
 
             blockwise_fp8_matmul[
@@ -1769,9 +1773,10 @@ def blockwise_scaled_fp8_with_epilogue[
                 a_scales_type=a_scales_type,
                 b_scales_type=b_scales_type,
                 config=matmul_config,
+                n_scale_granularity=scales_granularity_mnk[1],
             ](c, a, b, a_scales, b_scales, ctx)
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
+                Coord(m, n), ctx
             )
 
     else:

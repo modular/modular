@@ -160,12 +160,12 @@ struct Attention[
     # P swizzle for shared_memory_backed path (BN != WN, 16x16 MMA).
     # Mirrors amd/attention.mojo: Swizzle(3,0,3) XORs bits [5:3] into [2:0]
     # of the 8-element group index, spreading rows across LDS bank groups.
+    # Extended to FP8 16x16x128 (MMA_K=128, MMA_N=16) — same col_major[16, 4]
+    # P-write pattern as the BF16 16x16x32 case, just with FP8 simd_w=16.
     comptime _p_shared_memory_backed = Self.BN != Self.WN
     comptime _p_swizzle = (
         Swizzle(3, 0, 3) if (
-            Self._p_shared_memory_backed
-            and Self.mma_shape[0] == 16
-            and Self.mma_shape[2] <= 2 * Self.mma_shape[1]
+            Self._p_shared_memory_backed and Self.mma_shape[0] == 16
         ) else Optional[Swizzle](None)
     )
 
@@ -227,8 +227,26 @@ struct Attention[
     comptime _smem_alignment = align_of[
         SIMD[Self.q_type, simd_width_of[Self.q_type]()]
     ]()
+    # SMEM physical block width for K/V.  When the MMA strip width (BK)
+    # doesn't divide depth, fall back to a finer-grain BK_SMEM=64 layout
+    # so the K SMEM stride matches `depth` exactly (no zero-pad block).
+    # `_bk_smem` only diverges from `BK` for the FP8 MLA-decode case
+    # (BK=128, depth=576, depth%64==0): K SMEM stride becomes 64, and
+    # each MMA K=128 strip is composed of two adjacent BN×64 blocks (see
+    # `KVMmaOp.load_prefill_split`).  All other paths (BK%depth==0,
+    # BF16, prefill) keep `_bk_smem == BK` and use the single-block MMA
+    # load.
+    comptime _bk_smem = 64 if (
+        Self.BK == 128 and Self.depth % Self.BK != 0 and Self.depth % 64 == 0
+    ) else Self.BK
+    # K SMEM holds `ceildiv(depth, _bk_smem)` blocks of width `_bk_smem`.
+    # For depth=576, _bk_smem=64 → 9 blocks × BN × 64 = BN × 576 (exact).
+    # For depth%BK==0, _bk_smem=BK → ceildiv(depth,BK) blocks = depth/BK,
+    # so this reduces to BN × depth.
+    comptime _k_smem_blocks = ceildiv(Self.depth, Self._bk_smem)
     comptime _k_smem_size = Self.BN * (
-        Self.depth if Self.amd_structured_config.full_kv else Self.BK
+        Self._k_smem_blocks
+        * Self._bk_smem if Self.amd_structured_config.full_kv else Self.BK
     ) * (
         2 if (
             Self.amd_structured_config.double_buffer
@@ -276,8 +294,9 @@ struct Attention[
     ]
     # Dedicated warp-reduction scratch SMEM. Decoupling from K SMEM
     # avoids races between softmax's scratch ds_writes and other warps'
-    # in-flight K ds_reads (the prior overlay only happened to be safe
-    # for non-kv-alias decode because V's later DMA wiped the corruption).
+    # in-flight K ds_reads. Overlaying scratch onto K SMEM is unsafe in
+    # `mla_kv_alias` mode (V reads from K's SMEM, so there's no later
+    # V DMA to overwrite the corruption).
     var warp_scratch_ptr: UnsafePointer[
         Scalar[Self.accum_type],
         MutExternalOrigin,
@@ -375,9 +394,9 @@ struct Attention[
             Self.KvTileLayout(
                 Coord(
                     Int64(kv_tile_num_rows),
-                    Idx[Self.depth](),
+                    Idx[Self.depth],
                 ),
-                Coord(Idx[Self._kv_stride0](), Idx[1]()),
+                Coord(Idx[Self._kv_stride0], Idx[1]),
             ),
         )
 
@@ -457,9 +476,9 @@ struct Attention[
             layout=Self.QTileLayout(
                 Coord(
                     Int64(valid_rows),
-                    Idx[Self.q_depth](),
+                    Idx[Self.q_depth],
                 ),
-                Coord(Idx[Self._q_stride0](), Idx[1]()),
+                Coord(Idx[Self._q_stride0], Idx[1]),
             ),
         )
         self.q_buffer = Self.QRegisterBufferType(q_tile)
@@ -471,9 +490,9 @@ struct Attention[
             layout=Self.OutputTileLayout(
                 Coord(
                     Int64(valid_rows),
-                    Idx[Self.output_depth](),
+                    Idx[Self.output_depth],
                 ),
-                Coord(Idx[Self._output_stride0](), Idx[1]()),
+                Coord(Idx[Self._output_stride0], Idx[1]),
             ),
         )
 
@@ -558,6 +577,7 @@ struct Attention[
         comptime if Self.token_gen:
             # Decode: check single token at num_keys-1.
             return self.mask.status(
+                UInt32(self.batch_idx),
                 Index[dtype=DType.uint32](
                     self.num_keys - 1,
                     Int(kv_tile_start_row),
@@ -566,6 +586,7 @@ struct Attention[
             )
         else:
             return self.mask.status(
+                UInt32(self.batch_idx),
                 Index[dtype=DType.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
@@ -741,6 +762,39 @@ struct Attention[
         ](0, 0)
         var score_tile = self.p_reg_buffer.stage_tile[stage]()
         self.softmax.exp_scaled[start=1, stride=2](score_tile, self.scale)
+        self.softmax.scale_rowmax(self.scale)
+        self.softmax.calculate_qk_sum(score_tile, warp_scratch)
+        self.softmax.calculate_correction()
+        self.softmax.update_max()
+        self.softmax.update_sum()
+
+    @always_inline
+    def online_softmax_step_0_pkfma[stage: Int, mask: Bool = True](mut self):
+        """Step 0 deferred-scale variant that emits `v_pk_fma_f32`.
+
+        Like `_fma`, but uses `Softmax.exp_pkfma` which folds the
+        `score * scale - max * scale` into a single packed FMA per score
+        pair (matches aiter's softmax inner loop). Has the small FMA
+        precision gap noted on `exp_pkfma`; safe under the FP8 tolerance
+        envelope where the row-sum normalization absorbs it.
+        """
+        comptime if mask:
+            self.apply_mask[stage, scale=False]()
+        var warp_scratch = self.warp_scratch_tile().tile[
+            2 * Int(Self.num_warps_n), Int(Self.WM)
+        ](0, 0)
+        var score_tile = self.p_reg_buffer.stage_tile[stage]()
+        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.exp_pkfma[start=0, stride=2](score_tile, self.scale)
+
+    @always_inline
+    def online_softmax_step_1_pkfma[stage: Int](mut self):
+        """Step 1 pkfma counterpart of `_fma` step 1."""
+        var warp_scratch = self.warp_scratch_tile().tile[
+            2 * Int(Self.num_warps_n), Int(Self.WM)
+        ](0, 0)
+        var score_tile = self.p_reg_buffer.stage_tile[stage]()
+        self.softmax.exp_pkfma[start=1, stride=2](score_tile, self.scale)
         self.softmax.scale_rowmax(self.scale)
         self.softmax.calculate_qk_sum(score_tile, warp_scratch)
         self.softmax.calculate_correction()

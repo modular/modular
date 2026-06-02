@@ -51,17 +51,22 @@ from typing import Any, cast
 
 from max.driver import DeviceSpec
 from max.examples.diffusion.profiler import profile_execute
-from max.interfaces import (
+from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
+from max.pipelines.core import PixelContext
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.diffusion.interface import DiffusionPipeline
+from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
+from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_executor import PipelineExecutor
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.modeling.types import (
     PipelineTask,
     PixelGenerationInputs,
     RequestID,
 )
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    ProviderOptions,
-)
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import (
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import (
     InputFileContent,
     InputImageContent,
     InputTextContent,
@@ -70,16 +75,9 @@ from max.interfaces.request.open_responses import (
     OutputImageContent,
     UserMessage,
 )
-from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
-from max.pipelines.core import PixelContext
-from max.pipelines.lib import PixelGenerationTokenizer
-from max.pipelines.lib.interfaces import DiffusionPipeline
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_executor import PipelineExecutor
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.pipeline_variants.pixel_generation import (
-    PixelGenerationPipeline,
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
 )
 from PIL import Image
 

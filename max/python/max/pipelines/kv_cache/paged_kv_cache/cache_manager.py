@@ -25,7 +25,6 @@ from max.driver import CPU, Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import RequestID, TextGenerationContext
 from max.nn.kv_cache import (
     KVCacheBuffer,
     KVCacheInputs,
@@ -42,6 +41,7 @@ from max.nn.kv_cache.utils import (
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
+from max.pipelines.modeling.types import RequestID, TextGenerationContext
 from max.profiler import traced
 from max.support.math import ceildiv
 
@@ -303,11 +303,12 @@ class PagedKVCacheManager:
                         is_fp8_kv=draft_params.is_fp8_kv_dtype,
                     )
 
-            # TODO(SERVOPT-1254): Connector uses primary cache buffer only.
             replica_params = primary_params.copy_as_dp_1(
                 replica_idx=replica_idx
             )
-            device_buffers_to_offload = replica_device_buffers[0].all_buffers
+            device_buffers_to_offload: list[Buffer] = []
+            for cache_buffer in replica_device_buffers:
+                device_buffers_to_offload.extend(cache_buffer.all_buffers)
             if other_kv_managers_device_buffers_per_replica is not None:
                 device_buffers_to_offload.extend(
                     other_kv_managers_device_buffers_per_replica[replica_idx]
@@ -391,7 +392,12 @@ class PagedKVCacheManager:
         block_manager = self._replica[replica_idx].block_manager
         num_needed_blocks = (
             self.get_num_used_pages(replica_idx)
-            + block_manager.num_blocks_to_allocate(ctx, num_steps)
+            + block_manager.num_blocks_to_allocate(
+                ctx,
+                num_steps,
+                self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
+            )
             - block_manager.count_full_blocks_from_prefix_caches(ctx)
         )
         return min(
@@ -424,7 +430,10 @@ class PagedKVCacheManager:
         replica = self._replica[replica_idx]
         replica.block_manager.reuse_blocks_from_prefix_cache(data)
         replica.block_manager.allocate_new_blocks(
-            data, num_steps, self.params.num_eagle_speculative_tokens
+            data,
+            num_steps,
+            self.params.num_draft_tokens,
+            self.params.num_draft_tokens_per_step,
         )
 
     def _does_req_need_more_blocks(
@@ -439,7 +448,8 @@ class PagedKVCacheManager:
         seq_len = _compute_seq_len(
             ctx,
             num_steps,
-            self.params.num_eagle_speculative_tokens,
+            self.params.num_draft_tokens,
+            self.params.num_draft_tokens_per_step,
         )
         num_blocks = len(block_manager.req_to_blocks[ctx.request_id])
         return seq_len > num_blocks * self.params.page_size
@@ -483,7 +493,10 @@ class PagedKVCacheManager:
 
             # Compute the total sequence length
             seq_len = _compute_seq_len(
-                ctx, num_steps, self.params.num_eagle_speculative_tokens
+                ctx,
+                num_steps,
+                self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
             )
             max_seq_len = max(max_seq_len, seq_len)
 
@@ -580,7 +593,10 @@ class PagedKVCacheManager:
 
             # Sanity check that we have enough blocks.
             seq_len = _compute_seq_len(
-                ctx, num_steps, self.params.num_eagle_speculative_tokens
+                ctx,
+                num_steps,
+                self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
             )
             num_required_blocks = ceildiv(seq_len, self.params.page_size)
             assert len(blocks) >= num_required_blocks
@@ -612,9 +628,7 @@ class PagedKVCacheManager:
         # advance to the values for the next row. This should not be allocated
         # on pinned memory since it is exclusively accessed on the CPU and never
         # copied to the GPU.
-        absolute_max_cached_len = (
-            max_cached_len + self.params.num_eagle_speculative_tokens
-        )
+        absolute_max_cached_len = max_cached_len + self.params.num_draft_tokens
         max_lengths_host = build_max_lengths_tensor(
             num_steps,
             max_prompt_len,
@@ -635,28 +649,67 @@ class PagedKVCacheManager:
         # `k.max_context_length()` in flash attention corresponds to the
         # max cached context length for this step (including active prompt
         # tokens), i.e. `max_cached_len` here.
-        resolved_metadata = (
-            replica.attention_dispatch_resolver.resolve_for_replica(
-                batch_size,
-                max_prompt_len,
-                absolute_max_cached_len,
-            )
+        (
+            resolved_metadata,
+            mla_num_partitions,
+            mla_effective_split_len,
+        ) = replica.attention_dispatch_resolver.resolve_for_replica_with_scalars(
+            batch_size,
+            max_prompt_len,
+            absolute_max_cached_len,
         )
 
-        if self.params.num_eagle_speculative_tokens > 0:
+        # Wrap the MLA capturable scalars into 1-element host buffers
+        # exactly once per fetch, then share them across shards. None for
+        # MHA / degenerate paths.
+        mla_num_partitions_buf: Buffer | None = (
+            Buffer.from_numpy(np.array([mla_num_partitions], dtype=np.int64))
+            if mla_num_partitions is not None
+            else None
+        )
+        mla_effective_split_len_buf: Buffer | None = (
+            Buffer.from_numpy(
+                np.array([mla_effective_split_len], dtype=np.int64)
+            )
+            if mla_effective_split_len is not None
+            else None
+        )
+
+        if self.params.num_draft_tokens > 0:
             draft_resolver = (
                 replica.draft_attention_dispatch_resolver
                 or replica.attention_dispatch_resolver
             )
+            (
+                draft_resolved_metadata_,
+                draft_mla_num_partitions,
+                draft_mla_effective_split_len,
+            ) = draft_resolver.resolve_for_replica_with_scalars(
+                batch_size,
+                self.params.num_draft_tokens_per_step,
+                absolute_max_cached_len,
+            )
             draft_resolved_metadata: list[Buffer] | None = (
-                draft_resolver.resolve_for_replica(
-                    batch_size,
-                    1,
-                    absolute_max_cached_len,
+                draft_resolved_metadata_
+            )
+            draft_mla_num_partitions_buf: Buffer | None = (
+                Buffer.from_numpy(
+                    np.array([draft_mla_num_partitions], dtype=np.int64)
                 )
+                if draft_mla_num_partitions is not None
+                else None
+            )
+            draft_mla_effective_split_len_buf: Buffer | None = (
+                Buffer.from_numpy(
+                    np.array([draft_mla_effective_split_len], dtype=np.int64)
+                )
+                if draft_mla_effective_split_len is not None
+                else None
             )
         else:
             draft_resolved_metadata = None
+            draft_mla_num_partitions_buf = None
+            draft_mla_effective_split_len_buf = None
 
         ret_list: list[KVCacheInputsPerDevice] = []
         for cache_idx in range(self._num_caches):
@@ -691,6 +744,12 @@ class PagedKVCacheManager:
                         ),
                         attention_dispatch_metadata=metadata,
                         draft_attention_dispatch_metadata=draft_metadata,
+                        mla_num_partitions=mla_num_partitions_buf,
+                        mla_effective_split_len=mla_effective_split_len_buf,
+                        draft_mla_num_partitions=draft_mla_num_partitions_buf,
+                        draft_mla_effective_split_len=(
+                            draft_mla_effective_split_len_buf
+                        ),
                     )
                 )
 
@@ -857,10 +916,12 @@ class PagedKVCacheManager:
             replica.block_manager.reset_prefix_cache()
             replica.connector.reset_prefix_cache()
 
-    def get_metrics(self, replica_idx: int) -> KVCacheMetrics:
-        """Returns metrics for the given replica."""
-        replica = self._replica[replica_idx]
-        return replica.block_manager.metrics
+    def get_metrics_aggregated(self) -> KVCacheMetrics:
+        """Returns aggregated metrics across all replicas."""
+        return sum(
+            (replica.block_manager.metrics for replica in self._replica),
+            start=KVCacheMetrics(),
+        )
 
     def get_req_blocks(
         self, request_id: RequestID, replica_idx: int

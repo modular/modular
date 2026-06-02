@@ -563,13 +563,13 @@ def run_test_sparse[
     var total_q_tokens = batch_size * q_max_seq_len
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     # Output: [batch_size * q_max_seq_len, num_heads, V_DEPTH]
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged: [0, seq_len, 2*seq_len, ..., batch_size*seq_len]
@@ -1259,13 +1259,13 @@ def run_test_sparse_blockscale[
     # Q: [batch_size, num_heads, Q_DEPTH] (rank 3, ragged=True)
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     # Output: [batch_size, num_heads, V_DEPTH]
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged: [0, 1, 2, ..., batch_size]
@@ -1748,12 +1748,12 @@ def run_test_sparse_variable_topk[
     # -----------------------------------------------------------------------
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged: [0, 1, 2, ..., batch_size]
@@ -2256,12 +2256,12 @@ def run_test_sparse_attn_sink[
     # Build TileTensors and call flare_mla_decoding.
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
@@ -2942,12 +2942,12 @@ def run_test_sparse_extra_kv[
     # -----------------------------------------------------------------------
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
@@ -3471,12 +3471,12 @@ def run_test_sparse_topk_clamping[
     # -----------------------------------------------------------------------
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     # Row offsets for ragged: [0, 1, 2, ..., batch_size]

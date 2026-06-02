@@ -29,20 +29,40 @@ prep convention).
     (k_pack, mn_pack) order, feeding 4 sub-MMAs via the MFMA opsel byte
     selectors.
 
+`mxfp4_preshuffle_b_5d_gpu`:
+    GPU equivalent of `Shuffler.preshuffle_b_5d`. LDS-staged so both HBM
+    reads and writes are wave-coalesced. Constant-folded by the graph
+    compiler when called via `mo.mxfp4.preshuffle.b.5d` on a `Constant`
+    weight, so the shuffle runs once at session.load instead of every
+    forward pass.
+
 Layout reference (canonical):
     composable_kernel/example/ck_tile/18_flatmm/mxgemm/mx_flatmm_arch_traits.hpp:73-167
         — `preShuffleWeight` (B 5D) and `preShuffleScale` (scale 4D).
 """
 
-from std.gpu.host import HostBuffer
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    barrier,
+    block_idx,
+    thread_idx,
+)
+from std.gpu.host import DeviceContext, HostBuffer
 from std.math import ceildiv
 
 from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import Layout, TensorLayout
+from layout.tile_layout import Layout, TensorLayout, col_major
+from layout.tile_tensor import stack_allocation
+
+from std.utils import StaticTuple
+
+
+# 64-thread wave, one atom per lane; covers a full 16×4 atom dst tile.
+comptime _PRESHUFFLE_WAVE_SIZE = 64
 
 
 struct Shuffler[E: Int]:
-    """Host-side MXFP4 preshuffle layouts and helpers for AMD CDNA4.
+    """MXFP4 preshuffle layouts and helpers for AMD CDNA4.
 
     Parameters:
         E: Number of groups (experts / sort-blocks) the shuffler operates on.
@@ -111,52 +131,52 @@ struct Shuffler[E: Int]:
     # coords each lane passes to b_5d_grouped_layout, and the byte returned:
     #
     # (n_iter=0, k_iter=0)  warp_n_base = 0   k_byte_base = 0
-    #   lane  0 (nl=0,  kl=0):  Coord(Idx[0](), Idx[0](),  0..15)   → bytes    0..15
-    #   lane  1 (nl=1,  kl=0):  Coord(Idx[0](), Idx[1](),  0..15)   → bytes   16..31
-    #   lane 15 (nl=15, kl=0):  Coord(Idx[0](), Idx[15](), 0..15)   → bytes  240..255
-    #   lane 16 (nl=0,  kl=1):  Coord(Idx[0](), Idx[0](),  16..31)  → bytes  256..271
-    #   lane 32 (nl=0,  kl=2):  Coord(Idx[0](), Idx[0](),  32..47)  → bytes  512..527
-    #   lane 48 (nl=0,  kl=3):  Coord(Idx[0](), Idx[0](),  48..63)  → bytes  768..783
-    #   lane 63 (nl=15, kl=3):  Coord(Idx[0](), Idx[15](), 48..63)  → bytes 1008..1023
+    #   lane  0 (nl=0,  kl=0):  Coord(Idx[0], Idx[0],  0..15)   → bytes    0..15
+    #   lane  1 (nl=1,  kl=0):  Coord(Idx[0], Idx[1],  0..15)   → bytes   16..31
+    #   lane 15 (nl=15, kl=0):  Coord(Idx[0], Idx[15], 0..15)   → bytes  240..255
+    #   lane 16 (nl=0,  kl=1):  Coord(Idx[0], Idx[0],  16..31)  → bytes  256..271
+    #   lane 32 (nl=0,  kl=2):  Coord(Idx[0], Idx[0],  32..47)  → bytes  512..527
+    #   lane 48 (nl=0,  kl=3):  Coord(Idx[0], Idx[0],  48..63)  → bytes  768..783
+    #   lane 63 (nl=15, kl=3):  Coord(Idx[0], Idx[15], 48..63)  → bytes 1008..1023
     #
     # (n_iter=0, k_iter=1)  k_byte_base = 64
-    #   lane 0:  Coord(Idx[0](), Idx[0](), 64..79)                  → bytes 1024..1039
+    #   lane 0:  Coord(Idx[0], Idx[0], 64..79)                  → bytes 1024..1039
     #                                                                  (1 * B_STRIDE_K0)
     #
     # (n_iter=1, k_iter=0)  warp_n_base = 16
-    #   lane 0:  Coord(Idx[0](), Idx[16](), 0..15)                  → bytes 2048..2063
+    #   lane 0:  Coord(Idx[0], Idx[16], 0..15)                  → bytes 2048..2063
     #                                                                  (1 * K0_count * B_STRIDE_K0)
     #
     # (n_iter=1, k_iter=1)  warp_n_base = 16,  k_byte_base = 64
-    #   lane  0 (nl=0, kl=0):  Coord(Idx[0](), Idx[16](), 64..79)   → bytes 3072..3087
+    #   lane  0 (nl=0, kl=0):  Coord(Idx[0], Idx[16], 64..79)   → bytes 3072..3087
     #                                                                  (2048 N-stride + 1024 K-stride)
-    #   lane 17 (nl=1, kl=1):  Coord(Idx[0](), Idx[17](), 80..95)   → bytes 3344..3359
+    #   lane 17 (nl=1, kl=1):  Coord(Idx[0], Idx[17], 80..95)   → bytes 3344..3359
     #                                                                  (16 + 2048 + 256 + 1024 = 3344)
     #
     # The logical E (group / expert) axis is prepended with stride =
     # bytes-per-group, so a single TileTensor view spans all groups and host
     # preshuffle iterates `(e, n, k_byte)` with no per-group pointer math at
-    # the call site. Single-group consumers pass E=1 and Idx[0]() for e.
+    # the call site. Single-group consumers pass E=1 and Idx[0] for e.
     comptime b_5d_grouped_layout[N: Int, K_BYTES: Int] = Layout(
         Coord(
-            Idx[Self.E](),
-            Coord(Idx[Self.MFMA_MN_LANES](), Idx[N // Self.MFMA_MN_LANES]()),
+            Idx[Self.E],
+            Coord(Idx[Self.MFMA_MN_LANES], Idx[N // Self.MFMA_MN_LANES]),
             Coord(
-                Idx[Self.MFMA_LANE_BYTES](),
-                Idx[Self.MFMA_K_LANES](),
-                Idx[K_BYTES // Self.MFMA_K_BYTES](),
+                Idx[Self.MFMA_LANE_BYTES],
+                Idx[Self.MFMA_K_LANES],
+                Idx[K_BYTES // Self.MFMA_K_BYTES],
             ),
         ),
         Coord(
-            Idx[N * K_BYTES](),
+            Idx[N * K_BYTES],
             Coord(
-                Idx[Self.B_STRIDE_MN_LANE](),
-                Idx[(K_BYTES // Self.MFMA_K_BYTES) * Self.B_STRIDE_K0](),
+                Idx[Self.B_STRIDE_MN_LANE],
+                Idx[(K_BYTES // Self.MFMA_K_BYTES) * Self.B_STRIDE_K0],
             ),
             Coord(
-                Idx[Self.B_STRIDE_LANE_BYTES](),
-                Idx[Self.B_STRIDE_K_LANE](),
-                Idx[Self.B_STRIDE_K0](),
+                Idx[Self.B_STRIDE_LANE_BYTES],
+                Idx[Self.B_STRIDE_K_LANE],
+                Idx[Self.B_STRIDE_K0],
             ),
         ),
     )
@@ -191,38 +211,38 @@ struct Shuffler[E: Int]:
     # Worked example — MN_padded=64, K_SCALES=16 (MN0_count=2, K0_count=2).
     # Each lane's i32 lane-load — coord passed and the 4-byte range it covers:
     #
-    #   lane  0 (ml=0,  kl=0):  Coord(Idx[0](), Idx[0](),  Idx[0]())   → bytes   0..3
-    #   lane  1 (ml=1,  kl=0):  Coord(Idx[0](), Idx[1](),  Idx[0]())   → bytes   4..7
-    #   lane 15 (ml=15, kl=0):  Coord(Idx[0](), Idx[15](), Idx[0]())   → bytes  60..63
-    #   lane 16 (ml=0,  kl=1):  Coord(Idx[0](), Idx[0](),  Idx[1]())   → bytes  64..67
-    #   lane 32 (ml=0,  kl=2):  Coord(Idx[0](), Idx[0](),  Idx[2]())   → bytes 128..131
-    #   lane 48 (ml=0,  kl=3):  Coord(Idx[0](), Idx[0](),  Idx[3]())   → bytes 192..195
-    #   lane 63 (ml=15, kl=3):  Coord(Idx[0](), Idx[15](), Idx[3]())   → bytes 252..255
+    #   lane  0 (ml=0,  kl=0):  Coord(Idx[0], Idx[0],  Idx[0])   → bytes   0..3
+    #   lane  1 (ml=1,  kl=0):  Coord(Idx[0], Idx[1],  Idx[0])   → bytes   4..7
+    #   lane 15 (ml=15, kl=0):  Coord(Idx[0], Idx[15], Idx[0])   → bytes  60..63
+    #   lane 16 (ml=0,  kl=1):  Coord(Idx[0], Idx[0],  Idx[1])   → bytes  64..67
+    #   lane 32 (ml=0,  kl=2):  Coord(Idx[0], Idx[0],  Idx[2])   → bytes 128..131
+    #   lane 48 (ml=0,  kl=3):  Coord(Idx[0], Idx[0],  Idx[3])   → bytes 192..195
+    #   lane 63 (ml=15, kl=3):  Coord(Idx[0], Idx[15], Idx[3])   → bytes 252..255
     comptime scale_4d_grouped_layout[MN_padded: Int, K_SCALES: Int] = Layout(
         Coord(
-            Idx[Self.E](),
+            Idx[Self.E],
             Coord(
-                Idx[Self.MFMA_MN_LANES](),
-                Idx[Self.S_MN_PACK](),
-                Idx[MN_padded // Self.S_MN_BLOCK](),
+                Idx[Self.MFMA_MN_LANES],
+                Idx[Self.S_MN_PACK],
+                Idx[MN_padded // Self.S_MN_BLOCK],
             ),
             Coord(
-                Idx[Self.MFMA_K_LANES](),
-                Idx[Self.S_K_PACK](),
-                Idx[K_SCALES // Self.S_K_BLOCK](),
+                Idx[Self.MFMA_K_LANES],
+                Idx[Self.S_K_PACK],
+                Idx[K_SCALES // Self.S_K_BLOCK],
             ),
         ),
         Coord(
-            Idx[MN_padded * K_SCALES](),
+            Idx[MN_padded * K_SCALES],
             Coord(
-                Idx[Self.S_STRIDE_MN_LANE](),
-                Idx[Self.S_STRIDE_MN_PACK](),
-                Idx[(K_SCALES // Self.S_K_BLOCK) * Self.S_STRIDE_K0](),
+                Idx[Self.S_STRIDE_MN_LANE],
+                Idx[Self.S_STRIDE_MN_PACK],
+                Idx[(K_SCALES // Self.S_K_BLOCK) * Self.S_STRIDE_K0],
             ),
             Coord(
-                Idx[Self.S_STRIDE_K_LANE](),
-                Idx[Self.S_STRIDE_K_PACK](),
-                Idx[Self.S_STRIDE_K0](),
+                Idx[Self.S_STRIDE_K_LANE],
+                Idx[Self.S_STRIDE_K_PACK],
+                Idx[Self.S_STRIDE_K0],
             ),
         ),
     )
@@ -255,27 +275,147 @@ struct Shuffler[E: Int]:
         """Padded MN dim used by the 4D scale layout: MN rounded up to 32."""
         return ceildiv(MN, Self.S_MN_BLOCK) * Self.S_MN_BLOCK
 
-    # ---- B (weight) preshuffle ----
+    # ---- B (weight) preshuffle (GPU) ----
+    #
+    # Each dst tile is a column-major 16×4 grid of 16-byte atoms: NLane
+    # is the fast atom-axis (stride 16 B), KLane is the slow atom-axis
+    # (stride 256 B). The wave maps one atom per lane and uses a
+    # col_major thread layout on the dst side so the 64 lanes' writes
+    # hit the tile's 1024 contiguous bytes in N-fast order — a single
+    # coalesced wave write. Bank conflicts on LDS ignored for now;
+    # revisit if profiling shows LDS is the bottleneck.
+
+    @staticmethod
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(_PRESHUFFLE_WAVE_SIZE)
+        )
+    )
+    @__name("mxfp4_preshuffle_b_5d_kernel")
+    def _preshuffle_b_5d_kernel[
+        N: Int,
+        K_BYTES: Int,
+        RawLayout: TensorLayout,
+        DstLayout: TensorLayout,
+    ](
+        raw: TileTensor[DType.uint8, RawLayout, ImmutAnyOrigin],
+        dst: TileTensor[DType.uint8, DstLayout, MutAnyOrigin],
+    ):
+        """LDS-staged per-tile B 5D preshuffle on AMD GPU.
+
+        One CTA per `(e, n0, k0)` 16×64-byte tile. Phase 1 reads the
+        tile from `raw` coalesced and stages it in LDS at the literal
+        `(nlane, klane)` slot. Phase 2 reads the LDS transposed (N-fast
+        across the wave) and writes coalesced into `dst`'s column-major
+        tile.
+        """
+        var tid = Int(thread_idx.x)
+        var e = Int(block_idx.z)
+        var n0 = Int(block_idx.y)
+        var k0 = Int(block_idx.x)
+
+        # raw: per-CTA [1, 16, 4] atom tile from the row-major 3D view.
+        var raw_tile = raw.tile[1, Self.MFMA_MN_LANES, Self.MFMA_K_BYTES](
+            e, n0, k0
+        ).vectorize[1, 1, Self.MFMA_LANE_BYTES]()
+
+        # dst: derive the tile's base byte offset from the block coords
+        # (tiles are 1024 B each, contiguous in the 5D layout), then
+        # wrap a flat per-tile view with (NLane, KLane, KPack) strides
+        # matching b_5d_grouped_layout's intra-tile pattern (NLane stride
+        # 16 B, KLane 256 B, KPack 1 B). Vectorizing KPack absorbs the
+        # 16-byte atom into element_size, giving a clean rank-3 [16, 4,
+        # 1] col-major-in-atoms tile that .distribute can consume.
+        comptime TILE_BYTES = Self.MFMA_MN_LANES * Self.MFMA_K_BYTES
+        var dst_tile_base = dst.ptr + (
+            e * N * K_BYTES  # skip to current expert
+            + n0
+            * K_BYTES
+            * Self.MFMA_MN_LANES  # skip past N rows in current expert in units of N_Tile length
+            + k0 * TILE_BYTES  # go to the Kth tile of this row
+        )
+
+        var dst_tile = TileTensor[mut=True](
+            dst_tile_base,
+            Layout(
+                Coord(
+                    Idx[Self.MFMA_MN_LANES],
+                    Idx[Self.MFMA_K_LANES],
+                    Idx[Self.MFMA_LANE_BYTES],
+                ),
+                Coord(
+                    Idx[Self.B_STRIDE_MN_LANE],
+                    Idx[Self.B_STRIDE_K_LANE],
+                    Idx[Self.B_STRIDE_LANE_BYTES],
+                ),
+            ),
+        ).vectorize[1, 1, Self.MFMA_LANE_BYTES]()
+
+        # LDS staging: 16 NLane × 4 KLane atoms in their literal slot.
+        var smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+            row_major[Self.MFMA_MN_LANES, Self.MFMA_K_BYTES]()
+        )
+        var smem_atoms = smem.vectorize[1, Self.MFMA_LANE_BYTES]()
+
+        # raw is row-major. row_major thread layout (K-fast) puts 4
+        # lanes per N row sweeping 64 contiguous K bytes -> coalesced
+        # HBM read; same layout on the LDS write lands atoms in their
+        # literal `(nlane, klane)` slot.
+        comptime row_major_thread_layout_3d = row_major[
+            1, Self.MFMA_MN_LANES, Self.MFMA_K_LANES
+        ]()
+        comptime row_major_thread_layout_2d = row_major[
+            Self.MFMA_MN_LANES, Self.MFMA_K_LANES
+        ]()
+        var v = raw_tile.distribute[row_major_thread_layout_3d](tid)[0, 0, 0]
+        smem_atoms.distribute[row_major_thread_layout_2d](tid)[0, 0] = v
+
+        barrier()
+
+        # dst tile is column-major in atoms (NLane stride = 1 atom). The
+        # col_major thread layout maps tid -> (nl=tid%16, kl=tid//16);
+        # the same layout on SMEM (transposed read) and on dst (the
+        # natural intra-tile order) -> 64 lanes write 1024 contiguous
+        # bytes per CTA in a single coalesced wave.
+        comptime col_major_thread_layout_3d = col_major[
+            Self.MFMA_MN_LANES, Self.MFMA_K_LANES, 1
+        ]()
+        comptime col_major_thread_layout_2d = col_major[
+            Self.MFMA_MN_LANES, Self.MFMA_K_LANES
+        ]()
+        var w = smem_atoms.distribute[col_major_thread_layout_2d](tid)[0, 0]
+        dst_tile.distribute[col_major_thread_layout_3d](tid)[0, 0, 0] = w
 
     @staticmethod
     def preshuffle_b_5d[
         N: Int,
         K_BYTES: Int,
-        SrcLayout: TensorLayout,
     ](
-        src: TileTensor[DType.uint8, SrcLayout, MutAnyOrigin],
-        mut dst: HostBuffer[DType.uint8],
-    ) -> Self.BTileTensor[N, K_BYTES]:
-        """Preshuffle B from `[E, N, K_BYTES]` row-major to the 5D byte layout.
+        raw: TileTensor[
+            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+        ],
+        dst: TileTensor[
+            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
+        ],
+        ctx: DeviceContext,
+    ) raises:
+        """Launch the GPU MXFP4 B 5D preshuffle.
 
-        `src` is a 3D `(E, N, K_BYTES)` row-major tensor; `dst` is a flat
-        host buffer of size `E*N*K_BYTES` bytes. Returns `dst` wrapped as
-        a TileTensor with `Shuffler.b_5d_grouped_layout[E, N, K_BYTES]`,
-        ready for `buffer_load_dwordx4` direct-to-VGPR reads on the kernel
-        side.
+        Invoked eagerly from model weight adapters (one-shot graph) so
+        the shuffle runs once at session.load instead of the ~hours-long
+        numpy CPU path. Mirrors `block_scales_interleave`'s origin
+        handling pattern (accept any origin, cast to any-origin for the
+        kernel).
 
-        `K_BYTES` is the FP4-packed K dim (logical K // 2). N must be a
-        multiple of 16, K_BYTES a multiple of 64.
+        Parameters:
+            N: Per-expert N (must be a multiple of 16).
+            K_BYTES: Per-expert FP4-packed K (must be a multiple of 64).
+
+        Args:
+            raw: Row-major source weights `[E, N, K_BYTES]`.
+            dst: Destination buffer (same byte footprint; bytes get
+                written in `b_5d_grouped_layout` order).
+            ctx: AMD device context.
         """
         comptime assert (
             N % Self.MFMA_MN_LANES == 0
@@ -284,14 +424,24 @@ struct Shuffler[E: Int]:
             K_BYTES % Self.MFMA_K_BYTES == 0
         ), "preshuffle_b_5d: K_BYTES must be a multiple of 64"
 
-        var dst_tt = TileTensor(
-            dst, Self.b_5d_grouped_layout[N=N, K_BYTES=K_BYTES]
+        var raw_any = raw.as_any_origin()
+        var dst_any = dst.as_any_origin()
+        comptime kernel = Self._preshuffle_b_5d_kernel[
+            N,
+            K_BYTES,
+            type_of(raw_any).LayoutType,
+            type_of(dst_any).LayoutType,
+        ]
+        ctx.enqueue_function[kernel](
+            raw_any,
+            dst_any,
+            grid_dim=(
+                K_BYTES // Self.MFMA_K_BYTES,
+                N // Self.MFMA_MN_LANES,
+                Self.E,
+            ),
+            block_dim=_PRESHUFFLE_WAVE_SIZE,
         )
-        for e in range(Self.E):
-            for n in range(N):
-                for k_byte in range(K_BYTES):
-                    dst_tt[Coord(e, n, k_byte)] = src[Coord(e, n, k_byte)]
-        return dst_tt
 
     # ---- Scale preshuffle (works for both A and B scales; same layout) ----
 

@@ -11,7 +11,7 @@ description: >
 <!-- VERIFIED: ParserStmts.cpp parseIfStmt(), parseWhileStmt(),
      parseForStmt(), parseTryStmt(), parseWithStmt(),
      parseComptimeCompoundStmt(), parseParamIf(), parseParamFor(),
-     parseSuite() -->
+     parseSuite(); Signatures.cpp parseCaptureList() -->
 
 A *compound statement* has a header and a body. The header ends
 with `:` and is followed by an indented block with the body.
@@ -30,7 +30,7 @@ sets the indentation for the rest of the body:
 ```mojo
 if condition:
     do_something()
-      do_more()    # Error: statement has excess indentation
+      do_more()    # Error because statement has excess indentation
 ```
 
 ## If statements
@@ -53,8 +53,7 @@ The first true condition runs its block, and the statement exits.
 The `else` block runs if no condition is true.
 
 When the body is a single simple statement, you can write it
-on a single line, although this is not normally recommended in
-many house styles:
+on a single line, although many style guides discourage this.
 
 ```mojo
 if x > 0: print("positive")
@@ -63,10 +62,10 @@ if x > 0: print("positive")
 Common shortcuts from other languages won't work in Mojo:
 
 ```mojo
-x > 0 and print("positive")  # Error: 'None' does not implement
-                              # the '__bool__' method
+x > 0 and print("positive")  # Error because 'None' isn't truthy
 
-print("positive") if x > 0 else pass # Error: unexpected token in expression
+print("positive") if x > 0 else pass
+    # Error because 'pass' isn't an expression
 ```
 
 ## While loops
@@ -120,9 +119,8 @@ for key, value in pairs:  # For example, [("a", 1), ("b", 2), ...]
 
 ## Loops and else clauses
 
-An optional `else` clause runs when the loop exits normally,
-when the condition becomes false. It does not run if the loop
-exits with `break`:
+An optional `else` clause runs when the loop exits normally.
+It does not run if the loop exits with `break`:
 
 ```mojo
 var found = False
@@ -204,18 +202,24 @@ struct NetworkError:
     var code: Int
 
 def fetch() raises NetworkError -> String:
-    raise NetworkError("HTCPCP", 418)
+    raise NetworkError("HTCPCP", 418)   # See RFC 2324 *
 
 try:
     result = fetch()
 except e:              # e is inferred as `NetworkError`
-    print(e.message)   # Known types supports direct field access
-    print(e.code)
+    print(e.message)   # Known types support direct field access
+    print(e.code)      # `.code` and `.message` only work because `e`
+                        # is a known to be `NetworkError`
 ```
 
 A `try` block handles one error type. The compiler raises an
 error if code in the `try` block can raise more than one
 error type.
+
+:::note
+[RFC 2324](https://datatracker.ietf.org/doc/html/rfc2324) defines the
+Hyper Text Coffee Pot Control Protocol (HTCPCP) as an April Fools' joke.
+:::
 
 ## Context managers
 
@@ -241,9 +245,39 @@ This is equivalent to nested `with` statements.
 ### How context managers work
 
 When a `with` block is entered, `__enter__()` is called on the context
-manager expression. The result is bound to the `as` target if present.
-When the block exits, `__exit__()` is called. A context manager that
-defines only `__enter__()` is valid — `__exit__()` is optional.
+manager expression. The result is bound to the `as` target if present. A
+context manager that defines only `__enter__()` is valid; `__exit__()` is
+optional. When the block exits, `__exit__()` is called if it exists, even
+if an error occurs.
+
+A minimal custom context manager:
+
+```mojo
+struct Scope(ImplicitlyCopyable):
+    var label: String
+
+    def __init__(out self, label: String):
+        self.label = label
+
+    def __enter__(self) -> Self:
+        # perform setup tasks
+        print("entering", self.label)
+        return self
+
+    def __exit__(self):
+        # perform cleanup tasks
+        print("exiting", self.label)
+
+def main():
+    with Scope("setup") as s:
+        print("inside", s.label)
+    # entering setup
+    # inside setup
+    # exiting setup
+```
+
+`__enter__` returns `self` so the `as` target binds to the manager. The
+`ImplicitlyCopyable` conformance lets the compiler return `self` by value.
 
 ## Compile-time control flow
 
@@ -272,8 +306,8 @@ The condition must be a compile-time expression. In this example,
 during compilation:
 
 ```mojo
-comptime if runtime_value > 0:   # Error: 'comptime if' requires a
-    pass                         # parameter expression as a condition
+comptime if runtime_value > 0:   # Error because 'comptime if' requires
+    pass                         # compile-time evaluation
 ```
 
 `comptime if` supports `elif` and `else` like the regular `if` statement.
@@ -313,14 +347,14 @@ with open("file.txt") as f:
 ```
 
 Nested functions create their own scope and can capture variables from
-enclosing functions with the `capturing` keyword:
+enclosing functions with capture lists:
 
 ```mojo
 def outer():
     count = 0
 
-    def inner() capturing:
-        count += 1   # Captures count from outer
+    def inner() {mut count}:  # Capture count by mutable reference
+        count += 1            # Updates captured count
 
     inner()
     print(count)     # 1
