@@ -227,6 +227,18 @@ createLowerGlobalPOPToLLVM(const PluginManager *plugin);
 std::unique_ptr<mlir::Pass> createLowerPOPToLLVM(const PluginManager *plugin);
 
 //===----------------------------------------------------------------------===//
+// PluginSpecificLLVMLowering
+//===----------------------------------------------------------------------===//
+
+/// Create the host shim pass that enables compiler plugins to attach
+/// additional MLIR passes on the LLVM dialect before translation to LLVM IR.
+/// When `plugin` is null, the pass default-constructs its own
+/// `PluginManager` (which reads `MODULAR_COMPILER_PLUGINS` and `dlopen`s
+/// each .so).
+std::unique_ptr<mlir::Pass>
+createPluginSpecificLLVMLowering(const PluginManager *plugin);
+
+//===----------------------------------------------------------------------===//
 // LowerToLLVMPipeline
 //===----------------------------------------------------------------------===//
 /// Options for the KGEN to LLVM pipeline.

@@ -300,6 +300,33 @@ def LowerSuspensionPoints : Pass<"lower-suspension-points",
 }
 
 //===----------------------------------------------------------------------===//
+// PluginSpecificLLVMLowering
+//===----------------------------------------------------------------------===//
+
+def PluginSpecificLLVMLowering
+    : Pass<"plugin-specific-llvm-lowering", "mlir::ModuleOp"> {
+  let summary = "Apply plugin-contributed late MLIR passes on LLVM-dialect IR.";
+  let description = [{
+    Enables compiler plugins to attach additional MLIR passes that modify
+    the LLVM-dialect representation *before* it is translated to LLVM IR
+    by `mlir::translateModuleToLLVMIR`. The pass itself is just a host-side
+    shim: it resolves the active `PluginManager` (either injected by the
+    caller of `buildLowerToLLVMPipeline` or, for the standalone CLI path,
+    default-constructed from `MODULAR_COMPILER_PLUGINS`), selects the plugin
+    matching the module's target triple, then asks the plugin to populate a
+    nested `OpPassManager` via the `M_KGEN_addPostLowerToLLVMPasses` entry
+    point and runs that nested pipeline on the module.
+
+    Slots into `buildLowerToLLVMPipeline` after canonicalize/CSE and before
+    `DebugInfoToLLVM` — the last opportunity to mutate the LLVM dialect
+    while it is still MLIR. The plugin's contributed passes are responsible
+    for self-gating on the target triple via `lookupTargetInfo` so the pass
+    is a no-op on builds without a matching plugin.
+  }];
+  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // LegalizePOPOperations
 //===----------------------------------------------------------------------===//
 

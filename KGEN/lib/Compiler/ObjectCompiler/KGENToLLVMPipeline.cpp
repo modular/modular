@@ -46,6 +46,14 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass(config));
   pm.addNestedPass<LLVMFuncOp>(mlir::createCSEPass());
 
+  // Host shim that lets a compiler plugin attach additional MLIR passes to
+  // modify the LLVM-dialect IR before translation to LLVM IR. Owns the
+  // PluginManager lifecycle via the same dual-source pattern as
+  // LowerPOPToLLVMPass: caller-injected here for production builds, or
+  // pass-local + default-constructed when no plugin is supplied (the
+  // standalone CLI path through `kgen-opt -lower-to-llvm`).
+  pm.addPass(createPluginSpecificLLVMLowering(plugin));
+
   // Run the LLVM lowering for debug info last.
   pm.addPass(DebugInfo::createDebugInfoToLLVM(
       {/*tradeoffPerfForVariableDI=*/options.optimizationLevel == 0}));

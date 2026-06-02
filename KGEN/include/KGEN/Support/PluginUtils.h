@@ -11,6 +11,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <dlfcn.h>
@@ -126,6 +127,17 @@ public:
                               mlir::LLVMTypeConverter &, mlir::SymbolTable &,
                               M::TargetInfoAttr)
 
+  /// Plugin API for contributing target-specific late passes to the
+  /// LLVM-dialect lowering pipeline. Invoked from `buildLowerToLLVMPipeline`
+  /// after canonicalizer/CSE and before DebugInfoToLLVM. The plugin cannot
+  /// register passes with MLIR's global pass registry — MLIR's registry is
+  /// a `ManagedStatic` and each statically-linked unit (host binary, plugin
+  /// .so) has its own copy. Plugin passes must be added via this hook, not
+  /// via `-pass-name` from the CLI.
+  REGISTER_GET_KGEN_PLUGIN_FN(AddPostLowerToLLVMPasses,
+                              addPostLowerToLLVMPasses, M::ErrorOrSuccess,
+                              mlir::OpPassManager &)
+
   const std::string &getSoPath() const { return soPath; }
 
 private:
@@ -174,6 +186,19 @@ public:
                                M::ErrorOrSuccess, mlir::RewritePatternSet &,
                                mlir::LLVMTypeConverter &, mlir::SymbolTable &,
                                M::TargetInfoAttr)
+
+  /// Plugin API for contributing target-specific late passes to the
+  /// LLVM-dialect lowering pipeline. Iterates every loaded plugin (not just
+  /// the currently-selected one) because the pipeline is built before the
+  /// target triple is known — each plugin's contributed pass is expected to
+  /// self-gate via `lookupTargetInfo`. Hand-rolled because the iteration
+  /// semantics don't fit the `REGISTER_CALL_KGEN_PLUGIN_FN` macro template,
+  /// which forwards to `currPlugin` only.
+  M::ErrorOrSuccess addPostLowerToLLVMPasses(mlir::OpPassManager &pm) const {
+    for (const auto &p : plugins)
+      (void)p->addPostLowerToLLVMPasses(pm);
+    return M::success();
+  }
 
 private:
   std::vector<std::unique_ptr<Plugin>> plugins;
