@@ -49,7 +49,6 @@ _EXTRA_CONSTRAINTS = {
     "test_grouped_matmul_small_k.mojo": ["//:b200_gpu"],
     "test_block_scaled_mma_amd.mojo": ["//:mi355_gpu"],
     "test_block_scaled_mma_amd_pack_k.mojo": ["//:mi355_gpu"],
-    "test_mfma_32x32x64_f8f6f4.mojo": ["//:mi355_gpu"],
     "test_mxfp4_moe_matmul_amd_routed.mojo": ["//:mi355_gpu"],
     "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
     "test_ping_pong.mojo": ["//:amd_gpu"],
@@ -229,7 +228,6 @@ _GPU_MEMORY = {
     "test_grouped_matmul.mojo": "16",
     "test_block_scaled_mma_amd.mojo": "1",
     "test_block_scaled_mma_amd_pack_k.mojo": "1",
-    "test_mfma_32x32x64_f8f6f4.mojo": "1",
     "test_mxfp4_moe_matmul_amd_routed.mojo": "8",
     "test_gemv2.mojo": "2",
     "test_matmul.mojo": "3",

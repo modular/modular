@@ -460,6 +460,11 @@ struct BlockScaledMmaOp[
 # MXFP4MatmulAMD — kernel struct
 # ===----------------------------------------------------------------------=== #
 
+# TODO hardcoded support multiple MMAs in the future
+comptime MXFP4_MMA_M = 16
+comptime MXFP4_MMA_N = 16
+comptime MXFP4_MMA_K = 128
+
 
 struct MXFP4MatmulAMD[
     BM: Int = 128,
@@ -467,9 +472,6 @@ struct MXFP4MatmulAMD[
     BK_ELEMS: Int = 128,
     WM: Int = 64,
     WN: Int = 64,
-    MMA_M: Int = 16,
-    MMA_N: Int = 16,
-    MMA_K: Int = 128,
 ]:
     """Native MXFP4 block-scaled matmul for AMD CDNA4.
 
@@ -483,12 +485,13 @@ struct MXFP4MatmulAMD[
         BK_ELEMS: Block tile K in logical FP4 elements. Default 128.
         WM: Warp tile rows. BM must be divisible by WM. Default 64.
         WN: Warp tile cols. BN must be divisible by WN. Default 64.
-        MMA_M: MFMA tile rows. WM must be divisible by MMA_M. Default 16.
-        MMA_N: MFMA tile cols. WN must be divisible by MMA_N. Default 16.
-        MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
     """
 
     comptime BK_BYTES = Self.BK_ELEMS // 2
+
+    comptime MMA_M = MXFP4_MMA_M
+    comptime MMA_N = MXFP4_MMA_N
+    comptime MMA_K = MXFP4_MMA_K
 
     comptime num_warps_m = Self.BM // Self.WM
     comptime num_warps_n = Self.BN // Self.WN
@@ -532,6 +535,8 @@ struct MXFP4MatmulAMD[
     ):
         """MXFP4 block-scaled GEMM kernel with SMEM pipeline."""
         comptime BK_BYTES = Self.BK_BYTES
+        comptime MMA_M = Self.MMA_M
+        comptime MMA_N = Self.MMA_N
         comptime num_m_mmas = Self.num_m_mmas
         comptime num_n_mmas = Self.num_n_mmas
         comptime c_frag_size = Self.c_frag_size
@@ -625,7 +630,7 @@ struct MXFP4MatmulAMD[
 
         # === MMA operator ===
         var mma_op = BlockScaledMmaOp[
-            mma_shape=IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K),
+            mma_shape=IndexList[3](MMA_M, MMA_N, Self.MMA_K),
             num_m_mmas=num_m_mmas,
             num_n_mmas=num_n_mmas,
             num_k_tiles=num_k_tiles,
@@ -633,9 +638,7 @@ struct MXFP4MatmulAMD[
 
         # === Output writer ===
         # RegTileWriter casts from float32 accumulators to out_dtype.
-        var c_writer = RegTileWriter[
-            out_dtype, Self.MMA_M, WARP_SIZE // Self.MMA_M
-        ](c)
+        var c_writer = RegTileWriter[out_dtype, MMA_M, WARP_SIZE // MMA_M](c)
 
         # === Pipeline helpers ===
         var k_counter = 0
@@ -676,14 +679,14 @@ struct MXFP4MatmulAMD[
             """Cooperatively load scale tiles from GMEM to SMEM.
 
             Scale tile per BK iteration: [Self.BM, scales_per_mma] for A and
-            [Self.BN, scales_per_mma] for B, both uint8. Each row is
-            scales_per_mma * num_k_tiles bytes.
+            [Self.BN, scales_per_mma] for B, both uint8. Each row is 4 bytes.
             Threads 0..BM-1 load A scales, threads Self.BM..BM+Self.BN-1 load B.
-            Each active thread loads SCALE_WORDS_PER_ROW Int32 dwords per BK
-            iteration, giving coalesced 4-byte aligned GMEM reads.
+            Each active thread loads one 4-byte row as an Int32, giving
+            coalesced 4-byte aligned GMEM reads.
             """
-            comptime SCALE_WORDS_PER_ROW = (scales_per_mma * num_k_tiles) // 4
-
+            # Per BK iteration we load num_k_tiles MFMAs' worth of scales
+            # per row. Each thread writes num_k_tiles contiguous Int32
+            # dwords at row `tid` in the interleaved SMEM layout.
             var tid = Int(thread_idx.x)
             var base_scale_k = k_scale_counter * scales_per_mma * num_k_tiles
             var a_base_row = Int(block_idx.y) * Self.BM
@@ -693,33 +696,39 @@ struct MXFP4MatmulAMD[
             if tid < Self.BM:
                 var row = a_base_row + tid
                 if row < M:
-                    var src_word_base = (row * K_SCALES + base_scale_k) // 4
-                    comptime for w in range(SCALE_WORDS_PER_ROW):
-                        sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[
-                            tid * SCALE_WORDS_PER_ROW + w
-                        ] = sfa.ptr.bitcast[Scalar[DType.int32]]()[
-                            src_word_base + w
+                    comptime for k in range(num_k_tiles):
+                        var src_off = (
+                            row * K_SCALES + base_scale_k + k * scales_per_mma
+                        )
+                        var src_word = sfa.ptr.bitcast[Scalar[DType.int32]]()[
+                            src_off // scales_per_mma
                         ]
-                else:
-                    comptime for w in range(SCALE_WORDS_PER_ROW):
                         sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[
-                            tid * SCALE_WORDS_PER_ROW + w
+                            tid * num_k_tiles + k
+                        ] = src_word
+                else:
+                    comptime for k in range(num_k_tiles):
+                        sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                            tid * num_k_tiles + k
                         ] = Int32(0)
             # B scales: guard N-OOB rows (B is transposed).
             if tid < Self.BN:
                 var row = b_base_row + tid
                 if row < N:
-                    var src_word_base = (row * K_SCALES + base_scale_k) // 4
-                    comptime for w in range(SCALE_WORDS_PER_ROW):
-                        sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[
-                            tid * SCALE_WORDS_PER_ROW + w
-                        ] = sfb.ptr.bitcast[Scalar[DType.int32]]()[
-                            src_word_base + w
+                    comptime for k in range(num_k_tiles):
+                        var src_off = (
+                            row * K_SCALES + base_scale_k + k * scales_per_mma
+                        )
+                        var src_word = sfb.ptr.bitcast[Scalar[DType.int32]]()[
+                            src_off // scales_per_mma
                         ]
-                else:
-                    comptime for w in range(SCALE_WORDS_PER_ROW):
                         sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[
-                            tid * SCALE_WORDS_PER_ROW + w
+                            tid * num_k_tiles + k
+                        ] = src_word
+                else:
+                    comptime for k in range(num_k_tiles):
+                        sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                            tid * num_k_tiles + k
                         ] = Int32(0)
 
             k_scale_counter += 1
@@ -768,8 +777,8 @@ struct MXFP4MatmulAMD[
                 num_m_mmas=num_m_mmas,
                 num_n_mmas=num_n_mmas,
                 num_k_mmas=num_k_tiles,
-                MMA_M=Self.MMA_M,
-                MMA_N=Self.MMA_N,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
                 a_loads_per_thread=a_loads_per_thread,
                 b_loads_per_thread=b_loads_per_thread,
             ]()
@@ -851,18 +860,11 @@ struct MXFP4MatmulAMD[
         var c_block = c.tile[Self.BM, Self.BN](block_idx.y, block_idx.x)
         var c_warp = c_block.tile[Self.WM, Self.WN](warp_m, warp_n)
 
-        # AMD buffer_store dispatches at most 16 bytes per lane. For 16x16
-        # MFMA `c_frag_size == 4` and vectorize[1, 4] hits 16 bytes exactly.
-        # For 32x32 `c_frag_size == 16` (16 FP32 per lane per MMA), so we
-        # keep the vectorize at literal 4 and use `store[mfma32=True]`,
-        # which iterates the source as 4 register groups of 4 floats and
-        # reorders them via the CDNA 32x32 register permutation
-        # (`src[4*n + 16*m]` → fragment position `4*m + n`).
         comptime for m_mma in range(num_m_mmas):
             comptime for n_mma in range(num_n_mmas):
-                c_writer.store[mfma32=Self.MMA_M == 32](
-                    c_warp.tile[Self.MMA_M, Self.MMA_N](m_mma, n_mma).vectorize[
-                        1, 4
+                c_writer.store(
+                    c_warp.tile[MMA_M, MMA_N](m_mma, n_mma).vectorize[
+                        1, c_frag_size
                     ](),
                     c_reg.tile[1, c_frag_size](m_mma, n_mma),
                 )
@@ -874,14 +876,7 @@ struct MXFP4MatmulAMD[
 
 
 def _launch_mxfp4[
-    BM: Int,
-    BN: Int,
-    BK_ELEMS: Int,
-    WM: Int,
-    WN: Int,
-    MMA_M: Int = 16,
-    MMA_N: Int = 16,
-    MMA_K: Int = 128,
+    BM: Int, BN: Int, BK_ELEMS: Int, WM: Int, WN: Int
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,
@@ -893,14 +888,7 @@ def _launch_mxfp4[
 ) raises:
     """Instantiate MXFP4MatmulAMD with the given tile shape and launch."""
     comptime Kernel = MXFP4MatmulAMD[
-        BM=BM,
-        BN=BN,
-        BK_ELEMS=BK_ELEMS,
-        WM=WM,
-        WN=WN,
-        MMA_M=MMA_M,
-        MMA_N=MMA_N,
-        MMA_K=MMA_K,
+        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
     ]
     comptime N = type_of(c).static_shape[1]
 
@@ -926,11 +914,7 @@ def _launch_mxfp4[
     )
 
 
-def mxfp4_block_scaled_matmul_amd[
-    MMA_M: Int = 16,
-    MMA_N: Int = 16,
-    MMA_K: Int = 128,
-](
+def mxfp4_block_scaled_matmul_amd(
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, DType.uint8, ...],
     b: TileTensor[mut=False, DType.uint8, ...],
@@ -948,12 +932,6 @@ def mxfp4_block_scaled_matmul_amd[
     Tile shape is selected at runtime based on M to match the expected
     arithmetic intensity regime (decode vs. prefill). A proper
     (N, K)-keyed dispatch table is planned for a follow-up PR.
-
-    Parameters:
-        MMA_M: MFMA tile rows. Default 16. Pass 32 to opt into the
-            32x32x64 MFMA shape (must be paired with MMA_N=32, MMA_K=64).
-        MMA_N: MFMA tile cols. Default 16.
-        MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
 
     Args:
         c: Output [M, N] (any float dtype, e.g. float32 or bfloat16).
@@ -990,58 +968,23 @@ def mxfp4_block_scaled_matmul_amd[
     #   else      → general prefill / training
     if M <= 16:
         comptime if can_use_bk_512:
-            _launch_mxfp4[
-                BM=64,
-                BN=32,
-                BK_ELEMS=512,
-                WM=64,
-                WN=32,
-                MMA_M=MMA_M,
-                MMA_N=MMA_N,
-                MMA_K=MMA_K,
-            ](c, a, b, a_scales, b_scales, M, ctx)
+            _launch_mxfp4[BM=64, BN=32, BK_ELEMS=512, WM=64, WN=32](
+                c, a, b, a_scales, b_scales, M, ctx
+            )
         else:
-            _launch_mxfp4[
-                BM=128,
-                BN=128,
-                BK_ELEMS=128,
-                WM=64,
-                WN=64,
-                MMA_M=MMA_M,
-                MMA_N=MMA_N,
-                MMA_K=MMA_K,
-            ](c, a, b, a_scales, b_scales, M, ctx)
+            _launch_mxfp4[BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64](
+                c, a, b, a_scales, b_scales, M, ctx
+            )
     elif M <= 64:
         comptime if can_use_bk_256:
-            _launch_mxfp4[
-                BM=128,
-                BN=64,
-                BK_ELEMS=256,
-                WM=64,
-                WN=64,
-                MMA_M=MMA_M,
-                MMA_N=MMA_N,
-                MMA_K=MMA_K,
-            ](c, a, b, a_scales, b_scales, M, ctx)
+            _launch_mxfp4[BM=128, BN=64, BK_ELEMS=256, WM=64, WN=64](
+                c, a, b, a_scales, b_scales, M, ctx
+            )
         else:
-            _launch_mxfp4[
-                BM=128,
-                BN=128,
-                BK_ELEMS=128,
-                WM=64,
-                WN=64,
-                MMA_M=MMA_M,
-                MMA_N=MMA_N,
-                MMA_K=MMA_K,
-            ](c, a, b, a_scales, b_scales, M, ctx)
+            _launch_mxfp4[BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64](
+                c, a, b, a_scales, b_scales, M, ctx
+            )
     else:
-        _launch_mxfp4[
-            BM=128,
-            BN=128,
-            BK_ELEMS=128,
-            WM=64,
-            WN=64,
-            MMA_M=MMA_M,
-            MMA_N=MMA_N,
-            MMA_K=MMA_K,
-        ](c, a, b, a_scales, b_scales, M, ctx)
+        _launch_mxfp4[BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64](
+            c, a, b, a_scales, b_scales, M, ctx
+        )
