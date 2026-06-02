@@ -38,7 +38,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
 from .gemma3 import Gemma3

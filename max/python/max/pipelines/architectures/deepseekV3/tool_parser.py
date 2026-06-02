@@ -58,7 +58,7 @@ from max.pipelines.lib.tool_parsing import (
     register,
 )
 from max.pipelines.modeling.types import ParsedToolCall
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 logger = logging.getLogger(__name__)
 

@@ -26,7 +26,7 @@ from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.lib import CompilationTimer, PipelineConfig
-from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Model

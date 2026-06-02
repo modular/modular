@@ -21,14 +21,15 @@ from max.config import (
     resolve_max_config_inheritance,
 )
 from max.pipelines.lora import LoRAManager
-from max.pipelines.modeling.weights.hf_utils import (
+from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
     generate_local_model_path,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
-from max.pipelines.modeling.weights.weight_path_parser import WeightPathParser
+from max.pipelines.weights.quant import parse_quant_config
+from max.pipelines.weights.weight_path_parser import WeightPathParser
 
 from .bfloat16_utils import (
     float32_array_to_buffer,
@@ -72,7 +73,6 @@ from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
 from .pixel_tokenizer import PixelGenerationTokenizer
-from .quant import parse_quant_config
 from .registry import (
     PIPELINE_REGISTRY,
     PipelineModelType,

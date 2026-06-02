@@ -29,7 +29,7 @@ from max.pipelines.modeling.types import (
     ParsedToolCallDelta,
     ParsedToolResponse,
 )
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 
 def test_single_tool_call_parsing() -> None:

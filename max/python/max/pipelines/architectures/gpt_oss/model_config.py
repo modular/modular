@@ -28,8 +28,8 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
 

@@ -1,0 +1,30 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "weights",
+    srcs = glob(["**/*.py"]),
+    ignore_extra_deps = [
+        # Optional dep of max.graph, used for loading gguf files
+        requirement("gguf"),
+        # Used transitively via pydantic models and huggingface-hub internals
+        requirement("numpy"),
+        requirement("pydantic"),
+        requirement("typing-extensions"),
+        "//max/python/max:_core",
+    ],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/modeling",
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("pydantic"),
+        requirement("requests"),
+        requirement("tqdm"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+    ],
+)

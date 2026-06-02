@@ -624,7 +624,7 @@ def _parse_fp8_config(
     )
 
 
-logger = logging.getLogger("max.pipelines")
+_logger = logging.getLogger("max.pipelines")
 
 
 _FP4_DTYPES = (DType.uint8, DType.float4_e2m1fn)
@@ -697,7 +697,7 @@ def _load_standalone_quant_config(
         return None
 
     except Exception as e:
-        logger.debug(f"Failed to load standalone quant config: {e}")
+        _logger.debug(f"Failed to load standalone quant config: {e}")
         return None
 
 
@@ -880,7 +880,7 @@ def _parse_float4_config(
             ignored_modules_prefix=ignored_modules_prefix,
         )
 
-    logger.debug(
+    _logger.debug(
         "Skipping FP4 parsing for unsupported quant method: %s",
         quant_method,
     )
@@ -958,7 +958,7 @@ def parse_quant_config(
             ),
         )
         if not config.can_use_fused_mlp:
-            logger.warning(
+            _logger.warning(
                 "Fused MLP is not supported for this model. "
                 "This may impact performance."
             )

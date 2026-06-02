@@ -17,7 +17,7 @@ modular_py_test(
     deps = [
         "//max/python/max/graph",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
         "//max/tests/integration/test_common:mocks",
     ],
 )
@@ -29,7 +29,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
     ],
 )
 
@@ -59,7 +59,7 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
     ],
 )
 
@@ -112,7 +112,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
         requirement("huggingface-hub"),
         requirement("transformers"),
     ],

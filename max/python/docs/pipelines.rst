@@ -29,7 +29,7 @@ Submodules
    pipelines.modeling.dataprocessing
    pipelines.modeling.kv_cache_config
    pipelines.modeling.types
-   pipelines.modeling.weights
+   pipelines.weights
    pipelines.lora
    pipelines.request
    pipelines.speculative

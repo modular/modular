@@ -47,7 +47,7 @@ from max.pipelines.modeling.types.pipeline import (
     PipelineInputsType,
     PipelineOutputType,
 )
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .config import LoRAConfig
 from .lora_types import LoRAStatus, LoRAType

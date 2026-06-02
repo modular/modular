@@ -56,8 +56,8 @@ from max.pipelines.modeling.kv_cache_config import (
     KVConnectorConfig,
 )
 from max.pipelines.modeling.types.task import PipelineTask
-from max.pipelines.modeling.weights.hf_utils import is_diffusion_pipeline
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.weights.hf_utils import is_diffusion_pipeline
 from pydantic import (
     ConfigDict,
     Field,

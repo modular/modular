@@ -634,10 +634,10 @@
                   "label": "weights",
                   "link": {
                     "type": "doc",
-                    "id": "max/api/python/pipelines.modeling.weights"
+                    "id": "max/api/python/pipelines.weights"
                   },
                   "items": [
-                    "__AUTOGEN:max.pipelines.modeling.weights__"
+                    "__AUTOGEN:max.pipelines.weights__"
                   ]
                 }
               ]

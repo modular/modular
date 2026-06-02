@@ -35,12 +35,12 @@ from max.pipelines.lib import (
     ModelInputs,
 )
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
 )
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.weights.quant import parse_quant_config
 from max.support.algorithm import flatten2d
 from typing_extensions import override
 

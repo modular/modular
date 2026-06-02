@@ -28,7 +28,7 @@ from unittest.mock import patch
 import pytest
 from max.driver import DeviceSpec
 from max.pipelines.lib import MAXModelConfig
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 GPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="gpu")
 CPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="cpu")

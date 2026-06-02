@@ -22,7 +22,7 @@ from typing import Any
 
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.weight_loader import WeightLoader, _role_prefixed_loader
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 

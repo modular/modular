@@ -13,7 +13,7 @@
 
 """Types to interface with ML pipelines such as text/token/pixel generation."""
 
-from max.pipelines.modeling.weights.hf_utils import download_weight_files
+from max.pipelines.weights.hf_utils import download_weight_files
 
 from .architectures import register_all_models
 from .core import PixelContext, TextAndVisionContext, TextContext

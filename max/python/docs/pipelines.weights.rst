@@ -1,15 +1,15 @@
-:title: max.pipelines.modeling.weights
+:title: max.pipelines.weights
 :type: module
 :lang: python
 :wrapper_class: rst-module-autosummary
 
-max.pipelines.modeling.weights
+max.pipelines.weights
 ===============================
 
-.. automodule:: max.pipelines.modeling.weights
+.. automodule:: max.pipelines.weights
    :no-members:
 
-.. currentmodule:: max.pipelines.modeling.weights
+.. currentmodule:: max.pipelines.weights
 
 HuggingFace integration
 -----------------------
@@ -48,6 +48,7 @@ Weight loading
    :template: autosummary/function.rst
 
    auto_cast_weights_from_env
+   parse_quant_config
 
 .. autosummary::
    :nosignatures:

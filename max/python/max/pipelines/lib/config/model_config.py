@@ -53,13 +53,13 @@ from max.pipelines.modeling.config_enums import (
 )
 from max.pipelines.modeling.kv_cache_config import KVCacheConfig
 from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
-from max.pipelines.modeling.weights.hf_utils import (
+from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
-from max.pipelines.modeling.weights.weight_path_parser import WeightPathParser
+from max.pipelines.weights.weight_path_parser import WeightPathParser
 from pydantic import (
     ConfigDict,
     Field,

@@ -36,7 +36,7 @@ VALIDATE_HF_ACCESS_TARGET = (
     "max.pipelines.lib.config.model_config.validate_hf_repo_access"
 )
 VALIDATE_HF_ACCESS_HFUTILS_TARGET = (
-    "max.pipelines.modeling.weights.hf_utils.validate_hf_repo_access"
+    "max.pipelines.weights.hf_utils.validate_hf_repo_access"
 )
 HF_OFFLINE_TARGET = "huggingface_hub.constants.HF_HUB_OFFLINE"
 
