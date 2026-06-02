@@ -57,7 +57,7 @@ it is a pain to pass it around everywhere.
 Fortunately, `AsyncValue` instances is that they always know what
 `M::MLRT::CPUDevice` they came from. You can access this through the
 `asyncVal->getRuntime()` method which returns a
-[`CompactCPUDevicePtr`](../../include/MLRT/AsyncRT/Runtime/CompactRuntimePtr.h).
+[`CompactCPUDevicePtr`](../../include/MLRT/AsyncRT/Runtime/CompactCPUDevicePtr.h).
 A `CompactCPUDevicePtr` is a specialized class that can be used interchangeably
 with `CPUDevice&`.
 

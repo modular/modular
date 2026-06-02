@@ -25,10 +25,10 @@ functional changes) should contain tests.
 ./bazelw test //KGEN/test/mojo-parser:mojo-parser
 
 # Run a specific test file
-./bazelw test //KGEN/test/mojo-parser:closures/basic_closure.mojo.test
+./bazelw test //KGEN/test/mojo-parser:closures/unified_closure.mojo.test
 
 # Run integration tests
-./bazelw test //KGEN/test/mojo-integration:mojo-integration
+./bazelw test //KGEN/test/mojo-integration:test
 
 # Run with ASAN
 ./bazelw test --config=asan //KGEN/test/mojo-parser:mojo-parser

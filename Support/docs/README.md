@@ -28,6 +28,7 @@ purpose. The current libraries are:
 - [Frameworks](Frameworks.md)
 - [Globals](Globals.md)
 - [HTTP](HTTP.md)
+- [Logging](Logging.md)
 - [MArchTarget](MArchTarget.md)
 - [MDialect](MDialect.md)
 - [ML](ML.md)

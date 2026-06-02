@@ -288,7 +288,7 @@ latter should return the “index” type, which corresponds to a size_t. These
 should all get `fold()`ers for when the parameter value is actually a known
 constant integer value. Note that we should not add support for dynamic SIMD
 length or dynamic SIMD datatypes. See
-[this for rationale](https://github.com/modularml/modular/blob/main/KGEN/docs/README.md#support-for-dynamic-shapes).
+[this for rationale](https://github.com/modularml/modular/blob/main/KGEN/docs/manual/Rationale.md#support-for-dynamic-shapes-in-zapbuffer-et-al).
 
 ### ✅ Generator interface declarations and instances
 

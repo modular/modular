@@ -22,13 +22,13 @@ Details on these, and other tricks, are below!
 
 ## Running the Debugger
 
-[https://github.com/modularml/modular/blob/main/docs/bazel.md#running-targets-or-tests-with-lldb](https://github.com/modularml/modular/blob/main/docs/bazel.md#running-targets-or-tests-with-lldb)
+[https://github.com/modularml/modular/blob/main/docs/internal/bazel.md#running-targets-or-tests-with-lldb](https://github.com/modularml/modular/blob/main/docs/internal/bazel.md#running-targets-or-tests-with-lldb)
 
-For example, this will open the debugger for the `traits-with-builtin.mojo`
+For example, this will open the debugger for the `traits_with_builtin.mojo`
 test:
 
 ```bash
-bd //KGEN/tools/kgen-translate -- -import-mojo KGEN/test/mojo-parser/traits-with-builtin.mojo
+bd //KGEN/tools/kgen-translate -- -import-mojo KGEN/test/mojo-parser/traits_with_builtin.mojo
 ```
 
 Generally, test files contain a `# RUN:` line which contains the command to add
@@ -41,7 +41,7 @@ after `vscode-debug`, like:
 To make it work in vscode, put `--vscode` after the `bd`. For example:
 
 ```python
-bd --vscode //KGEN/tools/kgen-translate -- -import-mojo KGEN/test/mojo-parser/traits-with-builtin.mojo
+bd --vscode //KGEN/tools/kgen-translate -- -import-mojo KGEN/test/mojo-parser/traits_with_builtin.mojo
 ```
 
 ## Printing
@@ -106,7 +106,7 @@ information:
 
 ```cpp
 if (auto fileLineColLoc = dyn_cast<mlir::FileLineColLoc>(mlirLoc)) {
-  // Prints: /Users/verdagon/modular/KGEN/test/mojo-parser/traits-without-builtin.mojo:24:33
+  // Prints: /Users/verdagon/modular/KGEN/test/mojo-parser/traits_without_builtin.mojo:24:33
   llvm::outs() << fileLineColLoc.getFilename().str() << ":"
       << fileLineColLoc.getLine() << ":"
       << fileLineColLoc.getColumn() << "\n";
@@ -230,7 +230,7 @@ some effort, because things like `Optional`, `List`, and even `Int` won’t be
 available. Look at `KGEN/test/test-packages/std/builtin/stubs.mojo` for
 inspiration on how to nicely fake those.
 
-For an example, see `KGEN/test/mojo-parser/trait-metatype-roundtrip.mojo`.
+For an example, see `KGEN/test/mojo-parser/trait_metatype_roundtrip.mojo`.
 
 Caveat: The Mojo compiler hard-codes `AnyType`, so if you make your own trait
 named `AnyType` it might not work as expected. Also, Mojo secretly automatically
