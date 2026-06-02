@@ -390,9 +390,19 @@ class MiniMaxM2Attention(Module, Shardable):
             [total_seq_len, local_dim] and qk_var_local is [total_seq_len, 2]
             holding (mean(q^2), mean(k^2)) over local dims in float32.
         """
-        q = self.q_proj(x)
-        k = self.k_proj(x)
-        v = self.v_proj(x)
+        if self.quant_config is None:
+            # Fuse Q/K/V into one matmul + split (2 GEMMs/layer instead of 4).
+            head_dim = self.kv_params.head_dim
+            q_dim = self.n_heads * head_dim
+            kv_dim = self.num_key_value_heads * head_dim
+            qkv = x @ self.wqkv.T
+            q, k, v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+        else:
+            # Quantized attention projections use a different fused kernel in
+            # the DP path; keep the separate-matmul form here for correctness.
+            q = self.q_proj(x)
+            k = self.k_proj(x)
+            v = self.v_proj(x)
 
         qf = ops.cast(q, DType.float32)
         kf = ops.cast(k, DType.float32)
