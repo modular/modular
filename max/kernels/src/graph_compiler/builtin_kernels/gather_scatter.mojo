@@ -1221,17 +1221,20 @@ struct Slice:
             ].static_value < 0:
                 return 1
 
-            # The offset for dimension `i` is `start[i] * strides[i]`
-            comptime if not start_types[i].is_static_value or not stride_types[
-                i
-            ].is_static_value:
+            # The offset for dimension `i` is `start[i] * strides[i]`. If the
+            # start is not statically known the offset is unknown.
+            comptime if not start_types[i].is_static_value:
                 return 1
-            alignment = gcd(
-                alignment,
-                start_types[i].static_value
-                * stride_types[i].static_value
-                * align_of[dtype](),
-            )
+
+            comptime if start_types[i].static_value != 0:
+                comptime if not stride_types[i].is_static_value:
+                    return 1
+                alignment = gcd(
+                    alignment,
+                    start_types[i].static_value
+                    * stride_types[i].static_value
+                    * align_of[dtype](),
+                )
 
         return alignment
 
