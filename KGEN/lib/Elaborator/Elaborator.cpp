@@ -110,7 +110,7 @@ ConcreteFunction::CompiledRegion::compileIfNecessary(Region &region,
 ImplNode::ImplNode(ParamNode *parent)
     : ImplNodeBase(parent->gen.getBodyRegion()), parent(parent) {}
 
-static std::mutex &getGlobalMutex() {
+[[maybe_unused]] static std::mutex &getGlobalMutex() {
   static std::mutex mutex;
   return mutex;
 }
