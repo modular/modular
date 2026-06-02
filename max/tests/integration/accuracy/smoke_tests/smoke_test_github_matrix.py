@@ -128,7 +128,6 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": DISABLE,  # MXSERV-84
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": NON_XL | {"4xMI355"},
     "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
     "google/gemma-4-26B-A4B-it__localkv": MULTI,
     "google/gemma-4-26B-A4B-it__tieredkv": MULTI,
@@ -143,11 +142,10 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__debug_tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": NON_XL | {"4xMI355"},
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": NON_XL | {"4xMI355"},
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__debug_tiered_kvconnector_tpep": NON_XL | {"4xMI355"},
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": NON_XL | {"4xMI355"},
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__mha_eagle_tiered_kvconnector_tpep": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__debug_tiered_kvconnector_tpep": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep": NON_XL | {"4xMI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}

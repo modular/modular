@@ -138,12 +138,9 @@ def test_recipe_aliases_preserve_key_model_path_and_speculation() -> None:
     assert mtp_recipe.speculative.num_speculative_tokens == 3
 
     kimi_recipe = smoke_test._load_recipe(
-        MODEL_RECIPES["austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle"]
+        MODEL_RECIPES["nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep"]
     )
-    assert (
-        kimi_recipe.model.model_path
-        == "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"
-    )
+    assert kimi_recipe.model.model_path == "nvidia/Kimi-K2.5-NVFP4"
     assert kimi_recipe.speculative is not None
     assert kimi_recipe.speculative.num_speculative_tokens == 3
 
@@ -285,7 +282,7 @@ def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
     cmd = smoke_test.get_server_cmd(
-        "sglang", "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle"
+        "sglang", "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep"
     )
 
     assert "--mem-fraction-static" in cmd

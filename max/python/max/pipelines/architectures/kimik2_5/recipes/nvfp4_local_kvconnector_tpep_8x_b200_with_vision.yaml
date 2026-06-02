@@ -11,28 +11,15 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 model:
-  model_path: austinpowers/Kimi-K2.5-NVFP4-DeepseekV3
+  model_path: nvidia/Kimi-K2.5-NVFP4
   trust_remote_code: true
   device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
-  data_parallel_degree: 8
+  data_parallel_degree: 1
   kv_cache:
     kv_cache_format: float8_e4m3fn
     device_memory_utilization: 0.75
-
-draft_model:
-  model_path: nvidia/Kimi-K2.5-Thinking-Eagle3
-  trust_remote_code: true
-  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
-  data_parallel_degree: 8
-  quantization_encoding: bfloat16
-  kv_cache:
-    kv_cache_format: float8_e4m3fn
-
-speculative:
-  speculative_method: eagle
-  num_speculative_tokens: 3
+    kv_connector: local
 
 runtime:
   ep_size: 8
   max_batch_input_tokens: 4096
-  max_num_steps: 1

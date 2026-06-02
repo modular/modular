@@ -834,8 +834,6 @@ class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):
     # aborts during the second decode step.
     num_steps = 1
 
-    # TODO(MXSERV-7): replace ``austinpowers`` personal namespace with the
-    # official Modular HF org once the checkpoint is republished.
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
         return [
@@ -2132,9 +2130,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
     "amd/Kimi-K2.5-MXFP4": AmdKimiK2_5MXFP4PipelineOracle(
         "amd/Kimi-K2.5-MXFP4"
-    ),
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3": KimiK2_5DeepseekV3PipelineOracle(
-        "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"
     ),
     # NVFP4 weights pre-staged on the dedicated prod-2 8xB200 runner. Loaded
     # as a vanilla DeepseekV3 checkpoint (same bytes as Kimi-K2.5-NVFP4 with

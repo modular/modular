@@ -123,12 +123,10 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_dp_8x_b200.yaml",
     "Qwen/Qwen3-235B-A22B-Instruct-2507": "max/pipelines/architectures/qwen3/recipes/qwen3_235b_a22b_8x_b200.yaml",
     "unsloth/gpt-oss-20b-BF16__modulev3": "max/pipelines/architectures/gpt_oss_modulev3/recipes/gpt_oss_20b.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_tiered_kvconnector_tpep_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__mha_eagle_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_mha_eagle_tiered_kvconnector_tpep_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_local_kvconnector_tpep_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_tiered_kvconnector_tpep_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__debug_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_debug_tiered_kvconnector_tpep_8x_b200.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_tiered_kvconnector_tpep_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_mha_eagle_tiered_kvconnector_tpep_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_local_kvconnector_tpep_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__debug_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_debug_tiered_kvconnector_tpep_8x_b200_with_vision.yaml",
 })
 # fmt: on
 

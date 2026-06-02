@@ -11,14 +11,16 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 model:
-  model_path: austinpowers/Kimi-K2.5-NVFP4-DeepseekV3
+  model_path: nvidia/Kimi-K2.5-NVFP4
   trust_remote_code: true
   device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
   data_parallel_degree: 1
   kv_cache:
     kv_cache_format: float8_e4m3fn
     device_memory_utilization: 0.75
-    kv_connector: local
+    kv_connector: tiered
+    kv_connector_config:
+      use_debug_tiered_mode: true
 
 runtime:
   ep_size: 8

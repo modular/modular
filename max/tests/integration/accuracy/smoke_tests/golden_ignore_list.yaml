@@ -115,28 +115,24 @@ ignored_failures:
   - model: meta-llama/Llama-3.1-8B-Instruct__debug_tiered_kvconnector
     reason: "Excluded from golden gate (llama3-8B)"
 
-  # ── austinpowers KV-connector variants ───────────────────────────────────────
+  # ── Kimi-K2.5-NVFP4 KV-connector variants ────────────────────────────────────
   # Explicit gpu: these variants are excluded from all single-card and 2x runners
   # and run only on 8xB200.
-  - model: austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep
+  - model: nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep
     gpu: 8xB200
-    reason: "Excluded from golden gate (austinpowers KV-connector)"
+    reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 KV-connector)"
 
-  - model: austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep
+  - model: nvidia/Kimi-K2.5-NVFP4__debug_tiered_kvconnector_tpep
     gpu: 8xB200
-    reason: "Excluded from golden gate (austinpowers KV-connector)"
+    reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 KV-connector)"
 
-  - model: austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__debug_tiered_kvconnector_tpep
+  - model: nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep
     gpu: 8xB200
-    reason: "Excluded from golden gate (austinpowers KV-connector)"
+    reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 KV-connector)"
 
-  - model: austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep
+  - model: nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep
     gpu: 8xB200
-    reason: "Excluded from golden gate (austinpowers KV-connector)"
-
-  - model: austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__mha_eagle_tiered_kvconnector_tpep
-    gpu: 8xB200
-    reason: "Excluded from golden gate (austinpowers KV-connector)"
+    reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 KV-connector)"
 
   # ── RedHatAI FP8 ─────────────────────────────────────────────────────────────
   # Explicit gpu: passes on 8xB200 but fails on 8xMI355.
