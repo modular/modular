@@ -15,6 +15,7 @@
 # Validates that all actions use a pinned sha. Tags like @v4 can change and
 # can introduce vulnerabilities.
 
+import os
 import re
 import subprocess
 from typing import Any
@@ -85,4 +86,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if path := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        os.chdir(path)
     exit(main())

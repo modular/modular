@@ -2,6 +2,7 @@ load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "mojo_binary", "requirement")
+load(":linter.bzl", "linter")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -43,6 +44,11 @@ modular_py_binary(
         "@platforms//os:macos": ["@ruff-aarch64-apple-darwin//:ruff"],
     }),
     deps = [":lint_helpers"],
+)
+
+linter(
+    base_name = "ruff",
+    binary = ":ruff_wrapper",
 )
 
 alias(
@@ -91,45 +97,23 @@ modular_py_binary(
     ],
 )
 
-[
-    command(
-        name = name + "." + ("check" if check else "fix") + ("-fast" if fast else ""),
-        command = base_command,
-        environment = {
-            "FAST": str(fast),
-            "CHECK": str(check),
-        },
-    )
-    for name, base_command in [
-        ("mblack", ":mblack-wrapper"),
-        ("ruff", ":ruff_wrapper"),
-    ]
-    for check in (True, False)
-    for fast in (True, False)
-]
+linter(
+    base_name = "mblack",
+    binary = ":mblack-wrapper",
+)
 
+# No fix or fast mode
 modular_py_binary(
     name = "lint_docstrings",
     srcs = ["lint_docstrings.py"],
     deps = [":lint_helpers"],
 )
 
-command(
-    name = "lint-docstrings.check",
-    command = ":lint_docstrings",
-    run_from_workspace_root = True,
-)
-
+# No fix or fast mode
 modular_py_binary(
     name = "action-versions-pinned",
     srcs = ["action-versions-pinned.py"],
     deps = [requirement("pyyaml")],
-)
-
-command(
-    name = "action-versions-pinned.check",
-    command = ":action-versions-pinned",
-    run_from_workspace_root = True,
 )
 
 mojo_binary(
@@ -162,24 +146,17 @@ modular_py_binary(
     deps = [":lint_helpers"],
 )
 
-[
-    command(
-        name = "shellcheck.check" + ("-fast" if fast else ""),
-        command = ":shellcheck_wrapper",
-        environment = {
-            "CHECK": "true",
-            "FAST": str(fast),
-        },
-        tags = ["maybe-unused"],
-    )
-    for fast in (True, False)
-]
+linter(
+    base_name = "shellcheck",
+    binary = ":shellcheck_wrapper",
+    has_fix = False,
+)
 
 multirun(
     name = "lint",
     buffer_output = True,
     commands = [
-        ":action-versions-pinned.check",
+        ":action-versions-pinned",
         ":buildifier.check",
         ":check_licenses.check",
         ":mblack.check",
