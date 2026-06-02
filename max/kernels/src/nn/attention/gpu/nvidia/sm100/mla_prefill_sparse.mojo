@@ -773,15 +773,18 @@ struct MLAPrefillSparse[
                 Self.V_DEPTH_PER_CTA // O_RESCALE_CHUNK
             )
 
-            # Per-thread base offset (in units of bf16x8 = uint128) into
-            # the scores smem, matching the K-major SW128B layout the
-            # subsequent SV MMA expects. See phase1.cuh:166-167 — base =
-            # (idx%64) + 64*((idx/64)*8). Upper-half threads write the
-            # left half of S; lower-half threads write the right half.
-            var s_smem_uint128_base = (
-                scores_ptr.bitcast[SIMD[Self.qkv_dtype, 8]]()
-                + (idx_in_wg % UInt32(64))
-                + UInt32(64) * ((idx_in_wg / UInt32(64)) * UInt32(8))
+            # Per-thread base bf16 element offset into the scores smem,
+            # matching the K-major SW128B layout the subsequent SV MMA
+            # expects. See phase1.cuh:166-167 — uint128 base =
+            # (idx%64) + 64*((idx/64)*8); ×8 converts uint128 units to bf16
+            # elements. Upper-half threads write the left half of S;
+            # lower-half threads write the right half.
+            var s_smem_bf16_elem_base = Int(
+                (
+                    (idx_in_wg % UInt32(64))
+                    + UInt32(512) * (idx_in_wg / UInt32(64))
+                )
+                * UInt32(8)
             )
 
             for k in range(num_k_blocks):
@@ -899,9 +902,12 @@ struct MLAPrefillSparse[
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
                 # Write S to scores smem as 8 bf16 per uint128, stride 64
-                # uint128 between writes — exactly the SS-MMA layout.
+                # uint128 between writes--exactly the K-major SW128B layout
+                # the SS-MMA reads. Keep the packed 128-bit store: a plain
+                # SIMD[bf16, 8] store scalarizes into bank-conflicting
+                # half-word stores.
                 comptime for i in range(P_PER_THREAD // 8):
-                    s_smem_uint128_base[i * 64] = SIMD[Self.qkv_dtype, 8](
+                    var s_vec = SIMD[Self.qkv_dtype, 8](
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 0]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 1]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 2]),
@@ -910,6 +916,11 @@ struct MLAPrefillSparse[
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 5]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 6]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 7]),
+                    )
+                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
+                        scores_ptr,
+                        s_smem_bf16_elem_base + i * 512,
+                        bitcast[DType.uint32, 4](s_vec),
                     )
 
                 # Rescale O (in TMEM) if mi changed materially. The first
@@ -2788,10 +2799,18 @@ struct MLAPrefillSparse[
                 Self.V_DEPTH_PER_CTA // O_RESCALE_CHUNK
             )
 
-            var s_smem_uint128_base = (
-                scores_ptr.bitcast[SIMD[Self.qkv_dtype, 8]]()
-                + (idx_in_wg % UInt32(64))
-                + UInt32(64) * ((idx_in_wg / UInt32(64)) * UInt32(8))
+            # Per-thread base bf16 element offset into the scores smem,
+            # matching the K-major SW128B layout the subsequent SV MMA
+            # expects. See phase1.cuh:166-167 — uint128 base =
+            # (idx%64) + 64*((idx/64)*8); ×8 converts uint128 units to bf16
+            # elements. Upper-half threads write the left half of S;
+            # lower-half threads write the right half.
+            var s_smem_bf16_elem_base = Int(
+                (
+                    (idx_in_wg % UInt32(64))
+                    + UInt32(512) * (idx_in_wg / UInt32(64))
+                )
+                * UInt32(8)
             )
 
             for k in range(num_k_blocks):
@@ -2877,8 +2896,13 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
+                # Write S to scores smem as 8 bf16 per uint128, stride 64
+                # uint128 between writes--exactly the K-major SW128B layout
+                # the SS-MMA reads. Keep the packed 128-bit store: a plain
+                # SIMD[bf16, 8] store scalarizes into bank-conflicting
+                # half-word stores.
                 comptime for i in range(P_PER_THREAD // 8):
-                    s_smem_uint128_base[i * 64] = SIMD[Self.qkv_dtype, 8](
+                    var s_vec = SIMD[Self.qkv_dtype, 8](
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 0]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 1]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 2]),
@@ -2887,6 +2911,11 @@ struct MLAPrefillSparse[
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 5]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 6]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 7]),
+                    )
+                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
+                        scores_ptr,
+                        s_smem_bf16_elem_base + i * 512,
+                        bitcast[DType.uint32, 4](s_vec),
                     )
 
                 if k > 0 and should_scale_o:
