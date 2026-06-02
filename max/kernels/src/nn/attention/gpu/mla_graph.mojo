@@ -60,16 +60,9 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_decode_kv_cache_ragged,
     generic_flare_mla_prefill_kv_cache_ragged,
 )
-from nn.attention.gpu.mla import _k_cache_to_buffer
+from nn.attention.gpu.mla import _k_cache_to_buffer, MLA_DECODE_MAX_SEQ_LEN
 from nn.normalization import _rms_norm_warp_tiling_subkernel
 
-
-# ===-----------------------------------------------------------------------===#
-# Maximum sequence length that routes through the decode branch instead of
-# prefill. This covers MTP verification and speculative decoding (1 actual +
-# up to 5 spec ahead = 6) where a small number of draft tokens (> 1) should
-# still use the decode kernel.
-comptime MLA_DECODE_MAX_SEQ_LEN = 6
 
 # Manually fused MLA RoPE and RMSNorm kernel
 # ===-----------------------------------------------------------------------===#

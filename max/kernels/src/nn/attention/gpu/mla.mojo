@@ -134,6 +134,12 @@ from .nvidia.sm100.mla_prefill_per_token_scale import (
 # ===-----------------------------------------------------------------------===#
 
 
+# Max query tokens per sequence the decode branch handles. Only NVIDIA's
+# decode kernel takes more than one (MTP / speculative decode); AMD's is
+# token-generation only.
+comptime MLA_DECODE_MAX_SEQ_LEN = 6 if has_nvidia_gpu_accelerator() else 1
+
+
 # entrypoint for MLA decoding kernels
 @always_inline
 def flare_mla_decoding[
@@ -527,6 +533,17 @@ def flare_mla_decoding_dispatch[
     comptime assert (
         q.dtype.is_half_float() or q.dtype == DType.float8_e4m3fn
     ), "Only support half precision or float8_e4m3fn Q."
+
+    # AMD's decode kernel handles only one query token per sequence; assert it
+    # here at the dispatch chokepoint so every decode caller is covered.
+    comptime if has_amd_gpu_accelerator():
+        debug_assert(
+            max_prompt_len <= 1,
+            (
+                "AMD MLA decode kernel handles exactly one query token per"
+                " sequence; route multi-token sequences to the prefill kernel."
+            ),
+        )
 
     # TileTensor always has static shapes for the last two dims.
 
