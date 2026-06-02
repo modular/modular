@@ -109,6 +109,12 @@ modular_py_binary(
     deps = [":lint_helpers"],
 )
 
+linter(
+    base_name = "lint_docstrings",
+    binary = ":lint_docstrings",
+    has_fix = False,
+)
+
 # No fix or fast mode
 modular_py_binary(
     name = "action-versions-pinned",
