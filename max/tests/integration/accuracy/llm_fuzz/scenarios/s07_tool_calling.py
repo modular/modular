@@ -98,10 +98,10 @@ class ToolCallingAttacks(BaseScenario):
         malformed_tools = {
             # Empty array: normalized to no-tools, 200 is correct
             "empty_tools_array": ([], "accept"),
-            # Missing type: Pydantic defaults to "function", 200 is correct
+            # Missing type: OpenAI spec lists `type` as required
             "tool_missing_type": (
                 [{"function": valid_tool["function"]}],
-                "accept",
+                "reject",
             ),
             # Missing function: structurally invalid, must reject
             "tool_missing_function": ([{"type": "function"}], "reject"),
