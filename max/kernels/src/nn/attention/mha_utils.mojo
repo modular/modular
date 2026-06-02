@@ -104,7 +104,13 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
     def init(self, dtype: DType) -> Self:
         if self._value == -1:
             comptime if is_sm90or100:
-                return FlashAttentionAlgorithm(2 + Int(dtype.is_half_float()))
+                return FlashAttentionAlgorithm(
+                    2
+                    + Int(
+                        dtype.is_half_float()
+                        or (is_sm100 and dtype.is_float8())
+                    )
+                )
             else:
                 return FlashAttentionAlgorithm(2)
         else:
@@ -274,7 +280,10 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         # Currently, all are `OptionalReg` for consistency.
         if (
             is_sm90or100
-            and Self.dtype.is_half_float()
+            and (
+                Self.dtype.is_half_float()
+                or (is_sm100 and Self.dtype.is_float8())
+            )
             and self.algorithm == FlashAttentionAlgorithm(3)
         ):
             # BM

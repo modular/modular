@@ -161,15 +161,47 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    # SM100 MHA with fp8 KV via dequant-staging + existing bf16 FA4 path.
-    # SM100-only.
-    "attention/test_mha_sm100_fp8_kv_d256.mojo": select({
+    "attention/test_mha_sm100_fp8_kv_d256_prefill.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    # Same dequant-staging path at head_dim=512 (Gemma4-global shape).
-    # SM100-only.
-    "attention/test_mha_sm100_fp8_kv_d512.mojo": select({
+    "attention/test_mha_sm100_fp8_kv_d256_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_fp8_kv_d512_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_fp8_kv_d512_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d256_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d512_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d128_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d256_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d512_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d64_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "attention/test_mha_sm100_qkv_fp8_d128_prefill.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

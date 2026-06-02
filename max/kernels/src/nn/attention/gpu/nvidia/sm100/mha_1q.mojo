@@ -643,7 +643,7 @@ struct TMemOperand[
             return self.tmem_addr
         else:
             comptime linear = _tmem_offset[
-                DType.bfloat16, MMA_N=Self.MMA_K, m_mma=m_mma, n_mma=k_mma
+                Self.dtype, MMA_N=Self.MMA_K, m_mma=m_mma, n_mma=k_mma
             ]()
             return self.tmem_addr + UInt32(linear)
 
@@ -680,7 +680,11 @@ struct TMemOperand[
         # 16 x 256b results in repeated 8x4<1xN> pattern, where
         comptime N = 32 // (4 * src_size)
         comptime bytes = 4 * dst_size * N
-        comptime bits = 8 * bytes
+        # For fp8, the tcgen05.mma.kind::f8f6f4 reader expects K laid
+        # out in 8-col groups (MMA_K=32 fp8 = 8 32-bit cols = 256 bits),
+        # so use bits=256 with repeat=4 for frag_size_b32=16. bf16 keeps
+        # the natural bits=128 (2 cols/repeat, 16 repeats).
+        comptime bits = 256 if Self.dtype.is_float8() else 8 * bytes
         # e.g., N = 2 for fp32
         #
         # each repetition thus loads 8 columns
@@ -719,8 +723,85 @@ struct TMemOperand[
                 uninitialized=True
             )
 
-            comptime for _i in range(frag_size_b32):
-                frag_st2[_i] = frag[_i]
+            comptime if Self.dtype.is_float8():
+                # The SS-D fragment per thread (output of Q@K^T MMA) puts
+                # each 4-lane group at a 2x2 (M, N) block. For fp8 with
+                # 1 u32 = 4 fp8, the TS MMA (kind::f8f6f4) reader expects
+                # 4 K-consecutive fp8 in ONE M-row per u32. The two layouts
+                # disagree at thread-granularity: the data we need also
+                # lives in OTHER threads' registers. Redistribute via
+                # warp shuffles.
+                # 1. Each thread iterates s_dst over its 16 destination u32 slots.
+                # 2. For each slot, identifies which (M, K) quartet it owns in TS A layout via mma_n_tile, k_lo_half, m_local_src.
+                # 3. Uses warp.shuffle_idx to pull u32 values from two peer lanes in the same lane_row (the SS-D layout puts the K-cells we want on different lane_cols of the same row).
+                # 4. Picks the m_local_src-th u16 half of each of the two received u32s and concatenates them as the destination u32 (the SIMD half-word concat we just refactored to).
+
+                # Warp grid is 8 lane_rows x 4 lane_cols (32 lanes total).
+                comptime lane_cols_per_row = 4
+                # SS-D M-pair: each thread owns 2 M positions
+                # {lane_row, lane_row + 8} in its own registers.
+                comptime m_per_pair = 2
+                # TS A packs a K-quartet (4 fp8) per u32. We assemble it
+                # from a low half (K, K+1) and a high half (K+2, K+3),
+                # each sourced from a distinct peer lane.
+                comptime k_halves_per_n_tile = 2
+                comptime lane_cols_per_k_half = (
+                    lane_cols_per_row // k_halves_per_n_tile  # = 2
+                )
+                # 4 destination u32 slots per N-tile = the (M, K-half)
+                # outer product across the M-pair and the two K-halves.
+                comptime dst_slots_per_n_tile = (
+                    m_per_pair * k_halves_per_n_tile
+                )
+                # Source SS-D layout also packs 4 u32 slots per N-tile:
+                # the 4 lane_cols of one lane_row each contribute one slot.
+                comptime src_slots_per_n_tile = lane_cols_per_row
+
+                var lane_row_ui = UInt32(lane_id()) // lane_cols_per_row
+                var lane_col_ui = UInt32(lane_id()) % lane_cols_per_row
+
+                comptime for s_dst in range(frag_size_b32):
+                    comptime mma_n_tile = s_dst // dst_slots_per_n_tile
+                    comptime k_lo_half = s_dst % k_halves_per_n_tile
+                    comptime m_local_src = (
+                        s_dst // k_halves_per_n_tile
+                    ) % m_per_pair
+
+                    var l_src = lane_row_ui
+                    var src_lane_a = l_src * lane_cols_per_row + UInt32(
+                        k_lo_half * lane_cols_per_k_half
+                    )
+                    var src_lane_b = src_lane_a + 1
+                    var received_a: Scalar[DType.uint32] = 0
+                    var received_b: Scalar[DType.uint32] = 0
+                    # Each lane_col publishes a different slot of a_frag;
+                    # only the iteration matching this thread's lane_col
+                    # contributes to its output u32.
+                    comptime for c_val in range(src_slots_per_n_tile):
+                        comptime publisher_slot = (
+                            mma_n_tile * src_slots_per_n_tile + c_val
+                        )
+                        var val: Scalar[DType.uint32] = frag[publisher_slot]
+                        var ra = warp.shuffle_idx(val, src_lane_a)
+                        var rb = warp.shuffle_idx(val, src_lane_b)
+                        if lane_col_ui == UInt32(c_val):
+                            received_a = ra
+                            received_b = rb
+
+                    comptime which_half = Int(m_local_src)
+                    var ab_halves = bitcast[DType.uint16, 4](
+                        SIMD[DType.uint32, 2](received_a, received_b)
+                    )
+                    # ab_halves = [a_lo, a_hi, b_lo, b_hi]
+                    var packed = SIMD[DType.uint16, 2](
+                        ab_halves[which_half],
+                        ab_halves[which_half + 2],
+                    )
+                    frag_st2[s_dst] = bitcast[DType.uint32, 1](packed)
+            else:
+                comptime for _i in range(frag_size_b32):
+                    frag_st2[_i] = frag[_i]
+
             tcgen05_st[
                 datapaths=16,  # first dimension of the shape
                 bits=bits,  # second dimension of the shape
@@ -854,7 +935,10 @@ struct SM100TensorAccumulatorSS[
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
-    comptime MMA_K = 16
+    comptime MMA_K = 16 if Self.operand_t.is_half_float() else 32
+    comptime mma_kind = (
+        UMMAKind.KIND_F8F6F4 if Self.operand_t.is_float8() else UMMAKind.KIND_F16
+    )
 
     comptime num_m_mmas = Self.BM // Self.MMA_M
     comptime num_n_mmas = Self.BN // Self.MMA_N
@@ -887,7 +971,7 @@ struct SM100TensorAccumulatorSS[
         Self.MMA_K,
     ]()
 
-    comptime idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
@@ -1092,7 +1176,10 @@ struct SM100TensorAccumulatorTS[
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
-    comptime MMA_K = 16
+    comptime MMA_K = 16 if Self.operand_t.is_half_float() else 32
+    comptime mma_kind = (
+        UMMAKind.KIND_F8F6F4 if Self.operand_t.is_float8() else UMMAKind.KIND_F16
+    )
     comptime smem_ptr_t = UnsafePointer[
         Scalar[Self.operand_t],
         MutAnyOrigin,
@@ -1135,7 +1222,7 @@ struct SM100TensorAccumulatorTS[
         Self.num_softmax_threads,
     ]
 
-    comptime idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
@@ -1352,7 +1439,9 @@ def mha_sm100_dispatch[
 
     comptime num_scheduler_heads = config.num_heads // group
     comptime scheduler_tile_shape = 1
-    comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+    comptime swizzle_mode = (
+        TensorMapSwizzle.SWIZZLE_64B if config.dtype.is_float8() else TensorMapSwizzle.SWIZZLE_128B
+    )
     q_tma_op = rebind[
         QTMATile[
             KVType.dtype,
@@ -1818,9 +1907,23 @@ def _mha_sm100_enqueue[
     comptime p_smem_bytes = BM_enq * BN * size_of[
         config.dtype
     ]() if use_p_smem else 0
+    # The q_smem region is repurposed as the output tile in `write_output`
+    # (bitcast to output_type), so it must hold the wider of the two roles.
+    # We require output_type to be at least as wide as the KV/Q element
+    # type so the byte delta below is non-negative; matched widths give 0.
+    # The kernel-side `q_smem_size` mirrors this allocation.
+    comptime assert size_of[output_type]() >= size_of[config.dtype](), (
+        "q_smem is bitcast to output_type in write_output; output_type"
+        " must be at least as wide as the KV/Q element type"
+    )
+    comptime q_extra_for_output_bytes = BM_enq * config.padded_depth * (
+        size_of[output_type]() - size_of[config.dtype]()
+    )
     # we add smem use for SharedMemBarrier synchronization
     # 2*8 for mma mbars
-    comptime extra_B200_smem = (2 * num_s + 3) * 8 + p_smem_bytes
+    comptime extra_B200_smem = (
+        (2 * num_s + 3) * 8 + p_smem_bytes + q_extra_for_output_bytes
+    )
     comptime smem_use = config.shared_mem_bytes[
         True, sm_90=True
     ]() + extra_B200_smem
@@ -1954,7 +2057,7 @@ def _mha_sm100[
     comptime MMA_M: Int = 128 if (BM % 128) == 0 else 64
     comptime MMA_N0: Int = BN
     comptime MMA_N1: Int = config.padded_depth
-    comptime MMA_K: Int = 16
+    comptime MMA_K: Int = 16 if kv_type.is_half_float() else 32
     # comptime WM = BM // num_softmax_warps
     # comptime WN = BN
     # comptime num_m_mmas = BM // MMA_M  # WM // MMA_M
@@ -2029,7 +2132,7 @@ def _mha_sm100[
         BM=BM,  # 128
         BN=BN,  # BN
         BK=BK,  # depth
-        compute_BK=align_up(depth, 16),
+        compute_BK=align_up(depth, MMA_K),
         num_softmax_threads=num_softmax_threads,
         swizzle_a=swizzle_mode,
         swizzle_b=swizzle_mode,
@@ -2063,7 +2166,7 @@ def _mha_sm100[
         BM=BM,
         BN=MMA_N1,  # depth (total output width)
         BK=BN,  # BN (inner dim = num keys per block)
-        compute_BK=align_up(BN, 16),
+        compute_BK=align_up(BN, MMA_K),
         num_softmax_threads=num_softmax_threads,
         swizzle_a=swizzle_mode,
         swizzle_b=swizzle_mode,
@@ -2082,7 +2185,17 @@ def _mha_sm100[
 
     # first umma is BM x BK @ BK x BN
     # The entire query block (BM x depth) is tiled in shared memory.
-    comptime q_smem_size = BM * padded_depth
+    # The same region is later reused as the output tile (write_output)
+    # via `q_smem.bitcast[output_type]`, so it must hold the wider of the
+    # two roles. We require output_type to be at least as wide as the KV/Q
+    # element type so the ratio below is >= 1; a future config violating
+    # this must extend the allocation (or stop bitcasting).
+    comptime assert size_of[output_type]() >= size_of[kv_type](), (
+        "q_smem is bitcast to output_type in write_output; output_type"
+        " must be at least as wide as the KV/Q element type"
+    )
+    comptime q_or_out_kv_elems = size_of[output_type]() // size_of[kv_type]()
+    comptime q_smem_size = BM * padded_depth * q_or_out_kv_elems
     q_smem = external_memory[
         Scalar[kv_type],
         address_space=AddressSpace.SHARED,
@@ -2716,7 +2829,7 @@ def _mha_sm100[
             comptime assert (
                 output_type.is_half_float()
             ), "we don't support Float32 output"
-            comptime assert size_of[kv_type]() == size_of[output_type]()
+            comptime assert size_of[kv_type]() <= size_of[output_type]()
             comptime swizzle = make_swizzle[
                 num_rows=WM // 2, row_size=BN, access_size=8
             ]()
@@ -2748,15 +2861,16 @@ def _mha_sm100[
             # Vectorized copy from shared to global memory, during which every 2 FP32
             # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
             # vector and stored using 16B store instruction.
+            comptime out_simd_size = simd_width_of[output_type]()
             copy_sram_to_dram[
                 thread_layout=Layout.row_major(
-                    num_softmax_threads * simd_size // depth,
-                    depth // simd_size,
+                    num_softmax_threads * out_simd_size // depth,
+                    depth // out_simd_size,
                 ),
                 swizzle=swizzle,
             ](
-                output_gmem_tile.vectorize[1, simd_size](),
-                accum_smem_tile.vectorize[1, simd_size](),
+                output_gmem_tile.vectorize[1, out_simd_size](),
+                accum_smem_tile.vectorize[1, out_simd_size](),
             )
 
         comptime if PartitionType.do_partition:  # we may have an empty partition
@@ -2902,10 +3016,13 @@ def _mha_sm100[
             comptime if use_p_smem:
                 # Wait for warp 1's SS MMA to finish reading P from SMEM
                 # before we overwrite it.
-                # Write P from FP32 registers to BF16 SMEM for SS MMA
-                comptime p_swizzle = make_swizzle[
-                    num_rows=WM // 2, row_size=MMA_N0, access_size=8
-                ]()
+                comptime p_swizzle = (
+                    make_swizzle[
+                        kv_type, TensorMapSwizzle.SWIZZLE_64B
+                    ]() if kv_type.is_float8() else make_swizzle[
+                        num_rows=WM // 2, row_size=MMA_N0, access_size=8
+                    ]()
+                )
                 p_smem_tile = LayoutTensor[
                     kv_type,
                     Layout.row_major(BM, MMA_N0),
@@ -2969,10 +3086,13 @@ def _mha_sm100[
         # Final P write
         comptime if use_p_smem:
             # Wait for warp 1's SS MMA to finish reading P from SMEM
-            # before we overwrite it.
-            comptime p_swizzle = make_swizzle[
-                num_rows=WM // 2, row_size=MMA_N0, access_size=8
-            ]()
+            comptime p_swizzle = (
+                make_swizzle[
+                    kv_type, TensorMapSwizzle.SWIZZLE_64B
+                ]() if kv_type.is_float8() else make_swizzle[
+                    num_rows=WM // 2, row_size=MMA_N0, access_size=8
+                ]()
+            )
             p_smem_tile = LayoutTensor[
                 kv_type,
                 Layout.row_major(BM, MMA_N0),

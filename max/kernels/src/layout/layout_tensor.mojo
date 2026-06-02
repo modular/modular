@@ -7796,8 +7796,9 @@ def copy_local_to_shared[
             return
 
     comptime assert src.dtype == dst.dtype or (
-        src.dtype == DType.float32 and dst.dtype.is_half_float()
-    ), "Only support FP32 -> half precision downcast during copy."
+        src.dtype == DType.float32
+        and (dst.dtype.is_half_float() or dst.dtype.is_float8())
+    ), "Only support FP32 -> half-precision or FP8 downcast during copy."
     comptime assert (
         src.element_size == dst.element_size
     ), "src and dst element size mismatch."

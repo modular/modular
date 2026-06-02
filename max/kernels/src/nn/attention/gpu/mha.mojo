@@ -568,6 +568,10 @@ def flash_attention_dispatch[
 
     comptime q_half_float = dtype in (DType.float16, DType.bfloat16)
     comptime q_half_float_or_fp32 = dtype == DType.float32 or q_half_float
+    comptime q_fp8_depth512 = dtype.is_float8() and (
+        depth == 256 or depth == 512
+    )
+    comptime q_fp8_2q = dtype.is_float8() and (depth == 64 or depth == 128)
 
     var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
     var output_device = DeviceBuffer[output.dtype](
@@ -582,9 +586,14 @@ def flash_attention_dispatch[
             # Choose matmul parameters based on dtype.
             comptime if (
                 (is_sm90 or is_sm100)
-                and q_half_float
-                and (ragged or not _use_valid_length)
-                and config.algorithm == FlashAttentionAlgorithm(3)
+                and (
+                    (
+                        q_half_float
+                        and (ragged or not _use_valid_length)
+                        and config.algorithm == FlashAttentionAlgorithm(3)
+                    )
+                    or (is_sm100 and (q_fp8_depth512 or q_fp8_2q))
+                )
             ):
                 num_rows_q = q_num_matrix_view_rows(q)
 
@@ -961,8 +970,13 @@ def flash_attention_dispatch[
         elif (
             q_half_float_or_fp32
             or (dtype.is_float8() and has_amd_gpu_accelerator())
+            or (dtype.is_float8() and is_sm100)
         ) and is_token_generation:
-            comptime if depth <= 576:
+            comptime if depth <= 576 and (
+                not dtype.is_float8()
+                or has_amd_gpu_accelerator()
+                or (dtype.is_float8() and is_sm100 and depth <= 512)
+            ):
                 # AMD bf16: 4 warps (256 threads) with 16x16 MMA.
                 # BN=128 WN=32: each warp owns a full [16,32] P block.
                 # AMD fp8: 16x16x128 MMA when depth%128==0, else 32x32x64.
@@ -1058,10 +1072,15 @@ def flash_attention_dispatch[
 
                 comptime use_fa3_kernel = (
                     (is_sm90 or is_sm100)
-                    and q_half_float
-                    and (ragged or not _use_valid_length)
                     and mask_t.mask_safe_out_of_bounds
-                    and config.algorithm == FlashAttentionAlgorithm(3)
+                    and (
+                        (
+                            q_half_float
+                            and (ragged or not _use_valid_length)
+                            and config.algorithm == FlashAttentionAlgorithm(3)
+                        )
+                        or (is_sm100 and dtype.is_float8() and depth <= 512)
+                    )
                 )
 
                 comptime if (not use_fa3_kernel) and (depth % 64) != 0:
@@ -1090,31 +1109,6 @@ def flash_attention_dispatch[
                         sink_weights,
                     )
                 else:
-                    comptime kernel = mha_decoding[
-                        q.dtype,
-                        k_t,
-                        v_t,
-                        output.dtype,
-                        mask_t,
-                        type_of(valid_length.value()).layout,
-                        BM=BM,
-                        BN=BN,
-                        BK=BK,
-                        WM=WM,
-                        WN=WN,
-                        depth=depth,
-                        num_heads=num_heads,
-                        num_threads=num_threads,
-                        num_pipeline_stages=num_pipeline_stages,
-                        group=group,
-                        ragged=ragged,
-                        is_shared_kv=is_shared_kv,
-                        sink=sink,
-                        _use_valid_length=_use_valid_length,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                        decoding_warp_split_k=decoding_warp_split_k,
-                    ]
-
                     if num_partitions_value == 1:
                         comptime if use_fa3_kernel:
                             num_rows_q = q_num_matrix_view_rows(q)
@@ -1168,6 +1162,30 @@ def flash_attention_dispatch[
                                     _optional_lt_to_tt(sink_weights),
                                 )
                         else:
+                            comptime kernel = mha_decoding[
+                                q.dtype,
+                                k_t,
+                                v_t,
+                                output.dtype,
+                                mask_t,
+                                type_of(valid_length.value()).layout,
+                                BM=BM,
+                                BN=BN,
+                                BK=BK,
+                                WM=WM,
+                                WN=WN,
+                                depth=depth,
+                                num_heads=num_heads,
+                                num_threads=num_threads,
+                                num_pipeline_stages=num_pipeline_stages,
+                                group=group,
+                                ragged=ragged,
+                                is_shared_kv=is_shared_kv,
+                                sink=sink,
+                                _use_valid_length=_use_valid_length,
+                                _is_cache_length_accurate=_is_cache_length_accurate,
+                                decoding_warp_split_k=decoding_warp_split_k,
+                            ]
                             var nullptr_device = DeviceBuffer[accum_type].empty(
                                 ctx
                             )

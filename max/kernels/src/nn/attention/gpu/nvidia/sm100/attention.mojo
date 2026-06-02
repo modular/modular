@@ -188,8 +188,11 @@ struct FA4Config[
         else:
             self.BM = 256
         self.fuse_gqa = group > 1 and (self.MMA_M % group == 0) and not is_mla
-        self.swizzle_mode = swizzle_mode
-        swizzle_elems = swizzle_mode.bytes() // Self.qkv_dtype_size
+        comptime if Self.qkv_dtype.is_float8():
+            self.swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
+        else:
+            self.swizzle_mode = swizzle_mode
+        swizzle_elems = self.swizzle_mode.bytes() // Self.qkv_dtype_size
         self.ov_depth = ov_depth
         self.padded_qk_depth = align_up(qk_depth, swizzle_elems)
         self.padded_ov_depth = align_up(ov_depth, swizzle_elems)

@@ -1183,7 +1183,7 @@ def produce[
     comptime persistent = SchedulerType.may_advance
 
     comptime q_smem_layout_consumer = tile_layout_k_major[
-        DType.bfloat16, BM, padded_depth, swizzle_mode=swizzle_mode
+        qkv_type, BM, padded_depth, swizzle_mode=swizzle_mode
     ]()
 
     comptime q_size = q_smem_layout_consumer.size()

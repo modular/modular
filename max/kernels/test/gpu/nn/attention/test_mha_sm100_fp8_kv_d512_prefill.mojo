@@ -11,9 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Bit-exact-ish correctness test for SM100 MHA with FP8 KV cache (d=512).
+"""Bit-exact-ish correctness test for SM100 MHA with FP8 KV cache (d=512) — PREFILL.
 
-Sibling of `test_mha_sm100_fp8_kv_d256.mojo` exercising the same
+Prefill-only sibling of `test_mha_sm100_fp8_kv_d512_decode.mojo`. Both
+files were split out of the original `test_mha_sm100_fp8_kv_d512.mojo`
+so the prefill and decode paths can advance independently. Mirrors the
+same split done for d256.
+
+Slice 3 of the Gemma4 FP8 KV cache design. Exercises the **same**
 `dequant_paged_fp8_kv_to_bf16` kernel surface at head_dim=512 — the
 shape used by Gemma4's global (full-attention) layers
 (`gemma4/model_config.py:90,93`):
@@ -25,12 +30,9 @@ shape used by Gemma4's global (full-attention) layers
 test group ∈ {4, 8} which spans the realistic n_q_heads ∈ {16, 32}
 range for 31B-class models.
 
-The test verifies:
-- Block-start scale indexing remains correct at d=512 (8 scale-blocks
-  per head at g=64).
-- CAUSAL_MASK and SLIDING_WINDOW_CAUSAL_MASK both pass.
-- Paged layout at the larger head_dim — HBM staging buffer doubles vs
-  d=256 (BN×512×2 = 64 KiB/page).
+Multi-token Q cases (`seq_len > 1`) at head_dim=512 land in
+`mha_sm100_depth512_dispatch` (the depth=256/512 pair-CTA prefill
+kernel) — the in-scope target for the FP8 fusion (Tier 1 REVISED).
 
 Acceptance bar: cosine ≥ 0.9995 between bf16-reference and
 fp8-via-staging attention outputs.
@@ -52,7 +54,7 @@ from layout import (
 from layout._fillers import random
 from kv_cache.types import KVCacheStaticParams
 
-from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.gpu.mha import flash_attention
 from nn.attention.gpu.nvidia.sm100.mha_fp8_kv import (
     dequant_paged_fp8_kv_to_bf16,
 )
@@ -66,8 +68,8 @@ from std.testing import assert_true
 
 
 # ===-----------------------------------------------------------------------===#
-# Helpers (duplicated from test_mha_sm100_fp8_kv_d256.mojo, parametric on
-# head_dim).
+# Helpers (duplicated from test_mha_sm100_fp8_kv_d256_{prefill,decode}.mojo,
+# parametric on head_dim).
 # ===-----------------------------------------------------------------------===#
 
 
@@ -137,6 +139,10 @@ def execute_fp8_kv_test[
     num_keys: Int,
     mask_name: StaticString,
 ](mask: MaskType, ctx: DeviceContext,) raises:
+    comptime assert seq_len > 1, (
+        "Prefill test file must run with seq_len > 1. Use the _decode test"
+        " file for seq_len == 1 cases (which route through mha_1q.mojo)."
+    )
     comptime g = 64
     comptime page_size = 128
     comptime kv_num_heads = num_q_heads // group
@@ -146,7 +152,7 @@ def execute_fp8_kv_test[
     print(
         "test_mha_sm100_fp8_kv_d",
         head_dim,
-        ":",
+        "_prefill:",
         " mask=",
         mask_name,
         " group=",
@@ -174,7 +180,7 @@ def execute_fp8_kv_test[
     comptime scale_dtype = DType.float32
     comptime head_dim_gran = ceildiv(head_dim, g)
     var n_blocks_per_seq = ceildiv(num_keys, page_size)
-    # No even/odd parity constraint on physical blocks.
+    # Slice 4: no even/odd parity constraint on physical blocks.
     var num_paged_blocks = 2 * n_blocks_per_seq + 8
     if num_paged_blocks < 16:
         num_paged_blocks = 16
@@ -213,8 +219,8 @@ def execute_fp8_kv_test[
     )
 
     comptime num_layers = 1
-    # HBM staging buffer scales linearly with head_dim. At d=512 this
-    # is 2x what d=256 uses: BN×512×2 = 64 KiB/page × num_pages.
+    # HBM staging buffer scales linearly with head_dim. At d=512 this is
+    # 2x what Slice 2a saw at d=256: BN×512×2 = 64 KiB/page × num_pages.
     # The test's largest shape (4096 keys, 32 pages, n_kv_heads=4) uses
     # ~32 MiB for paged_fp8 and another ~64 MiB for paged_bf16 shadow,
     # which fits comfortably in B200's 80 GiB HBM.
@@ -235,7 +241,7 @@ def execute_fp8_kv_test[
     memset_zero(paged_fp8_host, paged_fp8_size)
     memset_zero(paged_scales_host, paged_scales_size)
 
-    # Arbitrary mixed-parity physical blocks; no aliasing constraint.
+    # Arbitrary mixed-parity physical blocks (Slice 4: aliasing bug fixed).
     var k_lut = alloc[UInt32](n_blocks_per_seq)
     var v_lut = alloc[UInt32](n_blocks_per_seq)
     var used = Set[Int]()
@@ -433,36 +439,8 @@ def execute_fp8_kv_test[
         ),
     )
 
-    mha_gpu_naive(
-        q_lt,
-        k_ref_lt,
-        v_ref_lt,
-        mask,
-        out_ref_lt,
-        scale,
-        batch_size,
-        seq_len,
-        num_keys,
-        num_q_heads,
-        head_dim,
-        group,
-        ctx,
-    )
-    mha_gpu_naive(
-        q_lt,
-        k_dq_lt,
-        v_dq_lt,
-        mask,
-        out_dq_lt,
-        scale,
-        batch_size,
-        seq_len,
-        num_keys,
-        num_q_heads,
-        head_dim,
-        group,
-        ctx,
-    )
+    flash_attention(out_ref_lt, q_lt, k_ref_lt, v_ref_lt, mask, scale, ctx)
+    flash_attention(out_dq_lt, q_lt, k_dq_lt, v_dq_lt, mask, scale, ctx)
     ctx.synchronize()
 
     var out_ref_host = alloc[Scalar[in_dtype]](o_size)
@@ -478,7 +456,7 @@ def execute_fp8_kv_test[
 
 
 # ===-----------------------------------------------------------------------===#
-# Entry point
+# Entry point — prefill cases (seq_len > 1) only
 # ===-----------------------------------------------------------------------===#
 
 
@@ -529,13 +507,6 @@ def main() raises:
             num_keys=1024,
             mask_name="CAUSAL_g8_s1024",
         ](causal, ctx)
-        # Largest CAUSAL_MASK shape constrained to seq_len=2048 at d=512:
-        # mha_gpu_naive allocates a [batch*heads, seq_len, num_keys] fp32 P
-        # buffer (mha.mojo:4844). At d=512 + group=8 + seq=4096, that's 2 GiB
-        # per call ×2 calls = 4 GiB on top of Q/K/V/paged tensors, exceeding
-        # the default mojo_test gpu-memory=3GiB budget. seq_len=2048 still
-        # exercises 16 paged blocks per layer (page_size=128) and the same
-        # convert+scale math.
         execute_fp8_kv_test[
             CausalMask,
             head_dim=512,
@@ -561,9 +532,6 @@ def main() raises:
             num_keys=1024,
             mask_name="SW1024_g8_s1024",
         ](sw_1024, ctx)
-        # local_window_size=1024 at seq_len=2048: window applies meaningfully
-        # (each query attends to ~1024 keys), tests the sliding-window mask
-        # logic at the larger head_dim without busting the memory budget.
         execute_fp8_kv_test[
             SlidingWindowCausalMask[1024],
             head_dim=512,
@@ -573,9 +541,6 @@ def main() raises:
             num_keys=2048,
             mask_name="SW1024_g8_s2048",
         ](sw_1024, ctx)
-        # local_window_size=4096 at seq_len=2048: window is wider than seq,
-        # equivalent to CAUSAL but exercises the SlidingWindowCausalMask code
-        # path explicitly.
         execute_fp8_kv_test[
             SlidingWindowCausalMask[4096],
             head_dim=512,
@@ -586,4 +551,4 @@ def main() raises:
             mask_name="SW4096_g8_s2048",
         ](sw_4096, ctx)
 
-        print("test_mha_sm100_fp8_kv_d512: ALL PASSED")
+        print("test_mha_sm100_fp8_kv_d512_prefill: ALL PASSED")

@@ -14,7 +14,10 @@
 
 from std.math import align_up
 from std.sys import size_of
-from std.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive_multicast
+from std.gpu.compute.arch.mma_nvidia_sm100 import (
+    UMMAKind,
+    mma_arrive_multicast,
+)
 from std.gpu.primitives.warp import broadcast
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
@@ -57,6 +60,9 @@ def fa4_mma[
     comptime cta_group: Int = config.cta_group()
 
     var mbars = smem.misc_mbars()
+    comptime mma_kind = (
+        UMMAKind.KIND_F8F6F4 if config.qkv_dtype.is_float8() else UMMAKind.KIND_F16
+    )
 
     # MMA types
     comptime UMMA0Type = SM100TensorAccumulatorSS[
@@ -70,6 +76,7 @@ def fa4_mma[
         transpose_b=True,
         cta_group=cta_group,
         num_stages=num_qk_stages,
+        mma_kind=mma_kind,
     ]
     comptime UMMA1Type = SM100TensorAccumulatorTS[
         config.qkv_dtype,
@@ -81,6 +88,7 @@ def fa4_mma[
         transpose_b=False,
         cta_group=cta_group,
         num_stages=num_pv_stages,
+        mma_kind=mma_kind,
     ]
 
     var tmem_addr: UInt32 = broadcast(smem.tmem_addr_ptr()[])

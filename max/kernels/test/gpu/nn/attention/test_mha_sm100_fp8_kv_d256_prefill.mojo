@@ -11,26 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Bit-exact-ish correctness test for SM100 MHA with FP8 KV cache.
+"""Bit-exact-ish correctness test for SM100 MHA with FP8 KV cache — PREFILL.
 
-Validates the dequant kernel + per-block scale math at the production
-shape: head_dim=256, g=64, n_kv_heads=4, page_size=128.
+Prefill-only sibling of `test_mha_sm100_fp8_kv_d256_decode.mojo`. Both files
+were split out of the original `test_mha_sm100_fp8_kv_d256.mojo` so the
+prefill and decode paths can advance independently — the prefill target is
+the new fused-convert path inside `mha_depth512` (Tier 1 REVISED of the
+fp8-KV plan), while the decode target waits on the `mha_1q.mojo` successor.
 
-The test compares attention output computed two ways:
+Multi-token Q cases (`seq_len > 1`) at head_dim=256 land in
+`mha_sm100_depth512_dispatch` (the depth=256/512 pair-CTA prefill kernel).
+Both reference and dequant-bf16 paths run through `flash_attention` and
+this file compares the two outputs.
 
-1. **bf16 reference path:** synthetic bf16 K,V -> `mha_gpu_naive`.
-2. **fp8-via-staging path:** quantize K,V to fp8+scales (host-side
-   matching the dequant kernel's math), stage into a paged FP8 cache,
-   run `dequant_paged_fp8_kv_to_bf16` on device, reorder the bf16
-   paged blocks back into a contiguous bf16 K,V via the same LUT, run
-   `mha_gpu_naive` on the dequant output.
-
-Acceptance bar: cosine ≥ 0.9995 between the two outputs.
-
-This test exercises the dequant kernel + paged-LUT plumbing only.
-The bf16-vs-fp8-staging output cosine here is the structural
-correctness gate that gates whether a future fused-convert pipeline
-can be expected to hit the same bar.
+Acceptance bar: cosine ≥ 0.9995 between bf16-reference and
+dequant-via-fp8 outputs (the Slice 2a structural correctness gate). Once
+the fused-convert FA4 path lands, the same bar applies — this file is the
+gate.
 
 Target hardware family: NVIDIA SM100 (B200).
 """
@@ -49,7 +46,7 @@ from layout import (
 from layout._fillers import random
 from kv_cache.types import KVCacheStaticParams
 
-from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.gpu.mha import flash_attention
 from nn.attention.gpu.nvidia.sm100.mha_fp8_kv import (
     dequant_paged_fp8_kv_to_bf16,
 )
@@ -142,9 +139,17 @@ def execute_fp8_kv_test[
     num_keys: Int,
     mask_name: StaticString,
 ](mask: MaskType, ctx: DeviceContext,) raises:
-    """Run the dequant kernel + naive attention on both fp8-staged and
+    """Run the dequant kernel + SM100 attention on both fp8-staged and
     bf16-reference paths, compare via cosine similarity.
+
+    Both paths run through `flash_attention` (SM100 dispatch). With
+    `seq_len > 1` and head_dim=256, this lands in
+    `mha_sm100_depth512_dispatch` — the prefill target for FP8 fusion.
     """
+    comptime assert seq_len > 1, (
+        "Prefill test file must run with seq_len > 1. Use the _decode test"
+        " file for seq_len == 1 cases (which route through mha_1q.mojo)."
+    )
     comptime head_dim = 256
     comptime g = 64
     comptime page_size = 128
@@ -153,7 +158,7 @@ def execute_fp8_kv_test[
     comptime scale = Float32(1.0) / sqrt(Float32(head_dim))
 
     print(
-        "test_mha_sm100_fp8_kv_d256: ",
+        "test_mha_sm100_fp8_kv_d256_prefill: ",
         "mask=",
         mask_name,
         " group=",
@@ -181,7 +186,7 @@ def execute_fp8_kv_test[
     comptime scale_dtype = DType.float32
     comptime head_dim_gran = ceildiv(head_dim, g)
     var n_blocks_per_seq = ceildiv(num_keys, page_size)
-    # No even/odd constraint — arbitrary mixed-parity blocks work
+    # Slice 4: no even/odd constraint — arbitrary mixed-parity blocks work
     # because the scales_tt_layout stride[0] aliasing bug is fixed.
     # K and V physical blocks share the same pool; each must be unique.
     var num_paged_blocks = 2 * n_blocks_per_seq + 8
@@ -226,8 +231,9 @@ def execute_fp8_kv_test[
     # ---- Build paged FP8 K-cache and V-cache as separate buffers ----
     # The dequant kernel treats data as
     #   [num_blocks, 2, num_layers, page_size, num_heads, head_size].
-    # K is stored at kv_idx=0, V at kv_idx=1.  K and V physical blocks
-    # can be arbitrary (mixed-parity); no even/odd constraint needed.
+    # K is stored at kv_idx=0, V at kv_idx=1. With the Slice 4 fix,
+    # K and V physical blocks can be arbitrary (mixed-parity); no
+    # even/odd constraint needed.
     comptime num_layers = 1
     var paged_fp8_size = (
         num_paged_blocks * 2 * num_layers * page_size * kv_num_heads * head_dim
@@ -247,8 +253,8 @@ def execute_fp8_kv_test[
     memset_zero(paged_scales_host, paged_scales_size)
 
     # Pick the LUT: arbitrary physical blocks for K and V (no even/odd
-    # constraint).  scales_tt_layout uses an explicit runtime stride[0]
-    # so any parity combination is safe.
+    # constraint). Slice 4 fixed the scales_tt_layout stride aliasing;
+    # any parity combination is now safe.
     var k_lut = alloc[UInt32](n_blocks_per_seq)
     var v_lut = alloc[UInt32](n_blocks_per_seq)
     var used = Set[Int]()
@@ -456,36 +462,8 @@ def execute_fp8_kv_test[
         ),
     )
 
-    mha_gpu_naive(
-        q_lt,
-        k_ref_lt,
-        v_ref_lt,
-        mask,
-        out_ref_lt,
-        scale,
-        batch_size,
-        seq_len,
-        num_keys,
-        num_q_heads,
-        head_dim,
-        group,
-        ctx,
-    )
-    mha_gpu_naive(
-        q_lt,
-        k_dq_lt,
-        v_dq_lt,
-        mask,
-        out_dq_lt,
-        scale,
-        batch_size,
-        seq_len,
-        num_keys,
-        num_q_heads,
-        head_dim,
-        group,
-        ctx,
-    )
+    flash_attention(out_ref_lt, q_lt, k_ref_lt, v_ref_lt, mask, scale, ctx)
+    flash_attention(out_dq_lt, q_lt, k_dq_lt, v_dq_lt, mask, scale, ctx)
     ctx.synchronize()
 
     var out_ref_host = alloc[Scalar[in_dtype]](o_size)
@@ -501,7 +479,7 @@ def execute_fp8_kv_test[
 
 
 # ===-----------------------------------------------------------------------===#
-# Entry point
+# Entry point — prefill cases (seq_len > 1) only
 # ===-----------------------------------------------------------------------===#
 
 
@@ -579,4 +557,26 @@ def main() raises:
             mask_name="SW4096_g8_s4096",
         ](sw_4096, ctx)
 
-        print("test_mha_sm100_fp8_kv_d256: ALL PASSED")
+        # Production Gemma4-sliding shape: n_q_heads=32, n_kv_heads=16
+        # (group=2), head_dim=256.  Exercises the dequant kernel's
+        # scale-block math at 16 KV heads (4x the per-token KV state of
+        # the g=8 cases above) — the configuration the sliding layers
+        # actually use in the nvidia/Gemma-4-31B-IT-NVFP4 checkpoint.
+        execute_fp8_kv_test[
+            CausalMask,
+            num_q_heads=32,
+            group=2,
+            seq_len=1024,
+            num_keys=1024,
+            mask_name="CAUSAL_g2_s1024",
+        ](causal, ctx)
+        execute_fp8_kv_test[
+            SlidingWindowCausalMask[1024],
+            num_q_heads=32,
+            group=2,
+            seq_len=4096,
+            num_keys=4096,
+            mask_name="SW1024_g2_s4096",
+        ](sw_1024, ctx)
+
+        print("test_mha_sm100_fp8_kv_d256_prefill: ALL PASSED")
