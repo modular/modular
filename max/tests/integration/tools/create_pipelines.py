@@ -918,11 +918,19 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         device_specs: list[driver.DeviceSpec],
     ) -> VLLMPipeline:
         gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
+        # vLLM's kimi_k25 plugin exposes its multimodal input under the
+        # vision_chunk modality, so the image must be keyed and limited under
+        # vision_chunk to reach the model.
         return VLLMPipeline(
             model_path=self.model_path,
             trust_remote_code=self.trust_remote_code,
             encoding=encoding,
             tensor_parallel_size=max(1, gpu_count),
+            extra_kwargs={
+                "mm_encoder_tp_mode": "data",
+                "limit_mm_per_prompt": {"vision_chunk": 1},
+            },
+            mm_data_key="vision_chunk",
         )
 
 
@@ -978,6 +986,7 @@ class GenericOracle(PipelineOracle):
         weight_path_map: dict[str, str] | None = None,
         config_params: dict[str, Any] = {},  # noqa: B006
         prompts: list[str] | None = None,
+        apply_chat_template: bool = False,
         use_cache: bool = True,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
         auto_processor_cls: Any = transformers.AutoTokenizer,
@@ -989,6 +998,7 @@ class GenericOracle(PipelineOracle):
         self._weight_path_map = weight_path_map
         self.config_params = config_params
         self._prompts = prompts
+        self._apply_chat_template = apply_chat_template
         self.auto_model_cls = auto_model_cls
         self.auto_processor_cls = auto_processor_cls
         self.task = task
@@ -1126,14 +1136,22 @@ class GenericOracle(PipelineOracle):
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
-        return (
-            [
-                MockTextGenerationRequest.text_only(prompt=prompt)
-                for prompt in self._prompts
+        prompts = self._prompts if self._prompts else test_data.DEFAULT_PROMPTS
+        if self._apply_chat_template:
+            # Wrap each prompt in a chat message so the MAX tokenizer applies
+            # the model's chat template, matching a templated reference golden.
+            return [
+                MockTextGenerationRequest.with_messages(
+                    prompt=prompt,
+                    messages=[{"role": "user", "content": prompt}],
+                    is_multimodal=False,
+                )
+                for prompt in prompts
             ]
-            if self._prompts
-            else test_data.DEFAULT_TEXT_ONLY
-        )
+        return [
+            MockTextGenerationRequest.text_only(prompt=prompt)
+            for prompt in prompts
+        ]
 
     @property
     def use_cache(self) -> bool:
@@ -2151,13 +2169,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "amd/MiniMax-M2.7-MXFP4": GenericOracle(
         model_path="amd/MiniMax-M2.7-MXFP4",
         config_params={
-            "max_length": 516,
+            # Chat-templating adds the system prompt and role markers, so the
+            # longest prompt grows past the raw 516-token budget to ~530.
+            "max_length": 640,
             "trust_remote_code": True,
-            "max_batch_input_tokens": 512,
+            "max_batch_input_tokens": 640,
             "ep_size": 4,
             "data_parallel_degree": 4,
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+        # The reference golden is chat-templated, so template the MAX side too.
+        apply_chat_template=True,
     ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",

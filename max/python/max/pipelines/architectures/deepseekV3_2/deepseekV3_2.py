@@ -368,6 +368,8 @@ class DeepseekV3_2DecoderLayer(Module):
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
         mla_decode_scalar_args: list[TensorValue] | None = None,
+        mla_num_partitions_scalars: list[TensorValue] | None = None,
+        mla_effective_split_len_scalars: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
@@ -383,6 +385,12 @@ class DeepseekV3_2DecoderLayer(Module):
                 mla_kv_cache_scales[i] if mla_kv_cache_scales else None,
                 attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
+                else None,
+                mla_num_partitions=mla_num_partitions_scalars[i]
+                if mla_num_partitions_scalars is not None
+                else None,
+                mla_effective_split_len=mla_effective_split_len_scalars[i]
+                if mla_effective_split_len_scalars is not None
                 else None,
             )
             for i in range(num_devices)
@@ -681,6 +689,21 @@ class DeepseekV3_2(Module):
                 if kv.attention_dispatch_metadata is not None
             ]
 
+        mla_num_partitions_scalars: list[TensorValue] | None = None
+        mla_effective_split_len_scalars: list[TensorValue] | None = None
+        if mla_kv_collections[0].mla_num_partitions is not None:
+            mla_num_partitions_scalars = [
+                kv.mla_num_partitions
+                for kv in mla_kv_collections
+                if kv.mla_num_partitions is not None
+            ]
+        if mla_kv_collections[0].mla_effective_split_len is not None:
+            mla_effective_split_len_scalars = [
+                kv.mla_effective_split_len
+                for kv in mla_kv_collections
+                if kv.mla_effective_split_len is not None
+            ]
+
         def inputs_for_layer(
             idx: int, h: list[TensorValue]
         ) -> list[Value[Any] | Sequence[Value[Any]]]:
@@ -704,6 +727,10 @@ class DeepseekV3_2(Module):
             ]
             if mla_decode_scalar_args is not None:
                 values.append(mla_decode_scalar_args)
+            if mla_num_partitions_scalars is not None:
+                values.append(mla_num_partitions_scalars)
+            if mla_effective_split_len_scalars is not None:
+                values.append(mla_effective_split_len_scalars)
             if ep_inputs is not None:
                 values.append(ep_inputs)
             return values

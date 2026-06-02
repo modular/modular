@@ -622,6 +622,28 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 if draft_params is not None
                 else None,
+                # MLA capturable-graph scalars (host-resident size-1
+                # tensors). Only present when this attention path is MLA.
+                mla_num_partitions=TensorType(
+                    DType.int64, shape=[1], device=DeviceRef.CPU()
+                )
+                if self.is_mla
+                else None,
+                mla_effective_split_len=TensorType(
+                    DType.int64, shape=[1], device=DeviceRef.CPU()
+                )
+                if self.is_mla
+                else None,
+                draft_mla_num_partitions=TensorType(
+                    DType.int64, shape=[1], device=DeviceRef.CPU()
+                )
+                if draft_params is not None and draft_params.is_mla
+                else None,
+                draft_mla_effective_split_len=TensorType(
+                    DType.int64, shape=[1], device=DeviceRef.CPU()
+                )
+                if draft_params is not None and draft_params.is_mla
+                else None,
             )
             for device in devices
         ]
