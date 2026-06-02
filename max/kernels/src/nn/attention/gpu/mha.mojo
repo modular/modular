@@ -736,31 +736,16 @@ def flash_attention_dispatch[
                     # per-block early-return + writeback skip together
                     # handle mixed-length multi-sequence ragged.
                     #
-                    # NullMask + partial-K-tile carve-out:
-                    # `num_keys % KV_BLOCK != 0` leaves the last K tile
-                    # partially valid (e.g., FLUX.2-dev i2i runs at
-                    # seq_len=8623 → last K tile has 47/64 valid keys).
-                    # Attempted kernel fix in this branch
-                    # (`_apply_oob_k_mask_fast` in
-                    # `_full_softmax_unconditional`) correctly masks
-                    # `att_block` OOB columns to -inf before softmax,
-                    # but `math_exp2(-3.4e38)` on AMD saturates at
-                    # ~1.18e-38 (not 0); combined with V SMEM OOB rows
-                    # that the DMA SRD doesn't cleanly bound at
-                    # `num_keys` (probe at PR-time showed V_OOB
-                    # containing real ±12-magnitude values from past
-                    # the V buffer's end), PV[N-1] sees small but
-                    # nonzero leakage that compounds over FLUX's 5600
-                    # HK calls per image. A literal-0 BF16 mask on the
-                    # post-cast P-cache would close the leak but the
-                    # PV-A operand uses a different lane/element
-                    # layout than the FP32 ACC, so the lane→K-position
-                    # table needs to be rederived. Until that lands,
-                    # route NullMask + partial-K to FA2.
-                    comptime _is_null_mask = _type_is_eq[mask_t, NullMask]()
-                    if max_prompt_len >= 4096 and not (
-                        _is_null_mask and max_cache_valid_length % 64 != 0
-                    ):
+                    # NullMask + partial-K (`num_keys % KV_BLOCK != 0`,
+                    # e.g. FLUX.2-dev i2i at seq_len=8623 → 135 K tiles,
+                    # last tile 47/64 valid) is now handled in-kernel: the
+                    # SRD clamp hardware-zeros the partial tile's OOB
+                    # columns, `_apply_kbound_mask_fast` excludes them from
+                    # softmax, and the even-tile-count round-up fixes the
+                    # odd-`N` main-loop/epilogue double-count that was the
+                    # real i2i corruption. FLUX i2i is SSIM 0.994 through
+                    # HK (was 0.50), so the prior carve-out to FA2 is gone.
+                    if max_prompt_len >= 4096:
                         comptime hk_config = HKMhaConfig(
                             q_block_size=32,
                             kv_block=64,

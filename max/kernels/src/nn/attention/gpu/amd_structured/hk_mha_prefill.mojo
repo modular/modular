@@ -151,7 +151,11 @@ from nn.attention.mha_mask import (
 from nn.attention.mha_operand import MHAOperand
 from std.sys.intrinsics import _type_is_eq
 
-from .hk_mha_mask import _apply_causal_mask_fast, apply_mask_to_att_block
+from .hk_mha_mask import (
+    _apply_causal_mask_fast,
+    _apply_kbound_mask_fast,
+    apply_mask_to_att_block,
+)
 from .hk_mha_softmax import (
     col_max,
     col_max_acc,
@@ -316,15 +320,18 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._KV_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
-    # Per-tile K/V layout (KV_BLOCK x DEPTH) used by the paged path. The
-    # stride matches `_KV_ROW_STRIDE` (NUM_KV_HEADS * DEPTH) so the
-    # cooperative loaders see the same row stride as the contiguous
-    # path's `.tile[KV_BLOCK, DEPTH](t, 0)` sub-slice. Static shape +
-    # static stride = constant folds everywhere.
+    # Per-tile K/V layout (valid_rows x DEPTH) used by the DMA loaders.
+    # `dim[0]` is a RUNTIME row count (Int32): KV_BLOCK for a full tile,
+    # the partial valid-row count for the last tile when
+    # `num_keys % KV_BLOCK != 0`. `make_amd_buffer_resource` / `_get_bounds`
+    # read it to size the cooperative loaders' buffer-resource
+    # `num_records`, so OOB lanes of a partial last tile hardware-zero
+    # instead of reading past `num_keys` into adjacent device memory
+    # (the FLUX.2 i2i NullMask corruption). The stride matches
+    # `_KV_ROW_STRIDE` (NUM_KV_HEADS * DEPTH); strides and DEPTH stay
+    # comptime so only the per-tile row count costs a runtime register.
     comptime _KvPerTileLayoutT = TileLayout[
-        Coord[
-            ComptimeInt[Self.KV_BLOCK], ComptimeInt[Self.DEPTH]
-        ].element_types,
+        Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._KV_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
     # IGLP `sched_group` IDs — one per scheduling-distinct cluster. The
@@ -425,17 +432,24 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         batch_idx: UInt32,
         kv_head_idx: UInt32,
         t: Int,
-    ) -> TileTensor[
-        DType.bfloat16, Self._KvPerTileLayoutT, ImmutAnyOrigin
-    ]:
+        num_keys: Int,
+    ) -> TileTensor[DType.bfloat16, Self._KvPerTileLayoutT, ImmutAnyOrigin]:
         """Builds the per-tile K gmem TileTensor at `(batch, t*KV_BLOCK,
         kv_head, 0)` via `MHAOperand.block_paged_tile`. For
         LayoutTensorMHAOperand this resolves to a pointer-arithmetic
         offset into a contiguous buffer; for KVCacheMHAOperand it
-        resolves through the page table."""
+        resolves through the page table.
+
+        `num_keys` clamps the tile's runtime `dim[0]` to the valid K
+        extent (`min(KV_BLOCK, num_keys - t*KV_BLOCK)`): KV_BLOCK for a
+        full tile, the partial count for the last tile, <= 0 for a tile
+        entirely past `num_keys` (collapses to a zero-byte buffer
+        resource in `_get_bounds`). This is what bounds the loader's SRD
+        `num_records` so OOB lanes hardware-zero (see `_KvPerTileLayoutT`)."""
         comptime assert (
             k_t.dtype == DType.bfloat16
         ), "HKMhaPrefill: K must be BF16"
+        var valid_rows = min(Self.KV_BLOCK, num_keys - t * Self.KV_BLOCK)
         # rebind: comptime k_t.dtype == BF16 (asserted above), so the
         # returned TileTensor's dtype parameter is statically BF16.
         return rebind[
@@ -446,7 +460,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 UInt32(t * Self.KV_BLOCK),
                 kv_head_idx,
                 Self._KvPerTileLayoutT(
-                    Coord(Idx[Self.KV_BLOCK], Idx[Self.DEPTH]),
+                    Coord(Int32(valid_rows), Idx[Self.DEPTH]),
                     Coord(Idx[Self._KV_ROW_STRIDE], Idx[1]),
                 ),
             )
@@ -462,13 +476,17 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         batch_idx: UInt32,
         kv_head_idx: UInt32,
         t: Int,
-    ) -> TileTensor[
-        DType.bfloat16, Self._KvPerTileLayoutT, ImmutAnyOrigin
-    ]:
-        """Builds the per-tile V gmem TileTensor (see `_make_k_tile`)."""
+        num_keys: Int,
+    ) -> TileTensor[DType.bfloat16, Self._KvPerTileLayoutT, ImmutAnyOrigin]:
+        """Builds the per-tile V gmem TileTensor (see `_make_k_tile`).
+
+        `num_keys` clamps the runtime `dim[0]` identically to
+        `_make_k_tile` so V's partial-last-tile OOB rows hardware-zero
+        rather than leaking stale V values into PV (the FLUX i2i bug)."""
         comptime assert (
             v_t.dtype == DType.bfloat16
         ), "HKMhaPrefill: V must be BF16"
+        var valid_rows = min(Self.KV_BLOCK, num_keys - t * Self.KV_BLOCK)
         return rebind[
             TileTensor[DType.bfloat16, Self._KvPerTileLayoutT, ImmutAnyOrigin]
         ](
@@ -477,7 +495,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 UInt32(t * Self.KV_BLOCK),
                 kv_head_idx,
                 Self._KvPerTileLayoutT(
-                    Coord(Idx[Self.KV_BLOCK], Idx[Self.DEPTH]),
+                    Coord(Int32(valid_rows), Idx[Self.DEPTH]),
                     Coord(Idx[Self._KV_ROW_STRIDE], Idx[1]),
                 ),
             )
@@ -494,6 +512,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         batch_idx: UInt32,
         kv_head_idx: UInt32,
         t: Int,
+        num_keys: Int,
         w_id: Int,
         l_id: Int,
     ):
@@ -531,8 +550,18 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         var subblock_id, row_strip = divmod(w_id, _warps_per_subblock)
         var sub_row, sub_col = divmod(subblock_id, _num_block_cols_k)
 
-        var k_gmem_tile = Self._make_k_tile(k_op, batch_idx, kv_head_idx, t)
+        var k_gmem_tile = Self._make_k_tile(
+            k_op, batch_idx, kv_head_idx, t, num_keys
+        )
         var k_loader = Self.KTileLoader(k_gmem_tile)
+        # `worker_base=row_strip`: at depth < 128, NUM_WARPS exceeds the
+        # K sub-block count so `_warps_per_subblock > 1` and each warp
+        # loads a `_rows_per_warp`-row half-strip. The loader's swizzle
+        # must see this strip's absolute sub-row (`row_strip`) or the
+        # `st_32x32_s` two-XOR swizzle's worker-bit-6 term is dropped for
+        # the upper strips and `load_K` reads them from the wrong banks
+        # (depth-64 correctness bug). At depth 128 `row_strip == 0`
+        # (1 warp / sub-block), so this is a no-op.
         k_loader.load(
             k_smem_slot.tile[_K_SUB_ROWS, _K_SUB_COLS](subblock_id, 0).tile[
                 _rows_per_warp, _K_SUB_COLS
@@ -540,6 +569,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             k_gmem_tile.tile[_K_SUB_ROWS, _K_SUB_COLS](sub_row, sub_col).tile[
                 _rows_per_warp, _K_SUB_COLS
             ](row_strip, 0),
+            worker_base=row_strip,
         )
 
     @staticmethod
@@ -553,6 +583,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         batch_idx: UInt32,
         kv_head_idx: UInt32,
         t: Int,
+        num_keys: Int,
         w_id: Int,
         l_id: Int,
     ):
@@ -561,7 +592,9 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         thread-id mapping over the whole `KV_BLOCK x DEPTH` tile.
 
         Loader construction is per-tile (see `_dma_k` docstring)."""
-        var v_gmem_tile = Self._make_v_tile(v_op, batch_idx, kv_head_idx, t)
+        var v_gmem_tile = Self._make_v_tile(
+            v_op, batch_idx, kv_head_idx, t, num_keys
+        )
         var v_loader = Self.VTileLoader(v_gmem_tile)
         v_loader.load(v_smem_slot, v_gmem_tile, w_id, l_id)
 
@@ -847,14 +880,22 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         head_idx: UInt32,
         batch_idx: UInt32,
         l_id: Int,
+        num_keys: Int,
     ):
         """Comptime dispatch wrapper around the mask application.
 
         - `CausalMask`: fast SIMD path. `q_start_pos < kv_end_pos`
           runtime check, then `_apply_causal_mask_fast`. The
           `start_pos` shift is folded into the q position.
-        - `NullMask`: comptime no-op (the status would always be
-          `NO_MASK` and the branch is unconditionally elided).
+        - `NullMask`: applies the key-bound fast path
+          (`_apply_kbound_mask_fast`) on any tile whose K range extends
+          past `num_keys` — i.e. a partial last tile (`num_keys %
+          KV_BLOCK != 0`) AND the phantom even-parity padding tile (see
+          the main loop's `max_num_tiles_local` round-up). Both carry
+          SRD-clamp-zeroed columns with score `Q@0 = 0`; excluding them
+          keeps the softmax denominator from being diluted. Guarded by
+          `(k_tile_idx + 1) * KV_BLOCK > num_keys` so fully-valid tiles
+          stay branch-cheap (no `v_cmp`/`v_cndmask`).
         - Any other `MHAMask` (`SlidingWindowCausalMask`,
           `ChunkedCausalMask`, `MaterializedMask`, fused
           combinations): generic path via `mask_functor.status(...)`
@@ -863,9 +904,25 @@ struct HKMhaPrefill[config: HKMhaConfig]:
           cost is acceptable for masks without a comptime-specialized
           fast path. Production callers: Gemma-3 (sliding window),
           Gemma-4 (chunked).
+
+        Note: the SRD clamp (`_make_k_tile` / `_make_v_tile`) hardware-
+        zeros the K/V of any tile (or tile suffix) past `num_keys`. A
+        zeroed key still carries score `Q@0 = 0`, which for normalized
+        inputs is a competitive softmax score, so it must be excluded
+        from the denominator — that is what the kbound mask does. For
+        `CausalMask` the causal cap already masks `k_pos >= num_keys`
+        (`q_pos < num_keys <= k_pos_oob`), so only `NullMask` needs the
+        explicit bound.
         """
         comptime if _type_is_eq[mask_t, NullMask]():
-            return
+            var kv_end_pos = (k_tile_idx + 1) * Self.KV_BLOCK
+            if unlikely(kv_end_pos > num_keys):
+                _apply_kbound_mask_fast[KV_BLOCK_SIZE=Self.KV_BLOCK](
+                    att_block,
+                    Int32(k_tile_idx),
+                    Int32(num_keys),
+                    Int32(l_id),
+                )
         elif _type_is_eq[mask_t, CausalMask]():
             var q_start_pos = q_tile_idx * Self.Q_BLOCK_SIZE + start_pos
             var kv_end_pos = (k_tile_idx + 1) * Self.KV_BLOCK
@@ -1321,6 +1378,19 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 max_num_tiles_calc if max_num_tiles_calc
                 < num_tiles else num_tiles
             )
+        elif _type_is_eq[mask_t, NullMask]():
+            # The software pipeline processes K tiles in even pairs (main
+            # loop advances `j` by 2; the epilogue drains a fixed 4
+            # tiles). An ODD tile count double-processes tile `N-3` across
+            # the main-loop/epilogue boundary and corrupts the output
+            # (FLUX i2i: num_keys=8623 -> 135 tiles, odd). Round up to
+            # even with a phantom trailing tile: the SRD clamp zeros its
+            # (entirely-past-`num_keys`) K/V, and the kbound mask in
+            # `_maybe_apply_mask` excludes its score-0 columns from
+            # softmax, so the phantom contributes nothing. `CausalMask` is
+            # unaffected (its cap fixes the parity and masks the tail);
+            # other masks keep the exact count.
+            max_num_tiles_local = num_tiles + (num_tiles & 1)
         else:
             max_num_tiles_local = num_tiles
 
@@ -1465,6 +1535,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             _batch_idx_u32,
             _kv_head_idx_u32,
             0,
+            num_keys,
             w_id,
             l_id,
         )
@@ -1480,6 +1551,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 1,
+                num_keys,
                 w_id,
                 l_id,
             )
@@ -1489,6 +1561,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             _batch_idx_u32,
             _kv_head_idx_u32,
             0,
+            num_keys,
             w_id,
             l_id,
         )
@@ -1516,6 +1589,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             UInt32(head_idx),
             _batch_idx_u32,
             l_id,
+            num_keys,
         )
 
         # Tile-0 partial softmax (no rescale: first tile).
@@ -1542,6 +1616,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 2,
+                num_keys,
                 w_id,
                 l_id,
             )
@@ -1552,6 +1627,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 1,
+                num_keys,
                 w_id,
                 l_id,
             )
@@ -1598,6 +1674,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 j,
+                num_keys,
                 w_id,
                 l_id,
             )
@@ -1613,6 +1690,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                     UInt32(head_idx),
                     _batch_idx_u32,
                     l_id,
+                    num_keys,
                 )
             _cluster_barrier()
 
@@ -1640,6 +1718,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 j - 1,
+                num_keys,
                 w_id,
                 l_id,
             )
@@ -1675,6 +1754,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 j + 1,
+                num_keys,
                 w_id,
                 l_id,
             )
@@ -1689,6 +1769,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 UInt32(head_idx),
                 _batch_idx_u32,
                 l_id,
+                num_keys,
             )
             sched_dsread_valu_pairs[
                 32, valu_cnt=1, group=Self._SCHED_MAIN_C5_DSREAD
@@ -1719,6 +1800,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 _batch_idx_u32,
                 _kv_head_idx_u32,
                 j,
+                num_keys,
                 w_id,
                 l_id,
             )
@@ -1755,6 +1837,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             _batch_idx_u32,
             _kv_head_idx_u32,
             N - 1,
+            num_keys,
             w_id,
             l_id,
         )
@@ -1769,6 +1852,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             UInt32(head_idx),
             _batch_idx_u32,
             l_id,
+            num_keys,
         )
         _cluster_barrier()
 
@@ -1796,6 +1880,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             _batch_idx_u32,
             _kv_head_idx_u32,
             N - 2,
+            num_keys,
             w_id,
             l_id,
         )
@@ -1828,6 +1913,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             UInt32(head_idx),
             _batch_idx_u32,
             l_id,
+            num_keys,
         )
         sched_dsread_valu_pairs[
             32, valu_cnt=1, group=Self._SCHED_EPI_C5_DSREAD
@@ -1858,6 +1944,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             _batch_idx_u32,
             _kv_head_idx_u32,
             N - 1,
+            num_keys,
             w_id,
             l_id,
         )
@@ -1890,6 +1977,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             UInt32(head_idx),
             _batch_idx_u32,
             l_id,
+            num_keys,
         )
         sched_dsread_valu_pairs[
             32, valu_cnt=1, group=Self._SCHED_EPI_C9_DSREAD
