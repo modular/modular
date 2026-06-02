@@ -59,6 +59,51 @@ def _has_schema_constraints(schema: dict[str, Any]) -> bool:
     )
 
 
+def _resolve_refs(
+    node: Any,
+    defs: dict[str, Any],
+    _depth: int = 0,
+    _max_depth: int = 10,
+) -> Any:
+    """Inline ``$ref`` pointers using definitions from ``$defs``.
+
+    Walks the schema tree and replaces ``{"$ref": "#/$defs/Name"}`` with
+    the corresponding entry from *defs*.  Recursion is capped at
+    *_max_depth* to handle self-referential schemas safely — unresolved
+    ``$ref`` nodes are left as-is and will fall through to the generic
+    ``value`` rule in the grammar generator.
+
+    The ``$defs`` key itself is stripped from the returned schema so
+    downstream code never sees it.
+    """
+    if not isinstance(node, dict):
+        if isinstance(node, list):
+            return [
+                _resolve_refs(item, defs, _depth, _max_depth) for item in node
+            ]
+        return node
+
+    if "$ref" in node:
+        ref = node["$ref"]
+        if (
+            isinstance(ref, str)
+            and ref.startswith("#/$defs/")
+            and _depth < _max_depth
+        ):
+            ref_name = ref[len("#/$defs/") :]
+            if ref_name in defs:
+                return _resolve_refs(
+                    defs[ref_name], defs, _depth + 1, _max_depth
+                )
+        return node
+
+    return {
+        k: _resolve_refs(v, defs, _depth, _max_depth)
+        for k, v in node.items()
+        if k != "$defs"
+    }
+
+
 def _extract_tool_schemas(
     tools: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]] | None:
@@ -70,7 +115,8 @@ def _extract_tool_schemas(
             continue
         params = t.get("function", {}).get("parameters")
         if params:
-            schemas[name] = params
+            defs = params.get("$defs", {})
+            schemas[name] = _resolve_refs(params, defs) if defs else params
     return schemas or None
 
 
@@ -533,9 +579,17 @@ class Gemma4ToolParser(StructuralTagToolParser):
         json_type = prop_schema.get("type", "")
 
         if isinstance(json_type, list):
-            alternatives = list(
-                dict.fromkeys(grammar_rule_for_json_type(t) for t in json_type)
-            )
+            alternatives: list[str] = []
+            for t in json_type:
+                alt = Gemma4ToolParser._generate_property_value_rule(
+                    {**prop_schema, "type": t},
+                    f"{rule_prefix}_{t}",
+                    sd_ref,
+                    rules_parts,
+                    depth,
+                )
+                alternatives.append(alt)
+            alternatives = list(dict.fromkeys(alternatives))
             if len(alternatives) == 1:
                 return alternatives[0]
             union_rule = f"{rule_prefix}_union"

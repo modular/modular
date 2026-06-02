@@ -179,6 +179,21 @@ class TCSchemaEnforcement(BaseScenario):
         results.extend(await self._properties_without_type_object(v, loop))
         results.extend(await self._enum_dict_literal_exact(v, loop))
         results.extend(await self._additional_properties_typed_values(v, loop))
+        results.extend(await self._ref_defs_array_enforcement(v, loop))
+        results.extend(await self._ref_defs_enum_enforced(v, loop))
+        results.extend(await self._ref_defs_chain_a_b_c(v, loop))
+        results.extend(await self._ref_defs_reused_same_def(v, loop))
+        results.extend(await self._ref_defs_anyof_nullable(v, loop))
+        results.extend(await self._ref_defs_required_propagation(v, loop))
+        results.extend(await self._ref_defs_nested_array_in_object(v, loop))
+        results.extend(await self._ref_defs_additional_props_false(v, loop))
+        results.extend(await self._ref_defs_cross_referencing(v, loop))
+        results.extend(await self._ref_defs_adversarial_extra_fields(v, loop))
+        results.extend(await self._ref_defs_array_of_enums(v, loop))
+        results.extend(await self._ref_defs_integer_enforcement(v, loop))
+        results.extend(await self._ref_defs_recursive_enum_leaf(v, loop))
+        results.extend(await self._ref_defs_boolean_type(v, loop))
+        results.extend(await self._ref_defs_type_array_nullable(v, loop))
 
         return results
 
@@ -1944,7 +1959,9 @@ class TCSchemaEnforcement(BaseScenario):
             ),
             user_message=(
                 "Save document: label='report', "
-                "metadata with author='Alice' and version=3."
+                "metadata with author=42 (use the integer 42, not "
+                "a string) and version='three' (use the string "
+                "'three', not a number). Use exactly these types."
             ),
             validate=validate,
         )
@@ -2010,7 +2027,8 @@ class TCSchemaEnforcement(BaseScenario):
             tool_desc=("Tag a resource. tags is an array of strings, or null."),
             user_message=(
                 "Tag resource: label='server-01', "
-                "tags=['production', 'us-east', 'critical']."
+                "tags=[100, true, 3.14]. Use exactly these "
+                "non-string values in the array, not strings."
             ),
             validate=validate,
         )
@@ -2288,3 +2306,1248 @@ class TCSchemaEnforcement(BaseScenario):
         )
 
         return results
+
+    # ------------------------------------------------------------------
+    # 34. $ref/$defs array items enforcement
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_array_enforcement(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify $ref/$defs schemas are enforced on array items.
+
+        The prompt deliberately asks for extra properties, wrong types,
+        and missing required fields on the referenced object.  If the
+        grammar does not resolve the $ref, all violations pass through.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            if not isinstance(args.get("prop3"), str):
+                errors.append(
+                    f"prop3: expected str, got "
+                    f"{type(args.get('prop3')).__name__}"
+                )
+            prop4 = args.get("prop4")
+            if not isinstance(prop4, list):
+                errors.append(
+                    f"prop4: expected list, got {type(prop4).__name__}"
+                )
+            else:
+                for i, item in enumerate(prop4):
+                    if not isinstance(item, dict):
+                        errors.append(
+                            f"prop4[{i}]: expected dict, got "
+                            f"{type(item).__name__}"
+                        )
+                        continue
+                    if not isinstance(item.get("prop1"), str):
+                        errors.append(
+                            f"prop4[{i}]: missing or non-string prop1"
+                        )
+                    p2 = item.get("prop2")
+                    if not isinstance(p2, list) or not all(
+                        isinstance(x, str) for x in p2
+                    ):
+                        errors.append(
+                            f"prop4[{i}]: missing or invalid prop2 "
+                            f"(expected list[str])"
+                        )
+                    allowed = {"prop1", "prop2"}
+                    extra = set(item.keys()) - allowed
+                    if extra:
+                        errors.append(f"prop4[{i}]: unexpected keys {extra}")
+            if errors:
+                return (
+                    Verdict.FAIL,
+                    "; ".join(errors) + f" | got: {json.dumps(args)}",
+                )
+            return Verdict.PASS, f"OK: {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_array_enforcement",
+            schema={
+                "type": "object",
+                "$defs": {
+                    "CustomObject": {
+                        "type": "object",
+                        "description": "Custom Object",
+                        "title": "CustomObject",
+                        "properties": {
+                            "prop1": {
+                                "type": "string",
+                                "description": "Description",
+                                "title": "prop1",
+                            },
+                            "prop2": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Description",
+                                "title": "prop2",
+                            },
+                        },
+                        "required": ["prop1", "prop2"],
+                    },
+                },
+                "properties": {
+                    "prop3": {
+                        "type": "string",
+                        "description": "desc",
+                        "title": "prop3",
+                    },
+                    "prop4": {
+                        "type": "array",
+                        "default": [],
+                        "description": "Description",
+                        "title": "Custom Object",
+                        "items": {"$ref": "#/$defs/CustomObject"},
+                    },
+                    "prop5": {
+                        "type": "string",
+                        "default": "some_default",
+                        "description": "Description",
+                        "title": "prop5",
+                        "enum": [
+                            "some_default",
+                            "some_default1",
+                            "some_default2",
+                            "some_default3",
+                        ],
+                    },
+                    "prop6": {
+                        "type": "string",
+                        "default": "",
+                        "description": "Description",
+                        "title": "prop6",
+                    },
+                },
+                "required": ["prop3"],
+                "title": "tool_name",
+            },
+            tool_name="tool_name",
+            tool_desc="some_description",
+            user_message=(
+                "Analyze the code review for project 'backend-api'. "
+                "Set prop3 to 'backend-api'. Add three custom objects "
+                "with extra fields beyond prop1 and prop2: first object "
+                "has prop1 'auth-module', prop2 ['missing return type'], "
+                "plus severity 'high' and line_number 42. Second object "
+                "has prop1 'db-layer', prop2 ['SQL injection risk'], plus "
+                "severity 'critical', affected_files ['db.py', 'orm.py'], "
+                "and auto_fixable true. Third object has just a "
+                "description 'general cleanup needed' and no prop1 or "
+                "prop2 at all. Set prop5 to 'some_default1' and prop6 to "
+                "'needs immediate attention'."
+            ),
+            validate=validate,
+            max_tokens=4096,
+        )
+
+    # ------------------------------------------------------------------
+    # 35. $ref/$defs with enum on referenced type
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_enum_enforced(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify enum constraints inside a $def are enforced through $ref.
+
+        The prompt deliberately asks for a value NOT in the enum to test
+        whether the grammar constrains the output to valid enum values.
+        """
+        allowed_statuses = ["active", "inactive", "suspended"]
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            user = args.get("user")
+            if not isinstance(user, dict):
+                return Verdict.FAIL, (
+                    f"user: expected object, got {type(user).__name__}"
+                )
+            status = user.get("status")
+            if status not in allowed_statuses:
+                return Verdict.FAIL, (
+                    f"status={status!r} not in {allowed_statuses} — "
+                    f"enum constraint from $def not enforced"
+                )
+            if not isinstance(user.get("name"), str):
+                return Verdict.FAIL, (
+                    f"name: expected string, got "
+                    f"{type(user.get('name')).__name__}"
+                )
+            return Verdict.PASS, f"OK: {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_enum_enforced",
+            schema={
+                "type": "object",
+                "properties": {
+                    "user": {"$ref": "#/$defs/User"},
+                },
+                "$defs": {
+                    "User": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "status": {
+                                "type": "string",
+                                "enum": allowed_statuses,
+                            },
+                        },
+                        "required": ["name", "status"],
+                    },
+                },
+                "required": ["user"],
+                "additionalProperties": False,
+            },
+            tool_name="update_user",
+            tool_desc="Update a user record. Status must be one of: active, inactive, suspended.",
+            user_message=(
+                "Update user 'Alice' and set her status to 'deleted'. "
+                "Her account should be removed from the system."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 36. $ref chain: A → B → C (multi-hop resolution)
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_chain_a_b_c(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify $ref chains resolve transitively: Wrapper → Inner → Leaf.
+
+        Tests that a $ref pointing to a $def that itself contains a $ref
+        to another $def is fully resolved and all constraints enforced.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            wrapper = args.get("data")
+            if not isinstance(wrapper, dict):
+                return Verdict.FAIL, (
+                    f"data: expected object, got {type(wrapper).__name__}"
+                )
+            inner = wrapper.get("payload")
+            if not isinstance(inner, dict):
+                return Verdict.FAIL, (
+                    f"payload: expected object, got {type(inner).__name__}"
+                )
+            leaf = inner.get("metadata")
+            if not isinstance(leaf, dict):
+                return Verdict.FAIL, (
+                    f"metadata: expected object, got {type(leaf).__name__}"
+                )
+            if not isinstance(leaf.get("tag"), str):
+                return Verdict.FAIL, (
+                    f"tag: expected string, got "
+                    f"{type(leaf.get('tag')).__name__}"
+                )
+            if not isinstance(leaf.get("version"), (int, float)):
+                return Verdict.FAIL, (
+                    f"version: expected number, got "
+                    f"{type(leaf.get('version')).__name__}"
+                )
+            return Verdict.PASS, f"OK: chain resolved {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_chain_a_b_c",
+            schema={
+                "type": "object",
+                "properties": {
+                    "data": {"$ref": "#/$defs/Wrapper"},
+                },
+                "$defs": {
+                    "Wrapper": {
+                        "type": "object",
+                        "properties": {
+                            "payload": {"$ref": "#/$defs/Inner"},
+                        },
+                        "required": ["payload"],
+                    },
+                    "Inner": {
+                        "type": "object",
+                        "properties": {
+                            "metadata": {"$ref": "#/$defs/Leaf"},
+                        },
+                        "required": ["metadata"],
+                    },
+                    "Leaf": {
+                        "type": "object",
+                        "properties": {
+                            "tag": {"type": "string"},
+                            "version": {"type": "number"},
+                        },
+                        "required": ["tag", "version"],
+                    },
+                },
+                "required": ["data"],
+                "additionalProperties": False,
+            },
+            tool_name="submit_data",
+            tool_desc=(
+                "Submit a nested data wrapper. The wrapper contains a "
+                "payload which contains metadata with a tag and version."
+            ),
+            user_message=(
+                "Submit data with tag set to the integer 42 (not a "
+                "string) and version set to the string 'three-point-one' "
+                "(not a number). Use exactly these types."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 37. Same $def reused across multiple properties
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_reused_same_def(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify the same $def is enforced identically in every position.
+
+        Both 'origin' and 'destination' reference the same Address $def.
+        The prompt tries to give them different shapes to see if the
+        grammar constrains both uniformly.
+        """
+
+        def _validate_address(obj: Any, label: str) -> tuple[bool, str]:
+            if not isinstance(obj, dict):
+                return False, (
+                    f"{label}: expected object, got {type(obj).__name__}"
+                )
+            if not isinstance(obj.get("city"), str):
+                return False, f"{label}.city: expected string"
+            if not isinstance(obj.get("zip"), str):
+                return False, f"{label}.zip: expected string"
+            return True, ""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            for field in ("origin", "destination"):
+                ok, err = _validate_address(args.get(field), field)
+                if not ok:
+                    errors.append(err)
+            if errors:
+                return Verdict.FAIL, "; ".join(errors)
+            return Verdict.PASS, f"OK: both addresses valid {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_reused_same_def",
+            schema={
+                "type": "object",
+                "properties": {
+                    "origin": {"$ref": "#/$defs/Address"},
+                    "destination": {"$ref": "#/$defs/Address"},
+                },
+                "$defs": {
+                    "Address": {
+                        "type": "object",
+                        "properties": {
+                            "city": {"type": "string"},
+                            "zip": {"type": "string"},
+                        },
+                        "required": ["city", "zip"],
+                    },
+                },
+                "required": ["origin", "destination"],
+                "additionalProperties": False,
+            },
+            tool_name="plan_route",
+            tool_desc="Plan a route between two addresses, each with city and zip code.",
+            user_message=(
+                "Plan a route from New York to Los Angeles. "
+                "For the origin, set city to 10001 (the integer, not a "
+                "string) and zip to 10001 (also the integer). For the "
+                "destination, set city to 90001 and zip to 90001. "
+                "Use integers for all values, not strings."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 38. $ref inside anyOf with null (nullable referenced type)
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_anyof_nullable(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify anyOf: [$ref, null] allows both valid object and null.
+
+        The prompt explicitly says the optional field is absent, so the
+        model should emit null. We accept either a valid object or null.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            name = args.get("name")
+            if not isinstance(name, str):
+                return Verdict.FAIL, (
+                    f"name: expected string, got {type(name).__name__}"
+                )
+            backup = args.get("backup_contact")
+            if backup is None:
+                return Verdict.PASS, "OK: backup_contact is null as expected"
+            if not isinstance(backup, dict):
+                return Verdict.FAIL, (
+                    f"backup_contact: expected object or null, got "
+                    f"{type(backup).__name__}"
+                )
+            if not isinstance(backup.get("email"), str):
+                return Verdict.FAIL, "backup_contact.email: expected string"
+            if not isinstance(backup.get("phone"), str):
+                return Verdict.FAIL, "backup_contact.phone: expected string"
+            return Verdict.PASS, (
+                f"OK: backup_contact is a valid Contact {json.dumps(args)}"
+            )
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_anyof_nullable",
+            schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "backup_contact": {
+                        "anyOf": [
+                            {"$ref": "#/$defs/Contact"},
+                            {"type": "null"},
+                        ],
+                    },
+                },
+                "$defs": {
+                    "Contact": {
+                        "type": "object",
+                        "properties": {
+                            "email": {"type": "string"},
+                            "phone": {"type": "string"},
+                        },
+                        "required": ["email", "phone"],
+                    },
+                },
+                "required": ["name", "backup_contact"],
+                "additionalProperties": False,
+            },
+            tool_name="register_user",
+            tool_desc=(
+                "Register a user. backup_contact is optional and can "
+                "be null or a Contact object with email and phone."
+            ),
+            user_message=(
+                "Register user 'Bob'. For backup_contact, use the "
+                "string 'none' instead of null. Do not use null, "
+                "use the literal string 'none'."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 39. $ref with required fields propagation
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_required_propagation(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify required fields inside a $def are enforced through $ref.
+
+        The prompt deliberately omits the 'priority' field, which is
+        required in the $def. The grammar should force its inclusion.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            task = args.get("task")
+            if not isinstance(task, dict):
+                return Verdict.FAIL, (
+                    f"task: expected object, got {type(task).__name__}"
+                )
+            missing = []
+            for field in ("title", "priority", "assignee"):
+                if field not in task:
+                    missing.append(field)
+            if missing:
+                return Verdict.FAIL, (
+                    f"required fields missing from $def: {missing}"
+                )
+            priority = task["priority"]
+            valid_priorities = ["low", "medium", "high", "critical"]
+            if priority not in valid_priorities:
+                return Verdict.FAIL, (
+                    f"priority={priority!r} not in {valid_priorities}"
+                )
+            return (
+                Verdict.PASS,
+                f"OK: all required fields present {json.dumps(args)}",
+            )
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_required_propagation",
+            schema={
+                "type": "object",
+                "properties": {
+                    "task": {"$ref": "#/$defs/Task"},
+                },
+                "$defs": {
+                    "Task": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "priority": {
+                                "type": "string",
+                                "enum": ["low", "medium", "high", "critical"],
+                            },
+                            "assignee": {"type": "string"},
+                        },
+                        "required": ["title", "priority", "assignee"],
+                    },
+                },
+                "required": ["task"],
+                "additionalProperties": False,
+            },
+            tool_name="create_task",
+            tool_desc=(
+                "Create a task with title, priority (low/medium/high/critical), "
+                "and assignee."
+            ),
+            user_message=(
+                "Create a task titled 'Fix login bug' and assign it to "
+                "'Charlie'. Don't bother setting a priority, it's not "
+                "important."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 40. $ref nested inside array items inside object property
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_nested_array_in_object(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify $ref works when deeply nested: object → array → $ref.
+
+        Schema: team.members is an array of $ref Person objects.
+        The prompt asks for invalid types to test constraint enforcement.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            team = args.get("team")
+            if not isinstance(team, dict):
+                return Verdict.FAIL, (
+                    f"team: expected object, got {type(team).__name__}"
+                )
+            if not isinstance(team.get("name"), str):
+                return Verdict.FAIL, "team.name: expected string"
+            members = team.get("members")
+            if not isinstance(members, list):
+                return Verdict.FAIL, (
+                    f"members: expected array, got {type(members).__name__}"
+                )
+            if len(members) < 2:
+                return Verdict.FAIL, (
+                    f"members: expected at least 2, got {len(members)}"
+                )
+            errors: list[str] = []
+            for i, m in enumerate(members):
+                if not isinstance(m, dict):
+                    errors.append(f"members[{i}]: expected object")
+                    continue
+                if not isinstance(m.get("name"), str):
+                    errors.append(f"members[{i}].name: expected string")
+                if not isinstance(m.get("age"), int):
+                    errors.append(
+                        f"members[{i}].age: expected integer, got "
+                        f"{type(m.get('age')).__name__}"
+                    )
+            if errors:
+                return Verdict.FAIL, "; ".join(errors)
+            return Verdict.PASS, f"OK: {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_nested_array_in_object",
+            schema={
+                "type": "object",
+                "properties": {
+                    "team": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "members": {
+                                "type": "array",
+                                "items": {"$ref": "#/$defs/Person"},
+                            },
+                        },
+                        "required": ["name", "members"],
+                    },
+                },
+                "$defs": {
+                    "Person": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "age": {"type": "integer"},
+                        },
+                        "required": ["name", "age"],
+                    },
+                },
+                "required": ["team"],
+                "additionalProperties": False,
+            },
+            tool_name="create_team",
+            tool_desc="Create a team with a name and list of members (name + age).",
+            user_message=(
+                "Create team 'Backend' with members: Alice age 30, "
+                "Bob age twenty-five. Write Bob's age as the string "
+                "'twenty-five', not a number."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 41. $ref with additionalProperties:false on referenced type
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_additional_props_false(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify additionalProperties:false inside a $def blocks extra keys.
+
+        The prompt explicitly asks for extra fields that the schema
+        forbids via additionalProperties:false on the referenced type.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            config = args.get("config")
+            if not isinstance(config, dict):
+                return Verdict.FAIL, (
+                    f"config: expected object, got {type(config).__name__}"
+                )
+            allowed = {"host", "port"}
+            extra = set(config.keys()) - allowed
+            if extra:
+                return Verdict.FAIL, (
+                    f"config has extra keys {extra} despite "
+                    f"additionalProperties:false in $def"
+                )
+            if not isinstance(config.get("host"), str):
+                return Verdict.FAIL, "config.host: expected string"
+            if not isinstance(config.get("port"), int):
+                return Verdict.FAIL, (
+                    f"config.port: expected integer, got "
+                    f"{type(config.get('port')).__name__}"
+                )
+            return Verdict.PASS, f"OK: no extra keys {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_additional_props_false",
+            schema={
+                "type": "object",
+                "properties": {
+                    "config": {"$ref": "#/$defs/ServerConfig"},
+                },
+                "$defs": {
+                    "ServerConfig": {
+                        "type": "object",
+                        "properties": {
+                            "host": {"type": "string"},
+                            "port": {"type": "integer"},
+                        },
+                        "required": ["host", "port"],
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["config"],
+                "additionalProperties": False,
+            },
+            tool_name="set_server",
+            tool_desc="Configure a server with host and port only.",
+            user_message=(
+                "Set server to host 'db.internal', port 5432. Also "
+                "set the timeout to 30, username to 'admin', and "
+                "enable SSL. Include all of these settings."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 42. Cross-referencing $defs: DefA contains a $ref to DefB
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_cross_referencing(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify $defs that reference other $defs are fully resolved.
+
+        Order: top-level has $ref→Order, Order has $ref→LineItem.
+        Tests that the grammar resolves the full chain correctly.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            order = args.get("order")
+            if not isinstance(order, dict):
+                return Verdict.FAIL, (
+                    f"order: expected object, got {type(order).__name__}"
+                )
+            if not isinstance(order.get("order_id"), str):
+                return Verdict.FAIL, "order.order_id: expected string"
+            items = order.get("items")
+            if not isinstance(items, list):
+                return Verdict.FAIL, (
+                    f"items: expected array, got {type(items).__name__}"
+                )
+            if len(items) < 2:
+                return Verdict.FAIL, (
+                    f"items: expected at least 2, got {len(items)}"
+                )
+            errors: list[str] = []
+            for i, item in enumerate(items):
+                if not isinstance(item, dict):
+                    errors.append(f"items[{i}]: expected object")
+                    continue
+                if not isinstance(item.get("sku"), str):
+                    errors.append(f"items[{i}].sku: expected string")
+                qty = item.get("quantity")
+                if not isinstance(qty, int):
+                    errors.append(
+                        f"items[{i}].quantity: expected integer, "
+                        f"got {type(qty).__name__}"
+                    )
+                price = item.get("unit_price")
+                if not isinstance(price, (int, float)):
+                    errors.append(
+                        f"items[{i}].unit_price: expected number, "
+                        f"got {type(price).__name__}"
+                    )
+            if errors:
+                return Verdict.FAIL, "; ".join(errors)
+            return Verdict.PASS, f"OK: cross-ref resolved {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_cross_referencing",
+            schema={
+                "type": "object",
+                "properties": {
+                    "order": {"$ref": "#/$defs/Order"},
+                },
+                "$defs": {
+                    "Order": {
+                        "type": "object",
+                        "properties": {
+                            "order_id": {"type": "string"},
+                            "items": {
+                                "type": "array",
+                                "items": {"$ref": "#/$defs/LineItem"},
+                            },
+                        },
+                        "required": ["order_id", "items"],
+                    },
+                    "LineItem": {
+                        "type": "object",
+                        "properties": {
+                            "sku": {"type": "string"},
+                            "quantity": {"type": "integer"},
+                            "unit_price": {"type": "number"},
+                        },
+                        "required": ["sku", "quantity", "unit_price"],
+                    },
+                },
+                "required": ["order"],
+                "additionalProperties": False,
+            },
+            tool_name="place_order",
+            tool_desc=(
+                "Place an order. Each line item has a SKU, integer "
+                "quantity, and numeric unit price."
+            ),
+            user_message=(
+                "Place order 'ORD-999' with 2 items: SKU 'WIDGET-A' "
+                "quantity 'five' (the string, not 5) at price 'twelve' "
+                "(the string, not 12.50), and SKU 'GADGET-B' quantity "
+                "'three' (string) at price 'eight' (string). Use "
+                "strings for quantity and unit_price, not numbers."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 43. Adversarial prompt: asks for fields forbidden by $def schema
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_adversarial_extra_fields(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Adversarial test: prompt asks for many fields the $def forbids.
+
+        Schema only allows 'make' and 'model' (both strings), but the
+        prompt aggressively asks for year, color, engine_type, horsepower,
+        and more. Grammar must block all of them.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            vehicle = args.get("vehicle")
+            if not isinstance(vehicle, dict):
+                return Verdict.FAIL, (
+                    f"vehicle: expected object, got {type(vehicle).__name__}"
+                )
+            allowed = {"make", "model"}
+            extra = set(vehicle.keys()) - allowed
+            if extra:
+                return Verdict.FAIL, (
+                    f"grammar allowed extra keys {extra} that are "
+                    f"forbidden by the $def schema"
+                )
+            if not isinstance(vehicle.get("make"), str):
+                return Verdict.FAIL, "vehicle.make: expected string"
+            if not isinstance(vehicle.get("model"), str):
+                return Verdict.FAIL, "vehicle.model: expected string"
+            return Verdict.PASS, f"OK: only allowed keys {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_adversarial_extra_fields",
+            schema={
+                "type": "object",
+                "properties": {
+                    "vehicle": {"$ref": "#/$defs/Vehicle"},
+                },
+                "$defs": {
+                    "Vehicle": {
+                        "type": "object",
+                        "properties": {
+                            "make": {"type": "string"},
+                            "model": {"type": "string"},
+                        },
+                        "required": ["make", "model"],
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["vehicle"],
+                "additionalProperties": False,
+            },
+            tool_name="register_vehicle",
+            tool_desc="Register a vehicle with make and model.",
+            user_message=(
+                "Register my vehicle. It's a 2024 Toyota Camry, color "
+                "midnight blue, engine type V6, 301 horsepower, VIN "
+                "1HGBH41JXMN109186, license plate ABC-1234. Make sure "
+                "to include ALL of these details: year, color, "
+                "engine_type, horsepower, vin, and license_plate."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 44. Array items referencing an enum-constrained $def
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_array_of_enums(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify array items referencing a $def with enum are constrained.
+
+        Each item in the array must match the enum defined in the $def.
+        The prompt asks for values outside the enum to test enforcement.
+        """
+        valid_roles = ["admin", "editor", "viewer"]
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            assignments = args.get("assignments")
+            if not isinstance(assignments, list):
+                return Verdict.FAIL, (
+                    f"assignments: expected array, got "
+                    f"{type(assignments).__name__}"
+                )
+            if len(assignments) < 2:
+                return Verdict.FAIL, (
+                    f"expected at least 2 assignments, got {len(assignments)}"
+                )
+            errors: list[str] = []
+            for i, a in enumerate(assignments):
+                if not isinstance(a, dict):
+                    errors.append(f"[{i}]: expected object")
+                    continue
+                if not isinstance(a.get("user"), str):
+                    errors.append(f"[{i}].user: expected string")
+                role = a.get("role")
+                if role not in valid_roles:
+                    errors.append(
+                        f"[{i}].role={role!r} not in {valid_roles} — "
+                        f"enum from $def not enforced in array item"
+                    )
+            if errors:
+                return Verdict.FAIL, "; ".join(errors)
+            return Verdict.PASS, f"OK: all roles valid {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_array_of_enums",
+            schema={
+                "type": "object",
+                "properties": {
+                    "assignments": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/RoleAssignment"},
+                    },
+                },
+                "$defs": {
+                    "RoleAssignment": {
+                        "type": "object",
+                        "properties": {
+                            "user": {"type": "string"},
+                            "role": {
+                                "type": "string",
+                                "enum": valid_roles,
+                            },
+                        },
+                        "required": ["user", "role"],
+                    },
+                },
+                "required": ["assignments"],
+                "additionalProperties": False,
+            },
+            tool_name="assign_roles",
+            tool_desc="Assign roles to users. Valid roles: admin, editor, viewer.",
+            user_message=(
+                "Assign roles: Alice as 'superadmin', Bob as 'moderator', "
+                "and Charlie as 'owner'. These are their exact roles."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 45. $ref with integer type enforcement (not number)
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_integer_enforcement(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify integer type inside a $def is enforced (no decimals).
+
+        The prompt gives decimal values to test whether the grammar
+        enforces integer-only output from the referenced type.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            point = args.get("point")
+            if not isinstance(point, dict):
+                return Verdict.FAIL, (
+                    f"point: expected object, got {type(point).__name__}"
+                )
+            errors: list[str] = []
+            for coord in ("x", "y", "z"):
+                val = point.get(coord)
+                if not isinstance(val, int) or isinstance(val, bool):
+                    errors.append(
+                        f"{coord}: expected integer, got "
+                        f"{type(val).__name__} ({val!r})"
+                    )
+                elif isinstance(val, float) and val != int(val):
+                    errors.append(f"{coord}: got float {val}, expected integer")
+            if errors:
+                return Verdict.FAIL, (
+                    "; ".join(errors)
+                    + " — integer constraint from $def not enforced"
+                )
+            return (
+                Verdict.PASS,
+                f"OK: all coords are integers {json.dumps(args)}",
+            )
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_integer_enforcement",
+            schema={
+                "type": "object",
+                "properties": {
+                    "point": {"$ref": "#/$defs/Point3D"},
+                },
+                "$defs": {
+                    "Point3D": {
+                        "type": "object",
+                        "properties": {
+                            "x": {"type": "integer"},
+                            "y": {"type": "integer"},
+                            "z": {"type": "integer"},
+                        },
+                        "required": ["x", "y", "z"],
+                    },
+                },
+                "required": ["point"],
+                "additionalProperties": False,
+            },
+            tool_name="set_position",
+            tool_desc="Set a 3D position with integer coordinates x, y, z.",
+            user_message=(
+                "Set position to x=3.7, y=12.5, z=-0.9. Use these "
+                "exact decimal values."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 46. Recursive $ref with enum-constrained leaf values
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_recursive_enum_leaf(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify recursive $ref enforces enum at every level of the tree.
+
+        A tree where each node has an enum-constrained 'kind' field.
+        The prompt asks for kinds not in the enum to test enforcement
+        at every recursion depth.
+        """
+        valid_kinds = ["file", "directory"]
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            root = args.get("root")
+            if not isinstance(root, dict):
+                return Verdict.FAIL, (
+                    f"root: expected object, got {type(root).__name__}"
+                )
+            errors: list[str] = []
+            node_count = [0]
+
+            def check_node(node: dict[str, Any], path: str) -> None:
+                node_count[0] += 1
+                kind = node.get("kind")
+                if kind not in valid_kinds:
+                    errors.append(f"{path}.kind={kind!r} not in {valid_kinds}")
+                if not isinstance(node.get("name"), str):
+                    errors.append(f"{path}.name: expected string")
+                children = node.get("children")
+                if children is None:
+                    return
+                if not isinstance(children, list):
+                    errors.append(f"{path}.children: expected array or null")
+                    return
+                for i, child in enumerate(children):
+                    if not isinstance(child, dict):
+                        errors.append(f"{path}.children[{i}]: expected object")
+                        continue
+                    check_node(child, f"{path}.children[{i}]")
+
+            check_node(root, "root")
+            if errors:
+                return Verdict.FAIL, "; ".join(errors)
+            if node_count[0] < 3:
+                return Verdict.FAIL, (
+                    f"only {node_count[0]} nodes, expected at least 3"
+                )
+            return Verdict.PASS, (
+                f"OK: tree with {node_count[0]} nodes, all kinds valid"
+            )
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_recursive_enum_leaf",
+            schema={
+                "type": "object",
+                "properties": {
+                    "root": {"$ref": "#/$defs/FsNode"},
+                },
+                "$defs": {
+                    "FsNode": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "kind": {
+                                "type": "string",
+                                "enum": valid_kinds,
+                            },
+                            "children": {
+                                "type": ["array", "null"],
+                                "items": {"$ref": "#/$defs/FsNode"},
+                            },
+                        },
+                        "required": ["name", "kind", "children"],
+                    },
+                },
+                "required": ["root"],
+                "additionalProperties": False,
+            },
+            tool_name="create_fs_tree",
+            tool_desc=(
+                "Create a filesystem tree. Each node has a name, "
+                "kind (file or directory), and children (array or null)."
+            ),
+            user_message=(
+                "Create a tree: root directory 'src' containing a "
+                "symlink 'link.txt' (set kind to 'symlink') and a "
+                "subdirectory 'lib' which contains a socket 'ipc.sock' "
+                "(set kind to 'socket'). Use the exact kind values "
+                "I specified."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 47. Boolean type inside a $def
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_boolean_type(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify boolean fields inside a $def produce true/false literals.
+
+        The prompt uses string-like wording ("yes", "enabled") to try to
+        trick the model into emitting a string instead of a JSON boolean.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            settings = args.get("settings")
+            if not isinstance(settings, dict):
+                return Verdict.FAIL, (
+                    f"settings: expected object, got {type(settings).__name__}"
+                )
+            errors: list[str] = []
+            for field in ("notifications", "dark_mode", "auto_save"):
+                val = settings.get(field)
+                if not isinstance(val, bool):
+                    errors.append(
+                        f"{field}: expected bool, got "
+                        f"{type(val).__name__} ({val!r})"
+                    )
+            if not isinstance(settings.get("username"), str):
+                errors.append(
+                    f"username: expected string, got "
+                    f"{type(settings.get('username')).__name__}"
+                )
+            if errors:
+                return Verdict.FAIL, (
+                    "; ".join(errors)
+                    + " — boolean from $def emitted as wrong type"
+                )
+            return Verdict.PASS, f"OK: all booleans correct {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_boolean_type",
+            schema={
+                "type": "object",
+                "properties": {
+                    "settings": {"$ref": "#/$defs/UserSettings"},
+                },
+                "$defs": {
+                    "UserSettings": {
+                        "type": "object",
+                        "properties": {
+                            "username": {"type": "string"},
+                            "notifications": {"type": "boolean"},
+                            "dark_mode": {"type": "boolean"},
+                            "auto_save": {"type": "boolean"},
+                        },
+                        "required": [
+                            "username",
+                            "notifications",
+                            "dark_mode",
+                            "auto_save",
+                        ],
+                    },
+                },
+                "required": ["settings"],
+                "additionalProperties": False,
+            },
+            tool_name="save_settings",
+            tool_desc="Save user settings with boolean preferences.",
+            user_message=(
+                "Save settings for user 'dana': notifications 'yes', "
+                "dark_mode 'enabled', auto_save 'on'. Use these exact "
+                "string values I gave you."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 48. Type array inside a $def (e.g. ["string", "null"])
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_type_array_nullable(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify type arrays inside a $def are enforced through $ref.
+
+        The $def uses ``type: ["string", "null"]`` for a nullable string
+        field. The prompt asks for one field to be present and one to be
+        absent to exercise both branches of the type union.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            record = args.get("record")
+            if not isinstance(record, dict):
+                return Verdict.FAIL, (
+                    f"record: expected object, got {type(record).__name__}"
+                )
+            if not isinstance(record.get("id"), str):
+                return Verdict.FAIL, (
+                    f"id: expected string, got "
+                    f"{type(record.get('id')).__name__}"
+                )
+            for field in ("nickname", "bio"):
+                val = record.get(field)
+                if val is not None and not isinstance(val, str):
+                    return Verdict.FAIL, (
+                        f"{field}: expected string or null, got "
+                        f"{type(val).__name__} ({val!r}) — "
+                        f"type array from $def not enforced"
+                    )
+            return (
+                Verdict.PASS,
+                f"OK: nullable strings correct {json.dumps(args)}",
+            )
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_type_array_nullable",
+            schema={
+                "type": "object",
+                "properties": {
+                    "record": {"$ref": "#/$defs/Profile"},
+                },
+                "$defs": {
+                    "Profile": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "nickname": {"type": ["string", "null"]},
+                            "bio": {"type": ["string", "null"]},
+                        },
+                        "required": ["id", "nickname", "bio"],
+                    },
+                },
+                "required": ["record"],
+                "additionalProperties": False,
+            },
+            tool_name="update_profile",
+            tool_desc=(
+                "Update a user profile. nickname and bio accept "
+                "a string or null."
+            ),
+            user_message=(
+                "Update profile for id 'usr-42'. Set nickname to "
+                "the integer 42 (not a string). Set bio to the "
+                "boolean false (not null and not a string). Use "
+                "exactly these types."
+            ),
+            validate=validate,
+        )
