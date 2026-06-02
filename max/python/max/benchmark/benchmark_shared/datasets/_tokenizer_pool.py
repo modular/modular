@@ -146,7 +146,11 @@ class TokenizerPool:
         loader: _LoaderFn | None = None,
     ) -> None:
         self.tokenizer = tokenizer
-        nproc = workers if workers is not None else max(1, os.cpu_count() or 8)
+        # Cap the default worker count at 128, leaving a core free for the
+        # main process. If the core count is unavailable, fall back to a
+        # single process.
+        default_nproc = min(128, max(1, (os.cpu_count() or 1) - 1))
+        nproc = workers if workers is not None else default_nproc
         # Tests (and other constrained environments) can cap worker count
         # via env var without threading `workers=` through every call site.
         env_cap = os.environ.get("MAX_BENCHMARK_MAX_TOKENIZER_THREADS")
