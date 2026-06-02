@@ -576,6 +576,28 @@ class Gemma4ToolParser(StructuralTagToolParser):
                 f"{rule_prefix}_enum", enum_values, sd_ref, rules_parts
             )
 
+        any_of = prop_schema.get("anyOf")
+        if any_of and isinstance(any_of, list):
+            branch_rules: list[str] = []
+            for i, branch in enumerate(any_of):
+                if isinstance(branch, dict):
+                    branch_rules.append(
+                        Gemma4ToolParser._generate_property_value_rule(
+                            branch,
+                            f"{rule_prefix}_branch{i}",
+                            sd_ref,
+                            rules_parts,
+                            depth + 1,
+                            max_depth,
+                        )
+                    )
+            unique = list(dict.fromkeys(branch_rules))
+            if len(unique) == 1:
+                return unique[0]
+            anyof_rule = f"{rule_prefix}_anyof"
+            rules_parts.append(f"{anyof_rule}: " + " | ".join(unique))
+            return anyof_rule
+
         json_type = prop_schema.get("type", "")
 
         if isinstance(json_type, list):

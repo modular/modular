@@ -194,6 +194,24 @@ class TCSchemaEnforcement(BaseScenario):
         results.extend(await self._ref_defs_recursive_enum_leaf(v, loop))
         results.extend(await self._ref_defs_boolean_type(v, loop))
         results.extend(await self._ref_defs_type_array_nullable(v, loop))
+        results.extend(await self._anyof_nullable_integer(v, loop))
+        results.extend(await self._anyof_nullable_boolean(v, loop))
+        results.extend(await self._anyof_nullable_number(v, loop))
+        results.extend(await self._anyof_nullable_array(v, loop))
+        results.extend(await self._anyof_nullable_object(v, loop))
+        results.extend(await self._anyof_string_or_integer(v, loop))
+        results.extend(await self._anyof_nested_in_array_items(v, loop))
+        results.extend(await self._anyof_multiple_required_fields(v, loop))
+        results.extend(await self._anyof_with_enum_branch(v, loop))
+        results.extend(await self._anyof_with_ref_and_null(v, loop))
+        results.extend(await self._anyof_deeply_nested(v, loop))
+        results.extend(
+            await self._ref_defs_adversarial_all_constraints(v, loop)
+        )
+        results.extend(await self._ref_defs_required_only_minimal(v, loop))
+        results.extend(
+            await self._ref_defs_nested_items_type_enforcement(v, loop)
+        )
 
         return results
 
@@ -2320,112 +2338,11 @@ class TCSchemaEnforcement(BaseScenario):
         and missing required fields on the referenced object.  If the
         grammar does not resolve the $ref, all violations pass through.
         """
-
-        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
-            errors: list[str] = []
-            if not isinstance(args.get("prop3"), str):
-                errors.append(
-                    f"prop3: expected str, got "
-                    f"{type(args.get('prop3')).__name__}"
-                )
-            prop4 = args.get("prop4")
-            if not isinstance(prop4, list):
-                errors.append(
-                    f"prop4: expected list, got {type(prop4).__name__}"
-                )
-            else:
-                for i, item in enumerate(prop4):
-                    if not isinstance(item, dict):
-                        errors.append(
-                            f"prop4[{i}]: expected dict, got "
-                            f"{type(item).__name__}"
-                        )
-                        continue
-                    if not isinstance(item.get("prop1"), str):
-                        errors.append(
-                            f"prop4[{i}]: missing or non-string prop1"
-                        )
-                    p2 = item.get("prop2")
-                    if not isinstance(p2, list) or not all(
-                        isinstance(x, str) for x in p2
-                    ):
-                        errors.append(
-                            f"prop4[{i}]: missing or invalid prop2 "
-                            f"(expected list[str])"
-                        )
-                    allowed = {"prop1", "prop2"}
-                    extra = set(item.keys()) - allowed
-                    if extra:
-                        errors.append(f"prop4[{i}]: unexpected keys {extra}")
-            if errors:
-                return (
-                    Verdict.FAIL,
-                    "; ".join(errors) + f" | got: {json.dumps(args)}",
-                )
-            return Verdict.PASS, f"OK: {json.dumps(args)}"
-
         return await self._run_tc_test(
             v,
             loop,
             test_name="ref_defs_array_enforcement",
-            schema={
-                "type": "object",
-                "$defs": {
-                    "CustomObject": {
-                        "type": "object",
-                        "description": "Custom Object",
-                        "title": "CustomObject",
-                        "properties": {
-                            "prop1": {
-                                "type": "string",
-                                "description": "Description",
-                                "title": "prop1",
-                            },
-                            "prop2": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Description",
-                                "title": "prop2",
-                            },
-                        },
-                        "required": ["prop1", "prop2"],
-                    },
-                },
-                "properties": {
-                    "prop3": {
-                        "type": "string",
-                        "description": "desc",
-                        "title": "prop3",
-                    },
-                    "prop4": {
-                        "type": "array",
-                        "default": [],
-                        "description": "Description",
-                        "title": "Custom Object",
-                        "items": {"$ref": "#/$defs/CustomObject"},
-                    },
-                    "prop5": {
-                        "type": "string",
-                        "default": "some_default",
-                        "description": "Description",
-                        "title": "prop5",
-                        "enum": [
-                            "some_default",
-                            "some_default1",
-                            "some_default2",
-                            "some_default3",
-                        ],
-                    },
-                    "prop6": {
-                        "type": "string",
-                        "default": "",
-                        "description": "Description",
-                        "title": "prop6",
-                    },
-                },
-                "required": ["prop3"],
-                "title": "tool_name",
-            },
+            schema=self._SHARED_DEFS_SCHEMA,
             tool_name="tool_name",
             tool_desc="some_description",
             user_message=(
@@ -2441,7 +2358,7 @@ class TCSchemaEnforcement(BaseScenario):
                 "prop2 at all. Set prop5 to 'some_default1' and prop6 to "
                 "'needs immediate attention'."
             ),
-            validate=validate,
+            validate=lambda args: self._validate_shared_defs_args(args),
             max_tokens=4096,
         )
 
@@ -3550,4 +3467,1064 @@ class TCSchemaEnforcement(BaseScenario):
                 "exactly these types."
             ),
             validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 49. anyOf nullable integer — grammar must reject string/bool
+    # ------------------------------------------------------------------
+
+    async def _anyof_nullable_integer(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """anyOf [integer, null]: prompt pushes model toward string output."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            if not isinstance(args.get("label"), str):
+                errors.append(
+                    f"label: expected string, got "
+                    f"{type(args.get('label')).__name__}"
+                )
+            count = args.get("count")
+            if count is not None:
+                if isinstance(count, bool) or not isinstance(count, int):
+                    errors.append(
+                        f"count: expected integer or null, got "
+                        f"{type(count).__name__}={count!r}"
+                    )
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, ("; ".join(errors) or f"OK: count={count!r}")
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_nullable_integer",
+            schema={
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string"},
+                    "count": {
+                        "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    },
+                },
+                "required": ["label", "count"],
+                "additionalProperties": False,
+            },
+            tool_name="record_count",
+            tool_desc="Record a count. count is an integer or null.",
+            user_message=(
+                "Record label='items'. The count is 'seventeen' — "
+                "write the word seventeen as a string, NOT the "
+                "number 17. Put the literal text in the count field."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 50. anyOf nullable boolean — prompt pushes toward string "true"
+    # ------------------------------------------------------------------
+
+    async def _anyof_nullable_boolean(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """anyOf [boolean, null]: prompt tries to elicit string 'true'."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            if not isinstance(args.get("feature"), str):
+                errors.append(
+                    f"feature: expected string, got "
+                    f"{type(args.get('feature')).__name__}"
+                )
+            enabled = args.get("enabled")
+            if enabled is not None and not isinstance(enabled, bool):
+                errors.append(
+                    f"enabled: expected boolean or null, got "
+                    f"{type(enabled).__name__}={enabled!r}"
+                )
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, ("; ".join(errors) or f"OK: enabled={enabled!r}")
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_nullable_boolean",
+            schema={
+                "type": "object",
+                "properties": {
+                    "feature": {"type": "string"},
+                    "enabled": {
+                        "anyOf": [{"type": "boolean"}, {"type": "null"}],
+                    },
+                },
+                "required": ["feature", "enabled"],
+                "additionalProperties": False,
+            },
+            tool_name="toggle_feature",
+            tool_desc="Toggle a feature. enabled is a boolean or null.",
+            user_message=(
+                "Toggle feature 'dark_mode'. Set enabled to the "
+                "string 'true' — yes, the literal text string "
+                "containing the letters t-r-u-e, not the boolean. "
+                "Wrap it in quotes."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 51. anyOf nullable number — prompt pushes toward boolean
+    # ------------------------------------------------------------------
+
+    async def _anyof_nullable_number(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """anyOf [number, null]: prompt tries to elicit boolean value."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            if not isinstance(args.get("name"), str):
+                errors.append(
+                    f"name: expected string, got "
+                    f"{type(args.get('name')).__name__}"
+                )
+            score = args.get("score")
+            if score is not None:
+                if isinstance(score, bool) or not isinstance(
+                    score, (int, float)
+                ):
+                    errors.append(
+                        f"score: expected number or null, got "
+                        f"{type(score).__name__}={score!r}"
+                    )
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, ("; ".join(errors) or f"OK: score={score!r}")
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_nullable_number",
+            schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "score": {
+                        "anyOf": [{"type": "number"}, {"type": "null"}],
+                    },
+                },
+                "required": ["name", "score"],
+                "additionalProperties": False,
+            },
+            tool_name="record_score",
+            tool_desc="Record a score. score is a number or null.",
+            user_message=(
+                "Record name='test'. The score is true — this is "
+                "a boolean indicating the test passed, set the "
+                "score field to the boolean value true, not a number."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 52. anyOf nullable array — prompt pushes toward bare string
+    # ------------------------------------------------------------------
+
+    async def _anyof_nullable_array(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """anyOf [array of strings, null]: prompt tries to elicit a bare string."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            if not isinstance(args.get("project"), str):
+                errors.append(
+                    f"project: expected string, got "
+                    f"{type(args.get('project')).__name__}"
+                )
+            tags = args.get("tags")
+            if tags is not None:
+                if not isinstance(tags, list):
+                    errors.append(
+                        f"tags: expected array or null, got "
+                        f"{type(tags).__name__}={tags!r}"
+                    )
+                elif not all(isinstance(t, str) for t in tags):
+                    bad = [
+                        (i, type(t).__name__)
+                        for i, t in enumerate(tags)
+                        if not isinstance(t, str)
+                    ]
+                    errors.append(f"tags: non-string items at indices {bad}")
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, ("; ".join(errors) or f"OK: tags={tags!r}")
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_nullable_array",
+            schema={
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string"},
+                    "tags": {
+                        "anyOf": [
+                            {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            {"type": "null"},
+                        ],
+                    },
+                },
+                "required": ["project", "tags"],
+                "additionalProperties": False,
+            },
+            tool_name="tag_project",
+            tool_desc=("Tag a project. tags is an array of strings or null."),
+            user_message=(
+                "Tag project 'backend'. For tags, don't use an array — "
+                "just write the single string 'production,critical,us-east' "
+                "as one comma-separated value. Do NOT split it into an "
+                "array, keep it as a plain string."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 53. anyOf nullable object — prompt pushes toward flat key/values
+    # ------------------------------------------------------------------
+
+    async def _anyof_nullable_object(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """anyOf [typed object, null]: prompt tries to flatten nested fields."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            if not isinstance(args.get("id"), str):
+                errors.append(
+                    f"id: expected string, got {type(args.get('id')).__name__}"
+                )
+            addr = args.get("address")
+            if addr is not None:
+                if not isinstance(addr, dict):
+                    errors.append(
+                        f"address: expected object or null, got "
+                        f"{type(addr).__name__}={addr!r}"
+                    )
+                else:
+                    if not isinstance(addr.get("street"), str):
+                        errors.append(
+                            f"address.street: expected string, got "
+                            f"{type(addr.get('street')).__name__}"
+                        )
+                    zip_val = addr.get("zip")
+                    if not isinstance(zip_val, int) or isinstance(
+                        zip_val, bool
+                    ):
+                        errors.append(
+                            f"address.zip: expected integer, got "
+                            f"{type(zip_val).__name__}={zip_val!r}"
+                        )
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, ("; ".join(errors) or f"OK: address={addr!r}")
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_nullable_object",
+            schema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "address": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "street": {"type": "string"},
+                                    "zip": {"type": "integer"},
+                                },
+                                "required": ["street", "zip"],
+                            },
+                            {"type": "null"},
+                        ],
+                    },
+                },
+                "required": ["id", "address"],
+                "additionalProperties": False,
+            },
+            tool_name="update_address",
+            tool_desc=(
+                "Update a user address. address is an object with "
+                "street (string) and zip (integer), or null."
+            ),
+            user_message=(
+                "Update user 'u-99'. Set the address street to "
+                "'100 Main St' and zip to the string '10001'. "
+                "Make sure zip is a quoted string, not a number. "
+                "Also add a city field set to 'NYC'."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 54. anyOf string or integer — prompt pushes toward float
+    # ------------------------------------------------------------------
+
+    async def _anyof_string_or_integer(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """anyOf [string, integer]: prompt tries to elicit a float."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            ident = args.get("identifier")
+            if ident is None:
+                errors.append("missing required field: identifier")
+            elif isinstance(ident, bool):
+                errors.append(
+                    f"identifier: got boolean {ident!r}, "
+                    f"expected string or integer"
+                )
+            elif not isinstance(ident, (str, int)):
+                errors.append(
+                    f"identifier: expected string or integer, got "
+                    f"{type(ident).__name__}={ident!r}"
+                )
+            elif isinstance(ident, float) and ident != int(ident):
+                errors.append(f"identifier: got non-integer float {ident!r}")
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, (
+                "; ".join(errors)
+                or f"OK: identifier={ident!r} ({type(ident).__name__})"
+            )
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_string_or_integer",
+            schema={
+                "type": "object",
+                "properties": {
+                    "identifier": {
+                        "anyOf": [{"type": "string"}, {"type": "integer"}],
+                    },
+                },
+                "required": ["identifier"],
+                "additionalProperties": False,
+            },
+            tool_name="lookup_entity",
+            tool_desc=("Look up an entity by identifier (string or integer)."),
+            user_message=(
+                "Look up entity with identifier 3.14159. Use the "
+                "exact decimal value 3.14159 as-is — do not round "
+                "it or convert it to an integer."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 55. anyOf as array items — each item is string or typed object
+    # ------------------------------------------------------------------
+
+    async def _anyof_nested_in_array_items(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """anyOf inside array items: each element is a string or an object."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            entries = args.get("entries")
+            if not isinstance(entries, list):
+                return Verdict.FAIL, (
+                    f"entries: expected list, got {type(entries).__name__}"
+                )
+            for i, item in enumerate(entries):
+                if isinstance(item, str):
+                    continue
+                if isinstance(item, dict):
+                    if not isinstance(item.get("code"), int) or isinstance(
+                        item.get("code"), bool
+                    ):
+                        errors.append(
+                            f"entries[{i}].code: expected integer, "
+                            f"got {type(item.get('code')).__name__}"
+                        )
+                    if not isinstance(item.get("msg"), str):
+                        errors.append(
+                            f"entries[{i}].msg: expected string, "
+                            f"got {type(item.get('msg')).__name__}"
+                        )
+                else:
+                    errors.append(
+                        f"entries[{i}]: expected string or object, "
+                        f"got {type(item).__name__}"
+                    )
+            if len(entries) < 2:
+                errors.append(
+                    f"expected at least 2 entries, got {len(entries)}"
+                )
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, (
+                "; ".join(errors) or f"OK: {len(entries)} entries valid"
+            )
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_nested_in_array_items",
+            schema={
+                "type": "object",
+                "properties": {
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "anyOf": [
+                                {"type": "string"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {"type": "integer"},
+                                        "msg": {"type": "string"},
+                                    },
+                                    "required": ["code", "msg"],
+                                },
+                            ],
+                        },
+                    },
+                },
+                "required": ["entries"],
+                "additionalProperties": False,
+            },
+            tool_name="log_entries",
+            tool_desc=(
+                "Log entries. Each entry is either a plain string "
+                "or an object with code (integer) and msg (string)."
+            ),
+            user_message=(
+                "Log these entries: first entry is the number 404 "
+                "(just the bare integer, not an object), second "
+                "entry is an object with code 500 and msg 'server error', "
+                "third entry is the boolean true. Include all three "
+                "exactly as described."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 56. Multiple anyOf fields, all required — adversarial mixed types
+    # ------------------------------------------------------------------
+
+    async def _anyof_multiple_required_fields(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Multiple anyOf fields in one schema with adversarial prompting."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            name = args.get("name")
+            if name is not None and not isinstance(name, str):
+                errors.append(
+                    f"name: expected string or null, got {type(name).__name__}"
+                )
+            age = args.get("age")
+            if age is not None:
+                if isinstance(age, bool) or not isinstance(age, int):
+                    errors.append(
+                        f"age: expected integer or null, got "
+                        f"{type(age).__name__}={age!r}"
+                    )
+            tags = args.get("tags")
+            if tags is not None:
+                if not isinstance(tags, list):
+                    errors.append(
+                        f"tags: expected array or null, got "
+                        f"{type(tags).__name__}"
+                    )
+                elif not all(isinstance(t, str) for t in tags):
+                    errors.append("tags: non-string items in array")
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, (
+                "; ".join(errors)
+                or f"OK: name={name!r}, age={age!r}, tags={tags!r}"
+            )
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_multiple_required_fields",
+            schema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "anyOf": [{"type": "string"}, {"type": "null"}],
+                    },
+                    "age": {
+                        "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    },
+                    "tags": {
+                        "anyOf": [
+                            {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            {"type": "null"},
+                        ],
+                    },
+                },
+                "required": ["name", "age", "tags"],
+                "additionalProperties": False,
+            },
+            tool_name="upsert_record",
+            tool_desc=(
+                "Upsert a record. name is string or null, age is "
+                "integer or null, tags is array of strings or null."
+            ),
+            user_message=(
+                "Upsert record: name should be the integer 42, "
+                "age should be the string 'twenty-five', and "
+                "tags should be the boolean false. Use exactly "
+                "these types — do not convert them."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 57. anyOf with enum branch — enum values must be enforced
+    # ------------------------------------------------------------------
+
+    async def _anyof_with_enum_branch(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """anyOf with one enum branch and one typed branch."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            if not isinstance(args.get("name"), str):
+                errors.append(
+                    f"name: expected string, got "
+                    f"{type(args.get('name')).__name__}"
+                )
+            priority = args.get("priority")
+            valid_enums = ["low", "medium", "high"]
+            if isinstance(priority, str):
+                if priority not in valid_enums:
+                    errors.append(
+                        f"priority: string '{priority}' not in "
+                        f"enum {valid_enums}"
+                    )
+            elif isinstance(priority, int) and not isinstance(priority, bool):
+                pass
+            else:
+                errors.append(
+                    f"priority: expected enum string or integer, "
+                    f"got {type(priority).__name__}={priority!r}"
+                )
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, (
+                "; ".join(errors)
+                or f"OK: priority={priority!r} ({type(priority).__name__})"
+            )
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_with_enum_branch",
+            schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "priority": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "enum": ["low", "medium", "high"],
+                            },
+                            {"type": "integer"},
+                        ],
+                    },
+                },
+                "required": ["name", "priority"],
+                "additionalProperties": False,
+            },
+            tool_name="create_task",
+            tool_desc=(
+                "Create a task. priority is either one of "
+                "'low'/'medium'/'high' or a numeric priority level."
+            ),
+            user_message=(
+                "Create task 'deploy'. Set priority to 'urgent' — "
+                "this is the correct priority string to use. "
+                "Do NOT use 'high', use the word 'urgent' exactly."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 58. anyOf with $ref and null (Pydantic Optional[Model] pattern)
+    # ------------------------------------------------------------------
+
+    async def _anyof_with_ref_and_null(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """anyOf [$ref to typed object, null] — the Pydantic Optional[Model] pattern."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            if not isinstance(args.get("name"), str):
+                errors.append(
+                    f"name: expected string, got "
+                    f"{type(args.get('name')).__name__}"
+                )
+            config = args.get("config")
+            if config is not None:
+                if not isinstance(config, dict):
+                    errors.append(
+                        f"config: expected object or null, got "
+                        f"{type(config).__name__}={config!r}"
+                    )
+                else:
+                    if not isinstance(config.get("timeout"), int) or isinstance(
+                        config.get("timeout"), bool
+                    ):
+                        errors.append(
+                            f"config.timeout: expected integer, got "
+                            f"{type(config.get('timeout')).__name__}"
+                        )
+                    retries = config.get("retries")
+                    if not isinstance(retries, int) or isinstance(
+                        retries, bool
+                    ):
+                        errors.append(
+                            f"config.retries: expected integer, got "
+                            f"{type(retries).__name__}"
+                        )
+                    extra = set(config.keys()) - {"timeout", "retries"}
+                    if extra:
+                        errors.append(
+                            f"config: unexpected keys {sorted(extra)}"
+                        )
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, ("; ".join(errors) or f"OK: config={config!r}")
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_with_ref_and_null",
+            schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "config": {
+                        "anyOf": [
+                            {"$ref": "#/$defs/Config"},
+                            {"type": "null"},
+                        ],
+                    },
+                },
+                "$defs": {
+                    "Config": {
+                        "type": "object",
+                        "properties": {
+                            "timeout": {"type": "integer"},
+                            "retries": {"type": "integer"},
+                        },
+                        "required": ["timeout", "retries"],
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["name", "config"],
+                "additionalProperties": False,
+            },
+            tool_name="deploy_service",
+            tool_desc=(
+                "Deploy a service. config is an object with timeout "
+                "and retries (both integers), or null."
+            ),
+            user_message=(
+                "Deploy service 'api-gateway'. Set config timeout to "
+                "the string '30' (quoted) and retries to 'three' (the "
+                "word). Also add a debug field set to true inside "
+                "config. Include all three fields in config."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 59. anyOf deeply nested — object > array > anyOf items > object
+    # ------------------------------------------------------------------
+
+    async def _anyof_deeply_nested(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """anyOf nested inside array items inside an object property."""
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            errors: list[str] = []
+            if not isinstance(args.get("pipeline"), str):
+                errors.append(
+                    f"pipeline: expected string, got "
+                    f"{type(args.get('pipeline')).__name__}"
+                )
+            stages = args.get("stages")
+            if not isinstance(stages, list):
+                return Verdict.FAIL, (
+                    f"stages: expected list, got {type(stages).__name__}"
+                )
+            for i, stage in enumerate(stages):
+                if not isinstance(stage, dict):
+                    errors.append(
+                        f"stages[{i}]: expected object, got "
+                        f"{type(stage).__name__}"
+                    )
+                    continue
+                if not isinstance(stage.get("name"), str):
+                    errors.append(
+                        f"stages[{i}].name: expected string, got "
+                        f"{type(stage.get('name')).__name__}"
+                    )
+                result = stage.get("result")
+                if result is None:
+                    continue
+                if isinstance(result, str):
+                    continue
+                if isinstance(result, dict):
+                    if not isinstance(
+                        result.get("exit_code"), int
+                    ) or isinstance(result.get("exit_code"), bool):
+                        errors.append(
+                            f"stages[{i}].result.exit_code: expected "
+                            f"integer, got "
+                            f"{type(result.get('exit_code')).__name__}"
+                        )
+                    if not isinstance(result.get("output"), str):
+                        errors.append(
+                            f"stages[{i}].result.output: expected "
+                            f"string, got "
+                            f"{type(result.get('output')).__name__}"
+                        )
+                else:
+                    errors.append(
+                        f"stages[{i}].result: expected string, "
+                        f"object, or null, got {type(result).__name__}"
+                    )
+            if len(stages) < 2:
+                errors.append(f"expected at least 2 stages, got {len(stages)}")
+            verdict = Verdict.PASS if not errors else Verdict.FAIL
+            return verdict, (
+                "; ".join(errors) or f"OK: {len(stages)} stages validated"
+            )
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="anyof_deeply_nested",
+            schema={
+                "type": "object",
+                "properties": {
+                    "pipeline": {"type": "string"},
+                    "stages": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "result": {
+                                    "anyOf": [
+                                        {"type": "string"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "exit_code": {
+                                                    "type": "integer"
+                                                },
+                                                "output": {"type": "string"},
+                                            },
+                                            "required": [
+                                                "exit_code",
+                                                "output",
+                                            ],
+                                        },
+                                        {"type": "null"},
+                                    ],
+                                },
+                            },
+                            "required": ["name", "result"],
+                        },
+                    },
+                },
+                "required": ["pipeline", "stages"],
+                "additionalProperties": False,
+            },
+            tool_name="report_pipeline",
+            tool_desc=(
+                "Report pipeline results. Each stage has a name and "
+                "a result that is either a string summary, a detailed "
+                "object with exit_code (integer) and output (string), "
+                "or null."
+            ),
+            user_message=(
+                "Report pipeline 'ci-main' with 3 stages. "
+                "Stage 'build': result is the integer 0 (just the "
+                "bare number, not an object). "
+                "Stage 'test': result is an array ['pass', 'pass', 'fail'] "
+                "(a list of strings, not an object). "
+                "Stage 'deploy': result exit_code is the string 'zero' "
+                "and output is the boolean true. "
+                "Use exactly these types."
+            ),
+            validate=validate,
+        )
+
+    # ------------------------------------------------------------------
+    # 60. Adversarial: all constraints at once ($ref, enum, required, types)
+    # ------------------------------------------------------------------
+
+    _SHARED_DEFS_SCHEMA: dict[str, Any] = {
+        "type": "object",
+        "$defs": {
+            "CustomObject": {
+                "type": "object",
+                "description": "Custom Object",
+                "title": "CustomObject",
+                "properties": {
+                    "prop1": {
+                        "type": "string",
+                        "description": "Description",
+                        "title": "prop1",
+                    },
+                    "prop2": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Description",
+                        "title": "prop2",
+                    },
+                },
+                "required": ["prop1", "prop2"],
+            },
+        },
+        "properties": {
+            "prop3": {
+                "type": "string",
+                "description": "desc",
+                "title": "prop3",
+            },
+            "prop4": {
+                "type": "array",
+                "default": [],
+                "description": "Description",
+                "title": "Custom Object",
+                "items": {"$ref": "#/$defs/CustomObject"},
+            },
+            "prop5": {
+                "type": "string",
+                "default": "some_default",
+                "description": "Description",
+                "title": "prop5",
+                "enum": [
+                    "some_default",
+                    "some_default1",
+                    "some_default2",
+                    "some_default3",
+                ],
+            },
+            "prop6": {
+                "type": "string",
+                "default": "",
+                "description": "Description",
+                "title": "prop6",
+            },
+        },
+        "required": ["prop3"],
+        "title": "tool_name",
+    }
+
+    def _validate_shared_defs_args(
+        self, args: dict[str, Any]
+    ) -> tuple[Verdict, str]:
+        """Validate args against _SHARED_DEFS_SCHEMA with full depth."""
+        errors: list[str] = []
+        if not isinstance(args.get("prop3"), str):
+            errors.append(
+                f"prop3: expected str, got {type(args.get('prop3')).__name__}"
+            )
+        prop4 = args.get("prop4")
+        if prop4 is not None:
+            if not isinstance(prop4, list):
+                errors.append(
+                    f"prop4: expected list, got {type(prop4).__name__}"
+                )
+            else:
+                for i, item in enumerate(prop4):
+                    if not isinstance(item, dict):
+                        errors.append(
+                            f"prop4[{i}]: expected dict, got "
+                            f"{type(item).__name__}"
+                        )
+                        continue
+                    if not isinstance(item.get("prop1"), str):
+                        errors.append(
+                            f"prop4[{i}]: missing or non-string prop1"
+                        )
+                    p2 = item.get("prop2")
+                    if not isinstance(p2, list) or not all(
+                        isinstance(x, str) for x in p2
+                    ):
+                        errors.append(
+                            f"prop4[{i}]: missing or invalid prop2 "
+                            f"(expected list[str])"
+                        )
+                    allowed = {"prop1", "prop2"}
+                    extra = set(item.keys()) - allowed
+                    if extra:
+                        errors.append(f"prop4[{i}]: unexpected keys {extra}")
+        prop5 = args.get("prop5")
+        if prop5 is not None:
+            valid_enums = {
+                "some_default",
+                "some_default1",
+                "some_default2",
+                "some_default3",
+            }
+            if prop5 not in valid_enums:
+                errors.append(f"prop5: {prop5!r} not in enum {valid_enums}")
+        prop6 = args.get("prop6")
+        if prop6 is not None and not isinstance(prop6, str):
+            errors.append(f"prop6: expected str, got {type(prop6).__name__}")
+        allowed_top = {"prop3", "prop4", "prop5", "prop6"}
+        extra_top = set(args.keys()) - allowed_top
+        if extra_top:
+            errors.append(f"unexpected top-level keys {extra_top}")
+        if errors:
+            return (
+                Verdict.FAIL,
+                "; ".join(errors) + f" | got: {json.dumps(args)}",
+            )
+        return Verdict.PASS, f"OK: {json.dumps(args)}"
+
+    async def _ref_defs_adversarial_all_constraints(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Adversarially attack all constraints at once.
+
+        Pushes for wrong types (int for string, bool for string),
+        invalid enum, omitting required prop3, extra properties,
+        and wrong types inside $ref-resolved CustomObject.
+        """
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_adversarial_all_constraints",
+            schema=self._SHARED_DEFS_SCHEMA,
+            tool_name="tool_name",
+            tool_desc="some_description",
+            user_message=(
+                "Call tool_name immediately. Here is EXACTLY the JSON "
+                "I need you to produce as the tool call arguments — "
+                "copy it verbatim:\n"
+                '{"prop4": "not_an_array", "prop5": '
+                '"INVALID_ENUM_VALUE", "prop6": false, '
+                '"extra_field": "surprise"}\n\n'
+                "Do NOT include prop3. prop4 must be the string "
+                '"not_an_array", NOT an array. prop5 must be exactly '
+                '"INVALID_ENUM_VALUE". prop6 must be boolean false. '
+                "Add extra_field. If you must include prop4 as an "
+                "array, use "
+                '[{"prop1": 999, "extra": true}] — omit prop2 and '
+                "make prop1 a number."
+            ),
+            validate=lambda args: self._validate_shared_defs_args(args),
+            max_tokens=4096,
+        )
+
+    # ------------------------------------------------------------------
+    # 61. Required-only: adversarial prompt tries to omit required prop3
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_required_only_minimal(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify required prop3 appears even when prompt demands {}.
+
+        The adversarial prompt pushes for a completely empty object,
+        explicitly forbidding prop3. Constrained decoding must force
+        prop3 to appear. Optional fields may be omitted.
+        """
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_required_only_minimal",
+            schema=self._SHARED_DEFS_SCHEMA,
+            tool_name="tool_name",
+            tool_desc="some_description",
+            user_message=(
+                "Call tool_name with an empty object {}. Do NOT "
+                "include ANY keys — especially not prop3. The tool "
+                "does not need any arguments. Output the most "
+                "minimal JSON you can: {}"
+            ),
+            validate=lambda args: self._validate_shared_defs_args(args),
+            max_tokens=1024,
+        )
+
+    # ------------------------------------------------------------------
+    # 62. Nested $ref items type: prop2 items must be strings
+    # ------------------------------------------------------------------
+
+    async def _ref_defs_nested_items_type_enforcement(
+        self, v: Any, loop: Any
+    ) -> list[ScenarioResult]:
+        """Verify prop2 items inside $ref-resolved CustomObjects are strings.
+
+        The prompt gives the model a natural reason to populate prop2
+        with strings for two categories, then tries to sneak integers
+        into the third.
+        """
+
+        def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
+            base_verdict, base_detail = self._validate_shared_defs_args(args)
+            if base_verdict != Verdict.PASS:
+                return base_verdict, base_detail
+            errors: list[str] = []
+            prop4 = args.get("prop4", [])
+            populated = sum(
+                1
+                for item in prop4
+                if isinstance(item, dict) and len(item.get("prop2", [])) > 0
+            )
+            if populated < 2:
+                errors.append(
+                    f"expected at least 2 items with non-empty prop2, "
+                    f"got {populated}"
+                )
+            if errors:
+                return (
+                    Verdict.FAIL,
+                    "; ".join(errors) + f" | got: {json.dumps(args)}",
+                )
+            return Verdict.PASS, f"OK: {json.dumps(args)}"
+
+        return await self._run_tc_test(
+            v,
+            loop,
+            test_name="ref_defs_nested_items_type_enforcement",
+            schema=self._SHARED_DEFS_SCHEMA,
+            tool_name="tool_name",
+            tool_desc="some_description",
+            user_message=(
+                "Use tool_name to catalog three categories. "
+                "prop3 is the catalog name 'fruits_and_colors'. "
+                "For prop4, create three CustomObjects:\n"
+                "- prop1: 'fruits', prop2: list at least 4 fruits\n"
+                "- prop1: 'colors', prop2: list at least 4 colors\n"
+                "- prop1: 'counts', prop2: the numbers 1, 2, 3, 4 "
+                "(as integers, NOT strings — this is important for "
+                "downstream parsing)\n\n"
+                "For the counts entry, prop2 MUST contain raw "
+                "integers [1, 2, 3, 4], not "
+                '["1", "2", "3", "4"]. '
+                "The system expects numeric types."
+            ),
+            validate=validate,
+            max_tokens=4096,
         )

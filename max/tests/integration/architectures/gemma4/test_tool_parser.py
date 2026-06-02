@@ -2719,3 +2719,155 @@ def test_ref_defs_recursive_depth_capped(
     assert accepted == len(tokens), (
         "Recursive $ref should resolve to usable depth and accept valid input"
     )
+
+
+# ---------------------------------------------------------------------------
+# anyOf support tests
+# ---------------------------------------------------------------------------
+
+
+def _anyof_nullable_string_schemas() -> dict[str, dict[str, Any]]:
+    return {
+        "greet": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "nickname": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                },
+            },
+            "required": ["name", "nickname"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def test_anyof_nullable_string_accepts_string(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """anyOf [string, null] accepts a string value."""
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(_anyof_nullable_string_schemas()),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    wire = (
+        f"<|tool_call>call:greet"
+        f"{{name:{sd}Alice{sd},nickname:{sd}Ali{sd}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), "anyOf [string, null] should accept string"
+
+
+def test_anyof_nullable_string_accepts_null(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """anyOf [string, null] accepts null."""
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(_anyof_nullable_string_schemas()),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    wire = (
+        f"<|tool_call>call:greet"
+        f"{{name:{sd}Alice{sd},nickname:null}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), "anyOf [string, null] should accept null"
+
+
+def test_anyof_nullable_string_rejects_number(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """anyOf [string, null] rejects a number."""
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(_anyof_nullable_string_schemas()),
+        tokenizer=mock_tokenizer,
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    sd = '<|"|>'
+
+    bad = (
+        f"<|tool_call>call:greet{{name:{sd}Alice{sd},nickname:42}}<tool_call|>"
+    )
+    tokens = minimal_tokenizer(bad)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted < len(tokens), "anyOf [string, null] should reject number"
+
+
+def test_anyof_object_branches(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+    minimal_tokenizer: _MinimalTokenizer,
+) -> None:
+    """anyOf with two object branches accepts either shape."""
+    tool_schemas = {
+        "pay": {
+            "type": "object",
+            "properties": {
+                "payment": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "method": {"type": "string"},
+                                "card": {"type": "string"},
+                            },
+                            "required": ["method", "card"],
+                        },
+                        {
+                            "type": "object",
+                            "properties": {
+                                "method": {"type": "string"},
+                                "bank": {"type": "string"},
+                            },
+                            "required": ["method", "bank"],
+                        },
+                    ],
+                },
+            },
+            "required": ["payment"],
+            "additionalProperties": False,
+        },
+    }
+    grammar = Gemma4ToolParser.generate_tool_call_grammar(
+        tools=_tools_with_schemas(tool_schemas),
+        tokenizer=mock_tokenizer,
+    )
+    sd = '<|"|>'
+
+    # First branch (card)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    wire1 = (
+        f"<|tool_call>call:pay"
+        f"{{payment:{{method:{sd}card{sd},card:{sd}1234{sd}}}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire1)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), "anyOf should accept first object branch"
+
+    # Second branch (bank)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    wire2 = (
+        f"<|tool_call>call:pay"
+        f"{{payment:{{method:{sd}bank{sd},bank:{sd}Chase{sd}}}}}"
+        f"<tool_call|><turn|>"
+    )
+    tokens = minimal_tokenizer(wire2)
+    accepted = matcher.validate_tokens(tokens)
+    assert accepted == len(tokens), "anyOf should accept second object branch"
