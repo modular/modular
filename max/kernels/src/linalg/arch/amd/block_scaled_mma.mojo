@@ -19,12 +19,13 @@ E8M0 words.
 """
 
 from std.memory import bitcast
-from std.sys import llvm_intrinsic
+from std.os import abort
+from std.sys import llvm_intrinsic, size_of
 from std.sys.info import _cdna_4_or_newer
 
 
 @fieldwise_init
-struct CDNA4F8F6F4MatrixFormat(TrivialRegisterPassable):
+struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
     """Represents the CDNA4 `f8f6f4` operand format selector."""
 
     var _value: Int32
@@ -38,6 +39,22 @@ struct CDNA4F8F6F4MatrixFormat(TrivialRegisterPassable):
     def __init__(out self, value: Int):
         self._value = Int32(value)
 
+    def __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    def simd_width(self) -> SIMDSize:
+        if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3:
+            return 32
+        if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E5M2:
+            return 32
+        if self == CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3:
+            return 24
+        if self == CDNA4F8F6F4MatrixFormat.FLOAT6_E3M2:
+            return 24
+        if self == CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1:
+            return 16
+        abort("invalid matrix format")
+
 
 @always_inline
 def cdna4_block_scaled_mfma[
@@ -47,8 +64,8 @@ def cdna4_block_scaled_mfma[
     b_matrix_format: CDNA4F8F6F4MatrixFormat,
 ](
     mut d: SIMD[DType.float32, _],
-    a: SIMD[DType.uint8, 32],
-    b: SIMD[DType.uint8, 32],
+    a: SIMD[DType.uint8, _],
+    b: SIMD[DType.uint8, _],
     packed_scale_word_a: Int32,
     packed_scale_word_b: Int32,
 ):
@@ -64,6 +81,9 @@ def cdna4_block_scaled_mfma[
     comptime assert (
         d.size == 16 or d.size == 4
     ), "accumulator width must be 16 (32x32x64) or 4 (16x16x128)"
+    comptime assert a.size == a_matrix_format.simd_width(), "bad a width"
+    comptime assert b.size == b_matrix_format.simd_width(), "bad b width"
+
     comptime intrinsic = (
         "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4" if d.size
         == 16 else "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4"
@@ -75,8 +95,8 @@ def cdna4_block_scaled_mfma[
         intrinsic,
         SIMD[DType.float32, d.size],
     ](
-        bitcast[DType.int32, 8](a),
-        bitcast[DType.int32, 8](b),
+        bitcast[DType.int32, a.size // size_of[DType.int32]()](a),
+        bitcast[DType.int32, b.size // size_of[DType.int32]()](b),
         d,
         a_matrix_format,
         b_matrix_format,

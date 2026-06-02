@@ -38,10 +38,6 @@ from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 
 from std.utils import IndexList, StaticTuple
-from linalg.arch.amd.block_scaled_mma import (
-    CDNA4F8F6F4MatrixFormat,
-    cdna4_block_scaled_mfma,
-)
 from structured_kernels.amd_tile_io import RegTileLoader, RegTileWriter
 
 from .mxfp4_matmul_amd import BlockScaledMmaOp, MX_BLOCK_SIZE

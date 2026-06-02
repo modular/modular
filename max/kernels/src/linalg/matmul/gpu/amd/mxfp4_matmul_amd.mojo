@@ -425,17 +425,12 @@ struct BlockScaledMmaOp[
                     + n * Self.c_frag_size
                 )
 
-                var a_data = self._a_reg.raw_load[
+                var a_frag = self._a_reg.raw_load[
                     width=Self.mma_frag_width_bytes
                 ](a_off)
-                var b_data = self._b_reg.raw_load[
+                var b_frag = self._b_reg.raw_load[
                     width=Self.mma_frag_width_bytes
                 ](b_off)
-
-                var a_frag = SIMD[DType.uint8, 32](0)
-                var b_frag = SIMD[DType.uint8, 32](0)
-                a_frag = a_frag.insert[offset=0](a_data)
-                b_frag = b_frag.insert[offset=0](b_data)
 
                 var c_frag = self._c_reg.raw_load[width=Self.c_frag_size](c_off)
 
