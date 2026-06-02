@@ -42,15 +42,6 @@ _CPU_EXTRA_CONSTRAINTS = {
     "test_copies.mojo": _MACOS_INCOMPATIBLE,
 }
 
-# Tests that allocate only trivial amounts of device memory and don't need to
-# participate in remote-runner GPU memory accounting. Skipping the
-# `gpu-memory` resource also lets these tests run on local macOS, where that
-# resource isn't tracked by the bazel resource manager.
-_SKIP_GPU_MEMORY_TRACKING = [
-    "test_device_pointer.mojo",
-    "test_device_pointer_kernel.mojo",
-]
-
 [
     mojo_test(
         name = src + ".test",
@@ -59,7 +50,7 @@ _SKIP_GPU_MEMORY_TRACKING = [
             "-D",
             "MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=gpu",
         ],
-        exec_properties = {} if src in _SKIP_GPU_MEMORY_TRACKING else {
+        exec_properties = {
             "test.resources:gpu-memory": "1.5",
         },
         main = src,
