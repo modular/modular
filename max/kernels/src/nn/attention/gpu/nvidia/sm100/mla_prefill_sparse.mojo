@@ -76,6 +76,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     sub_ftz,
     mul_ftz,
     fma_ftz,
+    exp2_emulation,
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
@@ -879,16 +880,25 @@ struct MLAPrefillSparse[
 
                 # S = exp2(P * scale_log2e - new_max), accumulate li, and
                 # convert to bf16 ready for the SV MMA.
+                #
+                # Emulate exp2 on the FMA pipe instead of calling hardware
+                # `ex2`: the SM100 softmax warpgroup is MUFU-bound on the
+                # critical path, so this is ~14% faster here. Don't replace
+                # with `exp2(d)`.
                 var s_bf16 = InlineArray[Scalar[Self.qkv_dtype], P_PER_THREAD](
                     uninitialized=True
                 )
-                comptime for i in range(P_PER_THREAD):
-                    var d: Float32 = (
-                        rebind[Float32](p[i]) * scale_log2e - new_max
+                var vscale = SIMD[DType.float32, 2](scale_log2e)
+                var vneg_max = SIMD[DType.float32, 2](-new_max)
+                comptime for j in range(P_PER_THREAD // 2):
+                    var pj = SIMD[DType.float32, 2](
+                        rebind[Float32](p[2 * j]),
+                        rebind[Float32](p[2 * j + 1]),
                     )
-                    var ed: Float32 = exp2(d)
-                    li = li + ed
-                    s_bf16[i] = ed.cast[Self.qkv_dtype]()
+                    var ed2 = exp2_emulation(fma_ftz(pj, vscale, vneg_max))
+                    li = li + ed2[0] + ed2[1]
+                    s_bf16[2 * j] = ed2[0].cast[Self.qkv_dtype]()
+                    s_bf16[2 * j + 1] = ed2[1].cast[Self.qkv_dtype]()
 
                 # Wait until the previous SV MMA has drained the scores
                 # smem before overwriting it. (sv_p1_done implies the
