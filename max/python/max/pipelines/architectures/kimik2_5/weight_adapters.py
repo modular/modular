@@ -133,6 +133,12 @@ _EXPERT_WEIGHT_RE = re.compile(
     r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight$"
 )
 
+_EXPERT_SCALE_RE = re.compile(
+    r"^(?P<prefix>.+\.layers\.\d+\.mlp\.experts)"
+    r"\.(?P<idx>\d+)"
+    r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight_scale$"
+)
+
 
 def _as_shuffleable_mxfp4_b(wd: WeightData) -> np.ndarray | None:
     """Return ``wd`` as a numpy view if it's a shuffleable MXFP4 B weight.
@@ -151,6 +157,29 @@ def _as_shuffleable_mxfp4_b(wd: WeightData) -> np.ndarray | None:
     return arr
 
 
+def _as_shuffleable_mxfp4_b_scale(wd: WeightData) -> np.ndarray | None:
+    """Return ``wd`` as a uint8 view if it's a shuffleable MXFP4 B scale.
+
+    Shuffleable when dtype is E8M0 and dims are cell-aligned for
+    ``Shuffler.scale_4d_grouped_layout``: ``N % 32 == 0`` (S_MN_BLOCK) and
+    ``K_SCALES % 8 == 0`` (S_K_BLOCK). The 2D src reshape used by
+    :func:`_shuffle_scale_4d` hardcodes those factors. Returns ``None``
+    when not shuffleable. E8M0 bytes are reinterpreted as uint8 for byte
+    permutation; the dtype is restored to E8M0 by the caller.
+    """
+    if wd.dtype != DType.float8_e8m0fnu:
+        return None
+    try:
+        arr = np.from_dlpack(wd.data)
+    except (TypeError, BufferError):
+        return None
+    if arr.dtype != np.uint8:
+        arr = arr.view(np.uint8)
+    if arr.ndim != 2 or arr.shape[0] % 32 != 0 or arr.shape[1] % 8 != 0:
+        return None
+    return arr
+
+
 def _shuffle_b_5d(src: np.ndarray, dst: np.ndarray) -> None:
     """Permute MXFP4 expert B bytes into ``Shuffler.b_5d_grouped_layout``.
 
@@ -165,6 +194,27 @@ def _shuffle_b_5d(src: np.ndarray, dst: np.ndarray) -> None:
         0, 2, 3, 1, 4
     )
     dst_v = dst.reshape(N // 16, K_BYTES // 64, 4, 16, 16)
+    np.copyto(dst_v, src_v)
+
+
+def _shuffle_scale_4d(src: np.ndarray, dst: np.ndarray) -> None:
+    """Permute MXFP4 B-scale bytes into ``Shuffler.scale_4d_grouped_layout``.
+
+    Reshape ``[MN, K_SCALES]`` row-major into the 6D decomposition
+    ``(MN_block, MN_pack=2, MN_lane=16, K_block, K_pack=2, K_lane=4)``
+    and transpose into the dst axis order
+    ``(MN_block, K_block, K_lane, MN_lane, K_pack, MN_pack)`` so C-order
+    strides match the 4D-cell byte layout addressed by
+    ``Shuffler.scale_4d_byte_off``. Within each i32 cell the bytes land
+    in ``(mn_pack, k_pack) = {(0,0), (1,0), (0,1), (1,1)}`` order at
+    byte offsets ``{0, 1, 2, 3}`` — what the preb kernel's OPSEL byte
+    selector reads.
+    """
+    MN, K_SCALES = src.shape
+    src_v = src.reshape(MN // 32, 2, 16, K_SCALES // 8, 2, 4).transpose(
+        0, 3, 5, 2, 4, 1
+    )
+    dst_v = dst.reshape(MN // 32, K_SCALES // 8, 4, 16, 2, 2)
     np.copyto(dst_v, src_v)
 
 
@@ -217,6 +267,64 @@ def preshuffle_mxfp4_b_experts(
 
     logger.info(
         "MXFP4 B preshuffle: %d experts across %d groups in %.1fs",
+        n_total,
+        len(groups),
+        time.perf_counter() - t0,
+    )
+
+
+def preshuffle_mxfp4_b_scales(
+    state_dict: dict[str, WeightData],
+) -> None:
+    """MXFP4 B-scale preshuffle of all per-expert scales in-place on CPU.
+
+    Walks ``state_dict``, groups expert scales by ``(prefix, proj)``,
+    rewrites each group's WeightData entries with bytes laid out in
+    ``scale_4d_grouped_layout`` so the AMD preb grouped-matmul kernel
+    can issue direct-VGPR i32 scale loads (one 2x2 cell per lane).
+    Scales whose dtype isn't E8M0 or whose dims aren't cell-aligned
+    (``N % 32 == 0`` and ``K_SCALES % 8 == 0``) are silently skipped.
+
+    Companion to :func:`preshuffle_mxfp4_b_experts`; should be called
+    immediately after it so weight and scale layouts stay in sync.
+    """
+    groups: defaultdict[tuple[str, str], list[str]] = defaultdict(list)
+    for name in state_dict:
+        if m := _EXPERT_SCALE_RE.match(name):
+            groups[m["prefix"], m["proj"]].append(name)
+
+    if not groups:
+        return
+
+    t0 = time.perf_counter()
+    n_total = 0
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for names in groups.values():
+            shuffleable = [
+                (name, arr)
+                for name in names
+                if (arr := _as_shuffleable_mxfp4_b_scale(state_dict[name]))
+                is not None
+            ]
+            if not shuffleable:
+                continue
+
+            kept_names, srcs = zip(*shuffleable, strict=True)
+            MN, K_SCALES = srcs[0].shape
+            buf = np.empty((len(srcs), MN, K_SCALES), dtype=np.uint8)
+            list(pool.map(_shuffle_scale_4d, srcs, buf))
+            for name, slot in zip(kept_names, buf, strict=True):
+                # from_numpy infers uint8 from the slab dtype; restore the
+                # E8M0 metadata so downstream graph-compiler dtype checks
+                # (e.g. grouped_dynamic_scaled_mxfp4_matmul) still pass.
+                state_dict[name] = dataclasses.replace(
+                    WeightData.from_numpy(slot, name=state_dict[name].name),
+                    dtype=DType.float8_e8m0fnu,
+                )
+            n_total += len(srcs)
+
+    logger.info(
+        "MXFP4 B-scale preshuffle: %d experts across %d groups in %.1fs",
         n_total,
         len(groups),
         time.perf_counter() - t0,

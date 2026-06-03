@@ -102,12 +102,12 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
 
         Per-lane usage:
             mn       = warp_mn_off + lane % 16            # mn_lane within block
-            k_scale  = scale_pack_idx * 8 + (lane // 16)  # k_lane within block
+            k_scale  = k_pair_idx * 8 + (lane // 16)      # k_lane within block
         """
         var byte_off = Int32(
-            Shuffler[1].scale_4d_grouped_layout[
-                MN_padded=Self.MN_padded, K_SCALES=Self.K_SCALES
-            ](Coord(Idx[0], mn, k_scale))
+            Shuffler[1].scale_4d_byte_off[
+                K_SCALES=Self.K_SCALES, packed_mode=True
+            ](mn, k_scale)
         )
         var v = self.bc.load[DType.uint8, 4](byte_off)
         return bitcast[DType.int32, 1](v)[0]

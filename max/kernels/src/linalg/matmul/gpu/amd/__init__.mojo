@@ -19,6 +19,7 @@ from .mxfp4_grouped_matmul_amd import (
     mxfp4_grouped_matmul_amd,
     mxfp4_grouped_matmul_amd_preb,
 )
+from .mxfp4_matmul_amd_preb import MXFP4MatmulAMD_PreB
 from .mxfp4_moe_matmul_amd import (
     InputRowMode,
     MXFP4MoERoutedMatmul,

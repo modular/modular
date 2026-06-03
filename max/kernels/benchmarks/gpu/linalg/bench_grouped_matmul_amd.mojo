@@ -23,7 +23,7 @@ algo selects the kernel (all MXFP4):
   - "routed"     -> mxfp4_moe_matmul_amd_routed (scattered sort blocks)
 """
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.memory import bitcast
 from std.os import abort
 from std.random import seed, shuffle
@@ -335,12 +335,6 @@ def bench_dense_preb[
     var b_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
         num_experts * N * packed_K
     )
-    var a_scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        total_routes * scale_K
-    )
-    var b_scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        num_experts * N * scale_K
-    )
     var c_dev = ctx.enqueue_create_buffer[DType.float32](total_routes * N)
     var a_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts + 1
@@ -355,10 +349,6 @@ def bench_dense_preb[
     init_vector_launch[DType.uint8](
         b_pre_dev, num_experts * N * packed_K, init_type, ctx
     )
-
-    # See comment in bench_dense — float8_e8m0fnu has no zero, init_vector_launch fails.
-    ctx.enqueue_memset(a_scales_dev, bitcast[DType.float8_e8m0fnu](UInt8(127)))
-    ctx.enqueue_memset(b_scales_dev, bitcast[DType.float8_e8m0fnu](UInt8(127)))
 
     var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](
         num_active_experts + 1
@@ -375,9 +365,24 @@ def bench_dense_preb[
     var max_tokens_for_kernel = (
         max_tokens_capacity if max_tokens_capacity > 0 else max_count
     )
+    var max_padded_M = align_up(max_tokens_for_kernel, 32)
     ctx.enqueue_copy(a_offsets_dev, a_off_h)
     ctx.enqueue_copy(expert_ids_dev, ei_h)
     ctx.synchronize()
+
+    # Preshuffled scale buffers (uint8 — the dispatcher reads these in
+    # scale-4d byte order via PreshuffledScaleLoader). The bench skips
+    # the actual preshuffle and just fills both with a valid E8M0 byte
+    # (0x7F = magnitude 1) — kernel timing is content-independent, same
+    # as the b_pre random-bytes approach above.
+    var a_sc_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
+        num_experts * max_padded_M * scale_K
+    )
+    var b_sc_pre_dev = ctx.enqueue_create_buffer[DType.uint8](
+        num_experts * N * scale_K
+    )
+    ctx.enqueue_memset(a_sc_pre_dev, UInt8(127))
+    ctx.enqueue_memset(b_sc_pre_dev, UInt8(127))
 
     var a_tt = TileTensor[mut=False](
         a_dev, row_major(Coord(total_routes, Idx[packed_K]))
@@ -385,11 +390,16 @@ def bench_dense_preb[
     var b_pre_tt = TileTensor[mut=False](
         b_pre_dev, row_major[num_experts, N * packed_K]()
     )
+    # Bitcast uint8 → float8_e8m0fnu at the TileTensor wrap to match the
+    # dispatcher signature. The kernel internally re-bitcasts to uint8
+    # for V# construction; the dtype is a wrapping convention.
     var sfa_tt = TileTensor[mut=False](
-        a_scales_dev, row_major(Coord(total_routes, Idx[scale_K]))
+        a_sc_pre_dev.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
     )
     var sfb_tt = TileTensor[mut=False](
-        b_scales_dev, row_major[num_experts, N, scale_K]()
+        b_sc_pre_dev.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        row_major[num_experts, N, scale_K](),
     )
     var aoff_tt = TileTensor(
         a_offsets_dev, row_major(Coord(num_active_experts + 1))
@@ -440,8 +450,8 @@ def bench_dense_preb[
 
     _ = a_dev^
     _ = b_pre_dev^
-    _ = a_scales_dev^
-    _ = b_scales_dev^
+    _ = a_sc_pre_dev^
+    _ = b_sc_pre_dev^
     _ = c_dev^
     _ = a_offsets_dev^
     _ = expert_ids_dev^

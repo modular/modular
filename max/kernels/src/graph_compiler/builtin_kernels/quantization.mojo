@@ -875,6 +875,63 @@ struct Struct_mxfp4_preshuffle_b_5d:
         )
 
 
+@compiler.register("mo.mxfp4.preshuffle.scale.4d_per_expert")
+struct Struct_mxfp4_preshuffle_scale_4d_per_expert:
+    """Per-step A-scale preshuffle for the AMD CDNA4 preb grouped matmul.
+
+    Takes row-major E8M0 A-scales `[total_tokens, K_SCALES]` and writes
+    cell-packed scales into per-expert fixed-stride slots of size
+    `max_padded_M = align_up(max_num_tokens_per_expert, 32)`. The
+    `mxfp4_grouped_matmul_amd_preb` kernel reads slot `e * max_padded_M`
+    for expert slot `e`. Inactive slots and pad rows are left untouched
+    by this kernel; the matmul's per-expert tight V# bound guards
+    out-of-range reads.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        input: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "mo.mxfp4.preshuffle.scale.4d_per_expert is GPU-only"
+
+        # E8M0 bytes feed the launcher as raw uint8 (the cell-packing is
+        # byte-level). Bitcast the input/output tile pointers so dtype
+        # metadata matches the launcher's `DType.uint8` TileTensor sig.
+        var raw_e8 = input.to_tile_tensor[DType.int64]()
+        var dst_e8 = output.to_tile_tensor[DType.int64]()
+        var raw_tt = TileTensor[mut=False](
+            raw_e8.ptr.bitcast[Scalar[DType.uint8]](), raw_e8.layout
+        )
+        var dst_tt = TileTensor[mut=True](
+            dst_e8.ptr.bitcast[Scalar[DType.uint8]](), dst_e8.layout
+        )
+        var a_off_tt = expert_start_indices.to_tile_tensor[DType.int64]()
+        comptime K_SCALES = type_of(raw_tt).static_shape[1]
+        # Persistent grid: one CTA per WG slot, grid-strides real tiles.
+        # `cu_count * 2` matches the matmul's persistent dispatch (see
+        # `PreShuffledBGroupedGEMM.total_wg`).
+        comptime total_wg = context.default_device_info.sm_count * 2
+        Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=K_SCALES](
+            raw_tt,
+            dst_tt,
+            a_off_tt,
+            Int(num_active_experts),
+            Int(max_num_tokens_per_expert),
+            total_wg,
+            context,
+        )
+
+
 @compiler.register("mo.unfused_qkv_matmul.ragged.paged.gguf_quantized")
 struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
     @always_inline

@@ -4036,6 +4036,19 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     else:
         estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
 
+    # The preb kernel expects A-scales in `Shuffler.scale_4d_grouped_layout`
+    # (i32 cells of 2x2 E8M0 bytes). Activations are quantized row-major by
+    # `quantize_dynamic_block_scaled_mxfp4` upstream, so insert the per-step
+    # preshuffle here. B-scales are static and preshuffled once at load.
+    if preshuffled_b:
+        a_scales = mxfp4_preshuffle_grouped_scale_4d(
+            a_scales,
+            expert_start_indices,
+            expert_usage_stats_host[0].cast(DType.uint32),
+            expert_usage_stats_host[1].cast(DType.uint32),
+            num_experts=int(weight.shape[0]),
+        )
+
     output = ops.custom(
         "mo.grouped.matmul.block.scaled.mxfp4",
         device=hidden_states.device,
@@ -5582,6 +5595,77 @@ def block_scales_interleave(
     )[0].tensor
 
     return result
+
+
+def mxfp4_preshuffle_grouped_scale_4d(
+    a_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    max_num_tokens_per_expert: TensorValue,
+    num_active_experts: TensorValue,
+    num_experts: int,
+) -> TensorValue:
+    """Applies the per-step A-scale preshuffle for the AMD CDNA4 preb kernel.
+
+    Takes row-major E8M0 A-scales ``[total_tokens, K_SCALES]`` and writes
+    cell-packed scales into per-expert fixed-stride slots of stride
+    ``align_up(max_num_tokens_per_expert, 32)``. Output slot ``e`` holds
+    expert slot ``e``'s scales; the preb matmul reads from
+    ``e * max_padded_M`` directly.
+
+    Intended to be inserted before ``mxfp4_grouped_matmul_amd_preb`` when
+    ``preshuffled_b=True`` so the matmul sees the cell layout it expects.
+
+    Args:
+        a_scales: Rank-2 ``float8_e8m0fnu`` tensor ``[total_tokens, K_SCALES]``
+            from ``quantize_dynamic_block_scaled_mxfp4``. ``K_SCALES`` must
+            be a multiple of 8.
+        expert_start_indices: Rank-1 ``uint32`` cumulative token offsets,
+            length ``num_active_experts + 1``.
+        max_num_tokens_per_expert: Scalar ``uint32`` upper bound on
+            per-expert token count this step.
+        num_active_experts: Scalar ``uint32`` number of active expert slots.
+        num_experts: Graph-build-time upper bound on ``num_active_experts``
+            (e.g. ``weight.shape[0]``). Used to size the output buffer.
+
+    Returns:
+        Rank-2 ``float8_e8m0fnu`` tensor ``[num_experts * total_tokens,
+        K_SCALES]``. The first ``num_active_experts * max_padded_M`` rows
+        are written; the rest is left untouched but accessible.
+    """
+    if a_scales.rank != 2:
+        raise ValueError(
+            f"a_scales must be rank 2 [total_tokens, K_SCALES], got rank"
+            f" {a_scales.rank}"
+        )
+    if a_scales.dtype != DType.float8_e8m0fnu:
+        raise ValueError(
+            f"a_scales must be float8_e8m0fnu, got {a_scales.dtype}"
+        )
+    if expert_start_indices.rank != 1:
+        raise ValueError(
+            "expert_start_indices must be rank 1, got rank"
+            f" {expert_start_indices.rank}"
+        )
+
+    out_rows = num_experts * a_scales.shape[0]
+
+    return ops.custom(
+        "mo.mxfp4.preshuffle.scale.4d_per_expert",
+        device=a_scales.device,
+        values=[
+            a_scales,
+            expert_start_indices,
+            max_num_tokens_per_expert,
+            num_active_experts,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[out_rows, a_scales.shape[1]],
+                device=a_scales.device,
+            ),
+        ],
+    )[0].tensor
 
 
 def mxfp4_preshuffle_b_5d(b: TensorValue) -> TensorValue:
