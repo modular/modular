@@ -18,7 +18,6 @@ from std.testing import assert_equal
 
 
 @always_inline
-@parameter
 def use_update[
     dtype: DType, width: SIMDSize, //
 ](input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]) -> SIMD[
@@ -429,7 +428,6 @@ def main() raises:
         ]
 
         @always_inline
-        @parameter
         def _add[
             ty: DType, width: SIMDSize
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -642,7 +640,6 @@ def main() raises:
         ]
 
         @always_inline
-        @parameter
         def _max[
             ty: DType, width: SIMDSize
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -855,7 +852,6 @@ def main() raises:
         ]
 
         @always_inline
-        @parameter
         def _min[
             ty: DType, width: SIMDSize
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
@@ -1068,7 +1064,6 @@ def main() raises:
         ]
 
         @always_inline
-        @parameter
         def _mul[
             ty: DType, width: SIMDSize
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:

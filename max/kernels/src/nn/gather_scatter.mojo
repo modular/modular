@@ -692,9 +692,7 @@ def scatter_nd_generator[
     reduce_fn: OptionalReg[
         def[
             dtype: DType, width: SIMDSize
-        ](SIMD[dtype, width], SIMD[dtype, width]) capturing -> SIMD[
-            dtype, width
-        ]
+        ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
     ] = None,
     *,
     _trace_description: StaticString = "scatter_nd",
@@ -803,18 +801,21 @@ def scatter_nd_generator[
         #   cuboid (r_minus_m = 3), etc.
         var r_minus_m = data.rank - last_shape_of_indices
 
-        @__copy_capture(
-            r_minus_m,
-            data_shape,
-            last_shape_of_indices,
-            output_flat,
-            updates_flat,
-        )
-        @parameter
+        @always_inline
         def update_func[
             simd_width: Int,
             alignment: Int = 1,
-        ](_indices_coords: Coord):
+        ](_indices_coords: Coord) {
+            var r_minus_m,
+            var data,
+            var data_shape,
+            var last_shape_of_indices,
+            var output_flat,
+            var updates_flat,
+            var indices,
+            var updates,
+            var output,
+        }:
             # Calculate how many elements to copy (this is from the innermost
             # dimensions, and is continuous memory locations).
             var count_copy = 1
@@ -910,11 +911,10 @@ def scatter_nd_generator[
             iter_shape[i] = Int(indices.dim[i]())
 
         elementwise[
-            update_func,
             simd_width=1,
             target=target,
             _trace_description=trace_description_str,
-        ](Coord(iter_shape), context)
+        ](update_func, Coord(iter_shape), context)
 
 
 @always_inline
