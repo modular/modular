@@ -406,6 +406,10 @@ This version is still a work in progress.
   to understand failures in calls with many arguments spread over multiple
   lines.
 
+- `mojo format` now accepts the bare move-capture form `{name^}` in closure
+  capture lists. Previously only the equivalent `{var name^}` form
+  round-tripped through the formatter.
+
 ## GPU programming
 
 - Added `DeviceContextList[size]` in `std.gpu.host`: a fixed-size,
