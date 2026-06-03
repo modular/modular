@@ -67,7 +67,6 @@ def test_text_generation_scheduler__empty_batches() -> None:
     print("Creating scheduler")
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
-        max_forward_steps_tg=8,
         target_tokens_per_batch_ce=32,
     )
     request_queue = queue.Queue[TextContext]()

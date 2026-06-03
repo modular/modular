@@ -64,7 +64,6 @@ def create_mock_pipeline() -> Mock:
 def create_scheduler(
     dp: int = 1,
     max_batch_size: int = 4,
-    max_forward_steps_tg: int = 8,
     target_tokens_per_batch_ce: int = 32,
     kvcache_ce_watermark: float = 0.95,
     enable_chunked_prefill: bool = False,
@@ -76,7 +75,6 @@ def create_scheduler(
 ]:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=max_batch_size,
-        max_forward_steps_tg=max_forward_steps_tg,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         data_parallel_degree=dp,
         kvcache_ce_watermark=kvcache_ce_watermark,
@@ -311,7 +309,7 @@ def test_schedule_tg() -> None:
     mock_request = create_mock_request()
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[[mock_request]],
-        num_steps=scheduler.scheduler_config.max_forward_steps_tg,
+        num_steps=1,
     )
 
     scheduler._schedule(inputs)
@@ -326,7 +324,6 @@ def test_scheduler_dp(dp: int) -> None:
     scheduler, _, _, _ = create_scheduler(
         dp=dp,
         max_batch_size=512,
-        max_forward_steps_tg=10,
         target_tokens_per_batch_ce=8192,
     )
     batch_constructor = scheduler.batch_constructor
@@ -363,49 +360,6 @@ def test_scheduler_dp(dp: int) -> None:
     assert len(batch_constructor.all_tg_reqs) == num_reqs
 
 
-@pytest.mark.parametrize("req1_is_tg", [True, False])
-@pytest.mark.parametrize("req2_is_tg", [True, False])
-def test_scheduler_dp2_ce_tg(req1_is_tg: bool, req2_is_tg: bool) -> None:
-    """Check that DP takes the min num_steps across all replicas."""
-    scheduler, _, _, _ = create_scheduler(
-        dp=2,
-        max_forward_steps_tg=42,
-    )
-    batch_constructor = scheduler.batch_constructor
-
-    batch_constructor.enqueue_new_request(create_mock_request(is_tg=req1_is_tg))
-    batch_constructor.enqueue_new_request(create_mock_request(is_tg=req2_is_tg))
-
-    inputs = batch_constructor.construct_batch()
-
-    # If both requests are TG, we should have 42 steps.
-    # Otherwise, we should have 1 step since we take the min num_steps across all replicas.
-    if req1_is_tg and req2_is_tg:
-        expected_num_steps = 42
-    else:
-        expected_num_steps = 1
-    assert inputs.num_steps == expected_num_steps
-
-    # There are 2 batches since DP=2
-    assert len(inputs.batches) == 2
-
-    # Each batch should have 1 request.
-    assert len(inputs.batches[0]) == 1
-    assert len(inputs.batches[1]) == 1
-
-
-def test_scheduler_single_req_with_dp2_should_have_num_steps_of_42() -> None:
-    """Check that when there is a single request, we run with num_steps=42.
-
-    We should NOT run with num_steps=1.
-    """
-    scheduler, _, _, _ = create_scheduler(dp=2, max_forward_steps_tg=42)
-    batch_constructor = scheduler.batch_constructor
-    batch_constructor.enqueue_new_request(create_mock_request(is_tg=True))
-    inputs = batch_constructor.construct_batch()
-    assert inputs.num_steps == 42
-
-
 def test_scheduler_empty_batch() -> None:
     """Check that we do not blow up when there are no requests."""
     scheduler, _, _, _ = create_scheduler(dp=100)
@@ -430,7 +384,6 @@ def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
     return TokenGenerationScheduler(
         scheduler_config=TokenGenerationSchedulerConfig(
             max_batch_size=4,
-            max_forward_steps_tg=8,
             target_tokens_per_batch_ce=32,
             data_parallel_degree=1,
             kvcache_ce_watermark=0.95,

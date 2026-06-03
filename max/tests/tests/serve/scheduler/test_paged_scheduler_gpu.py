@@ -75,42 +75,54 @@ def test_paged_scheduler_paging_to_host(
     # fmt: off
     if kv_connector is not None:
         # When paging to host is enabled, our effective cache size increases so
-        # we can get cache hits on the latter CE iterations.
+        # we can get cache hits on the later CE iterations.
         expected = [
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=550, cached_toks=0),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
             # d2h copies. device blocks evicted and then offloaded to cpu!
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=550, cached_toks=0),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=550, cached_toks=0),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
             # h2d copies. cpu cache hit!
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=38, cached_toks=512),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=38, cached_toks=512),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=38, cached_toks=512),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
-            BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0)
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
+            BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
         ]
     else:
         # When paging to host is disabled, we can't get cache hits because all
         # of the GPU blocks are evicted and discarded.
         expected = [
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=550, cached_toks=0),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
             # device blocks evicted but not offloaded :(
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=550, cached_toks=0),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
-            BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=550, cached_toks=0),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
             # no cache hits :(
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=550, cached_toks=0),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=550, cached_toks=0),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
             BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=550, cached_toks=0),
-            BatchInfo(TG, batch_size=1, terminated=1, steps=3, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
+            BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=550, cached_toks=0),
+            BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=550),
+            BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=551),
             BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
         ]
     # fmt: on

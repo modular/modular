@@ -34,10 +34,7 @@ from max.serve.scheduler.batch_constructor.text_batch_constructor import (
     TextBatchConstructor,
 )
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
-from max.serve.scheduler.dp_padding import (
-    DPBatchPadder,
-    DPPaddingInfo,
-)
+from max.serve.scheduler.dp_padding import DPBatchPadder, DPPaddingInfo
 from test_common.context_utils import create_text_context
 
 PadderKV = tuple[DPBatchPadder, PagedKVCacheManager, MagicMock]
@@ -181,7 +178,6 @@ def _make_batch_constructor(
     )
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=max_batch_size,
-        max_forward_steps_tg=1,
         target_tokens_per_batch_ce=4096,
         data_parallel_degree=dp_size,
     )

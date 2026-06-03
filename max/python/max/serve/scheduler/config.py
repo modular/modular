@@ -25,11 +25,13 @@ class TokenGenerationSchedulerConfig:
     max_batch_size: int
     """The maximum number of requests that can be in the token generation batch."""
 
-    max_forward_steps_tg: int
     """The number of tokens to generate for each request in the token generation iteration."""
 
     target_tokens_per_batch_ce: int
     """The target total number of tokens to encode in the context encoding batch."""
+
+    max_forward_steps_tg: int = 1
+    """The maximum number of steps to generate for each request in the token generation iteration."""
 
     max_seq_len: int | None = None
     """The maximum sequence length of the model."""
