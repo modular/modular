@@ -163,28 +163,32 @@ def calculate_num_steps(
 
 
 def build_response(
-    context_batch: list[TextGenerationContextType], max_seq_len: int
+    context_batch: list[TextGenerationContextType],
+    max_seq_len: int,
+    max_growth_per_step: int = 1,
 ) -> dict[RequestID, TextGenerationOutput]:
     """Build response from updated contexts.
 
     Args:
-        context_batch: The list of context objects
-        max_seq_len: The maximum sequence length
+        context_batch: The list of context objects.
+        max_seq_len: The maximum sequence length.
+        max_growth_per_step: Maximum tokens that can be added in the next step.
+            For standard decoding this is 1. For speculative decoding this is
+            num_speculative_tokens + 1 (all drafts accepted + bonus token).
 
     Returns:
-        Dictionary mapping request IDs to TextGenerationOutput objects
+        Dictionary mapping request IDs to TextGenerationOutput objects.
     """
     res: dict[RequestID, TextGenerationOutput] = {}
 
     for context in context_batch:
-        # Identify the Max Length
         context_max_length = upper_bounded_default(
             upper_bound=max_seq_len, default=context.max_length
         )
 
-        # Break early if beyond max length
+        # Mark as done if the next step would exceed the max length.
         current_length = context.tokens.processed_length + 1
-        if current_length >= context_max_length:
+        if current_length + max_growth_per_step > context_max_length:
             context.status = GenerationStatus.MAXIMUM_LENGTH
 
         output = context.to_generation_output()
@@ -353,10 +357,21 @@ def update_spec_decode_context_and_prepare_responses(
                 batch_idx
             ].tolist()
 
-    return build_response(
+    # With speculative decoding, the next step can add up to
+    # num_speculative_tokens (all drafts accepted) + 1 (bonus token).
+    max_growth_per_step = num_speculative_tokens + 1
+    result = build_response(
         context_batch=context_batch,
         max_seq_len=max_seq_len,
+        max_growth_per_step=max_growth_per_step,
     )
+
+    # Clear draft tokens for contexts that won't be processed further.
+    for ctx in context_batch:
+        if ctx.is_done:
+            ctx.spec_decoding_state.draft_tokens_to_verify = []
+
+    return result
 
 
 def get_rope_theta(config: AutoConfig) -> float:

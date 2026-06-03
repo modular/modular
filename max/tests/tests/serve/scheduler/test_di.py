@@ -2026,6 +2026,63 @@ def test_update_spec_decode_without_skip_fsm_advance_calls_advance_fsm() -> (
     assert mock_advance_fsm.call_count >= 1
 
 
+def test_update_spec_decode_early_stops_near_max_seq_len() -> None:
+    """update_spec_decode_context_and_prepare_responses marks contexts as
+    MAXIMUM_LENGTH when they would exceed max_seq_len in the next TG step.
+
+    Regression test for MAX-615: with speculative decoding, the next step can
+    add up to (num_spec_tokens + 1) tokens. If this would exceed max_seq_len,
+    the sequence is early-stopped to prevent a KV cache overflow crash.
+    """
+    num_spec_tokens = 3
+    # Max growth per step = num_spec_tokens + 1 = 4
+    max_growth = num_spec_tokens + 1
+
+    # Create a context where:
+    # - After realize_future_token, processed_length = prompt_len
+    # - current_length = processed_length + 1 = prompt_len + 1
+    # - Early-stop if: current_length + max_growth > max_seq_len
+    #   i.e., prompt_len + 1 + max_growth > max_seq_len
+    #   i.e., prompt_len > max_seq_len - max_growth - 1
+    #
+    # For max_seq_len=100, max_growth=4: prompt_len > 95, so prompt_len=96
+    # triggers early-stop.
+    max_seq_len = 100
+    prompt_len = max_seq_len - max_growth  # = 96
+    output_len = max_seq_len - prompt_len  # = 4
+
+    ctx = create_text_context(
+        target_endpoint="ipc:///tmp/test",
+        prompt_len=prompt_len,
+        output_len=output_len,
+    )
+    assert ctx.max_length == max_seq_len
+
+    # Prepare the context for spec dec: add future token placeholder
+    ctx.update_with_future_token()
+    assert not ctx.is_done, "Context should not be done before the test"
+
+    update_spec_decode_context_and_prepare_responses(
+        draft_tokens=np.array([[1, 2, 3]], dtype=np.int32),
+        next_draft_tokens=np.array([[4, 5, 6]], dtype=np.int32),
+        num_accepted_draft_tokens=np.array([0], dtype=np.int32),
+        next_tokens=np.array([99], dtype=np.int32),
+        context_batch=[ctx],
+        max_seq_len=max_seq_len,
+    )
+
+    # After realize_future_token: processed_length = 96, current_length = 97
+    # Check: 97 + 4 = 101 > 100 → MAXIMUM_LENGTH
+    assert ctx.status == GenerationStatus.MAXIMUM_LENGTH, (
+        "Context should be marked as MAXIMUM_LENGTH when next step would "
+        f"exceed max_seq_len. current_length={ctx.tokens.processed_length + 1}, "
+        f"max_growth={max_growth}, max_seq_len={max_seq_len}"
+    )
+    assert ctx.spec_decoding_state.draft_tokens_to_verify == [], (
+        "draft_tokens_to_verify must be empty when ctx.is_done=True"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Stall watchdog tests
 # ---------------------------------------------------------------------------
