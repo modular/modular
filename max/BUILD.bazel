@@ -17,6 +17,7 @@ package_group(
         "//bazel/...",
         "//docs/...",
         "//examples/...",  # OSS only
+        "//mach/tools/...",  # mach engine's Python benchmark/MEF tooling
         "//max/...",
         "//max_private/...",  # private-only entrypoints + tool parsers
         "//oss/...",
