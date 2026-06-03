@@ -191,7 +191,7 @@ class MoE(Module[[Tensor], Tensor]):
         Returns:
             Tensor with shape (seq_len, hidden_dim)
         """
-        seq_len = x.per_rank_shape[0]
+        seq_len = x.shape[0]
 
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)

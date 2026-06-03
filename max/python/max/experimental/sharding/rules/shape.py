@@ -32,6 +32,7 @@ from max.experimental.sharding import (
 )
 from max.experimental.sharding.per_shard_dim import (
     cell_at,
+    global_dim,
     is_per_shard_dim,
     make_per_shard_dim,
 )
@@ -424,7 +425,8 @@ def _structural_split_route(
                 )
             else:
                 src_i = _global_axis_size(x, i)
-            tgt = Dim(new_shape[i])
+            # A per-shard target dim contributes its global size here.
+            tgt = global_dim(Dim(new_shape[i]))
             if not isinstance(tgt, StaticDim) or tgt.dim != src_i:
                 match = False
                 break
@@ -442,7 +444,7 @@ def _structural_split_route(
     minus_one_idx: int | None = None
     other_prod = 1
     for d in new_shape:
-        dd = Dim(d)
+        dd = global_dim(Dim(d))
         if _is_minus_one(dd):
             if minus_one_idx is not None:
                 return None
@@ -489,7 +491,9 @@ def reshape_rule(x: TensorLayout, shape: Any) -> ActionSet:
     for per-rank-wrapper target axes; otherwise the structural split
     (:func:`_structural_split_route`) routes by left-to-right size
     correspondence. Iteration is per mesh axis so two placements on
-    the same tensor axis can route to two different targets.
+    the same tensor axis can route to two different targets. A target
+    taken from ``Tensor.shape`` already carries per-device cells on its
+    :class:`PerShardDim` axes, so those land directly.
     """
     new_shape = Shape(shape)
     if sum(1 for d in new_shape if _is_minus_one(d)) > 1:

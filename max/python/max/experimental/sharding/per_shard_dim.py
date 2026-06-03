@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import NoReturn, TypeGuard
 
-from max.graph.dim import Dim, SymbolicDim
+from max.graph.dim import Dim, StaticDim, SymbolicDim
 from max.graph.shape import Shape
 
 __all__ = [
@@ -35,6 +35,8 @@ __all__ = [
     "global_shape",
     "is_one",
     "is_per_shard_dim",
+    "is_static",
+    "is_symbolic",
     "make_per_shard_dim",
     "shape_at",
 ]
@@ -56,16 +58,36 @@ class PerShardDim(Dim):
     reaching MLIR.
     """
 
-    __slots__ = ("per_shard",)
+    __slots__ = ("_global", "per_shard")
 
     per_shard: tuple[Dim, ...]
+    _global: Dim | None
 
-    def __init__(self, per_shard: Iterable[Dim] | PerShardDim) -> None:
+    def __new__(
+        cls,
+        per_shard: Iterable[Dim] | PerShardDim = (),
+        *,
+        global_dim: Dim | None = None,
+    ) -> PerShardDim:
+        """Allocates the wrapper, returning ``per_shard`` itself on a plain re-wrap."""
+        if isinstance(per_shard, PerShardDim) and global_dim is None:
+            return per_shard
+        return object.__new__(cls)
+
+    def __init__(
+        self,
+        per_shard: Iterable[Dim] | PerShardDim,
+        *,
+        global_dim: Dim | None = None,
+    ) -> None:
         if isinstance(per_shard, PerShardDim):
             if per_shard is self:
                 return
+            if global_dim is None:
+                global_dim = per_shard._global
             per_shard = per_shard.per_shard
         object.__setattr__(self, "per_shard", tuple(per_shard))
+        object.__setattr__(self, "_global", global_dim)
 
     def to_mlir(self) -> NoReturn:
         """Raises; wrappers must be projected per shard before reaching MLIR."""
@@ -85,11 +107,15 @@ class PerShardDim(Dim):
                     yield p
 
     def __hash__(self) -> int:
+        if self._global is not None:
+            return hash(self._global)
         return hash(self.per_shard)
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, PerShardDim):
             return self.per_shard == other.per_shard
+        if self._global is not None and isinstance(other, (Dim, int, str)):
+            return Dim(self._global) == Dim(other)
         return NotImplemented
 
     def __ne__(self, other: object) -> bool:
@@ -97,9 +123,13 @@ class PerShardDim(Dim):
         return NotImplemented if eq is NotImplemented else not eq
 
     def __str__(self) -> str:
+        if self._global is not None:
+            return str(self._global)
         return "(" + " | ".join(str(d) for d in self.per_shard) + ")"
 
     def __repr__(self) -> str:
+        if self._global is not None:
+            return f"PerShardDim({self.per_shard!r}, global={self._global!r})"
         return f"PerShardDim({self.per_shard!r})"
 
     def __add__(self, rhs: object) -> Dim:
@@ -130,6 +160,8 @@ class PerShardDim(Dim):
         return _binop(lhs, self, lambda a, b: a - b)
 
     def __int__(self) -> int:
+        if self._global is not None:
+            return int(self._global)
         if len(self.per_shard) == 1:
             return int(self.per_shard[0])
         raise TypeError(
@@ -140,11 +172,41 @@ class PerShardDim(Dim):
     def __index__(self) -> int:
         return self.__int__()
 
+    @property
+    def is_static(self) -> bool:
+        """``True`` if this axis's global extent is a static size.
+
+        Folds to the global dim first (see :func:`global_dim`), so a sharded
+        axis whose global is static reports ``True`` even though
+        ``isinstance(self, StaticDim)`` is ``False``.
+        """
+        return is_static(self)
+
+    @property
+    def is_symbolic(self) -> bool:
+        """``True`` if this axis's global extent is a symbolic (named) dim."""
+        return is_symbolic(self)
+
 
 def _cells_of(x: object) -> tuple[Dim, ...] | None:
     """Returns ``x.per_shard`` if ``x`` is a :class:`PerShardDim`, else ``None``."""
     if isinstance(x, PerShardDim):
         return x.per_shard
+    return None
+
+
+def _global_or_none(x: object) -> Dim | None:
+    """Returns the global :class:`Dim` for ``x``, or ``None`` if unavailable.
+
+    Unlike :func:`global_dim`, this never folds per-shard cells: it returns the
+    recorded global of a :class:`PerShardDim` (which may be ``None``) or the dim
+    itself for a plain :class:`~max.graph.Dim`. Used to decide whether a global
+    can be propagated through :func:`_binop`.
+    """
+    if isinstance(x, PerShardDim):
+        return x._global
+    if isinstance(x, (int, str, Dim)):
+        return Dim(x)
     return None
 
 
@@ -176,36 +238,47 @@ def _binop(
         raise TypeError(
             f"_binop called without per-shard operand: {lhs!r}, {rhs!r}"
         )
-    return make_per_shard_dim(cells, force_wrap=True)
+    g_lhs, g_rhs = _global_or_none(lhs), _global_or_none(rhs)
+    result_global = (
+        op(g_lhs, g_rhs) if g_lhs is not None and g_rhs is not None else None
+    )
+    return make_per_shard_dim(cells, global_dim=result_global, force_wrap=True)
 
 
 def make_per_shard_dim(
-    per_shard: Sequence[Dim], *, force_wrap: bool = False
+    per_shard: Sequence[Dim],
+    *,
+    global_dim: Dim | None = None,
+    force_wrap: bool = False,
 ) -> Dim:
     """Wraps ``per_shard`` in a :class:`PerShardDim`, or collapses to a plain :class:`Dim`.
 
-    Collapses to ``per_shard[0]`` when every entry is equal. Pass
-    ``force_wrap=True`` to keep the wrapper even when entries happen to
-    be equal (used on Sharded axes so :func:`global_dim` recovers the
-    global extent by summing).
+    Collapses to ``per_shard[0]`` when every entry is equal and no
+    ``global_dim`` is attached. Pass ``force_wrap=True`` to keep the
+    wrapper even when entries happen to be equal (used on Sharded axes so
+    :func:`global_dim` recovers the global extent), or pass ``global_dim``
+    to record the axis's global size for ``int()``/display.
     """
     if not per_shard:
         raise ValueError("make_per_shard_dim: empty per_shard tuple.")
     cells = tuple(Dim(d) for d in per_shard)
-    if not force_wrap and _all_equal(cells):
+    if not force_wrap and global_dim is None and _all_equal(cells):
         return cells[0]
-    return PerShardDim(cells)
+    return PerShardDim(cells, global_dim=global_dim)
 
 
 def global_dim(d: Dim) -> Dim:
-    """Folds a :class:`PerShardDim` into a single global :class:`Dim` by summing.
+    """Folds a :class:`PerShardDim` into a single global :class:`Dim`.
 
-    Convenience for the common single-mesh-axis :class:`Sharded` case.
-    Multi-mesh-axis sharding requires the placement's
-    :meth:`Placement.global_dim`.
+    Returns the wrapper's recorded global when present, else sums the
+    per-shard cells (the common single-mesh-axis :class:`Sharded` case;
+    multi-mesh-axis sharding requires the placement's
+    :meth:`Placement.global_dim`).
     """
     if not is_per_shard_dim(d):
         return d
+    if d._global is not None:
+        return d._global
     total: Dim = d.per_shard[0]
     for x in d.per_shard[1:]:
         total = total + x
@@ -224,11 +297,29 @@ def is_one(d: Dim) -> bool:
     other :class:`~max.graph.Dim`, checks ``d == 1`` via integer
     comparison; non-static dims return ``False``.
     """
-    from max.graph.dim import StaticDim
-
     if is_per_shard_dim(d):
         return all(is_one(c) for c in d.per_shard)
     return isinstance(d, StaticDim) and d.dim == 1
+
+
+def is_static(d: Dim) -> bool:
+    """``True`` if ``d``'s global extent is a static (compile-time) size.
+
+    A :class:`PerShardDim` is judged by its global dim (see :func:`global_dim`),
+    so a sharded axis whose global is static reports ``True`` even though
+    ``isinstance(d, StaticDim)`` would not. Prefer this over
+    ``isinstance(dim, StaticDim)`` on a possibly-sharded shape.
+    """
+    return isinstance(global_dim(d), StaticDim)
+
+
+def is_symbolic(d: Dim) -> bool:
+    """``True`` if ``d``'s global extent is a symbolic (named) dim.
+
+    Folds a :class:`PerShardDim` to its global first, mirroring
+    :func:`is_static`.
+    """
+    return isinstance(global_dim(d), SymbolicDim)
 
 
 def cell_at(d: Dim, shard: int) -> Dim:

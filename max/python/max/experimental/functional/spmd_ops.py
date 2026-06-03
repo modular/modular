@@ -35,10 +35,11 @@ from max.experimental.sharding import (
     PlacementMapping,
     Replicated,
     TensorLayout,
+    global_dim,
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, TensorValueLike, Type, ops
-from max.graph.dim import DimLike, StaticDim
+from max.graph.dim import Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndices
 
 from ..sharding import (
@@ -172,15 +173,15 @@ def map_tensors(
 def tensor_to_layout(t: Tensor) -> TensorLayout:
     """Converts a :class:`Tensor` to a :class:`TensorLayout` for sharding-rule evaluation.
 
-    Carries the per-rank-aware shape (``t.per_rank_shape``) so the rules
-    that fold per-rank cells (notably ``reshape_rule``) can do the
-    correct shape arithmetic. Non-distributed tensors fall back to a
-    plain :class:`Shape`.
+    ``t.shape`` already carries per-device cells on :class:`Sharded` axes
+    (via :class:`PerShardDim`), so the rules that fold per-rank cells
+    (notably ``reshape_rule``) can do the correct shape arithmetic
+    directly. Non-distributed tensors fall back to a plain :class:`Shape`.
     """
     if t.is_distributed:
         return TensorLayout(
             t.dtype,
-            t.per_rank_shape,
+            t.shape,
             PlacementMapping(t.mesh, t.placements),
         )
     return TensorLayout(
@@ -1963,13 +1964,17 @@ def split(
     last may be smaller); a sequence specifies per-chunk sizes.
     """
     if isinstance(split_size_or_sections, int):
-        dim = x.shape[axis]
+        # On a sharded axis ``x.shape[axis]`` is a PerShardDim carrying the
+        # global size; ``global_dim`` recovers that static global (and is a
+        # no-op on a plain dim).
+        dim = global_dim(Dim(x.shape[axis]))
         if not isinstance(dim, StaticDim):
             raise TypeError(
                 f"split(x, chunk_size={split_size_or_sections}, axis={axis}): "
-                f"non-static dim {dim!r}; pass an explicit split_sizes list."
+                f"non-static dim {x.shape[axis]!r}; pass an explicit "
+                "split_sizes list."
             )
-        dim_size = int(dim)
+        dim_size = dim.dim
         chunk_size = split_size_or_sections
         num_full, remainder = divmod(dim_size, chunk_size)
         split_sizes: list[DimLike] = [chunk_size] * num_full

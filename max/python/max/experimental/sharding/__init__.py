@@ -72,6 +72,8 @@ from .per_shard_dim import (
     global_shape,
     is_one,
     is_per_shard_dim,
+    is_static,
+    is_symbolic,
     make_per_shard_dim,
     shape_at,
 )
@@ -148,6 +150,8 @@ __all__ = [
     "is_fully_replicated",
     "is_one",
     "is_per_shard_dim",
+    "is_static",
+    "is_symbolic",
     "isolated_solver",
     "local_shard_shape_from_global",
     "make_per_shard_dim",

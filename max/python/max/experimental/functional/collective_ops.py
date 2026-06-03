@@ -35,6 +35,8 @@ from max.experimental.sharding import (
     PlacementMapping,
     Replicated,
     Sharded,
+    global_dim,
+    is_static,
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, DeviceRef, Shape, TensorValue, ops
@@ -117,16 +119,19 @@ def _rebind_axis(tv: TensorValue, axis: int, new_dim: Dim) -> TensorValue:
     return ops.rebind(tv, Shape(new_shape))
 
 
-def _mint_split_symbol(
-    parent_dim: Dim,
+def _make_split_symbolic_dim(
+    dim: Dim,
     axis_name: str,
     coord: int,
     tensor_axis: int,
     fallback_prefix: str,
 ) -> SymbolicDim:
-    """Mints the per-rank symbol used to rebind a placement-establishing split."""
-    if isinstance(parent_dim, SymbolicDim):
-        return SymbolicDim(f"{parent_dim.name}_{axis_name}_{coord}")
+    """Makes a per-shard symbolic dim for a split axis."""
+    # When the axis is already sharded on another mesh axis, dim is a
+    # PerShardDim; key the symbol off its global dim's name when symbolic.
+    dim = global_dim(dim)
+    if isinstance(dim, SymbolicDim):
+        return SymbolicDim(f"{dim.name}_{axis_name}_{coord}")
     return SymbolicDim(
         f"{fallback_prefix}_{axis_name}_{coord}_axis{tensor_axis}"
     )
@@ -310,11 +315,13 @@ def _local_split(t: Tensor, mesh_axis: int, target: Sharded) -> Tensor:
                     shards[idx], tensor_axis, n
                 )
                 chunk = split_chunks[rank_in_group]
-                if (not target.even) and not isinstance(parent_dim, StaticDim):
+                # is_static folds an already-sharded axis (a PerShardDim) to
+                # its global, judging it by the global size.
+                if (not target.even) and not is_static(parent_dim):
                     chunk = _rebind_axis(
                         chunk,
                         tensor_axis,
-                        _mint_split_symbol(
+                        _make_split_symbolic_dim(
                             parent_dim,
                             axis_name,
                             rank_in_group,
@@ -382,7 +389,7 @@ def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
                             chunks[coord] = _rebind_axis(
                                 chunk,
                                 tensor_axis,
-                                _mint_split_symbol(
+                                _make_split_symbolic_dim(
                                     parent_dim,
                                     axis_name,
                                     coord,
