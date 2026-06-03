@@ -128,6 +128,18 @@ This version is still a work in progress.
   workload-draw variance. To opt back into a fresh seed, pass `--seed none` on
   the CLI (or `seed: null` in a workload/config YAML); the drawn seed is logged
   and recorded with the results so the run stays reproducible after the fact.
+- Added `--profile` to `max pipelines generate` for rudimentary,
+  one-command profiling. With Nsight Systems (`nsys`) on `PATH` and an
+  NVIDIA GPU, the timed run is captured into an `.nsys-rep` file and a
+  ranked top-N GPU kernel summary is printed. Without `nsys`, a Python/CPU
+  profile is produced from `cProfile`. The capture window is bounded by
+  `cudaProfilerStart`/`Stop` so warmup and graph-compile time are excluded.
+  Use `--profile-output` to override the report path.
+- Added `--profile` to `max pipelines benchmark` as a synonym for
+  `--trace` that also prints a ranked top-N GPU kernel summary at the end
+  of the run. The server still needs to be launched under `nsys launch`
+  (matching the existing `--trace` requirement); `--profile` removes the
+  "now run `nsys stats` by hand" step.
 
 ### Python API
 
