@@ -18,6 +18,7 @@ from collections.abc import MutableSequence
 from typing import Any
 
 import numpy as np
+from max._core.dialects import mo
 from max.driver import accelerator_architecture_name
 from max.dtype import DType
 from max.graph import (
@@ -26,6 +27,7 @@ from max.graph import (
     DeviceKind,
     DeviceRef,
     Dim,
+    Graph,
     StaticDim,
     TensorType,
     TensorValue,
@@ -2140,17 +2142,18 @@ def masked_flash_attention_gpu(
     _validate_argument_tensor("v", v, device=q.device)
     _validate_argument_tensor("mask", mask, device=q.device)
 
-    return ops.custom(
-        "masked_flash_attention_gpu",
-        values=[
-            q,
-            k,
-            v,
-            mask,
-            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
-        ],
-        out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
-        device=q.device,
+    out_type = TensorType(dtype=q.dtype, shape=q.shape, device=q.device)
+    scale_const = ops.constant(
+        scale, dtype=DType.float32, device=DeviceRef.CPU()
+    )
+    return Graph.current._add_op_generated(
+        mo.CompositeMaskedFlashAttentionGpuOp,
+        out_type,
+        q,
+        k,
+        v,
+        mask,
+        scale_const,
     )[0].tensor
 
 

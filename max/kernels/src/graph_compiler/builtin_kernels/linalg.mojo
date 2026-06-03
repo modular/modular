@@ -82,7 +82,7 @@ from std.utils import IndexList
 from .kernels import *
 
 
-@compiler.register("mo.matmul_fused_partial_rms_norm")
+@compiler.register("mo.composite.matmul_fused_partial_rms_norm")
 struct MatmulFusedPartialRMSNorm:
     """Fuses GEMV (M=1 matmul) with partial RMS normalization.
 
@@ -289,7 +289,7 @@ struct BatchMatmul:
         )
 
 
-@compiler.register("mo.fused_matmul_add")
+@compiler.register("mo.composite.matmul_add")
 struct FusedMatmulAdd:
     @staticmethod
     def execute[

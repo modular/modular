@@ -622,7 +622,7 @@ struct DistributedScatter:
         _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
 
 
-@compiler.register("mo.distributed.allreduce_add_rms_norm_quant_fp8")
+@compiler.register("mo.composite.distributed.allreduce_add_rms_norm_quant_fp8")
 struct DistributedAllReduceAddRMSNormQuantFP8:
     @staticmethod
     def execute[

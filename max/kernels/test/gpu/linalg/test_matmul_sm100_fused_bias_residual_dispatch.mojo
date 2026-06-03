@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 #
 # SM100 (B200) correctness test for `fused_bias_residual_matmul_dispatch_sm100`
-# (`mo.fused_matmul_add`). Exercises every dispatch path of the bias/residual
+# (`mo.composite.matmul_add`). Exercises every dispatch path of the bias/residual
 # fused matmul and confirms the residual is applied exactly once on each:
 #
 #   1. Native blackwell TMA-epilogue GEMM  (bf16, transpose_b, static aligned

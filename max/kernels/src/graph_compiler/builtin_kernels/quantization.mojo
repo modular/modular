@@ -91,7 +91,7 @@ from std.utils.index import Index
 from .kernels import *
 
 
-@compiler.register("rms_norm_fused_quantize_dynamic_scaled_fp8")
+@compiler.register("mo.composite.rms_norm_fused_quantize_dynamic_scaled_fp8")
 struct RMSNormFusedQuantizeDynamicScaledFP8:
     @staticmethod
     def execute[

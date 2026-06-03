@@ -1636,7 +1636,7 @@ struct Concat:
         return concat_shape_impl(axis, inputs)
 
 
-@compiler.register("mo.fused_concat_slice")
+@compiler.register("mo.composite.concat_slice")
 struct FusedConcatSlice:
     @staticmethod
     def execute[

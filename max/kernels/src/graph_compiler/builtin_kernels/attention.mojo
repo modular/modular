@@ -231,7 +231,7 @@ struct MLAIndexerRaggedFloat8Paged:
         )
 
 
-@compiler.register("masked_flash_attention_gpu")
+@compiler.register("mo.composite.masked_flash_attention_gpu")
 struct MaskedFlashAttentionGPU:
     @staticmethod
     def execute[
@@ -500,7 +500,7 @@ struct RaggedFlashAttentionGPU:
         ]()
 
 
-@compiler.register("no_mask_flash_attention_cpu")
+@compiler.register("mo.composite.no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
     @staticmethod
     def execute[
@@ -652,7 +652,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         return q.shape()
 
 
-@compiler.register("with_mask_flash_attention_cpu")
+@compiler.register("mo.composite.masked_flash_attention_cpu")
 struct WithMaskFlashAttentionCPU:
     @staticmethod
     def execute[

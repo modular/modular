@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Dispatcher for fused matmul + bias/residual (`mo.fused_matmul_add`).
+"""Dispatcher for fused matmul + bias/residual (`mo.composite.matmul_add`).
 
 Kept separate from `matmul_dispatch_sm100` so the generic matmul dispatch does
 not have to thread an epilogue tensor through every kernel. The bias/residual is

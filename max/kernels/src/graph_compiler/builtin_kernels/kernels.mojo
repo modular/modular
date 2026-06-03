@@ -2336,7 +2336,7 @@ struct BundledAllReduceSum:
         )
 
 
-@compiler.register("mo.bundled.allreduce_add_rms_norm_quant_fp8")
+@compiler.register("mo.composite.bundled.allreduce_add_rms_norm_quant_fp8")
 struct BundledAllReduceAddRMSNormQuantFP8:
     @staticmethod
     def execute[

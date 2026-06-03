@@ -535,7 +535,7 @@ struct ReduceRMSNorm:
         return input.shape()
 
 
-@compiler.register("mo.reduce.rms_norm.RoPE")
+@compiler.register("mo.composite.rms_norm_rope")
 struct ReduceRMSNormRoPE:
     """Fuses RMS normalization and Rotary Position Embedding (RoPE) into one operation.
 
@@ -809,7 +809,7 @@ struct ReduceMinAndMax:
         return new_shape
 
 
-@compiler.register("mo.reduce.rms_norm_fused_residual_add")
+@compiler.register("mo.composite.rms_norm_fused_residual_add")
 struct ReduceRMSNormFusedResidualAdd:
     @staticmethod
     def execute[
