@@ -22,7 +22,7 @@ from max.dtype import DType
 from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
 from pydantic import BeforeValidator, Field, PrivateAttr
 
-logger = logging.getLogger("max.pipelines")
+_logger = logging.getLogger("max.pipelines")
 
 
 def _coerce_dtype(value: Any) -> DType | Any:
@@ -42,18 +42,18 @@ def _coerce_dtype(value: Any) -> DType | Any:
     return value
 
 
-CoercedDType = Annotated[DType, BeforeValidator(_coerce_dtype)]
+_CoercedDType = Annotated[DType, BeforeValidator(_coerce_dtype)]
 
 
 class SamplingConfig(ConfigFileModel):
     """Configuration for the sampling stage of token generation."""
 
-    in_dtype: CoercedDType = Field(
+    in_dtype: _CoercedDType = Field(
         default=DType.float32,
         description="The data type of the input tokens.",
     )
 
-    out_dtype: CoercedDType = Field(
+    out_dtype: _CoercedDType = Field(
         default=DType.float32,
         description="The data type of the output logits.",
     )

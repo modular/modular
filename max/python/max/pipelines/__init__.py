@@ -50,7 +50,6 @@ from .lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
 )
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
-from .lib.sampling.sampling_config import SamplingConfig
 from .lib.tokenizer import (
     IdentityPipelineTokenizer,
     TextAndVisionTokenizer,
@@ -58,6 +57,7 @@ from .lib.tokenizer import (
 )
 from .lib.utils import upper_bounded_default
 from .lora import ADAPTER_CONFIG_FILE
+from .sampling.sampling_config import SamplingConfig
 
 # Hydrate the registry.
 register_all_models()

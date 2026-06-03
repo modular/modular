@@ -15,6 +15,7 @@ from .logits_processor import apply_logits_processors
 from .sampling import (
     RejectionRunner,
     SyntheticRunner,
+    TokenSampler,
     build_greedy_acceptance_sampler_graph,
     build_stochastic_acceptance_sampler_graph,
     build_synthetic_acceptance_sampler_graph,
@@ -25,18 +26,21 @@ from .sampling import (
 )
 from .sampling_config import SamplingConfig
 from .sampling_logits_processor import (
+    FrequencyData,
     FusedSamplingProcessor,
     PenaltyInputs,
     SamplerInputs,
 )
 
 __all__ = [
+    "FrequencyData",
     "FusedSamplingProcessor",
     "PenaltyInputs",
     "RejectionRunner",
     "SamplerInputs",
     "SamplingConfig",
     "SyntheticRunner",
+    "TokenSampler",
     "apply_logits_processors",
     "build_greedy_acceptance_sampler_graph",
     "build_stochastic_acceptance_sampler_graph",

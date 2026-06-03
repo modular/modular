@@ -53,9 +53,9 @@ from max.pipelines.lib.registry import (
     SupportedArchitecture,
     get_pipeline_for_task,
 )
-from max.pipelines.lib.sampling import SamplingConfig
 from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types.task import PipelineTask
+from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.weights.hf_utils import is_diffusion_pipeline
 from pydantic import (

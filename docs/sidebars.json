@@ -529,6 +529,17 @@
             },
             {
               "type": "category",
+              "label": "sampling",
+              "link": {
+                "type": "doc",
+                "id": "max/api/python/pipelines.sampling"
+              },
+              "items": [
+                "__AUTOGEN:max.pipelines.sampling__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "lib",
               "link": {
                 "type": "doc",

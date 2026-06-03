@@ -40,9 +40,9 @@ from max.profiler import Tracer, traced
 from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from ..config import PipelineConfig
+    from max.pipelines.lib.config import PipelineConfig
 
-logger = logging.getLogger("max.pipelines")
+_logger = logging.getLogger("max.pipelines")
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ class FrequencyData:
     sequence's data."""
 
 
-def to_pinned_host_buffer(
+def _to_pinned_host_buffer(
     values: Sequence[Any], device: Device, dtype: DType = DType.float32
 ) -> Buffer:
     """Copies a sequence of values into a buffer, pinned when device is not host.
@@ -221,7 +221,7 @@ class FusedSamplingProcessor:
                 for context in context_batch
             )
             if needs_penalties:
-                logger.warning(
+                _logger.warning(
                     "Penalties are provided in the request, but the model was not configured with enable_penalties=True, ignoring"
                 )
 
@@ -450,7 +450,7 @@ def _build_min_tokens_masks(
     if not enable_min_tokens:
         for context in batch:
             if context.min_tokens > 0:
-                logger.warning(
+                _logger.warning(
                     "min_tokens is provided in the request, but the model was not configured with enable_min_tokens=True, ignoring"
                 )
         return None
@@ -631,14 +631,14 @@ class SamplerInputs:
         Returns:
             SamplerInputs containing the sampling parameter tensors.
         """
-        temperature_host = to_pinned_host_buffer(
+        temperature_host = _to_pinned_host_buffer(
             [context.sampling_params.temperature for context in batch],
             device=device,
         )
         temperature = temperature_host.to(device)
 
         # top_k is a tensor of shape (batch_size,)
-        top_k_host = to_pinned_host_buffer(
+        top_k_host = _to_pinned_host_buffer(
             [context.sampling_params.top_k for context in batch],
             device=device,
             dtype=DType.int64,
@@ -651,7 +651,7 @@ class SamplerInputs:
         max_k = Buffer.from_numpy(max_k_np)
 
         # top_p is a tensor of shape (batch_size,)
-        top_p_host = to_pinned_host_buffer(
+        top_p_host = _to_pinned_host_buffer(
             [context.sampling_params.top_p for context in batch],
             device=device,
         )
@@ -663,14 +663,14 @@ class SamplerInputs:
         min_top_p = Buffer.from_numpy(min_top_p_np)
 
         # min_p is a tensor of shape (batch_size,)
-        min_p_host = to_pinned_host_buffer(
+        min_p_host = _to_pinned_host_buffer(
             [context.sampling_params.min_p for context in batch],
             device=device,
         )
         min_p = min_p_host.to(device)
 
         # seed is a tensor of shape (batch_size,)
-        seed_host = to_pinned_host_buffer(
+        seed_host = _to_pinned_host_buffer(
             [
                 context.sampling_params.seed + len(context.tokens)
                 for context in batch

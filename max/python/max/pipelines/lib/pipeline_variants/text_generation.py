@@ -74,6 +74,12 @@ from .utils import (
 if TYPE_CHECKING:
     from ..config import MAXModelConfig, PipelineConfig
 
+from max.pipelines.sampling import (
+    FusedSamplingProcessor,
+    apply_logits_processors,
+    token_sampler,
+)
+
 from ..interfaces import (
     ModelInputs,
     ModelOutputs,
@@ -81,11 +87,6 @@ from ..interfaces import (
     PipelineModelWithKVCache,
 )
 from ..interfaces.generate import GenerateMixin
-from ..sampling import (
-    FusedSamplingProcessor,
-    apply_logits_processors,
-    token_sampler,
-)
 from ..utils import CompilationTimer
 
 logger = logging.getLogger("max.pipelines")

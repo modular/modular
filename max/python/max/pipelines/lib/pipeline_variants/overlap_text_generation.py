@@ -150,6 +150,12 @@ if TYPE_CHECKING:
 
 from dataclasses import dataclass
 
+from max.pipelines.sampling import (
+    FusedSamplingProcessor,
+    apply_logits_processors,
+    token_sampler,
+)
+
 from ..graph_capture import ServeGraphCaptureRunner
 from ..interfaces import (
     ModelInputs,
@@ -157,11 +163,6 @@ from ..interfaces import (
     PipelineModel,
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
-)
-from ..sampling import (
-    FusedSamplingProcessor,
-    apply_logits_processors,
-    token_sampler,
 )
 from ..utils import CompilationTimer
 

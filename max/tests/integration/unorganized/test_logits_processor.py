@@ -19,14 +19,14 @@ from typing import Any, cast
 import numpy as np
 from max.driver import CPU, Buffer
 from max.pipelines import TextContext
-from max.pipelines.lib.sampling import SamplerInputs
-from max.pipelines.lib.sampling.logits_processor import apply_logits_processors
 from max.pipelines.modeling.types import (
     BatchProcessorInputs,
     ProcessorInputs,
     SamplingParams,
     TokenBuffer,
 )
+from max.pipelines.sampling import SamplerInputs
+from max.pipelines.sampling.logits_processor import apply_logits_processors
 
 
 class MockTensor:

@@ -21,6 +21,12 @@ from max.config import (
     resolve_max_config_inheritance,
 )
 from max.pipelines.lora import LoRAManager
+from max.pipelines.sampling import (
+    SamplingConfig,
+    rejection_sampler,
+    rejection_sampler_with_residuals,
+    token_sampler,
+)
 from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
@@ -77,12 +83,6 @@ from .registry import (
     PIPELINE_REGISTRY,
     PipelineModelType,
     SupportedArchitecture,
-)
-from .sampling import (
-    SamplingConfig,
-    rejection_sampler,
-    rejection_sampler_with_residuals,
-    token_sampler,
 )
 from .tokenizer import (
     IdentityPipelineTokenizer,

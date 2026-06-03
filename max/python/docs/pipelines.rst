@@ -31,6 +31,7 @@ Submodules
    pipelines.weights
    pipelines.lora
    pipelines.request
+   pipelines.sampling
    pipelines.speculative
 
 Configuration

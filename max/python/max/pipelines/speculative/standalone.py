@@ -22,12 +22,12 @@ from max.dtype import DType
 from max.pipelines.core import TextContext
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.pipelines.lib.pipeline_variants.utils import build_response
-from max.pipelines.lib.sampling import SamplerInputs, apply_logits_processors
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
 )
+from max.pipelines.sampling import SamplerInputs, apply_logits_processors
 from max.profiler import traced
 
 from .base import _SpeculativeDecodingMetrics, _SpeculativeDecodingPipelineBase
