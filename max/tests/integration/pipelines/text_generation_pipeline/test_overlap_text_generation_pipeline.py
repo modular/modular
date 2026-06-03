@@ -25,6 +25,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
+    _SYNC_PRIME_CALLBACK_TIMEOUT_S,
     AsyncBatch,
 )
 from max.pipelines.lib.pipeline_variants.utils import (
@@ -1664,7 +1665,9 @@ class TestAssignBitmaskInputs:
             num_draft_tokens_to_verify=self._K,
         )
 
-        mock_event.wait.assert_called_once_with(timeout=5.0)
+        mock_event.wait.assert_called_once_with(
+            timeout=_SYNC_PRIME_CALLBACK_TIMEOUT_S
+        )
         overlap_state.prime.assert_called_once()
         assert spec_state.last_callback_done_event is None
 
@@ -1727,7 +1730,9 @@ class TestAssignBitmaskInputs:
                 num_draft_tokens_to_verify=self._K,
             )
 
-        mock_event.wait.assert_called_once_with(timeout=5.0)
+        mock_event.wait.assert_called_once_with(
+            timeout=_SYNC_PRIME_CALLBACK_TIMEOUT_S
+        )
         mock_logger.error.assert_called_once()
         overlap_state.prime.assert_called_once()
         assert spec_state.last_callback_done_event is None

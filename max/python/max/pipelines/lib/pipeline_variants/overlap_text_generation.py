@@ -171,6 +171,12 @@ _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 _OOB_IDX = np.iinfo(np.int32).min
 _MAGIC_DRAFT_TOKEN_ID = 42
 
+# Bound for ``sync_prime`` waiting on the prior iter's async bitmask
+# callback worker. A worker that died before its ``finally`` (dispatch
+# failure, AsyncRT shutdown) never sets the event; capping the wait
+# degrades that to a noisy bitmask race instead of a silent hang.
+_SYNC_PRIME_CALLBACK_TIMEOUT_S = 120.0
+
 
 @runtime_checkable
 class _UnifiedSpecDecodeInputs(Protocol):
@@ -2509,10 +2515,7 @@ class OverlapTextGenerationPipeline(
             # (not a CUDA event), so no ``device.synchronize()``.
             prev_evt = spec_state.last_callback_done_event
             if prev_evt is not None and not prev_evt.is_set():
-                # Bounded so a worker that died before reaching the
-                # ``finally`` (dispatch failure, AsyncRT shutdown) degrades
-                # to a noisy bitmask race instead of a silent hang.
-                if not prev_evt.wait(timeout=5.0):
+                if not prev_evt.wait(timeout=_SYNC_PRIME_CALLBACK_TIMEOUT_S):
                     batch_request_ids = [
                         str(ctx.request_id) for ctx in context_batch
                     ]
@@ -2522,9 +2525,10 @@ class OverlapTextGenerationPipeline(
                     ]
                     logger.error(
                         "Async bitmask callback's done_event was not set "
-                        "within 5s; proceeding with sync_prime — pinned "
+                        "within %ss; proceeding with sync_prime — pinned "
                         "bitmask may have been stomped by the worker. "
                         "batch_request_ids=%s callback_request_ids=%s",
+                        _SYNC_PRIME_CALLBACK_TIMEOUT_S,
                         batch_request_ids,
                         callback_request_ids,
                     )
