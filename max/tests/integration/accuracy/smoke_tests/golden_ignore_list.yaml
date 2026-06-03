@@ -134,6 +134,12 @@ ignored_failures:
     gpu: 8xB200
     reason: "Excluded from golden gate (Kimi-K2.5-NVFP4 KV-connector)"
 
+  # ── nvidia/Gemma-4 ───────────────────────────────────────────────────────────
+  # No gpu → defaults to B200 + MI355.
+  - model: nvidia/Gemma-4-31B-IT-NVFP4__tieredkv
+    reason: "Tiered KV cache failure on Gemma-4-31B NVFP4"
+    ticket: "MXSERV-131"
+
   # ── RedHatAI FP8 ─────────────────────────────────────────────────────────────
   # Explicit gpu: passes on 8xB200 but fails on 8xMI355.
   - model: RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic
