@@ -555,8 +555,9 @@ def whitespace(
             return NO
 
     elif p.type == syms.capture_item:
-        # No space before `^` in a `var^` move-mode capture
-        # (e.g., `{var^}` or `{var^ a}`, not `{var ^ a}`).
+        # No space before `^` in a move-mode capture, whether after `var`
+        # (`{var^}`, `{var^ a}`) or a bare name (`{a^}`), not `{var ^ a}`
+        # or `{a ^}`.
         if t == token.CIRCUMFLEX:
             return NO
 

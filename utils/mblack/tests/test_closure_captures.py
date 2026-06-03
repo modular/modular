@@ -86,6 +86,59 @@ def test_var_move_named_capture_trailing_caret():
     assert_mojo_format(source, source)
 
 
+@pytest.mark.parametrize("raises", ["", " raises"])
+@pytest.mark.parametrize("space", ["", " "])
+def test_bare_move_capture(raises, space):
+    """Formats a bare move capture ``{a^}`` tight, dropping any space before ``^``."""
+    source = (
+        "def main() raises:\n"
+        "    var a: Int = 0\n"
+        "\n"
+        "    @always_inline\n"
+        f"    def cb[](){raises} {{a{space}^}}:\n"
+        "        var x = a\n"
+    )
+    expected = (
+        "def main() raises:\n"
+        "    var a: Int = 0\n"
+        "\n"
+        "    @always_inline\n"
+        f"    def cb[](){raises} {{a^}}:\n"
+        "        var x = a\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+@pytest.mark.parametrize("raises", ["", " raises"])
+def test_bare_named_capture(raises):
+    """Preserves a bare named capture ``{a}`` (no convention) unchanged."""
+    source = (
+        "def main() raises:\n"
+        "    var a: Int = 0\n"
+        "\n"
+        "    @always_inline\n"
+        f"    def cb[](){raises} {{a}}:\n"
+        "        var x = a\n"
+    )
+    assert_mojo_format(source, expected=source)
+
+
+def test_bare_move_in_mixed_capture_list():
+    """Formats a bare move ``b^`` alongside explicit-convention captures."""
+    source = (
+        "def main() raises:\n"
+        "    var a: Int = 0\n"
+        "    var b: Int = 0\n"
+        "    var c: Int = 0\n"
+        "\n"
+        "    @always_inline\n"
+        "    def cb[]() raises {var a^, b^, read c}:\n"
+        "        var x = a + b + c\n"
+    )
+    assert_mojo_format(source, expected=source)
+
+
+
 @pytest.mark.parametrize("raises_type", RAISES_TYPES)
 @pytest.mark.parametrize("space", ["", " "])
 def test_raises_typed_exception_then_captures(raises_type, space):

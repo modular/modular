@@ -44,9 +44,9 @@ named_effect: NAME ['(' STRING ')']
 captures: '{' [capture_list] '}'
 capture_list: capture_item (',' capture_item)* [',']
 # Support both specific captures (e.g., "var x", "var x^", "mut y") and
-# global capture modes (e.g., "var", "var^", "read"). Only VAR allows the
-# move marker '^'.
-capture_item: (VAR [NAME ['^'] | '^' [NAME]]) | (READ [NAME]) | (MUT [NAME]) | (REF [NAME]) | (NAME [NAME])
+# global capture modes (e.g., "var", "var^", "read"). The move marker '^'
+# follows either VAR or a bare name ("var x^", "var^", "x^").
+capture_item: (VAR [NAME ['^'] | '^' [NAME]]) | (READ [NAME]) | (MUT [NAME]) | (REF [NAME]) | (NAME ['^' | NAME])
 metaparams: '[' [typedparamslist] ']'
 parameters: '(' [typedargslist] ')'
 result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
