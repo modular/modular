@@ -112,6 +112,9 @@ This version is still a work in progress.
   structured-output path end-to-end. Pass `enable_tool_calls=False` on
   Nemotron-OpenCode to suppress forwarding.
 
+- Removed multi-step decode from the text-generation pipelines. The flag
+  `--max-num-steps` no longer works.
+
 ### `max` CLI
 
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).

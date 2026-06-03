@@ -765,7 +765,6 @@ class AsyncBatch(Generic[TextGenerationContextType]):
             outputs = update_context_and_prepare_responses(
                 generated_tokens_np.reshape((batch_size, 1)),
                 self.inputs.flat_batch,
-                num_steps=1,
                 overwrite_future=self.overwrite_future,
             )
             wrapped_outputs = _AsyncBatchOutput(output_dict=outputs)
@@ -3194,7 +3193,8 @@ class OverlapTextGenerationPipeline(
 
         if inputs.num_steps > 1:
             raise ValueError(
-                "Max num steps > 1 is not supported with the Overlap scheduler."
+                f"num_steps > 1 is not supported by the overlap pipeline, "
+                f"got {inputs.num_steps}."
             )
 
         # Initialize variables that may be set conditionally below.

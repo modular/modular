@@ -21,7 +21,6 @@ extra_pipelines_args=(
   --ep-size 8
   --data-parallel-degree 1
   --max-batch-input-tokens 8192
-  --max-num-steps 1
   --enable-prefix-caching
   --enable-structured-output
   --kv-cache-format float8_e4m3fn

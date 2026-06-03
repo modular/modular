@@ -214,16 +214,3 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> ModelInputs:
-        prev_model_inputs = cast(MockModelInputs, prev_model_inputs)
-        return MockModelInputs(
-            active_batch_size=prev_model_inputs.active_batch_size,
-            eos_prob=self.eos_prob,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-        )

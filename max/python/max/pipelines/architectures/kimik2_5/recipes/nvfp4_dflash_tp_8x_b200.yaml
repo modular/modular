@@ -36,5 +36,4 @@ speculative:
 runtime:
   ep_size: 8
   max_batch_input_tokens: 4096
-  max_num_steps: 1
   device_graph_capture: true

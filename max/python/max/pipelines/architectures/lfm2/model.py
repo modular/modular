@@ -360,19 +360,5 @@ class LFM2Model(LlamaModelBase):
             request_ids=request_ids,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> LFM2Inputs:
-        assert isinstance(prev_model_inputs, LFM2Inputs)
-        base = super().prepare_next_token_inputs(next_tokens, prev_model_inputs)
-        conv_states = self._conv_cache.get_states(prev_model_inputs.request_ids)
-        return LFM2Inputs(
-            **{f.name: getattr(base, f.name) for f in dataclasses.fields(base)},
-            conv_states=conv_states,
-            request_ids=prev_model_inputs.request_ids,
-        )
-
     def release(self, request_id: RequestID) -> None:
         self._conv_cache.release(request_id)

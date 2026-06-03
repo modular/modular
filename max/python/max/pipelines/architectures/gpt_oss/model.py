@@ -391,32 +391,3 @@ class GptOssModel(
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
         )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation.
-
-        Args:
-            next_tokens: The tensor containing the token IDs generated in the previous step.
-            prev_model_inputs: The :obj:`ModelInputs` used in the previous execution step.
-
-        Returns:
-            The prepared :obj:`ModelInputs` object for the next execution step.
-        """
-        prev_model_inputs = cast(GptOssInputs, prev_model_inputs)
-
-        row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
-
-        next_row_offsets = [
-            self._input_row_offsets_prealloc[:row_offsets_size].to(device)
-            for device in self.devices
-        ]
-
-        return GptOssInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )

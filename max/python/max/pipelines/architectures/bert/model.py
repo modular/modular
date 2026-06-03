@@ -131,13 +131,6 @@ class BertPipelineModel(PipelineModel[TextContext]):
             ),
         )
 
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> BertInputs:
-        raise NotImplementedError(
-            "Bert does not support preparing next tokens inputs."
-        )
-
     def load_model(self, session: InferenceSession) -> Model:
         logger.info("Building and compiling model...")
         before = time.perf_counter()

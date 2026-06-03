@@ -502,19 +502,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         """
         ...
 
-    @abstractmethod
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> ModelInputs:
-        """Prepares the secondary inputs to be passed to ``execute()``.
-
-        While ``prepare_initial_token_inputs`` is responsible for managing the initial inputs.
-        This function is responsible for updating the inputs, for each step in a multi-step execution pattern.
-        """
-        ...
-
     def compute_log_probabilities(
         self,
         session: InferenceSession,

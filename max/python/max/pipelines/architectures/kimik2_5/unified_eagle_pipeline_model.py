@@ -568,13 +568,6 @@ class Eagle3KimiK25Model(KimiK2_5Model):
             draft_kv_blocks=draft_kv_cache_buffers,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> KimiK2_5ModelInputs:
-        raise NotImplementedError("Eagle does not support Multistep execution")
-
     def _create_draft_config(
         self,
         target_config: KimiK2_5TextConfig,

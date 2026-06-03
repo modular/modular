@@ -781,29 +781,3 @@ class InternVLModel(
             kv_cache_inputs=kv_cache_inputs,
             image_token_indices=image_token_indices,
         )
-
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        """Prepares the inputs for subsequent execution steps in a multi-step generation."""
-        assert isinstance(prev_model_inputs, InternVLInputs)
-        prev_inputs = prev_model_inputs
-
-        # Use pre-allocated row offsets for next token.
-        # Since the pre-allocated array has length max_batch_size, slice out
-        # only the current step's batch size.
-        offset = prev_inputs.input_row_offsets[0].shape[0]
-        next_row_offsets = [
-            offsets_prealloc[:offset]
-            for offsets_prealloc in self._input_row_offsets_prealloc
-        ]
-
-        return InternVLInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            signal_buffers=self.signal_buffers,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            # Set vision model inputs to None after the first step
-            pixel_values=None,
-            kv_cache_inputs=prev_inputs.kv_cache_inputs,
-        )

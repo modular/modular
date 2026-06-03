@@ -122,12 +122,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     max_num_steps: int = Field(
-        default=-1,
+        default=1,
         description=(
-            "The number of steps to run for multi-step scheduling. ``-1`` "
-            "specifies a default value based on configuration and platform. "
-            "Ignored for models which are not auto-regressive (for example, "
-            "embedding models)."
+            "Deprecated. Multi-step pipeline execution is no longer supported; "
+            "the pipeline always runs single-step decode. Values other than "
+            "``1`` (including the legacy default ``-1``) are ignored after "
+            "logging a warning."
         ),
     )
 

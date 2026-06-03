@@ -144,18 +144,6 @@ class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
             kv_cache_inputs=kv_cache_inputs,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> ModelInputs:
-        del next_tokens
-        mock_prev = cast(MockModelInputs, prev_model_inputs)
-        return MockModelInputs(
-            batch_size=mock_prev.active_batch_size,
-            kv_cache_inputs=mock_prev.kv_cache_inputs,
-        )
-
 
 class MockSamplingProcessor:
     def __init__(self, batch_size: int, num_steps: int = 1) -> None:

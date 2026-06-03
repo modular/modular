@@ -372,16 +372,6 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             seed=self._next_seed(),
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedEagleLlama3Inputs:
-        raise NotImplementedError(
-            "Multistep execution is not supported for UnifiedEagleLlama3Model. "
-            "The unified pipeline handles iteration internally."
-        )
-
     @classmethod
     def calculate_max_seq_len(
         cls,

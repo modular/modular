@@ -572,54 +572,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             data_parallel_splits=Buffer.from_numpy(data_parallel_splits),
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-        hidden_states: Buffer | None = None,
-    ) -> DeepseekV3NextNInputs:
-        """Prepare inputs for next token generation.
-
-        Args:
-            next_tokens: Next tokens to process
-            prev_model_inputs: Previous model inputs
-            hidden_states: Hidden states from the base model (optional, will use
-                          hidden_states from prev_model_inputs if not provided)
-
-        Returns:
-            NextN model inputs for next token
-        """
-        assert isinstance(prev_model_inputs, DeepseekV3NextNInputs)
-
-        # Use provided hidden_states, or fall back to previous hidden_states
-        # This allows EAGLE pipeline to set hidden_states after calling this method
-        if hidden_states is None:
-            hidden_states = prev_model_inputs.hidden_states
-
-        # If still None after fallback, that's a real error
-        if hidden_states is None:
-            raise ValueError(
-                "hidden_states must be provided for DeepSeekV3 NextN model"
-            )
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_device_row_offsets = self._device_input_row_offsets_prealloc[
-            :row_offsets_size
-        ]
-        next_host_row_offsets = self._host_input_row_offsets_prealloc[
-            :row_offsets_size
-        ]
-        return DeepseekV3NextNInputs(
-            tokens=next_tokens,
-            hidden_states=hidden_states,
-            input_row_offsets=next_device_row_offsets,
-            host_input_row_offsets=next_host_row_offsets,
-            signal_buffers=self.signal_buffers,
-            batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            data_parallel_splits=prev_model_inputs.data_parallel_splits,
-        )
-
 
 def maybe_build_deepseekv3_nextn_kwargs(
     target_model: PipelineModel[TextContext],

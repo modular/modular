@@ -32,6 +32,7 @@ from max.profiler import traced
 
 from .base import _SpeculativeDecodingMetrics, _SpeculativeDecodingPipelineBase
 from .utils import (
+    _advance_draft_model_inputs,
     _compute_max_num_draft_steps,
     _ModelInputsWithTokensAndOffsets,
     _update_contexts_and_compute_metrics_standalone,
@@ -172,8 +173,8 @@ class _StandaloneSpeculativeDecodingPipeline(_SpeculativeDecodingPipelineBase):
             )
 
             # Prepare next token inputs.
-            curr_step_inputs = self._draft_model.prepare_next_token_inputs(
-                new_tokens, curr_step_inputs
+            curr_step_inputs = _advance_draft_model_inputs(
+                self._draft_model, new_tokens, curr_step_inputs
             )
 
         return (

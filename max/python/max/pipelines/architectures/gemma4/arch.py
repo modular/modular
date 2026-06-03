@@ -48,7 +48,6 @@ gemma4_arch = SupportedArchitecture(
         InputModality.VIDEO,
     },
     rope_type="normal",
-    required_arguments={"max_num_steps": 1},
     context_type=Gemma4Context,
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",

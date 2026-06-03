@@ -131,7 +131,7 @@ def test_throws_if_num_steps_gt_1() -> None:
     )
     with pytest.raises(
         ValueError,
-        match=r"Max num steps > 1 is not supported with the Overlap scheduler\.",
+        match=r"num_steps > 1 is not supported by the overlap pipeline",
     ):
         pipeline.execute(inputs)
 
@@ -311,8 +311,7 @@ def test_async_batch_sync_with_single_step_tokens() -> None:
         contexts_arg = call_args[0][1]
         assert contexts_arg == contexts
 
-        # Check keyword args
-        assert call_args[1]["num_steps"] == 1
+        # Check keyword args (overlap path always uses single-step [batch, 1] tokens)
         assert call_args[1]["overwrite_future"] is True
 
 

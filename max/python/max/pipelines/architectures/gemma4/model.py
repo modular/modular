@@ -714,44 +714,6 @@ class Gemma3_MultiModalModel(
             combined_indices=self._empty_indices(),
         )
 
-    @traced
-    def prepare_next_token_inputs(
-        self, next_tokens: Buffer, prev_model_inputs: ModelInputs
-    ) -> ModelInputs:
-        prev_model_inputs = cast(Gemma3MultiModalModelInputs, prev_model_inputs)
-
-        # Extract the global cache portion from combined kv_cache_inputs.
-        # Combined layout per replica: [primary_tp0..tpN, global_tp0..tpN].
-        n_devices = len(self.devices)
-        assert prev_model_inputs.kv_cache_inputs is not None
-        global_kv_inputs = KVCacheInputs(
-            inputs=prev_model_inputs.kv_cache_inputs.inputs[
-                n_devices : 2 * n_devices
-            ]
-        )
-        self._increment_global_cache_lengths_processor.execute(
-            kv_cache_inputs=global_kv_inputs,
-            prev_model_inputs=prev_model_inputs,
-        )
-
-        row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
-
-        # Slice each tensor in the list, not the list itself
-        next_row_offsets = [
-            offsets_prealloc[:row_offsets_size]
-            for offsets_prealloc in self._input_row_offsets_prealloc
-        ]
-
-        return Gemma3MultiModalModelInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            combined_embeds=self._empty_embeddings(),
-            combined_indices=self._empty_indices(),
-        )
-
     def _empty_embeddings(self) -> list[Buffer]:
         if not hasattr(self, "_cached_empty_embeddings"):
             self._cached_empty_embeddings = create_empty_embeddings(

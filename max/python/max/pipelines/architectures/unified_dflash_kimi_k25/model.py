@@ -485,16 +485,6 @@ class UnifiedDflashKimiK25Model(KimiK2_5Model):
             seed=self._next_seed(),
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> KimiK2_5ModelInputs:
-        raise NotImplementedError(
-            "DFlash does not support Multistep execution. The unified "
-            "pipeline handles iteration internally."
-        )
-
 
 def _build_dflash_draft_config(
     draft_hf: Any,

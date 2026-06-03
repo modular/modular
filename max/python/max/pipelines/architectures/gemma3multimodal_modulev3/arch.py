@@ -46,7 +46,6 @@ gemma3_multimodal_modulev3_arch = SupportedArchitecture(
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     rope_type="normal",
     required_arguments={
-        "max_num_steps": 1,
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,
     },

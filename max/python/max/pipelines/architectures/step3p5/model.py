@@ -33,7 +33,6 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
-    ModelInputs,
 )
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.lib.utils import (
@@ -425,40 +424,3 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             kv_cache_inputs=kv_cache_inputs,
             ep_inputs=ep_inputs,
         )
-
-    @override
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Llama3Inputs | Step3p5Inputs:
-        if isinstance(prev_model_inputs, Step3p5Inputs):
-            assert self._input_row_offsets_prealloc is not None
-            row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-            next_row_offsets = self._input_row_offsets_prealloc[
-                :row_offsets_size
-            ]
-
-            # host_input_row_offsets is only present in DP_EP; for TP_EP it
-            # stays None and the corresponding prealloc buffer was never
-            # allocated.
-            if prev_model_inputs.host_input_row_offsets is not None:
-                assert self._host_input_row_offsets_prealloc is not None
-                next_host_offsets = self._host_input_row_offsets_prealloc[
-                    :row_offsets_size
-                ]
-            else:
-                next_host_offsets = None
-
-            return Step3p5Inputs(
-                tokens=next_tokens,
-                input_row_offsets=next_row_offsets,
-                return_n_logits=prev_model_inputs.return_n_logits,
-                host_input_row_offsets=next_host_offsets,
-                data_parallel_splits=prev_model_inputs.data_parallel_splits,
-                signal_buffers=self.signal_buffers,
-                kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-                ep_inputs=prev_model_inputs.ep_inputs,
-            )
-
-        return super().prepare_next_token_inputs(next_tokens, prev_model_inputs)

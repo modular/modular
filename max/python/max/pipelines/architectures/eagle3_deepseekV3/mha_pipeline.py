@@ -488,13 +488,6 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
             seed=self._next_seed(),
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Eagle3MHADeepseekV3Inputs:
-        raise NotImplementedError("Eagle does not support Multistep execution")
-
 
 def _default_aux_layer_ids(
     num_target_layers: int, fc_input_multiplier: int

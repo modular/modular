@@ -602,7 +602,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         if self.vision_model is not None:
             # Multimodal model: always pass image embeddings to the LM graph.
             # For decode/text-only steps, lm_image_embeddings is already the
-            # pre-allocated empty buffer from prepare_next_token_inputs.
+            # pre-allocated empty buffer for decode-step LM vision inputs.
             # For prefill steps with images, run the vision encoder and update.
             if model_inputs.has_vision_inputs:
                 assert model_inputs.pixel_values is not None
@@ -803,58 +803,6 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             grid_thw=grid_thw,
             cu_seqlens=cu_seqlens,
             max_seqlen=max_seqlen,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Qwen3_5Inputs:
-        assert isinstance(prev_model_inputs, Qwen3_5Inputs)
-        assert self._input_row_offsets_prealloc is not None
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        # Build slot_idx for this decode step. The pools live on the cache
-        # and are mutated in place by the slot-indexed SSM kernels, so the
-        # only per-step transfer is the small uint32 slot_idx tensor written
-        # into a pre-allocated buffer (no per-step device allocation).
-        request_ids = prev_model_inputs.request_ids
-        assert self._state_cache is not None
-        assert self._slot_idx_prealloc is not None
-        assert request_ids is not None
-        slot_idx = self._state_cache.slot_idx_for(
-            request_ids, self._slot_idx_prealloc
-        )
-        conv_pools = self._state_cache.conv_pools
-        recurrent_pools = self._state_cache.rec_pools
-
-        # For multimodal models, include pre-allocated empty LM vision inputs so
-        # that buffers() returns the correct input count for CUDA graph capture.
-        lm_image_embeddings = self._empty_lm_image_embeddings
-        lm_image_token_indices = self._empty_lm_image_token_indices
-
-        return Qwen3_5Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            slot_idx=slot_idx,
-            conv_pools=conv_pools,
-            recurrent_pools=recurrent_pools,
-            request_ids=request_ids,
-            lm_image_embeddings=lm_image_embeddings,
-            # No vision encoder inputs on decode steps
-            image_token_indices=lm_image_token_indices,
-            pixel_values=None,
-            vision_position_ids=None,
-            weights=None,
-            indices=None,
-            max_grid_size=None,
-            grid_thw=None,
-            cu_seqlens=None,
-            max_seqlen=None,
         )
 
     def release(self, request_id: RequestID) -> None:

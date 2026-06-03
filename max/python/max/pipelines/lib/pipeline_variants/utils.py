@@ -198,67 +198,51 @@ def build_response(
 def update_context_and_prepare_responses(
     generated_tokens_host: npt.NDArray[np.int32],
     flat_batch: list[TextGenerationContextType],
-    num_steps: int,
     batch_log_probabilities: list[list[LogProbabilities | None]] | None = None,
     enable_log_probs: bool = False,
     overwrite_future: bool = False,
-    fsm_already_advanced_steps: int = 0,
 ) -> dict[RequestID, TextGenerationOutput]:
     """Updates context objects and prepares response objects after generation.
 
     Args:
         generated_tokens_host: Array of generated tokens on the host, indexed
-            as [batch, step].
+            as [batch, 1] (single step).
         flat_batch: List of generation contexts, one per request, matching
             batch dimension.
-        num_steps: Number of generation steps to process for each context.
         batch_log_probabilities: List of per-step log probability outputs (or
             None), each entry is a list per batch for that step.
         enable_log_probs: Whether to include log probability data in outputs.
         overwrite_future: Whether to overwrite future tokens in the context.
-        fsm_already_advanced_steps: Number of steps for which the FSM was
-            already advanced during multi-step execution. For these steps,
-            only the token buffer is updated (FSM is skipped).
 
     Returns:
         A dictionary mapping request IDs to their respective generation outputs.
     """
     res: dict[RequestID, TextGenerationOutput] = {}
     for batch_index, context in enumerate(flat_batch):
-        for step in range(num_steps):
-            # Convert to a Python scalar to improve serialization performance.
-            next_token = int(generated_tokens_host[batch_index, step])
+        # Convert to a Python scalar to improve serialization performance.
+        next_token = int(generated_tokens_host[batch_index, 0])
 
-            # Get Log probs if needed.
-            log_probs: LogProbabilities | None = None
-            if enable_log_probs:
-                assert batch_log_probabilities is not None
-                if step < len(batch_log_probabilities):
-                    log_probs_for_step = batch_log_probabilities[step]
-                    if log_probs_for_step and batch_index < len(
-                        log_probs_for_step
-                    ):
-                        log_probs = log_probs_for_step[batch_index]
+        # Get Log probs if needed.
+        log_probs: LogProbabilities | None = None
+        if enable_log_probs:
+            assert batch_log_probabilities is not None
+            if batch_log_probabilities:
+                log_probs_for_step = batch_log_probabilities[0]
+                if log_probs_for_step and batch_index < len(log_probs_for_step):
+                    log_probs = log_probs_for_step[batch_index]
 
-            if overwrite_future:
-                # If generated_length is still 0, then there is no placeholder
-                # future token. This is possible due to chunked prefill or preemption.
-                if context.tokens.generated_length:
-                    context.realize_future_token(
-                        new_token=next_token, log_probabilities=log_probs
-                    )
-            else:
-                # Update token buffer for all steps
-                context.advance_token_buffer(
+        if overwrite_future:
+            # If generated_length is still 0, then there is no placeholder
+            # future token. This is possible due to chunked prefill or preemption.
+            if context.tokens.generated_length:
+                context.realize_future_token(
                     new_token=next_token, log_probabilities=log_probs
                 )
-                # Only advance FSM for steps that weren't already advanced
-                # during multi-step execution
-                if step >= fsm_already_advanced_steps:
-                    context.advance_fsm(next_token)
-
-            if context.is_done:
-                break
+        else:
+            context.advance_token_buffer(
+                new_token=next_token, log_probabilities=log_probs
+            )
+            context.advance_fsm(next_token)
 
         # Only add the output if there are tokens to return.
         # It is possible that there are no generated tokens due to chunked prefill.

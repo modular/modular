@@ -360,25 +360,6 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
         inputs.kv_cache_inputs = kv_cache_inputs
         return inputs
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> MambaModelInputs:
-        prev = cast(MambaModelInputs, prev_model_inputs)
-        layer_states = self._ssm_cache.get_states(prev.request_ids)
-
-        inputs = MambaModelInputs(
-            tokens=next_tokens,
-            input_row_offsets=prev.input_row_offsets,
-            return_n_logits=prev.return_n_logits,
-            is_prefill=False,
-            layer_states=layer_states,
-            request_ids=prev.request_ids,
-        )
-        inputs.kv_cache_inputs = prev.kv_cache_inputs
-        return inputs
-
     def release(self, request_id: RequestID) -> None:
         """Release SSM cache slot when a request completes."""
         self._ssm_cache.release(request_id)

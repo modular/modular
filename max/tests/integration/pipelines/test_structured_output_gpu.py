@@ -164,7 +164,7 @@ def test_smollm_with_structured_output_gpu(
 def test_multistep_structured_output_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
-    """Test that multi-step execution (num_steps > 1) produces valid JSON."""
+    """Test structured output over multiple single-step pipeline invocations."""
     revision = hf_repo_lock.revision_for_hf_repo(
         "HuggingFaceTB/SmolLM2-135M-Instruct"
     )
@@ -235,7 +235,7 @@ def test_multistep_structured_output_gpu(
     kv_manager.claim(context.request_id, replica_idx=0)
 
     tokens = []
-    num_steps = 4  # Use multi-step execution
+    num_steps = 1
     while True:
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]], num_steps=num_steps
@@ -264,7 +264,7 @@ def test_multistep_structured_output_gpu(
 def test_multi_step_guided_decoding_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
-    """Test that multi-step execution works correctly with guided decoding."""
+    """Test that guided decoding works over repeated single-step invocations."""
     revision = hf_repo_lock.revision_for_hf_repo(
         "HuggingFaceTB/SmolLM2-135M-Instruct"
     )
@@ -328,8 +328,8 @@ def test_multi_step_guided_decoding_gpu(
     kv_manager = pipeline.kv_manager
     kv_manager.claim(context.request_id, replica_idx=0)
 
-    # Use multi-step execution (num_steps > 1) with guided decoding
-    num_steps = 3
+    # Single-step execution with guided decoding per scheduler iteration.
+    num_steps = 1
     max_iterations = 20
 
     for _ in range(max_iterations):

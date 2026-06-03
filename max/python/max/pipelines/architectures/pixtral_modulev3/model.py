@@ -273,25 +273,6 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
             kv_cache_inputs=kv_cache_inputs,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> PixtralInputs:
-        assert isinstance(prev_model_inputs, PixtralInputs)
-
-        old_row_offsets = prev_model_inputs.input_row_offsets
-        row_offsets_size = old_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        # Next-token steps have no vision inputs
-        return PixtralInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
     @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig

@@ -549,13 +549,6 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
             draft_kv_blocks=draft_kv_cache_buffers,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> KimiK2_5ModelInputs:
-        raise NotImplementedError("Eagle does not support Multistep execution")
-
 
 def _infer_fc_input_multiplier(
     draft_state_dict: dict[str, WeightData], hidden_size: int

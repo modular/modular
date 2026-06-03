@@ -358,17 +358,6 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             seed=self._next_seed(),
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedDflashLlama3Inputs:
-        raise NotImplementedError(
-            "Multistep execution is not supported for"
-            " UnifiedDflashLlama3Model. The unified pipeline handles"
-            " iteration internally."
-        )
-
     @classmethod
     def calculate_max_seq_len(
         cls,

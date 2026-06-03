@@ -459,21 +459,3 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
             kv_cache_inputs=kv_cache_inputs,
             image_token_indices=image_token_indices,
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Idefics3Inputs:
-        prev_model_inputs = cast(Idefics3Inputs, prev_model_inputs)
-        old_row_offsets = prev_model_inputs.input_row_offsets
-        row_offsets_size = old_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        # In multi-step execution, don't re-pass vision inputs.
-        return Idefics3Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-        )

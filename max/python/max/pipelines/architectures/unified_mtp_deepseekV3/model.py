@@ -454,13 +454,6 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             draft_kv_blocks=draft_kv_cache_buffers,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedMTPDeepseekV3Inputs:
-        raise NotImplementedError("MTP does not support Multistep execution")
-
     def _create_draft_config(
         self, draft_state_dict: dict[str, WeightData]
     ) -> DeepseekV3NextNConfig:

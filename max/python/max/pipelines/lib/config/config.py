@@ -24,7 +24,7 @@ import tempfile
 from typing import TYPE_CHECKING, Any, Literal
 
 from max.config import ConfigFileModel
-from max.driver import DeviceSpec, accelerator_api, load_devices
+from max.driver import accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
@@ -1242,21 +1242,14 @@ class PipelineConfig(ConfigFileModel):
                 and self._is_eligible_for_overlap_serve_optimizations()
             ):
                 self.runtime.enable_overlap_scheduler = True
-                self.runtime.max_num_steps = 1
                 logger.info(
-                    f"Automatically enabling overlap scheduling for {arch.name} with max-num-steps=1. "
+                    f"Automatically enabling overlap scheduling for {arch.name}. "
                     "You can manually disable this by setting --no-enable-overlap-scheduler --force."
                 )
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.runtime.enable_overlap_scheduler:
             if self.runtime.pipeline_role in ("decode_only", "prefill_only"):
-                if self.runtime.max_num_steps != 1:
-                    logger.info(
-                        "Setting max-num-steps=1 for overlap scheduling on %s worker.",
-                        self.runtime.pipeline_role,
-                    )
-                    self.runtime.max_num_steps = 1
                 logger.info(
                     "Overlap scheduling enabled for %s worker "
                     "(Disaggregated Inference). THIS IS EXPERIMENTAL.",
@@ -1269,10 +1262,6 @@ class PipelineConfig(ConfigFileModel):
             if self.lora:
                 raise ValueError(
                     "LoRA is not supported with the Overlap scheduler."
-                )
-            if self.runtime.max_num_steps > 1:
-                raise ValueError(
-                    "Max num steps > 1 is not supported with the Overlap scheduler."
                 )
             if self.model.device_specs[0].device_type == "cpu":
                 raise ValueError(
@@ -1297,28 +1286,19 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.enable_overlap_scheduler:
             logger.info("Enabling overlap scheduling for device graph capture.")
         self.runtime.enable_overlap_scheduler = True
-        if self.runtime.max_num_steps != 1:
-            logger.info(
-                "Setting max-num-steps=1 for device graph capture with overlap scheduling."
-            )
-        self.runtime.max_num_steps = 1
 
     def _validate_and_resolve_max_num_steps(self) -> None:
-        """Validates and resolves the max_num_steps field (platform-specific)."""
-        if self.draft_model is not None and self.runtime.max_num_steps > 1:
-            raise ValueError(
-                f"max_num_steps must be 1 when speculative decoding is enabled, "
-                f"got {self.runtime.max_num_steps}."
-            )
-        if self.runtime.max_num_steps < 0:
-            if self.model.default_device_spec == DeviceSpec.cpu():
-                self.runtime.max_num_steps = 1
-            elif self.draft_model is not None:
-                # Speculative decoding pipelines manage multi-step KV
-                # allocation internally.
-                self.runtime.max_num_steps = 1
-            else:
-                self.runtime.max_num_steps = 10
+        """Normalize deprecated ``max_num_steps`` to single-step decode."""
+        if self.runtime.max_num_steps in (1, -1):
+            self.runtime.max_num_steps = 1
+            return
+
+        logger.warning(
+            "--max-num-steps=%s is deprecated and ignored; using single-step "
+            "decode (max_num_steps=1).",
+            self.runtime.max_num_steps,
+        )
+        self.runtime.max_num_steps = 1
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """Validates pipeline config when used in speculative decoding mode."""

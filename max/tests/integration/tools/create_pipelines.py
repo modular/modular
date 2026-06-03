@@ -50,10 +50,7 @@ from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
 from max.pipelines.architectures.wan.wan_executor import WanExecutor
 from max.pipelines.core import PixelContext
-from max.pipelines.lib import (
-    PipelineRuntimeConfig,
-    PixelGenerationPipeline,
-)
+from max.pipelines.lib import PipelineRuntimeConfig, PixelGenerationPipeline
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
@@ -279,10 +276,10 @@ def _create_vision_max_pipeline(
     )
     if enable_chunked_prefill is not None:
         runtime = PipelineRuntimeConfig(
-            max_num_steps=1, enable_chunked_prefill=enable_chunked_prefill
+            enable_chunked_prefill=enable_chunked_prefill
         )
     else:
-        runtime = PipelineRuntimeConfig(max_num_steps=1)
+        runtime = PipelineRuntimeConfig()
     config = pipelines.PipelineConfig(
         models=ModelManifest({"main": model}),
         runtime=runtime,
@@ -685,7 +682,7 @@ class PixtralPipelineOracle(PipelineOracle):
                     )
                 }
             ),
-            runtime=PipelineRuntimeConfig(max_num_steps=1),
+            runtime=PipelineRuntimeConfig(),
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -755,7 +752,6 @@ class _KimiK2_5BaseOracle(PipelineOracle):
                 "model_path": self.model_path,
                 "huggingface_model_revision": revision,
                 "huggingface_weight_revision": revision,
-                "max_num_steps": 1,
                 "max_length": 4096,
                 "trust_remote_code": self.trust_remote_code,
                 "max_batch_input_tokens": 4096,
@@ -884,7 +880,6 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
                 "model_path": self.model_path,
                 "huggingface_model_revision": revision,
                 "huggingface_weight_revision": revision,
-                "max_num_steps": 1,
                 "max_length": 4096,
                 "trust_remote_code": self.trust_remote_code,
                 "max_batch_input_tokens": 4096,
@@ -964,7 +959,6 @@ class KimiK2_5DeepseekV3LocalPathPipelineOracle(
             ),
             runtime=PipelineRuntimeConfig(
                 defer_resolve=True,
-                max_num_steps=1,
                 max_batch_input_tokens=4096,
                 ep_size=8,
             ),
@@ -1052,7 +1046,6 @@ class GenericOracle(PipelineOracle):
                 "huggingface_model_revision": model_revision,
                 "huggingface_weight_revision": model_revision,
                 "weight_path": [] if weight_path is None else [weight_filename],
-                "max_num_steps": 1,
                 **self.config_params,
             }
         )
@@ -1291,7 +1284,6 @@ class LoRAOracle(PipelineOracle):
                 "quantization_encoding": encoding,
                 "model_path": self.model_path,
                 "huggingface_model_revision": revision,
-                "max_num_steps": 1,
                 "enable_lora": True,
                 "lora_paths": [lora_path],
                 "max_num_loras": 1,
@@ -1599,7 +1591,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={
             "max_vision_cache_entries": 256,
             "max_batch_size": 128,
-            "max_num_steps": 1,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
@@ -1608,7 +1599,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={
             "max_vision_cache_entries": 256,
             "max_batch_size": 128,
-            "max_num_steps": 1,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
