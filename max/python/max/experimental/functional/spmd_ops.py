@@ -35,8 +35,8 @@ from max.experimental.sharding import (
     PlacementMapping,
     Replicated,
     TensorLayout,
-    global_dim,
 )
+from max.experimental.sharding.per_shard_dim import global_dim
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, TensorValueLike, Type, ops
 from max.graph.dim import Dim, DimLike, StaticDim

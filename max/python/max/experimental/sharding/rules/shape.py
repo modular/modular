@@ -19,8 +19,8 @@ import builtins
 import functools
 import itertools
 import operator
-from collections.abc import Iterable, Sequence
-from typing import Any, NamedTuple
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any
 
 from max.experimental.sharding import (
     DeviceMapping,
@@ -28,14 +28,14 @@ from max.experimental.sharding import (
     Placement,
     PlacementMapping,
     Sharded,
-    _shard_sizes_along_axis,
 )
 from max.experimental.sharding.per_shard_dim import (
-    cell_at,
     global_dim,
     is_per_shard_dim,
+    local_dim_at,
     make_per_shard_dim,
 )
+from max.experimental.sharding.placements import _shard_sizes_along_axis
 from max.experimental.sharding.types import TensorLayout
 from max.graph.dim import Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndex, SliceIndices
@@ -187,12 +187,12 @@ def _per_rank_target(
 
     per_rank_shapes: list[Shape] = []
     for r in range(n):
-        src_r = [cell_at(Dim(d), r) for d in src_shape]
+        src_r = [local_dim_at(Dim(d), r) for d in src_shape]
         tgt_r: list[Dim] = []
         for d in lifted:
             if is_per_shard_dim(d):
                 assert isinstance(d, Dim)
-                tgt_r.append(cell_at(d, r))
+                tgt_r.append(local_dim_at(d, r))
             else:
                 tgt_r.append(d)
         if any(_is_minus_one(d) for d in tgt_r):
@@ -201,26 +201,25 @@ def _per_rank_target(
     return PerShard(per_rank_shapes)
 
 
-class _RepackContext(NamedTuple):
-    """Per-call finalize context for ``concat`` / ``stack``."""
+def _repack_finalize(
+    n: int, axis: int, is_tuple: bool
+) -> Callable[[Action], Action]:
+    """Builds the ``concat`` / ``stack`` finalize, pre-bound to its context.
 
-    n: int
-    """Number of variadic tensor inputs."""
+    Args:
+        n: Number of variadic tensor inputs.
+        axis: The concat/stack axis kwarg.
+        is_tuple: ``True`` when the user passed a ``tuple`` (vs. ``list``).
+    """
 
-    axis: int
-    """The concat/stack axis kwarg."""
+    def finalize(action: Action) -> Action:
+        mappings = action.inputs[:n]
+        container: list[DeviceMapping] | tuple[DeviceMapping, ...] = (
+            tuple(mappings) if is_tuple else list(mappings)
+        )
+        return Action(inputs=(container, axis), outputs=action.outputs)
 
-    is_tuple: bool
-    """``True`` when the user passed a ``tuple`` (vs. ``list``)."""
-
-
-def _repack_finalize(action: Action, ctx: _RepackContext) -> Action:
-    """Repacks ``inputs[:ctx.n]`` into the user's container followed by ``ctx.axis``."""
-    mappings = action.inputs[: ctx.n]
-    container: list[DeviceMapping] | tuple[DeviceMapping, ...] = (
-        tuple(mappings) if ctx.is_tuple else list(mappings)
-    )
-    return Action(inputs=(container, ctx.axis), outputs=action.outputs)
+    return finalize
 
 
 def passthrough_rule(x: TensorLayout, linear: bool = False) -> ActionSet:
@@ -310,22 +309,19 @@ def flatten_rule(
     return build_action_set(rows, layouts=(x,), extras=(start_dim, end_dim))
 
 
-class _ReshapeContext(NamedTuple):
-    """Per-call finalize context for ``reshape``."""
+def _reshape_finalize(
+    x: TensorLayout, shape: Shape
+) -> Callable[[Action], Action]:
+    """Builds the ``reshape`` finalize (per-rank projection), pre-bound."""
 
-    x: TensorLayout
-    shape: Shape
+    def finalize(action: Action) -> Action:
+        in_mapping = action.inputs[0]
+        assert isinstance(in_mapping, PlacementMapping)
+        out_placements = action.outputs[0].placements
+        local = _per_rank_target(shape, x.shape, out_placements, x.mapping.mesh)
+        return Action(inputs=(in_mapping, local), outputs=action.outputs)
 
-
-def _reshape_finalize(action: Action, ctx: _ReshapeContext) -> Action:
-    """Per-rank projection using the chosen output placements."""
-    in_mapping = action.inputs[0]
-    assert isinstance(in_mapping, PlacementMapping)
-    out_placements = action.outputs[0].placements
-    local = _per_rank_target(
-        ctx.shape, ctx.x.shape, out_placements, ctx.x.mapping.mesh
-    )
-    return Action(inputs=(in_mapping, local), outputs=action.outputs)
+    return finalize
 
 
 def _cells_match_product(target: Dim, src_dims: Sequence[Dim]) -> bool:
@@ -550,23 +546,16 @@ def reshape_rule(x: TensorLayout, shape: Any) -> ActionSet:
         layouts=(x,),
         extras=(shape,),
         result_shape=new_shape,
-        finalize=_reshape_finalize,
-        finalize_ctx=_ReshapeContext(x=x, shape=new_shape),
+        finalize=_reshape_finalize(x=x, shape=new_shape),
     )
 
 
-class _RebindContext(NamedTuple):
-    """Per-call finalize context for ``rebind``."""
+def _rebind_finalize(
+    shape: Shape, message: str, layout: object
+) -> Callable[[Action], Action]:
+    """Builds the ``rebind`` finalize, pre-bound to its context.
 
-    x: TensorLayout
-    shape: Shape
-    message: str
-    layout: object
-
-
-def _rebind_finalize(action: Action, ctx: _RebindContext) -> Action:
-    """Projects the rebind target shape per-rank under the input's placement.
-
+    Projects the rebind target shape per-rank under the input's placement.
     For each target axis, the per-shard size is:
 
     - the cell from a :class:`PerShardDim` wrapper if the caller passed one;
@@ -584,39 +573,48 @@ def _rebind_finalize(action: Action, ctx: _RebindContext) -> Action:
     the same load-balanced formula so dynamic dims not divisible by
     the mesh axis size are preserved exactly.
     """
-    in_mapping = action.inputs[0]
-    assert isinstance(in_mapping, PlacementMapping)
-    mesh = in_mapping.mesh
 
-    def _local(ti: int, td: DimLike) -> Dim:
-        d = Dim(td)
-        if is_per_shard_dim(d):
+    def finalize(action: Action) -> Action:
+        in_mapping = action.inputs[0]
+        assert isinstance(in_mapping, PlacementMapping)
+        mesh = in_mapping.mesh
+
+        def _local(ti: int, td: DimLike) -> Dim:
+            d = Dim(td)
+            if is_per_shard_dim(d):
+                return d
+            for mesh_axis, p in enumerate(in_mapping.placements):
+                if not isinstance(p, Sharded) or p.localized_axis() != ti:
+                    continue
+                group = mesh.mesh_shape[mesh_axis]
+                if isinstance(d, StaticDim):
+                    d = p.local_dim(
+                        d, mesh, mesh_axis, allow_symbolic_mint=False
+                    )
+                else:
+                    cells = tuple(
+                        ((r + 1) * d) // group - (r * d) // group
+                        for r in range(group)
+                    )
+                    d = make_per_shard_dim(cells)
             return d
-        for mesh_axis, p in enumerate(in_mapping.placements):
-            if not isinstance(p, Sharded) or p.localized_axis() != ti:
-                continue
-            group = mesh.mesh_shape[mesh_axis]
-            if isinstance(d, StaticDim):
-                d = p.local_dim(d, mesh, mesh_axis, allow_symbolic_mint=False)
-            else:
-                cells = tuple(
-                    ((r + 1) * d) // group - (r * d) // group
-                    for r in range(group)
-                )
-                d = make_per_shard_dim(cells)
-        return d
 
-    lifted = [_local(i, td) for i, td in enumerate(ctx.shape)]
-    per_rank = PerShard(
-        [
-            Shape(cell_at(d, r) if is_per_shard_dim(d) else d for d in lifted)
-            for r in range(mesh.num_devices)
-        ]
-    )
-    return Action(
-        inputs=(in_mapping, per_rank, ctx.message, ctx.layout),
-        outputs=action.outputs,
-    )
+        lifted = [_local(i, td) for i, td in enumerate(shape)]
+        per_rank = PerShard(
+            [
+                Shape(
+                    local_dim_at(d, r) if is_per_shard_dim(d) else d
+                    for d in lifted
+                )
+                for r in range(mesh.num_devices)
+            ]
+        )
+        return Action(
+            inputs=(in_mapping, per_rank, message, layout),
+            outputs=action.outputs,
+        )
+
+    return finalize
 
 
 def rebind_rule(
@@ -647,33 +645,28 @@ def rebind_rule(
         rows,
         layouts=(x,),
         extras=(shape, message, layout),
-        finalize=_rebind_finalize,
-        finalize_ctx=_RebindContext(
-            x=x, shape=target_shape, message=message, layout=layout
+        finalize=_rebind_finalize(
+            shape=target_shape, message=message, layout=layout
         ),
     )
 
 
-class _BroadcastContext(NamedTuple):
-    """Per-call finalize context for ``broadcast_to``."""
+def _broadcast_to_finalize(
+    x: TensorLayout, shape: list[Dim], out_dims: Iterable[DimLike] | None
+) -> Callable[[Action], Action]:
+    """Builds the ``broadcast_to`` finalize (per-rank projection), pre-bound."""
 
-    x: TensorLayout
-    shape: list[Dim]
-    out_dims: Iterable[DimLike] | None
+    def finalize(action: Action) -> Action:
+        in_mapping = action.inputs[0]
+        assert isinstance(in_mapping, PlacementMapping)
+        out_placements = action.outputs[0].placements
+        local = _per_rank_target(shape, x.shape, out_placements, x.mapping.mesh)
+        return Action(
+            inputs=(in_mapping, local, out_dims),
+            outputs=action.outputs,
+        )
 
-
-def _broadcast_to_finalize(action: Action, ctx: _BroadcastContext) -> Action:
-    """Per-rank projection using the chosen output placements."""
-    in_mapping = action.inputs[0]
-    assert isinstance(in_mapping, PlacementMapping)
-    out_placements = action.outputs[0].placements
-    local = _per_rank_target(
-        ctx.shape, ctx.x.shape, out_placements, ctx.x.mapping.mesh
-    )
-    return Action(
-        inputs=(in_mapping, local, ctx.out_dims),
-        outputs=action.outputs,
-    )
+    return finalize
 
 
 def broadcast_to_rule(
@@ -721,8 +714,7 @@ def broadcast_to_rule(
         rows,
         layouts=(x,),
         extras=(shape, out_dims),
-        finalize=_broadcast_to_finalize,
-        finalize_ctx=_BroadcastContext(
+        finalize=_broadcast_to_finalize(
             x=x, shape=target_shape, out_dims=out_dims
         ),
     )
@@ -759,8 +751,7 @@ def concat_rule(
         rows,
         layouts=layouts,
         extras=(axis,),
-        finalize=_repack_finalize,
-        finalize_ctx=_RepackContext(
+        finalize=_repack_finalize(
             n=len(layouts), axis=axis, is_tuple=isinstance(original_vals, tuple)
         ),
     )
@@ -778,8 +769,7 @@ def stack_rule(values: Iterable[TensorLayout], axis: int = 0) -> ActionSet:
         rows,
         layouts=layouts,
         extras=(axis,),
-        finalize=_repack_finalize,
-        finalize_ctx=_RepackContext(
+        finalize=_repack_finalize(
             n=len(layouts), axis=axis, is_tuple=isinstance(values, tuple)
         ),
     )
@@ -988,27 +978,26 @@ def scatter_add_rule(
     )
 
 
-class _SplitContext(NamedTuple):
-    """Per-call finalize context for ``split``."""
+def _split_finalize(
+    x: TensorLayout, split_sizes: Sequence[DimLike], axis: int
+) -> Callable[[Action], Action]:
+    """Builds the ``split`` finalize, pre-bound to its context."""
 
-    x: TensorLayout
-    split_sizes: Sequence[DimLike]
-    axis: int
+    def finalize(action: Action) -> Action:
+        chosen = action.inputs[0]
+        assert isinstance(chosen, PlacementMapping)
+        local_sizes = _localize_sizes(
+            [Dim(sz) for sz in split_sizes],
+            axis,
+            x.rank,
+            chosen.to_placements(),
+            x.mapping.mesh,
+        )
+        return Action(
+            inputs=(chosen, local_sizes, axis), outputs=action.outputs
+        )
 
-
-def _split_finalize(action: Action, ctx: _SplitContext) -> Action:
-    chosen = action.inputs[0]
-    assert isinstance(chosen, PlacementMapping)
-    local_sizes = _localize_sizes(
-        [Dim(sz) for sz in ctx.split_sizes],
-        ctx.axis,
-        ctx.x.rank,
-        chosen.to_placements(),
-        ctx.x.mapping.mesh,
-    )
-    return Action(
-        inputs=(chosen, local_sizes, ctx.axis), outputs=action.outputs
-    )
+    return finalize
 
 
 def split_rule(
@@ -1034,6 +1023,5 @@ def split_rule(
         rows,
         layouts=(x,),
         extras=(split_sizes, axis),
-        finalize=_split_finalize,
-        finalize_ctx=_SplitContext(x=x, split_sizes=split_sizes, axis=axis),
+        finalize=_split_finalize(x=x, split_sizes=split_sizes, axis=axis),
     )

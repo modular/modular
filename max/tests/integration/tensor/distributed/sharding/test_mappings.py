@@ -35,8 +35,8 @@ from max.experimental.sharding import (
     PlacementMapping,
     Replicated,
     Sharded,
-    is_fully_replicated,
 )
+from max.experimental.sharding.mappings import is_fully_replicated
 
 
 def cpu_devices(n: int) -> tuple[Device, ...]:

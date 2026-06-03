@@ -30,15 +30,14 @@ from max.graph.shape import Shape
 
 __all__ = [
     "PerShardDim",
-    "cell_at",
     "global_dim",
     "global_shape",
-    "is_one",
     "is_per_shard_dim",
     "is_static",
     "is_symbolic",
+    "local_dim_at",
+    "local_shape_at",
     "make_per_shard_dim",
-    "shape_at",
 ]
 
 
@@ -54,7 +53,7 @@ class PerShardDim(Dim):
 
     Used on :class:`Sharded` axes when shards hold different per-device
     sizes (uneven static splits, dynamic axes minted per-shard). The
-    wrapper must be projected per shard via :func:`cell_at` before
+    wrapper must be projected per shard via :func:`local_dim_at` before
     reaching MLIR.
     """
 
@@ -290,18 +289,6 @@ def is_per_shard_dim(d: object) -> TypeGuard[PerShardDim]:
     return isinstance(d, PerShardDim)
 
 
-def is_one(d: Dim) -> bool:
-    """``True`` if every cell of ``d`` is equal to 1.
-
-    For a :class:`PerShardDim`, checks every cell recursively. For any
-    other :class:`~max.graph.Dim`, checks ``d == 1`` via integer
-    comparison; non-static dims return ``False``.
-    """
-    if is_per_shard_dim(d):
-        return all(is_one(c) for c in d.per_shard)
-    return isinstance(d, StaticDim) and d.dim == 1
-
-
 def is_static(d: Dim) -> bool:
     """``True`` if ``d``'s global extent is a static (compile-time) size.
 
@@ -322,7 +309,7 @@ def is_symbolic(d: Dim) -> bool:
     return isinstance(global_dim(d), SymbolicDim)
 
 
-def cell_at(d: Dim, shard: int) -> Dim:
+def local_dim_at(d: Dim, shard: int) -> Dim:
     """Returns the dimension value at ``shard``.
 
     If ``d`` is a regular (non-distributed) :class:`Dim`, then ``d`` is
@@ -333,9 +320,9 @@ def cell_at(d: Dim, shard: int) -> Dim:
     return d
 
 
-def shape_at(shape: Sequence[Dim], shard: int) -> Shape:
+def local_shape_at(shape: Sequence[Dim], shard: int) -> Shape:
     """Projects every axis of ``shape`` onto a single ``shard`` index."""
-    return Shape([cell_at(Dim(d), shard) for d in shape])
+    return Shape([local_dim_at(Dim(d), shard) for d in shape])
 
 
 def global_shape(shape: Sequence[Dim]) -> Shape:

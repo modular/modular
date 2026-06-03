@@ -85,14 +85,13 @@ def pick(rule: Callable[..., ActionSet], *args: Any, **kwargs: Any) -> Action:
 
     Test-only helper that bypasses the source-graph trace: invokes ``rule``
     directly with the supplied :class:`TensorLayout`\\ s, enumerates the
-    feasible actions over the layouts' shared mesh, applies the per-device
-    memory-budget filter, and returns the cheapest by
-    :func:`pair_transition_cost`. Equivalent to one step of the
+    feasible actions over the layouts' shared mesh, and returns the cheapest
+    by :func:`pair_transition_cost`. Equivalent to one step of the
     :class:`~max.experimental.sharding.picker.GreedyReshard`
     but without going through a graph.
     """
     from max.experimental.sharding.picker import (
-        _filter_by_budget,
+        _finalize,
         cheapest_action,
         enumerate_feasible_actions,
     )
@@ -114,9 +113,4 @@ def pick(rule: Callable[..., ActionSet], *args: Any, **kwargs: Any) -> Action:
     actions = enumerate_feasible_actions(menu, mesh)
     if not actions:
         raise ValueError(f"pick: rule {rule.__name__!r} returned no actions.")
-    actions = _filter_by_budget(actions, in_layouts, mesh)
-    if not actions:
-        raise ValueError(
-            f"pick: rule {rule.__name__!r} actions all exceed memory budget."
-        )
-    return cheapest_action(actions, in_layouts, mesh)
+    return _finalize(menu, cheapest_action(actions, in_layouts, mesh))

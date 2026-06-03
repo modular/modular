@@ -35,9 +35,8 @@ from max.experimental.sharding import (
     PlacementMapping,
     Replicated,
     Sharded,
-    global_dim,
-    is_static,
 )
+from max.experimental.sharding.per_shard_dim import global_dim, is_static
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, DeviceRef, Shape, TensorValue, ops
 from max.graph.dim import Dim, StaticDim, SymbolicDim

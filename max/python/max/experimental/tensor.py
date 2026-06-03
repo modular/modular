@@ -117,12 +117,12 @@ from max.experimental.sharding import (
     PlacementMapping,
     Replicated,
     Sharded,
-    is_fully_replicated,
 )
+from max.experimental.sharding.mappings import is_fully_replicated
 from max.experimental.sharding.per_shard_dim import (
     is_per_shard_dim,
+    local_shape_at,
     make_per_shard_dim,
-    shape_at,
 )
 from max.experimental.support import contextvar_context, driver_tensor_type
 from max.graph import (
@@ -930,7 +930,7 @@ class Tensor(DLPackArray, HasTensorValue):
         values = []
         shape = self.shape
         for i in range(_mesh.num_devices):
-            local = shape_at(shape, i)
+            local = local_shape_at(shape, i)
             stype = TensorType(self.dtype, local, CPU())
             t = F.constant_external(f"{name}._shard.{i}", stype)
             t = t.to(_mesh.devices[i])

@@ -33,8 +33,8 @@ from max.experimental.sharding import (
     Placement,
     PlacementMapping,
     Replicated,
-    local_shard_shape_from_global,
 )
+from max.experimental.sharding.placements import local_shard_shape_from_global
 from max.experimental.tensor import Tensor, TensorType, defaults
 from max.graph import (
     DeviceRef,

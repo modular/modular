@@ -56,7 +56,6 @@ Sharding specifications
    DeviceMapping
    NamedMapping
    PlacementMapping
-   SpecEntry
 
 Distributed types
 -----------------
@@ -82,7 +81,6 @@ Per-op decisions
    Action
    ActionSet
    AxisAssignment
-   FeasibilityContext
    PerShard
 
 Pickers
@@ -130,20 +128,6 @@ Functions
    :template: autosummary/function.rst
 
    build_action_set
-   cell_at
-   cheapest_action
-   current_solver
-   enumerate_feasible_actions
    force_replicated_action_set
-   global_dim
-   global_shape
-   is_fully_replicated
-   is_one
-   is_per_shard_dim
    isolated_solver
-   local_shard_shape_from_global
-   make_per_shard_dim
    mode
-   shape_at
-   shard_shape
-   transition_cost

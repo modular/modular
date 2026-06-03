@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -83,22 +83,20 @@ def transition_cost(
     """Returns the cost of redistributing ``source`` to ``dest`` on ``axis_index``.
 
     Dispatches on :meth:`Placement.transition_to`, so custom
-    :class:`Placement` subclasses participate as long as they return
-    one of the built-in collective names (``"nop"``, ``"local_slice"``,
-    ``"allgather"``, ``"allreduce"``, ``"reduce_scatter"``,
-    ``"all_to_all"``, or ``"infeasible"``). Anything else is reported
-    as infeasible (``+inf``) so solvers reject it.
+    :class:`Placement` subclasses participate as long as they return a
+    :class:`Collective` member. Anything else is reported as infeasible
+    (``+inf``) so solvers reject it.
     """
     if source == dest:
         return 0.0
     name: Collective = source.transition_to(dest)
-    if name in ("nop", "local_slice"):
+    if name in (Collective.NOOP, Collective.LOCAL_SLICE):
         return 0.0
-    if name in ("allgather", "all_to_all"):
+    if name in (Collective.ALLGATHER, Collective.ALL_TO_ALL):
         return _ring_allgather(message_bytes, mesh, axis_index)
-    if name == "allreduce":
+    if name == Collective.ALLREDUCE:
         return _ring_allreduce(message_bytes, mesh, axis_index)
-    if name == "reduce_scatter":
+    if name == Collective.REDUCE_SCATTER:
         return _ring_reduce_scatter(message_bytes, mesh, axis_index)
     return float("inf")
 
@@ -154,15 +152,16 @@ def _action_cost(
 
 
 @dataclass(frozen=True)
-class FeasibilityContext:
+class _FeasibilityContext:
     """The state one feasibility check needs about *one* mesh axis.
 
-    Feasibility is decided per mesh axis: given the actual per-input
-    placements along that axis and the candidate :class:`AxisAssignment`,
-    does the candidate produce non-empty shards on every tensor input,
-    and does its output dim fit the user-requested result shape (if
-    any)? This context carries everything the helpers in
-    :func:`action_is_feasible` consult.
+    Internal to :mod:`cost`. Feasibility is decided per mesh axis: given
+    the actual per-input placements along that axis and the candidate
+    :class:`AxisAssignment`, does the candidate produce non-empty shards
+    on every tensor input, and does its output dim fit the user-requested
+    result shape (if any)? This context carries everything the helpers in
+    :func:`action_is_feasible` consult. The per-axis size is derived from
+    ``mesh`` and ``mesh_axis_idx`` via :attr:`group_size`.
     """
 
     layouts: tuple[TensorLayout, ...]
@@ -173,9 +172,6 @@ class FeasibilityContext:
     mesh_axis_idx: int
     """The mesh axis under evaluation. Indexes ``mesh.mesh_shape`` and the
     per-axis tuple of every input's placement."""
-    group_size: int
-    """``mesh.mesh_shape[mesh_axis_idx]``. Hoisted so the helpers don't keep
-    re-indexing."""
     result_shape: Sequence[Any] | None = None
     """Output shape constraint set by reshape-style rules (rules where the
     output shape is a rule argument, not derived). Used to reject
@@ -184,16 +180,17 @@ class FeasibilityContext:
     input_placements: Sequence[tuple[Placement, ...]] | None = None
     """Current per-input placements (one tuple per tensor input). ``None``
     falls back to reading ``layouts[i].mapping``."""
-    output_usage: Mapping[int, int] | None = None
-    """Per-tensor-axis cumulative shard factor across mesh axes already
-    picked in a multi-axis search. Lets the output-dim check stay
-    consistent when more than one mesh axis shards the same tensor axis."""
+
+    @property
+    def group_size(self) -> int:
+        """The size of the mesh axis under evaluation."""
+        return self.mesh.mesh_shape[self.mesh_axis_idx]
 
 
 def action_is_feasible(
     axs: AxisAssignment,
     actuals: tuple[Placement, ...],
-    ctx: FeasibilityContext,
+    ctx: _FeasibilityContext,
 ) -> bool:
     """Rejects strategies whose new :class:`Sharded` axes would create empty shards."""
     in_use = {ax for a in actuals if (ax := a.localized_axis()) is not None}
@@ -208,7 +205,7 @@ def _input_passes_empty_shard(
     p: Placement,
     actuals: tuple[Placement, ...],
     in_use: set[int],
-    ctx: FeasibilityContext,
+    ctx: _FeasibilityContext,
 ) -> bool:
     """True if input ``i`` under placement ``p`` would not produce an empty shard."""
     p_axis = p.localized_axis()
@@ -241,7 +238,7 @@ def _input_passes_empty_shard(
 
 
 def _cumulative_axis_group_size(
-    i: int, p_axis: int, ctx: FeasibilityContext
+    i: int, p_axis: int, ctx: _FeasibilityContext
 ) -> int:
     """Product of mesh-axis sizes already sharding tensor axis ``p_axis``."""
     placements = (
@@ -256,13 +253,8 @@ def _cumulative_axis_group_size(
     )
 
 
-def _output_dim_fits(output: Placement, ctx: FeasibilityContext) -> bool:
-    """True if the result-shape dim of ``output`` can host this axis's shard.
-
-    Accepts per-rank wrappers and ``-1`` wildcards; accepts
-    ``StaticDim`` only when the dim is at least the cumulative shard
-    factor; rejects bare symbolic or algebraic dims.
-    """
+def _output_dim_fits(output: Placement, ctx: _FeasibilityContext) -> bool:
+    """True if ``output``'s result-shape dim is large enough to shard on this mesh axis."""
     if ctx.result_shape is None:
         return True
     out_axis = output.localized_axis()
@@ -276,22 +268,21 @@ def _output_dim_fits(output: Placement, ctx: FeasibilityContext) -> bool:
         return False
     if d.dim == -1:
         return True
-    cum = (ctx.output_usage or {}).get(out_axis, 1) * ctx.group_size
-    return d.dim >= cum
+    return d.dim >= ctx.group_size
 
 
-# ─── Byte counts and per-rank memory ─────────────────────────────────
+# ─── Byte counts ──────────────────────────────────────────────────────
 
 
-def _global_axis_size(layout: TensorLayout, ti: int) -> int:
-    """Best-effort global static extent of axis ``ti``."""
-    dim = layout.shape[ti]
+def _global_axis_size(layout: TensorLayout, tensor_axis: int) -> int:
+    """Best-effort global static extent of tensor axis ``tensor_axis``."""
+    dim = layout.shape[tensor_axis]
     mesh = layout.mapping.mesh
     placements = layout.mapping.to_placements()
     factor = 1
-    for ma, p in enumerate(placements):
-        if isinstance(p, Sharded) and p.localized_axis() == ti:
-            factor *= mesh.mesh_shape[ma]
+    for mesh_axis, p in enumerate(placements):
+        if isinstance(p, Sharded) and p.localized_axis() == tensor_axis:
+            factor *= mesh.mesh_shape[mesh_axis]
     if is_per_shard_dim(dim):
         cell = dim.per_shard[0]
         if not isinstance(cell, StaticDim):
@@ -308,39 +299,32 @@ def tensor_byte_count(layout: TensorLayout) -> float:
     Symbolic axes fall back to ``1``.
     """
     total = float(layout.dtype.size_in_bytes)
-    for ti in range(len(layout.shape)):
-        total *= _global_axis_size(layout, ti)
+    for tensor_axis in range(len(layout.shape)):
+        total *= _global_axis_size(layout, tensor_axis)
     return total
 
 
-def per_rank_bytes(
-    full_bytes: Sequence[float], divisors: Sequence[int]
-) -> float:
-    """Returns ``sum(full_bytes[i] / divisors[i])``."""
-    return sum(fb / d for fb, d in zip(full_bytes, divisors, strict=True))
-
-
-def axis_actuals(
-    per_input_placements: Sequence[tuple[Placement, ...]], ax: int
+def input_placements_at_axis(
+    per_input_placements: Sequence[tuple[Placement, ...]], mesh_axis: int
 ) -> tuple[Placement, ...]:
-    """Per-input placement at mesh axis ``ax``, defaulting to ``Replicated``."""
+    """Per-input placement at ``mesh_axis``, defaulting to ``Replicated``."""
     return tuple(
-        p[ax] if len(p) > ax else Replicated() for p in per_input_placements
+        p[mesh_axis] if len(p) > mesh_axis else Replicated()
+        for p in per_input_placements
     )
 
 
-def admissible_rows_at_axis(
+def feasible_rows_at_axis(
     menu: ActionSet,
-    ax: int,
+    mesh_axis: int,
     per_input_placements: Sequence[tuple[Placement, ...]],
 ) -> tuple[AxisAssignment, ...]:
-    """Rows of ``menu`` feasible at mesh axis ``ax`` (no per-rank budget check)."""
-    actuals = axis_actuals(per_input_placements, ax)
-    ctx = FeasibilityContext(
+    """Rows of ``menu`` feasible at ``mesh_axis``."""
+    actuals = input_placements_at_axis(per_input_placements, mesh_axis)
+    ctx = _FeasibilityContext(
         layouts=menu.layouts,
         mesh=menu.mesh,
-        mesh_axis_idx=ax,
-        group_size=menu.mesh.mesh_shape[ax],
+        mesh_axis_idx=mesh_axis,
         result_shape=menu.result_shape,
         input_placements=per_input_placements,
     )
@@ -349,15 +333,6 @@ def admissible_rows_at_axis(
         for row in menu.axis_assignments
         if action_is_feasible(row, actuals, ctx)
     )
-
-
-def memory_budget_bytes_per_rank(mesh: DeviceMesh) -> float | None:
-    """Returns ``mesh``'s tightest per-device input-bytes ceiling, or ``None`` if unbounded."""
-    budgets = [mesh.memory_budget_for(d) for d in mesh.devices]
-    constrained = [b for b in budgets if b is not None]
-    if not constrained:
-        return None
-    return min(constrained)
 
 
 # ─── Menu builders ────────────────────────────────────────────────────
@@ -369,8 +344,7 @@ def build_action_set(
     layouts: tuple[TensorLayout, ...],
     extras: tuple[Any, ...] = (),
     result_shape: Sequence[Dim] | None = None,
-    finalize: Callable[[Action, Any], Action] | None = None,
-    finalize_ctx: Any = None,
+    finalize: Callable[[Action], Action] | None = None,
 ) -> ActionSet:
     """Wraps rule-emitted rows into a feasibility-filtered :class:`ActionSet`.
 
@@ -385,8 +359,7 @@ def build_action_set(
             :class:`Action`.
         result_shape: Output shape constraint for reshape-style rules.
         finalize: Optional post-pick transform of shape
-            ``(action, ctx) -> action``.
-        finalize_ctx: Opaque per-op context forwarded to ``finalize``.
+            ``action -> action`` (pre-bound by the rule).
     """
     if not layouts:
         raise ValueError("build_action_set: at least one layout required.")
@@ -412,7 +385,6 @@ def build_action_set(
         extras=extras,
         result_shape=result_shape,
         finalize=finalize,
-        finalize_ctx=finalize_ctx,
     )
 
 
@@ -444,17 +416,16 @@ def _feasible_at_any_axis(
     return any(
         action_is_feasible(
             row,
-            axis_actuals(placements_per_input, ax),
-            FeasibilityContext(
+            input_placements_at_axis(placements_per_input, mesh_axis),
+            _FeasibilityContext(
                 layouts=layouts,
                 mesh=mesh,
-                mesh_axis_idx=ax,
-                group_size=mesh.mesh_shape[ax],
+                mesh_axis_idx=mesh_axis,
                 result_shape=result_shape,
                 input_placements=placements_per_input,
             ),
         )
-        for ax in range(mesh.ndim)
+        for mesh_axis in range(mesh.ndim)
     )
 
 

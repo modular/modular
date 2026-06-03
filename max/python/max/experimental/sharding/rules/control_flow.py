@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable, Iterable
-from typing import Any, NamedTuple
+from typing import Any
 
 from max.experimental.sharding import (
     DeviceMapping,
@@ -47,44 +47,44 @@ def cond_rule(
     )
 
 
-class _WhileLoopContext(NamedTuple):
-    """Per-call finalize context for ``while_loop``.
+def _while_loop_finalize(
+    items: list[Any],
+    n: int,
+    predicate: Callable[..., TensorValue],
+    body: Callable[..., Value[Any] | Iterable[Value[Any]]],
+    container_type: type,
+) -> Callable[[Action], Action]:
+    """Builds the ``while_loop`` finalize, pre-bound to its context.
 
     Args:
         items: User's original ``initial_values`` flattened to a list,
             preserving non-tensor :class:`Value` entries in position.
-        n: Count of distributed :class:`TensorLayout` entries in
-            ``items``.
+        n: Count of distributed :class:`TensorLayout` entries in ``items``.
         predicate: User-supplied loop predicate callable.
         body: User-supplied loop body callable.
         container_type: Original container type to restore.
     """
 
-    items: list[Any]
-    n: int
-    predicate: Callable[..., TensorValue]
-    body: Callable[..., Value[Any] | Iterable[Value[Any]]]
-    container_type: type
+    def finalize(action: Action) -> Action:
+        mappings = action.inputs[:n]
+        suggested: list[DeviceMapping | Value[Any]] = []
+        out_mappings: list[DeviceMapping] = []
+        m_idx = 0
+        for v in items:
+            if isinstance(v, TensorLayout):
+                m = mappings[m_idx]
+                assert isinstance(m, PlacementMapping)
+                suggested.append(m)
+                out_mappings.append(m)
+                m_idx += 1
+            else:
+                suggested.append(v)
+        return Action(
+            inputs=(container_type(suggested), predicate, body),
+            outputs=tuple(out_mappings),
+        )
 
-
-def _while_loop_finalize(action: Action, ctx: _WhileLoopContext) -> Action:
-    mappings = action.inputs[: ctx.n]
-    suggested: list[DeviceMapping | Value[Any]] = []
-    out_mappings: list[DeviceMapping] = []
-    m_idx = 0
-    for v in ctx.items:
-        if isinstance(v, TensorLayout):
-            m = mappings[m_idx]
-            assert isinstance(m, PlacementMapping)
-            suggested.append(m)
-            out_mappings.append(m)
-            m_idx += 1
-        else:
-            suggested.append(v)
-    return Action(
-        inputs=(ctx.container_type(suggested), ctx.predicate, ctx.body),
-        outputs=tuple(out_mappings),
-    )
+    return finalize
 
 
 def while_loop_rule(
@@ -123,8 +123,7 @@ def while_loop_rule(
     pool = force_replicated_action_set(*tensor_layouts)
     return dataclasses.replace(
         pool,
-        finalize=_while_loop_finalize,
-        finalize_ctx=_WhileLoopContext(
+        finalize=_while_loop_finalize(
             items=items,
             n=n,
             predicate=predicate,

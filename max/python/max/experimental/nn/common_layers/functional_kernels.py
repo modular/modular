@@ -73,9 +73,14 @@ Independent = Replicated
 
 
 def _preserve_orig_mappings(
-    action: Action, orig_mappings: tuple[Any, ...]
-) -> Action:
-    return Action(inputs=orig_mappings, outputs=action.outputs)
+    orig_mappings: tuple[Any, ...],
+) -> Callable[[Action], Action]:
+    """Returns a finalize that restores the op's original input mappings."""
+
+    def finalize(action: Action) -> Action:
+        return Action(inputs=orig_mappings, outputs=action.outputs)
+
+    return finalize
 
 
 def grouped_matmul_ragged_rule(
@@ -101,8 +106,7 @@ def grouped_matmul_ragged_rule(
     return build_action_set(
         rows,
         layouts=layouts,
-        finalize=_preserve_orig_mappings,
-        finalize_ctx=tuple(l.mapping for l in layouts),
+        finalize=_preserve_orig_mappings(tuple(l.mapping for l in layouts)),
     )
 
 
