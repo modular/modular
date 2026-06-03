@@ -7102,3 +7102,56 @@ def tpool_patch_merger(
             )
         ],
     )[0].tensor
+
+
+def row_mean_of_squares(x: TensorValue) -> TensorValue:
+    """Computes the per-row mean of squares over the last axis.
+
+    For an input ``x`` flattened to ``[M, N]`` over its last axis, computes
+    ``out[m] = sum_n(float32(x[m, n]) ** 2) / N``. The square and accumulation
+    always run in ``float32`` regardless of the input dtype, and the result is
+    always ``float32``. The output preserves the leading axes with a trailing
+    size-1 reduction axis, matching ``ops.mean(x * x, axis=-1)``.
+
+    This is a fused, single-pass replacement for ``ops.mean(x * x, axis=-1)``
+    used in QK-RMSNorm-style variance computations. The generic reduce path
+    over-provisions the grid for small ``M`` (decode); this op launches exactly
+    one block per row.
+
+    Args:
+        x: The input tensor. Reduction runs over the last axis. Accepts
+            ``bfloat16`` or ``float32`` (any rank >= 1).
+
+    Returns:
+        A ``float32`` :class:`~max.graph.TensorValue` whose shape matches
+        ``x`` with the last axis replaced by ``1``.
+
+    Raises:
+        ValueError: If ``x`` dtype is not ``bfloat16`` or ``float32``.
+    """
+    if x.dtype not in (DType.bfloat16, DType.float32):
+        raise ValueError(
+            f"row_mean_of_squares expects bfloat16 or float32 input, got "
+            f"{x.dtype}"
+        )
+
+    # Flatten leading axes to a single rows dimension so the kernel sees [M, N].
+    rows = x.shape[:-1]
+    cols = x.shape[-1]
+    x_2d = x.reshape([-1, cols]) if x.rank != 2 else x
+
+    out_2d = ops.custom(
+        "mo.reduce.row_mean_of_squares",
+        device=x.device,
+        values=[x_2d],
+        out_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=[x_2d.shape[0], 1],
+                device=x.device,
+            )
+        ],
+    )[0].tensor
+
+    # Restore the leading axes with a trailing size-1 reduction axis.
+    return out_2d.reshape([*rows, 1])

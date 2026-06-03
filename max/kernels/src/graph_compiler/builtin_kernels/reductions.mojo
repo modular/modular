@@ -42,6 +42,7 @@ from nn.normalization import (
     rms_norm,
     rms_norm_fused_residual_add,
     rms_norm_rope_gpu,
+    row_mean_of_squares,
 )
 from nn.softmax import logsoftmax, softmax
 from nn.topk import top_k, top_k_shape_impl
@@ -57,6 +58,7 @@ from std.logger import Logger
 comptime logger = Logger()
 
 from std.utils import IndexList, StaticTuple
+from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
@@ -200,6 +202,52 @@ struct Mean:
         input: InputTensor[dtype=input_type, rank=input_rank, ...],
     ) raises -> IndexList[input_rank]:
         return reduce_shape(input, axis)
+
+
+@compiler.register("mo.reduce.row_mean_of_squares")
+struct RowMeanOfSquares:
+    """Per-row mean of squares over the last axis, accumulated in float32.
+
+    For input `x` of shape `[M, N]` computes `out[m, 0] = sum_n(x[m,n]^2) / N`
+    and writes a `[M, 1]` `output.dtype` result (typically float32). The square
+    and accumulation always run in the input's accumulation type (float32 for
+    bfloat16/float16/float32 inputs), independent of the output dtype.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[rank=2, ...],
+        input: FusedInputTensor[rank=2, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        if output.shape()[0] != input.shape()[0] or output.shape()[1] != 1:
+            raise Error("output must have shape [input_rows, 1]")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn(row: Int, val: Scalar[output.dtype]):
+            output.store[width=1](Index(row, 0), val)
+
+        row_mean_of_squares[input_fn, output_fn, target=target](
+            input.shape(), ctx
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[rank=2, ...],
+    ) -> IndexList[2]:
+        return Index(input.shape()[0], 1)
 
 
 @compiler.register("mo.reduce.add")

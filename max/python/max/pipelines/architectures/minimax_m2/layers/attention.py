@@ -37,6 +37,7 @@ from max.nn.kernels import (
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
+    row_mean_of_squares,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
@@ -404,10 +405,11 @@ class MiniMaxM2Attention(Module, Shardable):
             k = self.k_proj(x)
             v = self.v_proj(x)
 
-        qf = ops.cast(q, DType.float32)
-        kf = ops.cast(k, DType.float32)
-        q_var = ops.mean(qf * qf, axis=-1)  # [total_seq_len, 1]
-        k_var = ops.mean(kf * kf, axis=-1)  # [total_seq_len, 1]
+        # Per-row mean of squares (float32 accum) via a warp-tiled reduction
+        # kernel instead of the generic ops.mean(x*x) reduce, which is heavily
+        # over-provisioned at decode-time small M (~24us -> ~4us each).
+        q_var = row_mean_of_squares(q)  # [total_seq_len, 1] float32
+        k_var = row_mean_of_squares(k)  # [total_seq_len, 1] float32
         qk_var_local = ops.concat([q_var, k_var], axis=-1)  # [total_seq_len, 2]
         return q, k, v, qk_var_local
 
