@@ -984,6 +984,7 @@ class GenericOracle(PipelineOracle):
         auto_processor_cls: Any = transformers.AutoTokenizer,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         batch_size: int | list[int] | None = None,
+        add_bos_token: bool | None = None,
     ) -> None:
         self.model_path = model_path
         self._device_encoding_map = device_encoding_map
@@ -996,6 +997,7 @@ class GenericOracle(PipelineOracle):
         self.task = task
         self._use_cache = use_cache
         self.default_batch_size = batch_size
+        self.add_bos_token = add_bos_token
         self.trust_remote_code = config_params.get("trust_remote_code", False)
 
     @property
@@ -1061,6 +1063,11 @@ class GenericOracle(PipelineOracle):
             pipelines.TextGenerationPipelineInterface
             | pipelines.EmbeddingsPipeline,
         )
+        if self.add_bos_token is not None and hasattr(tokenizer, "delegate"):
+            # transformers v5 stopped honoring add_bos_token from
+            # tokenizer_config.json for some tokenizers, so raw-prompt encoding
+            # drops the leading BOS the reference goldens were generated with.
+            tokenizer.delegate.add_bos_token = self.add_bos_token
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -2070,6 +2077,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "use_subgraphs": False,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-R1": GenericOracle(
         model_path="deepseek-ai/DeepSeek-R1",
@@ -2081,6 +2089,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-V3.1-Terminus": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.1-Terminus",
@@ -2092,6 +2101,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-V3.2-Exp": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.2-Exp",
@@ -2116,6 +2126,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+        add_bos_token=True,
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
     "amd/Kimi-K2.5-MXFP4": AmdKimiK2_5MXFP4PipelineOracle(
