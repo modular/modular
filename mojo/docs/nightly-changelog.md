@@ -320,6 +320,17 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- Importing a Mojo module from Python no longer fails when the module lives in a
+  read-only directory (for example, a Mojo extension installed into a read-only
+  `site-packages`). Previously the importer always tried to write its compiled
+  artifacts to a `__mojocache__` directory next to the source, which raised an
+  `OSError` on a read-only file system. The importer now keeps that in-tree
+  behavior when the source directory is writable, and otherwise redirects the
+  cache to the Modular cache folder. That location honors the standard Modular
+  configuration: the `cache_dir` key in `modular.cfg`, the `MODULAR_CACHE_DIR`
+  and `MODULAR_HOME` environment variables, and the XDG base directory
+  specification.
+
 - The `mojo` compiler will now print the filename and line number in diagnostics
   that point to inaccessible source locations (e.g., from precompiled libraries)
   instead of a location at the top of the main file:
