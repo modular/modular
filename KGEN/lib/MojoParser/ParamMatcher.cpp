@@ -769,6 +769,11 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
         if (auto va = sugarDynCast<ParamListAttr>(actualAttr))
           toCheck = va.getValues();
 
+        SmallVector<ConstraintAttr> assumptions;
+        if (auto targetTrait = dyn_cast<TraitType>(targetMT)) {
+          state.declScope.getKnownAssumptionsIncludingParents(assumptions);
+        }
+
         fixableByUpCast = llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
           assert(LIT::isTypeExpr(typeExpr));
           // Try get the tightest possible metatype bound.
@@ -780,14 +785,22 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           FailureOr<bool> upCastable = IREmitter::canMetaTypeUpCastTo(
               shared, state.declScope.getLoc(), tightestBound, targetMT,
               &state.declScope);
-          return succeeded(upCastable) && upCastable.value();
+          if (succeeded(upCastable) && upCastable.value())
+            return true;
+
+          if (!assumptions.empty()) {
+            if (auto targetTrait = dyn_cast<TraitType>(targetMT)) {
+              return (LIT::attrConformsToTraitUnderAssumptions(
+                  typeExpr, targetTrait, shared, assumptions));
+            }
+          }
+          return false;
         });
 
         if (fixableByUpCast) {
           SmallVector<TypedAttr> casted =
               llvm::map_to_vector(toCheck, [targetMT](TypedAttr toMap) {
-                return TypeParamAttr::get(ASTType(UpcastAttr::strip(toMap)),
-                                          targetMT);
+                return UpcastAttr::get(targetMT, UpcastAttr::strip(toMap));
               });
 
           if (auto va = sugarDynCast<ParamListAttr>(actualAttr))
