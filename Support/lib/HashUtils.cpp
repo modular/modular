@@ -33,8 +33,23 @@
 
 #include "Support/Compiler/Threading.h"
 
-#include "xxh3.h"
+// HashUtils.h already includes xxhash.h (non-inline, with the full
+// XXH3_state_t definition). Do not include "xxh3.h": it forces XXH_INLINE_ALL,
+// which is incompatible with the dispatcher below.
 #include "xxhash.h"
+
+// On x86, route the streaming XXH3 update calls through the runtime CPU
+// dispatcher so hashing uses AVX2/AVX-512 when the host supports it. The
+// dispatcher redefines XXH3_{64,128}bits_update to *_dispatch variants
+// (implemented in xxh_x86dispatch.c, already compiled into @xxhash on x86_64),
+// so this include must precede the write_impl definitions below that call
+// them. It is confined to this translation unit, so the macro rewrites do not
+// leak through HashUtils.h. The reset/digest calls stay on the default path;
+// xxHash guarantees bit-identical output across all backends, so mixing them
+// is safe.
+#if defined(__x86_64__) || defined(_M_X64)
+#include "xxh_x86dispatch.h"
+#endif
 
 using namespace mlir;
 
@@ -42,8 +57,16 @@ M::raw_xxhash128_stream::raw_xxhash128_stream() : raw_ostream() {
   XXH3_128bits_reset(&State);
 }
 
+void M::raw_xxhash128_stream::write_impl(const char *Ptr, size_t Size) {
+  XXH3_128bits_update(&State, (void *)Ptr, Size);
+}
+
 M::raw_xxhash64_stream::raw_xxhash64_stream() : raw_ostream() {
   XXH3_64bits_reset(&State);
+}
+
+void M::raw_xxhash64_stream::write_impl(const char *Ptr, size_t Size) {
+  XXH3_64bits_update(&State, (void *)Ptr, Size);
 }
 
 std::array<uint8_t, 16> M::raw_xxhash128_stream::hash() {

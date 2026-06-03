@@ -17,7 +17,19 @@
 #include <string>
 #include <utility>
 
-#include "xxh3.h"
+// Pull in xxHash *without* XXH_INLINE_ALL so the streaming XXH3 functions
+// resolve to external symbols provided by @xxhash. XXH_INLINE_ALL would make
+// XXH_PUBLIC_API mean `static`, which is incompatible with the x86 runtime
+// dispatcher (xxh_x86dispatch) wired up in HashUtils.cpp, whose *_dispatch
+// symbols have external linkage. XXH_STATIC_LINKING_ONLY exposes the full
+// XXH3_state_t definition that the streams below store by value.
+//
+// NOTE: this header must not be included in the same translation unit as the
+// deprecated "xxh3.h" (which forces XXH_INLINE_ALL) — the two are mutually
+// exclusive. The x86 dispatcher itself is included only in HashUtils.cpp, so
+// its XXH3_*_update macro rewrites do not leak into consumers of this header.
+#define XXH_STATIC_LINKING_ONLY
+#include "xxhash.h"
 
 namespace mlir {
 class Operation;
@@ -29,10 +41,9 @@ namespace M {
 class raw_xxhash128_stream : public llvm::raw_ostream {
   XXH3_state_t State;
 
-  /// See raw_ostream::write_impl.
-  void write_impl(const char *Ptr, size_t Size) override {
-    XXH3_128bits_update(&State, (void *)Ptr, Size);
-  }
+  /// See raw_ostream::write_impl. Defined out-of-line in HashUtils.cpp so the
+  /// x86 dispatcher's XXH3 update macro rewrites stay confined to that file.
+  void write_impl(const char *Ptr, size_t Size) override;
 
 public:
   raw_xxhash128_stream();
@@ -50,10 +61,9 @@ public:
 class raw_xxhash64_stream : public llvm::raw_ostream {
   XXH3_state_t State;
 
-  /// See raw_ostream::write_impl.
-  void write_impl(const char *Ptr, size_t Size) override {
-    XXH3_64bits_update(&State, (void *)Ptr, Size);
-  }
+  /// See raw_ostream::write_impl. Defined out-of-line in HashUtils.cpp so the
+  /// x86 dispatcher's XXH3 update macro rewrites stay confined to that file.
+  void write_impl(const char *Ptr, size_t Size) override;
 
 public:
   raw_xxhash64_stream();
