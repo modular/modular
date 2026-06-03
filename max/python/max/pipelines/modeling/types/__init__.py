@@ -73,7 +73,12 @@ from .pipeline_variants import (
     VideoContentPart,
     VLMTextGenerationContext,
 )
-from .reasoning import ParsedReasoningDelta, ReasoningParser, ReasoningSpan
+from .reasoning import (
+    ParsedReasoningDelta,
+    ReasoningParser,
+    ReasoningPipelineTokenizer,
+    ReasoningSpan,
+)
 from .status import GenerationStatus
 from .task import InputModality, PipelineTask
 from .tokenizer import PipelineTokenizer, TokenizerEncoded, UnboundContextType
@@ -148,6 +153,7 @@ __all__ = [
     "ProcessorInputs",
     "Range",
     "ReasoningParser",
+    "ReasoningPipelineTokenizer",
     "ReasoningSpan",
     "Request",
     "RequestID",

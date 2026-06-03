@@ -64,6 +64,32 @@ async def convert_token_to_id(
     return int(encoded[0])
 
 
+def resolve_single_special_token(delegate: Any, token: str) -> int:
+    """Resolve a single special-token string to its id via an HF delegate.
+
+    Suitable for use in tokenizer ``__init__`` where the architecture
+    knows ``token`` is registered as a single special token in the
+    underlying vocab (for example, reasoning delimiters like ``<think>``
+    on Kimi K2.5 or ``<|channel>`` on Gemma 4).
+
+    Raises:
+        ValueError: If ``token`` is missing from the vocab (resolves to
+            ``unk_token_id``) or maps to more than one id.
+    """
+    token_id = delegate.convert_tokens_to_ids(token)
+    if isinstance(token_id, list):
+        raise ValueError(
+            f"Special token {token!r} resolved to multiple ids "
+            f"({token_id!r}); expected a single id."
+        )
+    if token_id == delegate.unk_token_id:
+        raise ValueError(
+            f"Special token {token!r} not found in tokenizer vocabulary "
+            f"(resolved to unk_token_id)."
+        )
+    return int(token_id)
+
+
 logger = logging.getLogger("max.pipelines")
 
 _UINT64_MASK = (1 << 64) - 1

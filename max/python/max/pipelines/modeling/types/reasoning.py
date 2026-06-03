@@ -18,11 +18,41 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
-from .tokenizer import PipelineTokenizer
+from max.pipelines.request import RequestType
+
+from .tokenizer import PipelineTokenizer, TokenizerEncoded, UnboundContextType
 
 _T = TypeVar("_T")
+
+
+@runtime_checkable
+class ReasoningPipelineTokenizer(
+    PipelineTokenizer[UnboundContextType, TokenizerEncoded, RequestType],
+    Protocol[UnboundContextType, TokenizerEncoded, RequestType],
+):
+    """:class:`PipelineTokenizer` that exposes its reasoning-delimiter token ids.
+
+    Implemented by architecture-specific tokenizers that drive a reasoning
+    parser (Gemma 4, Kimi K2.5, MiniMax M2). The tokenizer resolves the
+    delimiter ids once at construction and exposes them as instance
+    attributes so callers — for example
+    :class:`~max.pipelines.lib.pipeline_variants.overlap_text_generation.OverlapTextGenerationPipeline`'s
+    thinking-mode temperature scaling — can read them directly without
+    re-encoding ``<think>``/``</think>`` or depending on the reasoning
+    parser registry.
+    """
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """The token id that opens a reasoning span (e.g. ``<|channel>``)."""
+        ...
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """The token id that closes a reasoning span (e.g. ``<channel|>``)."""
+        ...
 
 
 class ReasoningSpan:

@@ -120,6 +120,7 @@ from max.pipelines.modeling.types import (
     EOSTracker,
     PipelineOutputsDict,
     PipelineTokenizer,
+    ReasoningPipelineTokenizer,
     RequestID,
     SpecDecodingState,
     TextGenerationContextType,
@@ -226,38 +227,21 @@ def _get_draft_kv_blocks(
 
 
 def _resolve_thinking_token_ids(
-    tokenizer: PipelineTokenizer[Any, Any, Any],
+    tokenizer: ReasoningPipelineTokenizer[Any, Any, Any],
 ) -> tuple[int, int]:
-    """Resolve ``<think>``/``</think>`` ids; returns ``(-1, -1)`` on failure."""
-    delegate = getattr(tokenizer, "delegate", None)
-    if delegate is None:
-        logger.warning(
-            "Reasoning parser is configured but tokenizer has no "
-            "'delegate'; thinking-mode temperature scaling disabled."
-        )
-        return (-1, -1)
+    """Resolve reasoning-delimiter token ids from a reasoning-aware tokenizer.
 
-    def _encode_one(text: str) -> int:
-        try:
-            ids = delegate.encode(text, add_special_tokens=False)
-        except TypeError:
-            # TikToken delegates omit add_special_tokens.
-            ids = delegate.encode(text)
-        if len(ids) != 1:
-            raise ValueError(
-                f"Token {text!r} did not map to a single id (got {ids!r})"
-            )
-        return int(ids[0])
-
-    try:
-        return (_encode_one("<think>"), _encode_one("</think>"))
-    except Exception as exc:
-        logger.warning(
-            "Failed to resolve <think>/</think> token ids; "
-            "thinking-mode temperature scaling disabled (%s)",
-            exc,
-        )
-        return (-1, -1)
+    Architecture-specific tokenizers that drive a reasoning parser declare
+    their delimiter ids by implementing
+    :class:`~max.pipelines.modeling.types.ReasoningPipelineTokenizer` (Gemma 4's
+    ``<|channel>``/``<channel|>``, Kimi K2.5's and MiniMax M2's
+    ``<think>``/``</think>``, etc.) and resolving the ids once at
+    construction.
+    """
+    return (
+        tokenizer.reasoning_start_token_id,
+        tokenizer.reasoning_end_token_id,
+    )
 
 
 @dataclass
@@ -1510,6 +1494,15 @@ class OverlapTextGenerationPipeline(
         self._think_start_token_id: int = -1
         self._think_end_token_id: int = -1
         if pipeline_config.runtime.reasoning_parser is not None:
+            if not isinstance(tokenizer, ReasoningPipelineTokenizer):
+                raise ValueError(
+                    f"reasoning_parser={pipeline_config.runtime.reasoning_parser!r} "
+                    f"requires the architecture's tokenizer to implement "
+                    f"ReasoningPipelineTokenizer, but "
+                    f"{type(tokenizer).__name__} does not. "
+                    f"Implement reasoning_start_token_id and "
+                    f"reasoning_end_token_id on the tokenizer."
+                )
             self._think_start_token_id, self._think_end_token_id = (
                 _resolve_thinking_token_ids(tokenizer)
             )
