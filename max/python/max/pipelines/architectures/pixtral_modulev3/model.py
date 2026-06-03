@@ -40,9 +40,11 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
+)
+from max.pipelines.lib.utils import (
+    parse_state_dict_from_weights,
     upper_bounded_default,
 )
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -76,6 +78,26 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     """The overall interface to the Pixtral model."""
 
     model_config_cls: ClassVar[type[Any]] = PixtralConfig
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Bounds ``max_length`` by ``text_config.max_position_embeddings`` (config is permissive)."""
+        upper_bound = huggingface_config.text_config.max_position_embeddings
+        try:
+            return upper_bounded_default(
+                upper_bound=upper_bound,
+                default=pipeline_config.model.max_length,
+            )
+        except ValueError as e:
+            raise ValueError(
+                f"Unable to infer max_length for {cls.__qualname__}, "
+                f"the provided max_length ({pipeline_config.model.max_length}) "
+                f"exceeds the model's max_position_embeddings ({upper_bound})."
+            ) from e
 
     vision_model: Callable[..., Any]
     """Compiled vision model (encoder + projector) for a ragged batch of images."""
@@ -272,23 +294,6 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
             image_token_indices=image_token_indices,
             kv_cache_inputs=kv_cache_inputs,
         )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.text_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Pixtral, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.text_config.max_position_embeddings})."
-            ) from e
 
     def _create_empty_image_embeddings(self) -> Buffer:
         return Buffer.zeros(

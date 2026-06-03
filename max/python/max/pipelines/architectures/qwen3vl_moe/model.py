@@ -186,15 +186,6 @@ class Qwen3VLModel(
         return 10 * 1024 * 1024 * 1024  # 10 GiB
 
     # TODO: Seems like a common pattern. Implement in a base class?
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the Qwen3VL model."""
-        return Qwen3VLConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Qwen3VL models into the MAX Engine session.
 

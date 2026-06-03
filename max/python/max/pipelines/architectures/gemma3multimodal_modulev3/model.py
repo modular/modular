@@ -152,14 +152,6 @@ class Gemma3MultiModalModelV3(
         return 15 * 1024 * 1024 * 1024  # 15 GiB
 
     @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Gemma3ForConditionalGenerationConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
-    @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return Gemma3ForConditionalGenerationConfig.get_num_layers(
             huggingface_config

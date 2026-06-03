@@ -258,6 +258,9 @@ class UnifiedEagleOutputs(ModelOutputs):
 class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""
 
+    #: Config class used to delegate ``calculate_max_seq_len`` and KV params.
+    model_config_cls: ClassVar[type[Any] | None] = None
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -375,31 +378,32 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return supported_encoding_dtype(quantization_encoding)
 
     @classmethod
-    @abstractmethod
+    def _calculate_max_seq_len_from_config(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Delegates to ``model_config_cls.calculate_max_seq_len`` or ``initialize().get_max_seq_len()``."""
+        model_config_cls = cls.model_config_cls
+        if model_config_cls is None:
+            raise NotImplementedError(
+                f"{cls.__qualname__} must set `model_config_cls` "
+                "or override `calculate_max_seq_len()`."
+            )
+        calculate = getattr(model_config_cls, "calculate_max_seq_len", None)
+        if calculate is not None:
+            return calculate(pipeline_config, huggingface_config)
+        return model_config_cls.initialize(pipeline_config).get_max_seq_len()
+
+    @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         """Calculates the optimal max sequence length for the model.
 
-        Models are expected to implement this method. The following example
-        shows how to implement it for a Mistral model:
-
-        .. code-block:: python
-
-            class MistralModel(PipelineModel):
-                @classmethod
-                def calculate_max_seq_len(cls, pipeline_config, huggingface_config) -> int:
-                    try:
-                        return upper_bounded_default(
-                            upper_bound=huggingface_config.max_seq_len,
-                            default=pipeline_config.model.max_length,
-                        )
-                    except ValueError as e:
-                        raise ValueError(
-                            "Unable to infer max_length for Mistral, the provided "
-                            f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                            f"model's max_seq_len ({huggingface_config.max_seq_len})."
-                        ) from e
+        Default implementation delegates to ``model_config_cls``. Override when
+        pipeline-model semantics differ from the config (for example, bounding
+        ``max_length`` where the config is permissive).
 
         Args:
             pipeline_config: Configuration for the pipeline.
@@ -408,8 +412,8 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         Returns:
             int: The maximum sequence length to use.
         """
-        raise NotImplementedError(
-            "PipelineModel must implement calculate_max_seq_len"
+        return cls._calculate_max_seq_len_from_config(
+            pipeline_config, huggingface_config
         )
 
     @classmethod
@@ -537,9 +541,6 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     """A pipeline model that supports KV cache."""
 
     kv_params: KVCacheParamInterface
-
-    #: Config class implementing ``construct_kv_params`` for this model.
-    model_config_cls: ClassVar[type[Any] | None] = None
 
     def __init__(
         self,

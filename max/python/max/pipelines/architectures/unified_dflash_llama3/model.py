@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device, DevicePinnedBuffer
@@ -133,6 +134,8 @@ class PersistentInputBuffers:
 
 class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
     """Unified DFlash Llama3: target + draft in one compiled graph."""
+
+    model_config_cls: ClassVar[type[Any]] = Llama3Config
 
     model: Model
 
@@ -356,14 +359,4 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
             seed=self._next_seed(),
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: PretrainedConfig,
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )

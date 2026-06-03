@@ -35,7 +35,6 @@ from max.pipelines.lib import (
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.types import RequestID
 from max.support.algorithm import flatten2d
-from transformers import AutoConfig
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
 from .lfm2 import LFM2
@@ -238,14 +237,6 @@ class LFM2Model(LlamaModelBase):
             dtype=self._model_config.dtype,
             max_slots=self.pipeline_config.runtime.max_batch_size or 1,
             device=self.devices[0],
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return LFM2Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )
 
     def _build_graph(

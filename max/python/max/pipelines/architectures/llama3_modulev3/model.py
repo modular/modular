@@ -37,7 +37,6 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from transformers import AutoConfig
 
 from .llama3 import Llama3
 from .model_config import Llama3Config
@@ -104,14 +103,6 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
             return_hidden_states,
         )
         self.model = self.load_model()
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
 
     def load_model(self) -> Callable[..., Any]:
         assert self.pipeline_config.runtime.max_batch_size, (

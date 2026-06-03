@@ -19,7 +19,7 @@ import logging
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -42,7 +42,6 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
 )
-from transformers import AutoConfig
 
 from .layers import (
     Qwen3AttentionNoCache,
@@ -78,6 +77,8 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     - Flash attention without cache operations
     - Last token pooling with L2 normalization
     """
+
+    model_config_cls: ClassVar[type[Any]] = Qwen3EmbeddingConfig
 
     model: Callable[..., Any]
     """Compiled model callable."""
@@ -271,12 +272,4 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             tokens=tokens_buffer.to(device),
             input_row_offsets=row_offsets_buffer,
             return_n_logits=return_n_logits_buffer,
-        )
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Qwen3EmbeddingConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )

@@ -44,7 +44,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from transformers.models.auto.configuration_auto import AutoConfig
+from transformers import AutoConfig
 
 from .model_config import Idefics3Config
 from .text_model.idefics3_text import Idefics3LanguageModel
@@ -184,6 +184,21 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
 
     model_config_cls: ClassVar[type[Any]] = Idefics3Config
 
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Uses ``max_length`` when set, else ``text_config.max_position_embeddings`` (config bounds)."""
+        max_seq_len = pipeline_config.model.max_length
+        if max_seq_len:
+            return max_seq_len
+        text_config = getattr(
+            huggingface_config, "text_config", huggingface_config
+        )
+        return getattr(text_config, "max_position_embeddings", 4096)
+
     vision_model: Model
     """The compiled vision model for processing images."""
 
@@ -218,21 +233,6 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         self.image_token_id = self.huggingface_config.image_token_id
 
         self._stacker = _VisionStacker()
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the Idefics3 model."""
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-
-        # Get `max_position_embeddings` from the `text_config`.
-        text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return getattr(text_config, "max_position_embeddings", 4096)
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Idefics3 models into the MAX Engine session.

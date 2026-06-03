@@ -180,11 +180,27 @@ def assert_image_embeddings_invariant(
 
 
 class InternVLModel(
-    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextAndVisionContext]
+    AlwaysSignalBuffersMixin,
+    PipelineModelWithKVCache[TextAndVisionContext],
 ):
     """An InternVL pipeline model for multimodal text generation."""
 
     model_config_cls: ClassVar[type[Any]] = InternVLConfig
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Uses ``max_length`` when set, else ``llm_config.max_position_embeddings`` (config bounds)."""
+        max_seq_len = pipeline_config.model.max_length
+        if max_seq_len:
+            return max_seq_len
+        llm_config = getattr(
+            huggingface_config, "llm_config", huggingface_config
+        )
+        return getattr(llm_config, "max_position_embeddings", 4096)
 
     vision_model: Model
     """The compiled vision model for processing images."""
@@ -221,21 +237,6 @@ class InternVLModel(
 
         # Initialize vision stacker for optimized parallel stacking.
         self._stacker = _VisionStacker()
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the InternVL model."""
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-
-        # Get `max_position_embeddings` from the `llm_config`.
-        llm_config = getattr(
-            huggingface_config, "llm_config", huggingface_config
-        )
-        return getattr(llm_config, "max_position_embeddings", 4096)
 
     @classmethod
     def estimate_activation_memory(

@@ -173,15 +173,6 @@ class Qwen2_5VLModel(
 
         self.vision_model, self.language_model = self.load_model(session)
 
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the Qwen2.5VL model."""
-        return Qwen2_5VLConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Qwen2.5VL models into the MAX Engine session.
 

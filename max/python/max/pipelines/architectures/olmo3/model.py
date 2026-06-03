@@ -36,7 +36,6 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from transformers import AutoConfig
 
 from .model_config import Olmo3Config
 from .olmo3 import Olmo3
@@ -108,28 +107,6 @@ class Olmo3Model(PipelineModelWithKVCache[TextContext]):
         )
 
         self.model = self.load_model()
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the Olmo3 model.
-
-        Uses the `max_length` from the :obj:`max.pipelines.config.PipelineConfig`
-        if provided, otherwise falls back to the `max_position_embeddings` from
-        the HuggingFace configuration's text config.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The calculated maximum sequence length.
-        """
-        return Olmo3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
 
     def load_model(self) -> Callable[..., Any]:
         """Loads the compiled Olmo3 model into the MAX Engine session.

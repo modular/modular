@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -35,10 +36,8 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    upper_bounded_default,
 )
 from max.pipelines.modeling.dataprocessing import collate_batch
-from transformers import AutoConfig
 
 from .graph import build_graph
 from .model_config import MPNetConfig
@@ -62,6 +61,8 @@ class MPNetInputs(ModelInputs):
 
 
 class MPNetPipelineModel(PipelineModel[TextContext]):
+    model_config_cls: ClassVar[type[MPNetConfig]] = MPNetConfig
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -82,23 +83,6 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             return_logits,
         )
         self.model = self.load_model(session)
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for MPNet, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, MPNetInputs)

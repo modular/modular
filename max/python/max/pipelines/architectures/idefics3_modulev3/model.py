@@ -139,6 +139,21 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
 
     model_config_cls: ClassVar[type[Any]] = Idefics3Config
 
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Uses ``max_length`` when set, else ``text_config.max_position_embeddings`` (config bounds)."""
+        max_seq_len = pipeline_config.model.max_length
+        if max_seq_len:
+            return max_seq_len
+        text_config = getattr(
+            huggingface_config, "text_config", huggingface_config
+        )
+        return getattr(text_config, "max_position_embeddings", 4096)
+
     vision_model: Callable[..., Any]
     """The compiled vision model."""
 
@@ -170,18 +185,6 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         self.vision_model, self.language_model = self.load_model()
         self.image_token_id = self.huggingface_config.image_token_id
         self._stacker = _VisionStacker()
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return getattr(text_config, "max_position_embeddings", 4096)
 
     def load_model(self) -> tuple[Callable[..., Any], Callable[..., Any]]:
         """Compile vision and language models using the V3 API.

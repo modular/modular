@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -85,6 +85,8 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
     The step model processes single new tokens using cached states.
     """
 
+    model_config_cls: ClassVar[type[Any]] = MambaConfig
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -128,14 +130,6 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return MambaConfig.get_num_layers(huggingface_config)
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return MambaConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
 
     @classmethod
     def get_kv_params(

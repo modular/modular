@@ -19,7 +19,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
@@ -51,7 +51,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
-    upper_bounded_default,
 )
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.pipelines.lib.vision_encoder_cache import (
@@ -154,6 +153,8 @@ class KimiK2_5Model(
 ):
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
 
+    model_config_cls: ClassVar[type[Any]] = KimiK2_5Config
+
     _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 
     _VISION_PEAK_BYTES_PER_PATCH_COEFF = 20
@@ -237,23 +238,6 @@ class KimiK2_5Model(
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.text_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for DeepseekV2, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_seq_len "
-                f"({huggingface_config.text_config.max_position_embeddings})."
-            ) from e
 
     def _create_model_config(
         self, state_dict: dict[str, WeightData]

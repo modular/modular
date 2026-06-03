@@ -47,7 +47,6 @@ from max.pipelines.lib.utils import (
 )
 from max.profiler import traced
 from max.support.algorithm import flatten2d
-from transformers import AutoConfig
 
 from .data_parallel_llama import create_graph as create_data_parallel_graph
 from .distributed_llama import DistributedLlama3
@@ -378,14 +377,6 @@ class LlamaModelBase(
             inputs.lora_grouped_offsets_kv = lora_grouped_offsets_kv
 
         return inputs
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:

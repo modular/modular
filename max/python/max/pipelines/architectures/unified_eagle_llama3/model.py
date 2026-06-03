@@ -36,7 +36,6 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     UnifiedEagleOutputs,
 )
-from max.pipelines.lib._hf_config import PretrainedConfig
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
@@ -370,14 +369,4 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
             seed=self._next_seed(),
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: PretrainedConfig,
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )

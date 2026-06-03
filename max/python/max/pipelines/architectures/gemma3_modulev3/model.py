@@ -102,15 +102,6 @@ class Gemma3Model(
 
         self.model = self.load_model()
 
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
-
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return Gemma3Config.get_num_layers(huggingface_config)
