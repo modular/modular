@@ -24,6 +24,7 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -33,7 +34,11 @@ from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class GptOssConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
+class GptOssConfig(
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+):
     """Configuration for GPT OSS models.
 
     Contains parameters specific to the GPT OSS architecture, typically
@@ -150,28 +155,6 @@ class GptOssConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             The number of hidden layers specified in the configuration.
         """
         return huggingface_config.num_hidden_layers
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the maximum sequence length for the model.
-
-        Uses the `max_length` from the :obj:`max.pipelines.config.PipelineConfig` if provided,
-        otherwise falls back to the `max_position_embeddings` from the HuggingFace
-        configuration's text config.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-
-        Returns:
-            The calculated maximum sequence length.
-        """
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
     @override
     @classmethod

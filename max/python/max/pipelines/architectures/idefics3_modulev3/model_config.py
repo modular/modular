@@ -24,8 +24,8 @@ from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
-    ArchConfigWithDecoderSubconfigKVParams,
     ArchConfigWithKVCache,
+    ArchVLConfigWithTextSubconfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
@@ -40,9 +40,7 @@ from ..llama3_modulev3.model_config import Llama3Config
 
 
 @dataclass(kw_only=True)
-class Idefics3Config(
-    ArchConfigWithDecoderSubconfigKVParams, ArchConfigWithKVCache
-):
+class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Idefics3 models (ModuleV3)."""
 
     devices: list[DeviceRef]
@@ -87,19 +85,6 @@ class Idefics3Config(
             huggingface_config, "text_config", huggingface_config
         )
         return text_config.num_hidden_layers
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculate maximum sequence length for Idefics3."""
-        text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config=pipeline_config,
-            huggingface_config=text_config,
-        )
 
     @override
     @classmethod

@@ -22,7 +22,9 @@ from .arch_config import (
     ArchConfigWithAttentionKVCache,
     ArchConfigWithKVAndVisionCache,
     ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
+    ArchVLConfigWithTextSubconfig,
 )
 from .generate import GenerateMixin
 from .pipeline_model import (
@@ -40,7 +42,9 @@ __all__ = [
     "ArchConfigWithAttentionKVCache",
     "ArchConfigWithKVAndVisionCache",
     "ArchConfigWithKVCache",
+    "ArchConfigWithPermissiveMaxSeqLen",
     "ArchConfigWithStoredKVParams",
+    "ArchVLConfigWithTextSubconfig",
     "DiffusionPipeline",
     "DiffusionPipelineOutput",
     "GenerateMixin",

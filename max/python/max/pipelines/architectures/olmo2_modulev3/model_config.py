@@ -26,6 +26,7 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
+    ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -35,7 +36,11 @@ from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class Olmo2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
+class Olmo2Config(
+    ArchConfigWithPermissiveMaxSeqLen,
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+):
     """Configuration for Olmo2 models.
 
     Contains parameters specific to the Olmo2 architecture, typically
@@ -141,15 +146,6 @@ class Olmo2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 1.0 / float(Olmo2Config.get_head_dim(huggingface_config))
             ),
         )
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.max_position_embeddings
 
     @override
     @classmethod
