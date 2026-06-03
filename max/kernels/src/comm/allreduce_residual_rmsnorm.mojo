@@ -10,11 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Fused allreduce + RMSNorm + FP8 quantization kernel.
+"""Fused allreduce + RMSNorm (+ optional FP8 quantization) kernel.
 
-Combines P2P allreduce, RMSNorm normalization, and FP8 dynamic quantization
-into a single kernel launch. Data stays in registers throughout — no global
-memory intermediate between allreduce and RMSNorm.
+Combines P2P allreduce, RMSNorm normalization, and optional FP8 dynamic
+quantization into a single kernel launch. Data stays in registers
+throughout — no global memory intermediate between allreduce and RMSNorm.
+
+Quantization is fused in only when the output dtype differs from the input
+dtype (`out_dtype != in_dtype`). When `out_dtype == in_dtype` (e.g. a bf16
+input with a bf16 output) the FP8 phases — per-row max, dynamic scale, and
+quantize — are skipped at compile time, the normalized value is written
+directly in the input dtype, and no per-row scale is produced.
 
 Three dispatch paths:
 
@@ -180,6 +186,9 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     comptime assert residual_output.T.flat_rank >= 2
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
+    # Fuse FP8 quantization only when the output dtype differs from the input.
+    # When out_dtype == in_dtype the max/scale/quantize phases are skipped.
+    comptime quantize = out_dtype != in_dtype
 
     var tid = thread_idx.x
     var idx = tid * simd_width
@@ -254,30 +263,36 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
             (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
         )
 
-        # Phase 2: Normalize + find max (preloaded gamma, no global load).
+        # Phase 2: Normalize (preloaded gamma, no global load).
         var normalized = SIMD[accum_type, simd_width](0)
-        var thread_max = Scalar[accum_type](0)
-
         if is_valid:
             normalized = (vec_data * norm_factor) * gamma_vec
-            thread_max = abs(normalized).reduce_max()
 
-        # Find maximum and compute scale.
-        var row_max = block.max[block_size=threads_per_block, broadcast=True](
-            thread_max
-        )
-        var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
-            out_dtype
-        ](row_max, scale_ub)
-        if tid == 0:
-            scale_buffer[row] = scale_factor
+        comptime if quantize:
+            # Phase 2b (FP8 only): find row max and compute the dynamic scale.
+            var thread_max = Scalar[accum_type](0)
+            if is_valid:
+                thread_max = abs(normalized).reduce_max()
+            var row_max = block.max[
+                block_size=threads_per_block, broadcast=True
+            ](thread_max)
+            var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
+                out_dtype
+            ](row_max, scale_ub)
+            if tid == 0:
+                scale_buffer[row] = scale_factor
 
-        # Phase 3: Quantize and write (normalized values in registers).
-        if is_valid:
-            var output_fp8 = fp8_quantize[out_dtype](
-                normalized, scale_factor_recip
-            )
-            output_fn[simd_width](row, idx, output_fp8)
+            # Phase 3: Quantize and write (normalized values in registers).
+            if is_valid:
+                var output_fp8 = fp8_quantize[out_dtype](
+                    normalized, scale_factor_recip
+                )
+                output_fn[simd_width](row, idx, output_fp8)
+        else:
+            # Phase 3 (no quant): write the normalized value directly in
+            # out_dtype (== in_dtype). No per-row scale is produced.
+            if is_valid:
+                output_fn[simd_width](row, idx, normalized.cast[out_dtype]())
 
     # NOTE: No end barrier needed. The FP8 output is consumed only by the
     # local GPU, so stream ordering guarantees writes complete before the
@@ -390,6 +405,10 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     comptime assert residual_output.T.flat_rank >= 2
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
+    # Fuse FP8 quantization only when the output dtype differs from the input.
+    # When out_dtype == in_dtype the scratch carries the normalized value in
+    # out_dtype (== in_dtype) and no scale section is reserved or written.
+    comptime quantize = out_dtype != in_dtype
 
     var tid = thread_idx.x
     var col_idx = tid * simd_width
@@ -404,9 +423,10 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     # Layout: [fp8_data | scales (padded) | bf16_residual (optional)]
     # See kernel docstring for the full size formula.
     var fp8_per_rank = rows_per_rank * cols
-    assert (
-        fp8_per_rank % 4 == 0
-    ), "fp8 scratch must be 4-byte aligned for scale stores"
+    comptime if quantize:
+        assert (
+            fp8_per_rank % 4 == 0
+        ), "fp8 scratch must be 4-byte aligned for scale stores"
 
     # Round up the scale element count to the next multiple of
     # (simd_width / sizeof(scales_dtype)) so that the residual scratch
@@ -414,10 +434,17 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     # Without this, rows_per_rank * sizeof(scales_dtype) may not be
     # divisible by simd_width, causing a misaligned SIMD residual store
     # when ceildiv(rows, ngpus) % (simd_width / sizeof(scales_dtype)) != 0.
+    # When not quantizing there is no scale section, so the residual scratch
+    # follows the output scratch directly (scale_pad_elements = 0).
     comptime scales_per_simd_chunk = simd_width // size_of[scales_dtype]()
-    var scale_pad_elements = (
-        ceildiv(rows_per_rank, scales_per_simd_chunk) * scales_per_simd_chunk
-    )
+    var scale_pad_elements: Int
+    comptime if quantize:
+        scale_pad_elements = (
+            ceildiv(rows_per_rank, scales_per_simd_chunk)
+            * scales_per_simd_chunk
+        )
+    else:
+        scale_pad_elements = 0
 
     # Local scratch pointers (for writes in Stage 1).
     # +1 advances the Signal pointer by sizeof(Signal) bytes, stepping
@@ -526,35 +553,51 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
             )
 
-            # Normalize + find max for FP8 scale.
+            # Normalize.
             var normalized = SIMD[accum_type, simd_width](0)
-            var thread_max = Scalar[accum_type](0)
             if is_valid:
                 normalized = (accum * norm_factor) * gamma_vec
-                thread_max = abs(normalized).reduce_max()
 
-            var row_max = block.max[
-                block_size=threads_per_block, broadcast=True
-            ](thread_max)
-            var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
-                out_dtype
-            ](row_max, scale_ub)
+            comptime if quantize:
+                # Find max for FP8 scale, write scale + fp8 to local scratch.
+                var thread_max = Scalar[accum_type](0)
+                if is_valid:
+                    thread_max = abs(normalized).reduce_max()
 
-            # Write scale to local scratch.
-            if tid == 0:
-                scratch_scale.address_space_cast[_target_address_space]().store(
-                    local_row, scale_factor
+                var row_max = block.max[
+                    block_size=threads_per_block, broadcast=True
+                ](thread_max)
+                var scale_factor, scale_factor_recip = (
+                    compute_dynamic_fp8_scale[out_dtype](row_max, scale_ub)
                 )
 
-            # Quantize and write fp8 to local scratch.
-            if is_valid:
-                var output_fp8 = fp8_quantize[out_dtype](
-                    normalized, scale_factor_recip
-                )
-                var local_elem = local_row * cols + col_idx
-                scratch_fp8.address_space_cast[_target_address_space]().store[
-                    width=simd_width, alignment=simd_width
-                ](local_elem, output_fp8)
+                # Write scale to local scratch.
+                if tid == 0:
+                    scratch_scale.address_space_cast[
+                        _target_address_space
+                    ]().store(local_row, scale_factor)
+
+                # Quantize and write fp8 to local scratch.
+                if is_valid:
+                    var output_fp8 = fp8_quantize[out_dtype](
+                        normalized, scale_factor_recip
+                    )
+                    var local_elem = local_row * cols + col_idx
+                    scratch_fp8.address_space_cast[
+                        _target_address_space
+                    ]().store[width=simd_width, alignment=simd_width](
+                        local_elem, output_fp8
+                    )
+            else:
+                # No quant: write normalized value (out_dtype == in_dtype) to
+                # local scratch. No scale is computed or written.
+                if is_valid:
+                    var local_elem = local_row * cols + col_idx
+                    scratch_fp8.address_space_cast[
+                        _target_address_space
+                    ]().store[width=simd_width, alignment=simd_width](
+                        local_elem, normalized.cast[out_dtype]()
+                    )
 
     # Per-block barrier with fence: block B waits for block B on all GPUs.
     # `syncthreads` plus the release/acquire atomics inside `_multi_gpu_barrier`
@@ -575,9 +618,10 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
             var row = gpu_row_start + local_row
             var local_elem = local_row * cols + col_idx
 
-            # Read fp8 from gpu's scratch and write to output.
+            # Read output value (fp8 when quantizing, else out_dtype) from
+            # gpu's scratch and write to output.
             if is_valid:
-                var fp8_val = (
+                var out_val = (
                     fp8_ptrs[gpu]
                     .address_space_cast[_target_address_space]()
                     .load[
@@ -586,15 +630,16 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                         invariant=True,
                     ](local_elem)
                 )
-                output_fn[simd_width](row, col_idx, fp8_val)
+                output_fn[simd_width](row, col_idx, out_val)
 
-            # Thread 0: read scale from gpu's scratch → scale_buffer.
-            if tid == 0:
-                scale_buffer[row] = (
-                    scale_ptrs[gpu]
-                    .address_space_cast[_target_address_space]()
-                    .load[invariant=True](local_row)
-                )
+            # Thread 0: read scale from gpu's scratch → scale_buffer (FP8 only).
+            comptime if quantize:
+                if tid == 0:
+                    scale_buffer[row] = (
+                        scale_ptrs[gpu]
+                        .address_space_cast[_target_address_space]()
+                        .load[invariant=True](local_row)
+                    )
 
             # Read bf16 residual from gpu's scratch (compile-time gated).
             comptime if has_residual:
@@ -782,41 +827,49 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     var grid_dim = min(ceildiv(rows, ngpus), max_blocks)
     var block_dim = threads_per_block
 
+    # Fuse FP8 quantization only when the output dtype differs from the input.
+    comptime quantize = out_dtype != in_dtype
+
     # Validate that the signal buffer scratch layout is correctly aligned.
-    # The 2-stage kernel places fp8 data immediately after the Signal header,
-    # then scale values (padded to simd_width bytes) immediately after the
-    # fp8 block, then the residual (if has_residual). For scale values to
-    # be properly aligned, the fp8 block size must be a multiple of
-    # sizeof(scales_dtype). The scale section is padded to simd_width bytes
-    # so the residual section is simd_width-byte aligned.
-    # Callers must also ensure each rank_sigs[i] buffer has at least:
-    #   sizeof(Signal) + fp8_scratch + scale_scratch_padded bytes
+    # The 2-stage kernel places the output data immediately after the Signal
+    # header (fp8 when quantizing, else out_dtype == in_dtype). When
+    # quantizing, the scale values (padded to simd_width bytes) follow; with no
+    # quantization there is no scale section. The residual (if has_residual)
+    # comes last. For scale values to be properly aligned, the output block
+    # size must be a multiple of sizeof(scales_dtype); the scale section is
+    # padded to simd_width bytes so the residual section is simd_width-byte
+    # aligned.
+    # Callers must ensure each rank_sigs[i] buffer has at least:
+    #   sizeof(Signal) + output_scratch [+ scale_scratch_padded if quantizing]
     # (plus residual_scratch = rows_per_rank * cols * sizeof(in_dtype) if
     # has_residual). See the kernel docstring for the full formula.
     var _rows_per_rank = ceildiv(rows, ngpus)
-    var _fp8_scratch = _rows_per_rank * cols
-    var _scale_scratch_raw = _rows_per_rank * size_of[scales_dtype]()
-    # Pad scale section to simd_width bytes (matches scale_pad_elements in kernel).
-    var _scale_scratch = ceildiv(_scale_scratch_raw, simd_width) * simd_width
-    var _min_buf = size_of[Signal]() + _fp8_scratch + _scale_scratch
+    var _out_scratch = _rows_per_rank * cols * size_of[out_dtype]()
+    var _scale_scratch = 0
+    comptime if quantize:
+        var _scale_scratch_raw = _rows_per_rank * size_of[scales_dtype]()
+        # Pad scale section to simd_width bytes (matches scale_pad_elements).
+        _scale_scratch = ceildiv(_scale_scratch_raw, simd_width) * simd_width
+    var _min_buf = size_of[Signal]() + _out_scratch + _scale_scratch
     comptime if has_residual:
         _min_buf += _rows_per_rank * cols * size_of[in_dtype]()
-    assert _fp8_scratch % size_of[scales_dtype]() == 0, (
-        String("2-stage: fp8 scratch (")
-        + String(_fp8_scratch)
-        + " B) must be a multiple of sizeof(scales_dtype) for scale pointer"
-        + " alignment; rank_sigs[i] must be >= "
-        + String(_min_buf)
-        + " bytes"
-    )
+    comptime if quantize:
+        assert _out_scratch % size_of[scales_dtype]() == 0, (
+            String("2-stage: output scratch (")
+            + String(_out_scratch)
+            + " B) must be a multiple of sizeof(scales_dtype) for scale pointer"
+            + " alignment; rank_sigs[i] must be >= "
+            + String(_min_buf)
+            + " bytes"
+        )
     comptime if has_residual:
-        assert (_fp8_scratch + _scale_scratch) % simd_width == 0, (
-            String("2-stage: residual scratch offset (fp8=")
-            + String(_fp8_scratch)
+        assert (_out_scratch + _scale_scratch) % simd_width == 0, (
+            String("2-stage: residual scratch offset (output=")
+            + String(_out_scratch)
             + " B + scales_padded="
             + String(_scale_scratch)
             + " B = "
-            + String(_fp8_scratch + _scale_scratch)
+            + String(_out_scratch + _scale_scratch)
             + " B) must be a multiple of simd_width ("
             + String(simd_width)
             + " B) for SIMD residual stores"
@@ -1028,8 +1081,8 @@ def _dispatch_fused_kernel[
 ) raises:
     """Dispatch the fused kernel with appropriate simd width and stage count.
 
-    Centralizes the dispatch logic shared by allreduce_rmsnorm_fp8 and
-    allreduce_residual_rmsnorm_fp8. Selects simd width based on column count
+    Centralizes the dispatch logic shared by allreduce_rmsnorm and
+    allreduce_residual_rmsnorm. Selects simd width based on column count
     and 1-stage vs 2-stage based on payload size.
     """
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
@@ -1039,6 +1092,13 @@ def _dispatch_fused_kernel[
     ]()
     comptime sw1 = base_simd_width
     comptime sw2 = base_simd_width * 2
+
+    # Fuse FP8 quantization only when the output dtype differs from the input.
+    # The split (2-kernel) path is FP8-only: it relies on the compact FP8
+    # all-gather and on `rms_norm_fused_fp8`'s `compile_only` JIT-deadlock
+    # guard, neither of which has a non-quant analog. So when not quantizing
+    # the dispatch only ever picks the 1-stage or 2-stage fused kernels.
+    comptime quantize = out_dtype != in_dtype
 
     # Use 2-stage (reduce-scatter + fused all-gather) for large payloads.
     # Threshold is per-rank payload: each GPU processes ceildiv(rows, ngpus)
@@ -1112,12 +1172,12 @@ def _dispatch_fused_kernel[
     elif force_stage == 2:
         use_2stage = True
     elif force_stage == 3:
-        # Force split (2-kernel) path.
+        # Force split (2-kernel) path (FP8/quantizing residual only).
         use_2stage = False
-        comptime if has_residual:
+        comptime if has_residual and quantize:
             use_split = True
     else:
-        comptime if has_residual:
+        comptime if has_residual and quantize:
             comptime if has_amd_gpu_accelerator():
                 # MI355: 2-stage fused beats split for cols <= 8192,
                 # split beats 2-stage for wider columns (16384+).
@@ -1142,6 +1202,10 @@ def _dispatch_fused_kernel[
                     use_2stage = True
                 else:
                     use_2stage = False
+        elif has_residual:
+            # Non-quant residual: the split path is FP8-only, so pick between
+            # the 1-stage and 2-stage fused kernels by per-rank payload only.
+            use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
         else:
             use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
 
@@ -1200,7 +1264,10 @@ def _dispatch_fused_kernel[
         )
 
     if use_split:
-        comptime if has_residual:
+        # use_split is only ever set when has_residual and quantize, and the
+        # comptime guard keeps the FP8-only split launcher from being
+        # instantiated for the non-quant case.
+        comptime if has_residual and quantize:
             _launch_split_allreduce_rmsnorm_fp8[
                 in_dtype, out_dtype, scales_dtype, ngpus
             ](
@@ -1235,7 +1302,7 @@ def _dispatch_fused_kernel[
     else:
         comptime max_cols = WARP_SIZE * sw2 * max_warps_per_block
         raise Error(
-            "allreduce_rmsnorm_fp8: cols ("
+            "allreduce_rmsnorm: cols ("
             + String(cols)
             + ") exceeds max supported ("
             + String(max_cols)
@@ -1246,7 +1313,7 @@ def _dispatch_fused_kernel[
 # --- Public API ---
 
 
-def allreduce_rmsnorm_fp8[
+def allreduce_rmsnorm[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
@@ -1267,55 +1334,66 @@ def allreduce_rmsnorm_fp8[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
-    """Fused allreduce + RMSNorm + FP8 quantization.
+    """Fused allreduce + RMSNorm with optional FP8 quantization.
 
-    Combines P2P allreduce across GPUs, RMSNorm normalization, and FP8
-    dynamic quantization into a single kernel launch. Eliminates the
-    global memory round-trip between allreduce output and RMSNorm input.
+    Combines a P2P allreduce across GPUs, RMSNorm, and — when the output dtype
+    differs from the input dtype — FP8 dynamic quantization into a single
+    kernel launch, eliminating the global memory round-trip between allreduce
+    output and RMSNorm input. When `out_dtype == in_dtype` the quantization is
+    skipped: the normalized value is written directly in the input dtype and
+    `scale_ub` and `scale_output` are ignored.
 
     Parameters:
         in_dtype: Input data type (e.g. bfloat16).
-        out_dtype: FP8 output data type (e.g. float8_e4m3fn).
-        scales_dtype: Scale factor data type (e.g. float32).
+        out_dtype: Output data type. Either a float8 type (fuses
+            quantization) or equal to `in_dtype` (no quantization).
+        scales_dtype: Scale factor data type (e.g. float32). Ignored when
+            `out_dtype == in_dtype`.
         ngpus: Number of GPUs participating.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
 
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
-        output: Output buffer for FP8 values as a TileTensor.
+        output: Output buffer (FP8 values when quantizing, else `in_dtype`).
         gamma: RMSNorm gamma weights (1D TileTensor of length cols).
         epsilon: RMSNorm epsilon for numerical stability.
         weight_offset: Additive offset for gamma weights.
-        scale_ub: Upper bound for FP8 scale clamping.
-        scale_output: Output buffer for per-row FP8 scales as a TileTensor.
+        scale_ub: Upper bound for FP8 scale clamping (ignored when not
+            quantizing).
+        scale_output: Output buffer for per-row FP8 scales (ignored, and not
+            written, when not quantizing).
         rank_sigs: Per-GPU signal pointers for synchronization.
         ctx: Device context for this GPU.
 
     Note:
-        This kernel does not issue an end barrier. The FP8 output and
-        scale buffers are safe to read only on the local GPU (stream
-        ordering guarantees visibility). If a remote GPU needs to read
-        these outputs, the caller must insert an explicit barrier.
-        The start barrier of the NEXT allreduce call protects the
-        input buffers that are read by remote GPUs.
+        This kernel does not issue an end barrier. The output and scale
+        buffers are safe to read only on the local GPU (stream ordering
+        guarantees visibility). If a remote GPU needs to read these outputs,
+        the caller must insert an explicit barrier. The start barrier of the
+        NEXT allreduce call protects the input buffers that are read by remote
+        GPUs.
 
         Signal buffer sizing:
           1-stage path (payload < threshold): size_of[Signal]() only.
           2-stage path (payload > threshold):
             size_of[Signal]()
-            + ceildiv(rows, ngpus) * cols                               (fp8 data)
+            + ceildiv(rows, ngpus) * cols * sizeof(out_dtype)          (output)
             + align_up(ceildiv(rows, ngpus) * sizeof(scales_dtype),
-                       simd_width)                                       (scales + pad)
+                       simd_width)                          (scales + pad, if
+                                                             quantizing)
     """
-    comptime assert ngpus >= 2, "allreduce_rmsnorm_fp8 requires at least 2 GPUs"
+    comptime assert ngpus >= 2, "allreduce_rmsnorm requires at least 2 GPUs"
     comptime assert (
         in_dtype.is_floating_point()
     ), "in_dtype must be floating point"
-    comptime assert out_dtype.is_float8(), "out_dtype must be float8"
+    comptime assert (out_dtype == in_dtype) or out_dtype.is_float8(), (
+        "out_dtype must be a float8 type (fuse quantization) or equal to"
+        " in_dtype (skip quantization)"
+    )
 
     if not is_p2p_enabled():
-        raise Error("allreduce_rmsnorm_fp8 requires P2P access between GPUs")
+        raise Error("allreduce_rmsnorm requires P2P access between GPUs")
 
     # Compute rows/cols from TileTensor dims.
     var in_num_elems = input_buffers[0].num_elements()
@@ -1363,7 +1441,7 @@ def allreduce_rmsnorm_fp8[
     )
 
 
-def allreduce_residual_rmsnorm_fp8[
+def allreduce_residual_rmsnorm[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
@@ -1386,12 +1464,21 @@ def allreduce_residual_rmsnorm_fp8[
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
-    """TileTensor primary implementation of allreduce_residual_rmsnorm_fp8.
+    """Fused allreduce + residual add + RMSNorm with optional FP8 quantization.
+
+    Combines a P2P allreduce, a residual add, RMSNorm, and — when the output
+    dtype differs from the input dtype — FP8 dynamic quantization into a fused
+    kernel. When `out_dtype == in_dtype` the quantization is skipped: the
+    normalized value is written directly in the input dtype and `scale_ub` and
+    `scale_output` are ignored (the per-row scale is neither computed nor
+    written).
 
     Parameters:
         in_dtype: Input data type (e.g. bfloat16).
-        out_dtype: FP8 output data type (e.g. float8_e4m3fn).
-        scales_dtype: Scale factor data type (e.g. float32).
+        out_dtype: Output data type. Either a float8 type (fuses
+            quantization) or equal to `in_dtype` (no quantization).
+        scales_dtype: Scale factor data type (e.g. float32). Ignored when
+            `out_dtype == in_dtype`.
         ngpus: Number of GPUs participating.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
@@ -1399,24 +1486,29 @@ def allreduce_residual_rmsnorm_fp8[
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
         residual: Residual buffer as a TileTensor.
-        output: Output buffer for FP8 values as a TileTensor.
+        output: Output buffer (FP8 values when quantizing, else `in_dtype`).
         residual_output: Output buffer for pre-norm sum as a TileTensor.
         gamma: RMSNorm gamma weights (1D TileTensor).
         epsilon: RMSNorm epsilon for numerical stability.
         weight_offset: Additive offset for gamma weights.
-        scale_ub: Upper bound for FP8 scale clamping.
-        scale_output: Output buffer for per-row FP8 scales as a TileTensor.
+        scale_ub: Upper bound for FP8 scale clamping (ignored when not
+            quantizing).
+        scale_output: Output buffer for per-row FP8 scales (ignored, and not
+            written, when not quantizing).
         rank_sigs: Per-GPU signal pointers for synchronization.
         ctx: Device context for this GPU.
     """
     comptime assert (
         in_dtype.is_floating_point()
     ), "in_dtype must be floating point"
-    comptime assert out_dtype.is_float8(), "out_dtype must be float8"
+    comptime assert (out_dtype == in_dtype) or out_dtype.is_float8(), (
+        "out_dtype must be a float8 type (fuse quantization) or equal to"
+        " in_dtype (skip quantization)"
+    )
 
     if not is_p2p_enabled():
         raise Error(
-            "allreduce_residual_rmsnorm_fp8 requires P2P access between GPUs"
+            "allreduce_residual_rmsnorm requires P2P access between GPUs"
         )
 
     # Compute rows/cols from TileTensor dims. The internal dispatch flattens

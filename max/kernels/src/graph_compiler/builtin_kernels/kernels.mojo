@@ -27,7 +27,7 @@ import extensibility as compiler
 from std.algorithm import mean
 from comm.allreduce import allreduce
 
-from comm.allreduce_residual_rmsnorm_fp8 import allreduce_residual_rmsnorm_fp8
+from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
 from comm import MAX_GPUS, Signal
 from extensibility import StaticTensorSpec
 from std.gpu.host import CompletionFlag, DeviceContext, DeviceContextList
@@ -2366,7 +2366,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         Single-device analog of `DistributedAllReduceAddRMSNormQuantFP8`, for
         use inside `mo.parallel`.  The parallel framework launches one
         instance per GPU; this kernel invokes the same underlying primitive
-        (`allreduce_residual_rmsnorm_fp8`) that the distributed variant calls
+        (`allreduce_residual_rmsnorm`) that the distributed variant calls
         from within `_launch_device_collective`, but for a single device.
 
         Args:
@@ -2395,15 +2395,21 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         var rows = in_num_elems // cols
         var rows_per_rank = ceildiv(rows, num_devices)
 
-        var fp8_size_bytes = cols * rows_per_rank  # fp8 = 1byte
+        # Output scratch holds fp8 (1 byte) when quantizing; this op is
+        # FP8-only, but size by output_type so the math stays correct if the
+        # output ever matches the input dtype (no-quant path).
+        var output_size_bytes = cols * rows_per_rank * size_of[output_type]()
         var pessimistic_simd_width = 32  # just to be safe...
-        var scales_size_bytes = align_up(
-            rows_per_rank * size_of[scales_type](), pessimistic_simd_width
+        var scales_size_bytes = (
+            align_up(
+                rows_per_rank * size_of[scales_type](), pessimistic_simd_width
+            ) if output_type
+            != dtype else 0
         )
         var residual_size_bytes = cols * rows_per_rank * size_of[dtype]()
 
         var scratch_buffer_size_bytes = (
-            fp8_size_bytes + scales_size_bytes + residual_size_bytes
+            output_size_bytes + scales_size_bytes + residual_size_bytes
         )
         _check_signal_buffer_size(
             signal_buffers[0].size(), scratch_buffer_size_bytes
@@ -2425,7 +2431,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             )
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
-        allreduce_residual_rmsnorm_fp8(
+        allreduce_residual_rmsnorm(
             in_tensors,
             residual.to_tile_tensor[DType.int64]().as_immut(),
             output.to_tile_tensor[DType.int64](),

@@ -27,7 +27,7 @@ import extensibility as compiler
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 
-from comm.allreduce_residual_rmsnorm_fp8 import allreduce_residual_rmsnorm_fp8
+from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
 from comm.reducescatter import reducescatter
 from comm.broadcast import broadcast
 from comm.scatter import scatter
@@ -664,15 +664,21 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         var rows = in_num_elems // cols
         var rows_per_rank = ceildiv(rows, num_devices)
 
-        var fp8_size_bytes = cols * rows_per_rank  # fp8 = 1byte
+        # Output scratch holds fp8 (1 byte) when quantizing; this op is
+        # FP8-only, but size by output_type so the math stays correct if the
+        # output ever matches the input dtype (no-quant path).
+        var output_size_bytes = cols * rows_per_rank * size_of[output_type]()
         var pessimistic_simd_width = 32  # just to be safe...
-        var scales_size_bytes = align_up(
-            rows_per_rank * size_of[scales_type](), pessimistic_simd_width
+        var scales_size_bytes = (
+            align_up(
+                rows_per_rank * size_of[scales_type](), pessimistic_simd_width
+            ) if output_type
+            != dtype else 0
         )
         var residual_size_bytes = cols * rows_per_rank * size_of[dtype]()
 
         var scratch_buffer_size_bytes = (
-            fp8_size_bytes + scales_size_bytes + residual_size_bytes
+            output_size_bytes + scales_size_bytes + residual_size_bytes
         )
         _check_signal_buffer_size(
             signal_buffers[0].size(), scratch_buffer_size_bytes
@@ -737,7 +743,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             var weight_offset = weight_offsets[index].unsafe_ptr()[]
             var scale_ub = scales_ub[index].unsafe_ptr()[]
 
-            allreduce_residual_rmsnorm_fp8(
+            allreduce_residual_rmsnorm(
                 in_tensors,
                 residual_buf,
                 out_buf,

@@ -11,16 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for the fully-fused allreduce + RMSNorm + FP8 quantization kernel."""
+"""Tests for the fully-fused allreduce + RMSNorm (+ optional FP8) kernel."""
 
+from std.math import rsqrt
 from std.sys import is_amd_gpu, size_of
 
 from std.memory import bitcast
 
 from comm import Signal, MAX_GPUS, group_start, group_end
-from comm.allreduce_residual_rmsnorm_fp8 import (
-    allreduce_residual_rmsnorm_fp8,
-    allreduce_rmsnorm_fp8,
+from comm.allreduce_residual_rmsnorm import (
+    allreduce_residual_rmsnorm,
+    allreduce_rmsnorm,
 )
 from comm.sync import enable_p2p
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
@@ -133,6 +134,57 @@ def _assert_scales_close(
 
     if scale_errors > 0:
         raise Error(t"Scale factor mismatches: {scale_errors} / {rows}")
+
+
+def _assert_bf16_close[
+    dtype: DType,
+](
+    ref_host: UnsafePointer[Scalar[dtype], _],
+    fused_host: UnsafePointer[Scalar[dtype], _],
+    length: Int,
+    *,
+    max_ulp: Int = 2,
+    max_error_rate: Float32 = 0.05,
+) raises:
+    """Assert two `dtype` host buffers match within `max_ulp` and a rate cap.
+
+    Used for the no-quant path where the output is written in the input dtype
+    (e.g. bf16) rather than quantized to FP8. Both the kernel and the host
+    reference normalize in float32 and cast once, so the only expected
+    divergence is reduction-order rounding (a small number of ±ULP mismatches).
+    """
+    var num_errors = 0
+    var num_ulp_errors = 0
+    for i in range(length):
+        var ref_val = ref_host[i].cast[DType.float32]()
+        var fused_val = fused_host[i].cast[DType.float32]()
+        if ref_val != fused_val:
+            num_errors += 1
+            var ref_bits = Int(bitcast[DType.uint16](ref_host[i]))
+            var fused_bits = Int(bitcast[DType.uint16](fused_host[i]))
+            if abs(ref_bits - fused_bits) > max_ulp:
+                num_ulp_errors += 1
+                if num_ulp_errors <= 5:
+                    print(
+                        "  bf16 mismatch at",
+                        i,
+                        ": ref=",
+                        ref_val,
+                        ", fused=",
+                        fused_val,
+                    )
+
+    if num_ulp_errors > 0:
+        raise Error(
+            t"bf16 mismatches exceed {max_ulp} ULP: {num_ulp_errors} / {length}"
+        )
+
+    var error_rate = Float32(num_errors) / Float32(length)
+    if error_rate > max_error_rate:
+        raise Error(
+            t"Too many bf16 mismatches: {num_errors} /"
+            t" {length} ({error_rate * 100.0}%)"
+        )
 
 
 # --- Test: fully fused allreduce + RMSNorm + FP8 ---
@@ -291,7 +343,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     group_start()
 
     comptime for i in range(ngpus):
-        allreduce_rmsnorm_fp8(
+        allreduce_rmsnorm(
             in_tiles,
             fused_fp8_tile,
             gamma_tensor,
@@ -331,6 +383,161 @@ def test_fused_allreduce_rmsnorm_fp8[
 
     # Cleanup.
     _ = host_bufs^
+    print("    PASS")
+
+
+# --- Test: fully fused allreduce + RMSNorm (no quant) ---
+
+
+def test_fused_allreduce_rmsnorm_noquant[
+    ngpus: Int,
+    dtype: DType,
+    rows: Int,
+    cols: Int,
+](list_of_ctx: List[DeviceContext]) raises:
+    """Verify the no-quant path (out_dtype == in_dtype) of the non-residual
+    fused kernel.
+
+    Exercises allreduce + RMSNorm with a `dtype` output (no FP8 quantization,
+    no scale output) against a host-side float32 reference.
+    """
+    comptime length = rows * cols
+
+    print(
+        "  test_fused_allreduce_rmsnorm_noquant[",
+        ngpus,
+        ",",
+        dtype,
+        ",",
+        rows,
+        "x",
+        cols,
+        "]",
+    )
+
+    # --- Setup: per-GPU input buffers ---
+    var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
+    var temp_bytes = ngpus * size_of[dtype]() * length
+
+    for i in range(ngpus):
+        in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
+        var h = list_of_ctx[i].enqueue_create_host_buffer[dtype](length)
+        for j in range(length):
+            h[j] = test_value_for_gpu_element[dtype](i, j)
+        list_of_ctx[i].enqueue_copy(in_dev[i], h)
+        host_bufs.append(h^)
+
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[DType.uint8](
+                size_of[Signal]() + temp_bytes
+            )
+        )
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+
+    comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
+    comptime InputTileType = TileTensor[
+        dtype, type_of(in_layout), ImmutAnyOrigin
+    ]
+    var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
+    for i in range(ngpus):
+        in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # --- Shared params ---
+    var ctx = list_of_ctx[0]
+    var gamma_host = ctx.enqueue_create_host_buffer[dtype](cols)
+    for i in range(cols):
+        gamma_host[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
+    var gamma_dev = ctx.enqueue_create_buffer[dtype](cols)
+    ctx.enqueue_copy(gamma_dev, gamma_host)
+
+    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var epsilon = Scalar[dtype](1e-5)
+    var weight_offset = Scalar[dtype](0.0)
+
+    # --- Host reference: allreduce in f32, then RMSNorm in f32 ---
+    var ref_sum_f32 = ctx.enqueue_create_host_buffer[DType.float32](length)
+    for i in range(length):
+        var s = Scalar[DType.float32](0)
+        for g in range(ngpus):
+            s += host_bufs[g][i].cast[DType.float32]()
+        ref_sum_f32[i] = s
+
+    var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
+    var eps_f32 = epsilon.cast[DType.float32]()
+    var woff_f32 = weight_offset.cast[DType.float32]()
+    for r in range(rows):
+        var m2 = Scalar[DType.float32](0)
+        for c in range(cols):
+            var s = ref_sum_f32[r * cols + c]
+            m2 += s * s
+        var norm = rsqrt(m2 / Float32(cols) + eps_f32)
+        for c in range(cols):
+            var s = ref_sum_f32[r * cols + c]
+            var g_f32 = gamma_host[c].cast[DType.float32]() + woff_f32
+            ref_out_host[r * cols + c] = ((s * norm) * g_f32).cast[dtype]()
+
+    # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
+    for i in range(ngpus):
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    var fused_out_dev = ctx.enqueue_create_buffer[dtype](length)
+    # Scale buffer + scale_ub are ignored on the no-quant path; pass a dummy.
+    var dummy_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+
+    var fused_out_tile = TileTensor(
+        fused_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
+    )
+    var dummy_scales_tile = TileTensor(
+        dummy_scales_dev, row_major(Coord(Idx[rows], Idx[1]))
+    )
+    var scale_ub = Float32(1.0)
+
+    group_start()
+
+    comptime for i in range(ngpus):
+        allreduce_rmsnorm(
+            in_tiles,
+            fused_out_tile,
+            gamma_tensor,
+            epsilon,
+            weight_offset,
+            scale_ub,
+            dummy_scales_tile,
+            rank_sigs,
+            list_of_ctx[i],
+        )
+    group_end()
+
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # --- Verify normalized output (no quant, written in `dtype`) ---
+    var fused_out_host = ctx.enqueue_create_host_buffer[dtype](length)
+    ctx.enqueue_copy(fused_out_host, fused_out_dev)
+    ctx.synchronize()
+
+    _assert_bf16_close(
+        ref_out_host.unsafe_ptr(), fused_out_host.unsafe_ptr(), length
+    )
+
+    # Cleanup.
+    _ = host_bufs^
+    _ = signal_buffers^
+    _ = in_dev^
+    _ = gamma_dev^
+    _ = fused_out_dev^
+    _ = dummy_scales_dev^
+
     print("    PASS")
 
 
@@ -509,7 +716,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     group_start()
 
     comptime for i in range(ngpus):
-        allreduce_residual_rmsnorm_fp8(
+        allreduce_residual_rmsnorm(
             in_tiles,
             residual_tile.as_immut(),
             fused_fp8_tile,
@@ -595,6 +802,208 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     print("    PASS")
 
 
+# --- Test: fully fused allreduce + residual add + RMSNorm (no quant) ---
+
+
+def test_fused_allreduce_residual_rmsnorm_noquant[
+    ngpus: Int,
+    dtype: DType,
+    rows: Int,
+    cols: Int,
+](list_of_ctx: List[DeviceContext]) raises:
+    """Verify the no-quant path (out_dtype == in_dtype) of the fused kernel.
+
+    Exercises allreduce + residual add + RMSNorm with a `dtype` output (no FP8
+    quantization, no scale output) against a host-side float32 reference. The
+    reference normalizes the exact float32 sum to match the kernel, which keeps
+    the accumulation in float32 before the single cast to `dtype`.
+    """
+    comptime length = rows * cols
+
+    print(
+        "  test_fused_allreduce_residual_rmsnorm_noquant[",
+        ngpus,
+        ",",
+        dtype,
+        ",",
+        rows,
+        "x",
+        cols,
+        "]",
+    )
+
+    # --- Setup: per-GPU input buffers ---
+    var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
+    var temp_bytes = ngpus * size_of[dtype]() * length
+
+    for i in range(ngpus):
+        in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
+        var h = list_of_ctx[i].enqueue_create_host_buffer[dtype](length)
+        for j in range(length):
+            h[j] = test_value_for_gpu_element[dtype](i, j)
+        list_of_ctx[i].enqueue_copy(in_dev[i], h)
+        host_bufs.append(h^)
+
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[DType.uint8](
+                size_of[Signal]() + temp_bytes
+            )
+        )
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
+
+    comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
+    comptime InputTileType = TileTensor[
+        dtype, type_of(in_layout), ImmutAnyOrigin
+    ]
+    var in_tiles = InlineArray[InputTileType, ngpus](uninitialized=True)
+    for i in range(ngpus):
+        in_tiles[i] = TileTensor(in_dev[i], in_layout).as_immut()
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # --- Shared params ---
+    var ctx = list_of_ctx[0]
+    var gamma_dev = ctx.enqueue_create_buffer[dtype](cols)
+    var gamma_host = ctx.enqueue_create_host_buffer[dtype](cols)
+    for i in range(cols):
+        gamma_host[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
+    ctx.enqueue_copy(gamma_dev, gamma_host)
+
+    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var epsilon = Scalar[dtype](1e-5)
+    var weight_offset = Scalar[dtype](0.0)
+
+    # --- Residual buffer: deterministic values ---
+    var residual_dev = ctx.enqueue_create_buffer[dtype](length)
+    var residual_host = ctx.enqueue_create_host_buffer[dtype](length)
+    for i in range(length):
+        residual_host[i] = (Float64(i % 127 + 1) / Float64(127)).cast[dtype]()
+    ctx.enqueue_copy(residual_dev, residual_host)
+    ctx.synchronize()
+
+    # --- Host reference: allreduce + residual in f32, then RMSNorm in f32 ---
+    var ref_sum_f32 = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var ref_sum_host = ctx.enqueue_create_host_buffer[dtype](length)
+    for i in range(length):
+        var s = Scalar[DType.float32](0)
+        for g in range(ngpus):
+            s += host_bufs[g][i].cast[DType.float32]()
+        s += residual_host[i].cast[DType.float32]()
+        ref_sum_f32[i] = s
+        # bf16-rounded pre-norm sum (matches kernel's residual_output write).
+        ref_sum_host[i] = s.cast[dtype]()
+
+    var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
+    var eps_f32 = epsilon.cast[DType.float32]()
+    var woff_f32 = weight_offset.cast[DType.float32]()
+    for r in range(rows):
+        var m2 = Scalar[DType.float32](0)
+        for c in range(cols):
+            var s = ref_sum_f32[r * cols + c]
+            m2 += s * s
+        var norm = rsqrt(m2 / Float32(cols) + eps_f32)
+        for c in range(cols):
+            var s = ref_sum_f32[r * cols + c]
+            var g_f32 = gamma_host[c].cast[DType.float32]() + woff_f32
+            ref_out_host[r * cols + c] = ((s * norm) * g_f32).cast[dtype]()
+
+    # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
+    for i in range(ngpus):
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    var fused_out_dev = ctx.enqueue_create_buffer[dtype](length)
+    var fused_res_out_dev = ctx.enqueue_create_buffer[dtype](length)
+    # Scale buffer + scale_ub are ignored on the no-quant path; pass a dummy.
+    var dummy_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+
+    var fused_out_tile = TileTensor(
+        fused_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
+    )
+    var fused_res_out_tile = TileTensor(
+        fused_res_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
+    )
+    var residual_tile = TileTensor(
+        residual_dev, row_major(Coord(Idx[rows], Idx[cols]))
+    )
+    var dummy_scales_tile = TileTensor(
+        dummy_scales_dev, row_major(Coord(Idx[rows], Idx[1]))
+    )
+    var scale_ub = Float32(1.0)
+
+    group_start()
+
+    comptime for i in range(ngpus):
+        allreduce_residual_rmsnorm(
+            in_tiles,
+            residual_tile.as_immut(),
+            fused_out_tile,
+            fused_res_out_tile,
+            gamma_tensor,
+            epsilon,
+            weight_offset,
+            scale_ub,
+            dummy_scales_tile,
+            rank_sigs,
+            list_of_ctx[i],
+        )
+    group_end()
+
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # --- Verify residual output (pre-norm sum) ---
+    var fused_res_out_host = ctx.enqueue_create_host_buffer[dtype](length)
+    ctx.enqueue_copy(fused_res_out_host, fused_res_out_dev)
+    var fused_out_host = ctx.enqueue_create_host_buffer[dtype](length)
+    ctx.enqueue_copy(fused_out_host, fused_out_dev)
+    ctx.synchronize()
+
+    var res_errors = 0
+    for i in range(length):
+        var ref_val = ref_sum_host[i].cast[DType.float32]()
+        var fused_val = fused_res_out_host[i].cast[DType.float32]()
+        var max_mag = max(abs(ref_val), abs(fused_val))
+        var bf16_ulp = max_mag * Float32(2.0**-7)
+        if abs(ref_val - fused_val) > bf16_ulp:
+            res_errors += 1
+            if res_errors <= 5:
+                print(
+                    "  Residual mismatch at",
+                    i,
+                    ": ref=",
+                    ref_val,
+                    ", fused=",
+                    fused_val,
+                )
+    if res_errors > 0:
+        raise Error(t"Residual output mismatches: {res_errors} / {length}")
+
+    # --- Verify normalized output (no quant, written in `dtype`) ---
+    _assert_bf16_close(
+        ref_out_host.unsafe_ptr(), fused_out_host.unsafe_ptr(), length
+    )
+
+    # Cleanup.
+    _ = host_bufs^
+    _ = signal_buffers^
+    _ = in_dev^
+    _ = residual_dev^
+    _ = gamma_dev^
+    _ = fused_out_dev^
+    _ = fused_res_out_dev^
+    _ = dummy_scales_dev^
+
+    print("    PASS")
+
+
 # --- Main ---
 
 comptime test_gpu_counts = (2, 4, 8)
@@ -663,6 +1072,26 @@ def main() raises:
         ](list_of_ctx)
 
         print(
+            "\n=== fused_allreduce_rmsnorm (no-quant bf16, ",
+            num_gpus,
+            "GPUs) ===",
+        )
+        # 1-stage path (small per-rank payloads).
+        test_fused_allreduce_rmsnorm_noquant[num_gpus, DType.bfloat16, 1, 4096](
+            list_of_ctx
+        )
+        test_fused_allreduce_rmsnorm_noquant[num_gpus, DType.bfloat16, 8, 8192](
+            list_of_ctx
+        )
+        # 2-stage path (large per-rank payloads) + misaligned rows_per_rank.
+        test_fused_allreduce_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 8192, 8192
+        ](list_of_ctx)
+        test_fused_allreduce_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 17, 16384
+        ](list_of_ctx)
+
+        print(
             "\n=== fused_allreduce_residual_rmsnorm_fp8 (",
             num_gpus,
             "GPUs) ===",
@@ -704,6 +1133,29 @@ def main() raises:
         ](list_of_ctx)
         test_fused_allreduce_residual_rmsnorm_fp8[
             num_gpus, DType.bfloat16, out_fp8_dtype, 20, 16384
+        ](list_of_ctx)
+
+        print(
+            "\n=== fused_allreduce_residual_rmsnorm (no-quant bf16, ",
+            num_gpus,
+            "GPUs) ===",
+        )
+        # 1-stage path (small per-rank payloads).
+        test_fused_allreduce_residual_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 1, 4096
+        ](list_of_ctx)
+        test_fused_allreduce_residual_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 8, 8192
+        ](list_of_ctx)
+        # 2-stage path (large per-rank payloads), including the persistent
+        # row loop.
+        test_fused_allreduce_residual_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 8192, 8192
+        ](list_of_ctx)
+        # 2-stage with misaligned rows_per_rank (residual scratch follows the
+        # output scratch directly when not quantizing — no scale section).
+        test_fused_allreduce_residual_rmsnorm_noquant[
+            num_gpus, DType.bfloat16, 17, 16384
         ](list_of_ctx)
 
     print("\nAll tests passed!")

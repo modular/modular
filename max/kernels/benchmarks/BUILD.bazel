@@ -25,7 +25,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist
     "gpu/comm/bench_allreduce.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "gpu/comm/bench_allreduce_residual_rmsnorm_fp8.mojo": select({
+    "gpu/comm/bench_allreduce_residual_rmsnorm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist
