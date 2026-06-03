@@ -1,4 +1,3 @@
-load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "mojo_binary", "requirement")
@@ -6,33 +5,22 @@ load(":linter.bzl", "linter")
 
 package(default_visibility = ["//visibility:public"])
 
-_BUILDIFIER_IGNORES = [
-    "./.derived/*",
-    "./.git/*",
-    "./CloudInfra/go/pkg/*",
-    "./third-party/llvm-project/*",
-    "./oss/max-llm-book/.pixi/*",
-    "./oss/skills/port-an-llm-to-max/.pixi/*",
-]
-
 modular_py_library(
     name = "lint_helpers",
     srcs = ["lint_helpers.py"],
     imports = ["."],
 )
 
-buildifier(
-    name = "buildifier.check",
-    exclude_patterns = _BUILDIFIER_IGNORES,
-    lint_mode = "warn",
-    mode = "diff",
+modular_py_binary(
+    name = "buildifier_wrapper",
+    srcs = ["buildifier_wrapper.py"],
+    data = ["@buildifier_prebuilt//:buildifier"],
+    deps = [":lint_helpers"],
 )
 
-buildifier(
-    name = "buildifier.fix",
-    exclude_patterns = _BUILDIFIER_IGNORES,
-    lint_mode = "fix",
-    mode = "fix",
+linter(
+    base_name = "buildifier",
+    binary = ":buildifier_wrapper",
 )
 
 modular_py_binary(
