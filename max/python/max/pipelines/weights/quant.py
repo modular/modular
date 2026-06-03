@@ -837,10 +837,8 @@ def _parse_mxfp4_config(
     num_hidden_layers = _get_num_hidden_layers(huggingface_config)
     all_layers = set(range(num_hidden_layers))
 
-    # MXFP4 only quantizes MoE expert weights; attention stays BF16.
     # `mlp_quantized_layers` controls which layers carry a QuantConfig
     # (StackedMoE checks it for the MXFP4 path).
-    # Fused MLP is disabled since only MoE experts are quantized.
     return QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
@@ -849,7 +847,7 @@ def _parse_mxfp4_config(
         embedding_output_dtype=DType.bfloat16,
         bias_dtype=bias_dtype,
         format=QuantFormat.MXFP4,
-        can_use_fused_mlp=False,
+        can_use_fused_mlp=can_use_fused_mlp(state_dict),
     )
 
 
