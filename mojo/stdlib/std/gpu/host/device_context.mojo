@@ -1980,20 +1980,24 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
             A C-string carrying an error message on failure, or an empty
             string on success.
         """
+        # Match the `uint32_t` C ABI for the grid/block dimensions, shared
+        # memory size, and attribute count (see `MojoBindings.cpp`), so the
+        # emitted `external_call` signature lines up with the runtime symbol
+        # and with the other enqueue launch paths.
         return external_call[
             "AsyncRT_DeviceStream_enqueueFunctionDirect", _CString[]
         ](
             self._handle,
             func_handle,
-            grid_dim.x(),
-            grid_dim.y(),
-            grid_dim.z(),
-            block_dim.x(),
-            block_dim.y(),
-            block_dim.z(),
-            shared_mem_bytes,
+            c_uint(grid_dim.x()),
+            c_uint(grid_dim.y()),
+            c_uint(grid_dim.z()),
+            c_uint(block_dim.x()),
+            c_uint(block_dim.y()),
+            c_uint(block_dim.z()),
+            c_uint(shared_mem_bytes),
             attributes,
-            num_attributes,
+            c_uint(num_attributes),
             args,
             arg_count,
             arg_sizes,
@@ -3608,32 +3612,32 @@ struct DeviceExternalFunction:
                 _CString[],
                 _DeviceContextPtr[mut=True],
                 _DeviceFunctionPtr[mut=True],
-                UInt32,
-                UInt32,
-                UInt32,
-                UInt32,
-                UInt32,
-                UInt32,
-                UInt32,
+                c_uint,
+                c_uint,
+                c_uint,
+                c_uint,
+                c_uint,
+                c_uint,
+                c_uint,
                 UnsafePointer[LaunchAttribute, MutAnyOrigin],
-                UInt32,
+                c_uint,
                 UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
-                UInt32,
+                c_uint,
                 Optional[UnsafePointer[UInt64, MutAnyOrigin]],
             ](
                 ctx._handle,
                 self._handle,
-                UInt32(grid_dim.x()),
-                UInt32(grid_dim.y()),
-                UInt32(grid_dim.z()),
-                UInt32(block_dim.x()),
-                UInt32(block_dim.y()),
-                UInt32(block_dim.z()),
-                UInt32(shared_mem_bytes.or_else(0)),
+                c_uint(grid_dim.x()),
+                c_uint(grid_dim.y()),
+                c_uint(grid_dim.z()),
+                c_uint(block_dim.x()),
+                c_uint(block_dim.y()),
+                c_uint(block_dim.z()),
+                c_uint(shared_mem_bytes.or_else(0)),
                 attributes.unsafe_ptr(),
-                UInt32(len(attributes)),
+                c_uint(len(attributes)),
                 dense_args_addrs.unsafe_ptr(),
-                UInt32(num_args),
+                c_uint(num_args),
                 None,
             )
         )
@@ -4632,20 +4636,28 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             A C-string carrying an error message on failure, or an empty
             string on success.
         """
+        # The C ABI declares the grid/block dimensions, shared memory size, and
+        # attribute count as `uint32_t` (see `MojoBindings.cpp`). Cast to
+        # `c_uint` so the emitted `external_call` signature matches the runtime
+        # symbol exactly. This also keeps the declaration identical to the
+        # parameter-pack launch path in `_call_with_pack`; without it the two
+        # paths declare `AsyncRT_DeviceContext_enqueueFunctionDirect` with
+        # conflicting (i64 vs i32) signatures, which fails to legalize when a
+        # graph composes both launch paths into one module.
         return external_call[
             "AsyncRT_DeviceContext_enqueueFunctionDirect", _CString[]
         ](
             self._handle,
             func_handle,
-            grid_dim.x(),
-            grid_dim.y(),
-            grid_dim.z(),
-            block_dim.x(),
-            block_dim.y(),
-            block_dim.z(),
-            shared_mem_bytes,
+            c_uint(grid_dim.x()),
+            c_uint(grid_dim.y()),
+            c_uint(grid_dim.z()),
+            c_uint(block_dim.x()),
+            c_uint(block_dim.y()),
+            c_uint(block_dim.z()),
+            c_uint(shared_mem_bytes),
             attributes,
-            num_attributes,
+            c_uint(num_attributes),
             args,
             arg_count,
             arg_sizes,
