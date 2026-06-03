@@ -901,6 +901,20 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
+                var o_chunk_prefetch = InlineArray[
+                    Scalar[DType.float32], O_RESCALE_CHUNK
+                ](uninitialized=True)
+                if k > 0 and should_scale_o:
+                    tcgen05_fence_after()
+                    o_chunk_prefetch = tcgen05_ld[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        dtype=DType.float32,
+                        pack=False,
+                        width=O_RESCALE_CHUNK,
+                    ](UInt32(Self.O_TMEM_ADDR))
+
                 # Write S to scores smem as 8 bf16 per uint128, stride 64
                 # uint128 between writes--exactly the K-major SW128B layout
                 # the SS-MMA reads. Keep the packed 128-bit store: a plain
@@ -923,11 +937,25 @@ struct MLAPrefillSparse[
                         bitcast[DType.uint32, 4](s_vec),
                     )
 
-                # Rescale O (in TMEM) if mi changed materially. The first
-                # iteration (k==0) has no O to scale yet.
+                # Rescale O (in TMEM) if mi changed materially; chunk 0
+                # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
-                    tcgen05_fence_after()
-                    comptime for chunk_idx in range(NUM_O_RESCALE_CHUNKS):
+                    tcgen05_load_wait()
+                    var o_scaled_0 = InlineArray[
+                        Scalar[DType.float32], O_RESCALE_CHUNK
+                    ](uninitialized=True)
+                    comptime for j in range(O_RESCALE_CHUNK):
+                        o_scaled_0[j] = mul_ftz(
+                            rebind[Float32](o_chunk_prefetch[j]),
+                            scale_for_old,
+                        )
+                    tcgen05_st[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        pack=False,
+                    ](UInt32(Self.O_TMEM_ADDR), o_scaled_0)
+                    comptime for chunk_idx in range(1, NUM_O_RESCALE_CHUNKS):
                         var o_chunk = tcgen05_ld[
                             datapaths=32,
                             bits=32,
@@ -2896,6 +2924,20 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
+                var o_chunk_prefetch = InlineArray[
+                    Scalar[DType.float32], O_RESCALE_CHUNK
+                ](uninitialized=True)
+                if k > 0 and should_scale_o:
+                    tcgen05_fence_after()
+                    o_chunk_prefetch = tcgen05_ld[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        dtype=DType.float32,
+                        pack=False,
+                        width=O_RESCALE_CHUNK,
+                    ](UInt32(Self.O_TMEM_ADDR))
+
                 # Write S to scores smem as 8 bf16 per uint128, stride 64
                 # uint128 between writes--exactly the K-major SW128B layout
                 # the SS-MMA reads. Keep the packed 128-bit store: a plain
@@ -2918,9 +2960,25 @@ struct MLAPrefillSparse[
                         bitcast[DType.uint32, 4](s_vec),
                     )
 
+                # Rescale O (in TMEM) if mi changed materially; chunk 0
+                # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
-                    tcgen05_fence_after()
-                    comptime for chunk_idx in range(NUM_O_RESCALE_CHUNKS):
+                    tcgen05_load_wait()
+                    var o_scaled_0 = InlineArray[
+                        Scalar[DType.float32], O_RESCALE_CHUNK
+                    ](uninitialized=True)
+                    comptime for j in range(O_RESCALE_CHUNK):
+                        o_scaled_0[j] = mul_ftz(
+                            rebind[Float32](o_chunk_prefetch[j]),
+                            scale_for_old,
+                        )
+                    tcgen05_st[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        pack=False,
+                    ](UInt32(Self.O_TMEM_ADDR), o_scaled_0)
+                    comptime for chunk_idx in range(1, NUM_O_RESCALE_CHUNKS):
                         var o_chunk = tcgen05_ld[
                             datapaths=32,
                             bits=32,
