@@ -132,9 +132,6 @@ class Gemma3Config(
     quant_config: QuantConfig | None = None
     """Scaled quantization configuration."""
 
-    def get_max_seq_len(self) -> int:
-        return self.max_position_embeddings
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """Retrieves the number of hidden layers from the HuggingFace configuration.

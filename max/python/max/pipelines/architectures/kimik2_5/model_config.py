@@ -368,10 +368,6 @@ class KimiK2_5Config(
         """Returns the KV cache parameters from the embedded LLM config."""
         return self.llm_config.get_kv_params()
 
-    def get_max_seq_len(self) -> int:
-        """Returns the maximum sequence length from the embedded LLM config."""
-        return self.llm_config.get_max_seq_len()
-
     @staticmethod
     def estimate_vision_cache_entry_bytes(
         huggingface_config: AutoConfig,

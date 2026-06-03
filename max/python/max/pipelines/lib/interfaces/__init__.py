@@ -20,6 +20,7 @@ from max.pipelines.diffusion.interface import (
 from .arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
+    ArchConfigWithBoundedMaxSeqLen,
     ArchConfigWithKVAndVisionCache,
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,

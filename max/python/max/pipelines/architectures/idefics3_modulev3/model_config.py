@@ -74,10 +74,6 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         """Returns the KV cache parameters from the embedded text config."""
         return self.text_config.get_kv_params()
 
-    def get_max_seq_len(self) -> int:
-        """Returns the maximum sequence length from the embedded text config."""
-        return self.text_config.get_max_seq_len()
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """Get number of layers in the language model."""

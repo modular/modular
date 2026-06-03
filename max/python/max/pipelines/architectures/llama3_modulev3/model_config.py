@@ -77,9 +77,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
 
-    def get_max_seq_len(self) -> int:
-        return self.max_seq_len
-
     @classmethod
     def construct_kv_params(
         cls,

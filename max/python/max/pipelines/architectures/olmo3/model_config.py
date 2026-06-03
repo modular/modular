@@ -138,9 +138,6 @@ class Olmo3Config(
     kv_params: KVCacheParams
     """KV cache parameters."""
 
-    def get_max_seq_len(self) -> int:
-        return self.max_position_embeddings
-
     @override
     @classmethod
     def initialize(

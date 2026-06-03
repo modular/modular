@@ -134,9 +134,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
 
-    def get_max_seq_len(self) -> int:
-        return self.max_seq_len
-
     @staticmethod
     def calculate_attention_multiplier(
         huggingface_config: AutoConfig,

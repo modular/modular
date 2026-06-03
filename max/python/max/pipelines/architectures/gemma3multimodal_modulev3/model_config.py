@@ -180,10 +180,6 @@ class Gemma3ForConditionalGenerationConfig(
     converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed"
     """
 
-    def get_max_seq_len(self) -> int:
-        """Returns the maximum sequence length from the embedded text config."""
-        return self.text_config.get_max_seq_len()
-
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.text_config.num_hidden_layers

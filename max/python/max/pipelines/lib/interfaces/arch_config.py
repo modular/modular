@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from max.driver import load_devices, scan_available_devices
 from max.dtype import DType
@@ -107,7 +107,45 @@ class ArchConfigWithKVAndVisionCache(ArchConfigWithKVCache, Protocol):
         ...
 
 
-class ArchConfigWithStoredKVParams:
+class ArchConfigWithBoundedMaxSeqLen:
+    """Mixin for configs that store a bounded ``max_seq_len`` computed at init."""
+
+    max_seq_len: int
+
+    def get_max_seq_len(self) -> int:
+        """Returns the maximum sequence length computed during initialization."""
+        return self.max_seq_len
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        """Bounds ``max_length`` by ``max_position_embeddings``."""
+        model_config = model_config or pipeline_config.model
+        try:
+            return upper_bounded_default(
+                upper_bound=huggingface_config.max_position_embeddings,
+                default=model_config.max_length,
+            )
+        except ValueError as e:
+            raise ValueError(
+                "Unable to infer max_length"
+                + (
+                    f" for {cls.__name__}"
+                    if cls.__name__ != "ArchConfigWithBoundedMaxSeqLen"
+                    else ""
+                )
+                + ", the provided "
+                f"max_length ({model_config.max_length}) exceeds the "
+                f"model's max_position_embeddings "
+                f"({huggingface_config.max_position_embeddings})."
+            ) from e
+
+
+class ArchConfigWithStoredKVParams(ArchConfigWithBoundedMaxSeqLen):
     """Mixin that implements :meth:`get_kv_params` as the ``kv_params`` field.
 
     Architecture dataclasses that precompute :class:`~max.nn.kv_cache.KVCacheParams`
@@ -163,31 +201,11 @@ class ArchConfigWithStoredKVParams:
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
-    ) -> int:
-        """Bounds ``max_length`` by ``max_position_embeddings``."""
-        model_config = model_config or pipeline_config.model
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=model_config.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length, the provided "
-                f"max_length ({model_config.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
-
 
 class ArchConfigWithPermissiveMaxSeqLen:
     """Mixin for configs that honor ``max_length`` without bounding."""
+
+    max_position_embeddings: int
 
     @classmethod
     def calculate_max_seq_len(
@@ -201,6 +219,10 @@ class ArchConfigWithPermissiveMaxSeqLen:
         if model_config.max_length:
             return model_config.max_length
         return huggingface_config.max_position_embeddings
+
+    def get_max_seq_len(self) -> int:
+        """Returns the resolved maximum sequence length stored on the config."""
+        return self.max_position_embeddings
 
 
 class ArchVLConfigWithTextSubconfig:
@@ -239,6 +261,15 @@ class ArchVLConfigWithTextSubconfig:
                 "'text_config' or 'llm_config' attribute."
             )
         return hf_text
+
+    def get_max_seq_len(self) -> int:
+        """Returns the maximum sequence length from the embedded text config."""
+        for config_attr in ("llm_config", "text_config"):
+            if config_attr in self.__annotations__:
+                return cast(
+                    ArchConfig, getattr(self, config_attr)
+                ).get_max_seq_len()
+        return super().get_max_seq_len()  # type: ignore[misc]
 
     @classmethod
     def construct_kv_params(
