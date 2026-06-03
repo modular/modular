@@ -14,10 +14,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from .buffer import Buffer
 from .event import Event
+from .function import Function
 
 
 class Queue:
@@ -64,6 +66,30 @@ class Queue:
 
     def wait_for_events(self, *events: Event) -> None:
         self._inner.wait_for_events(tuple(e._inner for e in events))
+
+    def execute(
+        self,
+        func: Function,
+        grid: tuple[int, int, int],
+        block: tuple[int, int, int],
+        args: Sequence[int],
+        arg_sizes: Sequence[int],
+        shared_mem_bytes: int = 0,
+    ) -> None:
+        if len(grid) != 3:
+            raise ValueError("grid must be a 3-tuple")
+        if len(block) != 3:
+            raise ValueError("block must be a 3-tuple")
+        if len(args) != len(arg_sizes):
+            raise ValueError("args and arg_sizes must have the same length")
+        self._inner.execute(
+            func._inner,
+            grid,
+            block,
+            args,
+            arg_sizes,
+            shared_mem_bytes,
+        )
 
     def __repr__(self) -> str:
         return "Queue()"
