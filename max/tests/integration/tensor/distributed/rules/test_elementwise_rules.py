@@ -109,20 +109,17 @@ class TestBinaryElementwise:
         assert out.to_placements() == (S(0),)
 
     def test_broadcast_rhs_lower_rank(self) -> None:
-        """2-D activation S(1) + (1, 8) bias S(1): symmetric S(1)."""
-        # `_align_ranks` upstream prepends size-1 dims to the lower-rank
-        # tensor and shifts shard axes accordingly, so the rule always
-        # receives equal-rank inputs. This test mirrors the post-align
-        # state for an original `[4,8] S(1) + [8] S(0)` add.
+        """(4, 8) S(1) + (8,): rhs's only axis trailing-aligns to output axis 1."""
+        # No rank padding in Python: the rule sees genuinely unequal-rank
+        # inputs and trailing-aligns rhs axis 0 to output axis 1.
         lhs = _layout(M(MESH_1D, S(1)), (4, 8))
-        rhs = _layout(M(MESH_1D, S(1)), (1, 8))
+        rhs = _layout(M(MESH_1D, R), (8,))
         _, (out,) = pick(binary_rule, lhs, rhs)
         assert out.to_placements() == (S(1),)
 
     def test_broadcast_lhs_lower_rank(self) -> None:
-        """(1, 8) S(1) + 2-D rhs S(1): symmetric S(1)."""
-        # Post-`_align_ranks` form of an original `[8] S(0) + [4,8] S(1)` add.
-        lhs = _layout(M(MESH_1D, S(1)), (1, 8))
+        """(8,) + (4, 8) S(1): lhs's only axis trailing-aligns to output axis 1."""
+        lhs = _layout(M(MESH_1D, R), (8,))
         rhs = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(binary_rule, lhs, rhs)
         assert out.to_placements() == (S(1),)

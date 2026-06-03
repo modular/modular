@@ -40,6 +40,7 @@ from max.experimental.functional import (
     relu,
     silu,
     transfer_to,
+    where,
 )
 from max.experimental.sharding import (
     DeviceMesh,
@@ -363,6 +364,97 @@ class _Broadcast:
         assert result.placements == (Replicated(), Sharded(1))
         assert tuple(result.shape) == (2, 4)
         np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
+
+    def test_broadcast_rank_diff_two(self) -> None:
+        # (2,3,4) + (4,): rhs is two ranks lower, leading axes broadcast.
+        a = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        b = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
+        ta = transfer_to(
+            Tensor(a), PlacementMapping(self.MESH_2, (Sharded(0),))
+        )
+        tb = transfer_to(
+            Tensor(b), PlacementMapping(self.MESH_2, (Replicated(),))
+        )
+        result = add(ta, tb)
+        assert tuple(result.shape) == (2, 3, 4)
+        np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
+
+    def test_broadcast_sharded_higher_rank_aligned_axis(self) -> None:
+        # (4,8) S(1) + (8,) R: the lower-rank operand's only axis
+        # trailing-aligns to the SHARDED axis (1) of the higher-rank
+        # operand. The replicated rhs must be sliced to the local extent
+        # so the per-shard op stays consistent along the sharded axis.
+        a = np.arange(32, dtype=np.float32).reshape(4, 8)
+        b = np.arange(8, dtype=np.float32) + 1.0
+        ta = transfer_to(
+            Tensor(a), PlacementMapping(self.MESH_2, (Sharded(1),))
+        )
+        tb = transfer_to(
+            Tensor(b), PlacementMapping(self.MESH_2, (Replicated(),))
+        )
+        result = add(ta, tb)
+        assert tuple(result.shape) == (4, 8)
+        np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
+
+    def test_broadcast_size_one_axis_stays_replicated(self) -> None:
+        # (2,4) S(0) + (1,4) R: lhs sharded on axis 0; rhs has a size-1
+        # axis 0 that must broadcast (never shard), so the output is
+        # sharded on axis 0 and RMO expands the size-1 axis per shard.
+        a = np.arange(8, dtype=np.float32).reshape(2, 4)
+        b = np.array([[100.0, 200.0, 300.0, 400.0]], dtype=np.float32)
+        ta = transfer_to(
+            Tensor(a), PlacementMapping(self.MESH_2, (Sharded(0),))
+        )
+        tb = transfer_to(
+            Tensor(b), PlacementMapping(self.MESH_2, (Replicated(),))
+        )
+        result = add(ta, tb)
+        assert tuple(result.shape) == (2, 4)
+        np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
+
+    def test_broadcast_ternary_rank_mismatch(self) -> None:
+        # where(cond (2,4), x (2,4), y (4,)): y is lower rank and
+        # trailing-aligns to axis 1; exercises the ternary broadcast path.
+        cond = np.array([[1, 0, 1, 0], [0, 1, 0, 1]], dtype=np.float32)
+        x = np.arange(8, dtype=np.float32).reshape(2, 4)
+        y = np.array([-1.0, -2.0, -3.0, -4.0], dtype=np.float32)
+        tc = transfer_to(
+            Tensor(cond > 0), PlacementMapping(self.MESH_2, (Sharded(0),))
+        )
+        tx = transfer_to(
+            Tensor(x), PlacementMapping(self.MESH_2, (Sharded(0),))
+        )
+        ty = transfer_to(
+            Tensor(y), PlacementMapping(self.MESH_2, (Replicated(),))
+        )
+        result = where(tc, tx, ty)
+        assert tuple(result.shape) == (2, 4)
+        np.testing.assert_allclose(
+            result.to_numpy(), np.where(cond > 0, x, y), rtol=1e-5
+        )
+
+    def test_broadcast_ternary_cond_lower_rank(self) -> None:
+        # where(cond (4,), x (2,4) S(0), y (2,4) S(0)): the CONDITION is
+        # the lower-rank operand and must broadcast up to the values'
+        # rank. Output is sharded on axis 0 from the values; cond stays
+        # Replicated and RMO broadcasts it per shard.
+        cond = np.array([1, 0, 1, 0], dtype=np.float32)
+        x = np.arange(8, dtype=np.float32).reshape(2, 4)
+        y = -np.arange(8, dtype=np.float32).reshape(2, 4)
+        tc = transfer_to(
+            Tensor(cond > 0), PlacementMapping(self.MESH_2, (Replicated(),))
+        )
+        tx = transfer_to(
+            Tensor(x), PlacementMapping(self.MESH_2, (Sharded(0),))
+        )
+        ty = transfer_to(
+            Tensor(y), PlacementMapping(self.MESH_2, (Sharded(0),))
+        )
+        result = where(tc, tx, ty)
+        assert tuple(result.shape) == (2, 4)
+        np.testing.assert_allclose(
+            result.to_numpy(), np.where(cond > 0, x, y), rtol=1e-5
+        )
 
 
 # ── TestCast ─────────────────────────────────────────────────────────────

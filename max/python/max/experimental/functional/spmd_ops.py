@@ -421,28 +421,16 @@ def _transfer_args(
     return tuple(result)
 
 
-def _align_ranks(*tensors: Tensor) -> tuple[Tensor, ...]:
-    """Prepends size-1 dims so every input shares the same rank.
-
-    Sharding rules always see equal-rank inputs; broadcasts become
-    explicit :func:`unsqueeze` nodes.
-    """
-    max_rank = builtins.max(builtins.len(t.shape) for t in tensors)
-    result: list[Tensor] = []
-    for t in tensors:
-        for _ in builtins.range(max_rank - builtins.len(t.shape)):
-            t = unsqueeze(t, 0)
-        result.append(t)
-    return tuple(result)
-
-
 def _binary_with_scalar_promotion(
     inner: Callable[..., object],
 ) -> Callable[..., Tensor]:
-    """Wraps a binary dispatch with scalar promotion plus unconditional rank alignment.
+    """Wraps a binary dispatch with scalar promotion.
 
     Scalar promotion is gated on ``any_distributed`` because the
-    single-device graph-op path handles scalar + tensor natively.
+    single-device graph-op path handles scalar + tensor natively. Rank
+    differences are not equalized here: broadcasting is handled by the
+    RMO dialect per shard, and the placement rules express trailing-axis
+    alignment directly.
     """
 
     def wrapper(lhs: Tensor | int | float, rhs: Tensor | int | float) -> Tensor:
@@ -451,8 +439,6 @@ def _binary_with_scalar_promotion(
                 lhs = full_like(rhs, lhs)
             elif isinstance(rhs, (int, float)) and isinstance(lhs, Tensor):
                 rhs = full_like(lhs, rhs)
-        if isinstance(lhs, Tensor) and isinstance(rhs, Tensor):
-            lhs, rhs = _align_ranks(lhs, rhs)
         result = inner(lhs, rhs)
         assert isinstance(result, Tensor)
         return result
@@ -1307,7 +1293,6 @@ def where(
         y = full_like(x, y)
     elif isinstance(y, (int, float)):
         y = full_like(cond, y)
-    cond, x, y = _align_ranks(cond, x, y)
     result = _where_inner(cond, x, y)
     assert isinstance(result, Tensor)
     return result
