@@ -620,6 +620,7 @@ class TextTokenizer(
             if max_gen_tokens is not None
             else self.max_length,
             tokens=token_buffer,
+            vocab_size=len(self.delegate),
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
@@ -970,6 +971,7 @@ class TextAndVisionTokenizer(
             eos_tracker=await self.create_eos_tracker(request),
             extra_model_args=extra_model_args,
             tokens=token_buffer,
+            vocab_size=len(self.delegate),
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,

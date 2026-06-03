@@ -663,6 +663,61 @@ def test_text_context_update_with_preemption_and_future_token() -> None:
     assert context.tokens.generated_length == 0
 
 
+def test_text_context_to_generation_output_validates_vocab_size() -> None:
+    """Generated tokens must be non-negative and within vocab when vocab_size is set."""
+    request_id = RequestID()
+
+    context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=100,
+    )
+    context.update(42)
+    output = context.to_generation_output()
+    assert output.tokens == [42]
+    assert output.request_id == request_id
+
+    negative_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=100,
+    )
+    negative_context.update(-1)
+    with pytest.raises(
+        RuntimeError,
+        match=r"Generated negative token_id=-1",
+    ):
+        negative_context.to_generation_output()
+
+    oob_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+        vocab_size=10,
+    )
+    oob_context.update(10)
+    with pytest.raises(
+        RuntimeError,
+        match=r"Generated out-of-vocabulary token_id=10 \(valid range: \[0, 10\)\)",
+    ):
+        oob_context.to_generation_output()
+
+    unset_vocab_context = TextContext(
+        request_id=request_id,
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2], dtype=np.int64)),
+        eos_tracker=EOSTracker(),
+    )
+    unset_vocab_context.update(999)
+    output = unset_vocab_context.to_generation_output()
+    assert output.tokens == [999]
+
+
 def test_vision_context_reset() -> None:
     context = TextAndVisionContext(
         max_length=50,

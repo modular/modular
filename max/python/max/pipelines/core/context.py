@@ -22,6 +22,9 @@ from typing import TYPE_CHECKING, Any
 import llguidance
 import numpy as np
 import numpy.typing as npt
+from max.pipelines.core.token_validation import (
+    validate_context_generated_tokens,
+)
 from max.pipelines.modeling.types import (
     EOSTracker,
     GenerationStatus,
@@ -302,12 +305,14 @@ class TextContext:
         _is_initial_prompt: Whether this is the initial prompt encoding
         _draft_offset: Offset for draft decoding
         _spec_decoding_state: Optional per-request speculative decoding state
+        vocab_size: Optional vocabulary size for validating generated token IDs
     """
 
     max_length: int
     tokens: TokenBuffer
     request_id: RequestID = field(default_factory=RequestID)
     eos_tracker: EOSTracker = field(default_factory=EOSTracker)
+    vocab_size: int | None = field(default=None)
     log_probabilities: int = field(default=0)
     log_probabilities_echo: bool = field(default=False)
     ignore_eos: bool = field(default=False)
@@ -583,6 +588,11 @@ class TextContext:
                 raise ValueError(
                     "Attempted to create generation output while future token is not yet realized."
                 )
+            validate_context_generated_tokens(
+                generated_tokens,
+                vocab_size=self.vocab_size,
+                request_id=self.request_id,
+            )
         else:
             generated_tokens = []
 
