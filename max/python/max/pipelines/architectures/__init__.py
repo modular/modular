@@ -38,6 +38,7 @@ def register_all_models() -> None:
     from .deepseekV2_modulev3 import deepseekV2_modulev3_arch
     from .deepseekV3 import deepseekV3_arch
     from .deepseekV3_2 import deepseekV3_2_arch
+    from .deepseekV3_modulev3 import deepseekV3_modulev3_arch
     from .deepseekV3_nextn import deepseekV3_nextn_arch
     from .dflash_llama3 import dflash_llama_arch
     from .eagle3_deepseekV3 import (
@@ -109,6 +110,7 @@ def register_all_models() -> None:
         deepseekV2_arch,
         deepseekV2_modulev3_arch,
         deepseekV3_arch,
+        deepseekV3_modulev3_arch,
         deepseekV3_2_arch,
         deepseekV3_nextn_arch,
         dflash_llama_arch,

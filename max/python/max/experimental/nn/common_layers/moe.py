@@ -25,6 +25,7 @@ from max.experimental import functional as F
 from max.experimental.nn import Linear
 from max.experimental.nn.common_layers.functional_kernels import (
     Independent,
+    fused_silu,
     grouped_matmul_ragged,
     moe_create_indices,
     shard_and_stack,
@@ -230,10 +231,7 @@ class MoE(Module[[Tensor], Tensor]):
             expert_usage_stats.to(CPU()),
         )
 
-        gate_up_projs = (
-            F.silu(gate_up_projs[:, : self.moe_dim])
-            * gate_up_projs[:, self.moe_dim :]
-        )
+        gate_up_projs = fused_silu(gate_up_projs, expert_start_indices)
 
         down_projs = grouped_matmul_ragged(
             gate_up_projs,
@@ -504,9 +502,7 @@ class ExpertParallelMoE(MoE):
         gate_up = grouped_matmul_ragged(
             dispatched_tokens, self.gate_up_proj, *meta_tensors
         )
-        silu_out = (
-            F.silu(gate_up[:, : self.moe_dim]) * gate_up[:, self.moe_dim :]
-        )
+        silu_out = fused_silu(gate_up, meta_tensors[0])
         down = grouped_matmul_ragged(silu_out, self.down_proj, *meta_tensors)
 
         # Combine expert outputs back to their source devices.

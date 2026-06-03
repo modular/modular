@@ -36,6 +36,9 @@ from max.experimental.sharding.cost import (
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
+from max.nn.comm.ep.ep_kernels import (
+    fused_silu as _fused_silu,
+)
 from max.nn.kernels import (
     flare_mla_prefill_plan as _flare_mla_prefill_plan,
 )
@@ -275,9 +278,11 @@ mla_prefill_graph = _wrap_kvcache_op(_mla_prefill_graph, "q")
 mla_decode_graph = _wrap_kvcache_op(_mla_decode_graph, "q")
 mla_prefill_decode_graph = _wrap_kvcache_op(_mla_prefill_decode_graph, "q")
 
+fused_silu = _wrap_kvcache_op(_fused_silu, "input")
 
 __all__ = [
     "flash_attention_ragged",
+    "fused_silu",
     "grouped_matmul_ragged",
     "moe_create_indices",
     "rms_norm_key_cache",

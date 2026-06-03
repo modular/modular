@@ -23,6 +23,7 @@ family.
    pipelines.architectures.deepseekV2_modulev3
    pipelines.architectures.deepseekV3
    pipelines.architectures.deepseekV3_2
+   pipelines.architectures.deepseekV3_modulev3
    pipelines.architectures.deepseekV3_nextn
    pipelines.architectures.dflash_llama3
    pipelines.architectures.eagle3_deepseekV3
@@ -90,6 +91,7 @@ Text generation
    ~max.pipelines.architectures.deepseekV2_modulev3
    ~max.pipelines.architectures.deepseekV3
    ~max.pipelines.architectures.deepseekV3_2
+   ~max.pipelines.architectures.deepseekV3_modulev3
    ~max.pipelines.architectures.deepseekV3_nextn
    ~max.pipelines.architectures.dflash_llama3
    ~max.pipelines.architectures.eagle3_deepseekV3
