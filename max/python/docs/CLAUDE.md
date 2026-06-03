@@ -41,15 +41,47 @@ Each Python module has one flat RST file (for example, `nn.rst`,
   `nn.kernels.rst`, `experimental.functional.rst`): documents all public
   members automatically without explicit listing.
 
+`index.rst` lists all module pages in its toctree. Module pages that have
+submodules list them in a "Submodules" toctree at the bottom.
+
 **Deduplication rule**: when a parent module re-exports members from a
 submodule, don't list that member more than once. Decide whether to include
 it in the parent module or submodule RST file based on which file offers the
 best-matching semantic group of members.
 
-`index.rst` lists all module pages in its toctree. Module pages that have
-submodules list them in a "Submodules" toctree at the bottom.
+**Prose lives at the symbol level.** The RST file is an index: front matter,
+`automodule` / `currentmodule` directives, section headings, and
+`autosummary` listings. Module introductions, class summaries, parameter
+tables, and any descriptive prose belong in the Python source as docstrings.
+For example, instead of writing an intro paragraph for a module inside its
+RST file, put it in the module-level docstring at the top of the `.py` file,
+and Sphinx autodoc will render it in the same place on the generated page.
 
-## Adding a new module page
+## Adding a symbol to an existing RST file
+
+When you want a new API to appear in the documentation (and it's not
+automatically generated):
+
+1. Open the RST file named after the symbol's module (for `max.nn.Foo`,
+   that's `nn.rst`).
+2. Find the `.. autosummary::` block whose section heading best matches the
+   symbol's role (for example, "Linear layers", "Normalization"). If no
+   section fits, add a new heading and a new `.. autosummary::` block; copy
+   the directives from a neighboring section (`:nosignatures:`,
+   `:toctree: generated`, `:template: autosummary/class.rst` for classes
+   and type aliases, `function.rst` for functions, `data.rst` for
+   module-level data).
+3. Add the symbol's bare name on its own line under the directive. Keep
+   entries alphabetical within a section.
+4. Confirm the symbol is exported through `__all__` or re-exported by a
+   parent `__init__.py`. Names that aren't publicly scoped won't render.
+5. Rebuild and verify: `./bazelw build //max/python/docs:python-api-docs`.
+
+When an API is removed, delete the matching line from the RST file. If that
+empties a section, remove the heading and the empty `.. autosummary::`
+directive with it.
+
+## Adding a new RST file for a module
 
 1. Create `{module}.rst` with `.. automodule::` and `.. autosummary::` sections
    (copy an existing file like `nn.rst` as a starting point).
