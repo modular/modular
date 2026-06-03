@@ -140,37 +140,103 @@ def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
     kv.kv_connector_config = cfg
 
 
-_AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
-    "LlamaForCausalLM",
-    "DeepseekV3ForCausalLM",
-    "DeepseekV32ForCausalLM",
-    "DeepseekV3ForCausalLMNextN",
-    "KimiK25ForConditionalGeneration",
-    "Gemma4ForConditionalGeneration",
-    "UnifiedEagleLlama3ForCausalLM",
-    "UnifiedDflashLlama3ForCausalLM",
-    "UnifiedDflashKimiK25ForCausalLM",
-    "UnifiedMTPDeepseekV3ForCausalLM",
-    "Eagle3DeepseekV2ForCausalLM",
-    "Eagle3DeepseekV3ForCausalLM",
-    "Eagle3MHADeepseekV3ForCausalLM",
-    "Eagle3MHAKimiK25ForCausalLM",
-    "MiniMaxM2ForCausalLM",
+# Architectures excluded from auto-enabling overlap scheduler.
+# Models not in this list will auto-enable overlap scheduler when eligible.
+_DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES = (
+    "DFlashDraftModel",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV2ForCausalLM_ModuleV3",
+    "ExaoneForCausalLM",
+    "ExaoneForCausalLM_ModuleV3",
+    "Gemma3ForCausalLM",
+    "Gemma3ForCausalLM_ModuleV3",
+    "Gemma3ForConditionalGeneration",
+    "Gemma3ForConditionalGeneration_ModuleV3",
+    "GlmMoeDsaForCausalLM",
+    "GptOssForCausalLM",
+    "GptOssForCausalLM_ModuleV3",
+    "GraniteForCausalLM",
+    "GraniteForCausalLM_ModuleV3",
+    "HYV3ForCausalLM",
+    "Idefics3ForConditionalGeneration",
+    "Idefics3ForConditionalGeneration_ModuleV3",
+    "InternVLChatModel",
+    "KimiVLForConditionalGeneration",
+    "Lfm2ForCausalLM",
+    "LlamaForCausalLMEagle",
+    "LlamaForCausalLMEagle3",
+    "LlamaForCausalLM_ModuleV3",
+    "LlavaForConditionalGeneration",
+    "LlavaForConditionalGeneration_ModuleV3",
+    "MambaForCausalLM",
+    "Mistral3ForConditionalGeneration",
+    "MistralForCausalLM",
+    "Olmo2ForCausalLM",
+    "Olmo2ForCausalLM_ModuleV3",
+    "Olmo3ForCausalLM",
+    "OlmoForCausalLM",
+    "OlmoForCausalLM_ModuleV3",
+    "Phi3ForCausalLM",
+    "Phi3ForCausalLM_ModuleV3",
+    "Qwen2ForCausalLM",
+    "Qwen2_5_VLForConditionalGeneration",
+    "Qwen3ForCausalLM",
+    "Qwen3MoeForCausalLM",
+    "Qwen3VLForConditionalGeneration",
+    "Qwen3VLMoeForConditionalGeneration",
+    "Qwen3_5ForConditionalGeneration",
+    "Step3p5ForCausalLM",
 )
 
-_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
-    "LlamaForCausalLM",
-    "DeepseekV3ForCausalLM",
-    "DeepseekV32ForCausalLM",
-    "DeepseekV3ForCausalLMNextN",
-    "KimiK25ForConditionalGeneration",
-    "UnifiedEagleLlama3ForCausalLM",
-    "UnifiedMTPDeepseekV3ForCausalLM",
-    "Eagle3DeepseekV2ForCausalLM",
-    "Eagle3DeepseekV3ForCausalLM",
-    "Eagle3MHADeepseekV3ForCausalLM",
-    "Eagle3MHAKimiK25ForCausalLM",
-    "MiniMaxM2ForCausalLM",
+# Architectures excluded from auto-enabling device graph capture.
+# Models not in this list will auto-enable device graph capture when eligible.
+_DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
+    "DFlashDraftModel",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV2ForCausalLM_ModuleV3",
+    "ExaoneForCausalLM",
+    "ExaoneForCausalLM_ModuleV3",
+    "Gemma3ForCausalLM",
+    "Gemma3ForCausalLM_ModuleV3",
+    "Gemma3ForConditionalGeneration",
+    "Gemma3ForConditionalGeneration_ModuleV3",
+    "Gemma4ForConditionalGeneration",
+    "GlmMoeDsaForCausalLM",
+    "GptOssForCausalLM",
+    "GptOssForCausalLM_ModuleV3",
+    "GraniteForCausalLM",
+    "GraniteForCausalLM_ModuleV3",
+    "HYV3ForCausalLM",
+    "Idefics3ForConditionalGeneration",
+    "Idefics3ForConditionalGeneration_ModuleV3",
+    "InternVLChatModel",
+    "KimiVLForConditionalGeneration",
+    "Lfm2ForCausalLM",
+    "LlamaForCausalLMEagle",
+    "LlamaForCausalLMEagle3",
+    "LlamaForCausalLM_ModuleV3",
+    "LlavaForConditionalGeneration",
+    "LlavaForConditionalGeneration_ModuleV3",
+    "MambaForCausalLM",
+    "Mistral3ForConditionalGeneration",
+    "MistralForCausalLM",
+    "Olmo2ForCausalLM",
+    "Olmo2ForCausalLM_ModuleV3",
+    "Olmo3ForCausalLM",
+    "OlmoForCausalLM",
+    "OlmoForCausalLM_ModuleV3",
+    "Phi3ForCausalLM",
+    "Phi3ForCausalLM_ModuleV3",
+    "Qwen2ForCausalLM",
+    "Qwen2_5_VLForConditionalGeneration",
+    "Qwen3ForCausalLM",
+    "Qwen3MoeForCausalLM",
+    "Qwen3VLForConditionalGeneration",
+    "Qwen3VLMoeForConditionalGeneration",
+    "Qwen3_5ForConditionalGeneration",
+    "Step3p5ForCausalLM",
+    "UnifiedDflashKimiK25ForCausalLM",
+    "UnifiedDflashLlama3ForCausalLM",
 )
 
 
@@ -1211,7 +1277,8 @@ class PipelineConfig(ConfigFileModel):
             if (
                 self.runtime.device_graph_capture is None
                 and arch is not None
-                and arch.name in _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
+                and arch.name
+                not in _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
                 and max_batch_size is not None
                 and accelerator_api() in ("cuda", "hip")
                 and self._is_eligible_for_overlap_serve_optimizations()
@@ -1234,11 +1301,15 @@ class PipelineConfig(ConfigFileModel):
         if self.runtime.force:
             return
 
-        # Automatically enable overlap scheduling for select architectures.
+        # Automatically enable overlap scheduling for architectures not in the
+        # disable list. This is a blacklist approach so new architectures get
+        # overlap scheduler by default, making it easier to track which models
+        # still need work.
         if not self.runtime.enable_overlap_scheduler:
             if (
                 arch is not None
-                and arch.name in _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES
+                and arch.name
+                not in _DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES
                 and self._is_eligible_for_overlap_serve_optimizations()
             ):
                 self.runtime.enable_overlap_scheduler = True
