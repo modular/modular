@@ -2231,8 +2231,11 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
                 indices_stride,
                 topk_lengths_ptr,
                 attn_sink_ptr,
-                num_partitions_in=num_partitions_proj,
-                effective_split_len_in=effective_split_len_proj,
+                # Sparse path: kernel caps effective_split_len via topk mask.
+                # Passing the Python-projected values would clobber that cap and
+                # inflate the split-K grid. Let the kernel compute its own values.
+                num_partitions_in=None,
+                effective_split_len_in=None,
             )
 
 
@@ -2637,8 +2640,9 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 indices_stride,
                 topk_lengths_ptr,
                 attn_sink_ptr,
-                num_partitions_in=num_partitions_proj,
-                effective_split_len_in=effective_split_len_proj,
+                # Sparse path: let kernel use its own mask-aware computation.
+                num_partitions_in=None,
+                effective_split_len_in=None,
             )
 
 
