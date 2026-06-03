@@ -521,6 +521,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             sampling_params=request.sampling_params,
             images=image_metadata,
             vision_token_ids=self.vision_token_ids,
+            vocab_size=self.tokenizer_vocab_size,
         )
 
         return context

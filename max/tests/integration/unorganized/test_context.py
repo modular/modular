@@ -703,7 +703,7 @@ def test_text_context_to_generation_output_validates_vocab_size() -> None:
     oob_context.update(10)
     with pytest.raises(
         RuntimeError,
-        match=r"Generated out-of-vocabulary token_id=10 \(valid range: \[0, 10\)\)",
+        match=r"Generated out-of-vocabulary token_id=10.*\(valid range: \[0, 10\)\)",
     ):
         oob_context.to_generation_output()
 

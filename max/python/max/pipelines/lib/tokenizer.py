@@ -410,6 +410,11 @@ class TextTokenizer(
                 elif isinstance(eos, list):
                     self._default_eos_token_ids.update(eos)
 
+    @property
+    def tokenizer_vocab_size(self) -> int:
+        """Vocabulary size of the HuggingFace tokenizer delegate."""
+        return len(self.delegate)
+
     def apply_chat_template(
         self,
         messages: list[TextGenerationRequestMessage],
@@ -620,7 +625,7 @@ class TextTokenizer(
             if max_gen_tokens is not None
             else self.max_length,
             tokens=token_buffer,
-            vocab_size=len(self.delegate),
+            vocab_size=self.tokenizer_vocab_size,
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
@@ -748,6 +753,11 @@ class TextAndVisionTokenizer(
             self.processor, "image_break_token_id", None
         ):
             self.vision_token_ids.append(image_break_token_id)
+
+    @property
+    def tokenizer_vocab_size(self) -> int:
+        """Vocabulary size of the HuggingFace tokenizer delegate."""
+        return len(self.delegate)
 
     def apply_chat_template(
         self,
@@ -971,7 +981,7 @@ class TextAndVisionTokenizer(
             eos_tracker=await self.create_eos_tracker(request),
             extra_model_args=extra_model_args,
             tokens=token_buffer,
-            vocab_size=len(self.delegate),
+            vocab_size=self.tokenizer_vocab_size,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,

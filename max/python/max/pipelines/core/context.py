@@ -22,9 +22,6 @@ from typing import TYPE_CHECKING, Any
 import llguidance
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.core.token_validation import (
-    validate_context_generated_tokens,
-)
 from max.pipelines.modeling.types import (
     EOSTracker,
     GenerationStatus,
@@ -588,11 +585,15 @@ class TextContext:
                 raise ValueError(
                     "Attempted to create generation output while future token is not yet realized."
                 )
-            validate_context_generated_tokens(
-                generated_tokens,
-                vocab_size=self.vocab_size,
-                request_id=self.request_id,
-            )
+            for token_id in generated_tokens:
+                if token_id < 0:
+                    raise RuntimeError(
+                        f"Generated negative token_id={token_id} for request {self.request_id}"
+                    )
+                if self.vocab_size is not None and token_id >= self.vocab_size:
+                    raise RuntimeError(
+                        f"Generated out-of-vocabulary token_id={token_id} for request {self.request_id} (valid range: [0, {self.vocab_size}))"
+                    )
         else:
             generated_tokens = []
 

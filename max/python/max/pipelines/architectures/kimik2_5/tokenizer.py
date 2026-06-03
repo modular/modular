@@ -454,7 +454,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             request_id=request.request_id,
             eos_tracker=await self.create_eos_tracker(request),
             tokens=token_buffer,
-            vocab_size=len(self.delegate),
+            vocab_size=self.tokenizer_vocab_size,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
