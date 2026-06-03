@@ -146,9 +146,15 @@ M::openIntermediateTextFile(StringRef baseName, StringRef extension) {
   if (configOr.isError())
     return nullptr;
 
-  StringRef tempsDir = configOr->getValue(STRINGIFY_MAX_CONFIG(".temps_dir"));
-  if (tempsDir.empty())
+  // Prefer the user-facing debug option; fall back to the legacy save-temps
+  // key (which is also where `MODULAR_MAX_TEMPS_DIR` lands). This mirrors the
+  // precedence in `M::getMaxIRDumpDir()` so that `MODULAR_DEBUG=ir-output-dir`
+  // emits intermediate text (e.g. the `.mojo` dump) alongside the MLIR files.
+  StringRef dir = configOr->getValue("max-debug.ir-output-dir");
+  if (dir.empty())
+    dir = configOr->getValue(STRINGIFY_MAX_CONFIG(".temps_dir"));
+  if (dir.empty())
     return nullptr;
 
-  return openUniqueFile(tempsDir, baseName, extension);
+  return openUniqueFile(dir, baseName, extension);
 }
