@@ -36,12 +36,13 @@ struct MetalEnqueueFunctionArgs:
     """Passes through Metal specific kernel launch data through to the
     driver."""
 
-    var args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin]
-    var arg_sizes: UnsafePointer[UInt64, ImmutAnyOrigin]
-    var arg_is_device_ptr: UnsafePointer[Bool, MutAnyOrigin]
+    var args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutExternalOrigin]
+    var arg_sizes: UnsafePointer[UInt64, ImmutExternalOrigin]
+    var arg_is_device_ptr: UnsafePointer[Bool, MutExternalOrigin]
     var buffers: Optional[
         UnsafePointer[
-            UnsafePointer[_DeviceBufferCpp, MutAnyOrigin], MutAnyOrigin
+            UnsafePointer[_DeviceBufferCpp, MutExternalOrigin],
+            MutExternalOrigin,
         ]
     ]
     var num_buffers: Int32
@@ -51,7 +52,7 @@ struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
     """Provides a Metal specific implementation of the `DeviceTypeEncoder`
     trait."""
 
-    var _buffers: List[UnsafePointer[_DeviceBufferCpp, MutAnyOrigin]]
+    var _buffers: List[UnsafePointer[_DeviceBufferCpp, MutExternalOrigin]]
 
     def __init__(out self):
         """Initializes the encoder with an empty buffer list."""
@@ -79,7 +80,7 @@ struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
             dst: The opaque destination pointer to encode into.
         """
         value.unsafe_ptr()._to_device_type(self, dst)
-        self._buffers.append(value.buffer()._handle.value().as_any_origin())
+        self._buffers.append(value.buffer()._handle.value())
 
 
 @always_inline
@@ -339,7 +340,9 @@ def call_with_pack_checked_metal[
         dense_args_addrs,
         dense_args_sizes,
         dense_args_is_device_ptr,
-        device_type_encoder._buffers.unsafe_ptr(),
+        device_type_encoder._buffers.unsafe_ptr().unsafe_origin_cast[
+            MutExternalOrigin
+        ](),
         Int32(len(device_type_encoder._buffers)),
     )
 
