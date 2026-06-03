@@ -13,6 +13,7 @@
 
 """KV cache management for MAX pipelines."""
 
+from .config import KVCacheConfig, KVConnectorConfig
 from .paged_kv_cache import (
     DummyKVCache,
     IncrementCacheLengthsProcessor,
@@ -29,6 +30,8 @@ __all__ = [
     "DummyKVCache",
     "IncrementCacheLengthsProcessor",
     "InsufficientBlocksError",
+    "KVCacheConfig",
+    "KVConnectorConfig",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
     "PagedKVCacheManager",

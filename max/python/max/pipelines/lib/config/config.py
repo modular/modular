@@ -30,6 +30,10 @@ from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    KVConnectorConfig,
+)
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
@@ -51,10 +55,6 @@ from max.pipelines.lib.registry import (
 )
 from max.pipelines.lib.sampling import SamplingConfig
 from max.pipelines.lora import LoRAConfig
-from max.pipelines.modeling.kv_cache_config import (
-    KVCacheConfig,
-    KVConnectorConfig,
-)
 from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.weights.hf_utils import is_diffusion_pipeline

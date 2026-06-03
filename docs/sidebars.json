@@ -598,17 +598,6 @@
                 },
                 {
                   "type": "category",
-                  "label": "kv_cache_config",
-                  "link": {
-                    "type": "doc",
-                    "id": "max/api/python/pipelines.modeling.kv_cache_config"
-                  },
-                  "items": [
-                    "__AUTOGEN:max.pipelines.modeling.kv_cache_config__"
-                  ]
-                },
-                {
-                  "type": "category",
                   "label": "types",
                   "link": {
                     "type": "doc",

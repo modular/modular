@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """MAX KVCache configuration."""
 
+from __future__ import annotations
+
 __all__ = ["KVCacheConfig", "KVConnectorConfig"]
 
 from collections.abc import Sequence
@@ -23,8 +25,8 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
+    SpeculativeMethod,
 )
-from max.pipelines.speculative.config import SpeculativeMethod
 from pydantic import ConfigDict, Field, PrivateAttr
 
 

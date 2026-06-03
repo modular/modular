@@ -32,6 +32,7 @@ from max.graph.weights import (
     weights_format,
 )
 from max.nn.kv_cache.cache_params import KVConnectorType
+from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.device_specs import (
     _default_device_specs,
@@ -51,7 +52,6 @@ from max.pipelines.modeling.config_enums import (
     supported_encoding_supported_devices,
     supported_encoding_supported_on,
 )
-from max.pipelines.modeling.kv_cache_config import KVCacheConfig
 from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
 from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,

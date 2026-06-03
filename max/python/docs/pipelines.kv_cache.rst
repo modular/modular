@@ -11,6 +11,17 @@ max.pipelines.kv_cache
 
 .. currentmodule:: max.pipelines.kv_cache
 
+Configuration
+-------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   KVCacheConfig
+   KVConnectorConfig
+
 Cache manager
 -------------
 

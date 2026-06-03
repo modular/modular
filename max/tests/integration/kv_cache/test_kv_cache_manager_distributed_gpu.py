@@ -28,11 +28,11 @@ from max.pipelines.kv_cache import (
     IncrementCacheLengthsProcessor,
     PagedKVCacheManager,
 )
+from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
-from max.pipelines.modeling.kv_cache_config import KVConnectorConfig
 from max.pipelines.modeling.types import TextGenerationContext
 from test_common.context_utils import create_text_context
 
