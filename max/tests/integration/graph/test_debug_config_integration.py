@@ -517,6 +517,13 @@ class TestReaderMigration:
         assert any(name.endswith(".mlir") for name in files), (
             f"Expected at least one .mlir file in {ir_dir}, got {files}"
         )
+        # Regression test for GEX-3810: the `mogg-emit-mojo` stage must also
+        # honor `ir-output-dir` and write the emitted Mojo text, not just the
+        # MLIR files. Prior to the fix the `.mojo` dump only landed when the
+        # legacy `max.temps_dir` key was set.
+        assert any(name.endswith(".mojo") for name in files), (
+            f"Expected an emitted .mojo file in {ir_dir}, got {files}"
+        )
 
     def test_ir_output_dir_via_legacy_temps_dir_still_works(
         self, tmp_path: Path
@@ -575,4 +582,9 @@ class TestReaderMigration:
         )
         assert any(name.endswith(".mlir") for name in files), (
             f"Expected at least one .mlir file in {ir_dir}, got {files}"
+        )
+        # The legacy temps key has always emitted the Mojo text; keep it
+        # covered so the two paths stay at parity (see GEX-3810).
+        assert any(name.endswith(".mojo") for name in files), (
+            f"Expected an emitted .mojo file in {ir_dir}, got {files}"
         )
