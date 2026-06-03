@@ -54,6 +54,7 @@ from layout.coord import (
     _IntToComptimeInt,
 )
 from layout.int_tuple import _IntTupleToCoordLike, coord_to_int_tuple
+from layout.tile_io import TileCopier
 from layout.tile_layout import Layout as TileLayout, TensorLayout, _RowMajor
 
 from .decorators import register_internal
@@ -81,6 +82,9 @@ struct IO(TrivialRegisterPassable):
     # Output fusion using a compute lambda.
     comptime _FusedComputeOutput = IO(31)
 
+    # Output fusion using a tile-based compute lambda.
+    comptime _FusedComputeOutputTile = IO(32)
+
     @always_inline("builtin")
     def __init__(out self, value: Int):
         self.value = value
@@ -99,6 +103,7 @@ struct IO(TrivialRegisterPassable):
             self == IO.FusedInput
             or self == IO.FusedOutput
             or self == IO._FusedComputeOutput
+            or self == IO._FusedComputeOutputTile
         )
 
 
@@ -130,6 +135,8 @@ comptime FusedInput = IOSpec[False, IO.FusedInput]()
 comptime FusedOutput = IOSpec[True, IO.FusedOutput]()
 
 comptime _FusedComputeOutput = IOSpec[True, IO._FusedComputeOutput]()
+
+comptime _FusedComputeOutputTile = IOSpec[True, IO._FusedComputeOutputTile]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -383,6 +390,47 @@ struct _NoComputeFusion(ComputeOutputFusion):
         ), "compute() not implemented for this ComputeOutputFusion"
 
 
+trait ComputeOutputFusionTile(TrivialRegisterPassable):
+    """Trait for tile-based compute-output fusion structs that transform a
+    TileTensor before storing."""
+
+    def compute[
+        dtype: DType,
+        rank: Int,
+        LayoutType: TensorLayout,
+        Copier: TileCopier,
+    ](
+        self,
+        tile_coords: IndexList[rank],
+        copier: Copier,
+        val: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+        ...
+
+
+struct _NoComputeFusionTile(ComputeOutputFusionTile):
+    """Sentinel type indicating no tile-based compute-output fusion is active.
+    """
+
+    def __init__(out self):
+        pass
+
+    def compute[
+        dtype: DType,
+        rank: Int,
+        LayoutType: TensorLayout,
+        Copier: TileCopier,
+    ](
+        self,
+        tile_coords: IndexList[rank],
+        copier: Copier,
+        val: TileTensor[dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+        comptime assert (
+            False
+        ), "compute() not implemented for this ComputeOutputFusionTile"
+
+
 # Compile time Tensor information
 struct StaticTensorSpec[
     dtype: DType,
@@ -391,6 +439,7 @@ struct StaticTensorSpec[
     InFusion: InputFusion = _NoFusionIn,
     OutFusion: OutputFusion = _NoFusionOut,
     ComputeFusion: ComputeOutputFusion = _NoComputeFusion,
+    ComputeFusionTile: ComputeOutputFusionTile = _NoComputeFusionTile,
 ](ImplicitlyCopyable):
     # IntTuple aliases for static shape/strides.
     comptime shape_tuple = coord_to_int_tuple[
@@ -414,8 +463,15 @@ struct StaticTensorSpec[
         comptime _has_compute = not _type_is_eq[
             Self.ComputeFusion, _NoComputeFusion
         ]()
+        comptime _has_compute_tile = not _type_is_eq[
+            Self.ComputeFusionTile, _NoComputeFusionTile
+        ]()
         comptime assert (
-            Int(_has_in) + Int(_has_out) + Int(_has_compute) <= 1
+            Int(_has_in)
+            + Int(_has_out)
+            + Int(_has_compute)
+            + Int(_has_compute_tile)
+            <= 1
         ), "StaticTensorSpec can have at most one fusion type"
         self.alignment = alignment
         self.address_space = address_space
@@ -431,8 +487,15 @@ struct StaticTensorSpec[
         comptime _has_compute = not _type_is_eq[
             Self.ComputeFusion, _NoComputeFusion
         ]()
+        comptime _has_compute_tile = not _type_is_eq[
+            Self.ComputeFusionTile, _NoComputeFusionTile
+        ]()
         comptime assert (
-            Int(_has_in) + Int(_has_out) + Int(_has_compute) <= 1
+            Int(_has_in)
+            + Int(_has_out)
+            + Int(_has_compute)
+            + Int(_has_compute_tile)
+            <= 1
         ), "StaticTensorSpec can have at most one fusion type"
         self.alignment = internals.alignment
         self.address_space = internals.address_space
@@ -576,6 +639,7 @@ struct StaticTensorSpec[
         F,
         Self.OutFusion,
         Self.ComputeFusion,
+        Self.ComputeFusionTile,
     ]:
         return {
             self.alignment,
@@ -592,6 +656,7 @@ struct StaticTensorSpec[
         Self.InFusion,
         F,
         Self.ComputeFusion,
+        Self.ComputeFusionTile,
     ]:
         return {
             self.alignment,
@@ -607,6 +672,24 @@ struct StaticTensorSpec[
         Self.static_layout,
         Self.InFusion,
         Self.OutFusion,
+        F,
+        Self.ComputeFusionTile,
+    ]:
+        return {
+            self.alignment,
+            self.address_space,
+        }
+
+    @always_inline
+    def with_compute_fusion_tile[
+        F: ComputeOutputFusionTile
+    ](self) -> StaticTensorSpec[
+        Self.dtype,
+        Self.rank,
+        Self.static_layout,
+        Self.InFusion,
+        Self.OutFusion,
+        Self.ComputeFusion,
         F,
     ]:
         return {
@@ -927,6 +1010,10 @@ comptime _FusedComputeOutputTensor = ManagedTensorSlice[
     io_spec=_FusedComputeOutput, ...
 ]
 
+comptime _FusedComputeOutputTileTensor = ManagedTensorSlice[
+    io_spec=_FusedComputeOutputTile, ...
+]
+
 comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
     io_spec=IOUnknown,
     static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
@@ -942,11 +1029,12 @@ struct ManagedTensorSlice[
     InFusion: InputFusion,
     OutFusion: OutputFusion,
     ComputeFusion: ComputeOutputFusion,
+    ComputeFusionTile: ComputeOutputFusionTile,
     //,
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[
-        dtype, rank, _, InFusion, OutFusion, ComputeFusion
+        dtype, rank, _, InFusion, OutFusion, ComputeFusion, ComputeFusionTile
     ],
 ](DevicePassable, TrivialRegisterPassable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
@@ -1005,6 +1093,9 @@ struct ManagedTensorSlice[
     comptime _has_compute_fusion: Bool = not _type_is_eq[
         Self.ComputeFusion, _NoComputeFusion
     ]()
+    comptime _has_compute_fusion_tile: Bool = not _type_is_eq[
+        Self.ComputeFusionTile, _NoComputeFusionTile
+    ]()
 
     var _ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var _spec: RuntimeTensorSpec[Self.dtype, Self.rank]
@@ -1012,6 +1103,7 @@ struct ManagedTensorSlice[
     var in_fusion: Self.InFusion
     var out_fusion: Self.OutFusion
     var compute_fusion: Self.ComputeFusion
+    var compute_fusion_tile: Self.ComputeFusionTile
 
     @staticmethod
     @always_inline
@@ -1051,6 +1143,20 @@ struct ManagedTensorSlice[
             return rebind[Self.ComputeFusion](_NoComputeFusion())
         else:
             var f: Self.ComputeFusion
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(f)
+            )
+            return f
+
+    @staticmethod
+    @always_inline
+    def _sentinel_compute_fusion_tile() -> Self.ComputeFusionTile:
+        """Return a sentinel ComputeFusionTile value, or an uninitialized
+        placeholder when the type parameter is a real fusion struct."""
+        comptime if _type_is_eq[Self.ComputeFusionTile, _NoComputeFusionTile]():
+            return rebind[Self.ComputeFusionTile](_NoComputeFusionTile())
+        else:
+            var f: Self.ComputeFusionTile
             __mlir_op.`lit.ownership.mark_initialized`(
                 __get_mvalue_as_litref(f)
             )
@@ -1110,6 +1216,7 @@ struct ManagedTensorSlice[
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
         self.compute_fusion = Self._sentinel_compute_fusion()
+        self.compute_fusion_tile = Self._sentinel_compute_fusion_tile()
 
     def __init__(
         out self,
@@ -1130,6 +1237,7 @@ struct ManagedTensorSlice[
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
         self.compute_fusion = Self._sentinel_compute_fusion()
+        self.compute_fusion_tile = Self._sentinel_compute_fusion_tile()
 
     def __init__(
         out self,
@@ -1148,6 +1256,7 @@ struct ManagedTensorSlice[
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
         self.compute_fusion = Self._sentinel_compute_fusion()
+        self.compute_fusion_tile = Self._sentinel_compute_fusion_tile()
 
     def __init__(
         out self,
@@ -1167,6 +1276,7 @@ struct ManagedTensorSlice[
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
         self.compute_fusion = Self._sentinel_compute_fusion()
+        self.compute_fusion_tile = Self._sentinel_compute_fusion_tile()
 
     @always_inline
     def __getitem__(self, indices: IndexList[Self.rank]) -> Scalar[Self.dtype]:
@@ -1635,6 +1745,27 @@ struct ManagedTensorSlice[
             return val
 
     @always_inline
+    def _fused_compute_output_tile_lambda[
+        _rank: Int,
+        LayoutType: TensorLayout,
+        Copier: TileCopier,
+    ](
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
+        tile_coords: IndexList[_rank],
+        copier: Copier,
+        val: TileTensor[Self.dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[Self.dtype, LayoutType, MutAnyOrigin]:
+        comptime assert _rank == Self.rank
+        var ridx = rebind[IndexList[Self.rank]](tile_coords)
+
+        comptime if Self._has_compute_fusion_tile:
+            return self.compute_fusion_tile.compute[
+                Self.dtype, Self.rank, LayoutType, Copier
+            ](ridx, copier, val)
+        else:
+            return val
+
+    @always_inline
     def with_tile_layout[
         new_layout: TensorLayout,
     ](
@@ -1688,6 +1819,7 @@ struct ManagedTensorSlice[
             fusion,
             rebind[type_of(result).OutFusion](_NoFusionOut()),
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
+            rebind[type_of(result).ComputeFusionTile](_NoComputeFusionTile()),
         }
 
     @doc_hidden
@@ -1719,6 +1851,7 @@ struct ManagedTensorSlice[
             rebind[type_of(result).InFusion](_NoFusionIn()),
             fusion,
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
+            rebind[type_of(result).ComputeFusionTile](_NoComputeFusionTile()),
         }
 
     @doc_hidden
@@ -1750,6 +1883,7 @@ struct ManagedTensorSlice[
             rebind[type_of(result).InFusion](_NoFusionIn()),
             fusion,
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
+            rebind[type_of(result).ComputeFusionTile](_NoComputeFusionTile()),
         }
 
     @doc_hidden
@@ -1780,6 +1914,39 @@ struct ManagedTensorSlice[
             self._runtime_strides,
             rebind[type_of(result).InFusion](_NoFusionIn()),
             rebind[type_of(result).OutFusion](_NoFusionOut()),
+            fusion,
+            rebind[type_of(result).ComputeFusionTile](_NoComputeFusionTile()),
+        }
+
+    @doc_hidden
+    @always_inline
+    def _bind_to_fused_compute_output_tile[
+        F: ComputeOutputFusionTile
+    ](
+        self,
+        fusion: F,
+        out result: ManagedTensorSlice[
+            dtype=Self.dtype,
+            rank=Self.rank,
+            io_spec=_FusedComputeOutputTile,
+            static_spec=Self.static_spec.with_compute_fusion_tile[F](),
+        ],
+    ):
+        """Bind a tile-based compute-output fusion struct to this tensor.
+
+        The returned MTS dispatches tile-based compute-output through
+        `fusion.compute()` to transform tile values before the final store.
+        """
+        comptime assert (
+            Self._is_unfused
+        ), "The tensor is already bound to a fusion struct"
+        return {
+            self._ptr,
+            self._spec,
+            self._runtime_strides,
+            rebind[type_of(result).InFusion](_NoFusionIn()),
+            rebind[type_of(result).OutFusion](_NoFusionOut()),
+            rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
             fusion,
         }
 
@@ -2011,6 +2178,7 @@ struct VariadicTensors[
             _NoFusionIn(),
             _NoFusionOut(),
             _NoComputeFusion(),
+            _NoComputeFusionTile(),
         }
 
 
@@ -2122,6 +2290,7 @@ struct _FusedInputVariadicTensors[
             self._fusions[index],
             rebind[type_of(result).OutFusion](_NoFusionOut()),
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
+            rebind[type_of(result).ComputeFusionTile](_NoComputeFusionTile()),
         }
 
     def shape[index: Int](self) -> IndexList[Self.rank]:
@@ -2212,6 +2381,7 @@ struct _FusedOutputVariadicTensors[
             rebind[type_of(result).InFusion](_NoFusionIn()),
             self._fusions[index],
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
+            rebind[type_of(result).ComputeFusionTile](_NoComputeFusionTile()),
         }
 
     def shape[index: Int](self) -> IndexList[Self.rank]:
