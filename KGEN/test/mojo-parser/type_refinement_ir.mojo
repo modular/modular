@@ -301,3 +301,24 @@ def refine_in_comptime_if_no_call[T: SomeTrait](var x: T):
 def refine_after_comptime_assert_no_call[T: SomeTrait](var x: T):
     comptime assert conforms_to(T, ImplicitlyDestructible)
     _ = x
+
+
+# A `where conforms_to(Self.T, Refined)` clause must widen the effective
+# trait bound of `Self.T` when matching it against a stricter declared
+# parameter bound.
+struct ParamBox[T: AnyType]:
+    pass
+
+
+def accepts_refined_box[T: RefinedParam](box: ParamBox[T]):
+    pass
+
+
+struct WhereParamMatcherContainer[T: OriginalParam]:
+    def refine_where_during_nested_param_binding(
+        self, box: ParamBox[Self.T]
+    ) where conforms_to(Self.T, RefinedParam):
+        # Inferred binding: `accepts_refined_value`'s T = Self.T, which is
+        # declared `OriginalParam` but widened to `RefinedParam` by the
+        # where clause.
+        accepts_refined_box(box)
