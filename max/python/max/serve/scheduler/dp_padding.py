@@ -77,22 +77,6 @@ class DPBatchPadder:
         self._model_name = model_name
         self._pipeline = pipeline
 
-        # Pre-allocate one sentinel block per replica. Dummies share
-        # this block via ref-count so padding can never fail due to
-        # block exhaustion.
-        self._sentinel_ids: list[RequestID] = []
-        for rank in range(dp_size):
-            sentinel_id = RequestID(f"_dp_sentinel_r{rank}")
-            sentinel_ctx = TextContext(
-                max_length=max_length,
-                tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
-                model_name=model_name,
-                request_id=sentinel_id,
-            )
-            kv_manager.claim(sentinel_id, replica_idx=rank)
-            kv_manager.alloc(sentinel_ctx, replica_idx=rank, num_steps=1)
-            self._sentinel_ids.append(sentinel_id)
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -177,9 +161,7 @@ class DPBatchPadder:
             )
             ctx.update(0)
             self._kv_manager.alloc_dummy(
-                ctx.request_id,
-                replica_idx=replica_idx,
-                sentinel_request_id=self._sentinel_ids[replica_idx],
+                ctx.request_id, replica_idx=replica_idx
             )
             dummies.append(ctx)
         return dummies

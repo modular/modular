@@ -411,21 +411,24 @@ def test_release_calls_pipeline_release_for_dummies() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Sentinel blocks
+# Null block (dummy KV slots)
 # ---------------------------------------------------------------------------
 
 
-def test_sentinel_blocks_allocated_at_init(padder_kv: PadderKV) -> None:
-    """Sentinel request IDs are claimed in the KV manager at construction."""
-    padder, kv_manager, _pipeline = padder_kv
+def test_null_block_reserved_per_replica(padder_kv: PadderKV) -> None:
+    """Each replica reserves block 0 as the pool null block at init."""
+    _padder, kv_manager, _pipeline = padder_kv
 
-    assert len(padder._sentinel_ids) == 2
-    for rank, sentinel_id in enumerate(padder._sentinel_ids):
-        assert kv_manager.contains(sentinel_id, replica_idx=rank)
+    for rank in range(2):
+        null_block = kv_manager._replica[
+            rank
+        ].block_manager.device_block_pool.null_block
+        assert null_block.is_null
+        assert null_block.bid == 128
 
 
 def test_padding_does_not_allocate_new_blocks() -> None:
-    """Dummies share the sentinel block; free block count stays constant."""
+    """Dummies map to the null block; used page count stays constant."""
     padder, kv_manager, pipeline = _make_padder(dp_size=2, total_num_pages=128)
 
     ctxs_r0 = _make_contexts(3)
@@ -442,14 +445,14 @@ def test_padding_does_not_allocate_new_blocks() -> None:
     assert info is not None
 
     assert kv_manager.get_num_used_pages(replica_idx=0) == used_after_real_r0
-    # Dummies share the sentinel block, so used page count should not increase.
+    # Dummies use the null block, so used page count should not increase.
     assert kv_manager.get_num_used_pages(replica_idx=1) == used_after_real_r1
 
     _release_info(info, kv_manager, pipeline)
 
 
 def test_repeated_pad_and_release_cycles() -> None:
-    """Padding the same replica multiple times reuses the sentinel block safely."""
+    """Padding the same replica multiple times reuses the null block safely."""
     padder, kv_manager, pipeline = _make_padder(dp_size=2, total_num_pages=128)
 
     for _ in range(5):
@@ -466,9 +469,6 @@ def test_repeated_pad_and_release_cycles() -> None:
         assert kv_manager.get_num_used_pages(replica_idx=1) == used_before
 
         _release_info(info, kv_manager, pipeline)
-
-        for rank, sid in enumerate(padder._sentinel_ids):
-            assert kv_manager.contains(sid, replica_idx=rank)
 
         for ctx in ctxs_r0:
             kv_manager.release(ctx.request_id, replica_idx=0)

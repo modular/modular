@@ -680,7 +680,8 @@ class KVTransferEngine:
                 [t.device for t in replica_tensors], backend_type
             )
             bytes_per_page, elts_per_page = _validate_tensor_shape(
-                replica_tensors, total_num_pages
+                replica_tensors,
+                total_num_pages,
             )
             bytes_per_page_list.append(bytes_per_page)
             elts_per_page_list.append(elts_per_page)
@@ -783,7 +784,8 @@ class KVTransferEngine:
         return cls(
             name=name,
             tensors=tensors,
-            total_num_pages=kv_cache.get_num_pages(replica_idx=0),
+            # Need to add 1 for the null block
+            total_num_pages=kv_cache.get_num_pages(replica_idx=0) + 1,
             replicate_kv_across_tp=primary_params.is_mla,
         )
 

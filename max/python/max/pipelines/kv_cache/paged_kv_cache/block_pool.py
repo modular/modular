@@ -68,6 +68,11 @@ class BlockPool:
         # be evicted.
         self.prefix_cache: dict[int, KVCacheBlock] = {}
 
+        # Placeholder block for dummy / padding requests. It will never be freed.
+        self.null_block = KVCacheBlock(
+            self.total_num_blocks, is_null=True, ref_cnt=42
+        )
+
     @traced
     def commit_into_prefix_cache(
         self,
@@ -75,6 +80,9 @@ class BlockPool:
         block: KVCacheBlock,
     ) -> None:
         """Commit a block into the prefix cache."""
+        if block.is_null:
+            raise ValueError("Cannot commit null block into prefix cache")
+
         assert block.block_hash is None
         block.block_hash = block_hash
 
@@ -150,6 +158,9 @@ class BlockPool:
         A block can be in both the prefix cache and the free block queue at the
         same time.
         """
+        if block.is_null:
+            return
+
         block.ref_cnt -= 1
         assert block.ref_cnt >= 0
         if block.ref_cnt == 0:
@@ -203,5 +214,7 @@ class BlockPool:
             assert block.block_hash == block_hash
 
         # Check that the total number of blocks is correct.
-        free_blocks = self.num_free_blocks
-        assert free_blocks + len(set(active_bids)) == self.total_num_blocks
+        assert (
+            self.num_free_blocks + len(set(active_bids))
+            == self.total_num_blocks
+        )
