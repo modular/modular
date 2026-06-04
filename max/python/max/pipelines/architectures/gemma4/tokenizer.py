@@ -26,6 +26,7 @@ import numpy as np
 import numpy.typing as npt
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import to_rgb
 from max.pipelines.core.context import GrammarEnforcementState
+from max.pipelines.core.exceptions import PromptTooLongError
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.tokenizer import resolve_single_special_token
@@ -466,9 +467,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
-            raise ValueError(
-                "encoded_prompt is greater than the max_length of the tokenizer"
-            )
+            raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
         # Build ImageMetadata for images only (not videos).
         # Find contiguous ranges of *image* tokens only.

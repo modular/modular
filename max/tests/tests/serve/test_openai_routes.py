@@ -30,7 +30,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
 from max.pipelines.core import TextContext
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.core.exceptions import InputError, PromptTooLongError
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     PipelineConfig,
@@ -233,6 +233,32 @@ async def test_openai_chat_completion_empty_model_name(app) -> None:  # noqa: AN
         choice = response.choices[0]
         assert choice.message.content == request_content
         assert choice.finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_prompt_too_long_returns_400(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``PromptTooLongError`` from the tokenizer must surface as 400."""
+
+    async def _raise(self, request) -> None:  # noqa: ANN001
+        raise PromptTooLongError(num_tokens=4096, max_length=2048)
+
+    monkeypatch.setattr(EchoPipelineTokenizer, "new_context", _raise)
+
+    async with AsyncTestClient(app) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="anything"),
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["message"].startswith("Prompt is too long")
+    assert "4096 tokens" in body["error"]["message"]
+    assert "2048 tokens" in body["error"]["message"]
+    assert body["error"]["type"] == "invalid_request_error"
 
 
 @pytest.mark.asyncio

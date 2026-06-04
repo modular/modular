@@ -24,6 +24,7 @@ import numpy as np
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from max.pipelines.core.exceptions import PromptTooLongError
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.modeling.types import (
     BaseContext,
@@ -327,3 +328,42 @@ def test_openresponses_video_request_returns_inline_base64_when_requested(
         assert content["num_frames"] == 2
         assert content["video_data"]
         assert "video_url" not in content
+
+
+class _PromptTooLongPipelineHandler(GeneralPipelineHandler):
+    """Mock handler whose generator raises ``PromptTooLongError`` on first
+    iteration — simulating a tokenizer that rejected an over-length prompt."""
+
+    def __init__(self) -> None:
+        self.model_name = "test-model"
+        self.logger = Mock()
+        self.debug_logging = False
+
+    async def next(
+        self, request: OpenResponsesRequest
+    ) -> AsyncGenerator[GenerationOutput, None]:
+        raise PromptTooLongError(
+            num_tokens=4033,
+            max_length=512,
+            limit_description="text encoder's maximum sequence length",
+        )
+        yield  # pragma: no cover -- unreachable, marks this as a generator
+
+
+def test_openresponses_prompt_too_long_returns_400(app: FastAPI) -> None:
+    """A ``PromptTooLongError`` from the handler must surface as 400 with
+    the exception's message intact, not propagate to a generic 500."""
+    app.state.handler = _PromptTooLongPipelineHandler()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/responses",
+            json={"model": "test-model", "input": "irrelevant"},
+        )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "Prompt is too long" in detail
+    assert "4033 tokens" in detail
+    assert "text encoder's maximum sequence length" in detail
+    assert "512 tokens" in detail

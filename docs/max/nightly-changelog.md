@@ -35,6 +35,16 @@ This version is still a work in progress.
 
 ### Inference server
 
+- MAX Serve now returns a clearer 400 Bad Request with the underlying
+  message when a prompt is too long for the model, instead of a generic
+  "Value error." response (or, for streaming completions, a 500 Internal
+  Server Error). All architectures now raise a structured
+  `PromptTooLongError` exposing `num_tokens` and `max_length` attributes
+  so callers can handle the failure programmatically. The user-facing
+  message identifies the relevant limit (LLM context window vs. diffusion
+  text encoder sequence length): for example, "Prompt is too long: N
+  tokens exceeds the configured maximum context length of M tokens.
+  Please shorten your prompt."
 - Fixed a KV cache offloading correctness bug that corrupted output for
   multi-cache models (such as Gemma 4's interleaved sliding-window plus
   global attention) when the `local` or `tiered` KV connector was enabled.

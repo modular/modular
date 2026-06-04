@@ -21,6 +21,7 @@ import numpy as np
 import numpy.typing as npt
 import PIL.Image
 from max.pipelines.core import PixelContext
+from max.pipelines.core.exceptions import PromptTooLongError
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.pixel_tokenizer import (
     PipelineClassName,
@@ -50,7 +51,7 @@ def tokenize_klein_text(
     ``max_length`` is set the result is padded/truncated to that length;
     otherwise the result has the prompt's natural length.
 
-    Raises ``ValueError`` if the natural-length tokenization exceeds
+    Raises ``PromptTooLongError`` if the natural-length tokenization exceeds
     ``max_length`` (rather than silently truncating).
 
     Shared by ``Flux2Tokenizer.encode`` (production) and the
@@ -77,10 +78,10 @@ def tokenize_klein_text(
         prompt_text, add_special_tokens=add_special_tokens
     )
     if max_length and len(raw_ids) > max_length:
-        raise ValueError(
-            "Prompt is too long for this model's text encoder: "
-            f"{len(raw_ids)} tokens exceeds the maximum of {max_length}"
-            " tokens. Please shorten your prompt."
+        raise PromptTooLongError(
+            len(raw_ids),
+            max_length,
+            limit_description="text encoder's maximum sequence length",
         )
 
     if max_length is None:
@@ -211,11 +212,10 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
                     else len(precheck_ids)
                 )
                 if max_sequence_length and precheck_len > max_sequence_length:
-                    raise ValueError(
-                        f"Prompt is too long for this model's text"
-                        f" encoder: {precheck_len} tokens exceeds"
-                        f" the maximum of {max_sequence_length}"
-                        " tokens. Please shorten your prompt."
+                    raise PromptTooLongError(
+                        precheck_len,
+                        max_sequence_length,
+                        limit_description="text encoder's maximum sequence length",
                     )
 
                 return delegate.apply_chat_template(
@@ -299,9 +299,10 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
             max_sequence_length is not None
             and input_ids_array.shape[1] > max_sequence_length
         ):
-            raise ValueError(
-                "Input string is larger than tokenizer's max length "
-                f"({input_ids_array.shape[1]} > {max_sequence_length})."
+            raise PromptTooLongError(
+                input_ids_array.shape[1],
+                max_sequence_length,
+                limit_description="text encoder's maximum sequence length",
             )
 
         encoded_prompt = input_ids_array[0].astype(np.int64, copy=False)

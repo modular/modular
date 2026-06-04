@@ -31,6 +31,7 @@ from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
 )
+from max.pipelines.core.exceptions import PromptTooLongError
 from max.pipelines.modeling.types import (
     EOSTracker,
     ImageMetadata,
@@ -489,9 +490,7 @@ class TextTokenizer(
             )
 
             if self.max_length and len(encoded_prompt) > self.max_length:
-                raise ValueError(
-                    f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {self.max_length})."
-                )
+                raise PromptTooLongError(len(encoded_prompt), self.max_length)
 
             encoded_prompt = np.array(encoded_prompt)
         else:
@@ -824,9 +823,7 @@ class TextAndVisionTokenizer(
 
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
-                raise ValueError(
-                    f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {max_length})."
-                )
+                raise PromptTooLongError(len(encoded_prompt), max_length)
 
             encoded_prompt = np.array(encoded_prompt)
         else:
@@ -964,9 +961,7 @@ class TextAndVisionTokenizer(
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
-            raise ValueError(
-                "encoded_prompt is greater than the max_length of the tokenizer"
-            )
+            raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
         start_and_end_idxs = find_contiguous_ranges(
             encoded_prompt, self.vision_token_ids
