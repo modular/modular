@@ -1,4 +1,4 @@
-load("@rules_multirun//:defs.bzl", "command", "multirun")
+load("@rules_multirun//:defs.bzl", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "mojo_binary", "requirement")
 load(":linter.bzl", "linter")
@@ -93,20 +93,16 @@ modular_py_binary(
 mojo_binary(
     name = "check_licenses",
     srcs = [":check_licenses.mojo"],
-    deps = ["@mojo//:std"],
+    deps = [
+        ":lint_helpers",
+        "@mojo//:std",
+    ],
 )
 
-command(
-    name = "check_licenses.check",
-    command = ":check_licenses",
-    run_from_workspace_root = True,
-)
-
-command(
-    name = "check_licenses.fix",
-    arguments = ["--fix"],
-    command = ":check_licenses",
-    run_from_workspace_root = True,
+linter(
+    base_name = "check_licenses",
+    binary = ":check_licenses",
+    has_fast = False,
 )
 
 modular_py_binary(

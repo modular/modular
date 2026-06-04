@@ -41,29 +41,45 @@ def _get_files(stdout: bytes) -> set[str]:
     return set(stdout.decode().splitlines())
 
 
+def _oss_filter(files: set[str]) -> set[str]:
+    # Only used for testing with the OSS overlay
+    if not os.getenv("USE_OSS_FILTER"):
+        return files
+
+    return {
+        f.removeprefix("oss/modular/")
+        for f in files
+        if f.startswith("oss/modular/")
+    }
+
+
 def get_all_files() -> set[str]:
     if _has_jj():
-        return _get_files(subprocess.check_output(["jj", "file", "list"]))
+        return _oss_filter(
+            _get_files(subprocess.check_output(["jj", "file", "list"]))
+        )
     else:
         tracked = subprocess.check_output(["git", "ls-files"])
         deleted = subprocess.check_output(["git", "ls-files", "--deleted"])
 
-        return _get_files(tracked) - _get_files(deleted)
+        return _oss_filter(_get_files(tracked) - _get_files(deleted))
 
 
 def get_changed_files() -> set[str]:
     if _has_jj():
-        return _get_files(
-            subprocess.check_output(
-                [
-                    "jj",
-                    "diff",
-                    "--name-only",
-                    "--from",
-                    "main@origin",
-                    "--to",
-                    "@",
-                ],
+        return _oss_filter(
+            _get_files(
+                subprocess.check_output(
+                    [
+                        "jj",
+                        "diff",
+                        "--name-only",
+                        "--from",
+                        "main@origin",
+                        "--to",
+                        "@",
+                    ],
+                )
             )
         )
     else:
@@ -75,4 +91,4 @@ def get_changed_files() -> set[str]:
         changed_files_result = subprocess.check_output(
             ["git", "diff", "--diff-filter=d", "--name-only", merge_base]
         )
-        return _get_files(changed_files_result)
+        return _oss_filter(_get_files(changed_files_result))
