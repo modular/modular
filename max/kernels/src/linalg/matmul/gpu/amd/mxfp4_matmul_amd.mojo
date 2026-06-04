@@ -68,7 +68,7 @@ from std.gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
-from layout import TensorLayout, TileTensor
+from layout import Idx, TensorLayout, TileTensor
 from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 
@@ -89,6 +89,10 @@ from .amd_matmul_schedule import (
 from pipeline.pipeline_dsl import ScheduleEntry
 
 from .mxfp4_preshuffle_loaders import PreshuffledBLoader
+from .amd_4wave_split_k_matmul import (
+    SplitKWorkspace,
+    _split_k_reduce_kernel,
+)
 
 # MXFP4: 32 MXFP4 elements per E8M0 scale.
 comptime MX_BLOCK_SIZE = 32
@@ -526,6 +530,7 @@ struct MXFP4MatmulAMD[
         b_layout: TensorLayout,
         sfa_layout: TensorLayout,
         sfb_layout: TensorLayout,
+        num_splits: Int = 1,
     ](
         c: TileTensor[out_dtype, c_layout, MutAnyOrigin],
         a: TileTensor[DType.uint8, a_layout, ImmutAnyOrigin],
@@ -533,7 +538,16 @@ struct MXFP4MatmulAMD[
         sfa: TileTensor[DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
         sfb: TileTensor[DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
     ):
-        """MXFP4 block-scaled GEMM kernel with SMEM pipeline."""
+        """MXFP4 block-scaled GEMM kernel with SMEM pipeline.
+
+        With `num_splits > 1` this is the inter-block split-K body: each
+        `block_idx.z` slice accumulates one disjoint K-band into its own
+        `[M, N]` region of a stacked `(num_splits * M, N)` float32
+        workspace (`out_dtype` is float32 in that mode). A separate
+        reduce kernel sums the `num_splits` partials and casts to the
+        real output dtype. `num_splits == 1` is byte-identical to the
+        no-split path (`split_id == 0`, full K range, zero offset).
+        """
         comptime BK_BYTES = Self.BK_BYTES
         comptime MMA_M = Self.MMA_M
         comptime MMA_N = Self.MMA_N
@@ -558,6 +572,29 @@ struct MXFP4MatmulAMD[
         )
 
         comptime K_SCALES = type_of(sfa).static_shape[1]  # K//32
+
+        # === Split-K K-banding ===
+        # The K dimension is partitioned into `num_splits` disjoint bands.
+        # Split `split_id` covers BK-tiles [split_id*tiles_per_split,
+        # (split_id+1)*tiles_per_split). For num_splits=1 this is the full
+        # K range (split_id=0, tiles_per_split = K_BYTES // BK_BYTES).
+        comptime K_per_split_bytes = K_BYTES // num_splits
+        comptime assert (
+            K_per_split_bytes * num_splits == K_BYTES
+        ), "num_splits must evenly divide K (packed bytes)"
+        comptime assert K_per_split_bytes % BK_BYTES == 0, (
+            "K_BYTES // num_splits must be a multiple of BK_BYTES; otherwise"
+            " the trailing K chunk of a split is silently skipped."
+        )
+        comptime tiles_per_split = K_per_split_bytes // BK_BYTES
+        # split_id is the K-band index, read from grid_dim.z *only* in split-K
+        # mode. With num_splits == 1 the split dimension does not exist, so we
+        # must NOT read block_idx.z: callers that reuse this kernel as a device
+        # function (e.g. the grouped/persistent matmuls) launch with
+        # grid_dim.z = num_experts, where block_idx.z is the expert index, not
+        # a split. Forcing split_id = 0 there keeps the K range full and the
+        # output offset zero — byte-identical to the no-split path.
+        var split_id = Int(block_idx.z) if num_splits > 1 else 0
 
         # Dynamic M for OOB bounds handling when M is not a multiple of Self.BM.
         var M = Int(a.dim[0]())
@@ -638,11 +675,29 @@ struct MXFP4MatmulAMD[
 
         # === Output writer ===
         # RegTileWriter casts from float32 accumulators to out_dtype.
-        var c_writer = RegTileWriter[out_dtype, MMA_M, WARP_SIZE // MMA_M](c)
+        #
+        # Split-K: `c` is a stacked `(num_splits * M, N)` workspace; this
+        # split writes its partial into the `[M, N]` region starting at
+        # element offset `split_id * M * N`. Building the writer over that
+        # per-split view means make_amd_buffer_resource bounds the V# at
+        # exactly one split's M*N extent, so OOB warp rows (rows >= M when
+        # M is not BM-aligned) are hardware-clamped to this split's region
+        # and never bleed into the next split. For num_splits==1 the offset
+        # is 0 and `c_split` is byte-identical to `c`.
+        var c_split = TileTensor(
+            c.ptr + split_id * M * N, row_major((Int(M), Idx[N]))
+        )
+        var c_writer = RegTileWriter[out_dtype, MMA_M, WARP_SIZE // MMA_M](
+            c_split
+        )
 
         # === Pipeline helpers ===
-        var k_counter = 0
-        var k_scale_counter = 0
+        # Both counters start at this split's first BK-tile. The DRAM
+        # loaders index `a_blockrow.tile[BM, BK_BYTES](0, k_counter)`, so
+        # this offset selects the split's K-slice; `load_scales_to_smem`
+        # mirrors it via `k_scale_counter * scales_per_mma * num_k_tiles`.
+        var k_counter = split_id * tiles_per_split
+        var k_scale_counter = split_id * tiles_per_split
 
         @always_inline
         @parameter
@@ -743,7 +798,7 @@ struct MXFP4MatmulAMD[
         @parameter
         def simple_k_loop():
             """Fallback for small K where schedule prologue doesn't fit."""
-            for k_iter in range(K_BYTES // BK_BYTES):
+            for k_iter in range(tiles_per_split):
                 load_tiles_from_dram()
                 load_scales_to_smem()
                 copy_tiles_to_smem()
@@ -836,8 +891,8 @@ struct MXFP4MatmulAMD[
             comptime for i in range(len(schedule.prologue)):
                 _bind[schedule.prologue[i]]()
 
-            # Main K-loop.
-            for _ in range(2, K_BYTES // BK_BYTES):
+            # Main K-loop (bounded to this split's tile count).
+            for _ in range(2, tiles_per_split):
                 comptime for i in range(len(schedule.kernel)):
                     _bind[schedule.kernel[i]]()
 
@@ -845,7 +900,7 @@ struct MXFP4MatmulAMD[
             comptime for i in range(len(schedule.epilogue)):
                 _bind[schedule.epilogue[i]]()
 
-        if K_BYTES // BK_BYTES < 2:
+        if tiles_per_split < 2:
             simple_k_loop()
         else:
             scheduled_k_loop()
@@ -857,7 +912,7 @@ struct MXFP4MatmulAMD[
         # so OOB stores (rows >= M) are hardware-clamped and silently
         # dropped. No per-element guards needed.
         var c_reg = mma_op.accum_tile()
-        var c_block = c.tile[Self.BM, Self.BN](block_idx.y, block_idx.x)
+        var c_block = c_split.tile[Self.BM, Self.BN](block_idx.y, block_idx.x)
         var c_warp = c_block.tile[Self.WM, Self.WN](warp_m, warp_n)
 
         comptime for m_mma in range(num_m_mmas):
@@ -914,6 +969,122 @@ def _launch_mxfp4[
     )
 
 
+def _launch_mxfp4_split_k[
+    BM: Int, BN: Int, BK_ELEMS: Int, WM: Int, WN: Int, num_splits: Int
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    M: Int,
+    ctx: DeviceContext,
+) raises:
+    """Inter-block split-K launch of MXFP4MatmulAMD + reduce.
+
+    Mirrors `amd_4wave_split_k_matmul`: allocate a `(num_splits * M, N)`
+    float32 workspace, launch the matmul over a `grid_dim.z = num_splits`
+    grid (each z-slice accumulates one K-band's partial into its `[M, N]`
+    region), then run `_split_k_reduce_kernel` on the same stream to sum
+    the partials and cast to `c`'s dtype. Targets the small-M decode
+    regime where the natural launch geometry leaves the GPU starved.
+    """
+    comptime Kernel = MXFP4MatmulAMD[
+        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
+    ]
+    comptime N = type_of(c).static_shape[1]
+    comptime c_dtype = type_of(c).dtype
+
+    var elems_per_split = M * N
+    var workspace = SplitKWorkspace[num_splits](ctx, elems_per_split)
+
+    # Stacked (num_splits * M, N) row-major float32 workspace. The kernel
+    # offsets into split `split_id`'s [M, N] region at element
+    # `split_id * M * N`, which is byte-identical to a (num_splits, M, N)
+    # buffer — exactly the layout `_split_k_reduce_kernel` expects.
+    var ws_tile = TileTensor(
+        workspace.scratch.unsafe_ptr(),
+        row_major((Int(num_splits * M), Idx[N])),
+    )
+
+    comptime kernel = Kernel.run[
+        DType.float32,
+        type_of(ws_tile).LayoutType,
+        type_of(a).LayoutType,
+        type_of(b).LayoutType,
+        type_of(a_scales).LayoutType,
+        type_of(b_scales).LayoutType,
+        num_splits=num_splits,
+    ]
+
+    ctx.enqueue_function[kernel](
+        ws_tile,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), num_splits),
+        block_dim=Kernel.num_threads,
+    )
+
+    # Reduce + cast on the same stream — naturally serialized after the
+    # matmul launch. Sums the `num_splits` f32 partials at flat index
+    # `tid` and casts to c's dtype.
+    comptime block_dim_x: Int = 256
+    var total_elems = M * N
+    var num_blocks = ceildiv(total_elems, block_dim_x)
+    comptime reduce_kernel = _split_k_reduce_kernel[num_splits, c_dtype]
+    ctx.enqueue_function[reduce_kernel](
+        workspace.scratch.unsafe_ptr(),
+        c.ptr,
+        total_elems,
+        elems_per_split,
+        N,
+        grid_dim=num_blocks,
+        block_dim=block_dim_x,
+    )
+
+    # Keep the workspace alive until both kernels are enqueued.
+    _ = workspace^
+
+
+def _pick_num_splits[
+    K_BYTES: Int, N: Int, BN: Int, BK_BYTES: Int, cta_cap: Int
+]() -> Int:
+    """Comptime split-K factor for the small-M decode regime.
+
+    Picks the largest `num_splits` such that the split is legal AND the
+    resulting CTA count `ceildiv(N, BN) * num_splits` stays under
+    `cta_cap`. Legality (mirrors `MXFP4MatmulAMD.run`'s split-K asserts):
+      * `K_BYTES % num_splits == 0`, and
+      * `(K_BYTES // num_splits) % BK_BYTES == 0`
+    i.e. `num_splits` divides `K_BYTES // BK_BYTES`. Additionally each
+    split must own at least 2 BK-tiles (`K_BYTES // num_splits >=
+    2*BK_BYTES`): with only 1 tile per split the kernel falls back to the
+    non-pipelined `simple_k_loop`, and the separate reduce launch over
+    the full `[M, N]` output then dominates the (now tiny) per-split
+    matmul — which regresses small-K shapes (e.g. down-proj K=2048). The
+    2-tile floor confines split-K to the regime where it actually wins.
+    Returns 1 if no split qualifies (caller takes the plain single-launch
+    path).
+
+    With M fitting in a single M-tile, total CTAs ≈ ceildiv(N, BN) *
+    num_splits, so this targets enough WGs to saturate ~256 CUs.
+    """
+    comptime total_tiles = K_BYTES // BK_BYTES
+    comptime n_blocks = ceildiv(N, BN)
+    var best = 1
+    comptime for s in range(2, total_tiles + 1):
+        comptime if (
+            K_BYTES % s == 0
+            and (K_BYTES // s) % BK_BYTES == 0
+            and (K_BYTES // s) >= 2 * BK_BYTES
+            and n_blocks * s <= cta_cap
+        ):
+            best = s
+    return best
+
+
 def mxfp4_block_scaled_matmul_amd(
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, DType.uint8, ...],
@@ -962,12 +1133,68 @@ def mxfp4_block_scaled_matmul_amd(
     if M == 0 or N == 0:
         return
 
+    # Split-K small-M config: 4-warp BM=64,BN=128 tile (WM=64,WN=32 →
+    # num_warps_n=4, num_warps_m=1) with BK_ELEMS=256 (BK_BYTES=128).
+    # At small M the whole problem is one M-tile, so the plain kernel
+    # launches only ceildiv(N, BN) CTAs and starves the GPU. Splitting
+    # K into `_sk_splits` disjoint bands (one extra CTA dim) multiplies
+    # the CTA count up toward `_sk_cta_cap`. `_sk_splits == 1` means no
+    # split qualified — fall back to the plain launch.
+    #
+    # `_sk_cta_cap` is derived from the device CU count rather than
+    # hardcoded: total split-K CTAs ≈ ceildiv(N, BN) * num_splits, and we
+    # want enough to fill every CU plus a second wave for latency hiding,
+    # so cap = sm_count * 2 (≈2 waves). On MI355X (sm_count=256) this is
+    # 512, which is the value the split factors were tuned at. The idiom
+    # `ctx.default_device_info.sm_count` mirrors fp4_quantization.mojo and
+    # grouped_matmul.mojo; `default_device_info` is a comptime alias keyed
+    # on the build's accelerator arch, so the cap is a compile-time const.
+    comptime _gpu = ctx.default_device_info
+    comptime SK_CTA_WAVES = 2
+    comptime _sk_cta_cap = _gpu.sm_count * SK_CTA_WAVES
+    comptime SK_BM = 64
+    comptime SK_BN = 128
+    comptime SK_BK_ELEMS = 256
+    comptime SK_BK_BYTES = SK_BK_ELEMS // 2  # 128
+    comptime SK_WM = 64
+    comptime SK_WN = 32
+    comptime _sk_splits = _pick_num_splits[
+        K_BYTES, N, SK_BN, SK_BK_BYTES, cta_cap=_sk_cta_cap
+    ]()
+
+    # Narrow-M split-K tile (M <= 16). The MFMA is 16x16x128, so a tile
+    # with BM=16/WM=16 (num_warps_m=1, num_m_mmas=1) wastes no M rows for a
+    # <=16-row GEMM — BM=64 would load and run MFMA on 48-63 OOB-zero rows.
+    # The DRAM→SMEM loader requires load_thread_rows = num_threads /
+    # (BK_BYTES/simd_width) <= BM (else a_loads_per_tile = BM /
+    # load_thread_rows == 0 and the A tile is never loaded). With
+    # BK_BYTES=128, simd_width=16 the load layout is 8 K-cols wide, so
+    # num_threads must be <= 8*BM = 128 for BM=16. That rules out the
+    # 4-warp (256-thread) BN=128,WN=32 shape — it sets load_thread_rows=32
+    # > BM=16 and breaks coverage. The legal narrow tile is 2 warps
+    # (128 threads): BN=128, WN=64 → num_warps_n=2, num_n_mmas=4. Same
+    # ceildiv(N,BN) and same _pick_num_splits result as the BM=64 tile
+    # (split count depends only on N/BN/BK_BYTES, not BM).
+    comptime SK16_BM = 16
+    comptime SK16_BN = 128
+    comptime SK16_WM = 16
+    comptime SK16_WN = 64
+
     # Runtime M-bucket dispatch. Tile shapes tuned for Kimi K2.5 on MI355.
-    #   M <=  16  → single-row decode regime
-    #   M <=  64  → short prefill
-    #   else      → general prefill / training
+    #   M <=  16  → decode → narrow split-K (BM=16, no wasted M rows)
+    #   M <=  64  → decode / short-prefill → BM=64 split-K
+    #   else      → general prefill / training (unchanged, no split-K)
     if M <= 16:
-        comptime if can_use_bk_512:
+        comptime if can_use_bk_256 and _sk_splits > 1:
+            _launch_mxfp4_split_k[
+                BM=SK16_BM,
+                BN=SK16_BN,
+                BK_ELEMS=SK_BK_ELEMS,
+                WM=SK16_WM,
+                WN=SK16_WN,
+                num_splits=_sk_splits,
+            ](c, a, b, a_scales, b_scales, M, ctx)
+        elif can_use_bk_512:
             _launch_mxfp4[BM=64, BN=32, BK_ELEMS=512, WM=64, WN=32](
                 c, a, b, a_scales, b_scales, M, ctx
             )
@@ -976,8 +1203,28 @@ def mxfp4_block_scaled_matmul_amd(
                 c, a, b, a_scales, b_scales, M, ctx
             )
     elif M <= 64:
-        comptime if can_use_bk_256:
-            _launch_mxfp4[BM=128, BN=64, BK_ELEMS=256, WM=64, WN=64](
+        comptime if can_use_bk_256 and _sk_splits > 1:
+            _launch_mxfp4_split_k[
+                BM=SK_BM,
+                BN=SK_BN,
+                BK_ELEMS=SK_BK_ELEMS,
+                WM=SK_WM,
+                WN=SK_WN,
+                num_splits=_sk_splits,
+            ](c, a, b, a_scales, b_scales, M, ctx)
+        elif can_use_bk_512:
+            # Non-split BK_ELEMS=512 fallback. Reached only when
+            # can_use_bk_256 holds, can_use_bk_512 holds, and
+            # _sk_splits == 1 — i.e. split-K found no legal factor. Since
+            # the split requires >=2 BK256-tiles per split (BK_BYTES=128),
+            # the only K that lands here is K_BYTES=256 (K=512 FP4 elems):
+            # 2 total K-tiles, so s=2 gives 1 tile/split (below the floor)
+            # and s>2 doesn't divide. A BK512 split is no better — at
+            # K_BYTES=256 there is exactly 1 BK512-tile, so no split is
+            # legal there either. There is simply nothing to split at
+            # K=512, so the non-split BK512 tile is correct for this
+            # tiny-K corner (rare in production: Kimi up=7168, down=2048).
+            _launch_mxfp4[BM=64, BN=32, BK_ELEMS=512, WM=64, WN=32](
                 c, a, b, a_scales, b_scales, M, ctx
             )
         else:
