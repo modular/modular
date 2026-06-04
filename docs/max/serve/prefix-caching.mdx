@@ -45,13 +45,14 @@ not provide additional benefit in the following cases:
 
 Prefix caching works by storing the key-value (KV) cache for a prefix and
 applying it to future prompts that include the same prefix, reducing redundant
-computation. By default, the following flags are applied:
+computation. It's built on PagedAttention, which MAX uses by default to manage
+the KV cache. The following flags control prefix caching behavior:
 
-- `--cache-strategy` : Prefix caching requires PagedAttention. To use
-  PagedAttention, the cache strategy must be `paged`.
-- `--enable-prefix-caching`: Enables prefix caching.
-- `--kv-cache-page-size`: PagedAttention currently requires a page size that is
-  a multiple of 128.
+- `--enable-prefix-caching`: enables prefix caching. This is on by default, so
+  you only need it to re-enable caching after disabling it. Use
+  `--no-enable-prefix-caching` to disable it.
+- `--kv-cache-page-size`: sets the number of tokens per page in the paged KV
+  cache. PagedAttention requires a page size that is a multiple of 128.
 
 Prefix caching with PagedAttention works on both CPU and GPU. To deploy a model
 with prefix caching using the `max` CLI, you can use the flag `--devices cpu`
@@ -98,13 +99,12 @@ max serve --model google/gemma-3-27b-it --no-enable-prefix-caching
 
 ### Enable prefix caching
 
-You can optionally explicitly enable prefix caching when serving your model
-with the [`max` CLI](/max/cli/serve). The following command represents
-the default MAX behavior:
+You can explicitly enable prefix caching when serving your model with the
+[`max` CLI](/max/cli/serve). The following command represents the default MAX
+behavior:
 
 ```bash
 max serve --model google/gemma-3-27b-it \
-    --cache-strategy paged \
     --enable-prefix-caching \
     --kv-cache-page-size 256
 ```
