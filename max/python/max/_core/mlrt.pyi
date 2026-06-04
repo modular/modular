@@ -73,6 +73,9 @@ class AsyncValue(Generic[T]):
         Return the held value. Raises `asyncio.InvalidStateError` if not yet done; re-raises the stored exception (or a synthesized `RuntimeError` for C++-side errors) if errored. Mirrors `asyncio.Future.result`.
         """
 
+    def wait(self) -> None:
+        """Block the calling thread until this AsyncValue is done."""
+
     def __await__(self) -> Generator[Any, None, T]:
         """Yield control to the event loop until this AsyncValue resolves."""
 
