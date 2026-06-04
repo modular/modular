@@ -8,6 +8,17 @@ package(default_visibility = [
 ])
 
 modular_py_binary(
+    name = "run_cross_node",
+    srcs = ["run_cross_node.py"],
+    main = "run_cross_node.py",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [],
+)
+
+modular_py_binary(
     name = "test_transfer_engine_cross_node",
     srcs = ["test_transfer_engine_cross_node.py"],
     main = "test_transfer_engine_cross_node.py",
