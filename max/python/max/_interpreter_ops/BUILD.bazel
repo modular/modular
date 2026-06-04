@@ -46,12 +46,6 @@ EXTRA_DEPS = {
         "//max:nn",
         "//max:extensibility",
     ],
-    "matmul_ops": [
-        "//max:extensibility",
-        "//max:linalg",
-        "//max:builtin_kernels",
-        "//max:layout",
-    ],
     "misc_ops": [
         "//max:builtin_kernels",
         "//max:extensibility",
@@ -111,8 +105,10 @@ modular_py_library(
     }),
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:_mlir_context",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
         "@mojo//:python",
         requirement("numpy"),

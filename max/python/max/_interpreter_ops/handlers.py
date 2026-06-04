@@ -28,6 +28,7 @@ import max._interpreter_ops as ops
 import numpy as np
 from max import _core, graph
 from max._core.dialects import builtin, kgen, mo, mosh
+from max._interpreter_ops import matmul_gc
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 
@@ -851,59 +852,45 @@ for op_type in ops.UNARY_MIXED:
 
 
 @register_op_handler(mo.MatmulOp)
-def _handle_matmul(
-    op: mo.MatmulOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.matmul by dispatching to Mojo matmul kernel."""
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_buffers_on_device(inputs, target_device)
-
-    lhs = inputs[0]
-    rhs = inputs[1]
-    assert isinstance(lhs, Buffer)
-    assert isinstance(rhs, Buffer)
-
-    # Calculate output shape: (M, K) @ (K, N) -> (M, N)
-    m = lhs.shape[0]
-    n = rhs.shape[1]
-
-    output = Buffer(shape=(m, n), dtype=lhs.dtype, device=target_device)
-
-    ops.matmul_ops.Matmul(output, lhs, rhs, target_device._device_context_ptr())
-    return [output]
-
-
 @register_op_handler(mo.BatchMatmulOp)
-def _handle_batch_matmul(
-    op: mo.BatchMatmulOp, inputs: Sequence[Buffer | None]
+def _handle_matmul(
+    op: mo.MatmulOp | mo.BatchMatmulOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.batch_matmul by dispatching to Mojo batched matmul kernel."""
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_buffers_on_device(inputs, target_device)
+    """Routes eager matmul and batch_matmul through the pre-compiled GC model.
 
-    lhs = inputs[0]
-    rhs = inputs[1]
+    Looks up the import-time-compiled rank-3 batched-matmul
+    :class:`~max.engine.Model` for the realized input's device and dtype,
+    view-shims the two operands to canonical rank 3, executes the model, and
+    view-shims the output back to the result rank. All views are zero-copy.
+
+    The same handler serves both ``mo.matmul`` (rank 2) and ``mo.batch_matmul``
+    (rank 3+). The RMO->MO lowering already casts both operands to a common
+    dtype and broadcasts them to equal batch/rank before these ops are created,
+    so reading device, dtype, and the equal-batch shape from ``lhs`` is exact.
+
+    Args:
+        op: The ``mo.matmul`` or ``mo.batch_matmul`` operation being handled.
+        inputs: The two realized operand buffers (``lhs``, ``rhs``).
+
+    Returns:
+        A single-element list holding the matmul result buffer.
+    """
+    lhs, rhs = inputs
     assert isinstance(lhs, Buffer)
     assert isinstance(rhs, Buffer)
 
-    # Compute output shape - try static first, fall back to Mojo shape fn
-    shape = result_type.shape
-    if graph.Shape.is_static(shape):
-        output_shape = graph.Shape(shape).static_dims
-    else:
-        shape_result = ops.matmul_ops.BatchMatmulShape(lhs, rhs)
-        output_shape = [int(shape_result[i]) for i in range(len(shape_result))]
+    model = matmul_gc.matmul_model(lhs.device, lhs.dtype)
 
-    output = Buffer(shape=output_shape, dtype=lhs.dtype, device=target_device)
+    # Forward rank shim: flatten leading dims to one batch dim (zero-copy).
+    lhs_view = lhs.view(lhs.dtype, matmul_gc.canonical_shape(lhs.shape))
+    rhs_view = rhs.view(rhs.dtype, matmul_gc.canonical_shape(rhs.shape))
 
-    ops.matmul_ops.BatchMatmul(
-        output, lhs, rhs, target_device._device_context_ptr()
-    )
-    return [output]
+    (out,) = model(lhs_view, rhs_view)
+
+    # Inverse rank shim: restore the original leading dims.
+    m, n = lhs.shape[-2], rhs.shape[-1]
+    result_shape = (*lhs.shape[:-2], m, n)
+    return [out.view(out.dtype, result_shape)]
 
 
 # Shape manipulation operations

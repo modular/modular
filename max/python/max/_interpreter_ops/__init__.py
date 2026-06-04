@@ -40,7 +40,6 @@ from . import (  # type: ignore[attr-defined]
     gather_scatter_ops,
     group_norm_ops,
     layer_norm_ops,
-    matmul_ops,
     misc_ops,
     nms_ops,
     pad_ops,
@@ -143,9 +142,15 @@ SOFTMAX: dict[
     mo.ReduceLogsoftmaxOp: softmax_ops.LogSoftmax,
 }
 
+# Some op handlers are backed by graph-compiler models compiled at import
+# time. matmul is the first; others will follow.
+from max._interpreter_ops.matmul_gc import compile_matmul_sweep
+
 # Import handlers after defining kernels to avoid circular import issues.
 # handlers.py uses the kernel dictionaries defined above.
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
+
+compile_matmul_sweep()
 
 __all__ = [
     "BINARY_ELEMENTWISE",
