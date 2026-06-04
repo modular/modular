@@ -1236,126 +1236,6 @@ void FnSigDecorators::finalize() {
   }
 }
 
-static void processFunctionConformances(FnOp func, SharedState &shared,
-                                        ASTDecl &decl) {
-  FnTypeGeneratorType sig = func.getFullSignature();
-  ArrayRef<Type> sigArgTypes = func.getFunctionType().getInputs();
-  ASTType resultType = func.getUserResultType();
-  // Reduce `sigArgTypes` to just the array of declared arguments.
-  if (sig.hasMemoryOnlyResult())
-    sigArgTypes = sigArgTypes.drop_back();
-  // Drop the error slot if there is one.
-  if (sig.isThrows())
-    sigArgTypes = sigArgTypes.drop_back();
-
-  // Extract the declared argument types.
-  SmallVector<ASTType> argTypes;
-  for (auto [idx, argType] : llvm::enumerate(sigArgTypes)) {
-    Type type = argType;
-    ArgConvention conv = sig.getArgConvention(idx);
-
-    ASTType rvType = RefType::stripRefConvention(type, conv);
-
-    // Handle vararg kinds.
-    if (sig.isPosVarArg(idx)) {
-      type = rvType.getVariadicListInfo().getElementRefType();
-      type = RefType::stripRefConvention(type, sig.getVariadicConvention(idx));
-    } else if (sig.isKwVarArg(idx)) {
-      // Don't need to unpack anything. We treat the whole dictionary as the
-      // value type.
-      type = RefType::stripRefConvention(type, conv);
-    } else if (sig.isPack(idx)) {
-      // For variadic packs, we don't have a type instance but we have the
-      // metatype.
-      Type metatype =
-          rvType.getVariadicPackInfo(shared).getParamListElementType();
-      type = ParamType::get(UnknownAttr::get(metatype));
-      conv = ArgConvention::ReadReg;
-    }
-    argTypes.push_back(rvType);
-  }
-
-  bool allVanillaKernelArgs = llvm::all_of(argTypes, [](ASTType astType) {
-    if (auto structTy = sugarDynCast<LIT::StructType>(astType.mlirType)) {
-      return KGEN::isDPSTensor(structTy) || KGEN::isMojoDeviceContext(structTy);
-    }
-    return false;
-  });
-
-  // We don't need to attach the conformance attrs if we have a kernel working
-  // purely with tensors
-  if (allVanillaKernelArgs && resultType.isNoneType())
-    return;
-
-  IREmitter emitter(decl, EC_Type);
-  auto generateValueWitnesses = [&](ASTType type,
-                                    Location loc) -> DictionaryAttr {
-    SMLoc smloc = shared.diags.convertLocToSMLoc(loc);
-    NamedAttrList methodsDict;
-    // These are the trait methods that MOGG is interested in.
-    for (auto [traitName, entryName] :
-         SmallVector<std::pair<StringRef, StringRef>>{
-             {"ImplicitlyDestructible", "__del__"}, {"Movable", "__init__"}}) {
-      auto traitDecl = shared.lookupBuiltinTrait(traitName, smloc);
-      if (!traitDecl)
-        continue;
-      auto traitDeclOp = cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
-      if (!traitDeclOp)
-        continue;
-      TraitType trait = traitDeclOp.bindReference();
-      // Assumptions needed: fn with `where AllWritable[*Ts]` needs witness
-      // tables for Tuple[*Ts]'s Movable/Destructible conformance.
-      FailureOr<TypedAttr> entry = getUniqueWitnessForTypeIfConforms(
-          shared, type, trait, entryName,
-          ASTDecl::getAssumptionsFromScope(&decl), smloc);
-      // If failed, an error will have been emitted. If empty, the type does not
-      // conform to the trait. In either case, move on to the next trait method.
-      if (failed(entry) || !*entry)
-        continue;
-      methodsDict.set(entryName, *entry);
-    }
-    return DictionaryAttr::get(shared.getContext(), methodsDict);
-  };
-
-  SmallVector<Attribute> argConformances;
-  Attribute resConformances = generateValueWitnesses(resultType, func.getLoc());
-  for (auto [idx, argType] : llvm::enumerate(argTypes)) {
-    argConformances.push_back(
-        generateValueWitnesses(argType, func.getArgument(idx).getLoc()));
-  }
-
-  NamedAttrList attrs = func->getAttrDictionary();
-  attrs.set(KGEN::kMoggArgumentValueWitnesses,
-            ArrayAttr::get(shared.getContext(), argConformances));
-  attrs.set(KGEN::kMoggResultValueWitnesses, resConformances);
-  func->setAttrs(attrs.getDictionary(shared.getContext()));
-}
-
-/// Process an extensibility decorator by generating additional trait binding
-/// information about each argument and result type.
-static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
-                                          const ExprNode *decorator) {
-  StringRef spelling;
-  if (auto callNode = dyn_cast<CallNode>(decorator))
-    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
-      spelling = declRef->spelling;
-
-  if (spelling.empty())
-    return;
-
-  if (spelling != KGEN::kFnRegisterInternal)
-    return;
-
-  auto func = cast_or_null<FnOp>(decl.getIfOperation());
-  if (!(isa<FileModuleOp>(func->getParentOp()) || func.getIsStatic())) {
-    shared.emitError(decl.getLoc(), "@")
-        << spelling << " is only supported on top-level or static functions";
-    return;
-  }
-
-  processFunctionConformances(func, shared, decl);
-}
-
 /// Given the lexical context of a function, return true if the default bit
 /// for the function is capturing.
 static bool
@@ -2257,10 +2137,8 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     emitter.emitNormalReturn(funcOp.getLoc(), Value(), /*emitEndFunc=*/false);
 
   // Now that the body of the function is parsed, run any body decorators.
-  Decorators(decl).applyBodyDecorators([&](ExprNode *decorator) {
-    processExtensibilityDecorator(shared, decl, decorator);
-    return failure();
-  });
+  Decorators(decl).applyBodyDecorators(
+      [&](ExprNode *decorator) { return failure(); });
 
   // If this function is @always_inline("builtin"), check that its body obeys
   // the right invariants.
@@ -2274,16 +2152,6 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
                      "unexpected function body in extern function "
                      "declaration, use `...`");
     return success();
-  }
-
-  auto declOp = dyn_cast<LIT::StructDeclOp>(funcOp->getParentOp());
-  if (!declOp)
-    return success();
-
-  for (auto decorator : declOp.getDecorators()) {
-    if (extractDecoratorName(decorator) == KGEN::kFnRegister &&
-        KGEN::fnNeedsConformances(funcOp))
-      processFunctionConformances(funcOp, shared, decl);
   }
 
   return success();
