@@ -100,14 +100,19 @@ _4X_GPU_TESTS = [
     "test_send_recv_heterogeneous_mla_gpu.py",
 ]
 
+_LIGHT_TRANSFER_GPU_TESTS = [
+    "test_basic_gpu.py",
+    "test_send_recv_multi_thread_gpu.py",
+]
+
 modular_py_test(
     name = "multi-gpu-tests",
     srcs = glob(
         ["*_gpu.py"],
-        exclude = _4X_GPU_TESTS,
+        exclude = _4X_GPU_TESTS + _LIGHT_TRANSFER_GPU_TESTS,
     ),
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "5",
     },
     gpu_constraints = [
         "//:has_gpu",
@@ -118,6 +123,26 @@ modular_py_test(
     per_test_tags = {
         "test_send_recv_multi_process_gpu.py": ["manual"],  # FIXME: Times out intermittently (SERVOPT-1326)
     },
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/kv_cache",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "transfer_light_gpu_tests",
+    srcs = _LIGHT_TRANSFER_GPU_TESTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:has_multi_gpu",
+        "//:nvidia_gpu",
+    ],
+    imports = ["."],
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",

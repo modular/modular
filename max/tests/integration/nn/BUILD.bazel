@@ -82,12 +82,28 @@ modular_py_test(
     ],
 )
 
+_NN_LIGHT_GPU_TESTS = [
+    "test_async_host_func_gpu.py",
+    "test_completion_flag_gpu.py",
+    "test_host_func_gpu.py",
+    "test_moe_gpu.py",
+    "test_sleep_gpu.py",
+    "test_slice_gpu.py",
+    "test_stacked_moe_gpu.py",
+    "test_wait_host_value_gpu.py",
+]
+
+_NN_MEDIUM_GPU_TESTS = [
+    "test_linear_gpu.py",
+    "test_mlp_float8_gpu.py",
+]
+
 modular_py_test(
     name = "nn_gpu_tests",
     size = "large",
     srcs = glob(
         ["*_gpu.py"],
-        exclude = [
+        exclude = _NN_LIGHT_GPU_TESTS + _NN_MEDIUM_GPU_TESTS + [
             "*_distributed_gpu.py",
             "bench_row_mean_of_squares_gpu.py",
             "test_conv_transpose_gpu.py",
@@ -126,6 +142,60 @@ modular_py_test(
         requirement("numpy"),
         requirement("torch"),
         requirement("triton"),
+        requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "nn_light_gpu_tests",
+    size = "large",
+    srcs = _NN_LIGHT_GPU_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "nn_medium_gpu_tests",
+    size = "large",
+    srcs = _NN_MEDIUM_GPU_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
         requirement("hypothesis"),
     ],
 )
