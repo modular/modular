@@ -49,6 +49,22 @@ PIPELINES: Final[list[PipelineEntry]] = [
         timeout=90,
     ),
     PipelineEntry(
+        pipeline="nvidia/Kimi-K2.6-NVFP4-ep-dp",
+        model_path="nvidia/Kimi-K2.6-NVFP4",
+        runner="modrunner-b200-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=90,
+    ),
+    PipelineEntry(
+        pipeline="nvidia/Kimi-K2.6-NVFP4-ep-tp",
+        model_path="nvidia/Kimi-K2.6-NVFP4",
+        runner="modrunner-b200-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=90,
+    ),
+    PipelineEntry(
         pipeline="google/gemma-4-31B-it",
         model_path="google/gemma-4-31b-it",
         runner="modrunner-b200",
