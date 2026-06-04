@@ -123,54 +123,31 @@ linter(
 )
 
 multirun(
-    name = "lint",
+    name = "multirun",
     buffer_output = True,
     commands = [
         ":action-versions-pinned",
-        ":buildifier.check",
-        ":check_licenses.check",
-        ":mblack.check",
-        ":ruff.check",
-        ":rumdl.check",
-        ":shellcheck.check",
+        ":buildifier_wrapper",
+        ":check_licenses",
+        ":lint_docstrings",
+        ":mblack-wrapper",
+        ":ruff_wrapper",
+        ":rumdl_wrapper",
+        ":shellcheck_wrapper",
     ],
     jobs = 0,
 )
 
-COMMON_FIX_COMMANDS = [
-    ":buildifier.fix",
-    ":check_licenses.fix",
-    ":rumdl.fix",
+[
+    sh_binary(
+        name = ("lint" if check else "format") + ("-fast" if fast else ""),
+        srcs = ["linter_wrapper.sh"],
+        data = ["//bazel/lint:multirun"],
+        env = {
+            "CHECK": str(check),
+            "FAST": str(fast),
+        },
+    )
+    for check in (True, False)
+    for fast in (True, False)
 ]
-
-multirun(
-    name = "fix-fast",
-    buffer_output = True,
-    commands = COMMON_FIX_COMMANDS + [
-        ":mblack.fix-fast",
-        ":ruff.fix-fast",
-    ],
-    jobs = 0,
-)
-
-multirun(
-    name = "fix",
-    buffer_output = True,
-    commands = COMMON_FIX_COMMANDS + [
-        ":mblack.fix",
-        ":ruff.fix",
-    ],
-    jobs = 0,
-)
-
-sh_binary(
-    name = "format",
-    srcs = ["format-wrapper.sh"],
-    data = ["//bazel/lint:fix"],
-)
-
-sh_binary(
-    name = "format-fast",
-    srcs = ["format-fast-wrapper.sh"],
-    data = ["//bazel/lint:fix-fast"],
-)

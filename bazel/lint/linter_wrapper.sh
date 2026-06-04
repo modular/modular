@@ -14,12 +14,21 @@
 
 set -euo pipefail
 
+[[ "$CHECK" == "False" || "$CHECK" == "0" ]] && prefix="format" || prefix="lint"
+
+[[ "$FAST" == "False" || "$FAST" == "0" ]] && suffix="" || suffix="-fast"
+
+
 if [[ $# -gt 0 ]]; then
-    echo "error: //:format does not accept arguments." >&2
-    echo "Run './bazelw run //:format' without arguments to format all files." >&2
+    echo "error: //:$prefix$suffix does not accept arguments." >&2
+    if [[ "$suffix" == "" ]]; then
+        echo "Run './bazelw run //:$prefix$suffix' without arguments to $prefix all files." >&2
+    else
+        echo "Run './bazelw run //:$prefix$suffix' without arguments to $prefix changed files." >&2
+    fi
     exit 1
 fi
 
 # Set RUNFILES_DIR so the multirun script can find its dependencies
 export RUNFILES_DIR="${0}.runfiles"
-exec "${RUNFILES_DIR}/_main/bazel/lint/fix.bash"
+exec "${RUNFILES_DIR}/_main/bazel/lint/multirun.bash"
