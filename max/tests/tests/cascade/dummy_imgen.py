@@ -14,6 +14,7 @@
 
 import asyncio
 import io
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -107,6 +108,33 @@ class DummyDenoiser(Worker):
             "guidance_scale": guidance_scale,
         }
 
+    @worker_method()
+    async def denoise_streaming(
+        self,
+        prompt_embeds: Int32Array,
+        tokens: Int32Array,
+        latents: Int32Array,
+        latent_image_ids: Int32Array,
+        sigmas: Int32Array,
+        guidance_scale: float,
+    ) -> AsyncIterator[dict[str, object]]:
+        """Yield fake latent state once per denoising step.
+
+        Each emitted frame carries a progressively longer prefix of the
+        sigma schedule so downstream stages observe an evolving step count.
+        """
+        num_steps = int(sigmas.shape[0]) - 1
+        for i in range(num_steps):
+            await asyncio.sleep(0.01)
+            yield {
+                "prompt_embeds": prompt_embeds,
+                "tokens": tokens,
+                "latents": latents,
+                "latent_image_ids": latent_image_ids,
+                "sigmas": sigmas[: i + 2],
+                "guidance_scale": guidance_scale,
+            }
+
 
 class DummyVAEDecoder(Worker):
     """Decode fake latent state into a deterministic image array."""
@@ -119,17 +147,18 @@ class DummyVAEDecoder(Worker):
         self, latents: dict[str, object], height: int, width: int
     ) -> UInt8Array:
         """Generate a deterministic image array from the context seed."""
-        _ = latents["prompt_embeds"]
-        sigmas = latents["sigmas"]
-        seed = int(cast(Int32Array, latents["latents"])[2])
-        num_steps = int(cast(Int32Array, sigmas).shape[0] - 1)
-        rng = np.random.default_rng(seed)
-        img = rng.random((height, width, 3), dtype=np.float32)
-        img = cast(Any, ndimage).gaussian_filter(
-            img, sigma=max(1.0, num_steps / 4)
-        )
-        img = (img - img.min()) / (img.max() - img.min())
-        return (img * 255).astype(np.uint8)
+        return _decode_latents(latents, height, width)
+
+    @worker_method()
+    async def decode_streaming(
+        self,
+        latents_iter: AsyncIterator[dict[str, object]],
+        height: int,
+        width: int,
+    ) -> AsyncIterator[UInt8Array]:
+        """Forward a stream of latents into a stream of image arrays."""
+        async for latents in latents_iter:
+            yield _decode_latents(latents, height, width)
 
 
 class DummyImageSerializer(Worker):
@@ -141,11 +170,41 @@ class DummyImageSerializer(Worker):
     @worker_method()
     async def serialize(self, img: UInt8Array, output_format: str) -> bytes:
         """Serialize an image array into an encoded byte buffer."""
-        pil_image = Image.fromarray(img)
-        buffer = io.BytesIO()
-        pil_image.save(buffer, format=output_format.upper())
-        buffer.seek(0)
-        return buffer.getvalue()
+        return _serialize_image(img, output_format)
+
+    @worker_method()
+    async def serialize_streaming(
+        self,
+        img_iter: AsyncIterator[UInt8Array],
+        output_format: str,
+    ) -> AsyncIterator[bytes]:
+        """Forward a stream of image arrays into a stream of encoded bytes."""
+        async for img in img_iter:
+            yield _serialize_image(img, output_format)
+
+
+def _decode_latents(
+    latents: dict[str, object], height: int, width: int
+) -> UInt8Array:
+    """Build a deterministic image array from a fake latent state."""
+    _ = latents["prompt_embeds"]
+    sigmas = latents["sigmas"]
+    seed = int(cast(Int32Array, latents["latents"])[2])
+    num_steps = int(cast(Int32Array, sigmas).shape[0] - 1)
+    rng = np.random.default_rng(seed)
+    img = rng.random((height, width, 3), dtype=np.float32)
+    img = cast(Any, ndimage).gaussian_filter(img, sigma=max(1.0, num_steps / 4))
+    img = (img - img.min()) / (img.max() - img.min())
+    return (img * 255).astype(np.uint8)
+
+
+def _serialize_image(img: UInt8Array, output_format: str) -> bytes:
+    """Encode an image array as bytes using the requested format."""
+    pil_image = Image.fromarray(img)
+    buffer = io.BytesIO()
+    pil_image.save(buffer, format=output_format.upper())
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 @dataclass
@@ -158,7 +217,7 @@ class DummyImageGenPipeline(CascadePipeline, ImageGenInterface):
     vae_decoder: DummyVAEDecoder
     image_serializer: DummyImageSerializer
 
-    async def generate(self, req: ImageGenRequest, prompt: str) -> bytes:
+    async def generate_image(self, req: ImageGenRequest, prompt: str) -> bytes:
         """Generate an image from a text prompt."""
         tokens = self.tokenizer.encode(prompt)
         sigmas = self.tokenizer.prepare_sigmas(
@@ -181,6 +240,43 @@ class DummyImageGenPipeline(CascadePipeline, ImageGenInterface):
         )
         image = self.vae_decoder.decode(denoised, req.height, req.width)
         return await self.image_serializer.serialize(image, req.output_format)
+
+    def generate_image_streaming(
+        self, req: ImageGenRequest, prompt: str
+    ) -> AsyncIterator[bytes]:
+        """Stream encoded images, emitting one frame per denoising step.
+
+        Wires the streaming variants of the denoiser, VAE decoder, and image
+        serializer into an end-to-end async pipeline. Each downstream worker
+        consumes the upstream stream and forwards a transformed frame, so the
+        caller observes ``num_steps`` byte buffers without any intermediate
+        materialization.
+        """
+        tokens = self.tokenizer.encode(prompt)
+        sigmas = self.tokenizer.prepare_sigmas(
+            req.height, req.width, req.num_steps
+        )
+        latents = self.tokenizer.prepare_latents(
+            req.height, req.width, req.seed
+        )
+        latent_image_ids = self.tokenizer.prepare_latent_image_ids(
+            req.height, req.width
+        )
+        prompt_embeds = self.text_encoder.encode(tokens)
+        denoised_stream = self.denoiser.denoise_streaming(
+            prompt_embeds,
+            tokens,
+            latents,
+            latent_image_ids,
+            sigmas,
+            req.guidance_scale,
+        )
+        image_stream = self.vae_decoder.decode_streaming(
+            denoised_stream, req.height, req.width
+        )
+        return self.image_serializer.serialize_streaming(
+            image_stream, req.output_format
+        )
 
 
 async def build_dummy_imgen_pipeline() -> DummyImageGenPipeline:

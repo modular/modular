@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 
 from pydantic import BaseModel
 
@@ -34,5 +35,20 @@ class ImageGenInterface(ABC):
     """Standard interface for an image-generation model."""
 
     @abstractmethod
-    async def generate(self, req: ImageGenRequest, prompt: str) -> bytes:
+    async def generate_image(self, req: ImageGenRequest, prompt: str) -> bytes:
         """Generate a serialized image from a text prompt."""
+
+    def generate_image_streaming(
+        self, req: ImageGenRequest, prompt: str
+    ) -> AsyncIterator[bytes]:
+        """Stream serialized images for a text prompt.
+
+        Override to emit intermediate frames (e.g., one per denoising step).
+        The default implementation defers to :py:meth:`generate_image` and
+        yields the final image as a single frame.
+        """
+
+        async def _single() -> AsyncIterator[bytes]:
+            yield await self.generate_image(req, prompt)
+
+        return _single()

@@ -24,7 +24,7 @@ policy, telemetry tags, ...) without touching every call site.
 A bounded set of ``__call__`` overloads on :py:class:`_WorkerMethodDecorator`
 transforms each declared parameter ``T`` into ``MaybeAsync[T]`` for the
 *exposed* signature, while the body keeps its original ``T`` typing. At
-runtime the wrapper materializes awaitable args via :py:func:`_fetchall`
+runtime the wrapper materializes awaitable args via :py:func:`_fetch_all`
 before invoking the body, so chained proxy calls and direct calls behave
 identically.
 """
@@ -59,7 +59,7 @@ async def _await_if_needed(arg: MaybeAsync[T]) -> T:
     return cast(T, arg)
 
 
-async def _fetchall(
+async def _fetch_all(
     args: Sequence[Any],
     kwargs: Mapping[str, Any],
 ) -> tuple[list[Any], dict[str, Any]]:
@@ -231,7 +231,7 @@ def worker_method() -> _WorkerMethodDecorator:
     ...) without touching every call site.
 
     Each declared positional parameter ``T`` is exposed to callers as
-    ``MaybeAsync[T]``; the wrapper resolves awaitables via :py:func:`_fetchall`
+    ``MaybeAsync[T]``; the wrapper resolves awaitables via :py:func:`_fetch_all`
     before invoking the body, which keeps its original ``T`` typing.
 
     The decorator preserves the coroutine vs. async-generator nature of the
@@ -256,7 +256,7 @@ def _wrap(f: Callable[..., Any]) -> Callable[..., Any]:
         async def gen_wrapper(
             self: Any, *args: Any, **kwargs: Any
         ) -> AsyncIterator[Any]:
-            resolved_args, resolved_kwargs = await _fetchall(args, kwargs)
+            resolved_args, resolved_kwargs = await _fetch_all(args, kwargs)
             async for item in f(self, *resolved_args, **resolved_kwargs):
                 yield item
 
@@ -264,7 +264,7 @@ def _wrap(f: Callable[..., Any]) -> Callable[..., Any]:
 
     @functools.wraps(f)
     async def coro_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-        resolved_args, resolved_kwargs = await _fetchall(args, kwargs)
+        resolved_args, resolved_kwargs = await _fetch_all(args, kwargs)
         return await f(self, *resolved_args, **resolved_kwargs)
 
     return coro_wrapper
