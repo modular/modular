@@ -44,6 +44,14 @@ This version is still a work in progress.
   left the other caches' halves stale, degrading accuracy. The connector now
   offloads and restores every cache.
 
+- Fixed JSON `response_format` and tool-call grammars not being enforced for
+  Kimi K2.5 vision-language checkpoints. The Kimi K2.5 tokenizer did not carry
+  grammar enforcement state onto the request context, so constrained-decoding
+  requests fell back to an unenforced state and decoded freely (e.g. a
+  `response_format=json_schema` request returned prose instead of
+  schema-conformant JSON). The tokenizer now derives enforcement state from the
+  response format, matching the text tokenizers.
+
 - MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
   normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
   o1/o3 chat-completion spec uses `developer` in place of `system`, and

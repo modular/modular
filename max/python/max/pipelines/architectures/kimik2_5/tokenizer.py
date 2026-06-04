@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
+from max.pipelines.core import GrammarEnforcementState
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.tokenizer import (
     resolve_single_special_token,
@@ -437,6 +438,13 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             request.response_format.grammar if request.response_format else None
         )
 
+        # Carry grammar enforcement state (grammar_enforced, tools_forced,
+        # has_json_schema) from the response format.
+        # Mirrors TextTokenizer / TextAndVisionTokenizer.
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
+        )
+
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
                 f"encoded_prompt length {encoded_prompt.shape[0]} is greater than the max_length of the tokenizer {self.max_length}"
@@ -460,6 +468,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             grammar=grammar,
+            grammar_state=grammar_state,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             grid_thws=grid_thws,

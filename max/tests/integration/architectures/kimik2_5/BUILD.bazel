@@ -55,5 +55,6 @@ modular_py_test(
     deps = [
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/modeling",
+        requirement("pytest-asyncio"),
     ],
 )
