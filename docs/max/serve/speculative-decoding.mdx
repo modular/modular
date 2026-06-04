@@ -212,11 +212,12 @@ better-matched draft checkpoint.
 
 ## Tune speculative decoding
 
-The following flags control how MAX drafts tokens and how verification
-decides to accept them. The first three map to fields on
+The following flags control how MAX drafts tokens and how verification decides
+to accept them. The first three map to fields on
 [`SpeculativeConfig`](/max/api/python/generated/max.pipelines.SpeculativeConfig)
-when you configure a pipeline programmatically. The last two live on
-the draft model's config and on `KVCacheConfig`.
+when you configure a pipeline programmatically. The last two live on the draft
+model's config and on
+[`KVCacheConfig`](/max/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/).
 
 - `--num-speculative-tokens`: number of tokens the draft proposes per
   step. Default is `2`. Larger values raise peak speedup but hurt
