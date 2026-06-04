@@ -1060,22 +1060,28 @@ static Type
 inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
                           DenseBoolArrayAttr discharged,
                           ParameterEvaluationContext *evaluationContext) {
-  if (paramValues.empty() && (!discharged || discharged.empty()))
-    return generator.getType();
-
   auto genType = sugarCast<GeneratorType>(generator.getType());
-  SmallVector<TypedAttr> normalizedParamValues =
-      normalizeBindParamsValues(genType, paramValues);
-  llvm::BitVector dischargedBodyConstraints =
-      denseBoolArrayAttrToBitVector(discharged);
-  std::optional<PartiallySpecializedInputParams> specializationOpt =
-      PartiallySpecializedInputParams::from(
-          genType.getInputParamTypes(), normalizedParamValues,
-          evaluationContext, /*emitErrorFn=*/{}, dischargedBodyConstraints);
-  assert(specializationOpt && "Failed to specialize generator");
-  GeneratorType specializedType =
-      genType.getSpecializedGenerator(*specializationOpt, /*emitErrorFn=*/{});
-  assert(specializedType && "Failed to specialize generator");
+
+  // Binding no parameters and discharging no constraints is a no-op: the
+  // specialized generator is the generator itself.
+  GeneratorType specializedType;
+  if (paramValues.empty() && (!discharged || discharged.empty())) {
+    specializedType = genType;
+  } else {
+    SmallVector<TypedAttr> normalizedParamValues =
+        normalizeBindParamsValues(genType, paramValues);
+    llvm::BitVector dischargedBodyConstraints =
+        denseBoolArrayAttrToBitVector(discharged);
+    std::optional<PartiallySpecializedInputParams> specializationOpt =
+        PartiallySpecializedInputParams::from(
+            genType.getInputParamTypes(), normalizedParamValues,
+            evaluationContext, /*emitErrorFn=*/{}, dischargedBodyConstraints);
+    assert(specializationOpt && "Failed to specialize generator");
+    specializedType =
+        genType.getSpecializedGenerator(*specializationOpt, /*emitErrorFn=*/{});
+    assert(specializedType && "Failed to specialize generator");
+  }
+
   // By back-compat, we never eliminate the empty generator type wrapper on
   // func types. This should eventually be made consistent with other types.
   PogListAttr metadata = specializedType.getMetadata();
@@ -1114,7 +1120,8 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
                                     ArrayRef<TypedAttr> paramValues, Type type,
                                     ParameterEvaluationContext *evalContext,
                                     DenseBoolArrayAttr discharged) {
-  if (paramValues.empty() && (!discharged || discharged.empty()))
+  if (paramValues.empty() && (!discharged || discharged.empty()) &&
+      isEqualCanon(generator.getType(), type))
     return generator;
 
   // If the actual generator is a BindParamsAttr, then we can flatten the new

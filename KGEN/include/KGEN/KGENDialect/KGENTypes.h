@@ -29,6 +29,7 @@ struct PartiallySpecializedInputParams;
 class FuncSymbolAttr;
 class FuncTypeGeneratorType;
 class FuncLiteralTypeGeneratorType;
+class ConstraintAttr;
 class PogListAttr;
 class StructDefFieldAttr;
 class SymbolConstantAttr;

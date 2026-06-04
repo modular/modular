@@ -356,12 +356,15 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
 /// Print the input parameter types of a generator type/attr.
 /// This needs to handle the case when 'paramInfo' is null.
 /// An additional attr/type body can be provided that will also be rebound with
-/// parameter names (if available in paramInfo) and returned.
+/// parameter names (if available in paramInfo) and returned. The provided
+/// `evaluator` is populated with the parameter index bindings so callers can
+/// reuse them (e.g. `printGeneratorBodyConstraints`) and substitute identically
+/// to the parameters and body.
 template <typename BodyT>
-static BodyT printGeneratorInterface(raw_ostream &os,
-                                     ArrayRef<Type> inputParamTypes,
-                                     PogListAttr paramInfo,
-                                     ASTTypePrinterContext ctx, BodyT body) {
+static BodyT
+printGeneratorInterface(raw_ostream &os, ArrayRef<Type> inputParamTypes,
+                        PogListAttr paramInfo, ASTTypePrinterContext ctx,
+                        BodyT body, ParameterEvaluator &evaluator) {
   assert(paramInfo && "always present");
   SharedState *diagShared = ctx.shared;
   if (!diagShared) {
@@ -375,7 +378,6 @@ static BodyT printGeneratorInterface(raw_ostream &os,
 
   bool needComma = false;
   PassingKind lastPassingKind = PassingKind::Implicit;
-  ParameterEvaluator evaluator;
   for (auto [i, type] : llvm::enumerate(inputParamTypes)) {
     ASTType reboundType = evaluator.getReboundType(type);
 
@@ -462,6 +464,29 @@ static BodyT printGeneratorInterface(raw_ostream &os,
     body = cast<BodyT>(evaluator.getReboundType(body));
 
   return body;
+}
+
+/// Print the trailing `where` clause for a generator's body constraints. The
+/// `evaluator` must already carry the parameter index bindings established by
+/// `printGeneratorInterface`, so constraint propositions substitute identically
+/// to the generator's parameters and body (handling variadic and
+/// auto-parameterized params consistently).
+static void printGeneratorBodyConstraints(raw_ostream &os,
+                                          PogListAttr paramInfo,
+                                          ParameterEvaluator &evaluator,
+                                          ASTTypePrinterContext ctx) {
+  if (!paramInfo || paramInfo.getBodyConstraints().empty())
+    return;
+
+  os << " where ";
+  llvm::interleave(
+      paramInfo.getBodyConstraints(), os,
+      [&](ConstraintAttr constraint) {
+        TypedAttr prop =
+            evaluator.getReboundAttribute(constraint.getProposition());
+        ASTType::printParam(os, prop, ctx);
+      },
+      ", ");
 }
 
 /// If the parameter being referenced is an auto-parameterization of the
@@ -653,11 +678,14 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   }
 
   auto printGeneratorAttr = [&](GeneratorAttr genAttr) {
+    PogListAttr paramList = genAttr.getMetadata();
+    ParameterEvaluator evaluator;
     TypedAttr reboundBody =
-        printGeneratorInterface(os, genAttr.getInputParamTypes(),
-                                genAttr.getMetadata(), ctx, genAttr.getBody());
+        printGeneratorInterface(os, genAttr.getInputParamTypes(), paramList,
+                                ctx, genAttr.getBody(), evaluator);
     os << ' ';
     printParam(os, reboundBody, ctx);
+    printGeneratorBodyConstraints(os, paramList, evaluator, ctx);
   };
 
   if (auto genAttr = dyn_cast<GeneratorAttr>(param)) {
@@ -1616,9 +1644,10 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   FuncType fnType = type.getBodyFnType();
   auto paramTypes =
       sugarCast<GeneratorType>(type.getAsType()).getInputParamTypes();
+  ParameterEvaluator evaluator;
   if (!paramTypes.empty()) {
     fnType = printGeneratorInterface(os, paramTypes, type.getParamListAttrs(),
-                                     ctx, fnType);
+                                     ctx, fnType, evaluator);
   }
   os << '(';
   bool hadAnyNames = false;
@@ -1740,6 +1769,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
     os << "None";
   else
     ASTType(resultType).print(os, ctx);
+  printGeneratorBodyConstraints(os, type.getParamListAttrs(), evaluator, ctx);
 }
 
 void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
@@ -1908,11 +1938,14 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
   } else if (auto paramRef = dyn_cast<ParamType>(type)) {
     printParam(os, paramRef.getParam(), ctx);
   } else if (auto genType = dyn_cast<GeneratorType>(type)) {
+    PogListAttr paramList = genType.getMetadata();
+    ParameterEvaluator evaluator;
     Type reboundBody =
-        printGeneratorInterface(os, genType.getInputParamTypes(),
-                                genType.getMetadata(), ctx, genType.getBody());
+        printGeneratorInterface(os, genType.getInputParamTypes(), paramList,
+                                ctx, genType.getBody(), evaluator);
     os << ' ';
     ASTType(reboundBody).print(os, ctx);
+    printGeneratorBodyConstraints(os, paramList, evaluator, ctx);
   } else if (isa<TypeType>(type)) {
     os << "__TypeOfAllTypes";
 #if 0

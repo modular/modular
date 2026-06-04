@@ -247,6 +247,12 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
 
     /// Return the name for the parameter at the specified index.
     StringAttr getParamName(size_t idx);
+
+    /// Return this generator's body constraints, or empty if it has none.
+    ArrayRef<ConstraintAttr> getBodyConstraints();
+
+    /// Return this generator with all of its body constraints removed.
+    GeneratorType getWithoutBodyConstraints();
   }];
 }
 

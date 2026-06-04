@@ -322,6 +322,23 @@ StringAttr GeneratorType::getParamName(size_t idx) {
   return getMetadata().getName(idx);
 }
 
+ArrayRef<ConstraintAttr> GeneratorType::getBodyConstraints() {
+  PogListAttr metadata = getMetadata();
+  if (!metadata)
+    return {};
+  return metadata.getBodyConstraints();
+}
+
+GeneratorType GeneratorType::getWithoutBodyConstraints() {
+  PogListAttr metadata = getMetadata();
+  if (!metadata || metadata.getBodyConstraints().empty())
+    return *this;
+  PogListAttr stripped = PogListAttr::get(getContext(), metadata.getPogs(),
+                                          /*bodyConstraints=*/{},
+                                          metadata.getOrigVariadicConvention());
+  return GeneratorType::get(getInputParamTypes(), getBody(), stripped);
+}
+
 Type GeneratorType::parse(AsmParser &p) {
   GeneratorType generator;
   if (p.parseLess() || parseGenerator(p, generator) || p.parseGreater())
