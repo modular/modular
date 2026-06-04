@@ -273,6 +273,40 @@ async def test_openai_error_envelope_shape(app) -> None:  # noqa: ANN001
         assert "detail" not in body
 
 
+@pytest.mark.asyncio
+async def test_chat_completion_schema_validation_error_uses_openai_envelope(
+    app,  # noqa: ANN001
+) -> None:
+    """Pydantic ``ValidationError`` from the chat schema surfaces as the OpenAI envelope.
+
+    Regression that composes SERVSYS-1257 (strongly-typed ``messages`` field,
+    so unknown roles raise ``pydantic.ValidationError`` at
+    ``CreateChatCompletionRequest.model_validate_json`` time) with the
+    ``HTTPException`` handler from #87521. The chat route catches
+    ``ValidationError`` and re-raises as ``HTTPException(status_code=400)``,
+    which the registered ``_openai_http_exception_handler`` turns into the
+    ``{"error": {"message", "type", "code", "param"}}`` body that
+    OpenAI/OpenRouter clients expect - not the raw FastAPI ``{"detail": ...}``.
+    """
+    async with AsyncTestClient(app) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "echo",
+                "messages": [{"role": "wizard", "content": "abracadabra"}],
+            },
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert "detail" not in body
+        assert body["error"]["type"] == "invalid_request_error"
+        assert body["error"]["code"] == "400"
+        # ``str(ValidationError)`` includes the offending input, so the
+        # rejected role makes it into the user-facing message.
+        assert "wizard" in body["error"]["message"]
+
+
 def test_validate_decodable_images_rejects_bad_bytes() -> None:
     # Empty / non-image bytes must raise (the request handler maps this to a
     # 400), not reach the worker and crash it later with an unhandled

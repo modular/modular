@@ -23,7 +23,7 @@ Explicitly importing //max/python/max/serve/schemas in the test's BUILD file has
 
 import pytest
 from max.serve.schemas.openai import CreateChatCompletionRequest
-from pydantic import AnyUrl
+from pydantic import AnyUrl, ValidationError
 
 
 @pytest.mark.skip
@@ -230,24 +230,21 @@ async def test_openai_parse_normalizes_developer_role_to_system() -> None:
     assert messages[1].role == "user"
 
 
-async def test_openai_parse_rejects_unknown_role() -> None:
+def test_openai_parse_rejects_unknown_role() -> None:
     """Roles outside the spec-supported set still surface as a validation error.
 
     The ``developer`` normalization must not become a permissive sink:
-    arbitrary role strings remain rejected by the internal type so genuine
-    malformed requests still produce a 4xx.
+    arbitrary role strings remain rejected by the schema so genuine malformed
+    requests still produce a 4xx. The role union is now validated by pydantic
+    at ``model_validate`` time (SERVSYS-1257), so the rejection happens here
+    rather than later inside ``openai_parse_chat_completion_request``.
     """
     request_data = {
         "model": "test",
         "messages": [{"role": "wizard", "content": "abracadabra"}],
     }
-    request = CreateChatCompletionRequest.model_validate(request_data)
-    settings = Settings()
-
-    with pytest.raises(Exception):
-        await openai_parse_chat_completion_request(
-            request, wrap_content=False, settings=settings
-        )
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(request_data)
 
 
 def test_openai_chat_completion_accepts_prompt_tokens() -> None:
@@ -361,8 +358,65 @@ async def test_openai_parse_drops_empty_tool_calls() -> None:
     assert messages[0].content == "ok"
 
 
+def test_openai_request_rejects_tool_call_missing_name() -> None:
+    """Assistant ``tool_calls`` missing ``function.name`` is rejected.
+
+    Regression for the llm-fuzz ``tool_calling/bad_tool_call_missing_name``
+    case. With the strongly-typed ``messages: list[ChatCompletionMessageParam]``
+    field, pydantic validates ``function.name`` (declared ``Required[str]`` on
+    the OpenAI SDK ``TypedDict``) at ``model_validate`` time and surfaces a
+    422 - no hand-coded check needed in the route.
+    """
+    request_data = {
+        "model": "test",
+        "messages": [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_test",
+                        "type": "function",
+                        "function": {"arguments": "{}"},
+                    }
+                ],
+            },
+        ],
+    }
+    with pytest.raises(ValidationError) as excinfo:
+        CreateChatCompletionRequest.model_validate(request_data)
+    assert "function.name" in str(excinfo.value)
+
+
+def test_openai_request_rejects_tool_call_empty_function() -> None:
+    """Assistant ``tool_calls`` with an empty ``function`` object is rejected.
+
+    Regression for the llm-fuzz ``tool_calling/bad_tool_call_empty_function``
+    case. Same mechanism as ``test_openai_request_rejects_tool_call_missing_name``:
+    ``function.name`` is ``Required[str]`` on the OpenAI SDK ``TypedDict`` so
+    pydantic refuses ``function = {}`` at request validation.
+    """
+    request_data = {
+        "model": "test",
+        "messages": [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": "call_test", "type": "function", "function": {}},
+                ],
+            },
+        ],
+    }
+    with pytest.raises(ValidationError) as excinfo:
+        CreateChatCompletionRequest.model_validate(request_data)
+    assert "function.name" in str(excinfo.value)
+
+
 async def test_openai_parse_coerces_empty_tool_call_arguments() -> None:
-    """Empty or missing ``function.arguments`` are coerced to ``{}``.
+    """Empty ``function.arguments`` are coerced to ``{}``.
 
     Mirrors vLLM's ``_postprocess_messages``: clients that send no-arg
     tool calls (for example a ``get_time()`` invocation) emit
@@ -381,11 +435,6 @@ async def test_openai_parse_coerces_empty_tool_call_arguments() -> None:
                         "type": "function",
                         "function": {"name": "get_time", "arguments": ""},
                     },
-                    {
-                        "id": "call_2",
-                        "type": "function",
-                        "function": {"name": "get_date"},
-                    },
                 ],
             },
         ],
@@ -399,9 +448,35 @@ async def test_openai_parse_coerces_empty_tool_call_arguments() -> None:
 
     assert len(messages) == 1
     assert messages[0].tool_calls is not None
-    assert len(messages[0].tool_calls) == 2
+    assert len(messages[0].tool_calls) == 1
     assert messages[0].tool_calls[0]["function"]["arguments"] == {}
-    assert messages[0].tool_calls[1]["function"]["arguments"] == {}
+
+
+def test_openai_request_rejects_tool_call_missing_arguments() -> None:
+    """Assistant ``tool_calls`` missing ``function.arguments`` is rejected.
+
+    OpenAI's spec marks ``Function.arguments`` as ``Required[str]``.
+    Requests that omit it entirely must fail schema validation rather
+    than being silently coerced.
+    """
+    request_data = {
+        "model": "test",
+        "messages": [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_date"},
+                    },
+                ],
+            },
+        ],
+    }
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(request_data)
 
 
 def test_openai_chat_completion_accepts_explicit_null_tool_choice() -> None:
@@ -421,6 +496,151 @@ def test_openai_chat_completion_accepts_explicit_null_tool_choice() -> None:
     }
     request = CreateChatCompletionRequest.model_validate(body)
     assert request.tool_choice is None
+
+
+def test_openai_chat_message_validates_structure() -> None:
+    """Regression for SERVSYS-1257: ``messages`` should not be typed as
+    ``list[dict[str, Any]]`` (the ``Any`` clobbered OpenAI SDK validation).
+
+    Confirms that ``CreateChatCompletionRequest`` now validates each
+    message against the OpenAI ``ChatCompletionMessageParam`` union -
+    invalid roles, missing required fields, and malformed content parts
+    surface as a 422 instead of being silently accepted.
+    """
+    base = {"model": "test"}
+
+    # Invalid role is rejected (was accepted previously).
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {**base, "messages": [{"role": "wizard", "content": "magic"}]}
+        )
+
+    # Missing required ``role`` is rejected.
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {**base, "messages": [{"content": "no role"}]}
+        )
+
+
+def test_openai_chat_message_multipart_content_preserves_list() -> None:
+    """Regression for SERVSYS-1257: validated multi-part ``content`` is a
+    concrete ``list`` of plain dicts that can be re-iterated.
+
+    Before this fix, ``messages`` was typed as ``list[dict[str, Any]]`` to
+    sidestep pydantic stashing the inner ``Iterable[ContentPart]`` as a
+    one-shot ``ValidatorIterator``. With the recursive ``Iterable -> list``
+    normalization in place, the content array survives validation as a
+    real list and the route can index/iterate it freely.
+    """
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "what's in this image?"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "https://example.com/foo.png"},
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    content = request.messages[0].get("content")
+    assert isinstance(content, list)
+    assert len(content) == 2
+    # Re-iteration must yield the same dicts (used to break on a
+    # ``ValidatorIterator`` that consumed itself after the first pass).
+    first_pass = [c.get("type") for c in content]
+    second_pass = [c.get("type") for c in content]
+    assert first_pass == second_pass == ["text", "image_url"]
+    # Items are plain dicts (TypedDict -> dict at the JSON layer).
+    assert content[0]["text"] == "what's in this image?"
+    assert content[1]["image_url"]["url"] == "https://example.com/foo.png"
+
+
+def test_openai_chat_message_preserves_vendor_extensions() -> None:
+    """``reasoning_content`` (vLLM-style extension on assistant turns) and
+    other vendor-specific message fields must survive validation.
+
+    The normalized chat-message ``TypedDict`` mirrors are configured with
+    ``extra='allow'`` so passthrough keys aren't silently dropped.
+    """
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": "ok",
+                    "reasoning_content": "preserved",
+                }
+            ],
+        }
+    )
+    assert request.messages[0].get("reasoning_content") == "preserved"
+
+
+def test_openai_chat_message_validates_vendor_extension_type() -> None:
+    """``reasoning_content`` is a first-class field; pydantic enforces its type.
+
+    Previously ``reasoning_content`` rode through ``extra='allow'`` on
+    the message TypedDict, so a non-string value passed validation and
+    later tripped a route-level ``assert`` (-> unhandled ``AssertionError``
+    -> 500). Declaring it on :class:`ChatCompletionMessageParam` makes
+    pydantic reject the bad type at ``model_validate`` time so the
+    request surfaces as a clean 4xx via the chat route's existing
+    ``ValidationError`` handler.
+    """
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": "ok",
+                        "reasoning_content": 123,
+                    }
+                ],
+            }
+        )
+
+
+def test_openai_chat_message_rejects_non_string_tool_call_id() -> None:
+    """``tool_call_id`` must be a string; non-string values are rejected."""
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [
+                    {
+                        "role": "tool",
+                        "content": "result",
+                        "tool_call_id": 123,
+                    }
+                ],
+            }
+        )
+
+
+def test_openai_chat_message_rejects_invalid_content_type() -> None:
+    """``content`` must be a string, list, or null; integers are rejected."""
+    with pytest.raises(ValidationError):
+        CreateChatCompletionRequest.model_validate(
+            {
+                "model": "test",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": 42,
+                    }
+                ],
+            }
+        )
 
 
 def test_openai_user_message_content_nullable_schema() -> None:

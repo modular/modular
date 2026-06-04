@@ -22,7 +22,7 @@ import queue
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -922,7 +922,7 @@ async def openai_parse_chat_completion_request(
             messages.append(
                 TextGenerationRequestMessage(
                     role=_normalize_openai_role(m["role"]),
-                    content=content if content else "",
+                    content=content or "",
                     tool_calls=tool_calls,
                     tool_call_id=tool_call_id,
                     reasoning_content=reasoning_content,
@@ -1430,7 +1430,7 @@ async def openai_create_chat_completion(
 
 
 def _convert_chat_completion_tools_to_token_generator_tools(
-    chat_tools: list[ChatCompletionFunctionToolParam] | None,
+    chat_tools: Iterable[ChatCompletionFunctionToolParam] | None,
 ) -> list[TextGenerationRequestTool] | None:
     """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:
