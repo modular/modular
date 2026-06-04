@@ -1132,10 +1132,9 @@ struct CumSum:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ):
-        cumsum[dtype, Bool(exclusive), Bool(reverse)](
+        cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis](
             output.to_tile_tensor[DType.int64](),
             input.to_tile_tensor[DType.int64](),
-            _unsafe_normalize_neg_index(axis, rank),
         )
 
 
