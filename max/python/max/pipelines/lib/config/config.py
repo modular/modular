@@ -1166,6 +1166,17 @@ class PipelineConfig(ConfigFileModel):
                 else:
                     # MLA target + MLA Eagle3 draft (existing path).
                     target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
+            if target_archs[0] == "Gemma4ForConditionalGeneration":
+                draft_archs = (
+                    self.draft_model.huggingface_config.architectures
+                    if self.draft_model is not None
+                    else None
+                )
+                if (
+                    draft_archs
+                    and draft_archs[0] == "Gemma4AssistantForCausalLM"
+                ):
+                    target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
 
         # Validate KV connector configuration
         _resolve_kvconnector_config(self.model.kv_cache)

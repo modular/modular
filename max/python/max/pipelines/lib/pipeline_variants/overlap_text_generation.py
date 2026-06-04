@@ -105,7 +105,13 @@ from max.graph.weights import (
     weights_format,
 )
 from max.nn import kernels
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    MultiKVCacheParams,
+    compute_num_device_blocks,
+    compute_num_host_blocks,
+)
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.core.exceptions import (
@@ -272,8 +278,9 @@ class SpecDecodeState:
     target_kv_manager: PagedKVCacheManager
     """The KVCache manager for the target model."""
 
-    draft_kv_blocks: list[Buffer]
-    """The KVCache blocks for the draft model."""
+    draft_kv_blocks: list[Buffer] | None
+    """The KVCache blocks for the draft model, or ``None`` when the draft
+    shares the target's KV cache (cross-attention draft, e.g. Gemma4 MTP)."""
 
     metrics: _SpeculativeDecodingMetrics
     """The metrics for speculative decoding."""
@@ -391,54 +398,127 @@ class SpecDecodeState:
             )
 
         target_kv_params = model.kv_params
-        assert isinstance(target_kv_params, KVCacheParams)
+        assert isinstance(target_kv_params, (KVCacheParams, MultiKVCacheParams))
         assert hasattr(model, "_draft_kv_params"), "Draft KV params not found"
         draft_kv_params = model._draft_kv_params
-        assert isinstance(draft_kv_params, KVCacheParams)
-
-        multi_kv_params = MultiKVCacheParams.from_params(
-            target_kv_params, draft_kv_params
-        )
-        target_kv_manager, draft_kv_manager = load_multi_kv_managers(
-            params=multi_kv_params,
-            max_batch_size=pipeline_config.runtime.max_batch_size,
-            max_seq_len=model.max_seq_len,
-            session=session,
-            available_cache_memory=pipeline_config.model.kv_cache._available_cache_memory,
+        assert draft_kv_params is None or isinstance(
+            draft_kv_params, KVCacheParams
         )
 
-        # Asymmetric attention (e.g. MLA target + MHA draft): each manager
-        # is single-cache from ``load_multi_kv_managers`` so the target
-        # manager's ``__init__`` skipped its draft-resolver branch
-        # (gated on ``num_caches > 1``). Inject the draft resolver here
-        # so ``runtime_inputs`` populates target_kv's
-        # ``draft_attention_dispatch_metadata`` slot with MHA geometry.
-        if target_kv_params.is_mla != draft_kv_params.is_mla:
-            from max.graph import DeviceRef
-            from max.nn.kv_cache import AttentionDispatchResolver
-            from max.nn.kv_cache.data_parallelism_utils import (
-                split_into_groups,
+        if draft_kv_params is None:
+            # Cross-attention / shared-KV draft (e.g. Gemma4 MTP): the draft
+            # reads the target's cache(s) and allocates nothing. A single
+            # manager covers the target's KV (single- or multi-cache), with no
+            # draft manager and no budget contribution. Decided by the draft's
+            # nature, independent of the target's topology.
+            target_kv_manager = load_kv_manager(
+                params=target_kv_params,
+                max_batch_size=pipeline_config.runtime.max_batch_size,
+                max_seq_len=model.max_seq_len,
+                session=session,
+                available_cache_memory=(
+                    pipeline_config.model.kv_cache._available_cache_memory
+                ),
             )
+            draft_kv_manager = None
+            data_parallel_degree = target_kv_params.data_parallel_degree
+        elif isinstance(target_kv_params, MultiKVCacheParams):
+            # Self-attention draft (owns its KV) + multi-cache target: add the
+            # draft's params to the page budget, then build one target manager
+            # (multi-cache native) plus a separate draft manager.
+            available_cache_memory = (
+                pipeline_config.model.kv_cache._available_cache_memory
+            )
+            max_batch_size = pipeline_config.runtime.max_batch_size
+            if available_cache_memory is None:
+                raise ValueError(
+                    "available_cache_memory should have been set during memory estimation"
+                )
+            if max_batch_size is None:
+                raise ValueError(
+                    "max_batch_size should have been set during memory estimation"
+                )
+            budget_params = MultiKVCacheParams.from_params(
+                *list(target_kv_params.params), draft_kv_params
+            )
+            total_num_pages = compute_num_device_blocks(
+                params=budget_params,
+                available_cache_memory=available_cache_memory,
+                max_batch_size=max_batch_size,
+                max_seq_len=model.max_seq_len,
+            )
+            total_num_host_pages = compute_num_host_blocks(budget_params)
+            target_kv_manager = PagedKVCacheManager(
+                params=target_kv_params,
+                total_num_pages=total_num_pages,
+                total_num_host_pages=total_num_host_pages,
+                session=session,
+                max_batch_size=max_batch_size,
+            )
+            draft_kv_manager = PagedKVCacheManager(
+                params=draft_kv_params,
+                total_num_pages=total_num_pages,
+                total_num_host_pages=total_num_host_pages,
+                session=session,
+                max_batch_size=max_batch_size,
+            )
+            data_parallel_degree = target_kv_params.data_parallel_degree
+        else:
+            assert isinstance(draft_kv_params, KVCacheParams)
+            multi_kv_params = MultiKVCacheParams.from_params(
+                target_kv_params, draft_kv_params
+            )
+            target_kv_manager, draft_kv_manager = load_multi_kv_managers(
+                params=multi_kv_params,
+                max_batch_size=pipeline_config.runtime.max_batch_size,
+                max_seq_len=model.max_seq_len,
+                session=session,
+                available_cache_memory=pipeline_config.model.kv_cache._available_cache_memory,
+            )
+            data_parallel_degree = multi_kv_params.data_parallel_degree
 
-            devices_per_replica = split_into_groups(
-                [d.to_device() for d in target_kv_params.devices],
-                groups=target_kv_params.data_parallel_degree,
-            )
-            for replica_idx, replica_devices in enumerate(devices_per_replica):
-                target_kv_manager._replica[
-                    replica_idx
-                ].draft_attention_dispatch_resolver = AttentionDispatchResolver(
-                    devices=[DeviceRef.from_device(d) for d in replica_devices],
-                    is_mla=draft_kv_params.is_mla,
-                    n_kv_heads_per_device=draft_kv_params.n_kv_heads_per_device,
-                    num_q_heads_per_device=draft_kv_params.num_q_heads_per_device,
-                    is_fp8_kv=draft_kv_params.is_fp8_kv_dtype,
+            # Asymmetric attention (e.g. MLA target + MHA draft): each
+            # manager is single-cache from ``load_multi_kv_managers`` so
+            # the target manager's ``__init__`` skipped its
+            # draft-resolver branch (gated on ``num_caches > 1``).
+            # Inject the draft resolver here so ``runtime_inputs``
+            # populates target_kv's
+            # ``draft_attention_dispatch_metadata`` slot with MHA
+            # geometry.
+            if target_kv_params.is_mla != draft_kv_params.is_mla:
+                from max.graph import DeviceRef
+                from max.nn.kv_cache import AttentionDispatchResolver
+                from max.nn.kv_cache.data_parallelism_utils import (
+                    split_into_groups,
                 )
 
-        draft_kv_blocks = _get_draft_kv_blocks(
-            draft_kv_manager, multi_kv_params.data_parallel_degree
-        )
-        assert len(draft_kv_blocks) == target_kv_params.n_devices
+                devices_per_replica = split_into_groups(
+                    [d.to_device() for d in target_kv_params.devices],
+                    groups=target_kv_params.data_parallel_degree,
+                )
+                for replica_idx, replica_devices in enumerate(
+                    devices_per_replica
+                ):
+                    target_kv_manager._replica[
+                        replica_idx
+                    ].draft_attention_dispatch_resolver = AttentionDispatchResolver(
+                        devices=[
+                            DeviceRef.from_device(d) for d in replica_devices
+                        ],
+                        is_mla=draft_kv_params.is_mla,
+                        n_kv_heads_per_device=draft_kv_params.n_kv_heads_per_device,
+                        num_q_heads_per_device=draft_kv_params.num_q_heads_per_device,
+                        is_fp8_kv=draft_kv_params.is_fp8_kv_dtype,
+                    )
+
+        draft_kv_blocks: list[Buffer] | None
+        if draft_kv_manager is None:
+            draft_kv_blocks = None
+        else:
+            draft_kv_blocks = _get_draft_kv_blocks(
+                draft_kv_manager, data_parallel_degree
+            )
+            assert len(draft_kv_blocks) == target_kv_params.n_devices
 
         num_speculative_tokens = (
             pipeline_config.speculative.num_speculative_tokens
@@ -1212,6 +1292,7 @@ class RealizeFutureTokenProcessor:
             self._graph = session.load(graph)
         self._enable_dp = enable_dp
         self._num_speculative_tokens = num_speculative_tokens
+        self._num_devices = len(devices)
 
     def _compute_mappings(
         self,
@@ -1306,10 +1387,13 @@ class RealizeFutureTokenProcessor:
             assert prev_batch.spec_decode is not None
             assert model_inputs.kv_cache_inputs is not None
 
-            num_kv_cache_inputs = len(model_inputs.kv_cache_inputs.inputs)
+            # Take one cache_length per device from the first KV cache
+            # type.  Multi-KV targets (e.g. sliding + global) have
+            # num_cache_types * num_devices entries, but the realize
+            # graph expects only num_devices.
             cache_lengths = [
                 model_inputs.kv_cache_inputs.inputs[i].cache_lengths
-                for i in range(num_kv_cache_inputs)
+                for i in range(self._num_devices)
             ]
             assert model_inputs.draft_tokens is not None
             num_draft_tokens_to_verify = model_inputs.draft_tokens.shape[1]
@@ -1322,7 +1406,11 @@ class RealizeFutureTokenProcessor:
             prev_draft_tokens = (
                 prev_batch.spec_decode.draft_tokens_to_verify_device
             )
-            signal_buffers = getattr(model_inputs, "signal_buffers", None)
+            signal_buffers = (
+                getattr(model_inputs, "signal_buffers", None)
+                if self._num_devices > 1
+                else None
+            )
 
             if self._enable_dp:
                 data_parallel_splits = model_inputs.data_parallel_splits
@@ -1380,13 +1468,14 @@ class RealizeFutureTokenProcessor:
             # draft tokens buffer so that when we read from draft_tokens later on
             # we get the real values...
             model_inputs.draft_tokens.inplace_copy_from(draft_tokens)
-            assert len(model_inputs.kv_cache_inputs.inputs) == len(
-                cache_lengths
-            )
-            for i in range(len(model_inputs.kv_cache_inputs.inputs)):
+            # Replicate realized cache_lengths to all KV cache types.
+            # Multi-KV targets have num_types * num_devices entries;
+            # the graph only produces num_devices outputs.
+            num_kv_inputs = len(model_inputs.kv_cache_inputs.inputs)
+            for i in range(num_kv_inputs):
                 model_inputs.kv_cache_inputs.inputs[i] = dataclasses.replace(
                     model_inputs.kv_cache_inputs.inputs[i],
-                    cache_lengths=cache_lengths[i],
+                    cache_lengths=cache_lengths[i % len(cache_lengths)],
                 )
         else:
             (new_ragged_input_tokens,) = out

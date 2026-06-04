@@ -132,6 +132,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "google/gemma-4-26B-A4B-it__localkv": MULTI,
     "google/gemma-4-26B-A4B-it__tieredkv": MULTI,
     "google/gemma-4-31B-it__localkv": MULTI,
+    "google/gemma-4-31B-it__mtp": MULTI | {"vllm", "sglang"},
     "google/gemma-4-31B-it__tieredkv": MULTI,
     "google/gemma-4-31B-it__tp2": set(RUNNERS) - {"2xB200", "2xMI355"},
     "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": MULTI | {"MI355"},

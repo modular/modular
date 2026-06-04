@@ -426,6 +426,7 @@
                 "max/api/python/pipelines.architectures.gemma3multimodal",
                 "max/api/python/pipelines.architectures.gemma3multimodal_modulev3",
                 "max/api/python/pipelines.architectures.gemma4",
+                "max/api/python/pipelines.architectures.gemma4_assistant",
                 "max/api/python/pipelines.architectures.glm5_1",
                 "max/api/python/pipelines.architectures.gpt_oss",
                 "max/api/python/pipelines.architectures.gpt_oss_modulev3",
@@ -468,6 +469,7 @@
                 "max/api/python/pipelines.architectures.unified_dflash_llama3",
                 "max/api/python/pipelines.architectures.unified_eagle_llama3",
                 "max/api/python/pipelines.architectures.unified_mtp_deepseekV3",
+                "max/api/python/pipelines.architectures.unified_mtp_gemma4",
                 "max/api/python/pipelines.architectures.wan",
                 "max/api/python/pipelines.architectures.z_image_modulev3"
               ]
