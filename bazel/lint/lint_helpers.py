@@ -83,12 +83,19 @@ def get_changed_files() -> set[str]:
             )
         )
     else:
-        merge_base_result = subprocess.check_output(
-            ["git", "merge-base", "origin/main", "HEAD"],
-        )
-        merge_base = merge_base_result.decode().rstrip("\n")
+        # TODO: Need a way to use a different diff base
+        if lint_diff_target := os.getenv("LINT_DIFF_TARGET"):
+            diff_target = lint_diff_target
+        else:
+            diff_target = (
+                subprocess.check_output(
+                    ["git", "merge-base", "origin/main", "HEAD"],
+                )
+                .decode()
+                .rstrip("\n")
+            )
 
         changed_files_result = subprocess.check_output(
-            ["git", "diff", "--diff-filter=d", "--name-only", merge_base]
+            ["git", "diff", "--diff-filter=d", "--name-only", diff_target]
         )
         return _oss_filter(_get_files(changed_files_result))
