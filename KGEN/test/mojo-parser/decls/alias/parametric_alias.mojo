@@ -39,6 +39,21 @@ comptime myTypeSelector[
     cond: Bool, t_type: AnyType, f_type: AnyType
 ] = t_type if cond else f_type
 
+# CHECK: lit.alias.decl *"whereBool{{.*}}": !lit.generator<
+# CHECK-SAME: "cond": !Bool
+# CHECK-SAME: {<{{.*}}#lit.struct.extract<:!Bool *(0,0), "_mlir_value">{{.*}}>}
+# CHECK-SAME: !AnyType> = <#kgen.gen<!Int>>
+comptime whereBool[cond: Bool]: AnyType where cond = Int
+
+# CHECK: lit.alias.decl *"nonParametricWhere{{.*}}": !lit.generator<
+# CHECK-SAME: {<true{{.*}}>}
+# CHECK-SAME: !AnyType> = <#kgen.gen<!Int>>
+comptime nonParametricWhere: AnyType where True = Int
+
+# CHECK: lit.alias.decl *"emptyParamWhere{{.*}}": !lit.generator<
+# CHECK-SAME: {<true{{.*}}>}
+# CHECK-SAME: !AnyType> = <#kgen.gen<!Int>>
+comptime emptyParamWhere[]: AnyType where True = Int
 
 # CHECK: lit.alias.decl *"explicitEmptyGeneratorAsType{{.*}}": !AnyType = <!Int>
 comptime explicitEmptyGeneratorAsType: AnyType = __mlir_attr[
@@ -65,6 +80,16 @@ def implicit_generator_constraint_drop[cond: Bool]() where cond:
         `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
     ] = constrained
     comptime used[a: Int]: AnyType = constrained[a]
+
+
+# CHECK-LABEL: lit.fn @"implicit_nonparametric_where
+def implicit_nonparametric_where[cond: Bool]() where cond:
+    # CHECK: lit.alias.decl *"constrained{{.*}}": !lit.generator<
+    # CHECK-SAME: {<{{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}>}
+    # CHECK-SAME: !AnyType> = <#kgen.gen<!Int>>
+    comptime constrained: AnyType where cond = Int
+    # CHECK: lit.alias.decl *"used{{.*}}": !AnyType = <!Int>
+    comptime used: AnyType = constrained
 
 
 @fieldwise_init
@@ -107,7 +132,9 @@ struct MyStruct[a: Int, b: Int](MyTrait):
 comptime trailingWhereId[T: AnyType] where conforms_to(T, AnyType) = T
 
 # CHECK: lit.alias.decl *"trailingWhereTyped{{.*}}": !lit.generator<<"T": !AnyType, {<sugar_preserved({{.*}}conforms_to(:!AnyType *(0,0), [{{[^]]*}}@AnyType])
-comptime trailingWhereTyped[T: AnyType]: AnyType where conforms_to(T, AnyType) = T
+comptime trailingWhereTyped[T: AnyType]: AnyType where conforms_to(
+    T, AnyType
+) = T
 
 # CHECK: lit.alias.decl *"trailingWhereMulti{{.*}}": !lit.generator<<"T": !AnyType, "U": !AnyType, {<sugar_preserved({{.*}}conforms_to(:!AnyType *(0,0), [{{[^]]*}}@AnyType])
 # CHECK-SAME: <sugar_preserved({{.*}}conforms_to(:!AnyType *(0,1), [{{[^]]*}}@AnyType])
