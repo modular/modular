@@ -970,10 +970,13 @@ def topk_sampling_from_prob[
             # Consumer Blackwell (sm_120/sm_121) allows only 1536 threads/SM vs
             # 2048 on datacenter parts, so a 1024-thread block exhausts SM
             # resources and the launch fails with LAUNCH_OUT_OF_RESOURCES. Cap the
-            # block size to 512 on those GPUs only; datacenter behavior is unchanged.
+            # block size to 896 on those GPUs only; datacenter behavior is
+            # unchanged. 896 was chosen per @dylan-stark's benchmark sweep
+            # (~20% better throughput than 512) and still fits the 1536-thread
+            # SM budget at one block per SM.
             comptime hw_info = ctx.default_device_info
             comptime bs = min(
-                block_size, 512
+                block_size, 896
             ) if hw_info.threads_per_multiprocessor < 2048 else block_size
             comptime kernel = TopKSamplingFromProbKernel[
                 probs.LayoutType,
@@ -1407,10 +1410,13 @@ def topk_topp_sampling_from_prob[
             # Consumer Blackwell (sm_120/sm_121) allows only 1536 threads/SM vs
             # 2048 on datacenter parts, so a 1024-thread block exhausts SM
             # resources and the launch fails with LAUNCH_OUT_OF_RESOURCES. Cap the
-            # block size to 512 on those GPUs only; datacenter behavior is unchanged.
+            # block size to 896 on those GPUs only; datacenter behavior is
+            # unchanged. 896 was chosen per @dylan-stark's benchmark sweep
+            # (~20% better throughput than 512) and still fits the 1536-thread
+            # SM budget at one block per SM.
             comptime hw_info = ctx.default_device_info
             comptime bs = min(
-                block_size, 512
+                block_size, 896
             ) if hw_info.threads_per_multiprocessor < 2048 else block_size
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
@@ -1803,10 +1809,13 @@ def topk_softmax_sample[
             # Consumer Blackwell (sm_120/sm_121) allows only 1536 threads/SM vs
             # 2048 on datacenter parts, so a 1024-thread block exhausts SM
             # resources and the launch fails with LAUNCH_OUT_OF_RESOURCES. Cap the
-            # block size to 512 on those GPUs only; datacenter behavior is unchanged.
+            # block size to 896 on those GPUs only; datacenter behavior is
+            # unchanged. 896 was chosen per @dylan-stark's benchmark sweep
+            # (~20% better throughput than 512) and still fits the 1536-thread
+            # SM budget at one block per SM.
             comptime hw_info = ctx.default_device_info
             comptime bs = min(
-                block_size, 512
+                block_size, 896
             ) if hw_info.threads_per_multiprocessor < 2048 else block_size
             comptime kernel = topk_softmax_sample_kernel[
                 bs,
