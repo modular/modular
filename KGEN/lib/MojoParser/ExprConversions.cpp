@@ -12,9 +12,10 @@
 #include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
-
+#include "InferenceState.h"
 #include "OverloadSet.h"
 
+#include "KGEN/MojoParser/Constraints.h"
 #include "MojoUtils.h"
 #include "ParamMatcher.h"
 #include "ParserEvaluationContext.h"
@@ -109,10 +110,58 @@ static bool canConvertFunctionTypes(FnTypeGeneratorType actualGen,
   return succeeded(matcher.matchFunctionTypes(actualGen, expectedGen));
 }
 
+//===----------------------------------------------------------------------===//
+// Generator body-constraint discharge
+//===----------------------------------------------------------------------===//
+
+/// Return true if every body constraint on `actual` can be fully dropped to
+/// reach `expected`: `expected` must carry no body constraints, the parameters
+/// and body must match, and all of `actual`'s constraints must be provable in
+/// this scope.
+///
+/// Only *full* dropping is supported. Partial dropping (retaining a subset) is
+/// sound but would leave retained constraints whose source locations differ
+/// from `expected`'s, forcing a `rebind` of the discharged value that
+/// `bind_params` folding does not yet look through. TODO: support partial
+/// dropping then.
+static bool canFullyDischargeBodyConstraints(GeneratorType actual,
+                                             GeneratorType expected,
+                                             ASTDecl &declScope, SMLoc loc) {
+  // Only allow a full drop: `expected` must retain no body constraints.
+  if (!expected.getBodyConstraints().empty())
+    return false;
+
+  // Conservatively require the types to be equal everywhere else for now.
+  if (!ASTType(actual.getWithoutBodyConstraints()).isEqualCanon(expected))
+    return false;
+
+  // Prove every body constraint so it can be dropped.
+  ArrayRef<ConstraintAttr> actualConstraints = actual.getBodyConstraints();
+  auto actualParamList = cast<PogListAttr>(actual.getMetadata());
+  OptionalDiag diag(declScope.getShared(), loc, /*discardError=*/true);
+  return checkConstraints(declScope, actualParamList, actualConstraints,
+                          actualConstraints, diag.getDiag(),
+                          /*unprovableConstraints=*/nullptr,
+                          /*evaluator=*/nullptr) == ConstraintResult::Satisfied;
+}
+
+/// Returns true if the constraints on `actual` can be fully discharged to reach
+/// `expected`. Assumes that `actual` and `expected` are not already equal.
+static bool canDischargeGeneratorConstraints(GeneratorType actual,
+                                             GeneratorType expected,
+                                             ASTDecl &declScope, SMLoc loc) {
+  if (actual.getBodyConstraints().empty())
+    return expected.getBodyConstraints().empty();
+  return canFullyDischargeBodyConstraints(actual, expected, declScope, loc);
+}
+
 static bool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
                                      GeneratorType actual,
                                      GeneratorType expected,
                                      ASTDecl &declScope) {
+  if (!canDischargeGeneratorConstraints(actual, expected, declScope,
+                                        valueExpr.expr->getLoc()))
+    return false;
 
   // Handle function conversions.
   if (auto actualFnType = sugarDynCast<FnTypeGeneratorType>(actual))
@@ -708,9 +757,44 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
                              expr, dest);
 }
 
+//===----------------------------------------------------------------------===//
+// Generator value conversion (emit side)
+//===----------------------------------------------------------------------===//
+
+/// Build the value that discharges *all* of `generatorValue`'s body constraints
+/// (which must already be proven in scope).
+static TypedAttr emitFullConstraintDischarge(PValue generatorValue,
+                                             IREmitter &emitter) {
+  auto generator = sugarCast<GeneratorType>(generatorValue.getType());
+  ArrayRef<ConstraintAttr> bodyConstraints = generator.getBodyConstraints();
+  DenseBoolArrayAttr discharged;
+  if (!bodyConstraints.empty()) {
+    llvm::BitVector indicesToDischarge(bodyConstraints.size());
+    indicesToDischarge.set();
+    discharged = KGEN::getDenseBoolArrayAttr(generatorValue.get().getContext(),
+                                             indicesToDischarge);
+  }
+  return BindParamsAttr::get(
+      generatorValue.get().getContext(), generatorValue.get(),
+      /*paramValues=*/{}, discharged, &emitter.shared.getEvaluationContext());
+}
+
 static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
                                     GeneratorType expected, IREmitter &emitter,
                                     ExprDest &dest) {
+  // If `value` is a generator whose body constraints can be fully dropped to
+  // reach `expected`, discharge them (the only supported constraint
+  // conversion).
+  auto actual = sugarDynCast<GeneratorType>(value.getRValueType());
+  if (actual && !actual.getBodyConstraints().empty() &&
+      canFullyDischargeBodyConstraints(actual, expected, emitter.getDeclScope(),
+                                       expr->getLoc())) {
+    PValue pValue = value.getIfPValue();
+    assert(pValue && "generator values are always PValues");
+    return emitter.emitCResult(emitFullConstraintDischarge(pValue, emitter),
+                               expr, dest);
+  }
+
   // If this is a function generator value, defer to function conversion.
   if (auto expectedFnType = sugarDynCast<FnTypeGeneratorType>(expected)) {
     return convertFunctionGeneratorValue(value, expr, expectedFnType, emitter,
@@ -739,6 +823,115 @@ static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
       GeneratorAttr::get(expected.getInputParamTypes(),
                          convBody.getIfPValue().get(), expected.getMetadata());
   return emitter.emitCResult(convGen, expr, dest);
+}
+
+static CValue convertEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr,
+                                          ASTType requiredType,
+                                          IREmitter &emitter, ExprDest &dest) {
+  PValue value = valueExpr.ir.getIfPValue();
+  assert(value && "canConvertEmptyGeneratorToBody should require a PValue");
+  return emitter.emitCResult(emitFullConstraintDischarge(value, emitter),
+                             valueExpr.expr, dest);
+}
+
+//===----------------------------------------------------------------------===//
+// Generator convertibility classification (can side)
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+struct ConversionResult {
+  /// Whether a convertibility result depends on scope-level assumptions, which
+  /// determines if it may be cached. The convertibility cache is keyed only on
+  /// the (value, required) type pair, so scope-dependent results (e.g. dropping
+  /// provable generator body constraints) must never be cached.
+  enum class Sensitivity {
+    /// The converter does not apply to this value/type pair. The caller should
+    /// keep trying other converters, which may or may not cache their results.
+    NotApplicable,
+    /// The converter applies and its result does not depend on scope-level
+    /// assumptions, so the result is safe to cache.
+    ScopeIndependent,
+    /// The converter applies but its result depends on scope-level assumptions
+    /// (e.g. provable generator body constraints), so the result must be
+    /// returned without caching.
+    ScopeDependent,
+  };
+
+  Sensitivity sensitivity;
+  bool isConvertible;
+
+  static ConversionResult notApplicable() {
+    return {Sensitivity::NotApplicable, /*isConvertible=*/false};
+  }
+  static ConversionResult scopeIndependent(bool isConvertible) {
+    return {Sensitivity::ScopeIndependent, isConvertible};
+  }
+  static ConversionResult scopeDependent(bool isConvertible) {
+    return {Sensitivity::ScopeDependent, isConvertible};
+  }
+
+  bool applies() const { return sensitivity != Sensitivity::NotApplicable; }
+  bool isCacheable() const {
+    return sensitivity == Sensitivity::ScopeIndependent;
+  }
+};
+} // namespace
+
+static ConversionResult
+classifyEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr, ASTType requiredType,
+                             ASTDecl &declScope) {
+  PValue value = valueExpr.ir.getIfPValue();
+  if (!value)
+    return ConversionResult::notApplicable();
+
+  auto generator = sugarDynCast<GeneratorType>(value.getType());
+  if (!generator || !generator.getInputParamTypes().empty())
+    return ConversionResult::notApplicable();
+
+  if (!ASTType(generator.getBody()).isEqualCanon(requiredType))
+    return ConversionResult::notApplicable();
+
+  ArrayRef<ConstraintAttr> bodyConstraints = generator.getBodyConstraints();
+  if (bodyConstraints.empty())
+    return ConversionResult::scopeIndependent(/*isConvertible=*/true);
+
+  // Whether the body constraints are dischargeable depends on this scope's
+  // assumptions, so the result is scope-dependent and must not be cached.
+  auto paramList = cast<PogListAttr>(generator.getMetadata());
+  OptionalDiag diag(declScope.getShared(), valueExpr.expr->getLoc(),
+                    /*discardError=*/true);
+  bool satisfied =
+      checkConstraints(declScope, paramList, bodyConstraints,
+                       /*origConstraints=*/{}, diag.getDiag(),
+                       /*unprovableConstraints=*/nullptr,
+                       /*evaluator=*/nullptr) == ConstraintResult::Satisfied;
+  return ConversionResult::scopeDependent(satisfied);
+}
+
+static bool canConvertEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr,
+                                           ASTType requiredType,
+                                           ASTDecl &declScope) {
+  ConversionResult conv =
+      classifyEmptyGeneratorToBody(valueExpr, requiredType, declScope);
+  return conv.applies() && conv.isConvertible;
+}
+
+static ConversionResult
+classifyGeneratorToGenerator(ASTExprAnd<CValue> valueExpr,
+                             GeneratorType requiredGenerator, ASTType rvType,
+                             ASTDecl &declScope) {
+  auto rvGeneratorType = sugarDynCast<GeneratorType>(rvType);
+  if (!rvGeneratorType)
+    return ConversionResult::notApplicable();
+
+  bool result = canConvertGeneratorTypes(valueExpr, rvGeneratorType,
+                                         requiredGenerator, declScope);
+  // Dropping generator body constraints depends on this scope's assumptions,
+  // so only the unconstrained case is safe to cache.
+  if (rvGeneratorType.getBodyConstraints().empty())
+    return ConversionResult::scopeIndependent(result);
+  return ConversionResult::scopeDependent(result);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1611,6 +1804,26 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     return isConvertible;
   };
 
+  // Cache, return, or fall through based on a converter's caching sensitivity.
+  // Scope-dependent results must never be cached, since the cache is keyed only
+  // on the type pair and would otherwise poison queries from other scopes.
+  auto resolveGeneratorConv =
+      [&](ConversionResult conv) -> std::optional<bool> {
+    if (!conv.applies())
+      return std::nullopt;
+    if (conv.isCacheable())
+      return cacheAndReturnVal(rvType, requiredType, conv.isConvertible);
+    return conv.isConvertible;
+  };
+
+  // Empty generators are zero-cost convertible to their body type when the
+  // generator's body constraints are satisfied by this scope's assumptions.
+  // A conversion that "applies" but fails the convertibility check returns
+  // false immediately intentionally.
+  if (std::optional<bool> resolved = resolveGeneratorConv(
+          classifyEmptyGeneratorToBody(value, requiredType, declScope)))
+    return *resolved;
+
   FailureOr<bool> canUpCast = canMetaTypeUpCastTo(
       shared, value.expr->getLoc(), rvType, requiredType, &declScope);
   if (succeeded(canUpCast))
@@ -1635,14 +1848,15 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
       return cacheAndReturnVal(rvType, requiredType, canUpCast.value());
   }
 
-  // Support implicit conversions of generator types (incl. non-trivial function
-  // generator conversions).
+  // Support implicit conversions of generator types, including dropping
+  // generator body constraints proven by this scope.  This is kept in the same
+  // relative order as the generator-conversion path in
+  // `emitImplicitConversionToType` so the two stay in lockstep.
   if (auto requiredGenerator = sugarDynCast<GeneratorType>(requiredType)) {
-    bool result = false;
-    if (auto rvGeneratorType = sugarDynCast<GeneratorType>(rvType))
-      result = canConvertGeneratorTypes(value, rvGeneratorType,
-                                        requiredGenerator, declScope);
-    return cacheAndReturnVal(rvType, requiredType, result);
+    if (std::optional<bool> resolved =
+            resolveGeneratorConv(classifyGeneratorToGenerator(
+                value, requiredGenerator, rvType, declScope)))
+      return *resolved;
   }
 
   // Functions can implicitly convert to their corresponding closure wrapper.
@@ -1707,6 +1921,9 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     value = emitZeroCostConvert({value, expr}, requiredType);
     return emitCResult(value, expr, dest);
   }
+
+  if (canConvertEmptyGeneratorToBody(valueExpr, requiredType, declScope))
+    return convertEmptyGeneratorToBody(valueExpr, requiredType, *this, dest);
 
   // Handle conversions between origins and origin sets.
   if (sugarIsa<OriginType>(rvType) && sugarIsa<OriginSetType>(requiredType)) {

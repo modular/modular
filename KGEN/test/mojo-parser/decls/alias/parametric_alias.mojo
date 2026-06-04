@@ -40,6 +40,33 @@ comptime myTypeSelector[
 ] = t_type if cond else f_type
 
 
+# CHECK: lit.alias.decl *"explicitEmptyGeneratorAsType{{.*}}": !AnyType = <!Int>
+comptime explicitEmptyGeneratorAsType: AnyType = __mlir_attr[
+    `#kgen.gen<`, Int, `> : !lit.generator<<>`, +AnyType, `>`
+]
+
+# CHECK-LABEL: lit.fn @"implicit_empty_generator_param
+# CHECK: lit.alias.decl *"bound{{.*}}": !AnyType
+# CHECK-SAME: = <bind_params(:!lit.generator<<>!AnyType> g)>
+def implicit_empty_generator_param[
+    g: __mlir_type[`!lit.generator<<>`, +AnyType, `>`]
+]():
+    comptime bound: AnyType = g
+
+
+# CHECK-LABEL: lit.fn @"implicit_generator_constraint_drop
+# CHECK-NOT: rebind(:!lit.generator<<"x": !Int, {<
+# CHECK: lit.alias.decl *"dropped{{.*}}": !lit.generator<<"x": !Int>!AnyType>
+# CHECK-SAME: = <#kgen.gen<!Int>>
+# CHECK: lit.alias.decl *"used{{.*}}": !lit.generator<<"a": !Int>!AnyType> = <#kgen.gen<!Int>>
+def implicit_generator_constraint_drop[cond: Bool]() where cond:
+    comptime constrained[x: Int]: AnyType where cond = Int
+    comptime dropped: __mlir_type[
+        `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
+    ] = constrained
+    comptime used[a: Int]: AnyType = constrained[a]
+
+
 @fieldwise_init
 struct PS[a: Int, b: Int, c: Int]:
     pass

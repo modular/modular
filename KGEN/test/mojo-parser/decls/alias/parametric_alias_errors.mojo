@@ -31,6 +31,58 @@ comptime typedNonparametricWhere: Int where True = 1
 # expected-error @+1 {{trailing 'where' clauses on non-parameterized aliases support TBD}}
 comptime emptyParamWhere[] where True = 1
 
+def implicit_generator_constraint_drop_error[cond: Bool]():
+    comptime constrained[x: Int]: AnyType where cond = Int
+    comptime dropped: __mlir_type[
+        `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
+    # expected-error @below {{cannot implicitly convert '[x: Int] AnyType where cond' value to '[x: Int] AnyType' in comptime initializer}}
+    ] = constrained
+
+def implicit_generator_constraint_drop_env_mismatch_error[
+    cond: Bool, other: Bool
+]() where other:
+    comptime constrained[x: Int]: AnyType where cond = Int
+    comptime dropped: __mlir_type[
+        `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
+    # expected-error @below {{cannot implicitly convert '[x: Int] AnyType where cond' value to '[x: Int] AnyType' in comptime initializer}}
+    ] = constrained
+
+# Discharging a generator body constraint depends on the assumptions in scope,
+# so its convertibility result must never be cached: the convertibility cache is
+# keyed only on the (value, required) type pair. The two scopes above failed to
+# discharge `where cond` for the `[x: Int] AnyType` generator/body pair; this
+# scope proves `cond` and must still succeed for the *same* type pair. If a
+# scope-dependent result were cached, the failures above would poison this query
+# and produce a spurious "cannot implicitly convert" diagnostic here.
+def implicit_generator_constraint_drop_cross_scope[cond: Bool]() where cond:
+    comptime constrained[x: Int]: AnyType where cond = Int
+    comptime dropped: __mlir_type[
+        `!lit.generator<<"x":`, +Int, `>`, +AnyType, `>`
+    ] = constrained
+
+
+# Only *fully* dropping body constraints is supported for now. Dropping a strict
+# subset (keeping `condB`, dropping `condA`) is rejected even though `condA` is
+# provable here: a partial drop would leave `condB` with a mismatched source
+# location, requiring a `rebind` that `bind_params` folding cannot yet look
+# through. TODO: allow partial dropping once folding handles the rebind.
+def implicit_generator_constraint_drop_partial[
+    condA: Bool, condB: Bool
+]() where condA where condB:
+    comptime keepsB[x: Int]: AnyType where condB = Int
+    comptime bothConstraints[x: Int]: AnyType where condA where condB = Int
+    # expected-error @below {{cannot implicitly convert '[x: Int] AnyType where condA, condB' value to '[x: Int] AnyType where condB' in comptime initializer}}
+    comptime r: type_of(keepsB) = bothConstraints
+
+
+# Adding a body constraint the source lacks is likewise rejected (it is a form of
+# partial relaxing -- `expected` retains constraints, so it is not a full drop).
+def implicit_generator_constraint_add[condA: Bool, condB: Bool]() where condA where condB:
+    comptime onlyA[x: Int]: AnyType where condA = Int
+    comptime bothConstraints[x: Int]: AnyType where condA where condB = Int
+    # expected-error @below {{cannot implicitly convert '[x: Int] AnyType where condA' value to '[x: Int] AnyType where condA, condB' in comptime initializer}}
+    comptime r: type_of(bothConstraints) = onlyA
+
 comptime myCurriedIntAdd[x: Int] = myIntAdd[x, ...]
 
 # expected-error @below {{unknown keyword parameter: 'y'}}
