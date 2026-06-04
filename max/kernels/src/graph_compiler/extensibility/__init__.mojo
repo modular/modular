@@ -30,6 +30,8 @@ from .operation_traits import *
 from .managed_tensor_slice import (
     _FusedComputeOutput,
     _FusedComputeOutputTensor,
+    _FusedComputeOutputTile,
+    _FusedComputeOutputTileTensor,
     _FusedInputTensor,
     _FusedInputVariadicTensors,
     _FusedOutputTensor,
