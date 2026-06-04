@@ -19,6 +19,11 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
+from std.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+)
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from std.gpu.primitives.warp import broadcast
@@ -30,7 +35,7 @@ from std.gpu.compute.arch.tcgen05 import (
 from std.gpu.memory import fence_mbarrier_init
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout.tma_async import RaggedTMA3DTile
-from nn.attention.gpu.nvidia.sm100.attention import FA4Config
+from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     SM100TensorAccumulatorSS,
@@ -302,6 +307,20 @@ struct SM100MHA2Q[
             cluster_sync()
         else:
             barrier()
+
+        # Programmatic Dependent Launch (PDL).  This is the only point every
+        # thread of every CTA reaches before the warp-specialized early
+        # returns below (invalid tiles bail in warps 0-13 while warps 14-15
+        # fall through), so it is the only divergence-free place to honor the
+        # contract that *every* CTA signal launch-dependents — otherwise a
+        # back-to-back consumer grid's `wait` hangs (see MLA decode).  The
+        # data-independent prologue above (barrier init, tmem alloc, TMA
+        # descriptor prefetch) overlaps the predecessor grid's tail; `wait`
+        # fences here before the data-dependent Q/K/V loads in `fa4_load`;
+        # `launch` lets the successor grid's prologue overlap our compute.
+        comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
+            wait_on_dependent_grids()
+            launch_dependent_grids()
 
         # warp group partitioning
         # Two QO:

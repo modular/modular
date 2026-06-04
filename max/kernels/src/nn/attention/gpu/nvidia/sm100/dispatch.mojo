@@ -13,6 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import ceildiv
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.gpu.host import (
     DeviceAttribute,
     DeviceBuffer,
@@ -23,7 +24,7 @@ from std.gpu.host import (
 from nn.attention.gpu.nvidia.sm90.attention import ImmutTileTensor1D
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger
-from nn.attention.gpu.nvidia.sm100.attention import FA4Config
+from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm90.attention import (
     NonNullPointer,
     NullPointer,
@@ -258,6 +259,7 @@ def mha_sm100_dispatch[
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                             UInt32(smem_use)
                         ),
+                        attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                     )
 
                 # --- ragged dispatch ---

@@ -288,6 +288,12 @@ This version is still a work in progress.
 - Updated `elementwise` call sites across MAX kernels and benchmarks to use
   `Coord`-native indexing, fixing compile failures caused by invalid
   `Coord`/`IndexList` conversions.
+- Enabled Programmatic Dependent Launch (PDL) for the SM100 (Blackwell)
+  FlashAttention-4 prefill kernel, letting back-to-back attention grids in a
+  stream overlap launch and prologue latency. This reduces per-launch overhead
+  most for shorter sequences (measured ~1.05x–1.5x faster on B200, bf16,
+  head_dim=128 across seq lengths 128–2048). On by default; disable with
+  `-D MHA_PDL=false`.
 
 ## Breaking changes
 
