@@ -113,9 +113,7 @@ def _matrix_band_part_impl[
             in_band = not in_band
 
         if in_band:
-            output.store_linear(
-                idx, rebind[Scalar[dtype]](input_0_fn[1, rank](idx))
-            )
+            output.store_linear(idx, input_0_fn[1, rank](idx))
         else:
             output.store_linear(idx, Scalar[dtype](0))
 

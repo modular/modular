@@ -229,8 +229,8 @@ def test_case_sampling[
     comptime is_top_p = test_case.is_top_p
     var batch_size = test_case.batch_size
     var vocab_size = test_case.vocab_size
-    var temperature = rebind[Scalar[dtype]](test_case.temperature)
-    var p_threshold = rebind[Scalar[dtype]](test_case.p_threshold)
+    var temperature = test_case.temperature
+    var p_threshold = test_case.p_threshold
 
     var _m: Bench
 

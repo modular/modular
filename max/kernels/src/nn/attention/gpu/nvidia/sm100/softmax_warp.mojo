@@ -229,7 +229,7 @@ def fa4_scale_write_output[
         comptime rows_per_half = ST.num_row_blocks_per_mma
         comptime start = m_half * rows_per_half
         comptime for i in range(start, start + rows_per_half):
-            irs = o.element_type(rebind[Scalar[accum_dtype]](inv_row_sums[i]))
+            irs = o.element_type(inv_row_sums[i])
             comptime for k in range(o.layout[1].size()):
                 o[i, k] *= irs
 
@@ -512,8 +512,8 @@ def fa4_lse_combine_write[
         comptime rows_per_half = ST.num_row_blocks_per_mma
         comptime start = m_half * rows_per_half
         comptime for i in range(start, start + rows_per_half):
-            fsl_i = own.element_type(rebind[Scalar[accum_dtype]](fsl_stack[i]))
-            fsp_i = peer.element_type(rebind[Scalar[accum_dtype]](fsp_stack[i]))
+            fsl_i = own.element_type(fsl_stack[i])
+            fsp_i = peer.element_type(fsp_stack[i])
             comptime for k in range(own.layout[1].size()):
                 own[i, k] = own[i, k] * fsl_i + peer[i, k] * fsp_i
 

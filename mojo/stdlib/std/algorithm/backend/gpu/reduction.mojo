@@ -774,9 +774,7 @@ def saturated_reduce_kernel[
             ]()
 
             comptime for i in range(num_reductions):
-                row_accum_cast[i] = rebind[SIMD[dtype, simd_width]](
-                    val[i].cast[dtype]()
-                )
+                row_accum_cast[i] = val[i].cast[dtype]()
 
             # Write output
             row_coords[axis] = 0

@@ -834,9 +834,7 @@ def _copy_partial_a_tile_blockwise_from_gmem[
         var g_row = m_tile_global_start + row
         var av = zero_vec
         if g_row < expert_end_row:
-            av = rebind[SIMD[a_type, VEC]](
-                a_gmem.load[width=VEC](g_row, iter_idx * BK + k0)
-            )
+            av = a_gmem.load[width=VEC](g_row, iter_idx * BK + k0)
         (a_smem_tile.ptr + Int(a_sw(Int32(row * BK + k0)))).store(av)
 
     # a_scales: BM scalars total; each lane writes one row per outer iteration.

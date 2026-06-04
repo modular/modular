@@ -493,9 +493,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             comptime for i in range(0, half_load // 2):
                 var element = float2_register[i]
                 float2_register[i] = exp2(element.fma(log2e_f32, -new_max))
-                float2_current_sum += rebind[SIMD[Self.AccumType, 2]](
-                    float2_register[i]
-                )
+                float2_current_sum += float2_register[i]
 
             # Correction-scale write to TMEM (skip on the first processed
             # tile — no prior O accumulator to correct).
@@ -945,12 +943,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                     var float2_register = o_row_subtile.vectorize[2]()
 
                     comptime for j in range(0, correction_inner_count):
-                        var element = rebind[SIMD[Self.AccumType, 2]](
-                            float2_register[j]
+                        var element = float2_register[j]
+                        float2_register[j] = element * SIMD[Self.AccumType, 2](
+                            scale_value
                         )
-                        float2_register[j] = rebind[
-                            type_of(float2_register[j])
-                        ](element * SIMD[Self.AccumType, 2](scale_value))
                     var _o_st_corr = InlineArray[
                         Scalar[Self.AccumType], per_warp_corr_elems
                     ](uninitialized=True)

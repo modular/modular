@@ -185,8 +185,8 @@ def fa4_correction[
                 comptime for _i in range(0, batch_size, 2):
                     var pair = mul_ftz(
                         SIMD[DType.float32, 2](
-                            rebind[Scalar[DType.float32]](o_b0[_i]),
-                            rebind[Scalar[DType.float32]](o_b0[_i + 1]),
+                            o_b0[_i],
+                            o_b0[_i + 1],
                         ),
                         c_pair,
                     )
@@ -215,8 +215,8 @@ def fa4_correction[
                 comptime for _i in range(0, batch_size, 2):
                     var pair = mul_ftz(
                         SIMD[DType.float32, 2](
-                            rebind[Scalar[DType.float32]](o_b1[_i]),
-                            rebind[Scalar[DType.float32]](o_b1[_i + 1]),
+                            o_b1[_i],
+                            o_b1[_i + 1],
                         ),
                         c_pair,
                     )
@@ -238,8 +238,8 @@ def fa4_correction[
                 comptime for _i in range(0, load_remainder, 2):
                     var pair = mul_ftz(
                         SIMD[DType.float32, 2](
-                            rebind[Scalar[DType.float32]](o_b0[_i]),
-                            rebind[Scalar[DType.float32]](o_b0[_i + 1]),
+                            o_b0[_i],
+                            o_b0[_i + 1],
                         ),
                         c_pair,
                     )

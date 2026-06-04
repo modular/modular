@@ -385,7 +385,7 @@ def set_batched_scale_factor[
         row_idx % SF_ATOM_M[0],
         (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
         (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-    ] = rebind[Scalar[scales_dtype]](scale_value)
+    ] = scale_value
 
 
 def set_batched_scale_factor[

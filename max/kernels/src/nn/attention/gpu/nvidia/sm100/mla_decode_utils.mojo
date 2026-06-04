@@ -3638,9 +3638,7 @@ struct MLA_SM100_Decode_Common[
             comptime for i in range(0, half_load // 2):
                 var element = float2_register[i]
                 float2_register[i] = exp2(element.fma(log2e_f32, -new_max))
-                float2_current_sum += rebind[SIMD[Self.AccumType, 2]](
-                    float2_register[i]
-                )
+                float2_current_sum += float2_register[i]
 
             # compute softmax using S_tmem_slot -> produce probabilities in regs
             # Expose correction scalars in SMEM for Correction warpgroup.

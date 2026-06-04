@@ -185,9 +185,7 @@ def test_dynamic_fp4_quant[
                         # verify the scale factors
                         assert_almost_equal(
                             ref_fp8_sf.cast[DType.float64](),
-                            rebind[Scalar[scales_dtype]](fp8_sf).cast[
-                                DType.float64
-                            ](),
+                            fp8_sf.cast[DType.float64](),
                             rtol=1e-1,
                             atol=1e-1,
                         )

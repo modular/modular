@@ -488,9 +488,7 @@ def stsm_helper[
         comptime for k in range(stsmx4_lane_size // cast_width):
             var src = SIMD[vec_dtype, cast_width]()
             comptime for _j in range(cast_width):
-                src[_j] = rebind[Scalar[vec_dtype]](
-                    vec[i * stsmx4_lane_size + k * cast_width + _j]
-                )
+                src[_j] = vec[i * stsmx4_lane_size + k * cast_width + _j]
             var casted = src.cast[dst.dtype]()
             comptime for _j in range(cast_width):
                 v[k * cast_width + _j] = casted[_j]

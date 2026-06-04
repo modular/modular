@@ -253,9 +253,7 @@ def gemv_kernel_vector[
         var b_tile = b.tile[1, WARP_SIZE * simd_width](0, i)
         var a_vec = a_tile.vectorize[1, simd_width]()[0, lane_id]
         var b_vec = b_tile.vectorize[1, simd_width]()[0, lane_id]
-        local_accum += rebind[local_accum_type](
-            a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
-        )
+        local_accum += a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
 
     # Last iteration: only lanes with valid K indices participate and
     # only if check_bounds is True.
@@ -267,7 +265,7 @@ def gemv_kernel_vector[
             if (lane_id + last * WARP_SIZE) * simd_width < k:
                 var a_vec = a_tile.vectorize[1, simd_width]()[0, lane_id]
                 var b_vec = b_tile.vectorize[1, simd_width]()[0, lane_id]
-                local_accum += rebind[local_accum_type](
+                local_accum += (
                     a_vec.cast[accum_type]() * b_vec.cast[accum_type]()
                 )
 
@@ -433,11 +431,11 @@ def gemv_split_k[
                 var b_vec = weight_tile.load[simd_width, non_temporal=True](
                     Coord(i, thread_idx.x * simd_width)
                 )
-                tile_w.store(Coord(i, Idx[0]), rebind[WeightVecType](b_vec))
+                tile_w.store(Coord(i, Idx[0]), b_vec)
             else:
                 var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
                 var b_vec = vec_weight_tile[i, thread_idx.x]
-                tile_w.store(Coord(i, Idx[0]), rebind[WeightVecType](b_vec))
+                tile_w.store(Coord(i, Idx[0]), b_vec)
 
         # Load activations and accumulate dot products.
         comptime for i in range(tile_m):
@@ -500,9 +498,7 @@ def gemv_split_k[
 
         comptime for jj in range(k_warp_num):
             comptime for ni in range(tile_n):
-                vals[ni] += rebind[Scalar[accum_type]](
-                    shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
-                )
+                vals[ni] += shmem[0, jj * tile_m * tile_n + mid * tile_n + ni]
 
         var row = tile_id_m + mid
         var col = tile_id_n

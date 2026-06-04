@@ -1034,7 +1034,7 @@ def external_call[
         __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
             loaded_pack
         )
-        return rebind_var[return_type](None)
+        return rebind_var[return_type](NoneType())
     else:
         return __mlir_op.`pop.external_call`[
             func=callee_kgen_string,

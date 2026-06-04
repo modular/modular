@@ -1580,16 +1580,14 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
         var a_row_ptr = a.ptr + m_global * K
         var b_expert_ptr = b.ptr + expert * N * K
         for k in range(K):
-            var a_val = rebind[Scalar[a_type]](a_row_ptr[k]).cast[accum_type]()
+            var a_val = a_row_ptr[k].cast[accum_type]()
             var a_scale = rebind[Scalar[a_scales_type]](
                 a_scales[
                     k // MAT_A_ROWS_SCALE_SIZE,
                     m_global // MAT_A_COLS_SCALE_SIZE,
                 ]
             ).cast[accum_type]()
-            var b_val = rebind[Scalar[b_type]](b_expert_ptr[n * K + k]).cast[
-                accum_type
-            ]()
+            var b_val = b_expert_ptr[n * K + k].cast[accum_type]()
             var b_scale = rebind[Scalar[b_scales_type]](
                 b_scales[
                     expert,
