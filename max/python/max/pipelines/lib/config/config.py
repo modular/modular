@@ -1281,7 +1281,7 @@ class PipelineConfig(ConfigFileModel):
                 not in _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
                 and max_batch_size is not None
                 and accelerator_api() in ("cuda", "hip")
-                and self._is_eligible_for_overlap_serve_optimizations()
+                and self._is_eligible_for_overlap_serve_optimizations(arch)
                 # Device graph capture is not supported for prefill-only workers.
                 and self.runtime.pipeline_role != "prefill_only"
             ):
@@ -1310,7 +1310,7 @@ class PipelineConfig(ConfigFileModel):
                 arch is not None
                 and arch.name
                 not in _DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES
-                and self._is_eligible_for_overlap_serve_optimizations()
+                and self._is_eligible_for_overlap_serve_optimizations(arch)
             ):
                 self.runtime.enable_overlap_scheduler = True
                 logger.info(
@@ -1339,9 +1339,16 @@ class PipelineConfig(ConfigFileModel):
                     "Overlap scheduler is not supported with CPU models."
                 )
 
-    def _is_eligible_for_overlap_serve_optimizations(self) -> bool:
+    def _is_eligible_for_overlap_serve_optimizations(
+        self, arch: SupportedArchitecture
+    ) -> bool:
+        # Overlap scheduling and device graph capture are only supported for
+        # text generation. Auto-enabling them for other tasks (e.g. embeddings)
+        # would fail downstream pipeline construction. See
+        # `get_pipeline_for_task` in registry.py.
         return (
-            not self.sampling.enable_variable_logits
+            arch.task == PipelineTask.TEXT_GENERATION
+            and not self.sampling.enable_variable_logits
             and not self.lora
             and self.model.device_specs[0].device_type != "cpu"
         )
