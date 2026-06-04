@@ -18,11 +18,13 @@ intended for public use and may change without notice.
 """
 
 from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.dtype import _uint_type_of_width
 from std.io.io import _printf
+from std.math.math import _llvm_unary_fn
 from std.os import abort
 from std.reflection.type_info import _unqualified_type_name
 from std.sys import align_of, size_of
-from std.sys.info import is_gpu
+from std.sys.info import is_gpu, bit_width_of
 from std.sys.defines import get_defined_int
 from std.ffi import CStringSlice
 
@@ -562,6 +564,11 @@ struct _TotalWritableBytes(Writer):
         self.size += string.byte_length()
 
 
+# ===----------------------------------------------------------------------=== #
+# Integer formatting utilities
+# ===----------------------------------------------------------------------=== #
+
+
 def _ord_ascii(s: StringSlice) -> UInt8:
     return UInt8(ord(s))
 
@@ -660,3 +667,74 @@ def _write_hex[
         buf[1] = `U`
         (buf.unsafe_ptr() + 2).store(chars)
         writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+
+
+comptime _100_digits = (
+    "00010203040506070809101112131415161718192021222324"
+    "25262728293031323334353637383940414243444546474849"
+    "50515253545556575859606162636465666768697071727374"
+    "75767778798081828384858687888990919293949596979899"
+)
+
+
+def _max_int_base_10_digits_and_sign[dtype: DType]() -> Int:
+    # FIXME(#5856): once log10 can be run at comptime
+    return 1 + (
+        Int(_llvm_unary_fn["llvm.log10"](Float64(Scalar[dtype].MAX)))
+        + Int(dtype.is_signed())
+    )
+
+
+@always_inline
+def _write_int_base_10[
+    pad_str: StaticString = ""
+](mut writer: Some[Writer], decimal: Scalar, pad_width: Int = 0):
+    """A function that writes a base 10 integer with the lowest possible
+    latency. Anything that needs higher throughput should look elsewhere."""
+    # NOTE: can't use Byte(ord()) here due to recursion
+    comptime `0` = 0x30
+    comptime `-` = 0x2D
+
+    comptime buf_size = _max_int_base_10_digits_and_sign[decimal.dtype]()
+    var buf = InlineArray[Byte, buf_size](uninitialized=True)
+    var ptr = buf.unsafe_ptr()
+
+    comptime dtype = _uint_type_of_width[bit_width_of[decimal.dtype]()]()
+    var remainder: Scalar[dtype]
+    comptime if decimal.dtype.is_signed():
+        var d = decimal.cast[dtype]()
+        remainder = (~d + 1) if decimal < 0 else d
+    else:
+        remainder = decimal.cast[dtype]()
+
+    var lut_ptr = _100_digits.unsafe_ptr()
+    var offset = buf_size - 1
+
+    while remainder >= 100:
+        var rem100 = remainder % 100
+        remainder //= 100
+
+        ptr.store(offset - 1, lut_ptr.load[2](rem100 * 2))
+        offset -= 2
+
+    if remainder >= 10:
+        ptr.store(offset - 1, lut_ptr.load[2](remainder * 2))
+        offset -= 2
+    else:
+        ptr[offset] = `0` | UInt8(remainder)
+        offset -= 1
+
+    comptime if decimal.dtype.is_signed():
+        ptr[offset] = `-`
+        offset -= Int(decimal < 0)
+
+    comptime if pad_str.byte_length() > 0:
+        var pad_i = buf_size - (offset + 1)
+        while pad_width > pad_i:
+            writer.write(pad_str)
+            pad_i += 1
+
+    offset += 1
+    writer.write_string(
+        {unsafe_from_utf8 = Span(ptr=ptr + offset, length=buf_size - offset)}
+    )

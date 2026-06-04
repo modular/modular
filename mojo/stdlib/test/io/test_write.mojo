@@ -12,8 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.format import Writable, Writer
-from std.format._utils import _hex_digits_to_hex_chars, _write_hex
-from std.memory import Span
+from std.format._utils import (
+    _hex_digits_to_hex_chars,
+    _write_hex,
+    _write_int_base_10,
+)
 from std.memory.memory import memset_zero
 from std.testing import assert_equal, TestSuite
 
@@ -61,21 +64,13 @@ def test_stringable_based_on_format() raises:
 
 def test_write_int_padded() raises:
     var s1 = String()
-
     Int(5).write_padded(s1, width=5)
-
     assert_equal(s1, "    5")
-
     Int(-5).write_padded(s1, width=5)
-
     assert_equal(s1, "    5   -5")
-
     Int(123).write_padded(s1, width=5)
-
     assert_equal(s1, "    5   -5  123")
-
     Int(0).write_padded(s1, width=5)
-
     assert_equal(s1, "    5   -5  123    0")
 
     # ----------------------------------
@@ -83,17 +78,11 @@ def test_write_int_padded() raises:
     # ----------------------------------
 
     var s2 = String()
-
     Int(12345).write_padded(s2, width=3)
-
     assert_equal(s2, "12345")
-
     Int(-1).write_padded(s2, width=1)
-
     assert_equal(s2, "12345-1")
-
     Int(-1).write_padded(s2, width=0)
-
     assert_equal(s2, "12345-1-1")
 
 
@@ -102,18 +91,13 @@ def test_write_simd_padded() raises:
     # Test writing scalar Int32
     # ----------------------------------
     var s1 = String()
-
     Int32(5).write_padded(s1, width=5)
-
     assert_equal(s1, "    5")
 
     # Test negative integers - note that negative signs aren't counted
     Int32(-5).write_padded(s1, width=5)
-
     assert_equal(s1, "    5   -5")
-
     Int32(123).write_padded(s1, width=5)
-
     assert_equal(s1, "    5   -5  123")
 
     # ----------------------------------
@@ -123,15 +107,10 @@ def test_write_simd_padded() raises:
     var s2 = String()
 
     Int32(12345).write_padded(s2, width=3)
-
     assert_equal(s2, "12345")
-
     Int32(-1).write_padded(s2, width=1)
-
     assert_equal(s2, "12345-1")
-
     Int32(-1).write_padded(s2, width=0)
-
     assert_equal(s2, "12345-1-1")
 
     # ----------------------------------
@@ -142,21 +121,80 @@ def test_write_simd_padded() raises:
     SIMD[DType.int32, 2](12345).write_padded(s3, width=3)
     assert_equal(s3, "[12345,12345]")
 
-    s3 = String()
+    s3.resize(0)
     SIMD[DType.int32, 2](12345).write_padded(s3, width=5)
     assert_equal(s3, "[12345,12345]")
 
-    s3 = String()
+    s3.resize(0)
     SIMD[DType.int32, 2](12345).write_padded(s3, width=6)
     assert_equal(s3, "[ 12345, 12345]")
 
-    s3 = String()
+    s3.resize(0)
     SIMD[DType.int32, 2](-12345).write_padded(s3, width=7)
     assert_equal(s3, "[ -12345, -12345]")
 
-    s3 = String()
+    s3.resize(0)
     SIMD[DType.int8, 4](127, 1, 10, 0).write_padded(s3, width=6)
     assert_equal(s3, "[   127,     1,    10,     0]")
+
+
+def test_write_int_base_10() raises:
+    var res = String()
+    _write_int_base_10(res, UInt8(255))
+    assert_equal(res, "255")
+    res.resize(0)
+    _write_int_base_10(res, UInt8(1))
+    assert_equal(res, "1")
+    res.resize(0)
+    _write_int_base_10(res, UInt8(11))
+    assert_equal(res, "11")
+    res.resize(0)
+    _write_int_base_10(res, UInt8(111))
+    assert_equal(res, "111")
+    res.resize(0)
+    _write_int_base_10(res, UInt8(0))
+    assert_equal(res, "0")
+    res.resize(0)
+    _write_int_base_10(res, Int8(-2))
+    assert_equal(res, "-2")
+    res.resize(0)
+    _write_int_base_10(res, UInt64(123456789))
+    assert_equal(res, "123456789")
+    res.resize(0)
+    _write_int_base_10(res, Int64(-123456789))
+    assert_equal(res, "-123456789")
+
+    res.resize(0)
+    _write_int_base_10(res, UInt8.MAX)
+    assert_equal(res, "255")
+    res.resize(0)
+    _write_int_base_10(res, UInt16.MAX)
+    assert_equal(res, "65535")
+    res.resize(0)
+    _write_int_base_10(res, UInt32.MAX)
+    assert_equal(res, "4294967295")
+    res.resize(0)
+    _write_int_base_10(res, UInt64.MAX)
+    assert_equal(res, "18446744073709551615")
+    res.resize(0)
+    _write_int_base_10(res, UInt128.MAX)
+    assert_equal(res, "340282366920938463463374607431768211455")
+
+    res.resize(0)
+    _write_int_base_10(res, Int8.MIN)
+    assert_equal(res, "-128")
+    res.resize(0)
+    _write_int_base_10(res, Int16.MIN)
+    assert_equal(res, "-32768")
+    res.resize(0)
+    _write_int_base_10(res, Int32.MIN)
+    assert_equal(res, "-2147483648")
+    res.resize(0)
+    _write_int_base_10(res, Int64.MIN)
+    assert_equal(res, "-9223372036854775808")
+    res.resize(0)
+    _write_int_base_10(res, Int128.MIN)
+    assert_equal(res, "-170141183460469231731687303715884105728")
 
 
 def test_hex_digits_to_hex_chars() raises:
