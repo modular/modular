@@ -164,7 +164,7 @@ struct AddOne:
         @always_inline
         def elementwise_add_one[
             width: Int
-        ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        ](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[elementwise_add_one, target=target](output, ctx)
@@ -348,8 +348,7 @@ def _vector_addition_gpu(
     def vector_addition_gpu_kernel(length: Int):
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < length:
-            var idx = IndexList[output.rank](tid)
-            var result = lhs.load[1](idx) + rhs.load[1](idx)
+            var result = lhs[tid] + rhs[tid]
             output.store[1](idx, result)
 
     var num_blocks = ceildiv(vector_length, BLOCK_SIZE)

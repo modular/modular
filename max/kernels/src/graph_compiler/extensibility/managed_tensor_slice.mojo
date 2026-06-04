@@ -1560,6 +1560,28 @@ struct ManagedTensorSlice[
         ](self, ridx)
 
     @always_inline
+    def load[
+        width: Int,
+        element_alignment: Int = 1,
+    ](self, index: Coord) -> SIMD[Self.dtype, width]:
+        """Gets data from this tensor slice as a `SIMD`, indexed by a `Coord`.
+
+        Parameters:
+            width: The width of the `SIMD` value. This must be large enough to contain the data from this tensor slice.
+            element_alignment: Indicate the alignment of the pointer stored to memory. This is needed to issue vector load for GPUs with strict alignment requirements.
+
+        Args:
+            index: A `Coord` indicating the dimension of the tensor slice to obtain data from.
+
+        Returns:
+            Data from this tensor slice at dimension `index`.
+        """
+        comptime assert index.rank == Self.rank
+        return self.load[width, element_alignment=element_alignment](
+            rebind[IndexList[Self.rank]](coord_to_index_list(index))
+        )
+
+    @always_inline
     def _fused_load[
         width: Int,
         # Necessary to make it simpler on the call site.
@@ -1577,6 +1599,16 @@ struct ManagedTensorSlice[
             return simd_load_from_managed_tensor_slice[
                 simd_width=width, element_alignment=element_alignment
             ](self, ridx)
+
+    @always_inline
+    def _fused_load[
+        width: Int,
+        element_alignment: Int = 1,
+    ](self, index: Coord) -> SIMD[Self.dtype, width]:
+        comptime assert index.rank == Self.rank
+        return self._fused_load[width, element_alignment=element_alignment](
+            rebind[IndexList[Self.rank]](coord_to_index_list(index))
+        )
 
     @always_inline("nodebug")
     def _lambda_load[
@@ -1676,6 +1708,30 @@ struct ManagedTensorSlice[
         ](self, ridx, val)
 
     @always_inline
+    def store[
+        width: SIMDSize,
+        element_alignment: Int = 1,
+    ](
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
+        index: Coord,
+        val: SIMD[Self.dtype, width],
+    ):
+        """Sets data in this tensor slice from a `SIMD`, indexed by a `Coord`.
+
+        Parameters:
+            width: The width of the `SIMD` value.
+            element_alignment: Indicate the alignment of the pointer stored to memory. This is needed to issue vector store for GPUs with strict alignment requirements.
+
+        Args:
+            index: A `Coord` indicating the dimension of the tensor slice to set data in.
+            val: The data to set into this tensor slice.
+        """
+        comptime assert index.rank == Self.rank
+        self.store[width, element_alignment=element_alignment](
+            rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
+        )
+
+    @always_inline
     def _fused_store[
         width: SIMDSize,
         # Necessary to make it simpler on the call site.
@@ -1698,6 +1754,20 @@ struct ManagedTensorSlice[
                 simd_width=width,
                 element_alignment=element_alignment,
             ](self, ridx, val)
+
+    @always_inline
+    def _fused_store[
+        width: SIMDSize,
+        element_alignment: Int = 1,
+    ](
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
+        index: Coord,
+        val: SIMD[Self.dtype, width],
+    ):
+        comptime assert index.rank == Self.rank
+        self._fused_store[width, element_alignment=element_alignment](
+            rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
+        )
 
     @always_inline("nodebug")
     def _lambda_store[
@@ -2422,7 +2492,7 @@ def foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: def[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
+    func: def[width: Int](Coord) capturing -> SIMD[dtype, width],
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
@@ -2432,6 +2502,10 @@ def foreach[
     ctx: DeviceContext,
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
+
+    The `func` body receives the element index as a `Coord`. Use
+    `coord_to_index_list` to convert it to an `IndexList` if integer index
+    arithmetic is needed.
 
     Parameters:
         dtype: The data type of the elements in the tensor slice.
@@ -2452,9 +2526,8 @@ def foreach[
         width: Int,
         alignment: Int = 1,
     ](index: Coord) capturing:
-        var idx = rebind[IndexList[rank]](coord_to_index_list(index))
-        var val = func[width](idx)
-        tensor._fused_store[element_alignment=alignment](idx, val)
+        var val = func[width](index)
+        tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
         elementwise_fn_wrapper,
