@@ -669,6 +669,7 @@ def stochastic_acceptance_sampler(
         _find_first_rejected(rejected, device), axis=-1
     )
 
+    seed_per_batch = ops.broadcast_to(seed, [batch_size])
     bonus_token_ids = topk_fused_sampling(
         logits=bonus_logits,
         top_k=top_k,
@@ -676,6 +677,7 @@ def stochastic_acceptance_sampler(
         temperature=temperature,
         top_p=top_p,
         min_top_p=min_top_p,
+        seed=seed_per_batch,
     )
 
     return first_rejected_idx, recovered_token_ids, bonus_token_ids.tensor
