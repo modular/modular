@@ -21,6 +21,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
@@ -410,7 +411,7 @@ class TextTokenizer(
                 elif isinstance(eos, list):
                     self._default_eos_token_ids.update(eos)
 
-    @property
+    @cached_property
     def tokenizer_vocab_size(self) -> int:
         """Vocabulary size of the HuggingFace tokenizer delegate."""
         return len(self.delegate)
@@ -754,7 +755,7 @@ class TextAndVisionTokenizer(
         ):
             self.vision_token_ids.append(image_break_token_id)
 
-    @property
+    @cached_property
     def tokenizer_vocab_size(self) -> int:
         """Vocabulary size of the HuggingFace tokenizer delegate."""
         return len(self.delegate)
