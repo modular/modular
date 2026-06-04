@@ -19,7 +19,7 @@ def linter(base_name, binary, has_fix = True, has_fast = True):
     for is_check in check_opts:
         for is_fast in fast_opts:
             command(
-                name = base_name + (".check" if is_check else ".fix") + ("-fast" if is_fast else ""),
+                name = base_name + (".check" if is_check else ".fix") + ("" if is_fast else "-all"),
                 command = binary,
                 environment = {
                     "CHECK": str(is_check),

@@ -134,26 +134,26 @@ config_setting(
 )
 
 alias(
-    name = "lint-fast",
-    actual = "//bazel/lint:lint-fast",
-    tags = [TOP_LEVEL_TAG],
-)
-
-alias(
     name = "lint",
     actual = "//bazel/lint",
     tags = [TOP_LEVEL_TAG],
 )
 
 alias(
-    name = "format-fast",
-    actual = "//bazel/lint:format-fast",
+    name = "lint-all",
+    actual = "//bazel/lint:lint-all",
     tags = [TOP_LEVEL_TAG],
 )
 
 alias(
     name = "format",
     actual = "//bazel/lint:format",
+    tags = [TOP_LEVEL_TAG],
+)
+
+alias(
+    name = "format-all",
+    actual = "//bazel/lint:format-all",
     tags = [TOP_LEVEL_TAG],
 )
 

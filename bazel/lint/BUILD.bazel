@@ -140,7 +140,7 @@ multirun(
 
 [
     sh_binary(
-        name = ("lint" if check else "format") + ("-fast" if fast else ""),
+        name = ("lint" if check else "format") + ("" if fast else "-all"),
         srcs = ["linter_wrapper.sh"],
         data = ["//bazel/lint:multirun"],
         env = {
