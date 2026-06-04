@@ -2632,10 +2632,15 @@ struct ConvertPOPCallToAIRIntrinsic
 
     // simdgroup_matrix intrinsics use custom mangling
     if (airName.starts_with("air.simdgroup_matrix_")) {
-      LLVM::LLVMFuncOp func = createSimdgroupMatrixAIRFunction(
+      ErrorOr<LLVM::LLVMFuncOp> funcOr = createSimdgroupMatrixAIRFunction(
           rewriter, module, op.getLoc(), airName, newOperands, types,
           op.getOperands().getTypes());
-      rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, newOperands);
+      if (funcOr.isError()) {
+        op.emitError() << funcOr.takeError();
+        return failure();
+      }
+      rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, funcOr.takeValue(),
+                                                newOperands);
       return success();
     }
 
@@ -2697,26 +2702,54 @@ private:
   }
 
   // Create AIR function for simdgroup_matrix intrinsics with custom mangling.
-  LLVM::LLVMFuncOp createSimdgroupMatrixAIRFunction(
+  ErrorOr<LLVM::LLVMFuncOp> createSimdgroupMatrixAIRFunction(
       ConversionPatternRewriter &rewriter, ModuleOp module, Location loc,
       StringRef airName, ValueRange operands, TypeRange resultTypes,
       TypeRange origOpTypes) const {
+    enum class SimdgroupMatrixKind {
+      k8x8,
+      k16x16,
+      kUnknown,
+    };
+
     SmallVector<Type> argTypes;
     for (Value value : operands)
       argTypes.push_back(value.getType());
+    const SimdgroupMatrixKind simdgroupKind = [&airName]() {
+      if (airName.contains("16x16"))
+        return SimdgroupMatrixKind::k16x16;
+      if (airName.contains("8x8"))
+        return SimdgroupMatrixKind::k8x8;
+      return SimdgroupMatrixKind::kUnknown;
+    }();
 
-    assert(argTypes.size() == 5 &&
-           "expected expanded operands: A, transpose_a, B, transpose_b, C");
-    assert(!resultTypes.empty() && "expected result type");
+    if (simdgroupKind == SimdgroupMatrixKind::kUnknown)
+      return Error("unknown 'simdgroup_matrix' intrinsic'");
+
+    if (simdgroupKind == SimdgroupMatrixKind::k16x16 && argTypes.size() != 5) {
+      return Error(
+          "expected expanded operands: A, transpose_a, B, transpose_b, C");
+    } else if (simdgroupKind == SimdgroupMatrixKind::k8x8 &&
+               argTypes.size() != 3) {
+      return Error("expected expanded operands: A, B, C");
+    }
+
+    if (resultTypes.empty())
+      return Error("expected result type");
 
     // Extract KGENDType from the original kgen struct's A and B fields to
     // determine the scalar-type chars.
-    assert(origOpTypes.size() == 1 && "expected single struct operand");
+    if (origOpTypes.size() != 1)
+      return Error("expected single struct operand");
+
     auto kgenStructTy = cast<StructType>(origOpTypes[0]);
     auto elemTypes = *kgenStructTy.getElementTypes();
+    const uint32_t aIdx = 0;
+    const uint32_t bIdx = simdgroupKind == SimdgroupMatrixKind::k16x16 ? 2 : 1;
+    const uint32_t cIdx = simdgroupKind == SimdgroupMatrixKind::k16x16 ? 4 : 2;
 
-    auto aDType = *cast<SIMDType>(elemTypes[0]).getResolvedDType();
-    auto bDType = *cast<SIMDType>(elemTypes[2]).getResolvedDType();
+    auto aDType = *cast<SIMDType>(elemTypes[aIdx]).getResolvedDType();
+    auto bDType = *cast<SIMDType>(elemTypes[bIdx]).getResolvedDType();
 
     //   'f' - floating point
     //   's' - signed integer
@@ -2737,9 +2770,9 @@ private:
     funcName += '.';
     funcName += mangleScalarTypeChar(bDType);
     funcName += "." + mangleType(resultTypes[0]); // D
-    funcName += "." + mangleType(argTypes[0]);    // A
-    funcName += "." + mangleType(argTypes[2]);    // B
-    funcName += "." + mangleType(argTypes[4]);    // C
+    funcName += "." + mangleType(argTypes[aIdx]); // A
+    funcName += "." + mangleType(argTypes[bIdx]); // B
+    funcName += "." + mangleType(argTypes[cIdx]); // C
 
     AIRIntrinsicName airFunctionName(funcName, /*requiresMangling=*/false);
     return createAIRFunction(rewriter, module, loc, airFunctionName, operands,
