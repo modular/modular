@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import compiler
+
 from std.gpu.host import DeviceContext
 from std.math import iota
 from std.sys import align_of, size_of
 
 from std.algorithm import parallelize_over_rows
 from std.bit import log2_floor
-from compiler import register
 from std.gpu import (
     WARP_SIZE,
     barrier,
@@ -48,7 +49,7 @@ struct TopKElement[T: DType](Comparable, TrivialRegisterPassable):
         return self.val < rhs.val
 
 
-@register("top_k_custom")
+@compiler.register("top_k_custom")
 struct TopK:
     """Registers the `top_k_custom` op, allowing python to use it from the `max`
     package. This is a simplified version without bottom_k and sorting options,

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import compiler
+
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys.info import (

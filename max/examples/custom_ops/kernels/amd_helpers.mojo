@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.sys import align_of
+from std.sys import align_of, size_of
 
 # AMD Helper functions and structs for Tensor Core MMA operations
 from std.sys.info import simd_width_of
