@@ -2274,10 +2274,6 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
 ///                                          ["=" expression]
 ///   | "alias" identifier [param_signature] ("where" expression)* "="
 ///   expression
-///
-/// Trailing "where" clauses are only allowed when the alias is parameterized
-/// (has a non-empty `[...]` parameter list).
-///
 LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
   ParserBase p(shared, lexer);
@@ -2311,28 +2307,18 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                                             InlineWhereNote::kTrailingWhere))
     return failure();
 
-  // Parse the alias type as a raw expression (no IR emission yet). Deferring
-  // emission lets us parse and emit any trailing 'where' clauses first, so
-  // the type's emission sees the body constraints in scope.
-  ExprNode *typeExpr = nullptr;
+  // Parse the alias body type as a raw expression (no IR emission yet).
+  // Deferring emission lets us parse and emit any trailing 'where' clauses
+  // first, so the type's emission sees the body constraints in scope.
+  ExprNode *bodyTypeExpr = nullptr;
   if (p.consumeIf(Token::colon)) {
-    if (p.parseExpression(typeExpr, decl.getIndentation()))
+    if (p.parseExpression(bodyTypeExpr, decl.getIndentation()))
       return failure();
   }
 
-  // Parse trailing 'where' clauses if present. These are only allowed when
-  // the alias is parameterized; emitting and type-checking them later
-  // requires referencing the parameter declarations.
-  if (!parsedParams.params.empty()) {
-    if (parsedParams.parseTrailingConstraintsIfPresent(p))
-      return failure();
-  } else if (p.getToken().isIdentifier() &&
-             p.getToken().getSpelling() == "where") {
-    p.emitError(p.getToken().getLoc(),
-                "trailing 'where' clauses on non-parameterized "
-                "aliases support TBD");
+  // Parse trailing 'where' clauses if present.
+  if (parsedParams.parseTrailingConstraintsIfPresent(p))
     return failure();
-  }
 
   // The alias signature is a self-contained scope where the input parameters
   // of the alias are visible by all types.  We must use a temporary
@@ -2354,39 +2340,19 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
   // type below) can rely on them.
   paramSignature.emitBodyConstraints();
 
-  // Now emit the alias type (if any).
+  // Now emit the alias body type (if any).
   ASTType type;
-  if (typeExpr) {
+  if (bodyTypeExpr) {
     IREmitter emitter(sigDecl, EC_Type);
-    type = emitter.emitExprType(typeExpr, /*allowUnbound=*/true);
+    type = emitter.emitExprType(bodyTypeExpr, /*allowUnbound=*/true);
     if (!type)
       return failure();
   }
 
-  // If there are input parameters, the actual type of the alias is a generator
-  // type. Parameterize the type with the input parameters.
-  // The type of the alias is a standalone type, so it needs to reference its
-  // input parameters by index refs (IRAIDAI), not name refs. This remapper
-  // handles converting the name refs to index refs.
-  IndexRefRemapper remapper(paramSignature.paramDeclAttrs, {});
-  auto parameterizeType = [&](ASTType type) -> ASTType {
-    if (paramSignature.paramDeclAttrs.empty())
-      return type;
-
-    SmallVector<Type> inputParamTypes;
-    for (ParamDeclAttr param : paramSignature.paramDeclAttrs)
-      inputParamTypes.push_back(remapper.replace(param.getType()));
-
-    return GeneratorType::get(
-        inputParamTypes, remapper.replace(type.mlirType),
-        remapper.replace(paramSignature.getParamListAttr()));
-  };
-
-  ASTDecl &parentDecl = *decl.getParentDecl();
-
-  NamedAttrList attrs = aliasDeclOp->getAttrDictionary();
+  // Parse & emit the initializer if one exists. If one does not exist, check
+  // for errors because the initializer can only be emitted in certain contexts.
+  TypedAttr initValue;
   if (p.consumeIf(Token::equal)) {
-    // Then this is a normal `alias` declaration with an initializer.
     ExprNode *initExpr = nullptr;
     if (p.parseVarInitExpression(initExpr, decl.getIndentation()))
       return failure();
@@ -2398,22 +2364,14 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     if (!rhsValue)
       return failure();
 
-    // If we had no declared type (`alias x = 42`), infer the type from the
-    // initializer.
+    // If we had no declared body type (`alias x = 42`), infer the body type
+    // from the initializer.
     if (!type)
       type = rhsValue.getType();
 
-    // If there are input parameters, we need to emit a value generator attr.
-    type = parameterizeType(type);
-    if (!paramSignature.paramDeclAttrs.empty()) {
-      TypedAttr remappedBody = remapper.replace(rhsValue.get());
-      auto genTp = cast<GeneratorType>(type);
-      rhsValue = cast<TypedAttr>(GeneratorAttr::get(
-          genTp.getInputParamTypes(), remappedBody, genTp.getMetadata()));
-    }
-    // Remember the value
-    attrs.set(aliasDeclOp.getValueAttrName(), rhsValue.get());
+    initValue = rhsValue.get();
   } else {
+    ASTDecl &parentDecl = *decl.getParentDecl();
     if (!isa_and_nonnull<LIT::TraitDeclOp>(parentDecl.getIfOperation())) {
       // Disallow this, because it would create diamond inheritance problems.
       p.emitError(identifierLoc)
@@ -2426,9 +2384,38 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
           << "comptime value without an initializer must have a type";
       return failure();
     }
-
-    type = parameterizeType(type);
   }
+
+  // If there are input parameters or constraints, the actual type of the alias
+  // is a generator type. Parameterize the body type & initializer value with
+  // the input parameters.
+  bool needsGeneratorType = !paramSignature.paramDeclAttrs.empty() ||
+                            !paramSignature.emittedBodyConstraints.empty();
+  if (needsGeneratorType) {
+    // The body type of the alias is a standalone type, so it needs to reference
+    // its input parameters by index refs (IRAIDAI), not name refs. This
+    // remapper handles converting the name refs to index refs.
+    IndexRefRemapper remapper(paramSignature.paramDeclAttrs, {});
+
+    SmallVector<Type> inputParamTypes;
+    for (ParamDeclAttr param : paramSignature.paramDeclAttrs)
+      inputParamTypes.push_back(remapper.replace(param.getType()));
+
+    PogListAttr metadata = remapper.replace(paramSignature.getParamListAttr());
+    type = GeneratorType::get(inputParamTypes, remapper.replace(type.mlirType),
+                              metadata);
+
+    // Wrap the initializer in a generator attr too.
+    if (initValue) {
+      TypedAttr remappedBody = remapper.replace(initValue);
+      initValue = GeneratorAttr::get(inputParamTypes, remappedBody, metadata);
+    }
+  }
+
+  NamedAttrList attrs = aliasDeclOp->getAttrDictionary();
+  // Remember the value
+  if (initValue)
+    attrs.set(aliasDeclOp.getValueAttrName(), initValue);
 
   // Propagate signature errors and decls.
   decl.takeDecls(sigDecl);
