@@ -278,14 +278,6 @@ ParamDeclRefAttr extractParamDeclRef(TypedAttr attr);
 // namespace; do not duplicate definitions on the GraphCompiler side.
 //===----------------------------------------------------------------------===//
 
-/// MLIR attribute keys carried on kernel `LIT::FnOp`s. The value of each is
-/// a `DictionaryAttr` mapping a trait method name (e.g. `__del__`) to the
-/// (potentially unresolved) method reference as a TypedAttr.
-constexpr StringLiteral kMoggArgumentValueWitnesses =
-    "mogg.arg_value_witnesses";
-constexpr StringLiteral kMoggResultValueWitnesses =
-    "mogg.result_value_witnesses";
-
 /// Mojo source-level decorator and method names.
 constexpr StringLiteral kFnRegisterInternal = "register_internal";
 constexpr StringLiteral kFnRegister = "register";
@@ -297,24 +289,6 @@ constexpr StringLiteral kPackageStd = "std";
 constexpr StringLiteral kPackageExtensibility = "extensibility";
 constexpr StringLiteral kLeafManagedTensorSlice = "ManagedTensorSlice";
 constexpr StringLiteral kLeafDeviceContext = "DeviceContext";
-
-/// True iff `structTy` is the DPS `ManagedTensorSlice` from the
-/// `extensibility` package (used by graph-compiler kernels).
-inline bool isDPSTensor(LIT::StructType structTy) {
-  return structTy.getSymbol().getRootReference().strref().starts_with(
-             kPackageExtensibility) &&
-         structTy.getSymbol().getLeafReference() == kLeafManagedTensorSlice;
-}
-
-/// True iff `structTy` is the public `std::DeviceContext` kernel-launch type.
-inline bool isMojoDeviceContext(LIT::StructType structTy) {
-  return structTy.getSymbol().getRootReference() == kPackageStd &&
-         structTy.getSymbol().getLeafReference() == kLeafDeviceContext;
-}
-
-inline bool fnNeedsConformances(LIT::FnOp fnOp) {
-  return fnOp.getSourceName() == kMoggExecuteFuncName;
-}
 
 } // namespace KGEN
 } // namespace M
