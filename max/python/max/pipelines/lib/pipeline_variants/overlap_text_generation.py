@@ -178,11 +178,12 @@ _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 _OOB_IDX = np.iinfo(np.int32).min
 _MAGIC_DRAFT_TOKEN_ID = 42
 
-# Bound for ``sync_prime`` waiting on the prior iter's async bitmask
-# callback worker. A worker that died before its ``finally`` (dispatch
-# failure, AsyncRT shutdown) never sets the event; capping the wait
-# degrades that to a noisy bitmask race instead of a silent hang.
-_SYNC_PRIME_CALLBACK_TIMEOUT_S = 120.0
+# Log that the async bitmask callback is lagging, but keep waiting for it.
+_CALLBACK_LAG_WARN_S = 5.0
+# A live callback always signals via its ``finally``; exceeding this means the
+# worker never ran (dispatch failure, AsyncRT shutdown), so we log and proceed rather than
+# block the scheduler indefinitely.
+_CALLBACK_DEADLINE_S = 120.0
 
 
 @runtime_checkable
@@ -2559,82 +2560,67 @@ class OverlapTextGenerationPipeline(
         # the boolean bitmask output).
         num_positions = overlap_state.num_positions
 
-        needs_sync_prime = True
-        if spec_state.has_precomputed_bitmask:
-            # Adopt the callback's bitmask if every constrained row
-            # (matcher already present) sits at the same index with the
-            # same rid as in the callback batch. Unconstrained padding
-            # rows are ``-1`` (all-ones) in both the callback's output
-            # and any sync-prime output, so swapping them by index is
-            # identity-safe.
-            callback_rids = spec_state.callback_request_ids
-            can_adopt = len(context_batch) <= len(callback_rids)
-            if can_adopt:
-                for idx, ctx in enumerate(context_batch):
-                    if ctx.matcher is None:
-                        # A constrained context whose matcher hasn't
-                        # been built yet (typically a freshly admitted
-                        # request) needs sync_prime to lazily construct
-                        # the matcher and fill this row from the right
-                        # initial state.
-                        if (
-                            ctx.grammar is not None
-                            or ctx.json_schema is not None
-                        ):
-                            can_adopt = False
-                            break
-                        continue
-                    if callback_rids[idx] != ctx.request_id:
-                        # A constrained row moved or didn't exist in
-                        # the callback batch; its precomputed row is
-                        # for a different request.
-                        can_adopt = False
-                        break
-            if can_adopt:
-                needs_sync_prime = False
-            # Clear the flag in either case: it's been consumed (either by
-            # being adopted as-is or by being overwritten via prime).
-            spec_state.has_precomputed_bitmask = False
+        callback_rids = spec_state.callback_request_ids
+        callback_available = spec_state.has_precomputed_bitmask
+        # Consumed this iteration regardless of how it is used below.
+        spec_state.has_precomputed_bitmask = False
 
-        if needs_sync_prime:
-            # Wait for the prior iter's async callback worker to finish
-            # writing pinned before ``prime()`` overwrites it; otherwise
-            # the worker can stomp ``prime()``'s rows after the in-graph
-            # wait passes, and the captured H2D DMAs stale rows into the
-            # sampler's device scratch. CPU<->CPU on a ``threading.Event``
-            # (not a CUDA event), so no ``device.synchronize()``.
+        if callback_available and self._callback_layout_matches(
+            context_batch, callback_rids
+        ):
+            # Fast path: the callback wrote pinned in this exact row order, so
+            # the in-graph wait gates the H2D directly -- zero-copy, no wait.
+            # The event is left for the next iter's enqueue to overwrite.
+            pass
+        else:
+            # Wait for the prior callback so its FSM advance and pinned write
+            # are done: sync fills below read a current FSM, and gather reads
+            # the callback's pinned rows. Keep waiting through normal lag (warn
+            # at 5s); only proceed at the 120s dead-worker deadline.
             prev_evt = spec_state.last_callback_done_event
             if prev_evt is not None and not prev_evt.is_set():
-                if not prev_evt.wait(timeout=_SYNC_PRIME_CALLBACK_TIMEOUT_S):
-                    batch_request_ids = [
-                        str(ctx.request_id) for ctx in context_batch
-                    ]
-                    callback_request_ids = [
-                        str(rid)
-                        for rid in (spec_state.callback_request_ids or [])
-                    ]
-                    logger.error(
-                        "Async bitmask callback's done_event was not set "
-                        "within %ss; proceeding with sync_prime — pinned "
-                        "bitmask may have been stomped by the worker. "
+                if not prev_evt.wait(timeout=_CALLBACK_LAG_WARN_S):
+                    logger.warning(
+                        "Async bitmask callback lagging >%.0fs; still waiting. "
                         "batch_request_ids=%s callback_request_ids=%s",
-                        _SYNC_PRIME_CALLBACK_TIMEOUT_S,
-                        batch_request_ids,
-                        callback_request_ids,
+                        _CALLBACK_LAG_WARN_S,
+                        [str(ctx.request_id) for ctx in context_batch],
+                        [str(r) for r in (callback_rids or [])],
                     )
-            # Cleared here so the next sync_prime doesn't re-wait on this
-            # already-consumed event after a callback-less iter (e.g.
-            # another CE prefill).
+                    remaining = _CALLBACK_DEADLINE_S - _CALLBACK_LAG_WARN_S
+                    if not prev_evt.wait(timeout=remaining):
+                        # Worker never signaled (likely a dead stream /
+                        # shutdown). Proceed rather than hang; a stale bitmask
+                        # self-heals via the matcher-rejection (unconstrained) path.
+                        logger.error(
+                            "Async bitmask callback did not complete within "
+                            "%.0fs; proceeding with a possibly-stale bitmask. "
+                            "batch_request_ids=%s callback_request_ids=%s",
+                            _CALLBACK_DEADLINE_S,
+                            [str(ctx.request_id) for ctx in context_batch],
+                            [str(r) for r in (callback_rids or [])],
+                        )
             spec_state.last_callback_done_event = None
-            bitmask_np = self._structured_output.compute_speculative_bitmasks(
-                context_batch=context_batch,
-                draft_tokens=draft_tokens_np,
-                num_positions=num_positions,
-            )
-            # ``prime`` writes the leading ``batch`` rows of pinned
-            # in place and release-stores ``1`` to the completion
-            # flag so the in-graph wait passes when the captured
-            # graph reaches it.
+
+            if callback_available:
+                # Adopt the callback's row for each continuing request (gather
+                # by request_id, robust to reorder / completion / growth);
+                # sync-fill only rows with no FSM state to advance.
+                bitmask_np = self._gather_bitmask(
+                    context_batch, callback_rids, draft_tokens_np, num_positions
+                )
+            else:
+                # No callback output to adopt: every row is new or was advanced
+                # synchronously, so a full sync fill reads a current FSM.
+                bitmask_np = (
+                    self._structured_output.compute_speculative_bitmasks(
+                        context_batch=context_batch,
+                        draft_tokens=draft_tokens_np,
+                        num_positions=num_positions,
+                    )
+                )
+            # ``prime`` writes the leading rows of pinned and signals the flag
+            # so the in-graph wait passes when the captured graph reaches it.
             overlap_state.prime(bitmask_np)
 
         # Wire the graph inputs via the cached-view helper. The
@@ -2655,6 +2641,68 @@ class OverlapTextGenerationPipeline(
         model_inputs.pinned_bitmask = pinned_view
         model_inputs.wait_payload = overlap_state.wait_payload
         model_inputs.device_bitmask_scratch = scratch_view
+
+    @staticmethod
+    def _callback_layout_matches(
+        context_batch: list[TextGenerationContextType],
+        callback_rids: list[RequestID],
+    ) -> bool:
+        """Whether the callback's rows match this batch's exact order."""
+        if len(context_batch) > len(callback_rids):
+            return False
+        for idx, ctx in enumerate(context_batch):
+            if ctx.matcher is None:
+                # New constrained row (matcher not built) needs a sync fill.
+                if ctx.grammar is not None or ctx.json_schema is not None:
+                    return False
+                continue
+            if callback_rids[idx] != ctx.request_id:
+                return False
+        return True
+
+    def _gather_bitmask(
+        self,
+        context_batch: list[TextGenerationContextType],
+        callback_rids: list[RequestID],
+        draft_tokens_np: npt.NDArray[np.int64],
+        num_positions: int,
+    ) -> npt.NDArray[np.bool_]:
+        """Gather continuing rows from the callback; sync-fill only new rows.
+
+        The callback advanced the FSM and wrote its rows before signaling
+        ``done_event`` (already waited on), so gathered rows are current and
+        the read comes before the sync path's write.
+        """
+        spec_state = self._spec_decode_state
+        assert spec_state is not None
+        overlap_state = spec_state.overlap_state
+        assert overlap_state is not None
+        callback_pinned = overlap_state.pinned_bitmask.to_numpy()
+        rid_to_row = {rid: j for j, rid in enumerate(callback_rids)}
+
+        assembled = np.empty(
+            (len(context_batch), num_positions, overlap_state.vocab_size),
+            dtype=np.bool_,
+        )
+        # ``is_initial_prompt`` rows (fresh / reactivated) have no FSM state to
+        # advance and no callback row, so they fall to the sync fill.
+        sync_indices: list[int] = []
+        for i, ctx in enumerate(context_batch):
+            src = rid_to_row.get(ctx.request_id)
+            if src is not None and not ctx.is_initial_prompt:
+                assembled[i] = callback_pinned[src]
+            else:
+                sync_indices.append(i)
+
+        if sync_indices:
+            sync_bitmask = self._structured_output.compute_speculative_bitmasks(
+                context_batch=[context_batch[i] for i in sync_indices],
+                draft_tokens=draft_tokens_np[sync_indices],
+                num_positions=num_positions,
+            )
+            for k, i in enumerate(sync_indices):
+                assembled[i] = sync_bitmask[k]
+        return assembled
 
     def _capture_callback_inputs(
         self,
