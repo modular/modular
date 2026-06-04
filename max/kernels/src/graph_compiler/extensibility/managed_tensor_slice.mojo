@@ -1627,6 +1627,16 @@ struct ManagedTensorSlice[
         ](ridx)
 
     @always_inline
+    def _lambda_load[
+        width: Int,
+        element_alignment: Int = 1,
+    ](self, index: Coord) -> SIMD[Self.dtype, width]:
+        comptime assert index.rank == Self.rank
+        return self._lambda_load[width, element_alignment=element_alignment](
+            rebind[IndexList[Self.rank]](coord_to_index_list(index))
+        )
+
+    @always_inline
     def _compute_offset(self, index: IndexList[Self.rank]) -> Int:
         comptime if Self.rank == 0:
             return 0
@@ -1794,6 +1804,23 @@ struct ManagedTensorSlice[
         )
 
     @always_inline
+    def _lambda_store[
+        width: SIMDSize,
+        element_alignment: Int = 1,
+    ](
+        self: ManagedTensorSlice[
+            io_spec=IOSpec[True, Self.input](),
+            static_spec=Self.static_spec,
+        ],
+        index: Coord,
+        val: SIMD[Self.dtype, width],
+    ):
+        comptime assert index.rank == Self.rank
+        self._lambda_store[width, element_alignment=element_alignment](
+            rebind[IndexList[Self.rank]](coord_to_index_list(index)), val
+        )
+
+    @always_inline
     def _fused_compute_output_lambda[
         width: SIMDSize,
         # Necessary to make it simpler on the call site.
@@ -1815,6 +1842,20 @@ struct ManagedTensorSlice[
             return val
 
     @always_inline
+    def _fused_compute_output_lambda[
+        width: SIMDSize,
+        element_alignment: Int = 1,
+    ](
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
+        index: Coord,
+        val: SIMD[Self.dtype, width],
+    ) -> SIMD[Self.dtype, width]:
+        comptime assert index.rank == Self.rank
+        return self._fused_compute_output_lambda[
+            width, element_alignment=element_alignment
+        ](rebind[IndexList[Self.rank]](coord_to_index_list(index)), val)
+
+    @always_inline
     def _fused_compute_output_tile_lambda[
         _rank: Int,
         LayoutType: TensorLayout,
@@ -1834,6 +1875,23 @@ struct ManagedTensorSlice[
             ](ridx, copier, val)
         else:
             return val
+
+    @always_inline
+    def _fused_compute_output_tile_lambda[
+        LayoutType: TensorLayout,
+        Copier: TileCopier,
+    ](
+        self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
+        tile_coords: Coord,
+        copier: Copier,
+        val: TileTensor[Self.dtype, LayoutType, MutAnyOrigin],
+    ) -> TileTensor[Self.dtype, LayoutType, MutAnyOrigin]:
+        comptime assert tile_coords.rank == Self.rank
+        return self._fused_compute_output_tile_lambda(
+            rebind[IndexList[Self.rank]](coord_to_index_list(tile_coords)),
+            copier,
+            val,
+        )
 
     @always_inline
     def with_tile_layout[
