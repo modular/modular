@@ -16,21 +16,18 @@
 from __future__ import annotations
 
 from max.experimental.nn import Module
-from max.experimental.nn.common_layers.multi_latent_attention import (
-    LatentAttentionWithRope,
-)
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.nn.kv_cache import PagedCacheValues
 
 
 class DeepseekV3TransformerBlock(Module[..., Tensor]):
-    """Stack of LatentAttentionWithRope, MoE/MLP, and RMSNorm for DeepSeek V3."""
+    """Stack of MLA attention, MoE/MLP, and RMSNorm for DeepSeek V3."""
 
     def __init__(
         self,
         *,
-        attention: LatentAttentionWithRope,
+        attention: Module[..., Tensor],
         mlp: Module[[Tensor], Tensor],
         attention_norm: RMSNorm,
         mlp_norm: RMSNorm,

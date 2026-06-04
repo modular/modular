@@ -20,6 +20,7 @@ from typing import Any
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -78,6 +79,13 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     max_batch_context_length: int = 131072
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
+
+    quant_config: QuantConfig | None = None
+    """Block-scaled quantization config when the checkpoint is FP8/FP4.
+
+    Set from the state-dict-dependent finalization step in
+    :meth:`DeepseekV3Model.load_model`; ``None`` for bf16 checkpoints.
+    """
 
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":

@@ -32,6 +32,7 @@ deepseekV3_modulev3_arch = SupportedArchitecture(
     default_encoding="bfloat16",
     supported_encodings={
         "bfloat16",
+        "float8_e4m3fn",
     },
     multi_gpu_supported=False,
     pipeline_model=DeepseekV3Model,
