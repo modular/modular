@@ -29,6 +29,12 @@ from std.sys import (
 from std.sys.info import _is_amd_rdna
 from std.sys.intrinsics import _type_is_eq
 import std.gpu.primitives.warp as warp
+from std.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from std.algorithm import elementwise
 from std.algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from std.bit import next_power_of_two
@@ -127,6 +133,7 @@ from nn.attention.gpu.nvidia.sm100.mha_depth512 import (
 from nn.attention.mha_utils import (
     DynamicInt,
     FlashAttentionAlgorithm,
+    MHA_PDL_LEVEL,
     MHAConfig,
     NoPartition,
     SplitKPartition,
@@ -1426,6 +1433,7 @@ def flash_attention_dispatch[
                                 batch_size,
                             ),
                             block_dim=(WARP_SIZE, 1, 1),
+                            attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                         )
                         _ = exp_sum_qk_max_data^
                         _ = output_intermediate_data^
@@ -4909,6 +4917,16 @@ def mha_splitk_reduce[
     assert (
         block_dim.x == WARP_SIZE
     ), "block_dim.x should be equal to the warp_size"
+
+    # Programmatic Dependent Launch.  Single-warp kernel with no early returns,
+    # so the function entry is a divergence-free point all threads reach before
+    # the first read of the producer's partial outputs / exp_sum / qk_max
+    # below.  `wait` fences here so those reads only happen after the split-K
+    # producer grid has flushed them; `launch` lets the successor grid's
+    # prologue overlap this reduction.  No-op on non-SM90+ and when MHA_PDL=off.
+    comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
+        wait_on_dependent_grids()
+        launch_dependent_grids()
 
     comptime accum_type = get_accum_type[output_type]()
     var batch_idx = block_idx.z

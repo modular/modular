@@ -14,7 +14,7 @@
 from std.collections import InlineArray, OptionalReg
 from std.math import align_up, ceildiv, recip
 from std.math.uutils import umod, ufloordiv, udivmod
-from nn.attention.mha_utils import DynamicInt
+from nn.attention.mha_utils import DynamicInt, MHA_PDL_LEVEL
 from std.math.constants import log2e
 from std.sys import (
     align_of,
@@ -28,11 +28,15 @@ from std.sys import (
     CompilationTarget,
 )
 
-from nn.attention.gpu.mha import mha_splitk_reduce, q_num_matrix_view_rows
+from nn.attention.gpu.mha import (
+    mha_splitk_reduce,
+    q_num_matrix_view_rows,
+)
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 import std.gpu.primitives.warp as warp
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.algorithm.functional import (
     _elementwise_impl_gpu,
     tile_and_unswitch,
@@ -937,6 +941,7 @@ def flare_mla_decoding_dispatch[
                         num_partitions_value,
                         grid_dim=(1, num_heads, batch_size),
                         block_dim=(WARP_SIZE, 1, 1),
+                        attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                     )
                 _ = exp_sum_qk_max_data^
                 _ = output_intermediate_data^

@@ -18,6 +18,12 @@ from std.math.constants import log2e
 from std.sys import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
+from std.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from std.collections import OptionalReg
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -91,6 +97,7 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
 )
 from nn.attention.mha_utils import (
     FlashAttentionAlgorithm,
+    MHA_PDL_LEVEL,
     MHAConfig,
     MHAPartitionScheme,
     OptionallyStaticInt,
@@ -1959,6 +1966,7 @@ def _mha_sm100_enqueue[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
+        attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
     )
 
 
@@ -2422,6 +2430,18 @@ def _mha_sm100[
     comptime assert num_s > 0
 
     barrier()
+
+    # Programmatic Dependent Launch.  This barrier is the last point every CTA
+    # reaches before the warp-specialized `do_partition` early-returns below,
+    # so it is the divergence-free place to honor the launch-dependents
+    # contract for every CTA (a producer CTA that skipped it would hang a
+    # waiting consumer such as `mha_splitk_reduce`).  `wait` overlaps this
+    # grid's prologue with its predecessor's tail; `launch` lets the dependent
+    # reduce grid be admitted early.  No-op on non-SM90+ / when MHA_PDL=off.
+    comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
+        wait_on_dependent_grids()
+        launch_dependent_grids()
+
     # For intra-warp overlap, we initiate ummas as
     # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...
     # ..., Q @ K_{N-1}, P_{N-2} @ V_{N-2}, P_{N-1} @ V_{N-1}
