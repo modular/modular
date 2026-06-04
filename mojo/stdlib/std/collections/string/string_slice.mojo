@@ -393,6 +393,31 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         else:
             self._slice = rebind[type_of(self._slice)](value.as_bytes())
 
+    @doc_hidden
+    def __init__(
+        out self: StringSlice[ImmutAnyOrigin],
+        *,
+        unsafe_borrowed_obj: PythonObject,
+    ) raises:
+        """Construct a `StringSlice` from a Python `str` object.
+
+        The caller is responsible for keeping the Python `str` object alive
+        until the `StringSlice` is no longer needed.
+
+        Args:
+            unsafe_borrowed_obj: The Python `str` object to convert from.
+
+        Raises:
+            An error if the conversion failed.
+        """
+        ref cpython = Python().cpython()
+        try:
+            self = cpython.PyUnicode_AsUTF8AndSize(
+                unsafe_borrowed_obj._obj_ptr
+            )[]
+        except:
+            raise cpython.get_error()
+
     # ===------------------------------------------------------------------===#
     # Trait implementations
     # ===------------------------------------------------------------------===#
@@ -476,6 +501,56 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return String(self)
 
+    # ===------------------------------------------------------------------=== #
+    # Indexing and Slicing
+    # ===------------------------------------------------------------------=== #
+
+    @always_inline
+    def __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters, this may return a
+        partial or invalid character sequence. For proper character access, use
+        `codepoint_slices()` or iterate over the string directly.
+
+        Parameters:
+            I: A type that can be used as an index.
+
+        Args:
+            byte: The byte index (0-based).
+
+        Returns:
+            A StringSlice containing the codepoint starting at the specified
+            byte position.
+        """
+        var idx = index(byte)
+        self._check_valid_index(idx)
+        return self._unchecked_get_byte(idx)
+
+    @always_inline
+    def __getitem__(self, *, byte: IntLiteral) -> Self:
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters `byte` must fall on
+        a codepoint boundary and an entire codepoint will be returned.
+        Aborts if `byte` does not fall on a codepoint boundary.
+
+        Args:
+            byte: The byte index (0-based).
+
+        Returns:
+            A StringSlice containing a single byte at the specified position.
+        """
+        comptime assert IntLiteral[byte.value]() >= 0, (
+            "negative indexing is not supported, use e.g."
+            " `slice[byte=slice.byte_length() - 1]`"
+        )
+        var idx = index(byte)
+        self._check_valid_index(idx)
+        return self._unchecked_get_byte(idx)
+
     @always_inline
     def __getitem__(self, *, byte: ContiguousSlice) -> Self:
         """Gets a substring at the specified byte positions.
@@ -516,6 +591,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         debug_assert[assert_mode="safe"](
             c_idx >= 0, "negative indexing is not supported"
         )
+        if self.byte_length() == 0:
+            return self
         # NOTE: Edge case: when the element at idx 0 in a string is fetched and
         # it's a multi-byte sequence, the code would assume it's an ascii
         # sequence. Fetch 1 more byte (when not OOB) just to have a continuation
@@ -580,26 +657,20 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             var cp_ptr = cp.unsafe_ptr()
             var offset = Int(cp_ptr) - Int(self.unsafe_ptr())
             var length = self.byte_length() - offset
-            res = {
-                unsafe_from_utf8 = Span(
-                    ptr=cp_ptr, length=length - Int(cp.byte_length() == 0)
-                )
-            }
+            length -= Int(cp.byte_length() == 0)
+            res = {unsafe_from_utf8 = Span(ptr=cp_ptr, length=length)}
 
         if codepoint.end:
             var idx = codepoint.end.value() - (codepoint.start.or_else(0) + 1)
             if idx < 0:
                 res = {}
             else:
-                var cp = res[codepoint=idx]
-                var r_ptr = res.unsafe_ptr()
-                var offset = Int(cp.unsafe_ptr()) - Int(r_ptr)
-                res = {
-                    unsafe_from_utf8 = Span(
-                        ptr=r_ptr, length=offset + cp.byte_length()
-                    )
-                }
-
+                var cp = res._get_codepoint(idx)
+                if cp.byte_length() != 0:
+                    var r_ptr = res.unsafe_ptr()
+                    var offset = Int(cp.unsafe_ptr()) - Int(r_ptr)
+                    var length = offset + cp.byte_length()
+                    res = {unsafe_from_utf8 = Span(ptr=r_ptr, length=length)}
         return res
 
     @always_inline
@@ -618,30 +689,42 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         debug_assert[assert_mode="safe"](Bool(char), "Invalid grapheme index")
         return char.take()
 
-    @doc_hidden
-    def __init__(
-        out self: StringSlice[ImmutAnyOrigin],
-        *,
-        unsafe_borrowed_obj: PythonObject,
-    ) raises:
-        """Construct a `StringSlice` from a Python `str` object.
-
-        The caller is responsible for keeping the Python `str` object alive
-        until the `StringSlice` is no longer needed.
+    def __getitem__(self, *, grapheme: ContiguousSlice) -> Self:
+        """Gets a substring at the specified grapheme positions.
 
         Args:
-            unsafe_borrowed_obj: The Python `str` object to convert from.
+            grapheme: A slice that specifies grapheme positions of the new
+                substring.
 
-        Raises:
-            An error if the conversion failed.
+        Returns:
+            A new StringSlice containing the graphemes in the specified range.
         """
-        ref cpython = Python().cpython()
-        try:
-            self = cpython.PyUnicode_AsUTF8AndSize(
-                unsafe_borrowed_obj._obj_ptr
-            )[]
-        except:
-            raise cpython.get_error()
+
+        var res: Self
+        if not grapheme.start:
+            res = self
+        else:
+            var gp = self.graphemes().nth(grapheme.start.value())
+            if not gp:
+                res = {}
+            else:
+                var gp_ptr = gp.value().unsafe_ptr()
+                var offset = Int(gp_ptr) - Int(self.unsafe_ptr())
+                var length = self.byte_length() - offset
+                res = {unsafe_from_utf8 = Span(ptr=gp_ptr, length=length)}
+
+        if grapheme.end:
+            var idx = grapheme.end.value() - (grapheme.start.or_else(0) + 1)
+            if idx < 0:
+                res = {}
+            else:
+                var gp = res.graphemes().nth(idx)
+                if gp:
+                    var r_ptr = res.unsafe_ptr()
+                    var offset = Int(gp.value().unsafe_ptr()) - Int(r_ptr)
+                    var length = offset + gp.value().byte_length()
+                    res = {unsafe_from_utf8 = Span(ptr=r_ptr, length=length)}
+        return res
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
@@ -829,130 +912,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             An iterator of references to the string elements.
         """
         return self.codepoint_slices()
-
-    @always_inline
-    def __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
-        """Gets a single byte at the specified byte index.
-
-        This performs byte-level indexing, not character (codepoint) indexing.
-        For strings containing multi-byte UTF-8 characters, this may return a
-        partial or invalid character sequence. For proper character access, use
-        `codepoint_slices()` or iterate over the string directly.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            byte: The byte index (0-based).
-
-        Returns:
-            A StringSlice containing the codepoint starting at the specified
-            byte position.
-        """
-        var idx = index(byte)
-        self._check_valid_index(idx)
-        return self._unchecked_get_byte(idx)
-
-    @always_inline
-    def __getitem__(self, *, byte: IntLiteral) -> Self:
-        """Gets a single byte at the specified byte index.
-
-        This performs byte-level indexing, not character (codepoint) indexing.
-        For strings containing multi-byte UTF-8 characters `byte` must fall on
-        a codepoint boundary and an entire codepoint will be returned.
-        Aborts if `byte` does not fall on a codepoint boundary.
-
-        Args:
-            byte: The byte index (0-based).
-
-        Returns:
-            A StringSlice containing a single byte at the specified position.
-        """
-        comptime assert IntLiteral[byte.value]() >= 0, (
-            "negative indexing is not supported, use e.g."
-            " `slice[byte=slice.byte_length() - 1]`"
-        )
-        var idx = index(byte)
-        self._check_valid_index(idx)
-        return self._unchecked_get_byte(idx)
-
-    def __getitem__(self, *, grapheme: ContiguousSlice) -> Self:
-        """Gets a substring at the specified grapheme-cluster positions.
-
-        A grapheme cluster is what a user would typically think of as a
-        single "character" on screen (see `graphemes()`). Slicing by
-        grapheme requires a forward scan of the string and is O(n) in the
-        byte length; use `byte=` slicing when you already have byte
-        offsets.
-
-        Out-of-range ends are clamped to the end of the string. Negative
-        indices are not supported.
-
-        Args:
-            grapheme: A slice specifying the grapheme-cluster range of the
-                new substring.
-
-        Returns:
-            A new `StringSlice` covering the requested grapheme range.
-
-        Examples:
-
-        ```mojo
-        from std.testing import assert_equal
-
-        # "café" decomposed: 'c', 'a', 'f', 'e' + combining acute.
-        # 5 codepoints, 4 graphemes.
-        var s = StringSlice("cafe\\u{0301}")
-        assert_equal(s[grapheme=0:3], "caf")
-        assert_equal(s[grapheme=3:4], "e\\u{0301}")
-        assert_equal(s[grapheme=3:], "e\\u{0301}")
-        assert_equal(s[grapheme=:], s)
-        ```
-        """
-        var start_idx = grapheme.start.or_else(0)
-        debug_assert[assert_mode="safe"](
-            start_idx >= 0, "grapheme start index must be non-negative"
-        )
-
-        var total_bytes = len(self._slice)
-        var iter = self.graphemes()
-        var i = 0
-
-        # Skip `start_idx` graphemes. Compute the byte offset once at the end
-        # by subtracting the iterator's remaining byte length, instead of
-        # summing each grapheme's `byte_length()` per iteration.
-        while i < start_idx:
-            if not iter.next():
-                break
-            i += 1
-        var start_bytes = total_bytes - iter.remaining_byte_length()
-
-        if not grapheme.end:
-            return Self(
-                unsafe_from_utf8=Span[Byte, Self.origin](
-                    ptr=self._slice.unsafe_ptr() + start_bytes,
-                    length=total_bytes - start_bytes,
-                )
-            )
-
-        var end_idx = grapheme.end.unsafe_value()
-        debug_assert[assert_mode="safe"](
-            end_idx >= start_idx,
-            "grapheme end index must be >= start index",
-        )
-
-        while i < end_idx:
-            if not iter.next():
-                break
-            i += 1
-        var end_bytes = total_bytes - iter.remaining_byte_length()
-
-        return Self(
-            unsafe_from_utf8=Span[Byte, Self.origin](
-                ptr=self._slice.unsafe_ptr() + start_bytes,
-                length=end_bytes - start_bytes,
-            )
-        )
 
     @always_inline
     def _check_valid_index(self, idx: Int):
