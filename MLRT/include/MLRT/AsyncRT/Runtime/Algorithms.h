@@ -33,8 +33,7 @@ inline static void await(ArrayRef<AnyAsyncValueRef> values) {
     values[0].getCPUDevice()->getWorkQueue()->await(values);
 }
 
-template <typename T>
-inline static void await(const AsyncValueRef<T> &value) {
+inline static void await(const AnyAsyncValueRef &value) {
   await(ArrayRef<AnyAsyncValueRef>(value));
 }
 
