@@ -37,12 +37,14 @@ from nn.argsort import argsort
 from nn.cumsum import cumsum
 from nn.gather_scatter import _unsafe_normalize_neg_index, normalize_neg_index
 from nn.normalization import (
+    apply_qk_rms_norm,
     group_norm,
     layer_norm,
     rms_norm,
     rms_norm_fused_residual_add,
     rms_norm_rope_gpu,
     row_mean_of_squares,
+    row_mean_of_squares_qk,
 )
 from nn.softmax import logsoftmax, softmax
 from nn.topk import top_k, top_k_shape_impl
@@ -248,6 +250,128 @@ struct RowMeanOfSquares:
         input: InputTensor[rank=2, ...],
     ) -> IndexList[2]:
         return Index(input.shape()[0], 1)
+
+
+@compiler.register("mo.reduce.row_mean_of_squares_qk")
+struct RowMeanOfSquaresQK:
+    """Fused per-row mean of squares for two operands Q and K.
+
+    For `q` of shape `[M, Nq]` and `k` of shape `[M, Nk]` (sharing rows but with
+    possibly different column counts), computes `out[m, 0] = mean_n(q[m,n]^2)`
+    and `out[m, 1] = mean_n(k[m,n]^2)` into a `[M, 2]` output. The square and
+    accumulation always run in float32. This is a single-launch fusion of two
+    `mo.reduce.row_mean_of_squares` ops plus a concat, used for cross-head
+    QK-RMSNorm statistics under tensor parallelism.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[rank=2, ...],
+        q: InputTensor[rank=2, ...],
+        k: InputTensor[rank=2, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        comptime assert q.dtype == k.dtype, "q and k must share a dtype"
+        if (
+            output.shape()[0] != q.shape()[0]
+            or output.shape()[0] != k.shape()[0]
+            or output.shape()[1] != 2
+        ):
+            raise Error("output must have shape [rows, 2] matching q/k rows")
+
+        # `k` is bitcast to `q.dtype` to unify the single `in_dtype` kernel
+        # parameter (q and k share a dtype, asserted above).
+        row_mean_of_squares_qk[target=target](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            k.to_tile_tensor[DType.int64]().bitcast[q.dtype](),
+            q.shape()[0],
+            q.shape()[1],
+            k.shape()[1],
+            ctx,
+        )
+
+    @staticmethod
+    def shape(
+        q: InputTensor[rank=2, ...],
+        k: InputTensor[rank=2, ...],
+    ) -> IndexList[2]:
+        return Index(q.shape()[0], 2)
+
+
+@compiler.register("mo.norm.apply_qk_rms_norm")
+struct ApplyQKRMSNorm:
+    """Fused per-element QK-RMSNorm apply for two operands Q and K.
+
+    Given the already cross-rank-reduced per-row statistics `qk_var [M, 2]`
+    (col 0 = mean(q^2), col 1 = mean(k^2), float32) and per-column float32
+    scales `gamma_q [Nq]` / `gamma_k [Nk]`, applies in a single launch:
+
+    `q_out[m,c] = cast((cast(q[m,c], f32) * rsqrt(qk_var[m,0] + eps)) * gamma_q[c], q.dtype)`
+    and likewise for K with column 1. The grouping `((x * rs) * gamma)` then
+    cast matches the unfused graph this replaces for bit-accuracy. This fuses
+    the QK-RMSNorm apply chain (~7 tiny elementwise/View kernels) into one
+    launch, used for cross-head QK-RMSNorm under tensor parallelism.
+
+    Outputs (in order): `q_out [M, Nq]`, `k_out [M, Nk]` (both q/k dtype).
+    Inputs (in order): `q [M, Nq]`, `k [M, Nk]` (activation dtype),
+    `qk_var [M, 2]` (float32), `gamma_q [Nq]` (float32),
+    `gamma_k [Nk]` (float32). Attribute: `epsilon` (float32 host scalar).
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        q_out: OutputTensor[rank=2, ...],
+        k_out: OutputTensor[rank=2, ...],
+        q: InputTensor[rank=2, ...],
+        k: InputTensor[rank=2, ...],
+        qk_var: InputTensor[dtype=DType.float32, rank=2, ...],
+        gamma_q: InputTensor[dtype=DType.float32, rank=1, ...],
+        gamma_k: InputTensor[dtype=DType.float32, rank=1, ...],
+        epsilon: Scalar[DType.float32],
+        ctx: DeviceContext,
+    ) capturing raises:
+        comptime assert q.dtype == k.dtype, "q and k must share a dtype"
+        comptime assert (
+            q_out.dtype == q.dtype and k_out.dtype == q.dtype
+        ), "outputs must match the q/k dtype"
+        if q_out.shape()[0] != q.shape()[0] or q_out.shape()[1] != q.shape()[1]:
+            raise Error("q_out must have shape [rows, Nq] matching q")
+        if k_out.shape()[0] != k.shape()[0] or k_out.shape()[1] != k.shape()[1]:
+            raise Error("k_out must have shape [rows, Nk] matching k")
+        if (
+            qk_var.shape()[0] != q.shape()[0]
+            or qk_var.shape()[0] != k.shape()[0]
+            or qk_var.shape()[1] != 2
+        ):
+            raise Error("qk_var must have shape [rows, 2] matching q/k rows")
+        if gamma_q.shape()[0] != q.shape()[1]:
+            raise Error("gamma_q must have shape [Nq] matching q cols")
+        if gamma_k.shape()[0] != k.shape()[1]:
+            raise Error("gamma_k must have shape [Nk] matching k cols")
+
+        # `out_dtype` is inferred from `q_out`; `k_out` shares the same dtype
+        # (asserted above), so bitcast its tile tensor to `q_out.dtype` to
+        # unify the single `out_dtype` parameter. Likewise `in_dtype` is
+        # inferred from `q`, so bitcast `k` to `q.dtype`.
+        apply_qk_rms_norm[target=target,](
+            q_out.to_tile_tensor[DType.int64](),
+            k_out.to_tile_tensor[DType.int64]().bitcast[q_out.dtype](),
+            gamma_q.to_tile_tensor[DType.int64](),
+            gamma_k.to_tile_tensor[DType.int64](),
+            qk_var.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            k.to_tile_tensor[DType.int64]().bitcast[q.dtype](),
+            epsilon,
+            q.shape()[0],
+            q.shape()[1],
+            k.shape()[1],
+            ctx,
+        )
 
 
 @compiler.register("mo.reduce.add")

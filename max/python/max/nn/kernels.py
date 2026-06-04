@@ -7239,3 +7239,160 @@ def row_mean_of_squares(x: TensorValue) -> TensorValue:
 
     # Restore the leading axes with a trailing size-1 reduction axis.
     return out_2d.reshape([*rows, 1])
+
+
+def row_mean_of_squares_qk(q: TensorValue, k: TensorValue) -> TensorValue:
+    """Fused per-row mean of squares for two operands ``q`` and ``k``.
+
+    For ``q`` of shape ``[M, Nq]`` and ``k`` of shape ``[M, Nk]`` (sharing the
+    leading rows dimension but with possibly different column counts), computes
+    a ``[M, 2]`` ``float32`` result where column 0 is ``mean_n(q[m, n] ** 2)``
+    and column 1 is ``mean_n(k[m, n] ** 2)``. The square and accumulation always
+    run in ``float32`` regardless of input dtype.
+
+    This is a single-kernel fusion of two :func:`row_mean_of_squares` calls plus
+    a concat, equivalent to
+    ``ops.concat([row_mean_of_squares(q), row_mean_of_squares(k)], axis=-1)``
+    but with one launch instead of two plus the concat. It is used for the
+    cross-head QK-RMSNorm variance statistics in tensor-parallel attention.
+
+    Args:
+        q: The Q projection, ``[M, Nq]``. Reduction runs over the last axis.
+        k: The K projection, ``[M, Nk]``. Must share ``q``'s rows dim and dtype.
+
+    Returns:
+        A ``float32`` :class:`~max.graph.TensorValue` of shape ``[M, 2]``.
+
+    Raises:
+        ValueError: If ``q``/``k`` are not rank 2, have mismatched dtypes or
+            rows, or use a dtype other than ``bfloat16`` or ``float32``.
+    """
+    if q.dtype not in (DType.bfloat16, DType.float32):
+        raise ValueError(
+            f"row_mean_of_squares_qk expects bfloat16 or float32 input, got "
+            f"{q.dtype}"
+        )
+    if q.dtype != k.dtype:
+        raise ValueError(
+            f"row_mean_of_squares_qk requires matching dtypes, got {q.dtype} "
+            f"(q) and {k.dtype} (k)"
+        )
+    if q.rank != 2 or k.rank != 2:
+        raise ValueError(
+            f"row_mean_of_squares_qk requires rank-2 inputs, got ranks "
+            f"{q.rank} (q) and {k.rank} (k)"
+        )
+
+    return ops.custom(
+        "mo.reduce.row_mean_of_squares_qk",
+        device=q.device,
+        values=[q, k],
+        out_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=[q.shape[0], 2],
+                device=q.device,
+            )
+        ],
+    )[0].tensor
+
+
+def apply_qk_rms_norm(
+    q: TensorValue,
+    k: TensorValue,
+    qk_var: TensorValue,
+    gamma_q: TensorValue,
+    gamma_k: TensorValue,
+    epsilon: float | np.floating[Any],
+) -> tuple[TensorValue, TensorValue]:
+    """Applies QK-RMSNorm to ``q`` and ``k`` from precomputed variance.
+
+    Given the already cross-rank-reduced per-row statistics ``qk_var`` of shape
+    ``[M, 2]`` (column 0 = ``mean_n(q[m, n] ** 2)``, column 1 =
+    ``mean_n(k[m, n] ** 2)``, ``float32``) and per-column ``float32`` scales
+    ``gamma_q``/``gamma_k``, computes in a single kernel launch::
+
+        q_out[m, c] = cast((cast(q[m, c], f32) * rsqrt(qk_var[m, 0] + eps))
+                           * gamma_q[c], q.dtype)
+        k_out[m, c] = cast((cast(k[m, c], f32) * rsqrt(qk_var[m, 1] + eps))
+                           * gamma_k[c], k.dtype)
+
+    This is a single-kernel fusion of the QK-RMSNorm apply chain
+    (``rsqrt`` scale, ``gamma`` multiply, and downcast for both Q and K),
+    equivalent to::
+
+        qf = ops.cast(q, DType.float32) * ops.rsqrt(qk_var[:, 0:1] + epsilon)
+        kf = ops.cast(k, DType.float32) * ops.rsqrt(qk_var[:, 1:2] + epsilon)
+        q_out = ops.cast(qf * gamma_q, q.dtype)
+        k_out = ops.cast(kf * gamma_k, k.dtype)
+
+    but with one launch instead of ~7 elementwise/slice kernels. The float
+    grouping ``((x * rs) * gamma)`` then cast matches the unfused form above. It
+    is used for the cross-head QK-RMSNorm apply in tensor-parallel attention,
+    where the variance is all-reduced across ranks between its computation
+    (:func:`row_mean_of_squares_qk`) and this apply.
+
+    Args:
+        q: The Q projection, ``[M, Nq]``. ``bfloat16`` or ``float32``.
+        k: The K projection, ``[M, Nk]``. Must share ``q``'s rows dim and dtype.
+        qk_var: The reduced variance statistics, ``[M, 2]`` ``float32``.
+        gamma_q: The Q norm scale, ``[Nq]`` ``float32``.
+        gamma_k: The K norm scale, ``[Nk]`` ``float32``.
+        epsilon: The RMSNorm epsilon added to the variance before ``rsqrt``.
+
+    Returns:
+        A tuple ``(q_out, k_out)`` of normalized tensors matching the shapes and
+        dtype of ``q`` and ``k`` respectively.
+
+    Raises:
+        ValueError: If ``q``/``k`` are not rank 2, have mismatched dtypes or
+            rows, use a dtype other than ``bfloat16`` or ``float32``, or if the
+            ``qk_var``/``gamma_q``/``gamma_k`` shapes or dtypes do not match.
+    """
+    if q.dtype not in (DType.bfloat16, DType.float32):
+        raise ValueError(
+            f"apply_qk_rms_norm expects bfloat16 or float32 input, got {q.dtype}"
+        )
+    if q.dtype != k.dtype:
+        raise ValueError(
+            f"apply_qk_rms_norm requires matching q/k dtypes, got {q.dtype} "
+            f"(q) and {k.dtype} (k)"
+        )
+    if q.rank != 2 or k.rank != 2:
+        raise ValueError(
+            f"apply_qk_rms_norm requires rank-2 q/k, got ranks {q.rank} (q) "
+            f"and {k.rank} (k)"
+        )
+    if qk_var.dtype != DType.float32 or qk_var.rank != 2:
+        raise ValueError(
+            f"apply_qk_rms_norm requires a rank-2 float32 qk_var, got dtype "
+            f"{qk_var.dtype} rank {qk_var.rank}"
+        )
+    if gamma_q.dtype != DType.float32 or gamma_k.dtype != DType.float32:
+        raise ValueError(
+            f"apply_qk_rms_norm requires float32 gamma, got {gamma_q.dtype} "
+            f"(gamma_q) and {gamma_k.dtype} (gamma_k)"
+        )
+    if gamma_q.rank != 1 or gamma_k.rank != 1:
+        raise ValueError(
+            f"apply_qk_rms_norm requires rank-1 gamma, got ranks "
+            f"{gamma_q.rank} (gamma_q) and {gamma_k.rank} (gamma_k)"
+        )
+
+    q_out, k_out = ops.custom(
+        "mo.norm.apply_qk_rms_norm",
+        device=q.device,
+        values=[
+            q,
+            k,
+            qk_var,
+            gamma_q,
+            gamma_k,
+            ops.constant(epsilon, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(dtype=q.dtype, shape=q.shape, device=q.device),
+            TensorType(dtype=k.dtype, shape=k.shape, device=k.device),
+        ],
+    )
+    return q_out.tensor, k_out.tensor
