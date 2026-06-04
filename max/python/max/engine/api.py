@@ -772,8 +772,9 @@ class InferenceSession:
     ) -> dict[str, Model]:
         """Initializes all models in a compiled artifact for execution.
 
-        Use this to complete the second half of a :meth:`compile`/:meth:`init`
-        pair. Returns one :class:`Model` per top-level graph in the artifact,
+        Use this to complete the second half of a
+        :meth:`compile`/:meth:`init_all` pair. Returns one :class:`Model` per
+        top-level graph in the artifact,
         keyed by ``sym_name``.
 
         Args:
