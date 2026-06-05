@@ -15,16 +15,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
 from max.pipelines.core import TextContext
-from max.pipelines.lib.pipeline_variants.text_generation import (
-    calculate_num_steps,
-)
+from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
+from max.pipelines.lib.pipeline_variants.utils import calculate_num_steps
 from max.pipelines.modeling.types import (
     TextGenerationContextType,
 )
@@ -211,3 +210,70 @@ def _compute_max_num_draft_steps(
                 context, num_draft_steps, max_seq_len
             )
     return num_draft_steps
+
+
+def _advance_draft_model_inputs(
+    draft_model: PipelineModel[TextContext],
+    next_tokens: Buffer,
+    prev_model_inputs: ModelInputs,
+) -> ModelInputs:
+    """Advance draft model inputs for the next speculative decode step."""
+    updates: dict[str, object] = {"tokens": next_tokens}
+
+    prealloc = getattr(draft_model, "_input_row_offsets_prealloc", None)
+    if prealloc is not None and hasattr(prev_model_inputs, "input_row_offsets"):
+        offsets = prev_model_inputs.input_row_offsets
+        if isinstance(offsets, list):
+            row_offsets_size = offsets[0].shape[0]
+            updates["input_row_offsets"] = [
+                buffer[:row_offsets_size] for buffer in prealloc
+            ]
+        else:
+            row_offsets_size = offsets.shape[0]
+            updates["input_row_offsets"] = prealloc[:row_offsets_size]
+
+    device_prealloc = getattr(
+        draft_model, "_device_input_row_offsets_prealloc", None
+    )
+    if device_prealloc is not None and hasattr(
+        prev_model_inputs, "input_row_offsets"
+    ):
+        offsets = prev_model_inputs.input_row_offsets
+        row_offsets_size = offsets.shape[0]
+        updates["input_row_offsets"] = device_prealloc[:row_offsets_size]
+
+    host_prealloc = getattr(
+        draft_model, "_host_input_row_offsets_prealloc", None
+    )
+    host_offsets = getattr(prev_model_inputs, "host_input_row_offsets", None)
+    if host_prealloc is not None and host_offsets is not None:
+        row_offsets_size = host_offsets.shape[0]
+        updates["host_input_row_offsets"] = host_prealloc[:row_offsets_size]
+
+    ssm_cache = getattr(draft_model, "_ssm_cache", None)
+    request_ids = getattr(prev_model_inputs, "request_ids", None)
+    if ssm_cache is not None and request_ids is not None:
+        updates["layer_states"] = ssm_cache.get_states(request_ids)
+
+    conv_cache = getattr(draft_model, "_conv_cache", None)
+    if conv_cache is not None and request_ids is not None:
+        updates["conv_states"] = conv_cache.get_states(request_ids)
+
+    state_cache = getattr(draft_model, "_state_cache", None)
+    slot_idx_prealloc = getattr(draft_model, "_slot_idx_prealloc", None)
+    if (
+        state_cache is not None
+        and request_ids is not None
+        and slot_idx_prealloc is not None
+    ):
+        updates["slot_idx"] = state_cache.slot_idx_for(
+            request_ids, slot_idx_prealloc
+        )
+        updates["conv_pools"] = state_cache.conv_pools
+        updates["recurrent_pools"] = state_cache.rec_pools
+
+    signal_buffers = getattr(draft_model, "signal_buffers", None)
+    if signal_buffers is not None:
+        updates["signal_buffers"] = signal_buffers
+
+    return replace(prev_model_inputs, **updates)

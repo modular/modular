@@ -33,7 +33,6 @@ from max.dtype import DType
 from max.experimental.nn._compilation_timer import collect_compilation_stats
 from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.lib import PipelineConfig, PipelineModel
-from max.pipelines.lib.lora_request_processor import LoRARequestProcessor
 from max.pipelines.modeling.types import (
     BaseContextType,
     Pipeline,
@@ -56,6 +55,9 @@ from max.serve.worker_interface import (
     ModelWorkerInterface,
     ModelWorkerProxy,
     sleep_with_backoff,
+)
+from max.serve.worker_interface.lora_request_processor import (
+    LoRARequestProcessor,
 )
 
 logger = logging.getLogger("max.serve")

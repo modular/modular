@@ -31,7 +31,6 @@ from max.graph import (
     ops,
 )
 from max.nn.attention.multi_latent_attention import (
-    DataParallelLatentAttentionWithRope,
     MLAPrefillMetadata,
 )
 from max.nn.comm import Signals
@@ -63,7 +62,6 @@ from .layers import (
     DeepseekV3_2MLP,
     DeepseekV3_2MoE,
     DeepseekV3_2TopKRouter,
-    Indexer,
 )
 from .layers.sparse_mla import (
     DataParallelSparseLatentAttentionWithRopeFp8,
@@ -152,31 +150,22 @@ class DeepseekV3_2DecoderLayer(Module):
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
 
-        self.self_attn: (
-            DataParallelSparseLatentAttentionWithRopeFp8
-            | DataParallelLatentAttentionWithRope
-        )
         self.mlp: DeepseekV3_2MLP | DeepseekV3_2MoE | MoE
         self.mlp_shards: list[DeepseekV3_2MLP | DeepseekV3_2MoE | Module]
 
+        nvfp4_enabled = (
+            config.quant_config is not None and config.quant_config.is_nvfp4
+        )
+        use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
         if config.quant_config is None:
             raise ValueError(
                 "DeepSeekV3.2 sparse attention requires a quantization config."
             )
 
-        num_hidden_layers = config.num_hidden_layers
-        attn_quantized_layers = config.quant_config.attn_quantized_layers
-        if attn_quantized_layers and len(attn_quantized_layers) not in (
-            0,
-            num_hidden_layers,
-        ):
+        if not use_fp8_mla:
             raise ValueError(
-                "DeepSeekV3.2 sparse attention requires uniform attention "
-                "quantization across layers."
+                "DeepSeekV3.2 must be executed with fp8 (due to fp8 indexer)."
             )
-        self.use_fp8_mla_sparse = (
-            len(attn_quantized_layers) == num_hidden_layers
-        )
 
         assert isinstance(config.kv_params, MultiKVCacheParams)
         mla_kv_params, _indexer_kv_params = config.kv_params.params
@@ -193,39 +182,18 @@ class DeepseekV3_2DecoderLayer(Module):
             qk_rope_head_dim=config.qk_rope_head_dim,
             v_head_dim=config.v_head_dim,
             devices=config.devices,
-            graph_mode=config.graph_mode,
+            graph_mode="decode",
             buffer_size=config.max_batch_context_length,
+            index_n_heads=config.index_n_heads,
+            index_head_dim=config.index_head_dim,
+            index_topk=config.index_topk,
         )
 
-        if not self.use_fp8_mla_sparse:
-            # BF16 MLA (e.g. NVFP4 with ``self_attn*`` in modelopt ignore).
-            # Dense decode for now (no FP8 sparse kernel); indexer weights load
-            # but are not executed in forward.
-            self.self_attn = DataParallelLatentAttentionWithRope(
-                dtype=DType.bfloat16,
-                norm_dtype=config.norm_dtype,
-                **sparse_attn_kwargs,
-            )
-            self.self_attn.indexer = Indexer(
-                dim=config.hidden_size,
-                index_n_heads=config.index_n_heads,
-                index_head_dim=config.index_head_dim,
-                qk_rope_head_dim=config.qk_rope_head_dim,
-                index_topk=config.index_topk,
-                q_lora_rank=config.q_lora_rank,
-                devices=config.devices,
-                activation_quant_config=config.quant_config,
-                weight_quant_config=None,
-            )
-        else:
-            self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
-                norm_dtype=DType.float32,
-                quant_config=config.quant_config,
-                index_n_heads=config.index_n_heads,
-                index_head_dim=config.index_head_dim,
-                index_topk=config.index_topk,
-                **sparse_attn_kwargs,
-            )
+        self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
+            norm_dtype=config.norm_dtype,
+            quant_config=config.quant_config,
+            **sparse_attn_kwargs,
+        )
 
         # Create MLP or MoE layer
         self.mlp = self._get_mlp(config, layer_idx)
@@ -423,33 +391,17 @@ class DeepseekV3_2DecoderLayer(Module):
 
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
-        if self.use_fp8_mla_sparse:
-            assert isinstance(
-                self.self_attn, DataParallelSparseLatentAttentionWithRopeFp8
-            )
-            attn_outs = self.self_attn(
-                layer_idx,
-                norm_xs,
-                signal_buffers,
-                mla_kv_collections,
-                indexer_kv_collections,
-                freqs_cis=freqs_cis,
-                input_row_offsets=input_row_offsets,
-                mla_prefill_metadata=mla_prefill_metadata,
-            )
-        else:
-            assert isinstance(
-                self.self_attn, DataParallelLatentAttentionWithRope
-            )
-            attn_outs = self.self_attn(
-                layer_idx,
-                norm_xs,
-                signal_buffers,
-                mla_kv_collections,
-                freqs_cis=freqs_cis,
-                input_row_offsets=input_row_offsets,
-                mla_prefill_metadata=mla_prefill_metadata,
-            )
+
+        attn_outs = self.self_attn(
+            layer_idx,
+            norm_xs,
+            signal_buffers,
+            mla_kv_collections,
+            indexer_kv_collections,
+            freqs_cis=freqs_cis,
+            input_row_offsets=input_row_offsets,
+            mla_prefill_metadata=mla_prefill_metadata,
+        )
 
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)]
 
@@ -529,7 +481,7 @@ class DeepseekV3_2(Module):
                 theta=config.rope_theta,
                 max_seq_len=config.max_position_embeddings,
                 head_dim=config.qk_rope_head_dim,
-                interleaved=False,  # config.rope_interleave,
+                interleaved=config.rope_interleave,
             )
 
         self.ep_manager: EPBatchManager | None = None

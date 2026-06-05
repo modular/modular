@@ -73,3 +73,60 @@ def normalize_message_tool_calls(message: dict[str, Any]) -> dict[str, Any]:
     out = dict(message)
     out["tool_calls"] = normalize_tool_call_arguments(tool_calls)
     return out
+
+
+def _validate_response_format_schema(
+    schema: dict[str, Any] | None,
+) -> None:
+    """Validates the root structure of a ``response_format.json_schema.schema``.
+
+    OpenAI's structured-outputs guide requires the root schema to be of
+    ``type: "object"``. A non-object root is invalid and should be
+    rejected at the request boundary with a 400.
+
+    - ``None`` is acceptable (no schema supplied).
+    - Empty dict is acceptable (treated as no constraint by downstream).
+    - Otherwise the root must have ``type == "object"``.
+
+    Raises:
+        ValueError: If the schema has a non-object root.
+    """
+    if schema is None or schema == {}:
+        return
+    root_type = schema.get("type")
+    if root_type != "object":
+        raise ValueError(
+            "response_format.json_schema.schema: root must have type "
+            f"'object' (got {root_type!r})"
+        )
+
+
+def _normalize_tools_parameters(
+    tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Returns ``tools`` with ``function.parameters`` coerced to a dict.
+
+    OpenAI's API normalizes ``tools[*].function.parameters: null`` to an
+    empty parameter list (equivalent to omitting the field) and returns
+    200. MAX should match.
+
+    - Dict ``parameters`` are passed through unchanged.
+    - ``None`` or missing ``parameters`` becomes ``{}``.
+    - Other values pass through unchanged (downstream validation handles
+      type errors).
+    - Tool entries without a ``function`` dict pass through unchanged.
+
+    The input list and its dicts are not mutated.
+    """
+    normalized: list[dict[str, Any]] = []
+    for tool in tools:
+        out = dict(tool)
+        fn = out.get("function")
+        if isinstance(fn, dict):
+            fn = dict(fn)
+            params = fn.get("parameters")
+            if params is None:
+                fn["parameters"] = {}
+            out["function"] = fn
+        normalized.append(out)
+    return normalized

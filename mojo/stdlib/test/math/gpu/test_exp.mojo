@@ -18,6 +18,7 @@ from std.algorithm.functional import elementwise
 from std.gpu import *
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.testing import *
+from std.utils.coord import Coord
 
 from std.utils import IndexList
 
@@ -46,16 +47,14 @@ def run_elementwise[
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[1]](idx0)
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var idx = Int(idx0[0].value())
 
         out_buffer.unsafe_ptr().store[width=simd_width](
-            idx[0], exp(in_buffer.unsafe_ptr().load[width=simd_width](idx[0]))
+            idx, exp(in_buffer.unsafe_ptr().load[width=simd_width](idx))
         )
 
-    elementwise[func, pack_size, target="gpu"](IndexList[1](length), ctx)
+    elementwise[func, pack_size, target="gpu"](Coord(length), ctx)
 
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:
         for i in range(length):

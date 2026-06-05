@@ -179,28 +179,6 @@ Logit processors
    LogitsProcessor
    ProcessorInputs
 
-LoRA
-----
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   LoRAOperation
-   LoRARequest
-   LoRAResponse
-   LoRAStatus
-   LoRAType
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/data.rst
-
-   LORA_REQUEST_ENDPOINT
-   LORA_RESPONSE_ENDPOINT
-
 Utilities
 ---------
 

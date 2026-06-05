@@ -142,8 +142,7 @@ class TokenGeneratorPipeline(
         """Generates and streams token chunks for the provided request.
 
         Yields chunks of tokens aligned with scheduler responses. Each chunk
-        contains all tokens from a single model worker response (size depends
-        on max_num_steps config). Benefits:
+        contains all tokens from a single model worker response. Benefits:
         - Single tokenizer.decode() call per chunk instead of per token
         - Callers can amortize Pydantic/SSE overhead across the chunk
         """

@@ -2262,8 +2262,41 @@ struct PagedKVCache[
         head_dim_idx: Int,
         val: SIMD[Self.dtype, ...],
     ):
-        """Stores an element at the given index."""
-        var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
+        """Stores an element at the given index.
+
+        Skips the write when the LUT entry for ``(bs, tok_idx // page_size)``
+        is the unassigned-slot sentinel — i.e. when the resolved
+        ``block_idx`` is outside ``[0, total_num_blocks)``. The cache
+        manager fills LUT columns past a request's allocated block count
+        with the sentinel value ``total_num_pages`` (see
+        ``cache_manager.py``'s ``lut_table_np.fill(self._total_num_pages)``)
+        so that SIMD over-reads of the LUT row are safe, but the *value*
+        of the sentinel times the page stride lands one page past the
+        end of the cache buffer. Without this guard a sentinel-resolved
+        store corrupts whatever device allocation happens to sit
+        immediately after the KV cache.
+        """
+        var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        debug_assert(
+            block_idx < Int(self.blocks.dim[0]()),
+            "KVCache block_idx resolved to sentinel/unassigned LUT entry (",
+            block_idx,
+            ")",
+        )
+        debug_assert(
+            head_idx < Self.kv_params.num_heads,
+            "KVCache head_idx out of range (",
+            head_idx,
+            ")",
+        )
+        assert (
+            head_dim_idx < Self.kv_params.head_size
+        ), "KVCache head_dim_idx is out of range"
+        assert tok_in_block_idx < Int(
+            self.blocks.dim[1]()
+        ), "KVCache tok_idx out of range"
+        var idx = Coord((block_idx, tok_in_block_idx, head_idx, head_dim_idx))
         # Bypass TileTensor.store's `where` constraint by using ptr directly.
         self.blocks.store(idx, val)
 
@@ -2309,7 +2342,23 @@ struct PagedKVCache[
                 Self.scale_dtype != DType.invalid
             ), "Valid quantization scale data type needed"
 
-        var scale_idx = self._get_scale_idx(bs, head_idx, tok_idx, head_dim_idx)
+        var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        debug_assert(
+            block_idx < Int(self.blocks.dim[0]()),
+            "KVCache block_idx resolved to sentinel/unassigned LUT entry (",
+            block_idx,
+            ")",
+        )
+        var scale_block_idx = head_dim_idx // Self.quantization_granularity
+        var scale_idx = Coord(
+            (
+                block_idx,
+                tok_in_block_idx,
+                head_idx,
+                scale_block_idx,
+            )
+        )
         # Bypass TileTensor.store's `where` constraint by using ptr directly.
         self.scales.value().store(scale_idx, scales)
 

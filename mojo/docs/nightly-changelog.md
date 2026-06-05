@@ -72,6 +72,17 @@ This version is still a work in progress.
 
 ## Library changes
 
+- The reduction axis of the `std.algorithm` reductions (`sum`, `product`,
+  `mean`, `max`, `min`, and the underlying `_reduce_generator` plus the CPU
+  and GPU backends) is now a keyword-only compile-time parameter named
+  `reduce_dim` instead of a runtime argument. This covers the
+  `mo.reduce.{mean,add,mul,max,min,reduce_min_and_max}` ops. Pass it in the
+  parameter list, e.g. `sum[..., reduce_dim=axis](shape, ctx)`.
+
+- The `axis` of the `nn.cumsum` kernel is now a keyword-only compile-time
+  parameter instead of a runtime argument. Pass it in the parameter list,
+  e.g. `cumsum[dtype, exclusive, reverse, axis=axis](output, input)`.
+
 - The `ImplicitlyCopyable`, `Intable`, and `Equatable` traits no longer
   inherit from `ImplicitlyDestructible`. Generic code that relied on
   receiving the destructor bound transitively through these traits (or
@@ -313,6 +324,17 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- Importing a Mojo module from Python no longer fails when the module lives in a
+  read-only directory (for example, a Mojo extension installed into a read-only
+  `site-packages`). Previously the importer always tried to write its compiled
+  artifacts to a `__mojocache__` directory next to the source, which raised an
+  `OSError` on a read-only file system. The importer now keeps that in-tree
+  behavior when the source directory is writable, and otherwise redirects the
+  cache to the Modular cache folder. That location honors the standard Modular
+  configuration: the `cache_dir` key in `modular.cfg`, the `MODULAR_CACHE_DIR`
+  and `MODULAR_HOME` environment variables, and the XDG base directory
+  specification.
+
 - The `mojo` compiler will now print the filename and line number in diagnostics
   that point to inaccessible source locations (e.g., from precompiled libraries)
   instead of a location at the top of the main file:
@@ -398,6 +420,10 @@ This version is still a work in progress.
   causes the failure, instead of on the call overall. This makes it easier
   to understand failures in calls with many arguments spread over multiple
   lines.
+
+- `mojo format` now accepts the bare move-capture form `{name^}` in closure
+  capture lists. Previously only the equivalent `{var name^}` form
+  round-tripped through the formatter.
 
 ## GPU programming
 

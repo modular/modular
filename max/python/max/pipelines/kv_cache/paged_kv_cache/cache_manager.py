@@ -61,6 +61,9 @@ KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
 #: ``ld.global.v{N}.u32`` vector loads.
 _LUT_TAIL_PAD = 16
 
+#: Sentinel pad value for lookup table.
+_LUT_FILL_PATTERN = 0xCCCCCCCC
+
 
 def _padded_lut_cols(cols: int) -> int:
     """Round an LUT inner dim up to a multiple of 8 plus a SIMD tail pad.
@@ -268,8 +271,10 @@ class PagedKVCacheManager:
             else MemoryTier.MEMORY_TIER_GPU
         )
 
+        # Allocate one extra page for the null block.
         all_device_buffers: list[list[KVCacheBuffer]] = [
-            cp.allocate_buffers(total_num_pages) for cp in self._cache_params
+            cp.allocate_buffers(total_num_pages + 1)
+            for cp in self._cache_params
         ]
 
         self._replica: list[_ReplicaMetadata] = []
@@ -303,11 +308,12 @@ class PagedKVCacheManager:
                         is_fp8_kv=draft_params.is_fp8_kv_dtype,
                     )
 
-            # TODO(SERVOPT-1254): Connector uses primary cache buffer only.
             replica_params = primary_params.copy_as_dp_1(
                 replica_idx=replica_idx
             )
-            device_buffers_to_offload = replica_device_buffers[0].all_buffers
+            device_buffers_to_offload: list[Buffer] = []
+            for cache_buffer in replica_device_buffers:
+                device_buffers_to_offload.extend(cache_buffer.all_buffers)
             if other_kv_managers_device_buffers_per_replica is not None:
                 device_buffers_to_offload.extend(
                     other_kv_managers_device_buffers_per_replica[replica_idx]
@@ -391,7 +397,12 @@ class PagedKVCacheManager:
         block_manager = self._replica[replica_idx].block_manager
         num_needed_blocks = (
             self.get_num_used_pages(replica_idx)
-            + block_manager.num_blocks_to_allocate(ctx, num_steps)
+            + block_manager.num_blocks_to_allocate(
+                ctx,
+                num_steps,
+                self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
+            )
             - block_manager.count_full_blocks_from_prefix_caches(ctx)
         )
         return min(
@@ -427,6 +438,7 @@ class PagedKVCacheManager:
             data,
             num_steps,
             self.params.num_draft_tokens,
+            self.params.num_draft_tokens_per_step,
         )
 
     def _does_req_need_more_blocks(
@@ -442,6 +454,7 @@ class PagedKVCacheManager:
             ctx,
             num_steps,
             self.params.num_draft_tokens,
+            self.params.num_draft_tokens_per_step,
         )
         num_blocks = len(block_manager.req_to_blocks[ctx.request_id])
         return seq_len > num_blocks * self.params.page_size
@@ -488,6 +501,7 @@ class PagedKVCacheManager:
                 ctx,
                 num_steps,
                 self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
             )
             max_seq_len = max(max_seq_len, seq_len)
 
@@ -571,7 +585,9 @@ class PagedKVCacheManager:
         assert all(buffer.is_contiguous for buffer in lut_table_by_device)
 
         lut_table_np = lut_table_host.to_numpy()
-        lut_table_np.fill(self._total_num_pages)
+        assert _LUT_FILL_PATTERN > self._total_num_pages
+        lut_table_np.fill(_LUT_FILL_PATTERN)
+
         cache_lengths_np = cache_lengths_host.to_numpy()
         cache_lengths_np.fill(0)
 
@@ -587,6 +603,7 @@ class PagedKVCacheManager:
                 ctx,
                 num_steps,
                 self.params.num_draft_tokens,
+                self.params.num_draft_tokens_per_step,
             )
             num_required_blocks = ceildiv(seq_len, self.params.page_size)
             assert len(blocks) >= num_required_blocks
@@ -800,18 +817,11 @@ class PagedKVCacheManager:
                 if replica.draft_attention_dispatch_resolver is not None:
                     replica.draft_attention_dispatch_resolver.host_only = False
 
-    def alloc_dummy(
-        self,
-        request_id: RequestID,
-        replica_idx: int,
-        sentinel_request_id: RequestID,
-    ) -> None:
-        """Claims a dummy request and shares the sentinel's block on a replica."""
+    def alloc_dummy(self, request_id: RequestID, replica_idx: int) -> None:
+        """Claims a dummy request and maps it to the replica's null block."""
         self.claim(request_id, replica_idx)
         replica = self._replica[replica_idx]
-        replica.block_manager.register_dummy_request(
-            request_id, sentinel_request_id
-        )
+        replica.block_manager.register_dummy_request(request_id)
 
     def num_free_blocks(self, replica_idx: int = 0) -> int:
         """Returns the number of free KV cache blocks on the given replica."""

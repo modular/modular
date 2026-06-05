@@ -33,8 +33,8 @@ from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.modeling.types import TextGenerationContext
+from max.pipelines.weights.quant import parse_quant_config
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_h100_h200
 from torch.utils.dlpack import from_dlpack

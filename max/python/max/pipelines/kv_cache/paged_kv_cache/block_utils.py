@@ -89,6 +89,8 @@ class KVCacheBlock:
     # The hash of the block composed of (block hash, tuple of token IDs).
     # It is only available when the block is full.
     block_hash: int | None = None
+    # Whether the block is the null block.
+    is_null: bool = False
 
     # Used to construct a doubly linked list for free blocks.
     # These two attributes should only be manipulated by FreeKVCacheBlockQueue.

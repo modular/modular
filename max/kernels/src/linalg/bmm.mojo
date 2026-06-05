@@ -742,19 +742,18 @@ def _batched_matmul_gpu[
                 @parameter
                 @__copy_capture(c_tensor_reshaped)
                 def epilogue_wrapper[
-                    simd_width: Int, rank: Int, alignment: Int = 1
-                ](idx: IndexList[rank]):
-                    var c_coord = Index(idx[0], idx[1], idx[2])
-                    var c_val = c_tensor_reshaped.load_linear[
+                    simd_width: Int, alignment: Int = 1
+                ](idx: Coord):
+                    var c_val = c_tensor_reshaped.load[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
-                    ](c_coord)
+                    ](idx)
                     epilogue[c_type, simd_width, alignment=alignment](
-                        c_coord, c_val
+                        coord_to_index_list(idx), c_val
                     )
 
                 elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                    Index(batch_size, m, n), ctx
+                    Coord(batch_size, m, n), ctx
                 )
 
             return

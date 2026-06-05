@@ -20,7 +20,7 @@ from std.testing import *
 from std.utils.fast_div import FastDiv
 from std.utils.index import Index, IndexList
 
-from layout import TileTensor, Idx, row_major
+from layout import TileTensor, Coord, Idx, row_major
 
 
 def test_fast_div() raises:
@@ -98,11 +98,9 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
     @always_inline
     @__copy_capture(out_divisors_buffer, out_remainders_buffer)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         comptime fast_div = FastDiv[type](4)
-        var idx = idx0[0]
+        var idx = idx0[0].value()
 
         out_divisors_buffer[idx] = (
             Scalar[fast_div.uint_type](idx) / fast_div
@@ -111,7 +109,7 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
             Scalar[fast_div.uint_type](idx) % fast_div
         ).cast[type]()
 
-    elementwise[func, simd_width=1, target="gpu"](Index(length), ctx)
+    elementwise[func, simd_width=1, target="gpu"](Coord(length), ctx)
 
     ctx.enqueue_copy(divisors.ptr, out_divisors)
     ctx.enqueue_copy(remainders.ptr, out_remainders)

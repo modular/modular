@@ -19,12 +19,22 @@ from std.bit import prev_power_of_two
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
+from std.gpu.primitives.grid_controls import PDLLevel
 
 
 comptime EnableForcedOrdering = get_defined_bool[
     "FA4ForcedSoftmaxOrdering", False
 ]()
 comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
+
+# Programmatic Dependent Launch level for the SM100 MHA prefill kernel.  On by
+# default so back-to-back attention grids in a stream overlap launch/prologue
+# latency; disable with `-D MHA_PDL=false`.  When > OFF the kernel emits
+# `wait_on_dependent_grids()` / `launch_dependent_grids()` and the dispatch
+# attaches the PROGRAMMATIC_STREAM_SERIALIZATION launch attribute.
+comptime MHA_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
+    "MHA_PDL", True
+]() else PDLLevel.OFF
 
 # Bytes per CTA in shared memory that the CUDA runtime reserves for
 # its own use; subtracted from `B200.shared_memory_per_multiprocessor`
@@ -188,8 +198,11 @@ struct FA4Config[
         else:
             self.BM = 256
         self.fuse_gqa = group > 1 and (self.MMA_M % group == 0) and not is_mla
-        self.swizzle_mode = swizzle_mode
-        swizzle_elems = swizzle_mode.bytes() // Self.qkv_dtype_size
+        comptime if Self.qkv_dtype.is_float8():
+            self.swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
+        else:
+            self.swizzle_mode = swizzle_mode
+        swizzle_elems = self.swizzle_mode.bytes() // Self.qkv_dtype_size
         self.ov_depth = ov_depth
         self.padded_qk_depth = align_up(qk_depth, swizzle_elems)
         self.padded_ov_depth = align_up(ov_depth, swizzle_elems)

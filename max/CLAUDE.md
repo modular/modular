@@ -47,7 +47,6 @@ SDK, APIs, and tools. The SDK provides:
   //max/tests/integration/architectures/llama3:test_cross_attention
 
 # Run GPU tests remotely
-bt-h100 //max/tests/integration/architectures/llama3:tests_gpu
 bt-b200 //max/tests/integration/architectures/llama3:tests_gpu
 ```
 

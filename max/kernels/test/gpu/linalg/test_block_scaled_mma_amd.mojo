@@ -27,7 +27,7 @@ from std.memory import bitcast
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import Coord, TensorLayout, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
@@ -63,63 +63,33 @@ def _block_scaled_mma_smoke_kernel[
         "AMD block-scaled MMA smoke test only supports 4- or 16-lane"
         " accumulators"
     )
-    var lane = Int(lane_id())
-    var a_frag = SIMD[DType.uint8, 32](UInt8(0x21))
-    var b_frag = SIMD[DType.uint8, 32](UInt8(0x12))
+    var lane = lane_id()
+    var a_frag = SIMD[DType.uint8, matrix_format.simd_width()](UInt8(0x21))
+    var b_frag = SIMD[DType.uint8, matrix_format.simd_width()](UInt8(0x12))
 
-    var one = _pack_e8m0_scale_word(Float32(1.0))
-    var two = _pack_e8m0_scale_word(Float32(2.0))
+    var one = _pack_e8m0_scale_word(1.0)
+    var two = _pack_e8m0_scale_word(2.0)
 
-    comptime if accum_width == 4:
-        var baseline_acc = SIMD[DType.float32, 4](0.0)
-        var scaled_acc = SIMD[DType.float32, 4](0.0)
-        cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
-            baseline_acc,
-            a_frag,
-            b_frag,
-            one,
-            one,
-        )
-        cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
-            scaled_acc,
-            a_frag,
-            b_frag,
-            two,
-            one,
-        )
-        baseline_out.store[width=4](
-            Coord(lane, Idx[0]),
-            baseline_acc,
-        )
-        scaled_out.store[width=4](
-            Coord(lane, Idx[0]),
-            scaled_acc,
-        )
-    else:
-        var baseline_acc = SIMD[DType.float32, 16](0.0)
-        var scaled_acc = SIMD[DType.float32, 16](0.0)
-        cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
-            baseline_acc,
-            a_frag,
-            b_frag,
-            one,
-            one,
-        )
-        cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
-            scaled_acc,
-            a_frag,
-            b_frag,
-            two,
-            one,
-        )
-        baseline_out.store[width=16](
-            Coord(lane, Idx[0]),
-            baseline_acc,
-        )
-        scaled_out.store[width=16](
-            Coord(lane, Idx[0]),
-            scaled_acc,
-        )
+    var baseline_acc = SIMD[DType.float32, accum_width](0.0)
+    var scaled_acc = SIMD[DType.float32, accum_width](0.0)
+
+    cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
+        baseline_acc,
+        a_frag,
+        b_frag,
+        one,
+        one,
+    )
+    cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
+        scaled_acc,
+        a_frag,
+        b_frag,
+        two,
+        one,
+    )
+
+    baseline_out.store(Coord(lane, 0), baseline_acc)
+    scaled_out.store(Coord(lane, 0), scaled_acc)
 
 
 def _run_block_scaled_mma_amd_smoke[
@@ -132,12 +102,10 @@ def _run_block_scaled_mma_amd_smoke[
     var scaled_device = ctx.enqueue_create_buffer[DType.float32](num_values)
 
     var baseline_tt = TileTensor(
-        baseline_device,
-        row_major(Coord(Idx[WARP_SIZE], Idx[accum_width])),
+        baseline_device, row_major[WARP_SIZE, accum_width]()
     )
     var scaled_tt = TileTensor(
-        scaled_device,
-        row_major(Coord(Idx[WARP_SIZE], Idx[accum_width])),
+        scaled_device, row_major[WARP_SIZE, accum_width]()
     )
 
     comptime kernel = _block_scaled_mma_smoke_kernel[

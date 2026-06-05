@@ -33,6 +33,7 @@ from extensibility import FusedOutput
 from extensibility import StaticTensorSpec
 from builtin_kernels import Range
 
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 
 from op_utils import (
@@ -209,17 +210,15 @@ def range_op[
                 @always_inline
                 @parameter
                 @__copy_capture(out_ptr, start, step)
-                def range_func[
-                    width: Int, rank: Int, alignment: Int = 1
-                ](idx: IndexList[rank]):
-                    var i = rebind[IndexList[1]](idx)[0]
+                def range_func[width: Int, alignment: Int = 1](idx: Coord):
+                    var i = Int(idx[0].value())
                     var result = start + (
                         iota[dtype, width](Scalar[dtype](i)) * step
                     )
                     out_ptr.store[width=width](i, result)
 
                 elementwise[range_func, simd_width=1, target="gpu"](
-                    IndexList[1](size), ctx
+                    Coord(size), ctx
                 )
             else:
                 raise Error(
@@ -366,11 +365,11 @@ def random_normal_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, mean, variance, seed_value, grid_block)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, alignment: Int = 1](idx: Coord):
         comptime assert (
             width == 1
         ), "PyTorch-compat normal kernel uses scalar lanes"
-        var i = rebind[IndexList[1]](idx)[0]
+        var i = Int(idx[0].value())
         var thread_id = UInt64(i % grid_block)
         var within_thread = i // grid_block
 
@@ -380,13 +379,11 @@ def random_normal_op[
         out_ptr.store[width=1](i, SIMD[dtype, 1](value))
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](size), ctx)
+        elementwise[func, simd_width=1](Coord(size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](size), ctx
-                )
+                elementwise[func, simd_width=1, target="gpu"](Coord(size), ctx)
 
 
 def random_normal_dispatcher(
@@ -488,21 +485,19 @@ def random_uniform_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, lower_bound, delta, seed_value)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var generator = Random(seed=seed_value, offset=UInt64(i))
         var values: SIMD[DType.float32, 4] = generator.step_uniform()
         values = values * delta + lower_bound
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=4](IndexList[1](size), ctx)
+        elementwise[func, simd_width=4](Coord(size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=4, target="gpu"](
-                    IndexList[1](size), ctx
-                )
+                elementwise[func, simd_width=4, target="gpu"](Coord(size), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for random_uniform"

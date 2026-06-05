@@ -386,24 +386,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             return_n_logits=return_n_logits_buffer,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Qwen3EmbeddingInputs:
-        """Prepare next token inputs (not supported for embedding models).
-
-        Args:
-            next_tokens: Next tokens
-            prev_model_inputs: Previous inputs
-
-        Raises:
-            NotImplementedError: Embedding models don't support autoregressive generation
-        """
-        raise NotImplementedError(
-            "Qwen3 embedding model does not support autoregressive generation"
-        )
-
     @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig

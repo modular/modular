@@ -34,7 +34,7 @@ def _elementwise_impl_cpu[
     simd_width: Int,
     FuncType: def[width: Int, alignment: Int = 1](Coord) -> None,
     *,
-    trace_description: StaticString = "",
+    trace_description: StaticString,
 ](func: FuncType, *, shape: Coord, ctx: Optional[DeviceContext] = None,):
     """Dispatches elementwise execution on CPU to the 1D or ND implementation
     based on the rank of the input shape.
