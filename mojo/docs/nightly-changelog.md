@@ -47,6 +47,38 @@ This version is still a work in progress.
       var data: Self.T
   ```
 
+- Trailing `where` clauses are now supported on struct declarations. Constraints
+  are part of the type and checked at every binding site:
+
+  ```mojo
+  struct SIMD[dtype: DType, size: Int]
+      where dtype != DType.invalid
+      where size.is_power_of_two():
+    ...
+  ```
+
+- Trailing `where` clauses are now supported on `comptime` alias declarations:
+
+  ```mojo
+  comptime PositiveOnly[N: Int]: AnyType where N > 0 = ...
+  ```
+
+- Trailing `where` clauses can now _discharge_ constraints from constrained
+  types appearing anywhere in a signature. A single trailing `where` will
+  simultaneously constrain the declaration and satisfy the requirements of types
+  used within the same signature:
+
+  ```mojo
+  struct Matrix[m: Int, n: Int] where m > 0 where n > 0: ...
+
+  def solve_linear_system[n: Int, a: Matrix[n, n], b: Vector[n]]() -> Vector[n]
+      where n > 0:
+    ...
+  ```
+
+  If no trailing `where` discharges a constraint, the compiler reports an error
+  and suggests the missing clause.
+
 ## Language changes
 
 - Support for "set-only" accessors has been removed. You need to define a
@@ -477,7 +509,7 @@ This version is still a work in progress.
   from `std.runtime.asyncrt`. Custom-op `execute` methods now take
   `DeviceContext` directly (or `Optional[DeviceContext]` where the context is
   genuinely optional), and multi-device ops take `DeviceContextList[N]` (see
-  the new entry under *Library changes*). The helpers `get_device_context()`
+  the new entry under _Library changes_). The helpers `get_device_context()`
   and `get_optional_device_context()` are no longer needed — pass the
   `DeviceContext` through directly. The `CpuDeviceContext` runtime always
   supplies a real context for the CPU path, so the nullable wrapper is no
