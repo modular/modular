@@ -1450,14 +1450,14 @@ def foreach[
     ](index: Coord) capturing:
         var idx = coord_to_index_list(index)
         var val = func[width, alignment](rebind[IndexList[tensor.rank]](idx))
-        tensor._fused_store[element_alignment=alignment](idx, val)
+        tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](Coord(tensor.shape()), ctx)
+    ](tensor.shape_coord(), ctx)
 
 
 @register_internal("mogg.elemwise_for_each")
@@ -1510,13 +1510,13 @@ def foreach[
     ](index: Coord) {var func^, var tensor}:
         var idx = rebind[IndexList[rank]](coord_to_index_list(index))
         var val = func[width, alignment](idx)
-        tensor._fused_store[element_alignment=alignment](idx, val)
+        tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
         simd_width=simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](wrapper, Coord(tensor.shape()), ctx)
+    ](wrapper, tensor.shape_coord(), ctx)
 
 
 @register_internal("mogg.call.foreach")
@@ -1609,7 +1609,7 @@ def foreach_out_func[
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](Coord(tensor.shape()), ctx)
+    ](tensor.shape_coord(), ctx)
 
 
 # TensorCopy intrinsic used by view kernels.

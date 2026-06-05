@@ -15,6 +15,13 @@
 
 from extensibility import get_row_major_tensor_spec_static
 from extensibility import ManagedTensorSlice, IOUnknown
+from extensibility.managed_tensor_slice import (
+    StaticTensorSpec,
+    _IndexListToTileLayout,
+)
+from layout import coord_to_index_list
+from std.memory import AddressSpace
+from std.sys import align_of
 from std.testing import assert_equal, TestSuite
 
 from std.utils import IndexList
@@ -228,6 +235,105 @@ def test_to_tile_tensor() raises:
     # Verify dimensions
     assert_equal(tile_tensor.layout.shape[0]().value(), 3)
     assert_equal(tile_tensor.layout.shape[1]().value(), 4)
+
+
+def test_shape_coord_static() raises:
+    """Test shape_coord() preserves fully-static shape information."""
+    var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
+    comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 4]()
+    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
+        storage.unsafe_ptr(), IndexList[2](3, 4)
+    )
+
+    var shape = tensor.shape_coord()
+
+    # Every dimension is statically known, so this is a compile-time fact.
+    comptime assert shape.all_dims_known
+    comptime assert shape.element_types[0].static_value == 3
+    comptime assert shape.element_types[1].static_value == 4
+
+    # The runtime values still round-trip correctly.
+    var index_list = coord_to_index_list(shape)
+    assert_equal(index_list[0], 3)
+    assert_equal(index_list[1], 4)
+
+
+def test_shape_coord_mixed() raises:
+    """Test shape_coord() encodes static dims while filling dynamic ones."""
+    var storage = InlineArray[Float32, 2 * 4](uninitialized=True)
+    # dim 0 is dynamic (-1), dim 1 is static (4); strides are row-major.
+    comptime mixed_layout = _IndexListToTileLayout[
+        IndexList[2](-1, 4), IndexList[2](4, 1)
+    ]
+    comptime mixed_spec = StaticTensorSpec[
+        DType.float32, 2, static_layout=mixed_layout
+    ](align_of[DType.float32](), AddressSpace.GENERIC)
+    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=mixed_spec](
+        storage.unsafe_ptr(), IndexList[2](2, 4)
+    )
+
+    var shape = tensor.shape_coord()
+
+    # The static/dynamic structure is preserved in the Coord's type.
+    comptime assert not shape.all_dims_known
+    comptime assert not shape.element_types[0].is_static_value
+    comptime assert shape.element_types[1].is_static_value
+    comptime assert shape.element_types[1].static_value == 4
+
+    # The dynamic dimension is filled from the runtime shape.
+    var index_list = coord_to_index_list(shape)
+    assert_equal(index_list[0], 2)
+    assert_equal(index_list[1], 4)
+
+
+def test_strides_coord_static() raises:
+    """Test strides_coord() preserves fully-static stride information."""
+    var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
+    comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 4]()
+    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
+        storage.unsafe_ptr(), IndexList[2](3, 4)
+    )
+
+    var strides = tensor.strides_coord()
+
+    # Row-major strides are statically known, so this is a compile-time fact.
+    comptime assert strides.all_dims_known
+    comptime assert strides.element_types[0].static_value == 4
+    comptime assert strides.element_types[1].static_value == 1
+
+    # The runtime values still round-trip correctly.
+    var index_list = coord_to_index_list(strides)
+    assert_equal(index_list[0], 4)
+    assert_equal(index_list[1], 1)
+
+
+def test_strides_coord_mixed() raises:
+    """Test strides_coord() encodes static strides while filling dynamic ones.
+    """
+    var storage = InlineArray[Float32, 2 * 4](uninitialized=True)
+    # Shape is static (2, 4); stride 0 is dynamic (-1) and stride 1 is static.
+    comptime mixed_layout = _IndexListToTileLayout[
+        IndexList[2](2, 4), IndexList[2](-1, 1)
+    ]
+    comptime mixed_spec = StaticTensorSpec[
+        DType.float32, 2, static_layout=mixed_layout
+    ](align_of[DType.float32](), AddressSpace.GENERIC)
+    var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=mixed_spec](
+        storage.unsafe_ptr(), IndexList[2](2, 4), IndexList[2](4, 1)
+    )
+
+    var strides = tensor.strides_coord()
+
+    # The static/dynamic structure is preserved in the Coord's type.
+    comptime assert not strides.all_dims_known
+    comptime assert not strides.element_types[0].is_static_value
+    comptime assert strides.element_types[1].is_static_value
+    comptime assert strides.element_types[1].static_value == 1
+
+    # The dynamic stride is filled from the runtime strides.
+    var index_list = coord_to_index_list(strides)
+    assert_equal(index_list[0], 4)
+    assert_equal(index_list[1], 1)
 
 
 def main() raises:

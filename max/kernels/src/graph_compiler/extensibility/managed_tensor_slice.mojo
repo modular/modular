@@ -1020,6 +1020,37 @@ comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
 ]
 
 
+@always_inline
+def _index_list_to_static_coord[
+    element_types: TypeList[Trait=CoordLike, ...],
+](values: IndexList) -> Coord[*element_types]:
+    """Builds a `Coord` of the given element types from a runtime `IndexList`.
+
+    Static elements keep their compile-time values (from the default-constructed
+    `Coord`), while dynamic elements are filled from `values`. This preserves
+    the static-vs-dynamic structure encoded in `element_types`.
+
+    Parameters:
+        element_types: The `CoordLike` element types of the resulting `Coord`.
+
+    Args:
+        values: The runtime values used to fill the dynamic elements.
+
+    Returns:
+        A `Coord` with the given element types.
+    """
+    comptime assert values.size == element_types.size, "rank mismatch"
+    var result = Coord[*element_types]()
+
+    comptime for i in range(element_types.size):
+        comptime if not result.element_types[i].is_static_value:
+            result[i] = rebind[result.element_types[i]](
+                Scalar[result.element_types[i].DTYPE](values[i])
+            )
+
+    return result
+
+
 @fieldwise_init
 struct ManagedTensorSlice[
     mut: Bool,
@@ -1375,6 +1406,44 @@ struct ManagedTensorSlice[
                 result[i] = self._spec.shape[i]
 
         return result
+
+    @always_inline
+    def shape_coord(
+        self,
+    ) -> Coord[*Self.static_spec.static_layout._shape_types]:
+        """Gets the shape of this tensor slice as a `Coord`.
+
+        Unlike `shape`, which returns a runtime `IndexList`, the returned
+        `Coord` preserves the static-vs-dynamic structure of the tensor's static
+        layout: statically-known dimensions are encoded as compile-time values
+        in the `Coord`'s type, while dynamic dimensions are filled from the
+        runtime shape.
+
+        Returns:
+            The shape of this tensor slice as a `Coord`.
+        """
+        return _index_list_to_static_coord[
+            Self.static_spec.static_layout._shape_types
+        ](self.shape())
+
+    @always_inline
+    def strides_coord(
+        self,
+    ) -> Coord[*Self.static_spec.static_layout._stride_types]:
+        """Gets the strides of this tensor slice as a `Coord`.
+
+        Unlike `strides`, which returns a runtime `IndexList`, the returned
+        `Coord` preserves the static-vs-dynamic structure of the tensor's static
+        layout: statically-known strides are encoded as compile-time values in
+        the `Coord`'s type, while dynamic strides are filled from the runtime
+        strides.
+
+        Returns:
+            The strides of this tensor slice as a `Coord`.
+        """
+        return _index_list_to_static_coord[
+            Self.static_spec.static_layout._stride_types
+        ](self.strides())
 
     @always_inline
     def dim_size(self, index: Int) -> Int:
@@ -2592,7 +2661,7 @@ def foreach[
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](Coord(tensor.shape()), ctx)
+    ](tensor.shape_coord(), ctx)
 
 
 def _shape_types_compatible[
