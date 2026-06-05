@@ -120,10 +120,11 @@ def _reduce_generator[
     ) capturing[_] -> SIMD[ty, width],
     /,
     target: StaticString = "cpu",
+    *,
+    reduce_dim: Int,
 ](
     shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
-    reduce_dim: Int,
     context: Optional[DeviceContext] = None,
 ) raises:
     """Reduce the given tensor using the given reduction function. The
@@ -138,11 +139,11 @@ def _reduce_generator[
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
         target: The target to run on.
+        reduce_dim: The dimension we are reducing.
 
     Args:
         shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
     comptime assert is_valid_target[target](), "unsupported target"
@@ -158,8 +159,11 @@ def _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](shape, init, reduce_dim)
+            reduce_dim=reduce_dim,
+        ](shape, init)
     elif CurrentPlugin.reduce_generator_fn[target]:
+        # The plugin hook takes `reduce_dim` as a runtime argument; feed it the
+        # compile-time value.
         return comptime (CurrentPlugin.reduce_generator_fn[target].value())[
             num_reductions,
             init_type,
@@ -174,7 +178,8 @@ def _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](shape, init, reduce_dim, context.value())
+            reduce_dim=reduce_dim,
+        ](shape, init, context.value())
 
 
 @always_inline
@@ -191,10 +196,11 @@ def _reduce_generator_wrapper[
     ) capturing[_] -> SIMD[dtype, width],
     /,
     target: StaticString = "cpu",
+    *,
+    reduce_dim: Int,
 ](
     shape: IndexList[_, element_type=DType.int64],
     init: Scalar,
-    reduce_dim: Int,
     context: Optional[DeviceContext] = None,
 ) raises:
     @always_inline
@@ -228,7 +234,8 @@ def _reduce_generator_wrapper[
         output_fn_wrapper,
         reduce_fn,
         target=target,
-    ](shape, init, reduce_dim, context)
+        reduce_dim=reduce_dim,
+    ](shape, init, context)
 
 
 @always_inline
@@ -244,10 +251,11 @@ def _reduce_generator[
     ) capturing[_] -> SIMD[ty, width],
     /,
     target: StaticString = "cpu",
+    *,
+    reduce_dim: Int,
 ](
     shape: IndexList[_, element_type=DType.int64],
     init: Scalar,
-    reduce_dim: Int,
     context: Optional[DeviceContext] = None,
 ) raises:
     """Reduce the given tensor using the given reduction function.
@@ -260,11 +268,11 @@ def _reduce_generator[
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
         target: The target to run on.
+        reduce_dim: The dimension we are reducing.
 
     Args:
         shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
 
@@ -298,7 +306,8 @@ def _reduce_generator[
         output_fn_wrapper,
         reduce_fn_wrapper,
         target,
-    ](shape, init_wrapped, reduce_dim, context)
+        reduce_dim=reduce_dim,
+    ](shape, init_wrapped, context)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -317,9 +326,10 @@ def max[
     ) capturing[_] -> None,
     /,
     target: StaticString = "cpu",
+    *,
+    reduce_dim: Int,
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
     context: Optional[DeviceContext] = None,
 ) raises:
     """Computes the max across the input and output shape.
@@ -333,10 +343,10 @@ def max[
         input_fn: The function to load the input.
         output_fn: The function to store the output.
         target: The target to run on.
+        reduce_dim: The axis to perform the max on.
 
     Args:
         input_shape: The input shape.
-        reduce_dim: The axis to perform the max on.
         context: The pointer to DeviceContext.
 
     Raises:
@@ -369,7 +379,8 @@ def max[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-    ](input_shape, Scalar[dtype].MIN, reduce_dim, context=context)
+        reduce_dim=reduce_dim,
+    ](input_shape, Scalar[dtype].MIN, context=context)
 
 
 @always_inline
@@ -383,9 +394,10 @@ def min[
     ) capturing[_] -> None,
     /,
     target: StaticString = "cpu",
+    *,
+    reduce_dim: Int,
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
     context: Optional[DeviceContext] = None,
 ) raises:
     """Computes the min across the input and output shape.
@@ -399,10 +411,10 @@ def min[
         input_fn: The function to load the input.
         output_fn: The function to store the output.
         target: The target to run on.
+        reduce_dim: The axis to perform the min on.
 
     Args:
         input_shape: The input shape.
-        reduce_dim: The axis to perform the min on.
         context: The pointer to DeviceContext.
 
     Raises:
@@ -435,7 +447,8 @@ def min[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-    ](input_shape, Scalar[dtype].MAX, reduce_dim, context=context)
+        reduce_dim=reduce_dim,
+    ](input_shape, Scalar[dtype].MAX, context=context)
 
 
 @always_inline
@@ -449,9 +462,10 @@ def sum[
     ) capturing[_] -> None,
     /,
     target: StaticString = "cpu",
+    *,
+    reduce_dim: Int,
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
     context: Optional[DeviceContext] = None,
 ) raises:
     """Computes the sum across the input and output shape.
@@ -465,10 +479,10 @@ def sum[
         input_fn: The function to load the input.
         output_fn: The function to store the output.
         target: The target to run on.
+        reduce_dim: The axis to perform the sum on.
 
     Args:
         input_shape: The input shape.
-        reduce_dim: The axis to perform the sum on.
         context: The pointer to DeviceContext.
 
     Raises:
@@ -501,7 +515,8 @@ def sum[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-    ](input_shape, Scalar[dtype](0), reduce_dim, context=context)
+        reduce_dim=reduce_dim,
+    ](input_shape, Scalar[dtype](0), context=context)
 
 
 @always_inline
@@ -515,9 +530,10 @@ def product[
     ) capturing[_] -> None,
     /,
     target: StaticString = "cpu",
+    *,
+    reduce_dim: Int,
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
     context: Optional[DeviceContext] = None,
 ) raises:
     """Computes the product across the input and output shape.
@@ -530,10 +546,10 @@ def product[
         input_fn: The function to load the input.
         output_fn: The function to store the output.
         target: The target to run on.
+        reduce_dim: The axis to perform the product on.
 
     Args:
         input_shape: The input shape.
-        reduce_dim: The axis to perform the product on.
         context: The pointer to DeviceContext.
 
     Raises:
@@ -566,7 +582,8 @@ def product[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-    ](input_shape, Scalar[dtype](1), reduce_dim, context=context)
+        reduce_dim=reduce_dim,
+    ](input_shape, Scalar[dtype](1), context=context)
 
 
 @always_inline
@@ -580,9 +597,10 @@ def mean[
     ) capturing[_] -> None,
     /,
     target: StaticString = "cpu",
+    *,
+    reduce_dim: Int,
 ](
     input_shape: IndexList[_, element_type=DType.int64],
-    reduce_dim: Int,
     output_shape: type_of(input_shape),
     context: Optional[DeviceContext] = None,
 ) raises:
@@ -597,10 +615,10 @@ def mean[
         input_fn: The function to load the input.
         output_fn: The function to store the output.
         target: The target to run on.
+        reduce_dim: The axis to perform the mean on.
 
     Args:
         input_shape: The input shape.
-        reduce_dim: The axis to perform the mean on.
         output_shape: The output shape.
         context: The pointer to DeviceContext.
 
@@ -664,10 +682,10 @@ def mean[
                 wrapped_output_mul,
                 reduce_impl,
                 target=target,
+                reduce_dim=reduce_dim,
             ](
                 input_shape,
                 init=Scalar[dtype](0),
-                reduce_dim=reduce_dim,
                 context=context,
             )
 
@@ -691,10 +709,10 @@ def mean[
                 wrapped_output_div,
                 reduce_impl,
                 target=target,
+                reduce_dim=reduce_dim,
             ](
                 input_shape,
                 init=Scalar[dtype](0),
-                reduce_dim=reduce_dim,
                 context=context,
             )
 
@@ -901,7 +919,8 @@ def reduce[
         input_fn,
         output_fn,
         reduce_fn_wrapper,
-    ](shape, init=init, reduce_dim=0)
+        reduce_dim=0,
+    ](shape, init=init)
 
     return out
 
@@ -1165,10 +1184,10 @@ def sum[
         input_fn_nd,
         output_fn,
         reduce_fn_wrapper,
+        reduce_dim=0,
     ](
         shape,
         init=Scalar[dtype](0),
-        reduce_dim=0,
     )
 
     return out
@@ -1400,10 +1419,10 @@ def variance[
         input_fn_nd,
         output_fn,
         reduce_fn_wrapper,
+        reduce_dim=0,
     ](
         shape,
         init=Scalar[mean_value.dtype](0),
-        reduce_dim=0,
     )
 
     return out / Scalar[dtype](length - correction)

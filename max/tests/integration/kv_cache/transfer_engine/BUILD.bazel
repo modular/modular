@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -6,6 +6,23 @@ package(default_visibility = [
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
+
+modular_py_binary(
+    name = "test_transfer_engine_cross_node",
+    srcs = ["test_transfer_engine_cross_node.py"],
+    main = "test_transfer_engine_cross_node.py",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/kv_cache",
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("pyzmq"),
+    ],
+)
 
 modular_py_test(
     name = "test_notification_latency",

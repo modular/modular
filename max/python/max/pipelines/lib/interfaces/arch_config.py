@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from max.driver import load_devices, scan_available_devices
 from max.dtype import DType
@@ -38,9 +38,9 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
 )
+from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
-from max.pipelines.modeling.kv_cache_config import KVCacheConfig
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -107,7 +107,45 @@ class ArchConfigWithKVAndVisionCache(ArchConfigWithKVCache, Protocol):
         ...
 
 
-class ArchConfigWithStoredKVParams:
+class ArchConfigWithBoundedMaxSeqLen:
+    """Mixin for configs that store a bounded ``max_seq_len`` computed at init."""
+
+    max_seq_len: int
+
+    def get_max_seq_len(self) -> int:
+        """Returns the maximum sequence length computed during initialization."""
+        return self.max_seq_len
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        """Bounds ``max_length`` by ``max_position_embeddings``."""
+        model_config = model_config or pipeline_config.model
+        try:
+            return upper_bounded_default(
+                upper_bound=huggingface_config.max_position_embeddings,
+                default=model_config.max_length,
+            )
+        except ValueError as e:
+            raise ValueError(
+                "Unable to infer max_length"
+                + (
+                    f" for {cls.__name__}"
+                    if cls.__name__ != "ArchConfigWithBoundedMaxSeqLen"
+                    else ""
+                )
+                + ", the provided "
+                f"max_length ({model_config.max_length}) exceeds the "
+                f"model's max_position_embeddings "
+                f"({huggingface_config.max_position_embeddings})."
+            ) from e
+
+
+class ArchConfigWithStoredKVParams(ArchConfigWithBoundedMaxSeqLen):
     """Mixin that implements :meth:`get_kv_params` as the ``kv_params`` field.
 
     Architecture dataclasses that precompute :class:`~max.nn.kv_cache.KVCacheParams`
@@ -164,14 +202,74 @@ class ArchConfigWithStoredKVParams:
         )
 
 
-class ArchConfigWithDecoderSubconfigKVParams:
+class ArchConfigWithPermissiveMaxSeqLen:
+    """Mixin for configs that honor ``max_length`` without bounding."""
+
+    max_position_embeddings: int
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        """Uses ``max_length`` when set, else ``max_position_embeddings``."""
+        model_config = model_config or pipeline_config.model
+        if model_config.max_length:
+            return model_config.max_length
+        return huggingface_config.max_position_embeddings
+
+    def get_max_seq_len(self) -> int:
+        """Returns the resolved maximum sequence length stored on the config."""
+        return self.max_position_embeddings
+
+
+class ArchVLConfigWithTextSubconfig:
     """Mixin for VLMs that embed a language-model arch config.
 
-    Annotate :attr:`llm_config` or :attr:`text_config` with the decoder type;
-    otherwise :class:`ArchConfigWithStoredKVParams` is used (Pixtral). HF
-    subconfig defaults to ``text_config``; override :meth:`construct_kv_params`
-    when the HF key differs (e.g. InternVL ``llm_config``).
+    Annotate :attr:`llm_config` or :attr:`text_config` with the text arch type;
+    otherwise :class:`ArchConfigWithStoredKVParams` is used (Pixtral). The HF
+    subconfig is read from ``text_config`` or ``llm_config`` on the HuggingFace
+    config (MAX field names need not match HF attribute names).
+    Override :meth:`construct_kv_params` / :meth:`calculate_max_seq_len` when
+    resolution is dynamic (e.g. InternVL) or semantics differ (e.g. Gemma4 KV).
     """
+
+    @classmethod
+    def _text_config_cls(cls) -> type[ArchConfigWithStoredKVParams]:
+        text_config_cls = cls.__annotations__.get(
+            "llm_config",
+            cls.__annotations__.get(
+                "text_config", ArchConfigWithStoredKVParams
+            ),
+        )
+        if isinstance(text_config_cls, type) and issubclass(
+            text_config_cls, ArchConfigWithStoredKVParams
+        ):
+            return text_config_cls
+        return ArchConfigWithStoredKVParams
+
+    @classmethod
+    def _hf_text_config(cls, huggingface_config: AutoConfig) -> AutoConfig:
+        hf_text = getattr(huggingface_config, "text_config", None)
+        if hf_text is None:
+            hf_text = getattr(huggingface_config, "llm_config", None)
+        if hf_text is None:
+            raise ValueError(
+                f"HuggingFace config {type(huggingface_config).__name__} has no "
+                "'text_config' or 'llm_config' attribute."
+            )
+        return hf_text
+
+    def get_max_seq_len(self) -> int:
+        """Returns the maximum sequence length from the embedded text config."""
+        for config_attr in ("llm_config", "text_config"):
+            if config_attr in self.__annotations__:
+                return cast(
+                    ArchConfig, getattr(self, config_attr)
+                ).get_max_seq_len()
+        return super().get_max_seq_len()  # type: ignore[misc]
 
     @classmethod
     def construct_kv_params(
@@ -182,31 +280,27 @@ class ArchConfigWithDecoderSubconfigKVParams:
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Delegates to the annotated decoder config class using HF ``text_config``."""
-        decoder_cls = cls.__annotations__.get(
-            "llm_config",
-            cls.__annotations__.get(
-                "text_config", ArchConfigWithStoredKVParams
-            ),
-        )
-        if not isinstance(decoder_cls, type) or not issubclass(
-            decoder_cls, ArchConfigWithStoredKVParams
-        ):
-            decoder_cls = ArchConfigWithStoredKVParams
-
-        hf_text = getattr(huggingface_config, "text_config", None)
-        if hf_text is None:
-            raise ValueError(
-                f"HuggingFace config {type(huggingface_config).__name__} has no "
-                "'text_config' attribute; override construct_kv_params for this "
-                "architecture."
-            )
-        return decoder_cls.construct_kv_params(
-            huggingface_config=hf_text,
+        """Delegates to the annotated text config class."""
+        return cls._text_config_cls().construct_kv_params(
+            huggingface_config=cls._hf_text_config(huggingface_config),
             pipeline_config=pipeline_config,
             devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
+        )
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        """Delegates to the annotated text config class."""
+        return cls._text_config_cls().calculate_max_seq_len(
+            pipeline_config,
+            cls._hf_text_config(huggingface_config),
+            model_config,
         )
 
 

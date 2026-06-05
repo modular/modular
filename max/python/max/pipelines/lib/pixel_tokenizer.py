@@ -148,6 +148,8 @@ class PipelineClassName(str, Enum):
     ZIMAGE = "ZImagePipeline"
     WAN = "WanPipeline"
     WAN_I2V = "WanImageToVideoPipeline"
+    QWEN_IMAGE_EDIT = "QwenImageEditPipeline"
+    QWEN_IMAGE_EDIT_PLUS = "QwenImageEditPlusPipeline"
 
     @classmethod
     def from_class_name(cls, class_name: str) -> PipelineClassName:

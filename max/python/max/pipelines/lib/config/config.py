@@ -24,12 +24,16 @@ import tempfile
 from typing import TYPE_CHECKING, Any, Literal
 
 from max.config import ConfigFileModel
-from max.driver import DeviceSpec, accelerator_api, load_devices
+from max.driver import accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    KVConnectorConfig,
+)
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
@@ -49,14 +53,11 @@ from max.pipelines.lib.registry import (
     SupportedArchitecture,
     get_pipeline_for_task,
 )
-from max.pipelines.lib.sampling import SamplingConfig
-from max.pipelines.modeling.kv_cache_config import (
-    KVCacheConfig,
-    KVConnectorConfig,
-)
+from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types.task import PipelineTask
-from max.pipelines.modeling.weights.hf_utils import is_diffusion_pipeline
+from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.weights.hf_utils import is_diffusion_pipeline
 from pydantic import (
     ConfigDict,
     Field,
@@ -68,7 +69,6 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig, _format_config_entries
 from .profiling_config import ProfilingConfig
 
@@ -140,37 +140,103 @@ def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
     kv.kv_connector_config = cfg
 
 
-_AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
-    "LlamaForCausalLM",
-    "DeepseekV3ForCausalLM",
-    "DeepseekV32ForCausalLM",
-    "DeepseekV3ForCausalLMNextN",
-    "KimiK25ForConditionalGeneration",
-    "Gemma4ForConditionalGeneration",
-    "UnifiedEagleLlama3ForCausalLM",
-    "UnifiedDflashLlama3ForCausalLM",
-    "UnifiedDflashKimiK25ForCausalLM",
-    "UnifiedMTPDeepseekV3ForCausalLM",
-    "Eagle3DeepseekV2ForCausalLM",
-    "Eagle3DeepseekV3ForCausalLM",
-    "Eagle3MHADeepseekV3ForCausalLM",
-    "Eagle3MHAKimiK25ForCausalLM",
-    "MiniMaxM2ForCausalLM",
+# Architectures excluded from auto-enabling overlap scheduler.
+# Models not in this list will auto-enable overlap scheduler when eligible.
+_DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES = (
+    "DFlashDraftModel",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV2ForCausalLM_ModuleV3",
+    "ExaoneForCausalLM",
+    "ExaoneForCausalLM_ModuleV3",
+    "Gemma3ForCausalLM",
+    "Gemma3ForCausalLM_ModuleV3",
+    "Gemma3ForConditionalGeneration",
+    "Gemma3ForConditionalGeneration_ModuleV3",
+    "GlmMoeDsaForCausalLM",
+    "GptOssForCausalLM",
+    "GptOssForCausalLM_ModuleV3",
+    "GraniteForCausalLM",
+    "GraniteForCausalLM_ModuleV3",
+    "HYV3ForCausalLM",
+    "Idefics3ForConditionalGeneration",
+    "Idefics3ForConditionalGeneration_ModuleV3",
+    "InternVLChatModel",
+    "KimiVLForConditionalGeneration",
+    "Lfm2ForCausalLM",
+    "LlamaForCausalLMEagle",
+    "LlamaForCausalLMEagle3",
+    "LlamaForCausalLM_ModuleV3",
+    "LlavaForConditionalGeneration",
+    "LlavaForConditionalGeneration_ModuleV3",
+    "MambaForCausalLM",
+    "Mistral3ForConditionalGeneration",
+    "MistralForCausalLM",
+    "Olmo2ForCausalLM",
+    "Olmo2ForCausalLM_ModuleV3",
+    "Olmo3ForCausalLM",
+    "OlmoForCausalLM",
+    "OlmoForCausalLM_ModuleV3",
+    "Phi3ForCausalLM",
+    "Phi3ForCausalLM_ModuleV3",
+    "Qwen2ForCausalLM",
+    "Qwen2_5_VLForConditionalGeneration",
+    "Qwen3ForCausalLM",
+    "Qwen3MoeForCausalLM",
+    "Qwen3VLForConditionalGeneration",
+    "Qwen3VLMoeForConditionalGeneration",
+    "Qwen3_5ForConditionalGeneration",
+    "Step3p5ForCausalLM",
 )
 
-_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
-    "LlamaForCausalLM",
-    "DeepseekV3ForCausalLM",
-    "DeepseekV32ForCausalLM",
-    "DeepseekV3ForCausalLMNextN",
-    "KimiK25ForConditionalGeneration",
-    "UnifiedEagleLlama3ForCausalLM",
-    "UnifiedMTPDeepseekV3ForCausalLM",
-    "Eagle3DeepseekV2ForCausalLM",
-    "Eagle3DeepseekV3ForCausalLM",
-    "Eagle3MHADeepseekV3ForCausalLM",
-    "Eagle3MHAKimiK25ForCausalLM",
-    "MiniMaxM2ForCausalLM",
+# Architectures excluded from auto-enabling device graph capture.
+# Models not in this list will auto-enable device graph capture when eligible.
+_DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
+    "DFlashDraftModel",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV2ForCausalLM_ModuleV3",
+    "ExaoneForCausalLM",
+    "ExaoneForCausalLM_ModuleV3",
+    "Gemma3ForCausalLM",
+    "Gemma3ForCausalLM_ModuleV3",
+    "Gemma3ForConditionalGeneration",
+    "Gemma3ForConditionalGeneration_ModuleV3",
+    "Gemma4ForConditionalGeneration",
+    "GlmMoeDsaForCausalLM",
+    "GptOssForCausalLM",
+    "GptOssForCausalLM_ModuleV3",
+    "GraniteForCausalLM",
+    "GraniteForCausalLM_ModuleV3",
+    "HYV3ForCausalLM",
+    "Idefics3ForConditionalGeneration",
+    "Idefics3ForConditionalGeneration_ModuleV3",
+    "InternVLChatModel",
+    "KimiVLForConditionalGeneration",
+    "Lfm2ForCausalLM",
+    "LlamaForCausalLMEagle",
+    "LlamaForCausalLMEagle3",
+    "LlamaForCausalLM_ModuleV3",
+    "LlavaForConditionalGeneration",
+    "LlavaForConditionalGeneration_ModuleV3",
+    "MambaForCausalLM",
+    "Mistral3ForConditionalGeneration",
+    "MistralForCausalLM",
+    "Olmo2ForCausalLM",
+    "Olmo2ForCausalLM_ModuleV3",
+    "Olmo3ForCausalLM",
+    "OlmoForCausalLM",
+    "OlmoForCausalLM_ModuleV3",
+    "Phi3ForCausalLM",
+    "Phi3ForCausalLM_ModuleV3",
+    "Qwen2ForCausalLM",
+    "Qwen2_5_VLForConditionalGeneration",
+    "Qwen3ForCausalLM",
+    "Qwen3MoeForCausalLM",
+    "Qwen3VLForConditionalGeneration",
+    "Qwen3VLMoeForConditionalGeneration",
+    "Qwen3_5ForConditionalGeneration",
+    "Step3p5ForCausalLM",
+    "UnifiedDflashKimiK25ForCausalLM",
+    "UnifiedDflashLlama3ForCausalLM",
 )
 
 
@@ -1211,7 +1277,8 @@ class PipelineConfig(ConfigFileModel):
             if (
                 self.runtime.device_graph_capture is None
                 and arch is not None
-                and arch.name in _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
+                and arch.name
+                not in _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
                 and max_batch_size is not None
                 and accelerator_api() in ("cuda", "hip")
                 and self._is_eligible_for_overlap_serve_optimizations()
@@ -1234,29 +1301,26 @@ class PipelineConfig(ConfigFileModel):
         if self.runtime.force:
             return
 
-        # Automatically enable overlap scheduling for select architectures.
+        # Automatically enable overlap scheduling for architectures not in the
+        # disable list. This is a blacklist approach so new architectures get
+        # overlap scheduler by default, making it easier to track which models
+        # still need work.
         if not self.runtime.enable_overlap_scheduler:
             if (
                 arch is not None
-                and arch.name in _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES
+                and arch.name
+                not in _DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES
                 and self._is_eligible_for_overlap_serve_optimizations()
             ):
                 self.runtime.enable_overlap_scheduler = True
-                self.runtime.max_num_steps = 1
                 logger.info(
-                    f"Automatically enabling overlap scheduling for {arch.name} with max-num-steps=1. "
+                    f"Automatically enabling overlap scheduling for {arch.name}. "
                     "You can manually disable this by setting --no-enable-overlap-scheduler --force."
                 )
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.runtime.enable_overlap_scheduler:
             if self.runtime.pipeline_role in ("decode_only", "prefill_only"):
-                if self.runtime.max_num_steps != 1:
-                    logger.info(
-                        "Setting max-num-steps=1 for overlap scheduling on %s worker.",
-                        self.runtime.pipeline_role,
-                    )
-                    self.runtime.max_num_steps = 1
                 logger.info(
                     "Overlap scheduling enabled for %s worker "
                     "(Disaggregated Inference). THIS IS EXPERIMENTAL.",
@@ -1269,10 +1333,6 @@ class PipelineConfig(ConfigFileModel):
             if self.lora:
                 raise ValueError(
                     "LoRA is not supported with the Overlap scheduler."
-                )
-            if self.runtime.max_num_steps > 1:
-                raise ValueError(
-                    "Max num steps > 1 is not supported with the Overlap scheduler."
                 )
             if self.model.device_specs[0].device_type == "cpu":
                 raise ValueError(
@@ -1297,28 +1357,19 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.enable_overlap_scheduler:
             logger.info("Enabling overlap scheduling for device graph capture.")
         self.runtime.enable_overlap_scheduler = True
-        if self.runtime.max_num_steps != 1:
-            logger.info(
-                "Setting max-num-steps=1 for device graph capture with overlap scheduling."
-            )
-        self.runtime.max_num_steps = 1
 
     def _validate_and_resolve_max_num_steps(self) -> None:
-        """Validates and resolves the max_num_steps field (platform-specific)."""
-        if self.draft_model is not None and self.runtime.max_num_steps > 1:
-            raise ValueError(
-                f"max_num_steps must be 1 when speculative decoding is enabled, "
-                f"got {self.runtime.max_num_steps}."
-            )
-        if self.runtime.max_num_steps < 0:
-            if self.model.default_device_spec == DeviceSpec.cpu():
-                self.runtime.max_num_steps = 1
-            elif self.draft_model is not None:
-                # Speculative decoding pipelines manage multi-step KV
-                # allocation internally.
-                self.runtime.max_num_steps = 1
-            else:
-                self.runtime.max_num_steps = 10
+        """Normalize deprecated ``max_num_steps`` to single-step decode."""
+        if self.runtime.max_num_steps in (1, -1):
+            self.runtime.max_num_steps = 1
+            return
+
+        logger.warning(
+            "--max-num-steps=%s is deprecated and ignored; using single-step "
+            "decode (max_num_steps=1).",
+            self.runtime.max_num_steps,
+        )
+        self.runtime.max_num_steps = 1
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """Validates pipeline config when used in speculative decoding mode."""

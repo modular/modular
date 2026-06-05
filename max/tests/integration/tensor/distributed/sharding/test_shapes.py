@@ -22,6 +22,8 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+)
+from max.experimental.sharding.placements import (
     _shard_sizes_along_axis,
     local_shard_shape_from_global,
     shard_shape,

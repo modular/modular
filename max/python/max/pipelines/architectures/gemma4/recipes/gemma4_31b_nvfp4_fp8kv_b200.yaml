@@ -28,4 +28,3 @@ runtime:
   max_batch_size: 128
   max_batch_input_tokens: 32768
   enable_chunked_prefill: true
-  max_num_steps: 1

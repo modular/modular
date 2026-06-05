@@ -128,7 +128,7 @@ class Glm5_1Config(DeepseekV3_2Config):
             tie_word_embeddings=config.tie_word_embeddings,
             rope_theta=get_rope_theta(config),
             rope_scaling=_glm_rope_scaling(config),
-            rope_interleave=False,  # getattr(config, "rope_interleave", True),
+            rope_interleave=getattr(config, "rope_interleave", True),
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,

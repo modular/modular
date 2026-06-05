@@ -35,6 +35,7 @@ from std.utils.numerics import isinf, isnan
 
 from std.math import ceildiv
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 from extensibility import InputTensor, OutputTensor
 
@@ -111,10 +112,8 @@ def nan_check_count[
 
         @parameter
         @always_inline
-        def scan[
-            width: Int, _rank: Int, alignment: Int = 1
-        ](idx: IndexList[_rank]) capturing:
-            var flat = idx[0]
+        def scan[width: Int, alignment: Int = 1](idx: Coord) capturing:
+            var flat = idx[0].value()
             var ptr = input.unsafe_ptr()
             var val = ptr.load[width=width](flat)
             var nans = isnan(val).cast[DType.int32]().reduce_add()

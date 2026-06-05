@@ -1576,6 +1576,7 @@ struct SubTileLoaderLDS[
             Self.dtype, _, _, address_space=AddressSpace.SHARED, ...
         ],
         src: TileTensor[Self.dtype, ...],
+        worker_base: Int = 0,
     ):
         """Load a warp sub-tile from DRAM to LDS.
 
@@ -1586,6 +1587,19 @@ struct SubTileLoaderLDS[
         Args:
             dst: Destination TileTensor in shared memory.
             src: Source TileTensor in global memory (warp sub-tile).
+            worker_base: Sub-tile row-strip index for cooperative
+                half-sub-block loads (N-warps-per-subblock partition at
+                depths < 128). When a caller splits a `BM`-row sub-block
+                across N warps and passes each warp its own `M = BM/N`-row
+                strip, the loader's internal `m_sub_tile` collapses to
+                `{0}` and the swizzle would be computed as if the strip
+                were the FIRST sub-row — dropping the
+                `m_sub_tile * WARP_SIZE` worker offset that the two-XOR
+                `st_32x32_s` swizzle needs (the `Swizzle(1,0,6)` bit-0
+                flip keys off worker bit 6). Pass the strip's absolute
+                sub-row index here so the swizzle matches the consumer
+                read (`MhaMmaOp.load_K`). Default 0 = full sub-block load
+                (depth 128), unchanged.
         """
         comptime M = type_of(src).static_shape[0]
         comptime N = type_of(src).static_shape[1]
@@ -1626,7 +1640,9 @@ struct SubTileLoaderLDS[
             var src_partitions = src.tile[BM, BN](m_tile, n_tile).tile[
                 BM_SUB, BN
             ](m_sub_tile, 0)
-            var worker_idx_with_offset = worker_idx + m_sub_tile * WARP_SIZE
+            var worker_idx_with_offset = (
+                worker_idx + (m_sub_tile + worker_base) * WARP_SIZE
+            )
             var swizzled_worker_idx = worker_idx_with_offset
             comptime if Self.swizzle:
                 swizzled_worker_idx = Self.swizzle.value()(swizzled_worker_idx)

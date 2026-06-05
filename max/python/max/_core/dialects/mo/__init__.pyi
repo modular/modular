@@ -318,6 +318,489 @@ class LayoutAttr(max._core.Attribute):
     @property
     def format(self) -> max._core.dialects.builtin.StringAttr: ...
 
+class CompositeDistributedAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
+    """
+    Allreduce takes in inputs each coming from a different device with
+    the same shape as the final output and performs a sum reduction
+    across the devices. This op instance executes on a specific device
+    (specified by the device attribute) and produces the output for that device.
+
+    This op also applies a residual (add), then RMSNorm and dynamic FP8 quantization to the output of AllReduce.
+    It returns both the quantized output value and the quantization scale.
+    It also returns the intermediate output of the residual (add) op.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: Sequence[max._core.Type],
+        out_scale: Sequence[max._core.Type],
+        out_residual: Sequence[max._core.Type],
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        residual: Sequence[max._core.Value[max._core.Type]],
+        gamma: Sequence[max._core.Value[max._core.Type]],
+        epsilon: Sequence[max._core.Value[max._core.Type]],
+        weight_offset: Sequence[max._core.Value[max._core.Type]],
+        scale_ub: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def residual(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def gamma(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def epsilon(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def scale_ub(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+
+class CompositeBundledAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
+    """
+    Per-device entry point for the fused `allreduce.sum` +
+    residual add + RMS norm + dynamic-scaled FP8 quantize chain, used inside
+    an `mo.parallel` region.  Takes N peer tensor inputs (from
+    `mo.bundled.expand`), N signal buffers (captured from graph scope),
+    per-device residual and gamma tensors, the epsilon / weight offset /
+    scale-upper-bound scalars, and a chain.
+
+    Returns the FP8 quantized output for this device, its scale tensor, the
+    intermediate residual (post-add) tensor, and an output chain.  This is
+    the bundled analog of
+    `mo.composite.distributed.allreduce_add_rms_norm_quant_fp8`.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        out_scale: TensorType,
+        out_residual: TensorType,
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        residual: max._core.Value[TensorType],
+        gamma: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+        scale_ub: max._core.Value[TensorType],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def residual(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    @property
+    def scale_ub(self) -> max._core.Value[TensorType]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+
+class CompositeConcatSliceOp(max._core.Operation):
+    """
+    This operation performs two operations at once:
+    %concat = mo.concat[axis](inputs)
+    %slice = mo.slice(%concat)
+    And returns both the concat and the slice result.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        concat_result: TensorType,
+        slice_result: TensorType,
+        axis: max._core.dialects.builtin.IntegerAttr,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        static_starts: max._core.dialects.builtin.ArrayAttr,
+        static_steps: max._core.dialects.builtin.ArrayAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def static_starts(self) -> max._core.dialects.builtin.ArrayAttr: ...
+    @static_starts.setter
+    def static_starts(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
+    @property
+    def static_steps(self) -> max._core.dialects.builtin.ArrayAttr: ...
+    @static_steps.setter
+    def static_steps(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class CompositeMatmulAddOp(max._core.Operation):
+    """
+    Computes C = A @ B (optionally transposed) + residual, fusing the matmul
+    and the residual addition into a single kernel call.
+
+    `residual` may be rank-2 (same shape as the output, element-wise add) or
+    rank-1 (broadcast along the row dimension, i.e. a bias vector).
+
+    This operation is currently only lowered for SM100 (B200) targets, where
+    the residual is passed directly to the matmul kernel as an epilogue tensor.
+
+    Example (2-D residual):
+
+    ```mlir
+      %res = mo.composite.matmul_add(%a, %b, %residual) {transpose_b = true} : (
+        !mo.tensor<[4, 512], bf16>,
+        !mo.tensor<[1536, 512], bf16>,
+        !mo.tensor<[4, 1536], bf16>
+      ) -> !mo.tensor<[4, 1536], bf16>
+    ```
+
+    Example (1-D bias broadcast):
+
+    ```mlir
+      %res = mo.composite.matmul_add(%a, %b, %bias) {transpose_b = true} : (
+        !mo.tensor<[4, 512], bf16>,
+        !mo.tensor<[1536, 512], bf16>,
+        !mo.tensor<[1536], bf16>
+      ) -> !mo.tensor<[4, 1536], bf16>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input_a: max._core.Value[TensorType],
+        input_b: max._core.Value[TensorType],
+        residual: max._core.Value[TensorType],
+        transpose_b: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def input_a(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_b(self) -> max._core.Value[TensorType]: ...
+    @property
+    def residual(self) -> max._core.Value[TensorType]: ...
+    @property
+    def transpose_b(self) -> bool: ...
+    @transpose_b.setter
+    def transpose_b(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+
+class CompositeMaskedFlashAttentionCpuOp(max._core.Operation):
+    """
+    Fused scaled-dot-product attention (`softmax(Q @ K^T * scale + mask) @ V`)
+    on CPU. `scale` is a host scalar (`f32`). Lowers 1:1 to the
+    `with_mask_flash_attention_cpu` kernel.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        query: max._core.Value[TensorType],
+        key: max._core.Value[TensorType],
+        value: max._core.Value[TensorType],
+        mask: max._core.Value[TensorType],
+        scale: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def query(self) -> max._core.Value[TensorType]: ...
+    @property
+    def key(self) -> max._core.Value[TensorType]: ...
+    @property
+    def value(self) -> max._core.Value[TensorType]: ...
+    @property
+    def mask(self) -> max._core.Value[TensorType]: ...
+    @property
+    def scale(self) -> max._core.Value[TensorType]: ...
+
+class CompositeMaskedFlashAttentionGpuOp(max._core.Operation):
+    """
+    Fused scaled-dot-product attention (`softmax(Q @ K^T * scale + mask) @ V`)
+    on GPU. `scale` is a host scalar (`f32`). Lowers 1:1 to the
+    `masked_flash_attention_gpu` kernel.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        query: max._core.Value[TensorType],
+        key: max._core.Value[TensorType],
+        value: max._core.Value[TensorType],
+        mask: max._core.Value[TensorType],
+        scale: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def query(self) -> max._core.Value[TensorType]: ...
+    @property
+    def key(self) -> max._core.Value[TensorType]: ...
+    @property
+    def value(self) -> max._core.Value[TensorType]: ...
+    @property
+    def mask(self) -> max._core.Value[TensorType]: ...
+    @property
+    def scale(self) -> max._core.Value[TensorType]: ...
+
+class CompositeMatmulFusedPartialRmsNormOp(max._core.Operation):
+    """
+    Fused operation computing a matmul followed by an RMS norm of the result,
+    returning both the normalized output and the un-normalized matmul output:
+
+      unnormed = input_a @ input_b   {transpose_b = true}
+      normed   = rms_norm(unnormed, gamma, epsilon, weight_offset)
+                   {multiply_before_cast = true}
+
+    The kernel hardcodes `transpose_b = true` and `multiply_before_cast = true`.
+    Produced by the matmul + partial-RMS-norm fusion pattern (GPU only).
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        normed: TensorType,
+        unnormed: TensorType,
+        input_a: max._core.Value[TensorType],
+        input_b: max._core.Value[TensorType],
+        gamma: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input_a(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_b(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+
+class CompositeNoMaskFlashAttentionCpuOp(max._core.Operation):
+    """
+    Fused scaled-dot-product attention (`softmax(Q @ K^T * scale) @ V`) on CPU
+    with no attention mask. `scale` is a host scalar (`f32`). Lowers 1:1 to the
+    `no_mask_flash_attention_cpu` kernel.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        query: max._core.Value[TensorType],
+        key: max._core.Value[TensorType],
+        value: max._core.Value[TensorType],
+        scale: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def query(self) -> max._core.Value[TensorType]: ...
+    @property
+    def key(self) -> max._core.Value[TensorType]: ...
+    @property
+    def value(self) -> max._core.Value[TensorType]: ...
+    @property
+    def scale(self) -> max._core.Value[TensorType]: ...
+
+class CompositeRmsNormFusedQuantizeDynamicScaledFp8Op(max._core.Operation):
+    """
+    Fused operation computing token-wise dynamic-scaled FP8 quantization of an
+    RMS-normalized input:
+
+      normed = rms_norm(input, weight, epsilon, weight_offset)
+                 {multiply_before_cast = true}
+      output, scale = quantize_dynamic_scaled_float8(normed, scale_ub)
+
+    Returns the FP8 quantized output and its per-token scale tensor. Produced by
+    the RMS-norm + quantize fusion pattern (GPU only).
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        scale: TensorType,
+        input: max._core.Value[TensorType],
+        weight: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+        scale_ub: max._core.Value[TensorType],
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    @property
+    def scale_ub(self) -> max._core.Value[TensorType]: ...
+
+class CompositeRmsNormFusedResidualAddOp(max._core.Operation):
+    """
+    Fused operation computing:
+      intermediate = rms_norm(input, gamma1, epsilon1, weight_offset1) + residual_input
+      output = rms_norm(intermediate, gamma2, epsilon2, weight_offset2)
+
+    Returns both the final output and the post-add intermediate tensor.
+
+    Example:
+
+    ```mlir
+      %output, %intermediate = mo.composite.rms_norm_fused_residual_add(
+          %input, %residual, %gamma1, %gamma2, %eps1, %eps2, %offset1, %offset2) {
+          multiply_before_cast1 = false, multiply_before_cast2 = false} :
+        (...) -> (!mo.tensor<[3, 2], f32>, !mo.tensor<[3, 2], f32>)
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        intermediate: TensorType,
+        input: max._core.Value[TensorType],
+        residual_input: max._core.Value[TensorType],
+        gamma1: max._core.Value[TensorType],
+        gamma2: max._core.Value[TensorType],
+        epsilon1: max._core.Value[TensorType],
+        epsilon2: max._core.Value[TensorType],
+        weight_offset1: max._core.Value[TensorType],
+        weight_offset2: max._core.Value[TensorType],
+        multiply_before_cast: max._core.dialects.builtin.BoolAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def residual_input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma1(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma2(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon1(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon2(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset1(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset2(self) -> max._core.Value[TensorType]: ...
+    @property
+    def multiply_before_cast(self) -> bool: ...
+    @multiply_before_cast.setter
+    def multiply_before_cast(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class CompositeRmsNormRopeOp(max._core.Operation):
+    """
+    Fused operation computing RMS normalization followed by Rotary Position
+    Embedding (RoPE):
+
+      normed = rms_norm(input, weight, epsilon, weight_offset)
+      x1, x2 = split(normed, axis=-1)
+      rotated = concat(-x2, x1, axis=-1)
+      result = normed * cos_vals + rotated * sin_vals
+
+    Example:
+
+    ```mlir
+      %result = mo.composite.rms_norm_rope(%input, %weight, %epsilon, %offset,
+                                           %cos_vals, %sin_vals)
+        {multiply_before_cast = false} :
+        (!mo.tensor<[2, 3, 128], bf16, gpu:0>, !mo.tensor<[128], bf16, gpu:0>,
+         !mo.tensor<[], bf16>, !mo.tensor<[], bf16>,
+         !mo.tensor<[2, 3, 128], f32, gpu:0>, !mo.tensor<[2, 3, 128], f32, gpu:0>)
+        -> !mo.tensor<[2, 3, 128], bf16, gpu:0>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        weight: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+        cos_vals: max._core.Value[TensorType],
+        sin_vals: max._core.Value[TensorType],
+        multiply_before_cast: max._core.dialects.builtin.BoolAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    @property
+    def cos_vals(self) -> max._core.Value[TensorType]: ...
+    @property
+    def sin_vals(self) -> max._core.Value[TensorType]: ...
+    @property
+    def multiply_before_cast(self) -> bool: ...
+    @multiply_before_cast.setter
+    def multiply_before_cast(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
 class CoordinateTransformMode(enum.Enum):
     half_pixel = 0
 
@@ -1106,52 +1589,6 @@ class DistributedAllgatherOp(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
-class DistributedAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
-    """
-    Allreduce takes in inputs each coming from a different device with
-    the same shape as the final output and performs a sum reduction
-    across the devices. This op instance executes on a specific device
-    (specified by the device attribute) and produces the output for that device.
-
-    This op also applies a residual (add), then RMSNorm and dynamic FP8 quantization to the output of AllReduce.
-    It returns both the quantized output value and the quantization scale.
-    It also returns the intermediate output of the residual (add) op.
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        output: Sequence[max._core.Type],
-        out_scale: Sequence[max._core.Type],
-        out_residual: Sequence[max._core.Type],
-        out_chain: ChainType,
-        inputs: Sequence[max._core.Value[max._core.Type]],
-        signal_buffers: Sequence[max._core.Value[max._core.Type]],
-        residual: Sequence[max._core.Value[max._core.Type]],
-        gamma: Sequence[max._core.Value[max._core.Type]],
-        epsilon: Sequence[max._core.Value[max._core.Type]],
-        weight_offset: Sequence[max._core.Value[max._core.Type]],
-        scale_ub: Sequence[max._core.Value[max._core.Type]],
-        in_chain: max._core.Value[ChainType],
-    ) -> None: ...
-    @property
-    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def residual(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def gamma(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def epsilon(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def scale_ub(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def in_chain(self) -> max._core.Value[ChainType]: ...
-
 class DistributedAllreduceSumOp(max._core.Operation):
     """
     Allreduce takes in inputs each coming from a different device with
@@ -1925,54 +2362,6 @@ class BufferTransferOp(max._core.Operation):
     def src(self) -> max._core.Value[BufferType]: ...
     @property
     def dst(self) -> max._core.Value[BufferType]: ...
-    @property
-    def in_chain(self) -> max._core.Value[ChainType]: ...
-
-class BundledAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
-    """
-    Per-device entry point for the fused `allreduce.sum` +
-    residual add + RMS norm + dynamic-scaled FP8 quantize chain, used inside
-    an `mo.parallel` region.  Takes N peer tensor inputs (from
-    `mo.bundled.expand`), N signal buffers (captured from graph scope),
-    per-device residual and gamma tensors, the epsilon / weight offset /
-    scale-upper-bound scalars, and a chain.
-
-    Returns the FP8 quantized output for this device, its scale tensor, the
-    intermediate residual (post-add) tensor, and an output chain.  This is
-    the bundled analog of `mo.distributed.allreduce_add_rms_norm_quant_fp8`.
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        output: TensorType,
-        out_scale: TensorType,
-        out_residual: TensorType,
-        out_chain: ChainType,
-        inputs: Sequence[max._core.Value[max._core.Type]],
-        signal_buffers: Sequence[max._core.Value[max._core.Type]],
-        residual: max._core.Value[TensorType],
-        gamma: max._core.Value[TensorType],
-        epsilon: max._core.Value[TensorType],
-        weight_offset: max._core.Value[TensorType],
-        scale_ub: max._core.Value[TensorType],
-        in_chain: max._core.Value[ChainType],
-    ) -> None: ...
-    @property
-    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def residual(self) -> max._core.Value[TensorType]: ...
-    @property
-    def gamma(self) -> max._core.Value[TensorType]: ...
-    @property
-    def epsilon(self) -> max._core.Value[TensorType]: ...
-    @property
-    def weight_offset(self) -> max._core.Value[TensorType]: ...
-    @property
-    def scale_ub(self) -> max._core.Value[TensorType]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
@@ -3572,108 +3961,6 @@ class FloorOp(max._core.Operation):
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
-
-class FusedConcatSliceOp(max._core.Operation):
-    """
-    This operation performs two operations at once:
-    %concat = mo.concat[axis](inputs)
-    %slice = mo.slice(%concat)
-    And returns both the concat and the slice result.
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        concat_result: TensorType,
-        slice_result: TensorType,
-        axis: max._core.dialects.builtin.IntegerAttr,
-        inputs: Sequence[max._core.Value[max._core.Type]],
-        static_starts: max._core.dialects.builtin.ArrayAttr,
-        static_steps: max._core.dialects.builtin.ArrayAttr,
-        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @property
-    def axis(self) -> int: ...
-    @axis.setter
-    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
-    @property
-    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-    @property
-    def static_starts(self) -> max._core.dialects.builtin.ArrayAttr: ...
-    @static_starts.setter
-    def static_starts(
-        self, arg: max._core.dialects.builtin.ArrayAttr, /
-    ) -> None: ...
-    @property
-    def static_steps(self) -> max._core.dialects.builtin.ArrayAttr: ...
-    @static_steps.setter
-    def static_steps(
-        self, arg: max._core.dialects.builtin.ArrayAttr, /
-    ) -> None: ...
-    @property
-    def output_param_decls(
-        self,
-    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
-    @output_param_decls.setter
-    def output_param_decls(
-        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
-    ) -> None: ...
-
-class FusedMatmulAddOp(max._core.Operation):
-    """
-    Computes C = A @ B (optionally transposed) + residual, fusing the matmul
-    and the residual addition into a single kernel call.
-
-    `residual` may be rank-2 (same shape as the output, element-wise add) or
-    rank-1 (broadcast along the row dimension, i.e. a bias vector).
-
-    This operation is currently only lowered for SM100 (B200) targets, where
-    the residual is passed directly to the matmul kernel as an epilogue tensor.
-
-    Example (2-D residual):
-
-    ```mlir
-      %res = mo.matmul_add(%a, %b, %residual) {transpose_b = true} : (
-        !mo.tensor<[4, 512], bf16>,
-        !mo.tensor<[1536, 512], bf16>,
-        !mo.tensor<[4, 1536], bf16>
-      ) -> !mo.tensor<[4, 1536], bf16>
-    ```
-
-    Example (1-D bias broadcast):
-
-    ```mlir
-      %res = mo.matmul_add(%a, %b, %bias) {transpose_b = true} : (
-        !mo.tensor<[4, 512], bf16>,
-        !mo.tensor<[1536, 512], bf16>,
-        !mo.tensor<[1536], bf16>
-      ) -> !mo.tensor<[4, 1536], bf16>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input_a: max._core.Value[TensorType],
-        input_b: max._core.Value[TensorType],
-        residual: max._core.Value[TensorType],
-        transpose_b: max._core.dialects.builtin.BoolAttr,
-    ) -> None: ...
-    @property
-    def input_a(self) -> max._core.Value[TensorType]: ...
-    @property
-    def input_b(self) -> max._core.Value[TensorType]: ...
-    @property
-    def residual(self) -> max._core.Value[TensorType]: ...
-    @property
-    def transpose_b(self) -> bool: ...
-    @transpose_b.setter
-    def transpose_b(
-        self, arg: max._core.dialects.builtin.BoolAttr, /
-    ) -> None: ...
 
 class GatherNdOp(max._core.Operation):
     """
@@ -5806,72 +6093,6 @@ class ReduceMulOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class ReduceRmsNormFusedResidualAddOp(max._core.Operation):
-    """
-    Fused operation computing:
-      intermediate = rms_norm(input, gamma1, epsilon1, weight_offset1) + residual_input
-      output = rms_norm(intermediate, gamma2, epsilon2, weight_offset2)
-
-    Returns both the final output and the post-add intermediate tensor.
-
-    Example:
-
-    ```mlir
-      %output, %intermediate = mo.reduce.rms_norm_fused_residual_add(
-          %input, %residual, %gamma1, %gamma2, %eps1, %eps2, %offset1, %offset2) {
-          multiply_before_cast1 = false, multiply_before_cast2 = false} :
-        (...) -> (!mo.tensor<[3, 2], f32>, !mo.tensor<[3, 2], f32>)
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        output: TensorType,
-        intermediate: TensorType,
-        input: max._core.Value[TensorType],
-        residual_input: max._core.Value[TensorType],
-        gamma1: max._core.Value[TensorType],
-        gamma2: max._core.Value[TensorType],
-        epsilon1: max._core.Value[TensorType],
-        epsilon2: max._core.Value[TensorType],
-        weight_offset1: max._core.Value[TensorType],
-        weight_offset2: max._core.Value[TensorType],
-        multiply_before_cast: max._core.dialects.builtin.BoolAttr,
-        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def residual_input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def gamma1(self) -> max._core.Value[TensorType]: ...
-    @property
-    def gamma2(self) -> max._core.Value[TensorType]: ...
-    @property
-    def epsilon1(self) -> max._core.Value[TensorType]: ...
-    @property
-    def epsilon2(self) -> max._core.Value[TensorType]: ...
-    @property
-    def weight_offset1(self) -> max._core.Value[TensorType]: ...
-    @property
-    def weight_offset2(self) -> max._core.Value[TensorType]: ...
-    @property
-    def multiply_before_cast(self) -> bool: ...
-    @multiply_before_cast.setter
-    def multiply_before_cast(
-        self, arg: max._core.dialects.builtin.BoolAttr, /
-    ) -> None: ...
-    @property
-    def output_param_decls(
-        self,
-    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
-    @output_param_decls.setter
-    def output_param_decls(
-        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
-    ) -> None: ...
-
 class ReduceRmsNormOp(max._core.Operation):
     """
     Applies Root Mean Square normalization to the input tensor.
@@ -5914,70 +6135,6 @@ class ReduceRmsNormOp(max._core.Operation):
     def epsilon(self) -> max._core.Value[TensorType]: ...
     @property
     def weight_offset(self) -> max._core.Value[TensorType]: ...
-    @property
-    def multiply_before_cast(self) -> bool: ...
-    @multiply_before_cast.setter
-    def multiply_before_cast(
-        self, arg: max._core.dialects.builtin.BoolAttr, /
-    ) -> None: ...
-    @property
-    def output_param_decls(
-        self,
-    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
-    @output_param_decls.setter
-    def output_param_decls(
-        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
-    ) -> None: ...
-
-class ReduceRmsNormRoPEOp(max._core.Operation):
-    """
-    Fused operation computing RMS normalization followed by Rotary Position
-    Embedding (RoPE):
-
-      normed = rms_norm(input, weight, epsilon, weight_offset)
-      x1, x2 = split(normed, axis=-1)
-      rotated = concat(-x2, x1, axis=-1)
-      result = normed * cos_vals + rotated * sin_vals
-
-    Example:
-
-    ```mlir
-      %result = mo.reduce.rms_norm.RoPE(%input, %weight, %epsilon, %offset,
-                                         %cos_vals, %sin_vals)
-        {multiply_before_cast = false} :
-        (!mo.tensor<[2, 3, 128], bf16, gpu:0>, !mo.tensor<[128], bf16, gpu:0>,
-         !mo.tensor<[], bf16>, !mo.tensor<[], bf16>,
-         !mo.tensor<[2, 3, 128], f32, gpu:0>, !mo.tensor<[2, 3, 128], f32, gpu:0>)
-        -> !mo.tensor<[2, 3, 128], bf16, gpu:0>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[TensorType],
-        weight: max._core.Value[TensorType],
-        epsilon: max._core.Value[TensorType],
-        weight_offset: max._core.Value[TensorType],
-        cos_vals: max._core.Value[TensorType],
-        sin_vals: max._core.Value[TensorType],
-        multiply_before_cast: max._core.dialects.builtin.BoolAttr,
-        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def weight(self) -> max._core.Value[TensorType]: ...
-    @property
-    def epsilon(self) -> max._core.Value[TensorType]: ...
-    @property
-    def weight_offset(self) -> max._core.Value[TensorType]: ...
-    @property
-    def cos_vals(self) -> max._core.Value[TensorType]: ...
-    @property
-    def sin_vals(self) -> max._core.Value[TensorType]: ...
     @property
     def multiply_before_cast(self) -> bool: ...
     @multiply_before_cast.setter

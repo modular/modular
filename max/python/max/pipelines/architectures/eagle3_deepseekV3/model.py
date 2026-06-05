@@ -503,13 +503,6 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
             seed=self._next_seed(),
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Eagle3DeepseekV3Inputs:
-        raise NotImplementedError("Eagle does not support Multistep execution")
-
     def _create_draft_config(
         self,
         target_config: DeepseekV3Config,

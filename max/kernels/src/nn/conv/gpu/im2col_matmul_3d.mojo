@@ -269,9 +269,6 @@ def dispatch_im2col_matmul_conv3d[
         return False
 
     var batch = Int(input.dim[0]())
-    var D = Int(input.dim[1]())
-    var H = Int(input.dim[2]())
-    var W = Int(input.dim[3]())
 
     var D_out = Int(output.dim[1]())
     var H_out = Int(output.dim[2]())
@@ -332,13 +329,11 @@ def dispatch_im2col_matmul_conv3d[
     var m_tile_cap = (
         m_tile_by_budget if m_tile_by_budget > _MIN_M_TILE else _MIN_M_TILE
     )
-    var num_tiles: Int
     var m_tile: Int
     if full_M <= m_tile_cap:
-        num_tiles = 1
         m_tile = full_M
     else:
-        num_tiles = ceildiv(full_M, m_tile_cap)
+        var num_tiles = ceildiv(full_M, m_tile_cap)
         m_tile = ceildiv(full_M, num_tiles)
 
     var im2col_buf = ctx.enqueue_create_buffer[input_type](m_tile * K)

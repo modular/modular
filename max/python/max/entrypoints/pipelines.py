@@ -318,10 +318,42 @@ def cli_serve(
     show_default=True,
     help="Number of warmup iterations to run before the final timed run.",
 )
+@click.option(
+    "--profile",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help=(
+        "Capture a rudimentary profile of the timed run. If Nsight Systems "
+        "(`nsys`) and an NVIDIA GPU are available, captures the GPU kernel "
+        "trace into an .nsys-rep file and prints the top kernels. Always "
+        "captures a Python/CPU profile via cProfile."
+    ),
+)
+@click.option(
+    "--profile-output",
+    type=str,
+    default=None,
+    help=(
+        "Path for the .nsys-rep file when `--profile` is on. Default: "
+        "$BUILD_WORKSPACE_DIRECTORY/max-profile.nsys-rep, or "
+        "./max-profile.nsys-rep."
+    ),
+)
+@click.option(
+    "--profile-top-n",
+    type=int,
+    default=15,
+    show_default=True,
+    help="Number of rows to show in the GPU kernel and Python profile tables.",
+)
 def cli_pipeline(
     prompt: str,
     image_url: list[str],
     num_warmups: int,
+    profile: bool,
+    profile_output: str | None,
+    profile_top_n: int,
     top_k: int,
     top_p: float,
     min_p: float,
@@ -346,6 +378,14 @@ def cli_pipeline(
     from max.entrypoints.cli import generate_text_for_pipeline
     from max.pipelines import PipelineConfig
     from max.pipelines.modeling.types import SamplingParams, SamplingParamsInput
+    from max.profiler import maybe_reexec_under_nsys
+
+    # When --profile is set and we have a usable nsys + NVIDIA GPU, re-exec
+    # under nsys *before* loading any model state. The child process picks
+    # up the same argv, detects it is running under nsys, and runs normally.
+    # This keeps the parent process's wasted work to ~zero.
+    if profile:
+        maybe_reexec_under_nsys(profile_output, top_n=profile_top_n)
 
     params = SamplingParamsInput(
         top_k=top_k,
@@ -377,6 +417,8 @@ def cli_pipeline(
         prompt=prompt,
         image_urls=image_url,
         num_warmups=num_warmups,
+        profile=profile,
+        profile_top_n=profile_top_n,
     )
 
 
@@ -462,7 +504,8 @@ def cli_list(json: bool) -> None:
 
 
 # Argument parsing is handled by benchmark_serving.parse_args.
-# All CLI args are forwarded as-is so the two entry points stay in sync.
+# All CLI args other than the explicit ``--profile*`` options below are
+# forwarded as-is so the two entry points stay in sync.
 @main.command(
     name="benchmark",
     context_settings={
@@ -471,8 +514,45 @@ def cli_list(json: bool) -> None:
         "help_option_names": [],
     },
 )
+@click.option(
+    "--profile",
+    "profile",
+    is_flag=True,
+    default=False,
+    help=(
+        "Translate to `--trace`, then render a ranked top-N GPU kernel "
+        "table from the resulting `.nsys-rep` after the run completes. "
+        "Unlike `max generate --profile`, this targets the *server* "
+        "process (which must already be running under `nsys launch`) — "
+        "the benchmark client just sends start/stop signals to nsys."
+    ),
+)
+@click.option(
+    "--profile-output",
+    "profile_output",
+    type=str,
+    default=None,
+    help=(
+        "Path for the .nsys-rep file when `--profile` is on. Default: "
+        "$BUILD_WORKSPACE_DIRECTORY/max-profile.nsys-rep, or "
+        "./max-profile.nsys-rep."
+    ),
+)
+@click.option(
+    "--profile-top-n",
+    "profile_top_n",
+    type=int,
+    default=15,
+    show_default=True,
+    help="Number of rows to show in the GPU kernel summary table.",
+)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
-def cli_benchmark(args: Sequence[str]) -> None:
+def cli_benchmark(
+    profile: bool,
+    profile_output: str | None,
+    profile_top_n: int,
+    args: Sequence[str],
+) -> None:
     """Run benchmark tests on a serving model.
 
     This command runs comprehensive benchmark tests on a model server to measure
@@ -480,18 +560,32 @@ def cli_benchmark(args: Sequence[str]) -> None:
     Make sure that the MAX server is running and hosting a model before running
     this command.
     """
-    # For benchmark command, we want to handle all arguments directly
-    # and bypass Click's argument processing
-    # args = ctx.params.get("args", [])
-
-    # Import lazily to avoid importing benchmark modules at module load time.
+    # ``--profile`` here is fundamentally different from ``max generate
+    # --profile``. Generate runs in-process and re-execs under
+    # ``nsys profile``; benchmark is a client that sends requests to a
+    # separately running server, so the server must be launched under
+    # ``nsys launch`` and we just signal start/stop on the existing nsys
+    # session via the existing ``--trace`` flow.
+    #
+    # Import lazily to avoid importing benchmark modules at module load
+    # time.
     from max.benchmark.sweep_benchmark_serving import main as sweep_main
+    from max.profiler import oneshot
+
+    args = list(args)
+    profile_path: str | None = None
+    if profile:
+        profile_path = profile_output or oneshot.default_profile_output()
+        args = oneshot.inject_trace_flags(args, profile_path)
 
     logger.debug("Running benchmark subcommand with args: %s", args)
+
+    benchmark_succeeded = False
     try:
         click.echo("Starting benchmark...")
         sweep_main(args, app_name="max-benchmark")
         click.echo("Benchmark completed successfully!")
+        benchmark_succeeded = True
     except SystemExit as e:
         # cyclopts calls sys.exit() for help and errors, we need to handle this
         if e.code == 0:
@@ -503,6 +597,22 @@ def cli_benchmark(args: Sequence[str]) -> None:
     except Exception as e:
         click.echo(f"Benchmark failed: {e}", err=True)
         sys.exit(1)
+
+    # Render outside the try so a renderer error doesn't get reported as
+    # "Benchmark failed".
+    if benchmark_succeeded and profile_path is not None:
+        if os.path.exists(profile_path):
+            oneshot.render_nsys_kernel_summary(
+                profile_path, top_n=profile_top_n, out=sys.stdout
+            )
+            sys.stdout.write(f"\nFull profile saved to: {profile_path}\n")
+            sys.stdout.write(f"Open with: nsys-ui {profile_path}\n")
+        else:
+            sys.stdout.write(
+                f"\n--profile: no .nsys-rep found at {profile_path}. The "
+                f"server must be launched under `nsys launch` for "
+                f"--profile to produce a GPU trace.\n"
+            )
 
 
 def print_version(

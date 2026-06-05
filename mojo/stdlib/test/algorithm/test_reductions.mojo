@@ -121,11 +121,10 @@ def test_fused_reductions_inner() raises:
     var shape = Index(size)
 
     _reduce_generator[
-        num_reductions, test_type, input_fn, output_fn, reduce_fn
+        num_reductions, test_type, input_fn, output_fn, reduce_fn, reduce_dim=0
     ](
         shape,
         init=init,
-        reduce_dim=0,
     )
 
     # CHECK: 1.0
@@ -211,11 +210,10 @@ def test_fused_reductions_outer() raises:
         )
 
     _reduce_generator[
-        num_reductions, test_type, input_fn, output_fn, reduce_fn
+        num_reductions, test_type, input_fn, output_fn, reduce_fn, reduce_dim=0
     ](
         shape,
         init=init,
-        reduce_dim=0,
     )
 
 

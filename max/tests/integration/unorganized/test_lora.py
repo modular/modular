@@ -19,16 +19,12 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData
 from max.pipelines.core import TextContext
-from max.pipelines.lib.config.lora_config import LoRAConfig
-from max.pipelines.lib.lora import LoRAManager
-from max.pipelines.modeling.types import (
-    LoRAStatus,
-)
+from max.pipelines.lora import LoRAConfig, LoRAManager, LoRAStatus
 
 
 @pytest.fixture
 def mock_lora_model() -> Generator[MagicMock, None, None]:
-    with patch("max.pipelines.lib.lora.LoRAModel") as MockLoRAModel:
+    with patch("max.pipelines.lora.lora.LoRAModel") as MockLoRAModel:
         yield MockLoRAModel
 
 
@@ -60,10 +56,10 @@ def configured_mock_lora(mock_lora_model: MagicMock) -> MagicMock:
 
 @pytest.fixture
 def lora_manager(monkeypatch: pytest.MonkeyPatch) -> Iterator[LoRAManager]:
-    """Create a LoRAManager instance with mocked ZMQ handler and locks disabled."""
+    """Create a LoRAManager instance with mocked weight loading."""
     mock_load_weights = MagicMock()
     monkeypatch.setattr(
-        "max.pipelines.lib.lora.load_weights", mock_load_weights
+        "max.pipelines.lora.lora.load_weights", mock_load_weights
     )
 
     config = LoRAConfig(

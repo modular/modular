@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
@@ -77,6 +77,9 @@ struct PreShuffledBGroupedGEMM[
             )
         )
     )
+    @__name(
+        t"mxfp4_preb_pers_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}"
+    )
     def persistent_kernel[
         BM: Int,
         BN: Int,
@@ -105,6 +108,7 @@ struct PreShuffledBGroupedGEMM[
             mut=False, DType.int32, ExpertIdsLayout, ImmutAnyOrigin
         ],
         num_active_experts: Int,
+        max_padded_M: Int,
     ):
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
@@ -116,7 +120,10 @@ struct PreShuffledBGroupedGEMM[
             WN=WN,
             B_PREFETCH=True,
         ]
-        comptime K_SCALES = sfa_tensor.static_shape[1]
+        # K_SCALES (= K / 32) derived from A-data packed_K (= K / 2). The
+        # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
+        # vs uint8-byte views differ); A is canonically 2D so this is stable.
+        comptime K_SCALES = a_tensor.static_shape[1] // 16
         comptime gx_n = ceildiv(N, BN)
 
         if N == 0 or num_active_experts == 0:
@@ -167,13 +174,22 @@ struct PreShuffledBGroupedGEMM[
             # descriptors out of the inner while loop.
 
             var a_start_row = a_offsets[expert_slot]
+            # Preshuffled A-scales: fixed-stride slots. Expert e's chunk
+            # starts at `e * max_padded_M` rows in `sfa_tensor`; each slot
+            # is `max_padded_M * K_SCALES` bytes, with trailing rows past
+            # `num_tokens[e]` zero-filled by the preshuffle kernel. The
+            # V# bound uses the per-expert padded M (align_up(num_tokens,
+            # 32)) so OOB scale reads past real data are clamped by both
+            # the V# and the zero-fill tail.
+            var sfa_start_row = UInt32(expert_slot * max_padded_M)
+            var sfa_padded_M = align_up(Int(M), 32)
 
             var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
             var a_ptr = a_tensor.ptr + a_start_row * UInt32(K_BYTES)
             var b_pre_ptr = b_pre_tensor.ptr + expert_id * Int32(N) * Int32(
                 K_BYTES
             )
-            var sfa_ptr = sfa_tensor.ptr + a_start_row * UInt32(K_SCALES)
+            var sfa_ptr = sfa_tensor.ptr + sfa_start_row * UInt32(K_SCALES)
             var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(
                 K_SCALES
             )
@@ -185,8 +201,15 @@ struct PreShuffledBGroupedGEMM[
             var b_pre_tile = TileTensor(
                 b_pre_ptr, row_major(Coord(Idx[1], Idx[N * K_BYTES]))
             )
+            # NOTE: the 2D `[MN_padded, K_SCALES]` shape is a fiction —
+            # the buffer is in scale-4d byte order, not row-major. Only
+            # the byte count (= product) is consulted, by V# construction
+            # inside `PreshuffledScaleLoader`. The kernel uses
+            # `Shuffler.scale_4d_byte_off` for actual addressing.
+            # TODO: switch to a flat 1D uint8 tile so the layout stops
+            # mis-suggesting row-major bytes.
             var sfa_tile = TileTensor(
-                sfa_ptr, row_major(Coord(Int(M), Idx[K_SCALES]))
+                sfa_ptr, row_major(Coord(Int(sfa_padded_M), Idx[K_SCALES]))
             )
             var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
 
@@ -237,6 +260,7 @@ struct PreShuffledBGroupedGEMM[
             )
         )
     )
+    @__name(t"mxfp4_preb_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}")
     def kernel[
         BM: Int,
         BN: Int,
@@ -265,6 +289,7 @@ struct PreShuffledBGroupedGEMM[
             mut=False, DType.int32, ExpertIdsLayout, ImmutAnyOrigin
         ],
         num_active_experts: Int,
+        max_padded_M: Int,
     ):
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
@@ -276,7 +301,10 @@ struct PreShuffledBGroupedGEMM[
             WN=WN,
             B_PREFETCH=True,
         ]
-        comptime K_SCALES = sfa_tensor.static_shape[1]
+        # K_SCALES (= K / 32) derived from A-data packed_K (= K / 2). The
+        # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
+        # vs uint8-byte views differ); A is canonically 2D so this is stable.
+        comptime K_SCALES = a_tensor.static_shape[1] // 16
 
         var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
         if M == 0 or N == 0:
@@ -288,11 +316,15 @@ struct PreShuffledBGroupedGEMM[
             return
 
         var a_start_row = a_offsets[block_idx.z]
+        # Preshuffled A-scales: fixed-stride slot at e * max_padded_M.
+        # Per-expert tight V# bound = align_up(num_tokens, 32).
+        var sfa_start_row = UInt32(Int(block_idx.z) * max_padded_M)
+        var sfa_padded_M = align_up(Int(M), 32)
 
         var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
         var a_ptr = a_tensor.ptr + a_start_row * UInt32(K_BYTES)
         var b_pre_ptr = b_pre_tensor.ptr + expert_id * Int32(N) * Int32(K_BYTES)
-        var sfa_ptr = sfa_tensor.ptr + a_start_row * UInt32(K_SCALES)
+        var sfa_ptr = sfa_tensor.ptr + sfa_start_row * UInt32(K_SCALES)
         var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(K_SCALES)
 
         var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
@@ -300,8 +332,10 @@ struct PreShuffledBGroupedGEMM[
         var b_pre_tile = TileTensor(
             b_pre_ptr, row_major(Coord(Idx[1], Idx[N * K_BYTES]))
         )
+        # See persistent_kernel for why this 2D shape is a fiction.
+        # TODO: switch to a flat 1D uint8 tile.
         var sfa_tile = TileTensor(
-            sfa_ptr, row_major(Coord(Int(M), Idx[K_SCALES]))
+            sfa_ptr, row_major(Coord(Int(sfa_padded_M), Idx[K_SCALES]))
         )
         var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
 
@@ -390,6 +424,12 @@ struct PreShuffledBGroupedGEMM[
         if max_num_tokens_per_expert == 0:
             return
 
+        # max_padded_M is the per-expert slot stride for the preshuffled
+        # A-scale buffer (set by the upstream preshuffle launch). The
+        # caller's max_num_tokens_per_expert must match what the
+        # preshuffle was sized for.
+        var max_padded_M = align_up(max_num_tokens_per_expert, 32)
+
         comptime out_dtype = type_of(c).dtype
 
         comptime if persistent:
@@ -418,6 +458,7 @@ struct PreShuffledBGroupedGEMM[
                 a_off_i,
                 expert_ids_i,
                 num_active_experts,
+                max_padded_M,
                 grid_dim=(Self.total_wg, 1, 1),
                 block_dim=MatmulDeviceFunctionType.num_threads,
             )
@@ -447,6 +488,7 @@ struct PreShuffledBGroupedGEMM[
                 a_off_i,
                 expert_ids_i,
                 num_active_experts,
+                max_padded_M,
                 grid_dim=(
                     ceildiv(N, BN),
                     ceildiv(max_num_tokens_per_expert, BM),
@@ -758,70 +800,163 @@ def mxfp4_grouped_matmul_amd_preb(
     ), "preb path currently only supports MI355X"
 
     comptime PreBGroupedGemmType = PreShuffledBGroupedGEMM[
-        cu_count=ctx.default_device_info.sm_count
+        cu_count=ctx.default_device_info.sm_count, wg_per_cu=2
     ]
 
-    comptime can_use_bk_512 = packed_K >= 256 and packed_K % 256 == 0
-    var use_direct = estimated_total_m >= m_threshold
-    comptime if can_use_bk_512:
-        if use_direct:
-            PreBGroupedGemmType.launch[
-                BM=64, BN=128, BK_ELEMS=512, WN=64, persistent=False
-            ](
-                c,
-                a,
-                b_pre,
-                a_scales,
-                b_scales,
-                a_offsets,
-                expert_ids,
-                max_num_tokens_per_expert,
-                num_active_experts,
-                ctx,
-            )
-        else:
-            PreBGroupedGemmType.launch[
-                BM=64, BN=128, BK_ELEMS=512, WN=64, persistent=True
-            ](
-                c,
-                a,
-                b_pre,
-                a_scales,
-                b_scales,
-                a_offsets,
-                expert_ids,
-                max_num_tokens_per_expert,
-                num_active_experts,
-                ctx,
-            )
+    # Preshuffled-scales requires num_k_mmas % 2 == 0, which
+    # forces BK_ELEMS >= 256 (i.e. packed_K >= 256 and packed_K % 256 == 0).
+    comptime assert packed_K >= 256 and packed_K % 256 == 0, (
+        "mxfp4_grouped_matmul_amd_preb requires packed K (K // 2) >= 256 and"
+        " divisible by 256; smaller K should use the non-preb path"
+        " (mxfp4_grouped_matmul_amd) instead."
+    )
+
+    var use_direct = estimated_total_m >= m_threshold  # persistency flag
+    if use_direct:
+        PreBGroupedGemmType.launch[
+            BM=64, BN=128, BK_ELEMS=512, WN=64, persistent=False
+        ](
+            c,
+            a,
+            b_pre,
+            a_scales,
+            b_scales,
+            a_offsets,
+            expert_ids,
+            max_num_tokens_per_expert,
+            num_active_experts,
+            ctx,
+        )
     else:
-        if use_direct:
-            PreBGroupedGemmType.launch[
-                BM=64, BN=128, BK_ELEMS=128, WN=64, persistent=False
-            ](
-                c,
-                a,
-                b_pre,
-                a_scales,
-                b_scales,
-                a_offsets,
-                expert_ids,
-                max_num_tokens_per_expert,
-                num_active_experts,
-                ctx,
-            )
-        else:
-            PreBGroupedGemmType.launch[
-                BM=64, BN=128, BK_ELEMS=128, WN=64, persistent=True
-            ](
-                c,
-                a,
-                b_pre,
-                a_scales,
-                b_scales,
-                a_offsets,
-                expert_ids,
-                max_num_tokens_per_expert,
-                num_active_experts,
-                ctx,
-            )
+        # KIMI up projection
+        comptime if N == 4096 and packed_K == (7168 // 2):
+            if estimated_total_m == 1:
+                PreBGroupedGemmType.launch[
+                    BM=16, BN=64, BK_ELEMS=512, WN=16, persistent=True
+                ](
+                    c,
+                    a,
+                    b_pre,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+                return
+            elif 2 <= estimated_total_m <= 4:
+                PreBGroupedGemmType.launch[
+                    BM=16, BN=128, BK_ELEMS=512, WN=32, persistent=True
+                ](
+                    c,
+                    a,
+                    b_pre,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+                return
+
+            elif 17 <= estimated_total_m <= 400:
+                PreBGroupedGemmType.launch[
+                    BM=32, BN=128, BK_ELEMS=512, WN=32, persistent=True
+                ](
+                    c,
+                    a,
+                    b_pre,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+                return
+
+        comptime if N == 7168 and packed_K == (2048 // 2):
+            if estimated_total_m == 1:
+                # ~8 experts * ceildiv(7168, 128)=56 = 448 blocks
+                PreBGroupedGemmType.launch[
+                    BM=16, BN=128, BK_ELEMS=512, WN=32, persistent=True
+                ](
+                    c,
+                    a,
+                    b_pre,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+                return
+            elif 2 <= estimated_total_m <= 16:
+                PreBGroupedGemmType.launch[
+                    BM=16, BN=256, BK_ELEMS=256, WN=64, persistent=True
+                ](
+                    c,
+                    a,
+                    b_pre,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+                return
+            elif 17 <= estimated_total_m <= 400:
+                PreBGroupedGemmType.launch[
+                    BM=32, BN=256, BK_ELEMS=512, WN=64, persistent=True
+                ](
+                    c,
+                    a,
+                    b_pre,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+                return
+            elif 401 <= estimated_total_m <= 1200:
+                PreBGroupedGemmType.launch[
+                    BM=64, BN=256, BK_ELEMS=512, WN=64, persistent=True
+                ](
+                    c,
+                    a,
+                    b_pre,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
+                return
+        PreBGroupedGemmType.launch[
+            BM=64, BN=128, BK_ELEMS=512, WN=64, persistent=True
+        ](
+            c,
+            a,
+            b_pre,
+            a_scales,
+            b_scales,
+            a_offsets,
+            expert_ids,
+            max_num_tokens_per_expert,
+            num_active_experts,
+            ctx,
+        )

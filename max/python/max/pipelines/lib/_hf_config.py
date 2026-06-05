@@ -17,7 +17,7 @@ import json
 import os
 from typing import Any
 
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from transformers import AutoConfig, PretrainedConfig
 
 # Process-wide cache keyed by HuggingFaceRepo. Avoids redundant network or
