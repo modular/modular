@@ -77,15 +77,6 @@ LogicalResult M::writeAttrToBytecodeFile(Attribute attr, raw_ostream &os) {
   return mlir::writeBytecodeToFile(tempBytecodeOp.get(), os);
 }
 
-Attribute M::readAttrFromBytecodeFile(llvm::MemoryBufferRef buffer,
-                                      MLIRContext *ctx) {
-  OwningOpRef<Operation *> rawOp = readOpFromBytecodeFile(
-      buffer, mlir::ParserConfig(ctx, /*verifyAfterParse=*/false));
-  if (!rawOp)
-    return nullptr;
-  // Pull out the encoded attribute from the operation.
-  return rawOp->getAttr("bytecode.attr");
-}
 //===----------------------------------------------------------------------===//
 // writeModuleToBytecodeAttr
 //===----------------------------------------------------------------------===//
