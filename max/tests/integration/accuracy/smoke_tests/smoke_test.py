@@ -66,6 +66,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _metrics_url(framework: str) -> str:
+    """Prometheus ``/metrics`` URL for the given framework (MAX uses port 8001, others 8000)."""
+    port = 8001 if framework in ("max", "max-ci", "max-nightly") else 8000
+    return f"http://127.0.0.1:{port}/metrics"
+
+
 # Maps alias model names to reusable MAX recipe configs. Aliases let the same
 # weights be tested under different configurations while keeping results
 # separate in dashboards. Paths use the portable ``max/pipelines/architectures/``
@@ -78,12 +84,14 @@ logger = logging.getLogger(__name__)
 # fmt: off
 MODEL_RECIPES = CaseInsensitiveDict({
     "deepseek-ai/DeepSeek-R1-0528": "max/pipelines/architectures/deepseekV3/recipes/r1_0528_8x_b200.yaml",
+    "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
     "google/gemma-4-26B-A4B-it__no_dgc": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_no_dgc.yaml",
     "google/gemma-4-26B-A4B-it__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_localkv.yaml",
     "google/gemma-4-26B-A4B-it__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tieredkv.yaml",
     "google/gemma-4-31B-it__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_localkv.yaml",
     "google/gemma-4-31B-it__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tieredkv.yaml",
+    "google/gemma-4-31B-it__tp2": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tp2.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_no_dgc.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__localkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_localkv.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tieredkv.yaml",
@@ -116,12 +124,10 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_dp_8x_b200.yaml",
     "Qwen/Qwen3-235B-A22B-Instruct-2507": "max/pipelines/architectures/qwen3/recipes/qwen3_235b_a22b_8x_b200.yaml",
     "unsloth/gpt-oss-20b-BF16__modulev3": "max/pipelines/architectures/gpt_oss_modulev3/recipes/gpt_oss_20b.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_tiered_kvconnector_tpep_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__mha_eagle_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_mha_eagle_tiered_kvconnector_tpep_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_local_kvconnector_tpep_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_tiered_kvconnector_tpep_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__debug_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_debug_tiered_kvconnector_tpep_8x_b200.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_tiered_kvconnector_tpep_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_mha_eagle_tiered_kvconnector_tpep_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__local_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_local_kvconnector_tpep_8x_b200_with_vision.yaml",
+    "nvidia/Kimi-K2.5-NVFP4__debug_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_debug_tiered_kvconnector_tpep_8x_b200_with_vision.yaml",
 })
 # fmt: on
 
@@ -401,6 +407,7 @@ def get_server_cmd(
         "sglang.launch_server",
         "--attention-backend",
         sglang_backend,
+        "--enable-metrics",
     ]
     # limit-mm-per-prompt.video is for InternVL3 on B200
     VLLM = [
@@ -630,6 +637,7 @@ def smoke_test(
         # TODO(GEX-3508): Reduce timeout once model build time is optimized
         timeout = 2700
 
+    metrics_url = _metrics_url(framework)
     with start_server(cmd, timeout) as server:
         logger.info(f"Server started in {server.startup_time:.2f} seconds")
         write_github_output("startup_time", f"{server.startup_time:.2f}")
@@ -645,7 +653,9 @@ def smoke_test(
                 max_concurrent=max_concurrent,
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
+                metrics_url=metrics_url,
             )
+
             if print_responses:
                 print_samples(samples, print_cot)
 

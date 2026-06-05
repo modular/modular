@@ -164,11 +164,7 @@ def run_bmm_and_check_result[
     @always_inline
     @__copy_capture(c_device_ref)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[3]](idx0)
-        var coord = Coord((idx[0], idx[1], idx[2]))
+    def func[simd_width: Int, alignment: Int = 1](coord: Coord):
         comptime assert c_device_ref.flat_rank >= 3
         var val = c_device_ref.load[width=simd_width](coord)
         comptime element_lambda = lambda_fn.value()
@@ -181,7 +177,7 @@ def run_bmm_and_check_result[
 
     comptime if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
-            IndexList[3](b, m, n),
+            (b, m, n),
             ctx,
         )
 

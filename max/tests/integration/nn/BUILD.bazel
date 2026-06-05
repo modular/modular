@@ -89,6 +89,7 @@ modular_py_test(
         ["*_gpu.py"],
         exclude = [
             "*_distributed_gpu.py",
+            "bench_row_mean_of_squares_gpu.py",
             "test_conv_transpose_gpu.py",
             "test_grouped_matmul_swiglu_nvfp4_gpu.py",
             "test_linear_fp8_amd_gpu.py",
@@ -126,6 +127,33 @@ modular_py_test(
         requirement("torch"),
         requirement("triton"),
         requirement("hypothesis"),
+    ],
+)
+
+modular_py_test(
+    name = "bench_row_mean_of_squares_gpu",
+    size = "large",
+    srcs = ["bench_row_mean_of_squares_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    imports = ["."],
+    main = "bench_row_mean_of_squares_gpu.py",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("torch"),
     ],
 )
 

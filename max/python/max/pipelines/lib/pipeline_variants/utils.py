@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -52,6 +53,33 @@ if TYPE_CHECKING:
     from max.pipelines.modeling.types import PipelineTokenizer
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _count_token_subsequence(
+    content: Sequence[int], special_tags: Sequence[int]
+) -> int:
+    """Counts non-overlapping occurrences of ``special_tags`` in ``content``.
+
+    Used only on the matcher-rejection diagnostic path to count how many
+    tool-call section markers were already committed. ``special_tags`` is the
+    section-begin (or -end) token-id sequence — a single token for most
+    parsers, so this is effectively a count. Runs O(len(content)); acceptable
+    because it fires only when a rejection has already occurred.
+    """
+    width = len(special_tags)
+    if width == 0:
+        return 0
+    tag_ids = list(special_tags)
+    count = 0
+    i = 0
+    last_start = len(content) - width
+    while i <= last_start:
+        if list(content[i : i + width]) == tag_ids:
+            count += 1
+            i += width
+        else:
+            i += 1
+    return count
 
 
 class _TikTokenAdapter:
@@ -135,28 +163,32 @@ def calculate_num_steps(
 
 
 def build_response(
-    context_batch: list[TextGenerationContextType], max_seq_len: int
+    context_batch: list[TextGenerationContextType],
+    max_seq_len: int,
+    max_growth_per_step: int = 1,
 ) -> dict[RequestID, TextGenerationOutput]:
     """Build response from updated contexts.
 
     Args:
-        context_batch: The list of context objects
-        max_seq_len: The maximum sequence length
+        context_batch: The list of context objects.
+        max_seq_len: The maximum sequence length.
+        max_growth_per_step: Maximum tokens that can be added in the next step.
+            For standard decoding this is 1. For speculative decoding this is
+            num_speculative_tokens + 1 (all drafts accepted + bonus token).
 
     Returns:
-        Dictionary mapping request IDs to TextGenerationOutput objects
+        Dictionary mapping request IDs to TextGenerationOutput objects.
     """
     res: dict[RequestID, TextGenerationOutput] = {}
 
     for context in context_batch:
-        # Identify the Max Length
         context_max_length = upper_bounded_default(
             upper_bound=max_seq_len, default=context.max_length
         )
 
-        # Break early if beyond max length
+        # Mark as done if the next step would exceed the max length.
         current_length = context.tokens.processed_length + 1
-        if current_length >= context_max_length:
+        if current_length + max_growth_per_step > context_max_length:
             context.status = GenerationStatus.MAXIMUM_LENGTH
 
         output = context.to_generation_output()
@@ -170,67 +202,51 @@ def build_response(
 def update_context_and_prepare_responses(
     generated_tokens_host: npt.NDArray[np.int32],
     flat_batch: list[TextGenerationContextType],
-    num_steps: int,
     batch_log_probabilities: list[list[LogProbabilities | None]] | None = None,
     enable_log_probs: bool = False,
     overwrite_future: bool = False,
-    fsm_already_advanced_steps: int = 0,
 ) -> dict[RequestID, TextGenerationOutput]:
     """Updates context objects and prepares response objects after generation.
 
     Args:
         generated_tokens_host: Array of generated tokens on the host, indexed
-            as [batch, step].
+            as [batch, 1] (single step).
         flat_batch: List of generation contexts, one per request, matching
             batch dimension.
-        num_steps: Number of generation steps to process for each context.
         batch_log_probabilities: List of per-step log probability outputs (or
             None), each entry is a list per batch for that step.
         enable_log_probs: Whether to include log probability data in outputs.
         overwrite_future: Whether to overwrite future tokens in the context.
-        fsm_already_advanced_steps: Number of steps for which the FSM was
-            already advanced during multi-step execution. For these steps,
-            only the token buffer is updated (FSM is skipped).
 
     Returns:
         A dictionary mapping request IDs to their respective generation outputs.
     """
     res: dict[RequestID, TextGenerationOutput] = {}
     for batch_index, context in enumerate(flat_batch):
-        for step in range(num_steps):
-            # Convert to a Python scalar to improve serialization performance.
-            next_token = int(generated_tokens_host[batch_index, step])
+        # Convert to a Python scalar to improve serialization performance.
+        next_token = int(generated_tokens_host[batch_index, 0])
 
-            # Get Log probs if needed.
-            log_probs: LogProbabilities | None = None
-            if enable_log_probs:
-                assert batch_log_probabilities is not None
-                if step < len(batch_log_probabilities):
-                    log_probs_for_step = batch_log_probabilities[step]
-                    if log_probs_for_step and batch_index < len(
-                        log_probs_for_step
-                    ):
-                        log_probs = log_probs_for_step[batch_index]
+        # Get Log probs if needed.
+        log_probs: LogProbabilities | None = None
+        if enable_log_probs:
+            assert batch_log_probabilities is not None
+            if batch_log_probabilities:
+                log_probs_for_step = batch_log_probabilities[0]
+                if log_probs_for_step and batch_index < len(log_probs_for_step):
+                    log_probs = log_probs_for_step[batch_index]
 
-            if overwrite_future:
-                # If generated_length is still 0, then there is no placeholder
-                # future token. This is possible due to chunked prefill or preemption.
-                if context.tokens.generated_length:
-                    context.realize_future_token(
-                        new_token=next_token, log_probabilities=log_probs
-                    )
-            else:
-                # Update token buffer for all steps
-                context.advance_token_buffer(
+        if overwrite_future:
+            # If generated_length is still 0, then there is no placeholder
+            # future token. This is possible due to chunked prefill or preemption.
+            if context.tokens.generated_length:
+                context.realize_future_token(
                     new_token=next_token, log_probabilities=log_probs
                 )
-                # Only advance FSM for steps that weren't already advanced
-                # during multi-step execution
-                if step >= fsm_already_advanced_steps:
-                    context.advance_fsm(next_token)
-
-            if context.is_done:
-                break
+        else:
+            context.advance_token_buffer(
+                new_token=next_token, log_probabilities=log_probs
+            )
+            context.advance_fsm(next_token)
 
         # Only add the output if there are tokens to return.
         # It is possible that there are no generated tokens due to chunked prefill.
@@ -341,10 +357,21 @@ def update_spec_decode_context_and_prepare_responses(
                 batch_idx
             ].tolist()
 
-    return build_response(
+    # With speculative decoding, the next step can add up to
+    # num_speculative_tokens (all drafts accepted) + 1 (bonus token).
+    max_growth_per_step = num_speculative_tokens + 1
+    result = build_response(
         context_batch=context_batch,
         max_seq_len=max_seq_len,
+        max_growth_per_step=max_growth_per_step,
     )
+
+    # Clear draft tokens for contexts that won't be processed further.
+    for ctx in context_batch:
+        if ctx.is_done:
+            ctx.spec_decoding_state.draft_tokens_to_verify = []
+
+    return result
 
 
 def get_rope_theta(config: AutoConfig) -> float:
@@ -767,6 +794,63 @@ class StructuredOutputHelper:
             ctx.matcher.rollback(tokens_consumed)
         ctx.restore_grammar_state(fsm_snap)
 
+    def _rejection_diagnostics(
+        self,
+        ctx: TextGenerationContextType,
+        committed_tokens: list[int],
+        committed_idx: int,
+    ) -> str:
+        """Best-effort extra state for the matcher-rejection error log.
+
+        Runs only on the (rare) rejection path and is fully guarded so a
+        diagnostic failure can never crash the async worker thread. Surfaces
+        whether the rejection landed in the middle of a tool call (a desync
+        signature) versus at a clean grammar boundary:
+
+        * ``matcher_accepting=False`` means the matcher was mid-structure
+          (inside a call header / args), not at a stoppable boundary.
+        * ``open_sections>0`` means more ``<|tool_calls_section_begin|>`` than
+          ``...section_end|>`` are committed, i.e. an open tool-call section.
+        * ``committed_token_ids`` is this spec-decode step's accepted-drafts +
+          bonus token, as raw token IDs, so the exact desyncing batch can be
+          reconstructed offline against the tokenizer.
+
+        Only token IDs are logged (no decoded text), so no model output text
+        reaches the logs; reconstruct decoded forms after the fact.
+        """
+        try:
+            matcher = ctx.matcher
+            snapshot = ctx.snapshot_grammar_state()
+
+            # "Inside an open tool-call section": section-begins minus
+            # section-ends committed so far.
+            delims = self.tool_call_region_delimiters
+            open_sections = -1
+            if (
+                delims is not None
+                and delims.start_token_ids
+                and delims.end_token_ids
+            ):
+                generated = [int(t) for t in ctx.tokens.generated]
+                open_sections = _count_token_subsequence(
+                    generated, delims.start_token_ids
+                ) - _count_token_subsequence(generated, delims.end_token_ids)
+
+            return (
+                f"reject_idx={committed_idx}/{len(committed_tokens)} "
+                f"matcher_accepting="
+                f"{matcher.is_accepting() if matcher is not None else '?'} "
+                f"matcher_stopped="
+                f"{matcher.is_stopped() if matcher is not None else '?'} "
+                f"enforced={ctx.grammar_enforced} "
+                f"tools_forced={ctx.tools_forced} "
+                f"in_thinking_region={snapshot.in_thinking_region} "
+                f"open_sections={open_sections} "
+                f"committed_token_ids={list(committed_tokens)}"
+            )
+        except Exception as e:
+            return f"<diagnostics unavailable: {e!r}>"
+
     @traced
     def advance_fsm_and_compute_bitmasks(
         self,
@@ -865,12 +949,15 @@ class StructuredOutputHelper:
                             "Async matcher rejected token %d "
                             "(request %s, role=%s); disabling enforcement "
                             "for the rest of the request. "
-                            "matcher_errors=%s matcher_warnings=%s",
+                            "matcher_errors=%s matcher_warnings=%s %s",
                             token,
                             ctx.request_id,
                             role,
                             ctx.matcher.get_error(),
                             ctx.matcher.get_grammar_warnings(),
+                            self._rejection_diagnostics(
+                                ctx, committed_tokens, committed_idx
+                            ),
                         )
                         ctx.grammar_enforced = False
 

@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import contextvars
 import math
-from collections.abc import Mapping
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from max.driver import CPU, Device
@@ -35,9 +36,6 @@ class DeviceMesh:
 
     axis_names: tuple[str, ...]
     """The human-readable name for each mesh axis."""
-
-    memory_budget_bytes_per_device: float | Mapping[Device, float] | None = None
-    """Per-device input-bytes ceiling. Hard filter on per-op actions."""
 
     def __post_init__(self) -> None:
         if len(self.devices) == 0:
@@ -156,20 +154,6 @@ class DeviceMesh:
         """Returns ``True`` if this mesh contains exactly one device."""
         return self.num_devices == 1
 
-    def memory_budget_for(self, device: Device) -> float | None:
-        """Returns the per-rank input-bytes budget for ``device``, or ``None`` if unbounded."""
-        budget = self.memory_budget_bytes_per_device
-        if budget is None:
-            return None
-        if isinstance(budget, Mapping):
-            if device not in budget:
-                raise KeyError(
-                    f"memory_budget_bytes_per_device does not cover "
-                    f"{device!r}; provide an entry for every mesh device."
-                )
-            return float(budget[device])
-        return float(budget)
-
     @property
     def is_simulated(self) -> bool:
         """Returns ``True`` if all mesh slots reference the same device.
@@ -186,12 +170,13 @@ _active_mesh: contextvars.ContextVar[DeviceMesh | None] = (
 
 
 def get_active_mesh() -> DeviceMesh | None:
-    """Returns the mesh from the current :class:`MeshContext`, or ``None``."""
+    """Returns the mesh from the current :func:`mesh_context`, or ``None``."""
     return _active_mesh.get(None)
 
 
-class MeshContext:
-    """Context manager that publishes a mesh to spec-first :class:`NamedMapping` constructions.
+@contextmanager
+def mesh_context(mesh: DeviceMesh) -> Iterator[DeviceMesh]:
+    """Publishes ``mesh`` to spec-first :class:`NamedMapping` constructions.
 
     JAX-style: when a :class:`NamedMapping` is created without an explicit
     mesh inside this block, it picks up ``mesh`` from this context and
@@ -199,16 +184,11 @@ class MeshContext:
 
     .. code-block:: python
 
-        with MeshContext(mesh):
+        with mesh_context(mesh):
             model = Transformer(...)  # all weights resolve against ``mesh``
     """
-
-    def __init__(self, mesh: DeviceMesh) -> None:
-        self.mesh = mesh
-
-    def __enter__(self) -> DeviceMesh:
-        self._token = _active_mesh.set(self.mesh)
-        return self.mesh
-
-    def __exit__(self, *exc: object) -> None:
-        _active_mesh.reset(self._token)
+    token = _active_mesh.set(mesh)
+    try:
+        yield mesh
+    finally:
+        _active_mesh.reset(token)

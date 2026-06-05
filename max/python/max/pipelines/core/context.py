@@ -302,12 +302,14 @@ class TextContext:
         _is_initial_prompt: Whether this is the initial prompt encoding
         _draft_offset: Offset for draft decoding
         _spec_decoding_state: Optional per-request speculative decoding state
+        vocab_size: Optional vocabulary size for validating generated token IDs
     """
 
     max_length: int
     tokens: TokenBuffer
     request_id: RequestID = field(default_factory=RequestID)
     eos_tracker: EOSTracker = field(default_factory=EOSTracker)
+    vocab_size: int | None = field(default=None)
     log_probabilities: int = field(default=0)
     log_probabilities_echo: bool = field(default=False)
     ignore_eos: bool = field(default=False)
@@ -583,6 +585,15 @@ class TextContext:
                 raise ValueError(
                     "Attempted to create generation output while future token is not yet realized."
                 )
+            for token_id in generated_tokens:
+                if token_id < 0:
+                    raise RuntimeError(
+                        f"Generated negative token_id={token_id} for request {self.request_id}"
+                    )
+                if self.vocab_size is not None and token_id >= self.vocab_size:
+                    raise RuntimeError(
+                        f"Generated out-of-vocabulary token_id={token_id} for request {self.request_id} (valid range: [0, {self.vocab_size}))"
+                    )
         else:
             generated_tokens = []
 

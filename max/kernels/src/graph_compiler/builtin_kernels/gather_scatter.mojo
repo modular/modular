@@ -341,7 +341,6 @@ struct ScatterNDAdd:
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -389,7 +388,6 @@ struct ScatterNDMul:
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -437,7 +435,6 @@ struct ScatterNDMin:
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -485,7 +482,6 @@ struct ScatterNDMax:
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -1221,17 +1217,20 @@ struct Slice:
             ].static_value < 0:
                 return 1
 
-            # The offset for dimension `i` is `start[i] * strides[i]`
-            comptime if not start_types[i].is_static_value or not stride_types[
-                i
-            ].is_static_value:
+            # The offset for dimension `i` is `start[i] * strides[i]`. If the
+            # start is not statically known the offset is unknown.
+            comptime if not start_types[i].is_static_value:
                 return 1
-            alignment = gcd(
-                alignment,
-                start_types[i].static_value
-                * stride_types[i].static_value
-                * align_of[dtype](),
-            )
+
+            comptime if start_types[i].static_value != 0:
+                comptime if not stride_types[i].is_static_value:
+                    return 1
+                alignment = gcd(
+                    alignment,
+                    start_types[i].static_value
+                    * stride_types[i].static_value
+                    * align_of[dtype](),
+                )
 
         return alignment
 
@@ -1633,7 +1632,7 @@ struct Concat:
         return concat_shape_impl(axis, inputs)
 
 
-@compiler.register("mo.fused_concat_slice")
+@compiler.register("mo.composite.concat_slice")
 struct FusedConcatSlice:
     @staticmethod
     def execute[

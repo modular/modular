@@ -28,7 +28,7 @@ from max.nn.sampling import (
     compute_synthetic_acceptance_base_rate,
     stochastic_acceptance_sampler,
 )
-from max.pipelines.lib.sampling import (
+from max.pipelines.sampling import (
     SyntheticRunner,
     build_greedy_acceptance_sampler_graph,
     build_stochastic_acceptance_sampler_graph,

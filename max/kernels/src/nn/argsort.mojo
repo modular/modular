@@ -32,6 +32,7 @@ from std.memory import stack_allocation
 from layout import Idx, TensorLayout, TileTensor, row_major
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList, StaticTuple
 
 
@@ -55,12 +56,12 @@ def _argsort_cpu[
     comptime assert input.flat_rank == 1
 
     @parameter
-    def fill_indices_iota[
-        width: Int, rank: Int, alignment: Int = 1
-    ](offset: IndexList[rank]):
-        indices.raw_store(
-            offset[0],
-            iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
+    def fill_indices_iota[width: Int, alignment: Int = 1](offset: Coord):
+        indices.store(
+            offset,
+            iota[indices.dtype, width](
+                Scalar[indices.dtype](offset[0].value())
+            ),
         )
 
     elementwise[
@@ -407,9 +408,9 @@ def _argsort_gpu[
         @parameter
         @__copy_capture(indices, input, input_copy)
         def fill_indices_iota_no_padding[
-            width: Int, rank: Int, alignment: Int = 1
-        ](offset: IndexList[rank]):
-            var i = offset[0]
+            width: Int, alignment: Int = 1
+        ](offset: Coord):
+            var i = offset[0].value()
 
             indices.raw_store(
                 i,
@@ -453,10 +454,8 @@ def _argsort_gpu[
     # Initialize indices with sequential values and copy input data to device
     @parameter
     @__copy_capture(padded_indices, padded_input, input, indices, n)
-    def fill_indices_iota[
-        width: Int, rank: Int, alignment: Int = 1
-    ](offset: IndexList[rank]):
-        var i = offset[0]
+    def fill_indices_iota[width: Int, alignment: Int = 1](offset: Coord):
+        var i = Int(offset[0].value())
         if i < n:
             padded_indices.raw_store(
                 i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
@@ -493,12 +492,8 @@ def _argsort_gpu[
     # Extract the unpadded indices from the padded indices.
     @parameter
     @__copy_capture(padded_indices, indices)
-    def extract_indices[
-        width: Int, rank: Int, alignment: Int = 1
-    ](offset: IndexList[rank]):
-        indices.raw_store(
-            offset[0], padded_indices.raw_load[width=width](offset[0])
-        )
+    def extract_indices[width: Int, alignment: Int = 1](offset: Coord):
+        indices.store(offset, padded_indices.load[width=width](offset))
 
     # Extract the unpadded indices from the padded indices.
     elementwise[

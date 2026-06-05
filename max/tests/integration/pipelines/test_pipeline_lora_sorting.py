@@ -34,12 +34,12 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
     SamplingConfig,
 )
-from max.pipelines.lib.lora import LoRAManager, LoRAModel
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
 )
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
+from max.pipelines.lora import LoRAManager, LoRAModel
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
@@ -142,18 +142,6 @@ class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
         return MockModelInputs(
             batch_size=len(context_batch),
             kv_cache_inputs=kv_cache_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> ModelInputs:
-        del next_tokens
-        mock_prev = cast(MockModelInputs, prev_model_inputs)
-        return MockModelInputs(
-            batch_size=mock_prev.active_batch_size,
-            kv_cache_inputs=mock_prev.kv_cache_inputs,
         )
 
 

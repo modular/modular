@@ -17,6 +17,11 @@ This version is still a work in progress.
   tensor-parallel attention and expert-parallel MoE.
 - Added NVFP4 quantization support for Gemma 4.
 - Added MXFP4 quantization support for MiniMax-M2.
+- Added tensor-parallel attention + expert-parallel MoE (TP+EP) support for
+  MiniMax-M2. Set `data_parallel_degree: 1` with `runtime.ep_size > 1` to
+  shard attention heads across GPUs while distributing MoE experts via
+  expert parallelism. Both reduce-scatter (default) and allreduce
+  (`runtime.ep_use_allreduce: true`) collective strategies are supported.
 - Kimi K2.5 tool calling now supports interleaved thinking: a single
   assistant turn may interleave multiple `<think>...</think>` reasoning
   blocks with multiple tool-call sections and end with `<|im_end|>`. The
@@ -29,6 +34,23 @@ This version is still a work in progress.
 ## MAX framework
 
 ### Inference server
+
+- Fixed a KV cache offloading correctness bug that corrupted output for
+  multi-cache models (such as Gemma 4's interleaved sliding-window plus
+  global attention) when the `local` or `tiered` KV connector was enabled.
+  These models share one block pool across all of their caches, but the
+  connector only offloaded and reloaded the primary cache, so a prefix-cache
+  block served from host or disk restored only the primary cache's data and
+  left the other caches' halves stale, degrading accuracy. The connector now
+  offloads and restores every cache.
+
+- Fixed JSON `response_format` and tool-call grammars not being enforced for
+  Kimi K2.5 vision-language checkpoints. The Kimi K2.5 tokenizer did not carry
+  grammar enforcement state onto the request context, so constrained-decoding
+  requests fell back to an unenforced state and decoded freely (e.g. a
+  `response_format=json_schema` request returned prose instead of
+  schema-conformant JSON). The tokenizer now derives enforcement state from the
+  response format, matching the text tokenizers.
 
 - MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
   normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
@@ -98,11 +120,34 @@ This version is still a work in progress.
   structured-output path end-to-end. Pass `enable_tool_calls=False` on
   Nemotron-OpenCode to suppress forwarding.
 
+- Removed multi-step decode from the text-generation pipelines. The flag
+  `--max-num-steps` no longer works.
+
 ### `max` CLI
 
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
 - Removed the `default` value for `--devices`; omit `--devices` to use the model
   or config default.
+- The serving benchmark entrypoint (`benchmark_serving`) now defaults `--seed`
+  to a fixed value instead of drawing a fresh random seed on each run. The seed
+  drives the workload generator (input/output lengths, session structure,
+  content), so a fixed default makes repeated and scheduled runs reproducible
+  and keeps run-to-run deltas reflecting the change under test rather than
+  workload-draw variance. To opt back into a fresh seed, pass `--seed none` on
+  the CLI (or `seed: null` in a workload/config YAML); the drawn seed is logged
+  and recorded with the results so the run stays reproducible after the fact.
+- Added `--profile` to `max pipelines generate` for rudimentary,
+  one-command profiling. With Nsight Systems (`nsys`) on `PATH` and an
+  NVIDIA GPU, the timed run is captured into an `.nsys-rep` file and a
+  ranked top-N GPU kernel summary is printed. Without `nsys`, a Python/CPU
+  profile is produced from `cProfile`. The capture window is bounded by
+  `cudaProfilerStart`/`Stop` so warmup and graph-compile time are excluded.
+  Use `--profile-output` to override the report path.
+- Added `--profile` to `max pipelines benchmark` as a synonym for
+  `--trace` that also prints a ranked top-N GPU kernel summary at the end
+  of the run. The server still needs to be launched under `nsys launch`
+  (matching the existing `--trace` requirement); `--profile` removes the
+  "now run `nsys stats` by hand" step.
 
 ### Python API
 
@@ -240,6 +285,15 @@ This version is still a work in progress.
   dispatched the same way, with a single worker used automatically when the
   problem size is small. The dedicated small-tensor `concat` fast path has been
   removed in favor of the existing serial/parallel dispatch.
+- Updated `elementwise` call sites across MAX kernels and benchmarks to use
+  `Coord`-native indexing, fixing compile failures caused by invalid
+  `Coord`/`IndexList` conversions.
+- Enabled Programmatic Dependent Launch (PDL) for the SM100 (Blackwell)
+  FlashAttention-4 prefill kernel, letting back-to-back attention grids in a
+  stream overlap launch and prologue latency. This reduces per-launch overhead
+  most for shorter sequences (measured ~1.05x–1.5x faster on B200, bf16,
+  head_dim=128 across seq lengths 128–2048). On by default; disable with
+  `-D MHA_PDL=false`.
 
 ## Breaking changes
 

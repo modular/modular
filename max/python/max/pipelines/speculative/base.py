@@ -42,18 +42,18 @@ from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
     get_eos_tokens,
 )
-from max.pipelines.lib.sampling import (
-    RejectionRunner,
-    SamplingConfig,
-    SyntheticRunner,
-    rejection_runner_registry,
-)
-from max.pipelines.lib.sampling.sampling import TokenSampler
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     RequestID,
     TextGenerationRequest,
 )
+from max.pipelines.sampling import (
+    RejectionRunner,
+    SamplingConfig,
+    SyntheticRunner,
+    rejection_runner_registry,
+)
+from max.pipelines.sampling.sampling import TokenSampler
 from max.profiler import traced
 from transformers import AutoConfig
 

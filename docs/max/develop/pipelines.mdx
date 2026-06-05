@@ -450,19 +450,13 @@ class MyModel(PipelineModel):
     ) -> ModelInputs:
         """Prepare inputs for the first forward pass (prefill)."""
         ...
-
-    def prepare_next_token_inputs(
-        self, next_tokens, prev_model_inputs
-    ) -> ModelInputs:
-        """Prepare inputs for subsequent forward passes (decode)."""
-        ...
 ```
 
 In this example, these methods define the interface that all model
 implementations must provide. The `execute()` method runs your model's forward
-pass on the compiled executable. The separation between
-`prepare_initial_token_inputs` and `prepare_next_token_inputs` reflects the two
-phases of autoregressive generation:
+pass on the compiled executable. `prepare_initial_token_inputs` builds the
+tensors for each scheduled batch (prefill and decode steps share this path in
+the serving pipeline):
 
 1. **Prefill**: Process the entire prompt at once, building up the KV cache.
 2. **Decode**: Generate tokens one at a time, reusing the cached keys/values.

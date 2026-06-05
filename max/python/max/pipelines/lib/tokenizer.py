@@ -64,6 +64,32 @@ async def convert_token_to_id(
     return int(encoded[0])
 
 
+def resolve_single_special_token(delegate: Any, token: str) -> int:
+    """Resolve a single special-token string to its id via an HF delegate.
+
+    Suitable for use in tokenizer ``__init__`` where the architecture
+    knows ``token`` is registered as a single special token in the
+    underlying vocab (for example, reasoning delimiters like ``<think>``
+    on Kimi K2.5 or ``<|channel>`` on Gemma 4).
+
+    Raises:
+        ValueError: If ``token`` is missing from the vocab (resolves to
+            ``unk_token_id``) or maps to more than one id.
+    """
+    token_id = delegate.convert_tokens_to_ids(token)
+    if isinstance(token_id, list):
+        raise ValueError(
+            f"Special token {token!r} resolved to multiple ids "
+            f"({token_id!r}); expected a single id."
+        )
+    if token_id == delegate.unk_token_id:
+        raise ValueError(
+            f"Special token {token!r} not found in tokenizer vocabulary "
+            f"(resolved to unk_token_id)."
+        )
+    return int(token_id)
+
+
 logger = logging.getLogger("max.pipelines")
 
 _UINT64_MASK = (1 << 64) - 1
@@ -384,6 +410,11 @@ class TextTokenizer(
                 elif isinstance(eos, list):
                     self._default_eos_token_ids.update(eos)
 
+    @property
+    def tokenizer_vocab_size(self) -> int:
+        """Vocabulary size of the HuggingFace tokenizer delegate."""
+        return len(self.delegate)
+
     def apply_chat_template(
         self,
         messages: list[TextGenerationRequestMessage],
@@ -594,6 +625,7 @@ class TextTokenizer(
             if max_gen_tokens is not None
             else self.max_length,
             tokens=token_buffer,
+            vocab_size=self.tokenizer_vocab_size,
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
@@ -721,6 +753,11 @@ class TextAndVisionTokenizer(
             self.processor, "image_break_token_id", None
         ):
             self.vision_token_ids.append(image_break_token_id)
+
+    @property
+    def tokenizer_vocab_size(self) -> int:
+        """Vocabulary size of the HuggingFace tokenizer delegate."""
+        return len(self.delegate)
 
     def apply_chat_template(
         self,
@@ -944,6 +981,7 @@ class TextAndVisionTokenizer(
             eos_tracker=await self.create_eos_tracker(request),
             extra_model_args=extra_model_args,
             tokens=token_buffer,
+            vocab_size=self.tokenizer_vocab_size,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,

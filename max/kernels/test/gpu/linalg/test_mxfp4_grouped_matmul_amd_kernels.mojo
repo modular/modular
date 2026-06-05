@@ -29,7 +29,8 @@ Coverage matrix per kernel:
   - Inactive slot: expert_id=-1
   - More tiles than total_wg (persistent multi-wave per WG)
   - Kimi-decode / Kimi-prefill scale at L2 dimensions
-  - Both BK_ELEMS=512 (K_BYTES % 256 == 0) and BK_ELEMS=128 paths
+  - BK_ELEMS=512 only — the preshuffled-scales preb path requires
+    num_k_mmas % 2 == 0 (i.e. BK_ELEMS >= 256)
 
 Currently MI355X-only.
 
@@ -39,7 +40,7 @@ Usage:
 
 from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.gpu.host.info import MI355X
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.memory import bitcast
 from std.random import random_ui64, seed
 
@@ -155,6 +156,9 @@ def _run_preb[
     BK_ELEMS: Int,
     persistent: Bool,
     cu_count: Int,  # struct param — `total_wg = cu_count * 2`
+    BM: Int = 64,
+    BN: Int = 128,
+    WN: Int = 64,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -187,8 +191,14 @@ def _run_preb[
         num_active,
         " total_tokens=",
         total_tokens,
+        " BM=",
+        BM,
+        " BN=",
+        BN,
         " BK_ELEMS=",
         BK_ELEMS,
+        " WN=",
+        WN,
     )
 
     # Host buffers + random init.
@@ -214,6 +224,10 @@ def _run_preb[
     _fill_random_e8m0(b_sc_h, num_experts * N * scale_K)
     _build_routing(a_off_h, eid_h, num_tokens_by_expert, expert_ids_list)
 
+    # Per-expert preshuffled-A-scale slot stride: align_up(max, 32).
+    # Caller-supplied bound; in production this is a model-config constant.
+    var max_padded_M = align_up(max_tokens, 32)
+
     # Device buffers + upload.
     var a_d = ctx.enqueue_create_buffer[DType.uint8](total_tokens * packed_K)
     var b_d = ctx.enqueue_create_buffer[DType.uint8](num_experts * N * packed_K)
@@ -224,6 +238,15 @@ def _run_preb[
         total_tokens * scale_K
     )
     var b_sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+        num_experts * N * scale_K
+    )
+    # Preshuffled scale buffers (uint8 — opaque bytes). The dispatcher
+    # expects scale tensors in scale-4d byte order; we produce them
+    # below via the GPU launcher (A) and CPU helper (B, static weights).
+    var a_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
+        num_experts * max_padded_M * scale_K
+    )
+    var b_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
         num_experts * N * scale_K
     )
     var a_off_d = ctx.enqueue_create_buffer[DType.uint32](num_active + 1)
@@ -256,7 +279,45 @@ def _run_preb[
         b_raw_tt, b_pre_dst_tt, ctx
     )
 
-    # Reference: per-expert ungrouped matmul against raw B.
+    # GPU preshuffle of A-scales into per-expert fixed-stride slots.
+    var a_sc_raw_u8_tt = TileTensor[mut=False](
+        a_sc_d.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+        row_major(Coord(total_tokens, Idx[scale_K])),
+    )
+    var a_sc_pre_tt = TileTensor[mut=True](
+        a_sc_pre_d,
+        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+    )
+    var a_off_tt_for_pre = TileTensor[mut=False](
+        a_off_d, row_major(Coord(num_active + 1))
+    )
+    Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
+        a_sc_raw_u8_tt,
+        a_sc_pre_tt,
+        a_off_tt_for_pre,
+        num_active,
+        max_tokens,
+        ctx.default_device_info.sm_count * 2,
+        ctx,
+    )
+
+    # CPU preshuffle of B-scales. B-scales are static weights — in
+    # production this runs once at session.load. Done here on host since
+    # the existing helper takes comptime MN; for B that's the static N.
+    var b_sc_pre_h = ctx.enqueue_create_host_buffer[DType.uint8](
+        num_experts * N * scale_K
+    )
+    ctx.synchronize()
+    var b_sc_raw_u8_tt = TileTensor(
+        b_sc_h.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K])),
+    )
+    Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
+        b_sc_raw_u8_tt, b_sc_pre_h
+    )
+    ctx.enqueue_copy(b_sc_pre_d, b_sc_pre_h)
+
+    # Reference: per-expert ungrouped matmul against raw B (raw scales).
     _gpu_per_expert_reference[num_experts, N, K](
         ctx,
         num_active,
@@ -269,7 +330,10 @@ def _run_preb[
         c_ref_d,
     )
 
-    # Run the preb kernel under test.
+    # Run the preb kernel under test. Scales are the preshuffled
+    # buffers; bitcast uint8 ptr → float8_e8m0fnu to match the dispatcher
+    # signature (the kernel internally bitcasts back to uint8 for V#
+    # construction; the dtype here is a wrapping convention).
     var a_tt = TileTensor[mut=False](
         a_d, row_major(Coord(total_tokens, Idx[packed_K]))
     )
@@ -277,20 +341,22 @@ def _run_preb[
         b_pre_d, row_major[num_experts, N * packed_K]()
     )
     var a_sc_tt = TileTensor[mut=False](
-        a_sc_d, row_major(Coord(total_tokens, Idx[scale_K]))
+        a_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
     )
     var b_sc_tt = TileTensor[mut=False](
-        b_sc_d, row_major[num_experts, N, scale_K]()
+        b_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        row_major[num_experts, N, scale_K](),
     )
     var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))
     var eid_tt = TileTensor(eid_d, row_major(Coord(num_active)))
     var c_tt = TileTensor[mut=True](c_d, row_major(Coord(total_tokens, Idx[N])))
 
     PreShuffledBGroupedGEMM[cu_count=cu_count].launch[
-        BM=64,
-        BN=128,
+        BM=BM,
+        BN=BN,
         BK_ELEMS=BK_ELEMS,
-        WN=64,
+        WN=WN,
         persistent=persistent,
     ](
         c_tt,
@@ -329,6 +395,8 @@ def _run_preb[
     _ = b_pre_d^
     _ = a_sc_d^
     _ = b_sc_d^
+    _ = a_sc_pre_d^
+    _ = b_sc_pre_d^
     _ = a_off_d^
     _ = eid_d^
     _ = c_d^
@@ -341,6 +409,9 @@ def test_persistent[
     K: Int,
     BK_ELEMS: Int = 512,
     cu_count: Int = 256,  # default = MI355X
+    BM: Int = 64,
+    BN: Int = 128,
+    WN: Int = 64,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -362,6 +433,9 @@ def test_persistent[
         BK_ELEMS=BK_ELEMS,
         persistent=True,
         cu_count=cu_count,
+        BM=BM,
+        BN=BN,
+        WN=WN,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
 
 
@@ -371,6 +445,9 @@ def test_direct[
     K: Int,
     BK_ELEMS: Int = 512,
     cu_count: Int = 256,
+    BM: Int = 64,
+    BN: Int = 128,
+    WN: Int = 64,
 ](
     name: String,
     num_tokens_by_expert: List[Int],
@@ -386,6 +463,9 @@ def test_direct[
         BK_ELEMS=BK_ELEMS,
         persistent=False,
         cu_count=cu_count,
+        BM=BM,
+        BN=BN,
+        WN=WN,
     ](name, num_tokens_by_expert, expert_ids_list, ctx)
 
 
@@ -658,9 +738,29 @@ def main() raises:
         ctx,
     )
 
-    # BK_ELEMS=128 path (K=256 → packed_K=128, not divisible by 256).
-    test_persistent[4, 128, 256, BK_ELEMS=128](
-        "bk128-multi", [32, 64, 128, 32], [0, 1, 2, 3], ctx
+    # Tile-size variants on the persistent path. Cover the kernel's
+    # supported BM/WN matrix (BM ∈ {16} ∪ multiples of 32, same for WN).
+    print("---- preb persistent kernel — tile-size variants ----")
+
+    # BM=16 path: 1-row-per-sub-MMA M, shrui scale rotation on odd-parity CTAs.
+    test_persistent[4, 512, 2048, BM=16, BN=128, WN=64](
+        "bm16-default-wn", [16, 32, 8, 48], [0, 1, 2, 3], ctx
+    )
+
+    # WN=16 path: N-side shrui rotation; BM unchanged.
+    test_persistent[4, 512, 2048, BM=64, BN=64, WN=16](
+        "wn16-default-bm", [64, 32, 16, 48], [0, 1, 2, 3], ctx
+    )
+
+    # Both BM=16 and WN=16 — exercises both shrui paths simultaneously.
+    test_persistent[4, 256, 2048, BM=16, BN=64, WN=16](
+        "bm16-wn16", [16, 32, 8, 24], [0, 1, 2, 3], ctx
+    )
+
+    # Smaller BN=64 with default BM/WN — exercises the N-tile dispatcher
+    # at a non-default BN.
+    test_persistent[4, 256, 2048, BM=64, BN=64, WN=64](
+        "bn64", [64, 128, 32, 96], [0, 1, 2, 3], ctx
     )
 
     # ----------------------------------------------------------------- #
@@ -681,6 +781,15 @@ def main() raises:
 
     # Large single-expert prefill (where direct typically wins over persistent).
     test_direct[1, 1024, 512]("single-large", [8192], [0], ctx)
+
+    # Tile-size variants on the direct path.
+    print("---- preb direct kernel — tile-size variants ----")
+    test_direct[4, 256, 2048, BM=16, BN=64, WN=16](
+        "bm16-wn16", [3, 7, 1, 5], [0, 1, 2, 3], ctx
+    )
+    test_direct[4, 512, 2048, BM=64, BN=64, WN=16](
+        "wn16-default-bm", [128, 64, 32, 48], [0, 1, 2, 3], ctx
+    )
 
     # Kimi-prefill scaled.
     test_direct[49, 512, 2048](
@@ -788,11 +897,6 @@ def main() raises:
             48,
         ],
         ctx,
-    )
-
-    # BK_ELEMS=128 path.
-    test_direct[4, 128, 256, BK_ELEMS=128](
-        "bk128-multi", [32, 64, 128, 32], [0, 1, 2, 3], ctx
     )
 
     print("==== all preb grouped MXFP4 kernel tests passed ====")

@@ -28,6 +28,7 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import elementwise, IndexList
 
 from std.sys.info import has_apple_gpu_accelerator
+from std.utils.coord import Coord
 
 from op_utils import (
     _get_dtype,
@@ -126,8 +127,8 @@ def avg_pool2d_op[
         pad_w_before,
         count_boundary_flag,
     )
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var rem, c = divmod(i, channels)
         var rem2, ow = divmod(rem, out_w)
         var n, oh = divmod(rem2, out_h)
@@ -157,12 +158,10 @@ def avg_pool2d_op[
             out_ptr[i] = Scalar[dtype](0)
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](total), ctx)
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 

@@ -289,8 +289,8 @@ class _Reshape:
         )
 
     def test_gemma_qkv_merge_per_shard_shape(self) -> None:
-        """Merge using ``per_rank_shape[1] * per_rank_shape[2]`` — exercises
-        the wrapper-landing path on a merged target axis."""
+        """Merge using ``shape[1] * shape[2]`` — exercises the wrapper-landing
+        path on a merged target axis."""
         T, n_heads, head_dim = 6, 8, 16
         q_dim = n_heads * head_dim
         t_np = np.arange(T * q_dim, dtype=np.float32).reshape(
@@ -302,8 +302,8 @@ class _Reshape:
         out = reshape(
             dt,
             (
-                dt.per_rank_shape[0],
-                dt.per_rank_shape[1] * dt.per_rank_shape[2],
+                dt.shape[0],
+                dt.shape[1] * dt.shape[2],
             ),
         )
         assert out.placements == (Sharded(1),)
