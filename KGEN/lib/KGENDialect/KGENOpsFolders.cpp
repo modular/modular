@@ -286,9 +286,9 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
                                           PatternRewriter &rewriter) {
   // If the condition is statically true then we can just remove this op.
   auto cond = op.getCond();
-  if (auto intCond = dyn_cast<IntegerAttr>(cond)) {
+  if (auto boolCond = sugarDynCast<SIMDAttr>(cond)) {
     // Leave failing conditions, they must be diagnosed at elaboration time.
-    if (intCond.getValue().isZero())
+    if (!boolCond.getAsBool())
       return failure();
     rewriter.eraseOp(op);
     return success();
@@ -308,8 +308,8 @@ ParamAssertOp::parametric_interpret(ArrayRef<Attribute> operands,
   if (!cond)
     return ErrorTree(getLoc(), "evaluate kgen.param.assert's cond failed");
 
-  auto resultInt = cast<IntegerAttr>(cond);
-  if (resultInt.getValue().isZero()) {
+  auto resultBool = cast<SIMDAttr>(cond);
+  if (!resultBool.getAsBool()) {
     Attribute message = state.getReboundAttribute(getMessage());
     return ErrorTree(getLoc(), "constraint failed: " +
                                    cast<StringAttr>(message).getValue());

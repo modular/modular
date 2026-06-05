@@ -142,7 +142,7 @@ kgen.generator @test_variadic_ptrremove_map() {
 // CHECK:    kgen.return %[[V2]] : !kgen.scalar<f32>
 
 kgen.generator @float_constant_f32<value: f64, DT: dtype>() -> !kgen.scalar<DT> {
-  kgen.param.assert <to_builtin(:scalar<bool> eq(:dtype DT, f32))>, "float please"
+  kgen.param.assert <eq(:dtype DT, f32)>, "float please"
   %0 = kgen.param.constant: f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
   %2 = pop.cast_from_builtin %1: f32 to !kgen.scalar<DT>
@@ -173,7 +173,7 @@ kgen.generator @paramAssertExample() {
   kgen.param.declare flen = <4>
 
   // Should succeed.
-  kgen.param.assert <to_builtin(:scalar<bool> eq(flen, 4))>, "vector length should be 4 for floats"
+  kgen.param.assert <eq(flen, 4)>, "vector length should be 4 for floats"
   kgen.return
 }
 
@@ -383,7 +383,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
 
 // CHECK-LABEL: kgen.func @"takeStringParameter,SomeString=\22foo\22"
 kgen.generator @takeStringParameter<SomeString: string>() {
-  kgen.param.assert <to_builtin(:scalar<bool> eq(:string SomeString, "foo"))>, "I want foo"
+  kgen.param.assert <eq(:string SomeString, "foo")>, "I want foo"
   kgen.return
 }
 
@@ -523,12 +523,12 @@ kgen.generator @partial_bind_params_region_2() -> index {
 
 // COM: First instantiation of `@fwd` is inside an assert.
 
-kgen.generator @fwd(%a: i1) -> i1 {
-  kgen.return %a : i1
+kgen.generator @fwd(%a: !kgen.scalar<bool>) -> !kgen.scalar<bool> {
+  kgen.return %a : !kgen.scalar<bool>
 }
 
 kgen.generator @f() {
-  kgen.param.assert <apply(:(i1) -> i1 @fwd, 1)>, "true"
+  kgen.param.assert <apply(:(!kgen.scalar<bool>) -> !kgen.scalar<bool> @fwd, true)>, "true"
   kgen.return
 }
 
@@ -1701,7 +1701,7 @@ kgen.generator export @main() {
 
 // -----
 
-kgen.generator @might_fail<succeed: i1>() {
+kgen.generator @might_fail<succeed: !kgen.scalar<bool>>() {
   kgen.param.assert <succeed>, "did not succeed"
   kgen.return
 }
@@ -1711,9 +1711,9 @@ kgen.generator @might_fail<succeed: i1>() {
 // CHECK-LABEL: @compile_assembly_conditional
 kgen.generator export @compile_assembly_conditional() {
   // CHECK-NEXT: <{ "failed {{.*}}", -1, #interp.uninitmem }>
-  kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =llvm, "", true, :() -> () @might_fail<:i1 0>>>
+  kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =llvm, "", true, :() -> () @might_fail<:!kgen.scalar<bool> false>>>
   // CHECK-NEXT: <{ "{{.*}}", 0, [[CAP_FN:@.*]] }>
-  kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =llvm, "", true, :() -> () @might_fail<:i1 1>>>
+  kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =llvm, "", true, :() -> () @might_fail<:!kgen.scalar<bool> true>>>
   kgen.return
 }
 
@@ -1723,7 +1723,7 @@ kgen.generator export @compile_assembly_conditional() {
 
 // CHECK-NOT: @no_impl
 kgen.generator @no_impl() -> index {
-  kgen.param.assert <0>, "bad"
+  kgen.param.assert <false>, "bad"
   %index0 = kgen.param.constant = <0>
   kgen.return %index0 : index
 }

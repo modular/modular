@@ -1136,9 +1136,8 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
     return success();
 
   Location loc = translateLocation(kwLoc);
-  // TODO: Update ParamAssertOp to take scalar<bool> directly.
-  TypedAttr propI1 = CastToBuiltinAttr::get(propVal.get());
-  auto assertOp = KGEN::ParamAssertOp::create(builder, loc, propI1, message);
+  auto assertOp =
+      KGEN::ParamAssertOp::create(builder, loc, propVal.get(), message);
 
   // All subsequent statements implicitly belong to a new, nested parameter
   // scope. This scope completely takes over as the new `curDeclScope` and the

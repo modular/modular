@@ -41,9 +41,8 @@ kgen.generator export @main() {
         hlcf.break "inlined_cf_scope"
       } else {
         kgen.param.apply *"(lifted)apply_2" = [() -> !kgen.scalar<bool>: @"_mlirtype_is_eq"<:type _19x17_T, :type none>]()
-        kgen.param.apply *"(lifted)apply_3" = [(!kgen.scalar<bool> read) -> i1: @"__mlir_i1__"](*"(lifted)apply_2")
         // expected-note @below {{constraint failed: expected Int or NoneType}}
-        kgen.param.assert <*"(lifted)apply_3">, "expected Int or NoneType"
+        kgen.param.assert <*"(lifted)apply_2">, "expected Int or NoneType"
         hlcf.break "inlined_cf_scope"
       } {thenIsolated}
       kgen.unreachable

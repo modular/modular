@@ -646,8 +646,8 @@ kgen.generator @dtype_params<dt: dtype, f32: dtype, ui32: dtype>() {
 // MLIR TYPES
 // CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
 kgen.generator @type_params<dt: dtype, typeParam: type>() {
-  // CHECK: kgen.param.assert <to_builtin(:scalar<bool> eq(:type typeParam, scalar<f32>))>
-  kgen.param.assert <to_builtin(:scalar<bool> eq(:type typeParam, !kgen.scalar<f32>))>, "f32 scalarzzz"
+  // CHECK: kgen.param.assert <eq(:type typeParam, scalar<f32>)>
+  kgen.param.assert <eq(:type typeParam, !kgen.scalar<f32>)>, "f32 scalarzzz"
   // CHECK: kgen.param.declare ty1: type = <scalar<f32>>
   kgen.param.declare ty1: type = <scalar<f32>>
 
@@ -668,11 +668,11 @@ kgen.generator @type_params<dt: dtype, typeParam: type>() {
 // STRING TYPES
 // CHECK-LABEL: kgen.generator @string_params<a: string, b: string>()
 kgen.generator @string_params<a: string, b: string>() {
-  // CHECK: kgen.param.assert <to_builtin(:scalar<bool> eq(:string a, b))>, "samesies only"
-  kgen.param.assert <to_builtin(:scalar<bool> eq(:string a, b))>, "samesies only"
+  // CHECK: kgen.param.assert <eq(:string a, b)>, "samesies only"
+  kgen.param.assert <eq(:string a, b)>, "samesies only"
 
-  // CHECK: kgen.param.assert <to_builtin(:scalar<bool> in(:string a, [b, "foo"]))>, "samesies or foo"
-  kgen.param.assert <to_builtin(:scalar<bool> in(:string a, [b, "foo"]))>, "samesies or foo"
+  // CHECK: kgen.param.assert <in(:string a, [b, "foo"])>, "samesies or foo"
+  kgen.param.assert <in(:string a, [b, "foo"])>, "samesies or foo"
 
   // CHECK: kgen.param.declare s1: string = <"exciting">
   kgen.param.declare s1: string = <"exciting">
@@ -686,41 +686,41 @@ kgen.generator @string_params<a: string, b: string>() {
 
 // CHECK-LABEL: kgen.generator @target_params2<t0: target>()
 kgen.generator @target_params2<t0: target>() {
-  // CHECK: kgen.param.assert <to_builtin(:scalar<bool> eq(:target t0, #kgen.target<triple = "triple", arch = "cpu", features = "features", data_layout = "p:32:32", simd_bit_width = 4>))>, "must support target!!"
-  kgen.param.assert <to_builtin(:scalar<bool> eq(:target t0, #kgen.target<triple="triple", arch="cpu", features="features", data_layout="p:32:32", simd_bit_width=4>))>, "must support target!!"
+  // CHECK: kgen.param.assert <eq(:target t0, #kgen.target<triple = "triple", arch = "cpu", features = "features", data_layout = "p:32:32", simd_bit_width = 4>)>, "must support target!!"
+  kgen.param.assert <eq(:target t0, #kgen.target<triple="triple", arch="cpu", features="features", data_layout="p:32:32", simd_bit_width=4>)>, "must support target!!"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_has_feature<t0: target>()
 kgen.generator @target_has_feature<t0: target>() {
-  kgen.param.assert <target_has_feature(t0, "avx")>, "must support avx!"
+  kgen.param.assert <from_builtin(:scalar<bool> target_has_feature(t0, "avx"))>, "must support avx!"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_is_gpu_triple<t0: target>()
 kgen.generator @target_is_gpu_triple<t0: target>() {
-  kgen.param.assert <to_builtin(:scalar<bool> eq(:string target_get_field(t0, "triple"), "nvptx64-nvidia-cuda"))>, "triple must be nvptx64-nvidia-cuda"
+  kgen.param.assert <eq(:string target_get_field(t0, "triple"), "nvptx64-nvidia-cuda")>, "triple must be nvptx64-nvidia-cuda"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_is_os<t0: target>()
 kgen.generator @target_is_os<t0: target>() {
-  kgen.param.assert <to_builtin(:scalar<bool> eq(:string target_get_field(t0, "os"), "darwin"))>, "os must be darwin"
+  kgen.param.assert <eq(:string target_get_field(t0, "os"), "darwin")>, "os must be darwin"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_is_little_endian<t0: target>()
 kgen.generator @target_is_little_endian<t0: target>() {
-  kgen.param.assert <to_builtin(:scalar<bool> eq(:string target_get_field(t0, "endianness"), "little"))>, "target must be little endian"
+  kgen.param.assert <eq(:string target_get_field(t0, "endianness"), "little")>, "target must be little endian"
   kgen.return
 }
 
 
 // CHECK-LABEL: kgen.generator @target_get_field()
 kgen.generator @target_get_field() {
-  kgen.param.assert<to_builtin(:scalar<bool> eq(128, target_get_field(#target, "simd_bit_width")))>,
+  kgen.param.assert<eq(128, target_get_field(#target, "simd_bit_width"))>,
                     "simd_bit_width is always greater than 1"
-  kgen.param.assert<to_builtin(:scalar<bool> eq(:string target_get_field(#target, "os"), "darwin"))>,
+  kgen.param.assert<eq(:string target_get_field(#target, "os"), "darwin")>,
                     "target os is darwin"
   kgen.return
 }

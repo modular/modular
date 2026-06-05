@@ -22,7 +22,7 @@ def exhaustive_comptime_if[x: Int]() -> Int:
         return 0
     else:
         comptime assert False
-        # CHECK: kgen.param.assert <0>
+        # CHECK: kgen.param.assert <false>
         # CHECK-NEXT: kgen.unreachable
 
 
@@ -36,7 +36,7 @@ def exhaustive_comptime_if[x: Int]() -> Int:
 def dead_code_after_assert(mut x: Int) -> Int:
     x = 7
     comptime assert False
-    # CHECK: kgen.param.assert <0>
+    # CHECK: kgen.param.assert <false>
     # CHECK-NEXT: kgen.unreachable
 
 # A completely uncallable function is also fine.

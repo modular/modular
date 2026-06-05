@@ -289,9 +289,9 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
   Attribute value;
   HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getCond());
 
-  // If the constraint evaluated to zero then the assert fails.
-  auto resultInt = cast<IntegerAttr>(value);
-  if (resultInt.getValue().isZero()) {
+  // If the constraint evaluated to false then the assert fails.
+  auto resultBool = cast<SIMDAttr>(value);
+  if (!resultBool.getAsBool()) {
     // Evaluate the string to report it.
     HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getMessage());
     inode->setToError(

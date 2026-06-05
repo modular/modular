@@ -10,7 +10,8 @@
 # CHECK: kgen.func export @conditional_alias
 def no_impl() -> __mlir_type.index:
     __mlir_op.`kgen.param.assert`[
-        cond=__mlir_attr.false, message=__mlir_attr.`"bad" : !kgen.string`
+        cond=__mlir_attr.`#kgen.simd<false> : !kgen.scalar<bool>`,
+        message=__mlir_attr.`"bad" : !kgen.string`,
     ]()
     return __mlir_attr.`0 : index`
 
