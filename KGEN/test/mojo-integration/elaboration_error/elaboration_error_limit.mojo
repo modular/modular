@@ -35,7 +35,8 @@ def entry_method2():
 @no_inline
 def foo():
     __mlir_op.`kgen.param.assert`[
-        cond=__mlir_attr.`false`, message="oops".value
+        cond=__mlir_attr.`#kgen.simd<false> : !kgen.scalar<bool>`,
+        message="oops".value,
     ]()  # expected-note {{constraint failed}}
 
 
@@ -45,7 +46,8 @@ def foo():
 @no_inline
 def bar():
     __mlir_op.`kgen.param.assert`[
-        cond=__mlir_attr.`false`, message="oops".value
+        cond=__mlir_attr.`#kgen.simd<false> : !kgen.scalar<bool>`,
+        message="oops".value,
     ]()  # expected-note {{constraint failed}}
 
 
@@ -54,7 +56,8 @@ def bar():
 @no_inline
 def baz():
     __mlir_op.`kgen.param.assert`[
-        cond=__mlir_attr.`false`, message="oops".value
+        cond=__mlir_attr.`#kgen.simd<false> : !kgen.scalar<bool>`,
+        message="oops".value,
     ]()
 
 

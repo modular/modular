@@ -217,7 +217,7 @@ def signature_capture[a: Int, f: def[b: Int]() thin -> TwoParams[a, b]]():
 # CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<{{.*}}cond: !Bool, message: !lit.struct<#StringLiteral <:string *"message.value`">>>()
 def my_constrained[cond: Bool, message: StringLiteral]():
     # CHECK: kgen.param.assert <{{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">{{.*}}>, *"message.value`"
-    __mlir_op.`kgen.param.assert`[cond=cond.__mlir_i1__(), message=message.value]()
+    __mlir_op.`kgen.param.assert`[cond=cond.__mlir_bool__(), message=message.value]()
     return
 
 

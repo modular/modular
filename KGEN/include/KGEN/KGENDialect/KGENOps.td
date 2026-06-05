@@ -1041,10 +1041,10 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert",
     true at elaboration time.
   }];
 
-  let arguments = (ins AttrOfType<I1>:$cond,
+  let arguments = (ins AttrOfType<BoolScalar>:$cond,
                        AttrOfType<KGEN_StringType>:$message);
   let assemblyFormat = [{
-    ` ` `<` custom<ParamValue>($cond, "$_builder.getI1Type()") `>` `,`
+    ` ` `<` custom<ScalarBoolParamValue>($cond) `>` `,`
     custom<StringParam>($message) attr-dict
   }];
 

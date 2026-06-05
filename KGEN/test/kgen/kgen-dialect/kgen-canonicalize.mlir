@@ -99,10 +99,10 @@ kgen.func @cast_to_folds(%arg0: f32) -> f32 {
 
 // CHECK-LABEL: kgen.generator @param_assert_simplify<p1: i1, p2>()
 kgen.generator @param_assert_simplify<p1 : i1, p2>() {
-  // CHECK-NOT: assert <1>
-  kgen.param.assert <1>, "this is pointless"
-  // CHECK-NEXT: kgen.param.assert <0>, "failing asserts must be kept"
-  kgen.param.assert <to_builtin(:scalar<bool> eq(42, 41))>, "failing asserts must be kept"
+  // CHECK-NOT: assert <true>
+  kgen.param.assert <true>, "this is pointless"
+  // CHECK-NEXT: kgen.param.assert <false>, "failing asserts must be kept"
+  kgen.param.assert <eq(42, 41)>, "failing asserts must be kept"
   kgen.return
 }
 

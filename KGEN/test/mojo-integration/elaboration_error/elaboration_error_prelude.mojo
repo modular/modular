@@ -23,7 +23,7 @@ from std.collections.string.string_slice import _get_kgen_string
 @always_inline("nodebug")
 def my_constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     __mlir_op.`kgen.param.assert`[
-        cond=cond.__mlir_i1__(),
+        cond=cond.__mlir_bool__(),
         message=_get_kgen_string[msg, *extra](),
     ]()  # expected-note {{constraint failed}}
 
