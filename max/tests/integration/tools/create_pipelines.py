@@ -50,6 +50,7 @@ from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
 from max.pipelines.architectures.wan.wan_executor import WanExecutor
 from max.pipelines.core import PixelContext
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.lib import PipelineRuntimeConfig, PixelGenerationPipeline
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
@@ -1416,11 +1417,20 @@ class ImageGenerationOracle(PipelineOracle):
                 quantization_encoding=encoding,
             )
 
+        runtime_kwargs: dict[str, Any] = {
+            "prefer_module_v3": prefer_module_v3,
+        }
+
+        # Optional denoising-cache overrides (e.g. TaylorSeer / FBCache).
+        denoising_cache = self.config_params.get("denoising_cache")
+        if denoising_cache is not None:
+            runtime_kwargs["denoising_cache"] = DenoisingCacheConfig(
+                **denoising_cache
+            )
+
         config = pipelines.PipelineConfig(
             models=models,
-            runtime=PipelineRuntimeConfig(
-                prefer_module_v3=prefer_module_v3,
-            ),
+            runtime=PipelineRuntimeConfig(**runtime_kwargs),
         )
 
         pipeline_model_cls = (

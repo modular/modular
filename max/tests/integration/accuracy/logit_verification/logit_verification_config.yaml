@@ -1126,6 +1126,33 @@ logit_verification_pipelines:
       transformer_weight_path:
         - "black-forest-labs/FLUX.2-dev-NVFP4/flux2-dev-nvfp4.safetensors"
 
+  # Flux2-dev-fp4 w/ TaylorSeer
+  black-forest-labs/FLUX.2-dev-NVFP4-t2i-TaylorSeer:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_1x, *b200_2x]
+    pipeline: "black-forest-labs/FLUX.2-dev-t2i"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [image-generation, nvidia-only, nvidia-multi, no-h100]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/09e2330e3ea8016979b145072037df30ac8a7c6a425c00d64ae340cd52455295/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
+      json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
+    # Per-prompt SSIM:  [.923, .960, .959, .950, .901]
+    # Per-prompt LPIPS: [.0388, .0409, .0395, .0296, .0557]
+    # Thresholds set with ~10% headroom from the worst-performing prompt.
+    ssim_threshold: 0.8
+    lpips_threshold: 0.06
+    timeout: 3600
+    config_params_override:
+      prefer_module_v3: false
+      denoising_cache:
+        taylorseer: true
+        taylorseer_max_order: 2
+        taylorseer_warmup_steps: 3
+        taylorseer_cache_interval: 2
+      transformer_weight_path:
+        - "black-forest-labs/FLUX.2-dev-NVFP4/flux2-dev-nvfp4.safetensors"
+
   black-forest-labs/FLUX.2-dev-i2i-bfloat16-v2:
     pre_submit_agents: []
     post_submit_agents: [*b200_1x, *mi355_1x]
