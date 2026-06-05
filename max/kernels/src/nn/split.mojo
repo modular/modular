@@ -40,9 +40,10 @@ def split[
     target: StaticString,
     trace_description: StaticString,
     output_origin: MutOrigin,
+    *,
+    axis: Int,
 ](
     input: TileTensor[dtype, ...],
-    axis: Int,
     outputs: StaticTuple[
         TileTensor[dtype, OutputLayoutType, output_origin],
         num_outputs,

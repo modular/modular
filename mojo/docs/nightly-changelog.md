@@ -104,6 +104,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- The `axis` of the `nn.split` kernel is now a keyword-only compile-time
+  parameter instead of a runtime argument. Pass it in the parameter list,
+  e.g. `split[..., axis=axis](input, outputs, ctx)`.
 - The reduction axis of the `std.algorithm` reductions (`sum`, `product`,
   `mean`, `max`, `min`, and the underlying `_reduce_generator` plus the CPU
   and GPU backends) is now a keyword-only compile-time parameter named
