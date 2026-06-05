@@ -21,7 +21,7 @@ import numpy as np
 import numpy.typing as npt
 import PIL.Image
 from max.pipelines.core import PixelContext
-from max.pipelines.core.exceptions import PromptTooLongError
+from max.pipelines.core.exceptions import InputError, PromptTooLongError
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.pixel_tokenizer import (
     PipelineClassName,
@@ -35,6 +35,10 @@ from max.pipelines.request.provider_options import ImageProviderOptions
 from .system_messages import SYSTEM_MESSAGE, format_input, format_input_klein
 
 logger = logging.getLogger("max.pipelines")
+
+# Distilled FLUX.2-Klein is trained for exactly this many denoising steps;
+# other values produce incoherent images.
+_DISTILLED_KLEIN_NUM_STEPS: int = 4
 
 
 def tokenize_klein_text(
@@ -130,6 +134,16 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
             scheduler_config_overrides={"use_empirical_mu": True},
         )
         self._max_pixel_size = 1024 * 1024
+
+        self._is_distilled_klein = (
+            self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN
+            and bool(self._manifest_metadata.get("is_distilled", False))
+        )
+        # Distilled FLUX.2-Klein is trained for exactly
+        # ``_DISTILLED_KLEIN_NUM_STEPS`` steps; override the executor-level
+        # default so requests that omit ``steps`` pick up the right value.
+        if self._is_distilled_klein:
+            self._default_num_inference_steps = _DISTILLED_KLEIN_NUM_STEPS
 
     @staticmethod
     def _build_text_ids(batch_size: int, seq_len: int) -> npt.NDArray[np.int64]:
@@ -351,12 +365,18 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
             )
 
         if self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
-            is_distilled_klein = bool(
-                self._manifest_metadata.get("is_distilled", False)
-            )
+            if (
+                self._is_distilled_klein
+                and pixel_options.steps is not None
+                and pixel_options.steps != _DISTILLED_KLEIN_NUM_STEPS
+            ):
+                raise InputError(
+                    f"FLUX.2-Klein distilled requires steps="
+                    f"{_DISTILLED_KLEIN_NUM_STEPS} (got {pixel_options.steps})."
+                )
             # for non-distilled models, CFG is enabled
             # whenever guidance_scale > 1.0; negative prompt defaults to "".
-            do_true_cfg = guidance_scale > 1.0 and not is_distilled_klein
+            do_true_cfg = guidance_scale > 1.0 and not self._is_distilled_klein
         else:
             do_true_cfg = (
                 pixel_options.true_cfg_scale > 1.0
