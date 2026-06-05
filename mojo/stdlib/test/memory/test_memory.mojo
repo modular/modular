@@ -796,7 +796,10 @@ def test_memmove_overlapping_regions() raises:
     var list = [1, 2, 3, 4, 5, 6, 7]
     # shift all values down by 1
     memmove(
-        dest=list.unsafe_ptr(), src=list.unsafe_ptr() + 1, count=len(list) - 1
+        # NOTE: need `as_any_origin` to avoid exclusivity violations
+        dest=list.unsafe_ptr().as_any_origin(),
+        src=list.unsafe_ptr().as_any_origin() + 1,
+        count=len(list) - 1,
     )
     assert_equal(list, [2, 3, 4, 5, 6, 7, 7])
 

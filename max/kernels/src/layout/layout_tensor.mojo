@@ -851,17 +851,7 @@ struct LayoutTensor[
     @implicit
     def __init__(
         other: LayoutTensor,
-        out self: LayoutTensor[
-            other.dtype,
-            other.layout,
-            ImmutOrigin(other.origin),
-            address_space=other.address_space,
-            element_layout=other.element_layout,
-            layout_int_type=other.layout_int_type,
-            linear_idx_type=other.linear_idx_type,
-            masked=other.masked,
-            alignment=other.alignment,
-        ],
+        out self: type_of(other).Immut,
     ):
         """Implicitly cast a mutable LayoutTensor to immutable.
 
@@ -988,6 +978,9 @@ struct LayoutTensor[
         mut: Whether the result tensor is mutable.
         origin: The origin for the result tensor.
     """
+
+    comptime Immut = Self.OriginCastType[ImmutOrigin(Self.origin)]
+    """Type alias for an immutably-casted tensor."""
 
     comptime MutableAnyType = Self.OriginCastType[MutAnyOrigin]
     """Mutable LayoutTensor type with MutAnyOrigin."""
@@ -5218,7 +5211,7 @@ struct LayoutTensor[
 
     @always_inline
     def distance(
-        self,
+        self: Self.Immut,
         addr: UnsafePointer[
             mut=False,
             Scalar[Self.dtype],
@@ -5271,9 +5264,13 @@ struct LayoutTensor[
         _layout: Layout,
         _uint_dtype: DType = _get_unsigned_type(_layout, Self.address_space),
     ](
-        self,
+        self: Self.Immut,
         src: LayoutTensor[
-            Self.dtype, _layout, address_space=Self.address_space, ...
+            mut=False,
+            Self.dtype,
+            _layout,
+            address_space=Self.address_space,
+            ...,
         ],
     ) -> Scalar[_uint_dtype]:
         """Calculate the element-wise distance between this tensor and another

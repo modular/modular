@@ -86,9 +86,6 @@ def test[
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
     comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
-    var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
-
     # Buffers for direct conv.
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_4d = Layout.row_major[4]()

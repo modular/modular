@@ -414,14 +414,7 @@ struct TileTensor[
     @implicit
     def __init__(
         other: TileTensor,
-        out self: TileTensor[
-            other.dtype,
-            other.LayoutType,
-            ImmutOrigin(other.origin),
-            address_space=other.address_space,
-            linear_idx_type=other.linear_idx_type,
-            element_size=other.element_size,
-        ],
+        out self: type_of(other).Immut,
     ):
         """Implicitly cast a mutable TileTensor to immutable.
 
@@ -1047,12 +1040,12 @@ struct TileTensor[
                 )
 
     def _distance(
-        self,
+        self: Self.Immut,
         addr: UnsafePointer[
             mut=False,
             Scalar[Self.dtype],
+            _,
             address_space=Self.address_space,
-            ...,
         ],
     ) -> Scalar[Self.linear_idx_type]:
         """Calculate the element-wise distance between this tensor's pointer
@@ -2441,6 +2434,9 @@ struct TileTensor[
             ),
         }
 
+    comptime Immut = Self.OriginCastType[ImmutOrigin(Self.origin)]
+    """Type alias for an immutably-casted tensor."""
+
     comptime OriginCastType[
         mut: Bool,
         //,
@@ -2451,6 +2447,7 @@ struct TileTensor[
         LayoutType=Self.LayoutType,
         address_space=Self.address_space,
         linear_idx_type=Self.linear_idx_type,
+        element_size=Self.element_size,
     ]
     """Type alias for origin-cast result tensors.
 

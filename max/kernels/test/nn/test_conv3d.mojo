@@ -67,11 +67,6 @@ def test[
     var WO = (W + pad_w[0] + pad_w[1] - dilation[2] * (S - 1) - 1) // stride[2] + 1
     # fmt: on
 
-    # Alternative with explicit dtype parameters
-    var padding_0 = IndexList[2](pad_d[0], pad_d[1])
-    var padding_1 = IndexList[2](pad_h[0], pad_h[1])
-    var padding_2 = IndexList[2](pad_w[0], pad_w[1])
-
     var conv_shape = ConvShape[3](
         n=N,
         input_dims=DHW,
@@ -104,9 +99,6 @@ def test[
     # Find the tile size used in packing.
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
     comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
-
-    var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     comptime layout_5d = Layout.row_major[5]()
     comptime layout_6d = Layout.row_major[6]()

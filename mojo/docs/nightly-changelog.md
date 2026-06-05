@@ -107,6 +107,14 @@ This version is still a work in progress.
 - The `axis` of the `nn.split` kernel is now a keyword-only compile-time
   parameter instead of a runtime argument. Pass it in the parameter list,
   e.g. `split[..., axis=axis](input, outputs, ctx)`.
+
+- `UnsafePointer` implicit constructor has been fixed. When a function took
+  an `UnsafePointer[mut=False, ...]`, and was passed a mutable pointer, the
+  incorrect constructor was chosen from overload resolution resulting in the
+  new origin being `ImmutableAnyOrigin`. This is an issue as it occasionally
+  hid mutability aliasing between pointers and hid some unused variables.
+  The constructor now correctly casts to `ImmutOrigin(Self.origin)`.
+
 - The reduction axis of the `std.algorithm` reductions (`sum`, `product`,
   `mean`, `max`, `min`, and the underlying `_reduce_generator` plus the CPU
   and GPU backends) is now a keyword-only compile-time parameter named
