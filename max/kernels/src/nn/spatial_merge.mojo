@@ -60,6 +60,7 @@ def spatial_merge_kernel[
     # Compute input/output offsets on-the-fly by scanning grid_thw.
     # Simultaneously find which batch item this patch belongs to.
     var b = 0
+    var found = False
     for i in range(batch_size):
         var t = grid_thw[i, 0]
         var h = grid_thw[i, 1]
@@ -71,11 +72,16 @@ def spatial_merge_kernel[
         # Check if patch_idx falls in this batch item.
         if patch_idx < Int(offset_out + num_output_patches):
             b = i
+            found = True
             break
 
         # Accumulate offsets.
         offset_in += rebind[Int64](h * w)
         offset_out += rebind[Int64](num_output_patches)
+
+    # Skip blocks whose patch index is past the last output patch.
+    if not found:
+        return
 
     # Local patch index (i.e., within this batch item).
     var patch_local_idx = patch_idx - Int(offset_out)
@@ -171,7 +177,12 @@ def spatial_merge[
 ) raises:
     comptime threads_per_block = 256
     var batch_size = Int(grid_thw.dim[0]())
-    var num_blocks = Int(output.dim[0]())
+    # One block per merged output patch: each block writes
+    # merge_size * merge_size * hidden_size elements, so the block count is the
+    # output element count divided by that per-patch size.
+    var num_blocks = Int(output.dim[0]() * output.dim[1]()) // (
+        merge_size * merge_size * hidden_size
+    )
 
     comptime kernel = spatial_merge_kernel[
         dtype,
