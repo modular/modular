@@ -49,6 +49,12 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # Drives the SM100 MLA FP8-KV decode kernel (MLA_SM100_Decode_KV_FP8).
+    # SM100-only.
+    "test_mla_decode_kv_fp8_magnitude_stress.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_index_fp8.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
