@@ -35,6 +35,13 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Added a `maxserve.startup_time` Prometheus histogram (seconds) that
+  records model-worker startup time, previously only available in the
+  server logs. It is split by a `component` tag (`build`, `compile`, `init`,
+  `graph_capture`, `pinned_memory`, `spawn`, and `total`), so a single metric
+  can be plotted broken down by startup phase to track pod startup time in
+  production.
+
 - Added a `maxserve.time_per_output_token` Prometheus histogram (milliseconds).
   Emitted once per request, it reports the mean decode-phase latency per
   generated token (`decode_time / (num_generated_tokens - 1)`), excluding the
