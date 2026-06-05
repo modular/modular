@@ -10,6 +10,7 @@
 #include "Support/Telemetry/Logs.h"
 #include "llvm/Support/MemoryBuffer.h"
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdlib>
 #include <fstream>
@@ -659,6 +660,88 @@ TEST(Telemetry, FireAndForgetLogRecordExporterDispatchesOnDetachedThread) {
         << "Delegate's Export ran on the caller's thread — the wrapper "
            "is no longer fire-and-forget (SDLC-3618 regression).";
   }
+}
+
+// A delegate whose Export blocks until released, so a test can prove
+// FireAndForgetLogRecordExporter::ForceFlush actually waits for the in-flight
+// export to finish rather than returning while it is still running.
+class BlockingLogRecordExporter
+    : public opentelemetry::sdk::logs::LogRecordExporter {
+public:
+  std::unique_ptr<opentelemetry::sdk::logs::Recordable>
+  MakeRecordable() noexcept override {
+    return nullptr;
+  }
+
+  opentelemetry::sdk::common::ExportResult
+  Export(const opentelemetry::nostd::span<
+         std::unique_ptr<opentelemetry::sdk::logs::Recordable>> &) noexcept
+      override {
+    {
+      std::unique_lock<std::mutex> lock(mu);
+      started = true;
+      startedCv.notify_all();
+      releaseCv.wait(lock, [&] { return released; });
+    }
+    exportReturned.store(true);
+    return opentelemetry::sdk::common::ExportResult::kSuccess;
+  }
+
+  bool ForceFlush(std::chrono::microseconds) noexcept override { return true; }
+  bool Shutdown(std::chrono::microseconds) noexcept override { return true; }
+
+  void release() {
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      released = true;
+    }
+    releaseCv.notify_all();
+  }
+
+  std::mutex mu;
+  std::condition_variable startedCv;
+  std::condition_variable releaseCv;
+  bool started = false;
+  bool released = false;
+  std::atomic<bool> exportReturned{false};
+};
+
+// ForceFlush must block until the in-flight export finishes — that drain is
+// what keeps a worker from reading the LoggerProvider's Resource after
+// teardown (SDLC-3618). Verified deterministically with a delegate that blocks
+// inside Export until released.
+TEST(Telemetry, FireAndForgetLogRecordExporterForceFlushDrainsInFlight) {
+  auto blocking = std::make_unique<BlockingLogRecordExporter>();
+  auto *blockingPtr = blocking.get();
+  FireAndForgetLogRecordExporter async(std::move(blocking));
+
+  std::vector<std::unique_ptr<opentelemetry::sdk::logs::Recordable>> records;
+  opentelemetry::nostd::span<
+      std::unique_ptr<opentelemetry::sdk::logs::Recordable>>
+      span{records.data(), records.size()};
+  async.Export(span);
+
+  // Wait until the worker is actually inside the delegate's (blocked) Export.
+  {
+    std::unique_lock<std::mutex> lock(blockingPtr->mu);
+    ASSERT_TRUE(blockingPtr->startedCv.wait_for(
+        lock, std::chrono::seconds(5), [&] { return blockingPtr->started; }))
+        << "worker never entered the delegate's Export";
+  }
+
+  // While the export is blocked, a short ForceFlush must report the drain did
+  // NOT complete, and the export must still be in flight.
+  EXPECT_FALSE(async.ForceFlush(std::chrono::milliseconds(50)))
+      << "ForceFlush reported drained while an export was still blocked";
+  EXPECT_FALSE(blockingPtr->exportReturned.load());
+
+  // Release the delegate; a generous ForceFlush must now wait for the export
+  // to finish before returning success.
+  blockingPtr->release();
+  EXPECT_TRUE(async.ForceFlush(std::chrono::seconds(5)))
+      << "ForceFlush did not drain after the export was released";
+  EXPECT_TRUE(blockingPtr->exportReturned.load())
+      << "ForceFlush returned before the in-flight export completed";
 }
 
 /// This test verifies that the invocation event is NOT emitted when crash

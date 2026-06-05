@@ -20,8 +20,11 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
@@ -169,37 +172,69 @@ private:
 /// is unreachable, every synchronous `Export` can stall for tens of
 /// seconds, blocking `emitL0Event` on the emit path. See SDLC-3618.
 ///
-/// Deliberate semantic deviations from the base `LogRecordExporter`
-/// contract, all in service of never blocking the caller:
+/// `emit` stays non-blocking — `Export` only spawns the worker and returns —
+/// but the wrapper now *tracks* in-flight workers so it can drain them at
+/// well-defined points. This matters for correctness, not just delivery:
+/// each record carries a raw pointer to the LoggerProvider's `Resource`, so a
+/// worker that outlives the provider would read freed Resource strings and
+/// crash (observed as `std::length_error` in `basic_string::_M_create`).
+/// Draining in `ForceFlush` (and the destructor backstop) — driven from
+/// `TelemetryContext::flush()` / `~TelemetryContext()` while the Resource is
+/// still alive — closes that use-after-free window.
 ///
-///   - `Export` always returns `kSuccess`. The caller has no signal about
-///     whether the detached HTTP call eventually succeeded or failed.
-///   - `ForceFlush` always returns `true` without actually waiting. We do
-///     not track detached threads, so we cannot report honest completion.
-///     Do NOT use this wrapper in any call chain where the `ForceFlush`
-///     return value drives retry logic.
-///   - `Shutdown` does not forward to the delegate. Propagating the call
-///     would try to drain any in-flight curl requests in the delegate's
-///     HTTP client and can block beyond our timeout budget.
-///   - Detached threads are terminated abruptly when the process exits;
-///     in-flight HTTP requests at that moment are dropped.
+/// Semantic notes on the base `LogRecordExporter` contract:
+///
+///   - `Export` always returns `kSuccess` and never blocks; the caller has no
+///     signal about whether the off-thread export eventually succeeded.
+///   - `ForceFlush` waits up to the supplied `timeout` for in-flight workers to
+///     finish and returns whether the drain completed. `flush()` is always
+///     called before teardown, so this is the primary UAF guard.
+///   - `Shutdown` stays non-blocking (returns immediately) by design: awaiting
+///     it could stall process exit on the delegate's unreachable-endpoint curl
+///     retries (SDLC-3618). It does not forward to the delegate.
+///   - If a drain times out (e.g. endpoint unreachable at process exit) the
+///     worker is left running. It can never touch freed *wrapper* memory — it
+///     only races the `SharedState`, kept alive by its own `shared_ptr`. The
+///     records it still holds, however, point at the provider's `Resource`,
+///     which teardown can then free out from under it. So a drain timeout
+///     *narrows* the use-after-free window to that case rather than
+///     eliminating it. Fully closing it would require making each record
+///     self-contained (deep-copying the Resource) before dispatch.
 class FireAndForgetLogRecordExporter
     : public opentelemetry::sdk::logs::LogRecordExporter {
 public:
   explicit FireAndForgetLogRecordExporter(
       std::unique_ptr<opentelemetry::sdk::logs::LogRecordExporter> delegate)
-      : delegate_(std::move(delegate)) {}
+      : state_(std::make_shared<SharedState>()) {
+    state_->delegate = std::move(delegate);
+  }
+
+  // Backstop: drain any export still in flight before this wrapper goes away.
+  // In the normal teardown path TelemetryContext::~TelemetryContext() already
+  // calls flush() (-> ForceFlush) then Shutdown() before the LoggerProvider —
+  // and the Resource the records point into — is destroyed, so by here the
+  // count is usually already zero and this returns immediately. Reuses the
+  // budget from the most recent ForceFlush so teardown doesn't pile an
+  // independent timeout on top of the flush() that just ran.
+  ~FireAndForgetLogRecordExporter() override {
+    std::chrono::microseconds budget;
+    {
+      std::lock_guard<std::mutex> lock(state_->mutex);
+      budget = state_->drainBudget;
+    }
+    drain(budget);
+  }
 
   std::unique_ptr<opentelemetry::sdk::logs::Recordable>
   MakeRecordable() noexcept override {
-    return delegate_->MakeRecordable();
+    return state_->delegate->MakeRecordable();
   }
 
   opentelemetry::sdk::common::ExportResult
   Export(const opentelemetry::nostd::span<
          std::unique_ptr<opentelemetry::sdk::logs::Recordable>>
              &records) noexcept override {
-    // Take ownership of the records so the detached thread can own them.
+    // Take ownership of the records so the worker thread can own them.
     // Our only caller, `SimpleLogRecordProcessor::OnEmit`, does not touch
     // the span after `Export` returns — it destroys the local `unique_ptr`
     // at scope exit — so moving out is safe. Do NOT use this wrapper
@@ -208,27 +243,84 @@ public:
     owned.reserve(records.size());
     for (auto &record : records)
       owned.push_back(std::move(record));
-    std::thread([delegate = delegate_, owned = std::move(owned)]() mutable {
+
+    // Mark one export in flight, then run the (potentially slow / blocking)
+    // delegate export off-thread so `emit` never blocks on network I/O.
+    {
+      std::lock_guard<std::mutex> lock(state_->mutex);
+      ++state_->inFlight;
+    }
+    // The worker co-owns `state_` via the shared_ptr capture, so the mutex /
+    // condition variable / delegate it touches stay alive even if this
+    // wrapper is destroyed first — the worker only ever races the SharedState,
+    // never freed exporter memory.
+    std::thread([state = state_, owned = std::move(owned)]() mutable {
       opentelemetry::nostd::span<
           std::unique_ptr<opentelemetry::sdk::logs::Recordable>>
           span{owned.data(), owned.size()};
-      (void)delegate->Export(span);
+      (void)state->delegate->Export(span);
+      std::lock_guard<std::mutex> lock(state->mutex);
+      if (--state->inFlight == 0)
+        state->done.notify_all();
     }).detach();
     return opentelemetry::sdk::common::ExportResult::kSuccess;
   }
 
-  bool ForceFlush(std::chrono::microseconds /*timeout*/) noexcept override {
-    return true;
+  // ForceFlush now honestly waits (up to `timeout`) for in-flight exports to
+  // finish. This is what keeps a detached export from reading the
+  // LoggerProvider's Resource after the provider is torn down:
+  // TelemetryContext::flush() -> ForceFlush runs from both the explicit flush
+  // path and ~TelemetryContext while the Resource is still alive. Returns false
+  // if the drain timed out with work still pending.
+  bool ForceFlush(std::chrono::microseconds timeout) noexcept override {
+    {
+      // Remember the budget so the destructor backstop reuses it rather than
+      // adding an independent one.
+      std::lock_guard<std::mutex> lock(state_->mutex);
+      state_->drainBudget = timeout;
+    }
+    return drain(timeout);
   }
 
+  // Shutdown stays non-blocking by design (SDLC-3618): forwarding/awaiting here
+  // could stall process exit on the delegate's unreachable-endpoint curl
+  // retries. The UAF window is already closed by ForceFlush (always called
+  // first in teardown) and the destructor backstop, so Shutdown need not wait.
   bool Shutdown(std::chrono::microseconds /*timeout*/) noexcept override {
     return true;
   }
 
 private:
-  // `shared_ptr` so detached threads can keep the delegate alive past this
-  // wrapper's own destruction.
-  std::shared_ptr<opentelemetry::sdk::logs::LogRecordExporter> delegate_;
+  // Shared between this wrapper and every in-flight worker so the
+  // synchronization primitives and delegate outlive the wrapper if needed.
+  struct SharedState {
+    std::shared_ptr<opentelemetry::sdk::logs::LogRecordExporter> delegate;
+    std::mutex mutex;
+    std::condition_variable done;
+    std::size_t inFlight = 0;
+    // Budget the destructor backstop drains with, set to the most recent
+    // ForceFlush timeout. The default is the fallback for standalone use that
+    // never routes through TelemetryContext::flush() (e.g. unit tests); guarded
+    // by `mutex`.
+    std::chrono::microseconds drainBudget =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::seconds(5));
+  };
+
+  bool drain(std::chrono::microseconds timeout) noexcept {
+    // Cap the wait so a sentinel like `microseconds::max()` can't overflow the
+    // steady_clock time_point inside wait_for (which would make it return
+    // immediately instead of waiting). A day is far past any real flush budget.
+    constexpr auto kMaxWait =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::hours(24));
+    const auto waitFor = timeout < kMaxWait ? timeout : kMaxWait;
+    std::unique_lock<std::mutex> lock(state_->mutex);
+    return state_->done.wait_for(lock, waitFor,
+                                 [&] { return state_->inFlight == 0; });
+  }
+
+  std::shared_ptr<SharedState> state_;
 };
 
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
