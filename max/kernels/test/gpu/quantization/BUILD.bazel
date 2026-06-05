@@ -11,16 +11,23 @@ _DEPS = [
 
 _FP8_FP4_TESTS = [
     "test_scaled_matmul.mojo",
+    "test_scaled_matmul_pathological_bscale.mojo",
     "test_scaled_fp8_quantization.mojo",
     "test_scaled_nvfp4_quantization.mojo",
     "test_nvfp4_block_scales_interleave.mojo",
     "test_scaled_mxfp8_quantization.mojo",
     "test_scaled_nvfp4_quantization_async.mojo",
+    "test_nvfp4_quantization_near_zero.mojo",
     "test_grouped_nvfp4_quantization.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
     "test_scaled_matmul.mojo": select({
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_scaled_matmul_pathological_bscale.mojo": select({
         "//:h100_gpu": ["//:h100_gpu"],
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -42,6 +49,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_scaled_nvfp4_quantization_async.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_nvfp4_quantization_near_zero.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

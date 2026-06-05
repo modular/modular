@@ -49,6 +49,7 @@ from layout import (
 )
 from layout._fillers import random
 from std.testing import assert_almost_equal, assert_true
+from std.utils.numerics import isinf, isnan
 
 from nn.rope_split_store import _rope_split_store_ragged
 
@@ -66,6 +67,7 @@ def execute_fp8_test[
     num_kv_heads: Int,
     head_size: Int,
     quantization_granularity: Int,
+    near_zero_block: Bool = False,
 ](ctx: DeviceContext) raises:
     """Run the fp8-KV path and verify roundtrip against bf16 reference.
 
@@ -171,6 +173,22 @@ def execute_fp8_test[
         row_major((total_length, Idx[combined_dim])),
     )
     random(qkv_host_tt)
+
+    # Regression for the FP8 quant `0*Inf` on a near-zero K/V block: overwrite
+    # token 0's entire K region with a tiny value (~1e-38) plus one exactly-0
+    # lane. The per-block `max_abs` becomes a tiny f32 denormal → scale =
+    # max_abs/448 underflows to a nonzero denormal → the `scale==0` guard in
+    # rope_split_store's quant MISSES it → inv_scale = 1/scale = +Inf → the
+    # zero lane computes `0 * Inf = NaN` → fp8(NaN)=NaN in the cache. Real K/V
+    # can be near-zero for a degenerate/quiet block; randn never is, which is
+    # why the normal test is clean. (head goes through RoPE first, but RoPE of
+    # ~1e-38 stays ~1e-38, so max_abs stays denormal.)
+    comptime if near_zero_block:
+        var k_base = q_dim_val  # K region starts right after the Q region
+        var k_region = num_kv_heads * head_dim
+        for j in range(k_region):
+            qkv_host_ptr[k_base + j] = Scalar[in_dtype](1e-38)
+        qkv_host_ptr[k_base] = Scalar[in_dtype](0.0)  # one exactly-zero lane
     ctx.enqueue_copy(qkv_device, qkv_host_ptr)
 
     # Q output (bf16). The bf16 path computes a reference Q below.
@@ -182,6 +200,26 @@ def execute_fp8_test[
     # ensure the kernel writes every byte it claims to.
     var kv_block_total = kv_block_shape.flattened_length()
     var fp8_kv_device = ctx.enqueue_create_buffer[kv_dtype](kv_block_total)
+    # For the near_zero_block finiteness scan: zero-init the cache so that
+    # UNWRITTEN cells are finite 0 (the buffer is otherwise uninitialized
+    # garbage that can contain fp8 NaN bytes — a full-buffer NaN scan would
+    # falsely count that garbage). With zero-init, any NaN in the scan came
+    # from the kernel's quant of the near-zero block.
+    comptime if near_zero_block:
+        fp8_kv_device.enqueue_fill(Scalar[kv_dtype](0))
+        # VERIFY the init actually zeroed the buffer (artifact-vs-real test):
+        # if this pre-kernel scan already shows NaN, enqueue_fill didn't take
+        # and any post-kernel "NaN" is uninit garbage, not kernel output.
+        var pre_nf = 0
+        var pre_host = alloc[Scalar[kv_dtype]](kv_block_total)
+        ctx.enqueue_copy(pre_host, fp8_kv_device)
+        ctx.synchronize()
+        for i in range(kv_block_total):
+            var pv = pre_host[i].cast[DType.float32]()
+            if isnan(pv) or isinf(pv):
+                pre_nf += 1
+        print("  near_zero_block PRE-KERNEL cache non-finite:", pre_nf)
+        pre_host.free()
     # Scales tensor in float32.
     var scales_total = kv_scales_shape.flattened_length()
     var fp8_scales_device = ctx.enqueue_create_buffer[scale_dtype](scales_total)
@@ -410,6 +448,23 @@ def execute_fp8_test[
     ctx.enqueue_copy(fp8_scales_host_ptr, fp8_scales_device)
     ctx.synchronize()
 
+    # near_zero_block regression: scan the written fp8 KV cache for NaN/Inf.
+    # The bit-exact reference comparison below is meaningless for the
+    # deliberately-degenerate near-zero block, so we just assert finiteness
+    # (a NaN in the fp8 cache is the bug) and return.
+    comptime if near_zero_block:
+        print(
+            "  near_zero_block mode: checking finiteness of KERNEL-WRITTEN"
+            " cells in the populated-cell walk below."
+        )
+
+    # Counts non-finite values among the KERNEL-WRITTEN cells only (set in
+    # the walk below). Scanning the whole buffer is invalid — the cache is
+    # allocated uninitialized, so unwritten cells hold garbage (incl. fp8
+    # NaN bytes). Only cells reached via the paged lookup table were
+    # actually written by the kernel.
+    var near_zero_nan_count = 0
+
     # Walk the populated (batch, token, kv, head, dim) cells and compute
     # cosine + per-element relative error against the bf16 reference.
     # We only inspect cells the kernel actually wrote, mapped via the
@@ -496,9 +551,33 @@ def execute_fp8_test[
                                 + h * hd
                                 + head_dim_idx
                             )
-                            var fp8_val = Float64(
-                                fp8_kv_host_ptr[fp8_off].cast[DType.float32]()
-                            )
+                            var fp8_raw = fp8_kv_host_ptr[fp8_off].cast[
+                                DType.float32
+                            ]()
+                            # near_zero_block: this is a KERNEL-WRITTEN cell.
+                            # A NaN/Inf here is a real kernel output (the
+                            # `0*Inf` quant bug), not buffer garbage.
+                            comptime if near_zero_block:
+                                if isnan(fp8_raw) or isinf(fp8_raw):
+                                    near_zero_nan_count += 1
+                                    if near_zero_nan_count <= 8:
+                                        print(
+                                            "    NaN at b=",
+                                            b,
+                                            " t=",
+                                            t,
+                                            " kv=",
+                                            kv_idx,
+                                            " h=",
+                                            h,
+                                            " blk=",
+                                            blk,
+                                            " d=",
+                                            d,
+                                            " scale=",
+                                            scale_val,
+                                        )
+                            var fp8_val = Float64(fp8_raw)
                             var ref_val = Float64(
                                 ref_kv_result_ptr[fp8_off].cast[DType.float32]()
                             )
@@ -522,6 +601,27 @@ def execute_fp8_test[
                             num_compared += 1
 
     assert_true(num_compared > 0, "no elements were compared")
+
+    # near_zero_block: the bf16-reference cosine/rel-err bars are meaningless
+    # for a deliberately-degenerate near-zero block, so we only assert that
+    # the KERNEL-WRITTEN cells are FINITE (the `0*Inf` quant bug writes NaN).
+    comptime if near_zero_block:
+        print(
+            "  near_zero_block: kernel-written non-finite count =",
+            near_zero_nan_count,
+            "/",
+            num_compared,
+        )
+        if near_zero_nan_count > 0:
+            raise Error(
+                "rope_split_store FP8 quant wrote "
+                + String(near_zero_nan_count)
+                + " non-finite value(s) into KERNEL-WRITTEN cells for a"
+                + " near-zero K block (0*Inf in the dynamic scale)"
+            )
+        print("  near_zero_block PASS: all kernel-written cells finite.")
+        return
+
     var cos_sim = dot_xy / (sqrt(dot_xx) * sqrt(dot_yy) + 1e-30)
     print("    num elements compared:", num_compared)
     print("    cosine similarity:", cos_sim)
@@ -859,6 +959,18 @@ def main() raises:
             num_kv_heads=4,
             head_size=512,
             quantization_granularity=32,
+        ](ctx)
+
+        # --- FP8 near-zero-block regression: a near-zero K block must NOT
+        # produce a NaN in the fp8 cache (the `0*Inf` dynamic-scale bug). ---
+        print("\n=== fp8 path: NEAR-ZERO K block (0*Inf regression) ===")
+        execute_fp8_test[
+            interleaved=True,
+            num_q_heads=32,
+            num_kv_heads=4,
+            head_size=256,
+            quantization_granularity=64,
+            near_zero_block=True,
         ](ctx)
 
         # Note: the non-interleaved K storage layout's behavior is

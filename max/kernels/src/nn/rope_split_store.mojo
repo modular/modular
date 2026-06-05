@@ -41,6 +41,8 @@ from nn.fused_qk_rope import rope_value
 from nn.rope import get_safetensors_idx
 from std.utils.index import IndexList
 
+from comm.fp8_utils import guarded_inv_scale
+
 
 # ===-----------------------------------------------------------------------===#
 # Core kernel
@@ -549,10 +551,12 @@ def _rope_split_store_ragged_impl[
                     var roped_f32 = roped_bf16.cast[DType.float32]()
                     var max_abs = abs(roped_f32).reduce_max()
                     var scale: Float32 = max_abs / fp8_max_val
-                    var inv_scale: Float32 = (
-                        Float32(0.0) if scale
-                        == Float32(0.0) else Float32(1.0) / scale
-                    )
+                    # Unlike `fp8_quantize` (which #87813 made clamp), this
+                    # direct fp8 cast is UNSATURATED, so a non-finite
+                    # `roped_f32 * inv_scale` from a near-zero block's denormal
+                    # scale would write a bad byte into the KV cache. The shared
+                    # guard returns 0 for a zero/non-finite-reciprocal scale.
+                    var inv_scale = guarded_inv_scale(scale)
                     # 3) Quantize to fp8.
                     var fp8_val = (roped_f32 * inv_scale).cast[
                         DType.float8_e4m3fn
@@ -603,10 +607,9 @@ def _rope_split_store_ragged_impl[
                     var val_f32 = val_bf16.cast[DType.float32]()
                     var max_abs = abs(val_f32).reduce_max()
                     var scale: Float32 = max_abs / fp8_max_val
-                    var inv_scale: Float32 = (
-                        Float32(0.0) if scale
-                        == Float32(0.0) else Float32(1.0) / scale
-                    )
+                    # See the K path: a near-zero V block's denormal scale would
+                    # overflow `1/scale`; the shared guard returns 0 instead.
+                    var inv_scale = guarded_inv_scale(scale)
                     var fp8_val = (val_f32 * inv_scale).cast[
                         DType.float8_e4m3fn
                     ]()

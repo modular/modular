@@ -58,6 +58,20 @@ This version is still a work in progress.
   text encoder sequence length): for example, "Prompt is too long: N
   tokens exceeds the configured maximum context length of M tokens.
   Please shorten your prompt."
+
+- Fixed an FP8 dynamic-quantization bug that mis-quantized near-zero groups on
+  NVIDIA GPUs (writing NaN into FP8 activations and the FP8 KV cache, surfacing
+  downstream as non-finite logits). When a quantization group was near zero, its
+  dynamic scale `max_abs / fp8_max` underflowed to a tiny denormal whose
+  reciprocal overflowed to infinity; multiplying lanes by that infinity produced
+  `+inf` (and `0 * inf = NaN` on zero lanes) *before* the FP8 cast. This is
+  upstream of, and not addressed by, the saturating FP8 cast: clamping the
+  result would turn the near-zero group into `±max_finite` garbage rather than
+  the correct zero. The reciprocal is now guarded to be finite, so a near-zero
+  group quantizes to a clean FP8 zero. Fixes the shared dynamic-scale helper
+  (used by FP8 quantization, fused RMSNorm, and the residual-add AllReduce
+  RMSNorm) and the fused RoPE plus KV-store path.
+
 - Fixed a KV cache offloading correctness bug that corrupted output for
   multi-cache models (such as Gemma 4's interleaved sliding-window plus
   global attention) when the `local` or `tiered` KV connector was enabled.

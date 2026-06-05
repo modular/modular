@@ -17,7 +17,35 @@ used across fused normalization kernels and standalone quantization kernels.
 """
 
 from std.math import clamp
-from std.utils.numerics import max_finite, min_finite
+from std.utils.numerics import isinf, isnan, max_finite, min_finite
+
+
+@always_inline
+def guarded_inv_scale[dt: DType](scale: Scalar[dt]) -> Scalar[dt]:
+    """Reciprocal of an FP8 scale factor, guarded to stay finite.
+
+    For a near-zero quant group the dynamic scale `max_abs / fp8_max` underflows
+    to a tiny denormal whose reciprocal overflows to +Inf; a later
+    `value * inv_scale` is then +Inf (and `0 * Inf = NaN` on a zero lane) before
+    the FP8 cast. Gate on `scale` first so the division is skipped for a zero
+    scale, and treat a non-finite reciprocal as zero so the (effectively zero)
+    group quantizes to a clean FP8 zero.
+
+    Parameters:
+        dt: The scale dtype.
+
+    Args:
+        scale: The FP8 scale factor (`max_abs / fp8_max`), non-negative.
+
+    Returns:
+        `1 / scale`, or `0` when `scale` is zero or its reciprocal is non-finite.
+    """
+    if scale == 0:
+        return 0
+    var inv_scale = 1.0 / scale
+    if isinf(inv_scale) or isnan(inv_scale):
+        return 0
+    return inv_scale
 
 
 @always_inline
@@ -52,8 +80,14 @@ def compute_dynamic_fp8_scale[
         min(row_max.cast[scale_ub.dtype](), scale_ub)
         / fp8_max.cast[scale_ub.dtype]()
     )
-    var scale_factor_recip = type_of(row_max)(
-        0.0 if scale_factor == 0.0 else 1.0 / scale_factor.cast[row_max.dtype]()
+    # Guard the reciprocal against denormal-scale overflow (see
+    # `guarded_inv_scale`): a near-zero group's `scale_factor` underflows to a
+    # tiny denormal whose `1/scale_factor` overflows to +Inf, NaN-ing the fp8
+    # cast on a zero lane (0*Inf). #87813's saturating cast does not help here —
+    # it is downstream and turns the +Inf into ±max_finite garbage. Treat a
+    # non-finite reciprocal as zero so the group quantizes to a clean fp8 zero.
+    var scale_factor_recip = guarded_inv_scale(
+        scale_factor.cast[row_max.dtype]()
     )
     return (scale_factor, scale_factor_recip)
 

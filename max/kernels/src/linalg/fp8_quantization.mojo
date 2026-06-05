@@ -597,17 +597,17 @@ def quantize_fp8_kernel_per_tensor[
                 )
                 max_scale = max(max_scale, s)
 
-        # Derive the per-tensor reciprocal scale from the max group scale.
-        # The per-group scales are already scale_factor = group_max / fp8_max,
-        # so the tensor-wide scale is simply the largest of those.
-        comptime fp8_max = max_finite[out_type]()
-        var scale_factor = (
-            min(max_scale, scale_ub) / fp8_max.cast[scale_ub.dtype]()
-        )
-        var scale_factor_recip = (
-            0.0 if scale_factor
-            == 0.0 else 1.0 / scale_factor.cast[accum_type]()
-        )
+        # `max_scale` is the tensor-wide max-abs: compute_scales_fp8_kernel writes
+        # each group's RAW max, and the scan above takes the largest. Route the
+        # scale and its reciprocal through the shared compute_dynamic_fp8_scale so
+        # the per-tensor path gets the SAME finite-reciprocal guard as the
+        # per-group kernels: a near-zero/denormal tensor max makes scale_factor
+        # underflow to a nonzero f32 denormal and 1/scale_factor overflow to +Inf,
+        # which NaNs the fp8 cast on a zero lane (0*Inf). The guard treats a
+        # non-finite reciprocal as zero scale, so the group quantizes to fp8 zero.
+        var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
+            out_type
+        ](max_scale.cast[accum_type](), scale_ub)
 
         # Write the per-tensor scale to every position so downstream
         # readers that index scales[group_idx, row] see the correct value.
