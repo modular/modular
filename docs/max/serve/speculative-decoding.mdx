@@ -242,9 +242,6 @@ flags.
 
 These restrictions apply when speculative decoding is enabled:
 
-- `--max-num-steps` must be `1`. Speculative-decoding pipelines manage
-  multi-step KV allocation internally, and any other value raises a
-  configuration error.
 - `--enable-echo` isn't supported alongside speculative decoding.
 - Structured output (JSON-schema-constrained generation) isn't supported
   alongside speculative decoding.

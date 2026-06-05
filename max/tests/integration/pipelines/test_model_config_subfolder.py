@@ -25,7 +25,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from test_common.mocks import (
     mock_pipeline_config_resolve,
 )

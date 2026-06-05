@@ -366,6 +366,11 @@ class ServeGraphCaptureRunner:
             self._draft_probe_strategy = self._target_probe_strategy
             self._draft_is_mla = self._target_is_mla
 
+        # Block drafts (DFlash) run at q=num_draft_tokens_per_step; probe the
+        # captured draft dispatch at this width to match cache_manager's runtime
+        # draft dispatch (q=1 for autoregressive drafts like eagle/mtp).
+        self._draft_q_at_capture = kv_params.num_draft_tokens_per_step
+
         self.graph_entries: dict[GraphKey, GraphEntry] = {}
 
     def release_graph(self, key: GraphKey) -> None:
@@ -414,7 +419,7 @@ class ServeGraphCaptureRunner:
         if q_max_seq_len > 1:
             draft_probe_lengths = self._draft_probe_strategy.probe_lengths(
                 self._max_cache_length_upper_bound,
-                1,
+                self._draft_q_at_capture,
             )
         else:
             draft_probe_lengths = []
@@ -458,7 +463,7 @@ class ServeGraphCaptureRunner:
                     draft_np_int,
                     draft_esl_int,
                 ) = self._draft_resolver.resolve_for_replica_with_scalars(
-                    batch_size, 1, length
+                    batch_size, self._draft_q_at_capture, length
                 )
                 metadata_draft = draft_bufs[0]
                 draft_np, _ = _unpack_dispatch_metadata(metadata_draft)

@@ -24,6 +24,12 @@ from pydantic import ConfigDict, Field, field_validator
 from .datasets import DatasetMode, DistributionParameter
 from .utils import int_or_none, parse_comma_separated
 
+# Fixed default seed for the workload generator and request sampling. Scheduled
+# and repeated benchmark runs pin this so run-to-run deltas reflect the change
+# under test rather than workload-draw variance. Pass ``--seed none`` (or
+# ``seed: null`` in YAML) to draw a fresh random seed instead.
+DEFAULT_BENCHMARK_SEED = 0x5EED  # spells "SEED" (= 24301)
+
 BaseBackend = Literal[
     "mcloud",
     "modular",
@@ -240,13 +246,15 @@ class BaseBenchmarkConfig(ConfigFileModel):
     )
 
     seed: int | None = Field(
-        default=None,
+        default=DEFAULT_BENCHMARK_SEED,
         description=(
-            "Random seed for reproducibility. When set, the same seed is used "
-            "for every benchmark iteration instead of drawing a fresh random "
-            "seed per concurrency level. Useful for reproducing a specific "
-            "concurrency level from a prior sweep without re-running the full "
-            "sweep."
+            "Random seed for the workload generator and request sampling. "
+            "Defaults to a fixed value so repeated and scheduled runs are "
+            "reproducible and run-to-run deltas reflect the change under test "
+            "rather than workload-draw variance. Pass ``--seed none`` (or "
+            "``seed: null`` in YAML) to draw a fresh random seed instead; the "
+            "drawn seed is logged and recorded with the results so the run "
+            "stays reproducible after the fact."
         ),
     )
 
@@ -265,6 +273,14 @@ class BaseBenchmarkConfig(ConfigFileModel):
         default=False,
         description="Enable detailed DEBUG logging.",
     )
+
+    @field_validator("seed", mode="before")
+    @classmethod
+    def _parse_seed_cli_string(cls, value: object) -> object:
+        """Map the CLI/YAML string ``none`` to ``None`` (draw a random seed)."""
+        if isinstance(value, str):
+            return int_or_none(value)
+        return value
 
 
 class BaseServingBenchmarkConfig(BaseBenchmarkConfig):
@@ -603,15 +619,15 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    warmup_concurrency: int = Field(
-        default=128,
-        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
+    warmup_delay_biased: bool = Field(
+        default=False,
+        description="Bias warmup session/turn selection by inter-turn think time (sum of delays) instead of turn count. Requires delays to be configured; falls back to turn-based when none are present.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    randomize_session_start: bool = Field(
-        default=True,
-        description="Add a random sleep (0 to inter-turn delay) before each session's first measured query to spread out the initial wave of requests.",
+    warmup_concurrency: int = Field(
+        default=128,
+        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
         json_schema_extra={"group": "Traffic Control"},
     )
 

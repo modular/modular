@@ -35,7 +35,6 @@ from max.pipelines.lib import (
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.types import RequestID
 from max.support.algorithm import flatten2d
-from transformers import AutoConfig
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
 from .lfm2 import LFM2
@@ -240,14 +239,6 @@ class LFM2Model(LlamaModelBase):
             device=self.devices[0],
         )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return LFM2Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
-
     def _build_graph(
         self,
         weights: Weights,
@@ -358,20 +349,6 @@ class LFM2Model(LlamaModelBase):
             **{f.name: getattr(base, f.name) for f in dataclasses.fields(base)},
             conv_states=conv_states,
             request_ids=request_ids,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> LFM2Inputs:
-        assert isinstance(prev_model_inputs, LFM2Inputs)
-        base = super().prepare_next_token_inputs(next_tokens, prev_model_inputs)
-        conv_states = self._conv_cache.get_states(prev_model_inputs.request_ids)
-        return LFM2Inputs(
-            **{f.name: getattr(base, f.name) for f in dataclasses.fields(base)},
-            conv_states=conv_states,
-            request_ids=prev_model_inputs.request_ids,
         )
 
     def release(self, request_id: RequestID) -> None:

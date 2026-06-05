@@ -77,6 +77,7 @@ def PyInit_mojo_module() -> PythonObject:
             .def_method[Queue.copy_from_device]("copy_from_device")
             .def_method[Queue.copy_intra_device]("copy_intra_device")
             .def_method[Queue.wait_for_events]("wait_for_events")
+            .def_method[Queue.execute]("execute")
         )
 
         _ = (
@@ -87,6 +88,7 @@ def PyInit_mojo_module() -> PythonObject:
             .def_method[Stream.copy_from_device]("copy_from_device")
             .def_method[Stream.copy_intra_device]("copy_intra_device")
             .def_method[Stream.wait_for_events]("wait_for_events")
+            .def_method[Stream.execute]("execute")
         )
 
         _ = (

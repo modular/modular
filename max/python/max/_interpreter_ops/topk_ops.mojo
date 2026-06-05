@@ -28,6 +28,7 @@ from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
+from std.utils.coord import Coord
 
 from std.algorithm.functional import elementwise, IndexList
 
@@ -95,8 +96,8 @@ def topk_op[
     @always_inline
     @parameter
     @__copy_capture(out_val_ptr, out_idx_ptr, in_ptr, dim1, dim2, k)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var pair = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var pair = Int(idx[0].value())
         var i0, i2 = divmod(pair, dim2)
         var in_base = i0 * dim1 * dim2 + i2
         var out_base = i0 * k * dim2 + i2
@@ -126,12 +127,10 @@ def topk_op[
             out_idx_ptr[out_base + ki * dim2] = best_idx
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](total), ctx)
+        elementwise[func, simd_width=1](Coord(total), ctx)
     else:
         comptime if has_accelerator():
-            elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), ctx
-            )
+            elementwise[func, simd_width=1, target="gpu"](Coord(total), ctx)
         else:
             raise Error("No GPU accelerator available")
 

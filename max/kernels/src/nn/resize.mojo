@@ -168,9 +168,7 @@ def resize_nearest_neighbor[
 
     @__copy_capture(scales)
     @parameter
-    def nn_interpolate[
-        simd_width: Int, _rank: Int, alignment: Int = 1
-    ](out_coords: IndexList[_rank]):
+    def nn_interpolate[simd_width: Int, alignment: Int = 1](out_coords: Coord):
         var in_coords = IndexList[input.rank](0)
 
         comptime for i in range(input.rank):
@@ -178,7 +176,7 @@ def resize_nearest_neighbor[
                 Int(
                     round(
                         coord_transform[coordinate_transformation_mode](
-                            out_coords[i],
+                            Int(out_coords[i].value()),
                             Int(input.dim(i)),
                             Int(output.dim(i)),
                             scales[i],
@@ -189,14 +187,12 @@ def resize_nearest_neighbor[
             )
 
         var in_idx = input.layout(Coord(in_coords))
-        var out_idx = output.layout(Coord(out_coords))
+        var out_idx = output.layout(out_coords)
 
         output.raw_store(out_idx, input.ptr[in_idx])
 
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
-    elementwise[nn_interpolate, 1](
-        coord_to_index_list(output.layout.shape_coord()), ctx
-    )
+    elementwise[nn_interpolate, 1](output.layout.shape_coord(), ctx)
 
 
 @always_inline

@@ -1,5 +1,4 @@
-load("//bazel:api.bzl", "mojo_library", "pkg_filegroup", "pkg_files", "strip_prefix")
-load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
+load("//bazel:api.bzl", "pkg_filegroup", "pkg_files")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -21,30 +20,15 @@ _EXCLUDED_KERNEL_LIBS = (
     "weights_registry",  # internal weight registration helpers
 )
 
-# This mojo_library call is for documentation purposes only. This target exists
-# so that `__init__.mojo` produces an `index.md` for `/max/api/kernels/`.
-# Because each kernel sub-package is its own Bazel package (used throughout the
-# codebase as `//max:linalg`, `//max:nn`, etc.), the per-sub-package `.docs` are
-# stitched into the published tree by the `docs` `pkg_filegroup` below.
-# This also means the `index.md` file doesn't know about its sub-packages and
-# MojoDoc can't generate a list of links to them. To work around this, we
-# use the post-process-docs.py script to generate that list of links.
-mojo_library(
-    name = "kernels_index",
-    srcs = ["__init__.mojo"],
-    docs_base_path = "kernels",
-    docs_title = "kernels",
-    tags = [
-        "manual",
-        ALLOW_UNUSED_TAG,
-    ],
-    deps = ["@mojo//:std"],
-)
-
+# Static landing page for `/max/api/kernels/`. Each kernel sub-package is its
+# own Bazel package (used throughout the codebase as `//max:linalg`, `//max:nn`,
+# etc.), so per-sub-package `.docs` are stitched into the published tree by the
+# `docs` `pkg_filegroup` below. The post-process-docs.py script injects a
+# `## Packages` listing into this page from the assembled sub-package index
+# files.
 pkg_files(
     name = "index.docs",
-    srcs = [":kernels_index.docs"],
-    strip_prefix = strip_prefix.from_pkg("kernels_index.docs"),
+    srcs = ["index.md"],
     tags = ["manual"],
 )
 

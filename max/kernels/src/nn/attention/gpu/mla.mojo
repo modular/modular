@@ -14,7 +14,7 @@
 from std.collections import InlineArray, OptionalReg
 from std.math import align_up, ceildiv, recip
 from std.math.uutils import umod, ufloordiv, udivmod
-from nn.attention.mha_utils import DynamicInt
+from nn.attention.mha_utils import DynamicInt, MHA_PDL_LEVEL
 from std.math.constants import log2e
 from std.sys import (
     align_of,
@@ -28,11 +28,15 @@ from std.sys import (
     CompilationTarget,
 )
 
-from nn.attention.gpu.mha import mha_splitk_reduce, q_num_matrix_view_rows
+from nn.attention.gpu.mha import (
+    mha_splitk_reduce,
+    q_num_matrix_view_rows,
+)
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 import std.gpu.primitives.warp as warp
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.algorithm.functional import (
     _elementwise_impl_gpu,
     tile_and_unswitch,
@@ -132,6 +136,12 @@ from .nvidia.sm100.mla_prefill_per_token_scale import (
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
 # ===-----------------------------------------------------------------------===#
+
+
+# Max query tokens per sequence the decode branch handles. Only NVIDIA's
+# decode kernel takes more than one (MTP / speculative decode); AMD's is
+# token-generation only.
+comptime MLA_DECODE_MAX_SEQ_LEN = 8 if has_nvidia_gpu_accelerator() else 1
 
 
 # entrypoint for MLA decoding kernels
@@ -528,6 +538,17 @@ def flare_mla_decoding_dispatch[
         q.dtype.is_half_float() or q.dtype == DType.float8_e4m3fn
     ), "Only support half precision or float8_e4m3fn Q."
 
+    # AMD's decode kernel handles only one query token per sequence; assert it
+    # here at the dispatch chokepoint so every decode caller is covered.
+    comptime if has_amd_gpu_accelerator():
+        debug_assert(
+            max_prompt_len <= 1,
+            (
+                "AMD MLA decode kernel handles exactly one query token per"
+                " sequence; route multi-token sequences to the prefill kernel."
+            ),
+        )
+
     # TileTensor always has static shapes for the last two dims.
 
     comptime if _is_sm10x_gpu(ctx.default_device_info):
@@ -920,6 +941,7 @@ def flare_mla_decoding_dispatch[
                         num_partitions_value,
                         grid_dim=(1, num_heads, batch_size),
                         block_dim=(WARP_SIZE, 1, 1),
+                        attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                     )
                 _ = exp_sum_qk_max_data^
                 _ = output_intermediate_data^
@@ -4064,6 +4086,7 @@ def _k_cache_to_buffer[
     def copy_fn_unified[width: Int, alignment: Int = 1](idx: Coord):
         copy_fn[width, idx.rank, alignment](coord_to_index_list(idx))
 
-    _elementwise_impl_gpu[simd_width=target_simd_width](
-        copy_fn_unified, shape=launch_shape, ctx=context
-    )
+    _elementwise_impl_gpu[
+        simd_width=target_simd_width,
+        trace_description="mla_k_cache_copy",
+    ](copy_fn_unified, shape=launch_shape, ctx=context)

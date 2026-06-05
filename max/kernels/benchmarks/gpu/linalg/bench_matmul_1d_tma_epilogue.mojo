@@ -52,6 +52,9 @@ from layout import (
     row_major,
 )
 from linalg.matmul.gpu import _matmul_gpu
+from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
+    fused_bias_residual_matmul_dispatch_sm100,
+)
 from std.utils import IndexList
 
 
@@ -270,25 +273,23 @@ def bench_matmul_1d_tma_epilogue[
             ](tensor_c, tensor_a, tensor_b, ctx)
 
         else:  # "tma_bias"
-            # Wrap 1D bias as a (1, N) TileTensor to match the 2D
-            # epilogue type _matmul_gpu expects. The kernel only
-            # uses the raw pointer for 1D bias.
+            # Wrap 1D bias as a (1, N) TileTensor to match the 2D epilogue
+            # type the fused dispatcher expects. The kernel only uses the raw
+            # pointer for 1D bias.
             var epi_1 = Int64(1)
             var epi_n = Int64(N)
             var epilogue_for_gpu = TileTensor(
                 bias_tile.ptr, row_major(Coord(epi_1, epi_n))
             ).as_immut()
-            _matmul_gpu[
-                use_tensor_core=True,
+            fused_bias_residual_matmul_dispatch_sm100[
                 transpose_b=transpose_b,
-                has_epilogue_tensor=True,
                 epilogue_is_1d=True,
             ](
                 tensor_c,
                 tensor_a,
                 tensor_b,
+                epilogue_for_gpu.as_any_origin(),
                 ctx,
-                epilogue_tensor=epilogue_for_gpu.as_any_origin(),
             )
 
     @parameter
@@ -389,17 +390,15 @@ def bench_matmul_1d_tma_epilogue[
                 bias_ver_dev.unsafe_ptr(),
                 row_major(Coord(ver_epi_1, ver_epi_n)),
             ).as_immut()
-            _matmul_gpu[
-                use_tensor_core=True,
+            fused_bias_residual_matmul_dispatch_sm100[
                 transpose_b=transpose_b,
-                has_epilogue_tensor=True,
                 epilogue_is_1d=True,
             ](
                 c_kernel_nd,
                 a_ver_nd,
                 b_ver_nd,
+                ver_epilogue.as_any_origin(),
                 ctx,
-                epilogue_tensor=ver_epilogue.as_any_origin(),
             )
 
         # Add 1D bias to reference output (broadcast across M rows).

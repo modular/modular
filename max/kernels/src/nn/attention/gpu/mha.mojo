@@ -29,6 +29,12 @@ from std.sys import (
 from std.sys.info import _is_amd_rdna
 from std.sys.intrinsics import _type_is_eq
 import std.gpu.primitives.warp as warp
+from std.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from std.algorithm import elementwise
 from std.algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from std.bit import next_power_of_two
@@ -67,6 +73,7 @@ from layout import (
     UNKNOWN_VALUE,
     lt_to_tt,
     row_major,
+    coord_to_index_list,
 )
 from layout.layout import *
 from layout.layout_tensor import (
@@ -126,6 +133,7 @@ from nn.attention.gpu.nvidia.sm100.mha_depth512 import (
 from nn.attention.mha_utils import (
     DynamicInt,
     FlashAttentionAlgorithm,
+    MHA_PDL_LEVEL,
     MHAConfig,
     NoPartition,
     SplitKPartition,
@@ -567,6 +575,10 @@ def flash_attention_dispatch[
 
     comptime q_half_float = dtype in (DType.float16, DType.bfloat16)
     comptime q_half_float_or_fp32 = dtype == DType.float32 or q_half_float
+    comptime q_fp8_depth512 = dtype.is_float8() and (
+        depth == 256 or depth == 512
+    )
+    comptime q_fp8_2q = dtype.is_float8() and (depth == 64 or depth == 128)
 
     var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
     var output_device = DeviceBuffer[output.dtype](
@@ -581,9 +593,14 @@ def flash_attention_dispatch[
             # Choose matmul parameters based on dtype.
             comptime if (
                 (is_sm90 or is_sm100)
-                and q_half_float
-                and (ragged or not _use_valid_length)
-                and config.algorithm == FlashAttentionAlgorithm(3)
+                and (
+                    (
+                        q_half_float
+                        and (ragged or not _use_valid_length)
+                        and config.algorithm == FlashAttentionAlgorithm(3)
+                    )
+                    or (is_sm100 and (q_fp8_depth512 or q_fp8_2q))
+                )
             ):
                 num_rows_q = q_num_matrix_view_rows(q)
 
@@ -735,31 +752,16 @@ def flash_attention_dispatch[
                     # per-block early-return + writeback skip together
                     # handle mixed-length multi-sequence ragged.
                     #
-                    # NullMask + partial-K-tile carve-out:
-                    # `num_keys % KV_BLOCK != 0` leaves the last K tile
-                    # partially valid (e.g., FLUX.2-dev i2i runs at
-                    # seq_len=8623 → last K tile has 47/64 valid keys).
-                    # Attempted kernel fix in this branch
-                    # (`_apply_oob_k_mask_fast` in
-                    # `_full_softmax_unconditional`) correctly masks
-                    # `att_block` OOB columns to -inf before softmax,
-                    # but `math_exp2(-3.4e38)` on AMD saturates at
-                    # ~1.18e-38 (not 0); combined with V SMEM OOB rows
-                    # that the DMA SRD doesn't cleanly bound at
-                    # `num_keys` (probe at PR-time showed V_OOB
-                    # containing real ±12-magnitude values from past
-                    # the V buffer's end), PV[N-1] sees small but
-                    # nonzero leakage that compounds over FLUX's 5600
-                    # HK calls per image. A literal-0 BF16 mask on the
-                    # post-cast P-cache would close the leak but the
-                    # PV-A operand uses a different lane/element
-                    # layout than the FP32 ACC, so the lane→K-position
-                    # table needs to be rederived. Until that lands,
-                    # route NullMask + partial-K to FA2.
-                    comptime _is_null_mask = _type_is_eq[mask_t, NullMask]()
-                    if max_prompt_len >= 4096 and not (
-                        _is_null_mask and max_cache_valid_length % 64 != 0
-                    ):
+                    # NullMask + partial-K (`num_keys % KV_BLOCK != 0`,
+                    # e.g. FLUX.2-dev i2i at seq_len=8623 → 135 K tiles,
+                    # last tile 47/64 valid) is now handled in-kernel: the
+                    # SRD clamp hardware-zeros the partial tile's OOB
+                    # columns, `_apply_kbound_mask_fast` excludes them from
+                    # softmax, and the even-tile-count round-up fixes the
+                    # odd-`N` main-loop/epilogue double-count that was the
+                    # real i2i corruption. FLUX i2i is SSIM 0.994 through
+                    # HK (was 0.50), so the prior carve-out to FA2 is gone.
+                    if max_prompt_len >= 4096:
                         comptime hk_config = HKMhaConfig(
                             q_block_size=32,
                             kv_block=64,
@@ -975,8 +977,13 @@ def flash_attention_dispatch[
         elif (
             q_half_float_or_fp32
             or (dtype.is_float8() and has_amd_gpu_accelerator())
+            or (dtype.is_float8() and is_sm100)
         ) and is_token_generation:
-            comptime if depth <= 576:
+            comptime if depth <= 576 and (
+                not dtype.is_float8()
+                or has_amd_gpu_accelerator()
+                or (dtype.is_float8() and is_sm100 and depth <= 512)
+            ):
                 # AMD bf16: 4 warps (256 threads) with 16x16 MMA.
                 # BN=128 WN=32: each warp owns a full [16,32] P block.
                 # AMD fp8: 16x16x128 MMA when depth%128==0, else 32x32x64.
@@ -1072,10 +1079,15 @@ def flash_attention_dispatch[
 
                 comptime use_fa3_kernel = (
                     (is_sm90 or is_sm100)
-                    and q_half_float
-                    and (ragged or not _use_valid_length)
                     and mask_t.mask_safe_out_of_bounds
-                    and config.algorithm == FlashAttentionAlgorithm(3)
+                    and (
+                        (
+                            q_half_float
+                            and (ragged or not _use_valid_length)
+                            and config.algorithm == FlashAttentionAlgorithm(3)
+                        )
+                        or (is_sm100 and dtype.is_float8() and depth <= 512)
+                    )
                 )
 
                 comptime if (not use_fa3_kernel) and (depth % 64) != 0:
@@ -1104,31 +1116,6 @@ def flash_attention_dispatch[
                         sink_weights,
                     )
                 else:
-                    comptime kernel = mha_decoding[
-                        q.dtype,
-                        k_t,
-                        v_t,
-                        output.dtype,
-                        mask_t,
-                        type_of(valid_length.value()).layout,
-                        BM=BM,
-                        BN=BN,
-                        BK=BK,
-                        WM=WM,
-                        WN=WN,
-                        depth=depth,
-                        num_heads=num_heads,
-                        num_threads=num_threads,
-                        num_pipeline_stages=num_pipeline_stages,
-                        group=group,
-                        ragged=ragged,
-                        is_shared_kv=is_shared_kv,
-                        sink=sink,
-                        _use_valid_length=_use_valid_length,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                        decoding_warp_split_k=decoding_warp_split_k,
-                    ]
-
                     if num_partitions_value == 1:
                         comptime if use_fa3_kernel:
                             num_rows_q = q_num_matrix_view_rows(q)
@@ -1182,6 +1169,30 @@ def flash_attention_dispatch[
                                     _optional_lt_to_tt(sink_weights),
                                 )
                         else:
+                            comptime kernel = mha_decoding[
+                                q.dtype,
+                                k_t,
+                                v_t,
+                                output.dtype,
+                                mask_t,
+                                type_of(valid_length.value()).layout,
+                                BM=BM,
+                                BN=BN,
+                                BK=BK,
+                                WM=WM,
+                                WN=WN,
+                                depth=depth,
+                                num_heads=num_heads,
+                                num_threads=num_threads,
+                                num_pipeline_stages=num_pipeline_stages,
+                                group=group,
+                                ragged=ragged,
+                                is_shared_kv=is_shared_kv,
+                                sink=sink,
+                                _use_valid_length=_use_valid_length,
+                                _is_cache_length_accurate=_is_cache_length_accurate,
+                                decoding_warp_split_k=decoding_warp_split_k,
+                            ]
                             var nullptr_device = DeviceBuffer[accum_type].empty(
                                 ctx
                             )
@@ -1422,6 +1433,7 @@ def flash_attention_dispatch[
                                 batch_size,
                             ),
                             block_dim=(WARP_SIZE, 1, 1),
+                            attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                         )
                         _ = exp_sum_qk_max_data^
                         _ = output_intermediate_data^
@@ -4906,6 +4918,16 @@ def mha_splitk_reduce[
         block_dim.x == WARP_SIZE
     ), "block_dim.x should be equal to the warp_size"
 
+    # Programmatic Dependent Launch.  Single-warp kernel with no early returns,
+    # so the function entry is a divergence-free point all threads reach before
+    # the first read of the producer's partial outputs / exp_sum / qk_max
+    # below.  `wait` fences here so those reads only happen after the split-K
+    # producer grid has flushed them; `launch` lets the successor grid's
+    # prologue overlap this reduction.  No-op on non-SM90+ and when MHA_PDL=off.
+    comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
+        wait_on_dependent_grids()
+        launch_dependent_grids()
+
     comptime accum_type = get_accum_type[output_type]()
     var batch_idx = block_idx.z
     var q_head_idx = block_idx.y
@@ -5966,22 +5988,20 @@ def _naive_attention[
     @__copy_capture(score)
     @parameter
     @always_inline
-    def scale_and_mask[
-        width: Int, _rank: Int, alignment: Int = 1
-    ](coords: IndexList[_rank]):
-        var vec = score.load_linear[width, alignment=alignment](
-            rebind[IndexList[4]](coords)
-        )
+    def scale_and_mask[width: Int, alignment: Int = 1](coords: Coord):
+        var score_idx = coord_to_index_list(coords)
+        var vec = score.load_linear[width, alignment=alignment](score_idx)
         vec = vec * scale.cast[dtype]()
         vec = vec + mask.load[width=width](
-            Index(coords[_rank - 2], coords[_rank - 1])
+            IndexList[2](
+                Int(coords[coords.rank - 2].value()),
+                Int(coords[coords.rank - 1].value()),
+            )
         )
-        score.store_linear[width, alignment=alignment](
-            rebind[IndexList[4]](coords), vec
-        )
+        score.store_linear[width, alignment=alignment](score_idx, vec)
 
     elementwise[scale_and_mask, simd_size](
-        Index(batch_size, num_heads, seq_len, num_keys), ctx
+        (batch_size, num_heads, seq_len, num_keys), ctx
     )
 
     softmax[dtype, simd_size, 4](score, score, axis=3)

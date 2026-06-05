@@ -50,10 +50,7 @@ from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
 from max.pipelines.architectures.wan.wan_executor import WanExecutor
 from max.pipelines.core import PixelContext
-from max.pipelines.lib import (
-    PipelineRuntimeConfig,
-    PixelGenerationPipeline,
-)
+from max.pipelines.lib import PipelineRuntimeConfig, PixelGenerationPipeline
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
@@ -279,10 +276,10 @@ def _create_vision_max_pipeline(
     )
     if enable_chunked_prefill is not None:
         runtime = PipelineRuntimeConfig(
-            max_num_steps=1, enable_chunked_prefill=enable_chunked_prefill
+            enable_chunked_prefill=enable_chunked_prefill
         )
     else:
-        runtime = PipelineRuntimeConfig(max_num_steps=1)
+        runtime = PipelineRuntimeConfig()
     config = pipelines.PipelineConfig(
         models=ModelManifest({"main": model}),
         runtime=runtime,
@@ -685,7 +682,7 @@ class PixtralPipelineOracle(PipelineOracle):
                     )
                 }
             ),
-            runtime=PipelineRuntimeConfig(max_num_steps=1),
+            runtime=PipelineRuntimeConfig(),
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -755,7 +752,6 @@ class _KimiK2_5BaseOracle(PipelineOracle):
                 "model_path": self.model_path,
                 "huggingface_model_revision": revision,
                 "huggingface_weight_revision": revision,
-                "max_num_steps": 1,
                 "max_length": 4096,
                 "trust_remote_code": self.trust_remote_code,
                 "max_batch_input_tokens": 4096,
@@ -834,8 +830,6 @@ class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):
     # aborts during the second decode step.
     num_steps = 1
 
-    # TODO(MXSERV-7): replace ``austinpowers`` personal namespace with the
-    # official Modular HF org once the checkpoint is republished.
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
         return [
@@ -886,7 +880,6 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
                 "model_path": self.model_path,
                 "huggingface_model_revision": revision,
                 "huggingface_weight_revision": revision,
-                "max_num_steps": 1,
                 "max_length": 4096,
                 "trust_remote_code": self.trust_remote_code,
                 "max_batch_input_tokens": 4096,
@@ -966,7 +959,6 @@ class KimiK2_5DeepseekV3LocalPathPipelineOracle(
             ),
             runtime=PipelineRuntimeConfig(
                 defer_resolve=True,
-                max_num_steps=1,
                 max_batch_input_tokens=4096,
                 ep_size=8,
             ),
@@ -992,6 +984,7 @@ class GenericOracle(PipelineOracle):
         auto_processor_cls: Any = transformers.AutoTokenizer,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         batch_size: int | list[int] | None = None,
+        add_bos_token: bool | None = None,
     ) -> None:
         self.model_path = model_path
         self._device_encoding_map = device_encoding_map
@@ -1004,6 +997,7 @@ class GenericOracle(PipelineOracle):
         self.task = task
         self._use_cache = use_cache
         self.default_batch_size = batch_size
+        self.add_bos_token = add_bos_token
         self.trust_remote_code = config_params.get("trust_remote_code", False)
 
     @property
@@ -1054,7 +1048,6 @@ class GenericOracle(PipelineOracle):
                 "huggingface_model_revision": model_revision,
                 "huggingface_weight_revision": model_revision,
                 "weight_path": [] if weight_path is None else [weight_filename],
-                "max_num_steps": 1,
                 **self.config_params,
             }
         )
@@ -1070,6 +1063,11 @@ class GenericOracle(PipelineOracle):
             pipelines.TextGenerationPipelineInterface
             | pipelines.EmbeddingsPipeline,
         )
+        if self.add_bos_token is not None and hasattr(tokenizer, "delegate"):
+            # transformers v5 stopped honoring add_bos_token from
+            # tokenizer_config.json for some tokenizers, so raw-prompt encoding
+            # drops the leading BOS the reference goldens were generated with.
+            tokenizer.delegate.add_bos_token = self.add_bos_token
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -1293,7 +1291,6 @@ class LoRAOracle(PipelineOracle):
                 "quantization_encoding": encoding,
                 "model_path": self.model_path,
                 "huggingface_model_revision": revision,
-                "max_num_steps": 1,
                 "enable_lora": True,
                 "lora_paths": [lora_path],
                 "max_num_loras": 1,
@@ -1601,7 +1598,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={
             "max_vision_cache_entries": 256,
             "max_batch_size": 128,
-            "max_num_steps": 1,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
@@ -1610,7 +1606,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={
             "max_vision_cache_entries": 256,
             "max_batch_size": 128,
-            "max_num_steps": 1,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
@@ -2082,6 +2077,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "use_subgraphs": False,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-R1": GenericOracle(
         model_path="deepseek-ai/DeepSeek-R1",
@@ -2093,6 +2089,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-V3.1-Terminus": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.1-Terminus",
@@ -2104,6 +2101,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-V3.2-Exp": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.2-Exp",
@@ -2128,13 +2126,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+        add_bos_token=True,
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
     "amd/Kimi-K2.5-MXFP4": AmdKimiK2_5MXFP4PipelineOracle(
         "amd/Kimi-K2.5-MXFP4"
-    ),
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3": KimiK2_5DeepseekV3PipelineOracle(
-        "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"
     ),
     # NVFP4 weights pre-staged on the dedicated prod-2 8xB200 runner. Loaded
     # as a vanilla DeepseekV3 checkpoint (same bytes as Kimi-K2.5-NVFP4 with

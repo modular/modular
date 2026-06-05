@@ -40,7 +40,6 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
@@ -270,30 +269,6 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             data_parallel_splits=data_parallel_splits,
             ep_inputs=ep_inputs,
             host_input_row_offsets=host_row_offsets,
-        )
-
-    @override
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> HYV3Inputs:
-        assert isinstance(prev_model_inputs, HYV3Inputs)
-        llama_inputs = super().prepare_next_token_inputs(
-            next_tokens, prev_model_inputs
-        )
-        host_input_row_offsets = Buffer.from_numpy(
-            np.arange(llama_inputs.input_row_offsets.shape[0], dtype=np.uint32)
-        )
-        return HYV3Inputs(
-            tokens=llama_inputs.tokens,
-            input_row_offsets=llama_inputs.input_row_offsets,
-            signal_buffers=llama_inputs.signal_buffers,
-            kv_cache_inputs=llama_inputs.kv_cache_inputs,
-            return_n_logits=llama_inputs.return_n_logits,
-            data_parallel_splits=llama_inputs.data_parallel_splits,
-            ep_inputs=prev_model_inputs.ep_inputs,
-            host_input_row_offsets=host_input_row_offsets,
         )
 
     @override

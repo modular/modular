@@ -333,10 +333,13 @@ def main() -> None:
     categories = discover_categories(dir_names)
     stale: list[str] = []
 
+    # Manually re-implementing is_check() from lint_helpers since it's the only use here
+    is_check = args.check or os.getenv("CHECK", "").lower() in ("1", "true")
+
     # Per-architecture RST pages
     for d in dir_names:
         rst_path = DOCS_DIR / f"pipelines.architectures.{d}.rst"
-        sync_file(rst_path, generate_rst(d), args.check, stale)
+        sync_file(rst_path, generate_rst(d), is_check, stale)
 
     # Architectures index RST and sidebars.json
     sync_file(
@@ -345,22 +348,18 @@ def main() -> None:
         args.check,
         stale,
     )
-    sync_sidebars_json(dir_names, args.check, stale)
+    sync_sidebars_json(dir_names, is_check, stale)
 
-    if args.check:
-        if stale:
-            print(
-                "❌ Architecture docs are out-of-date.\n"
-                "Stale files:\n"
-                + "\n".join(f"  - {f}" for f in stale)
-                + "\n\nRun `./bazelw run //oss/modular/docs:generate-arch-docs`"
-                " to regenerate.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        print("✅ Architecture docs are up-to-date.")
-    else:
-        print("✅ Architecture docs generated.")
+    if is_check and stale:
+        print(
+            "❌ Architecture docs are out-of-date.\n"
+            "Stale files:\n"
+            + "\n".join(f"  - {f}" for f in stale)
+            + "\n\nRun `./bazelw run //oss/modular/docs:generate-arch-docs`"
+            " to regenerate.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

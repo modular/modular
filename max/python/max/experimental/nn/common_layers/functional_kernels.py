@@ -36,6 +36,9 @@ from max.experimental.sharding.cost import (
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
+from max.nn.comm.ep.ep_kernels import (
+    fused_silu as _fused_silu,
+)
 from max.nn.kernels import (
     flare_mla_prefill_plan as _flare_mla_prefill_plan,
 )
@@ -73,9 +76,14 @@ Independent = Replicated
 
 
 def _preserve_orig_mappings(
-    action: Action, orig_mappings: tuple[Any, ...]
-) -> Action:
-    return Action(inputs=orig_mappings, outputs=action.outputs)
+    orig_mappings: tuple[Any, ...],
+) -> Callable[[Action], Action]:
+    """Returns a finalize that restores the op's original input mappings."""
+
+    def finalize(action: Action) -> Action:
+        return Action(inputs=orig_mappings, outputs=action.outputs)
+
+    return finalize
 
 
 def grouped_matmul_ragged_rule(
@@ -101,8 +109,7 @@ def grouped_matmul_ragged_rule(
     return build_action_set(
         rows,
         layouts=layouts,
-        finalize=_preserve_orig_mappings,
-        finalize_ctx=tuple(l.mapping for l in layouts),
+        finalize=_preserve_orig_mappings(tuple(l.mapping for l in layouts)),
     )
 
 
@@ -271,9 +278,11 @@ mla_prefill_graph = _wrap_kvcache_op(_mla_prefill_graph, "q")
 mla_decode_graph = _wrap_kvcache_op(_mla_decode_graph, "q")
 mla_prefill_decode_graph = _wrap_kvcache_op(_mla_prefill_decode_graph, "q")
 
+fused_silu = _wrap_kvcache_op(_fused_silu, "input")
 
 __all__ = [
     "flash_attention_ragged",
+    "fused_silu",
     "grouped_matmul_ragged",
     "moe_create_indices",
     "rms_norm_key_cache",

@@ -1149,6 +1149,61 @@ def _rms_norm_gpu_block_subkernel[
             output_fn[simd_width, align](row, offset, norm_val)
 
 
+# ===----------------------------------------------------------------------=== #
+# Row mean-of-squares reduction
+# ===----------------------------------------------------------------------=== #
+#
+# SM100 (B200) primary target; portable to SM90 / CDNA4 / Apple (only uses
+# `block_reduce` + grid-stride column loop, no arch-specific intrinsics).
+#
+# Computes, for an input `x` of shape `[..., N]` flattened to `[M, N]`:
+#     out[m] = sum_n(accum(x[m, n])^2) / N        (accumulated in `accum_type`)
+# and writes a `[M, 1]`-shaped `out_dtype` result (one value per row).
+#
+# This mirrors the reduction half of `_rms_norm_warp_tiling_subkernel`
+# (`var thread_m2 = (vec_data**2).reduce_add()` then `block_reduce`, then
+# `row_m2 / num_cols`) WITHOUT applying the norm and WITHOUT a `gamma`
+# weight. Like the rms-norm block path it launches exactly one block per row
+# (`grid_dim = rows`), so small-M decode does not over-provision the grid.
+
+
+@__name(t"row_mean_of_squares_gpu_block_{in_dtype}_{out_dtype}")
+def row_mean_of_squares_gpu_block[
+    in_dtype: DType,
+    out_dtype: DType,
+    //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        in_dtype, width
+    ],
+    output_fn: def(row: Int, val: Scalar[out_dtype]) capturing -> None,
+](num_cols: Int):
+    comptime accum_type = get_accum_type[in_dtype]()
+
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var thread_m2 = Scalar[accum_type](0)
+
+    with PDL():
+        # Each block owns a single row; threads grid-stride across the columns.
+        for x in range(ceildiv(ceildiv(num_cols, simd_width), block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
+            if offset < num_cols:
+                var vec_data = input_fn[simd_width](row, offset).cast[
+                    accum_type
+                ]()
+                thread_m2 += (vec_data**2).reduce_add()
+
+        var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2
+        )
+
+        if tid == 0:
+            var mean = row_m2 / Scalar[accum_type](num_cols)
+            output_fn(Int(row), mean.cast[out_dtype]())
+
+
 @__name(t"rms_norm_gpu_block_{dtype}_{multiply_before_cast}")
 def rms_norm_gpu_block[
     mut: Bool,
@@ -3086,6 +3141,148 @@ def rms_norm[
             target=target,
             multiply_before_cast=multiply_before_cast,
         ](shape, gamma, epsilon, weight_offset, ctx)
+
+
+# ===----------------------------------------------------------------------=== #
+# Row mean-of-squares: dispatcher + CPU/GPU entry points
+# ===----------------------------------------------------------------------=== #
+
+
+def row_mean_of_squares_gpu[
+    in_dtype: DType,
+    out_dtype: DType,
+    //,
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        in_dtype, width
+    ],
+    output_fn: def(row: Int, val: Scalar[out_dtype]) capturing -> None,
+    pdl_level: PDLLevel = PDLLevel.ON,
+](rows: Int, cols: Int, ctx: DeviceContext) raises:
+    """Launches the GPU mean-of-squares reduction: one block per row.
+
+    SM100 (B200) primary target; uses only `block_reduce` so it is portable.
+    """
+    if rows == 0 or cols == 0:
+        return
+
+    comptime simd_width = simd_width_of[in_dtype, target=get_gpu_target()]()
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+
+    # One block per row keeps the grid tiny for small-M decode (e.g. M=16).
+    var grid_dim = rows
+
+    if cols % simd_width == 0:
+        # Vectorized loads: clamp threads to what is needed for the row, but
+        # never exceed the device's max threads-per-block.
+        var block_dim = min(
+            ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+            WARP_SIZE * max_warps_per_block,
+        )
+        comptime kernel = row_mean_of_squares_gpu_block[
+            simd_width, max_warps_per_block, input_fn, output_fn
+        ]
+        ctx.enqueue_function[kernel](
+            cols,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+    else:
+        # General N (incl. non-multiple of vector width): scalar loads.
+        var block_dim = min(
+            ceildiv(cols, WARP_SIZE) * WARP_SIZE,
+            WARP_SIZE * max_warps_per_block,
+        )
+        comptime kernel = row_mean_of_squares_gpu_block[
+            1, max_warps_per_block, input_fn, output_fn
+        ]
+        ctx.enqueue_function[kernel](
+            cols,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+
+
+def row_mean_of_squares_cpu[
+    in_dtype: DType,
+    out_dtype: DType,
+    //,
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        in_dtype, width
+    ],
+    output_fn: def(row: Int, val: Scalar[out_dtype]) capturing -> None,
+](rows: Int, cols: Int):
+    """Naive CPU reference path (also used as a correctness oracle)."""
+    comptime accum_type = get_accum_type[in_dtype]()
+    for r in range(rows):
+        var acc = Scalar[accum_type](0)
+        for c in range(cols):
+            var v = input_fn[1](r, c)[0].cast[accum_type]()
+            acc += v * v
+        output_fn(r, (acc / Scalar[accum_type](cols)).cast[out_dtype]())
+
+
+def row_mean_of_squares[
+    in_dtype: DType,
+    out_dtype: DType,
+    rank: Int,
+    //,
+    input_0_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        in_dtype, width
+    ],
+    output_0_fn: def(row: Int, val: Scalar[out_dtype]) capturing -> None,
+    /,
+    target: StaticString = "cpu",
+](shape: IndexList[rank], ctx: DeviceContext) raises:
+    """Per-row mean of squares over the last axis, accumulated in `accum_type`.
+
+    For input flattened to `[M, N]`, computes `out[m] = sum_n(x[m,n]^2) / N`
+    and invokes `output_0_fn(m, ...)` once per row with an `out_dtype` scalar.
+
+    Parameters:
+        in_dtype: Element type of the input (e.g. `bfloat16` or `float32`).
+        out_dtype: Element type of the per-row result (typically `float32`).
+        rank: Rank of the logical input shape.
+        input_0_fn: Loads `width` contiguous input elements at a 2D `[row, col]`
+            position re-expressed as an n-D index.
+        output_0_fn: Receives `(row, value)` once per row.
+        target: `"cpu"` or a GPU target string.
+
+    Args:
+        shape: Logical input shape. Reduction runs over the last axis.
+        ctx: Device context (ignored on CPU).
+    """
+    var cols = shape[rank - 1]
+    var rows = shape.flattened_length() // cols
+
+    @always_inline
+    @parameter
+    def input_fn_2d[width: Int](row: Int, col: Int) -> SIMD[in_dtype, width]:
+        # Translate a 2D [row, col] index back to the original n-D tensor.
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        return input_0_fn[width](indices.canonicalize())
+
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        return trace_arg("input", shape, in_dtype)
+
+    with Trace[TraceLevel.OP, target=target](
+        "row_mean_of_squares",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
+    ):
+        if shape.flattened_length() == 0:
+            return
+
+        comptime if is_cpu[target]():
+            row_mean_of_squares_cpu[input_fn_2d, output_0_fn](rows, cols)
+        elif is_gpu[target]():
+            row_mean_of_squares_gpu[input_fn_2d, output_0_fn](rows, cols, ctx)
+        else:
+            comptime assert False, "unsupported target " + target
 
 
 def _rms_norm_fused_residual_add_impl[
