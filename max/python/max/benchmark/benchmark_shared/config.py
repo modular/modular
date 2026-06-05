@@ -90,6 +90,7 @@ PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
 PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "modular": "/v1/responses",
     "modular-chat": "/v1/responses",
+    "mcloud": "/v1/responses",
     "sglang": "/v1/images/generations",
     "sglang-chat": "/v1/images/generations",
     "vllm": "/v1/chat/completions",
