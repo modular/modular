@@ -42,6 +42,7 @@ from std.memory import stack_allocation
 from std.atomic import Atomic
 
 from std.utils import IndexList
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from std.sys import get_defined_int
@@ -997,7 +998,7 @@ def _reduce_generator_gpu[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=DType.int64],
+    shape_coord: Coord,
     init: StaticTuple[Scalar[init_type], num_reductions],
     ctx: DeviceContext,
 ) raises:
@@ -1015,7 +1016,7 @@ def _reduce_generator_gpu[
         reduce_dim: The dimension we are reducing.
 
     Args:
-        shape: The shape of the tensor we are reducing.
+        shape_coord: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
         ctx: The pointer to DeviceContext.
 
@@ -1023,6 +1024,7 @@ def _reduce_generator_gpu[
         If the GPU kernel launch fails.
     """
 
+    var shape = coord_to_index_list(shape_coord)
     comptime reduce_dim_normalized = (
         shape.size + reduce_dim
     ) if reduce_dim < 0 else reduce_dim

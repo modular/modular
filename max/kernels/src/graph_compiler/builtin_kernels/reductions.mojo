@@ -60,6 +60,7 @@ from std.logger import Logger
 comptime logger = Logger()
 
 from std.utils import IndexList, StaticTuple
+from std.utils.coord import Coord
 from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
@@ -193,7 +194,7 @@ struct Mean:
             output_fn,
             target=target,
             reduce_dim=axis,
-        ](input.shape(), output.shape(), ctx)
+        ](Coord(input.shape()), Coord(output.shape()), ctx)
 
     @staticmethod
     def shape[
@@ -411,7 +412,7 @@ struct ReduceAdd:
             output_fn,
             target=target,
             reduce_dim=axis,
-        ](input.shape(), ctx)
+        ](Coord(input.shape()), ctx)
 
     @staticmethod
     def shape[
@@ -461,7 +462,7 @@ struct ReduceMul:
             output_fn,
             target=target,
             reduce_dim=axis,
-        ](input.shape(), ctx)
+        ](Coord(input.shape()), ctx)
 
     @staticmethod
     def shape[
@@ -511,7 +512,7 @@ struct ReduceMax:
             output_fn,
             target=target,
             reduce_dim=axis,
-        ](input.shape(), ctx)
+        ](Coord(input.shape()), ctx)
 
     @staticmethod
     def shape[
@@ -561,7 +562,7 @@ struct ReduceMin:
             output_fn,
             target=target,
             reduce_dim=axis,
-        ](input.shape(), ctx)
+        ](Coord(input.shape()), ctx)
 
     @staticmethod
     def shape[
@@ -966,7 +967,7 @@ struct ReduceMinAndMax:
             target=target,
             reduce_dim=norm_axis,
         ](
-            input.shape(),
+            Coord(input.shape()),
             init=init,
             context=Optional[DeviceContext](ctx),
         )

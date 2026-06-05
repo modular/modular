@@ -20,6 +20,7 @@ from std.algorithm.functional import _get_num_workers
 from std.math.math import min as _min
 
 from std.utils.index import IndexList, StaticTuple
+from std.utils.coord import Coord, coord_to_index_list
 
 from std.algorithm.reduction import _get_nd_indices_from_flat_index
 
@@ -45,10 +46,7 @@ def _reduce_generator_cpu[
     /,
     *,
     reduce_dim: Int,
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init: StaticTuple[Scalar[init_type], num_reductions],
-):
+](shape_coord: Coord, init: StaticTuple[Scalar[init_type], num_reductions],):
     """Reduce the given tensor using the given reduction function on CPU. The
     num_reductions parameter enables callers to execute fused reductions. The
     reduce_0_fn and output_0_fn should be implemented in a way which routes
@@ -63,9 +61,14 @@ def _reduce_generator_cpu[
         reduce_dim: The dimension we are reducing.
 
     Args:
-        shape: The shape of the tensor we are reducing.
+        shape_coord: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
     """
+
+    # The inner/outer reduction helpers index the shape by a runtime
+    # `reduce_dim`, which a `Coord` does not support, so convert to an
+    # `IndexList` at the boundary.
+    var shape = coord_to_index_list(shape_coord)
 
     comptime rank = shape.size
 

@@ -69,6 +69,7 @@ from layout import (
 from std.logger import Logger
 from std.memory import bitcast, stack_allocation
 from std.utils import IndexList
+from std.utils.coord import Coord
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -1177,7 +1178,7 @@ def gemv[
         reduce_impl,
         reduce_dim=1,
     ](
-        Index(M, K),
+        Coord((M, K)),
         init=Scalar[c_type](0),
     )
 

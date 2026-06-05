@@ -65,6 +65,7 @@ from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils import IndexList, StaticTuple
+from std.utils.coord import Coord
 from std.utils.index import product
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
@@ -442,7 +443,7 @@ def _softmax_3_pass_base[
         reduce_impl,
         reduce_dim=0,
     ](
-        IndexList[1](output.num_elements()),
+        Coord((output.num_elements(),)),
         init=Scalar[dtype].MIN,
     )
 
