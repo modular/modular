@@ -73,6 +73,7 @@ def hip_mha_decoding_num_partitions(
     num_keys: Int,
     heads_per_group: Int,
     sm_count: Int,
+    is_mla: Bool = False,
 ) -> Int:
     """Wave-aligned split-K target for MI355X MHA + MLA decode.
 
@@ -140,7 +141,7 @@ def hip_mha_decoding_num_partitions(
     var work_items = heads_per_group * batch_size
 
     # MHA-style: kv_num_heads spawns CTAs directly in grid_y.
-    if heads_per_group < BM:
+    if (not is_mla) and heads_per_group < BM:
         if work_items >= sm_count:
             # High occupancy: 1 partition already fills the GPU. Scale
             # partition size up as work_items grows so we don't
@@ -178,6 +179,7 @@ def mha_decoding_num_partitions(
     num_keys: Int,
     heads_per_group: Int,
     ctx: DeviceContext,
+    is_mla: Bool = False,
 ) raises -> Int:
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     if ctx.api() == "hip":
@@ -186,6 +188,7 @@ def mha_decoding_num_partitions(
             num_keys,
             heads_per_group,
             sm_count,
+            is_mla=is_mla,
         )
     if ctx.api() == "cuda":
         return cuda_mha_decoding_num_partitions(

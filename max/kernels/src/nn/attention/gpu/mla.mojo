@@ -765,7 +765,11 @@ def flare_mla_decoding_dispatch[
                 comptime if has_amd_gpu_accelerator():
                     # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
                     num_partitions_value = mha_decoding_num_partitions(
-                        batch_size, max_cache_valid_length, num_heads, ctx
+                        batch_size,
+                        max_cache_valid_length,
+                        num_heads,
+                        ctx,
+                        is_mla=True,
                     )
                 else:
                     num_partitions_value = 1
