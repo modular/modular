@@ -124,14 +124,6 @@ importMojoPackage(ContextRef context, StringRef path, StringRef packageName,
                   mlir::TimingScope &ts,
                   SmallVectorImpl<std::string> *includedFiles = nullptr);
 
-/// Parse the binary Mojo package at the given path as a fully self contained
-/// module, resolving all dependencies into a self contained module. Returns a
-/// module op that contains the package.
-OwningOpRef<ModuleOp> importStandaloneMojoBinaryPackage(
-    MLRT::CPUDevice &cpuDevice,
-    const std::shared_ptr<llvm::SourceMgr> &sourceMgr, MLIRContext *ctx,
-    StringRef path);
-
 /// Clone the module containing the given decl, and prepare it for compilation.
 /// This handles stripping out any unused decls, stabilizing value uses, and
 /// performing any other necessary transformations.
