@@ -100,7 +100,7 @@ kimivl_arch = SupportedArchitecture(
 eagle3_kimik25_arch = SupportedArchitecture(
     name="Eagle3DeepseekV2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["nvidia/Kimi-K2.5-NVFP4"],
+    example_repo_ids=["nvidia/Kimi-K2.5-NVFP4", "nvidia/Kimi-K2.6-NVFP4"],
     default_encoding="bfloat16",
     supported_encodings={
         "bfloat16",
@@ -125,7 +125,7 @@ eagle3_kimik25_arch = SupportedArchitecture(
 eagle3_mha_kimik25_arch = SupportedArchitecture(
     name="Eagle3MHAKimiK25ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["nvidia/Kimi-K2.5-NVFP4"],
+    example_repo_ids=["nvidia/Kimi-K2.5-NVFP4", "nvidia/Kimi-K2.6-NVFP4"],
     default_encoding="bfloat16",
     supported_encodings={
         "bfloat16",

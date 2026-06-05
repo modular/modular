@@ -282,10 +282,14 @@ class Eagle3KimiK25Model(KimiK2_5Model):
         )
 
         # Share embed_tokens before loading so the graph sees a single
-        # Weight object for the shared embedding.  norm and lm_head are
-        # loaded independently from the draft checkpoint.
+        # Weight object for the shared embedding.  norm is loaded
+        # independently from the draft checkpoint; lm_head is shared from
+        # the target when absent from the draft checkpoint (e.g.
+        # nvidia/Kimi-K2.6-Eagle3 omits lm_head.weight).
         assert nn_model.draft is not None
         nn_model.draft.embed_tokens = nn_model.target.embed_tokens
+        if "lm_head.weight" not in draft_state_dict:
+            nn_model.draft.lm_head = nn_model.target.lm_head
 
         target_llm_sd = {
             k[len("language_model.") :]: v
@@ -302,7 +306,7 @@ class Eagle3KimiK25Model(KimiK2_5Model):
 
         draft_expected = set(nn_model.draft.raw_state_dict().keys())
         draft_provided = set(draft_state_dict.keys())
-        shared_prefixes = ("embed_tokens.",)
+        shared_prefixes = ("embed_tokens.", "lm_head.")
         missing = {
             k
             for k in draft_expected - draft_provided
@@ -320,10 +324,14 @@ class Eagle3KimiK25Model(KimiK2_5Model):
         # resets weight.name back to the module-path key.
         draft_weights_registry = nn_model.draft.state_dict()
 
+        draft_lm_head_shared = "lm_head.weight" not in draft_state_dict
+
         # Rename non-shared draft Weights so graph-level names are unique
         # (e.g. "draft.norm.weight" vs "norm.weight" from target).
         for name, weight in nn_model.draft.raw_state_dict().items():
             if name.startswith("embed_tokens."):
+                continue
+            if draft_lm_head_shared and name.startswith("lm_head."):
                 continue
             weight.name = f"draft.{name}"
 
@@ -346,6 +354,8 @@ class Eagle3KimiK25Model(KimiK2_5Model):
         self.state_dict.update(nn_model.target.state_dict())
         for k, v in draft_weights_registry.items():
             if k.startswith("embed_tokens."):
+                continue
+            if draft_lm_head_shared and k.startswith("lm_head."):
                 continue
             self.state_dict[f"draft.{k}"] = v
 

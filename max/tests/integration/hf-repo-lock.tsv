@@ -118,6 +118,7 @@ nvidia/Gemma-4-26B-A4B-NVFP4	bbf84e07ec612504a2ad296b3c7ab2e1712f7ea2
 nvidia/Gemma-4-31B-IT-NVFP4	e5ef03afa233c35cb000323ff098d4291e1dd07c
 nvidia/Kimi-K2.5-NVFP4	e4e908c073784de20ad3af0be653421f1088922d
 nvidia/Kimi-K2.5-Thinking-Eagle3	0b0c6ac039089ad2c2418c91c039553381a302d9
+nvidia/Kimi-K2.6-Eagle3	60f9ba6e143963e7aaacb6d6f346594d65de3f72
 nvidia/Kimi-K2.6-NVFP4	2fd3a800dedd098b8327eb49e93ebc75f85da19f
 nvidia/Llama-3.1-405B-Instruct-NVFP4	8ddfc523e75da0cd52d8d486895aa984282f6db9
 nvidia/Llama-3.1-8B-Instruct-NVFP4	bdb54e24298451af785c0ac63c1b485e9b7400a2
