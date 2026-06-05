@@ -1219,6 +1219,28 @@ struct ManagedTensorSlice[
         self.compute_fusion = Self._sentinel_compute_fusion()
         self.compute_fusion_tile = Self._sentinel_compute_fusion_tile()
 
+    def __init__(
+        out self,
+        ptr: UnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=True]],
+        shape: Coord[*Self.RuntimeLayout.shape_types],
+        strides: Coord[*Self.RuntimeLayout.stride_types],
+    ):
+        """Initializes a ManagedTensorSlice from a pointer, shape, and strides.
+
+        The shape and strides are provided as `Coord`s; their runtime values
+        fill the dynamic dimensions of the tensor slice's layout.
+
+        In general, custom operations should not create `ManagedTensorSlice`
+        instances, but instead use the ones provided by the MAX inference
+        engine.
+        """
+        self._ptr = ptr
+        self._runtime_layout = Self.RuntimeLayout(shape, strides)
+        self.in_fusion = Self._sentinel_in_fusion()
+        self.out_fusion = Self._sentinel_out_fusion()
+        self.compute_fusion = Self._sentinel_compute_fusion()
+        self.compute_fusion_tile = Self._sentinel_compute_fusion_tile()
+
     @always_inline
     def __getitem__(self, indices: IndexList[Self.rank]) -> Scalar[Self.dtype]:
         """Gets the value at the specified indices.
@@ -1334,6 +1356,18 @@ struct ManagedTensorSlice[
             The strides of this tensor slice as a `Coord`.
         """
         return self._runtime_layout.stride_coord()
+
+    @always_inline
+    def runtime_layout(self) -> Self.RuntimeLayout:
+        """Gets the runtime layout of this tensor slice.
+
+        The layout bundles the shape and strides as `Coord`s, preserving the
+        static-vs-dynamic structure of the tensor's static layout.
+
+        Returns:
+            The runtime layout of this tensor slice.
+        """
+        return self._runtime_layout
 
     @always_inline
     def dim_size(self, index: Int) -> Int:
@@ -2031,10 +2065,7 @@ struct ManagedTensorSlice[
         out result: TileTensor[
             dtype=Self.dtype,
             origin=MutExternalOrigin,
-            LayoutType=TileLayout[
-                shape_types=Self.static_spec.static_layout._shape_types,
-                stride_types=Self.static_spec.static_layout._stride_types,
-            ],
+            LayoutType=Self.RuntimeLayout,
         ],
     ):
         return {

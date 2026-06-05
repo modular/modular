@@ -38,7 +38,6 @@ from layout import (
     row_major,
     coord_to_index_list,
 )
-from layout.tile_layout import Layout
 from std.memory import memcpy
 from std.memory.unsafe_pointer import unsafe_cast
 
@@ -1105,30 +1104,8 @@ def mogg_async_pack_borrow[
 @register_internal("mogg.tensor.__init__")
 @always_inline
 def mogg_tensor_init[
-    dtype: DType,
-    rank: Int,
-    mut: Bool,
-    input: IO,
-    static_layout: TensorLayout,
-    alignment: Int,
-](
-    ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
-) -> ManagedTensorSlice[
-    io_spec=IOSpec[mut, input](),
-    static_spec=StaticTensorSpec[
-        dtype,
-        rank,
-        static_layout=static_layout,
-    ](alignment, AddressSpace.GENERIC),
-]:
-    """
-    Helper for constructing a ManagedTensorSlice.
-    """
-    return {ptr.bitcast[Scalar[dtype]](), shape}
-
-
-@always_inline
-def mogg_tensor_init[
+    LayoutType: TensorLayout,
+    //,
     dtype: DType,
     rank: Int,
     mut: Bool,
@@ -1136,25 +1113,23 @@ def mogg_tensor_init[
     alignment: Int,
 ](
     ptr: OpaquePointer[MutAnyOrigin],
-    shape: Coord,
-    strides: Coord,
+    layout: LayoutType,
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
     static_spec=StaticTensorSpec[
         dtype,
         rank,
-        static_layout=Layout[
-            shape_types=shape.element_types,
-            stride_types=strides.element_types,
-        ],
+        static_layout=LayoutType,
     ](alignment, AddressSpace.GENERIC),
 ]:
     """
-    Helper for constructing a ManagedTensorSlice.
+    Helper for constructing a ManagedTensorSlice from a layout.
     """
-    var shape_list = rebind[IndexList[rank]](coord_to_index_list(shape))
-    var strides_list = rebind[IndexList[rank]](coord_to_index_list(strides))
-    return {ptr.bitcast[Scalar[dtype]](), shape_list, strides_list}
+    return {
+        ptr.bitcast[Scalar[dtype]](),
+        layout.shape_coord(),
+        layout.stride_coord(),
+    }
 
 
 @register_internal("mogg.async.ready")
