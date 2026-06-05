@@ -22,6 +22,15 @@ is sampled proportional to its delay.  This matches the ergodic steady state:
 a session is ``delay_k / sum(delays)`` likely to be sleeping through turn k,
 and the resulting initial firing rate equals the steady-state rate N/E[D] rather
 than the burst rate N*E[1/D] produced by uniform turn selection.
+
+The delay-only model assumes a session spends all of its cycle time *sleeping*
+between turns. When the time spent *generating* a response is non-negligible
+(long outputs and/or high time-per-output-token), that assumption under-weights
+long-generation turns. Supplying estimated TTFT/TPOT switches the weighting to
+total *occupancy* ``R_k + D_k`` (generation time ``R_k = ttft + tpot *
+output_len_k`` plus inter-turn sleep ``D_k``), so the true steady-state fraction
+``(R_k + D_k) / sum(R_j + D_j)`` is used instead of ``D_k / sum(D_j)``. With
+zero estimates the occupancy weight reduces exactly to ``D_k``.
 """
 
 from __future__ import annotations
@@ -37,8 +46,20 @@ from max.benchmark.benchmark_shared.datasets import ChatSession
 logger = logging.getLogger(__name__)
 
 
-def _prefix_delays_ms(s: ChatSession) -> np.ndarray:
-    """Return the inter-turn delay (ms) available at each valid prefix position.
+def _prefix_occupancy_ms(
+    s: ChatSession, est_ttft_ms: float = 0.0, est_tpot_ms: float = 0.0
+) -> np.ndarray:
+    """Return the steady-state occupancy time (ms) at each valid prefix position.
+
+    The occupancy at position ``k`` (``prefix_turns = k``) is the time a session
+    spends in turn ``k``'s window of the renewal cycle: the generation time
+    ``R_k = est_ttft_ms + est_tpot_ms * output_len_k`` plus the inter-turn sleep
+    ``D_k``. Both ``output_len_k`` (the assistant ``num_tokens``) and ``D_k``
+    (its ``delay_until_next_message``) come from the turn-``k`` assistant message
+    at ``messages[2k-1]``.
+
+    With ``est_ttft_ms == est_tpot_ms == 0`` this reduces to the inter-turn delay
+    ``D_k`` (the historical delay-only weight).
 
     The returned array has length ``T-1`` where ``T = s.num_turns``.  Index
     ``k`` (0-based) corresponds to ``prefix_turns = k+1``: the session has
@@ -46,9 +67,9 @@ def _prefix_delays_ms(s: ChatSession) -> np.ndarray:
     the assistant message of turn ``k`` before sending turn ``k+1``.
 
     The phase-spread in ``chat_session_driver`` reads
-    ``messages[prefix_turns * 2 - 1].delay_until_next_message``, which is
-    exactly ``out[prefix_turns - 1]`` here.  Zero or missing delays are
-    stored as 0.0; single-turn sessions return an empty array.
+    ``messages[prefix_turns * 2 - 1]``, which is exactly ``out[prefix_turns - 1]``
+    here.  Zero or missing delays are stored as 0.0; single-turn sessions return
+    an empty array.
     """
     T = s.num_turns
     if T <= 1:
@@ -57,28 +78,46 @@ def _prefix_delays_ms(s: ChatSession) -> np.ndarray:
     for k in range(1, T):  # prefix_turns = k → assistant msg at index 2k-1
         msg_idx = 2 * k - 1
         if msg_idx < len(s.messages):
-            d = s.messages[msg_idx].delay_until_next_message
-            if d is not None and d > 0.0:
-                out[k - 1] = float(d)
+            m = s.messages[msg_idx]
+            d = m.delay_until_next_message
+            delay = float(d) if d is not None and d > 0.0 else 0.0
+            runtime = est_ttft_ms + est_tpot_ms * m.num_tokens
+            out[k - 1] = delay + runtime
     return out
 
 
-def _session_weights(
-    sessions: Sequence[ChatSession], use_delay_bias: bool
-) -> np.ndarray:
-    """Size-bias weight per session: total think time or turn count.
+def _prefix_delays_ms(s: ChatSession) -> np.ndarray:
+    """Inter-turn delay (ms) per valid prefix position.
 
-    When ``use_delay_bias`` is set, the weight is the sum of inter-turn delays
-    (clamped to ``>= 1`` so zero-delay sessions still draw). Otherwise it is the
-    turn count (clamped to ``>= 1``). The same weighting drives the PPS draw and
-    the logged ``target_mean`` / ``realized_mean`` diagnostics so they stay
-    directly comparable.
+    Equivalent to :func:`_prefix_occupancy_ms` with zero runtime estimates.
+    """
+    return _prefix_occupancy_ms(s)
+
+
+def _session_weights(
+    sessions: Sequence[ChatSession],
+    use_delay_bias: bool,
+    est_ttft_ms: float = 0.0,
+    est_tpot_ms: float = 0.0,
+) -> np.ndarray:
+    """Size-bias weight per session: total occupancy time or turn count.
+
+    When ``use_delay_bias`` is set, the weight is the sum of per-position
+    occupancy ``R_k + D_k`` (clamped to ``>= 1`` so zero-occupancy sessions still
+    draw); with zero runtime estimates this is just the sum of inter-turn delays.
+    Otherwise it is the turn count (clamped to ``>= 1``). The same weighting
+    drives the PPS draw and the logged ``target_mean`` / ``realized_mean``
+    diagnostics so they stay directly comparable.
     """
     if use_delay_bias:
-        delay_sums = np.array(
-            [_prefix_delays_ms(s).sum() for s in sessions], dtype=np.float64
+        occupancy_sums = np.array(
+            [
+                _prefix_occupancy_ms(s, est_ttft_ms, est_tpot_ms).sum()
+                for s in sessions
+            ],
+            dtype=np.float64,
         )
-        return np.maximum(delay_sums, 1.0)
+        return np.maximum(occupancy_sums, 1.0)
     return np.array([max(1, s.num_turns) for s in sessions], dtype=np.float64)
 
 
@@ -212,6 +251,8 @@ def pick_warmup_population(
     main_pool_target: int,
     rng: np.random.Generator,
     delay_biased: bool = False,
+    est_ttft_ms: float = 0.0,
+    est_tpot_ms: float = 0.0,
 ) -> tuple[list[ChatSession], _WarmupSamplingReport | None]:
     """Build the runner's task list with warmup picks at the head.
 
@@ -223,23 +264,28 @@ def pick_warmup_population(
     P(T)).
 
     Delay biasing is opt-in via ``delay_biased`` and only takes effect
-    when inter-turn delays are actually configured; otherwise selection
-    falls back to turn-count weighting.
+    when per-position occupancy is actually non-zero; otherwise selection
+    falls back to turn-count weighting. Occupancy is ``R_k + D_k`` where
+    ``R_k = est_ttft_ms + est_tpot_ms * output_len_k`` is the estimated
+    generation time and ``D_k`` the inter-turn delay. With zero estimates
+    occupancy is just the delay ``D_k`` (the historical behavior); with
+    estimates set, a no-delay-but-long-generation workload still biases by
+    generation time rather than falling back to turn count.
 
     **Session selection**: with delay bias, sessions are selected with
-    probability proportional to their total think time (sum of
-    inter-turn delays); without it, proportional to turn count.
+    probability proportional to their total occupancy (sum of
+    ``R_k + D_k``); without it, proportional to turn count.
     For ``factor >= 2`` this is done via
     :func:`systematic_probability_proportional_to_size`; for
     ``factor < 2`` the picks are uniform.
 
     **Starting-turn selection**: with delay bias, ``prefix_turns`` is
-    sampled proportional to the delay at each candidate position — turns
-    with longer delays are more likely to be the one "in progress." This
-    matches the ergodic steady state (a session is ``D_k / sum(D)``
-    likely to be sleeping through turn k) and eliminates the initial
-    burst produced by uniform turn selection. Without delay bias, falls
-    back to the original uniform draw over ``{0, …, T-1}``.
+    sampled proportional to the occupancy at each candidate position — turns
+    a session spends longer in (generating or sleeping) are more likely to
+    be the one "in progress." This matches the ergodic steady state (a
+    session is ``(R_k + D_k) / sum(R + D)`` likely to be in turn k) and
+    eliminates the initial burst produced by uniform turn selection. Without
+    delay bias, falls back to the original uniform draw over ``{0, …, T-1}``.
 
     Returns ``(reordered_sessions, report)``. ``report`` is ``None``
     only when warmup is off (``warmup_to_steady_state=False`` or
@@ -282,17 +328,31 @@ def pick_warmup_population(
         chat_sessions[candidate_pool : candidate_pool + main_count]
     )
 
-    # Per-session delay arrays (one entry per valid prefix position) drive the
-    # delay-biased starting-turn selection below. Delay bias is opt-in and only
-    # meaningful when delays are actually present; otherwise weight by turn
-    # count. The same weights drive the PPS draw and the logged diagnostics.
-    all_prefix_delays = [_prefix_delays_ms(s) for s in candidates]
+    # Per-session occupancy arrays (one entry per valid prefix position) drive
+    # the delay-biased starting-turn selection below. Occupancy is R_k + D_k;
+    # with zero runtime estimates it is just the inter-turn delay D_k. Delay
+    # bias is opt-in and only meaningful when some occupancy is present;
+    # otherwise weight by turn count. The same weights drive the PPS draw and
+    # the logged diagnostics.
+    all_prefix_occupancy = [
+        _prefix_occupancy_ms(s, est_ttft_ms, est_tpot_ms) for s in candidates
+    ]
     use_delay_bias = delay_biased and any(
-        d.sum() > 0.0 for d in all_prefix_delays
+        o.sum() > 0.0 for o in all_prefix_occupancy
     )
-    candidate_weights = _session_weights(candidates, use_delay_bias)
-    full_weights = _session_weights(chat_sessions, use_delay_bias)
-    weight_unit = "delay-ms" if use_delay_bias else "turns"
+    runtime_estimated = est_ttft_ms > 0.0 or est_tpot_ms > 0.0
+    candidate_weights = _session_weights(
+        candidates, use_delay_bias, est_ttft_ms, est_tpot_ms
+    )
+    full_weights = _session_weights(
+        chat_sessions, use_delay_bias, est_ttft_ms, est_tpot_ms
+    )
+    if not use_delay_bias:
+        weight_unit = "turns"
+    elif runtime_estimated:
+        weight_unit = "occupancy-ms"
+    else:
+        weight_unit = "delay-ms"
 
     # Length-biased only when factor>=2 AND we have headroom to pick from.
     # Otherwise fall back to a plain uniform pick — at factor<2 we don't
@@ -318,15 +378,16 @@ def pick_warmup_population(
         if total_turns <= 1:
             prefix_turns = 0
         elif use_delay_bias:
-            delays = all_prefix_delays[int(i)]
-            delay_total = float(delays.sum())
-            if delay_total > 0.0:
-                # Sample prefix_turns ∝ D_k: sessions sleeping through a
-                # longer window are proportionally more likely to be observed.
-                probs = delays / delay_total
+            occupancy = all_prefix_occupancy[int(i)]
+            occupancy_total = float(occupancy.sum())
+            if occupancy_total > 0.0:
+                # Sample prefix_turns ∝ (R_k + D_k): turns a session spends
+                # longer in (generating or sleeping) are proportionally more
+                # likely to be the one in progress.
+                probs = occupancy / occupancy_total
                 prefix_turns = int(rng.choice(total_turns - 1, p=probs)) + 1
             else:
-                # This session has no delays; use uniform over {1, ..., T-1}.
+                # This session has no occupancy; use uniform over {1, …, T-1}.
                 prefix_turns = int(rng.integers(1, total_turns))
         else:
             prefix_turns = int(rng.integers(0, total_turns))
@@ -389,7 +450,12 @@ def log_warmup_sampling_report(report: _WarmupSamplingReport) -> None:
     else:
         stdev_str = "stdev n/a"
 
-    bias_mode = "delay-biased" if report.delay_biased else "turn-biased"
+    if not report.delay_biased:
+        bias_mode = "turn-biased"
+    elif report.weight_unit == "occupancy-ms":
+        bias_mode = "occupancy-biased"
+    else:
+        bias_mode = "delay-biased"
     logger.info(
         "[warmup-sampling] warmup_pool=%d main_pool=%d M=%d factor=%d"
         " mode=%s\n"

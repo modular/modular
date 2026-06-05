@@ -453,6 +453,8 @@ async def benchmark(
                 main_pool_target=args.num_chat_sessions or len(chat_sessions),
                 rng=np.random.default_rng(args.seed),
                 delay_biased=args.warmup_delay_biased,
+                est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
+                est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
             )
             if report is not None:
                 log_warmup_sampling_report(report)
@@ -625,6 +627,8 @@ async def benchmark(
                 run_prefix_len=run_prefix_len,
                 request_rate=request_rate,
                 burstiness=args.burstiness,
+                est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
+                est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -671,6 +675,8 @@ async def benchmark(
                 run_prefix_len=run_prefix_len,
                 request_rate=request_rate,
                 burstiness=args.burstiness,
+                est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
+                est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -1237,6 +1243,8 @@ def _run_dry_run_sweep(
                 main_pool_target=args.num_chat_sessions or 0,
                 rng=rng,
                 delay_biased=args.warmup_delay_biased,
+                est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
+                est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
             )
             if report is not None:
                 log_warmup_sampling_report(report)

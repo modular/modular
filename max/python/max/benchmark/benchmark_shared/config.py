@@ -19,7 +19,7 @@ from collections.abc import Mapping, Sequence
 from typing import Literal
 
 from max.config import ConfigFileModel
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .datasets import DatasetMode, DistributionParameter
 from .utils import int_or_none, parse_comma_separated
@@ -626,6 +626,18 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
+    warmup_delay_estimated_ttft_ms: float = Field(
+        default=0.0,
+        description="Estimated time-to-first-token in milliseconds per turn. When set (with --warmup-delay-biased), warmup weights each turn by its occupancy (estimated generation time + inter-turn delay) instead of delay alone, better matching steady state for high-TPOT / long-output workloads. 0 = off.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_delay_estimated_tpot_ms: float = Field(
+        default=0.0,
+        description="Estimated time-per-output-token in milliseconds, used with --warmup-delay-estimated-ttft-ms to weight warmup by per-turn generation time (ttft + tpot * output_len). Only valid with --warmup-delay-biased. 0 = off.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
     warmup_concurrency: int = Field(
         default=128,
         description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
@@ -925,6 +937,20 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         if isinstance(value, str):
             return parse_comma_separated(value, float)
         return value
+
+    @model_validator(mode="after")
+    def _check_warmup_runtime_estimates(self) -> ServingBenchmarkConfig:
+        """Runtime estimates only refine delay-biased warmup."""
+        if (
+            self.warmup_delay_estimated_ttft_ms > 0.0
+            or self.warmup_delay_estimated_tpot_ms > 0.0
+        ) and not self.warmup_delay_biased:
+            raise ValueError(
+                "--warmup-delay-estimated-ttft-ms /"
+                " --warmup-delay-estimated-tpot-ms require"
+                " --warmup-delay-biased to be set."
+            )
+        return self
 
     @property
     def sampling(self) -> SamplingConfig:
