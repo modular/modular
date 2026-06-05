@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -37,7 +37,7 @@ from sse_starlette.sse import EventSourceResponse
 
 
 def _normalize_message_content(
-    content: str | list[dict[str, Any]],
+    content: str | Sequence[Mapping[str, Any]],
 ) -> str:
     """Flatten a chat message content payload into plain text."""
     if isinstance(content, str):
