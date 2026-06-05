@@ -33,5 +33,6 @@ unified_mtp_gemma4_arch = SupportedArchitecture(
     weight_adapters={WeightsFormat.safetensors: convert_safetensor_state_dict},
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
+    multi_gpu_supported=True,
     config=Gemma4ForConditionalGenerationConfig,
 )

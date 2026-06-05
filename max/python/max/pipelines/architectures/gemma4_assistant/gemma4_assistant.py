@@ -380,8 +380,9 @@ class Gemma4AssistantDecoderLayer(Module):
             residual[i] + hidden_states[i] for i in range(len(hidden_states))
         ]
 
-        scalar = self.layer_scalar.to(hidden_states[0].device)
-        hidden_states = [h * scalar for h in hidden_states]
+        hidden_states = [
+            h * self.layer_scalar.to(h.device) for h in hidden_states
+        ]
 
         return hidden_states
 

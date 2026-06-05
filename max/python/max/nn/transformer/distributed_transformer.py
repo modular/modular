@@ -107,17 +107,17 @@ def distributed_logits_postprocess(
     offsets = None
 
     if return_logits == ReturnLogits.VARIABLE and h:
-        return_range = ops.range(
-            start=return_n_logits[0],
-            stop=0,
-            step=-1,
-            out_dim="return_n_logits_range",
-            dtype=DType.int64,
-            device=device,
-        )
         last_indices = [
             ops.reshape(
-                ops.unsqueeze(row_offset[1:], -1) - return_range,
+                ops.unsqueeze(row_offset[1:], -1)
+                - ops.range(
+                    start=return_n_logits[0],
+                    stop=0,
+                    step=-1,
+                    out_dim="return_n_logits_range",
+                    dtype=DType.int64,
+                    device=row_offset.device,
+                ),
                 shape=(-1,),
             )
             for row_offset in input_row_offsets
@@ -134,7 +134,7 @@ def distributed_logits_postprocess(
         )
         offsets = ops.range(
             0,
-            last_indices[0].shape[0] + return_n_logits[0],
+            TensorValue(last_indices[0].shape[0]) + return_n_logits[0],
             return_n_logits[0],
             out_dim="logit_offsets",
             dtype=DType.int64,

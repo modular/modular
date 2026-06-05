@@ -356,9 +356,7 @@ class UnifiedMTPGemma4(Module):
 
         for step in range(1, self.num_draft_steps):
             draft_hs = [
-                draft_hs[i].rebind(
-                    [f"mtp_step{step}_batch_dev_{i}", hidden_dim]
-                )
+                draft_hs[i].rebind([f"mtp_step{step}_batch", hidden_dim])
                 for i in range(n_devs)
             ]
 

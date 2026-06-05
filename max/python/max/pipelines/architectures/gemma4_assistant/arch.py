@@ -33,5 +33,6 @@ gemma4_assistant_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_safetensor_language_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
+    multi_gpu_supported=True,
     config=Gemma4AssistantConfig,
 )

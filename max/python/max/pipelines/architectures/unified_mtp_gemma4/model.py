@@ -22,7 +22,7 @@ import numpy as np
 from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph
+from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -196,7 +196,9 @@ class UnifiedMTPGemma4Model(
             # -- 4. Create draft config --
             draft_hf_config = draft_model_config.huggingface_config
             assert draft_hf_config is not None
-            draft_config = self._create_draft_config(draft_hf_config)
+            draft_config = self._create_draft_config(
+                draft_hf_config, config.devices
+            )
             # -- 5. Create unified module --
             assert self.pipeline_config.speculative is not None
             nn_model = UnifiedMTPGemma4(
@@ -465,6 +467,7 @@ class UnifiedMTPGemma4Model(
     def _create_draft_config(
         self,
         draft_hf_config: AutoConfig,
+        devices: list[DeviceRef],
     ) -> Gemma4AssistantConfig:
         """Create Gemma4AssistantConfig from the draft HF config."""
         from ..gemma3.model_config import _HIDDEN_ACTIVATION_MAP
@@ -501,6 +504,7 @@ class UnifiedMTPGemma4Model(
 
         num_hidden_layers = tc["num_hidden_layers"]
         return Gemma4AssistantConfig(
+            devices=devices,
             backbone_hidden_size=backbone_hidden_size,
             hidden_size=tc["hidden_size"],
             num_hidden_layers=num_hidden_layers,
