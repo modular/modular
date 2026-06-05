@@ -26,6 +26,7 @@ import subprocess
 import sys
 import time
 from collections.abc import (
+    Callable,
     Generator,
     Iterator,
     Mapping,
@@ -1336,6 +1337,8 @@ def _run_benchmark_sweep(
 
 def main_with_parsed_args(
     args: ServingBenchmarkConfig,
+    *,
+    server_liveness: Callable[[], bool] | None = None,
 ) -> Iterator[BenchmarkRunResult]:
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
@@ -1374,6 +1377,7 @@ def main_with_parsed_args(
         args.port,
         timeout_s=args.server_ready_timeout_s,
         backend=args.backend,
+        liveness_check=server_liveness,
     )
 
     yield from _run_benchmark_sweep(args, session, use_dynamic_num_prompts)
