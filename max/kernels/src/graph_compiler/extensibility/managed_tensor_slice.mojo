@@ -52,6 +52,7 @@ from layout import (
 from layout.coord import (
     ComptimeInt,
     _IntToComptimeInt,
+    crd2idx,
 )
 from layout.int_tuple import _IntTupleToCoordLike, coord_to_int_tuple
 from layout.tile_io import TileCopier
@@ -804,7 +805,7 @@ def simd_store_into_managed_tensor_slice[
             return strided_store(value, tensor._ptr + flat_index, stride)
 
     comptime if not _last_stride_is_static:
-        var stride = tensor._runtime_strides[rank - 1]
+        var stride = tensor.stride_length[rank - 1]()
         # Dynamic stride
         if stride == 0:
             tensor._ptr.store[alignment=max_alignment](0, value)
@@ -977,7 +978,7 @@ def simd_load_from_managed_tensor_slice[
             )
 
     comptime if not _last_stride_is_static:
-        var stride = tensor._runtime_strides[rank - 1]
+        var stride = tensor.stride_length[rank - 1]()
         # Dynamic stride
         if stride == 0:
             return tensor._ptr.load[invariant=invariant](flat_index)
@@ -1128,9 +1129,13 @@ struct ManagedTensorSlice[
         Self.ComputeFusionTile, _NoComputeFusionTile
     ]()
 
+    comptime RuntimeLayout = TileLayout[
+        shape_types=Self.static_spec.static_layout._shape_types,
+        stride_types=Self.static_spec.static_layout._stride_types,
+    ]
+
     var _ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-    var _spec: RuntimeTensorSpec[Self.dtype, Self.rank]
-    var _runtime_strides: IndexList[Self.rank]
+    var _runtime_layout: Self.RuntimeLayout
     var in_fusion: Self.InFusion
     var out_fusion: Self.OutFusion
     var compute_fusion: Self.ComputeFusion
@@ -1193,6 +1198,25 @@ struct ManagedTensorSlice[
             )
             return f
 
+    @staticmethod
+    @always_inline
+    def _make_runtime_layout(
+        shape: IndexList[Self.rank], strides: IndexList[Self.rank]
+    ) -> Self.RuntimeLayout:
+        """Builds the runtime layout from a runtime shape and strides.
+
+        Static dimensions keep their compile-time values; dynamic dimensions are
+        filled from `shape`/`strides`.
+        """
+        return Self.RuntimeLayout(
+            _index_list_to_static_coord[
+                Self.static_spec.static_layout._shape_types
+            ](shape),
+            _index_list_to_static_coord[
+                Self.static_spec.static_layout._stride_types
+            ](strides),
+        )
+
     def __init__(
         out self,
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
@@ -1231,7 +1255,6 @@ struct ManagedTensorSlice[
             adjusted_shape[i] = Int(
                 ceil(Float64(stop[i] - start[i]) / Float64(step[i]))
             )
-        var slice_spec = RuntimeTensorSpec[Self.dtype](adjusted_shape)
 
         var slicer_strides = adjusted_shape.get_row_major_strides()
         var start_offset = _dot_prod(start, slicer_strides)
@@ -1242,8 +1265,9 @@ struct ManagedTensorSlice[
             strides[i] = step[i] * slicer_strides[i]
 
         self._ptr = ptr + start_offset
-        self._spec = slice_spec
-        self._runtime_strides = strides
+        self._runtime_layout = Self._make_runtime_layout(
+            adjusted_shape, strides
+        )
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
         self.compute_fusion = Self._sentinel_compute_fusion()
@@ -1263,8 +1287,7 @@ struct ManagedTensorSlice[
         engine.
         """
         self._ptr = ptr
-        self._spec = spec
-        self._runtime_strides = strides
+        self._runtime_layout = Self._make_runtime_layout(spec.shape, strides)
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
         self.compute_fusion = Self._sentinel_compute_fusion()
@@ -1282,8 +1305,9 @@ struct ManagedTensorSlice[
         engine.
         """
         self._ptr = ptr
-        self._spec = RuntimeTensorSpec[Self.dtype, Self.rank](shape)
-        self._runtime_strides = shape.get_row_major_strides()
+        self._runtime_layout = Self._make_runtime_layout(
+            shape, shape.get_row_major_strides()
+        )
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
         self.compute_fusion = Self._sentinel_compute_fusion()
@@ -1302,8 +1326,7 @@ struct ManagedTensorSlice[
         engine.
         """
         self._ptr = ptr
-        self._spec = RuntimeTensorSpec[Self.dtype, Self.rank](shape)
-        self._runtime_strides = strides
+        self._runtime_layout = Self._make_runtime_layout(shape, strides)
         self.in_fusion = Self._sentinel_in_fusion()
         self.out_fusion = Self._sentinel_out_fusion()
         self.compute_fusion = Self._sentinel_compute_fusion()
@@ -1322,7 +1345,7 @@ struct ManagedTensorSlice[
         comptime assert (
             not Self._has_input_fusion
         ), "Direct load on fused tensor is forbidden"
-        var offset = _dot_prod(indices, self.strides())
+        var offset = self._compute_offset(indices)
         return self._ptr[offset]
 
     @always_inline
@@ -1374,17 +1397,8 @@ struct ManagedTensorSlice[
         comptime assert (
             not Self._has_output_store_fusion
         ), "Direct store on fused tensor is forbidden"
-        var offset = _dot_prod(indices, self.strides())
+        var offset = self._compute_offset(indices)
         self._ptr[offset] = val
-
-    def spec(self) -> RuntimeTensorSpec[Self.dtype, Self.rank]:
-        """Gets the `TensorSpec` of this tensor slice, which provides meta-data
-        about the tensor slice.
-
-        Returns:
-            The static `TensorSpec` for this tensor slice.
-        """
-        return self._spec
 
     @always_inline
     def shape(self) -> IndexList[Self.rank]:
@@ -1396,21 +1410,14 @@ struct ManagedTensorSlice[
         var result = IndexList[Self.rank]()
 
         comptime for i in range(Self.rank):
-            comptime if Self.static_spec.static_layout._shape_types[
-                i
-            ].is_static_value:
-                result[i] = Self.static_spec.static_layout._shape_types[
-                    i
-                ].static_value
-            else:
-                result[i] = self._spec.shape[i]
+            result[i] = Int(self._runtime_layout.shape[i]().value())
 
         return result
 
     @always_inline
     def shape_coord(
         self,
-    ) -> Coord[*Self.static_spec.static_layout._shape_types]:
+    ) -> Coord[*Self.RuntimeLayout.shape_types]:
         """Gets the shape of this tensor slice as a `Coord`.
 
         Unlike `shape`, which returns a runtime `IndexList`, the returned
@@ -1422,14 +1429,12 @@ struct ManagedTensorSlice[
         Returns:
             The shape of this tensor slice as a `Coord`.
         """
-        return _index_list_to_static_coord[
-            Self.static_spec.static_layout._shape_types
-        ](self.shape())
+        return self._runtime_layout.shape_coord()
 
     @always_inline
     def strides_coord(
         self,
-    ) -> Coord[*Self.static_spec.static_layout._stride_types]:
+    ) -> Coord[*Self.RuntimeLayout.stride_types]:
         """Gets the strides of this tensor slice as a `Coord`.
 
         Unlike `strides`, which returns a runtime `IndexList`, the returned
@@ -1441,9 +1446,7 @@ struct ManagedTensorSlice[
         Returns:
             The strides of this tensor slice as a `Coord`.
         """
-        return _index_list_to_static_coord[
-            Self.static_spec.static_layout._stride_types
-        ](self.strides())
+        return self._runtime_layout.stride_coord()
 
     @always_inline
     def dim_size(self, index: Int) -> Int:
@@ -1475,14 +1478,7 @@ struct ManagedTensorSlice[
             t" {Self.rank}]"
         )
 
-        comptime if not Self.static_spec.static_layout._shape_types[
-            index
-        ].is_static_value:
-            return self._spec.shape[index]
-        else:
-            return Self.static_spec.static_layout._shape_types[
-                index
-            ].static_value
+        return Int(self._runtime_layout.shape[index]().value())
 
     @always_inline
     def strides(self) -> IndexList[Self.rank]:
@@ -1494,14 +1490,7 @@ struct ManagedTensorSlice[
         var result = IndexList[Self.rank]()
 
         comptime for i in range(Self.rank):
-            comptime if Self.static_spec.static_layout._stride_types[
-                i
-            ].is_static_value:
-                result[i] = Self.static_spec.static_layout._stride_types[
-                    i
-                ].static_value
-            else:
-                result[i] = self._runtime_strides[i]
+            result[i] = Int(self._runtime_layout.stride[i]().value())
 
         return result
 
@@ -1535,14 +1524,7 @@ struct ManagedTensorSlice[
             t" [0, {Self.rank}]"
         )
 
-        comptime if not Self.static_spec.static_layout._stride_types[
-            index
-        ].is_static_value:
-            return self._runtime_strides[index]
-        else:
-            return Self.static_spec.static_layout._stride_types[
-                index
-            ].static_value
+        return Int(self._runtime_layout.stride[index]().value())
 
     @always_inline
     def size(self) -> Int:
@@ -1551,12 +1533,7 @@ struct ManagedTensorSlice[
         Returns:
             The total number of elements in the tensor slice.
         """
-        var product: Int = 1
-
-        comptime for i in range(Self.rank):
-            product *= self.dim_size[i]()
-
-        return product
+        return Int(self._runtime_layout.size())
 
     @always_inline
     def bytecount(self) -> Int:
@@ -1720,41 +1697,42 @@ struct ManagedTensorSlice[
             var offset: Int32 = 0
 
             comptime for i in range(Self.rank):
-                comptime if not Self.static_spec.static_layout._stride_types[
-                    i
-                ].is_static_value:
-                    offset = fma(
-                        Int32(index[i]), Int32(self._runtime_strides[i]), offset
-                    )
-                else:
-                    offset = fma(
-                        Int32(index[i]),
-                        Int32(
-                            Self.static_spec.static_layout._stride_types[
-                                i
-                            ].static_value
-                        ),
-                        offset,
-                    )
+                offset = fma(
+                    Int32(index[i]),
+                    Int32(self._runtime_layout.stride[i]().value()),
+                    offset,
+                )
             return Int(offset)
 
         var offset = 0
 
         comptime for i in range(Self.rank):
-            comptime if not Self.static_spec.static_layout._stride_types[
-                i
-            ].is_static_value:
-                offset = fma(index[i], self._runtime_strides[i], offset)
-            else:
-                offset = fma(
-                    index[i],
-                    Self.static_spec.static_layout._stride_types[
-                        i
-                    ].static_value,
-                    offset,
-                )
+            offset = fma(
+                Int(index[i]),
+                Int(self.stride_length[i]()),
+                offset,
+            )
 
         return offset
+
+    @always_inline
+    def _compute_offset(self, index: Coord) -> Int:
+        comptime assert index.rank == Self.rank
+
+        comptime if Self.rank == 0:
+            return 0
+
+        var shape = self.shape_coord()
+        var strides = self.strides_coord()
+
+        comptime if is_gpu() and Self.address_space in (
+            AddressSpace.SHARED,
+            AddressSpace.LOCAL,
+            AddressSpace.CONSTANT,
+        ):
+            return Int(crd2idx[out_type=DType.int32](index, shape, strides))
+
+        return Int(crd2idx[out_type=DType.int](index, shape, strides))
 
     @always_inline
     def store[
@@ -2011,8 +1989,7 @@ struct ManagedTensorSlice[
         # prove it statically.
         return {
             self._ptr,
-            self._spec,
-            self._runtime_strides,
+            self._runtime_layout,
             fusion,
             rebind[type_of(result).OutFusion](_NoFusionOut()),
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
@@ -2043,8 +2020,7 @@ struct ManagedTensorSlice[
         ), "The tensor is already bound to a fusion struct"
         return {
             self._ptr,
-            self._spec,
-            self._runtime_strides,
+            self._runtime_layout,
             rebind[type_of(result).InFusion](_NoFusionIn()),
             fusion,
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
@@ -2075,8 +2051,7 @@ struct ManagedTensorSlice[
         ), "The tensor is already bound to a fusion struct"
         return {
             self._ptr,
-            self._spec,
-            self._runtime_strides,
+            self._runtime_layout,
             rebind[type_of(result).InFusion](_NoFusionIn()),
             fusion,
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
@@ -2107,8 +2082,7 @@ struct ManagedTensorSlice[
         ), "The tensor is already bound to a fusion struct"
         return {
             self._ptr,
-            self._spec,
-            self._runtime_strides,
+            self._runtime_layout,
             rebind[type_of(result).InFusion](_NoFusionIn()),
             rebind[type_of(result).OutFusion](_NoFusionOut()),
             fusion,
@@ -2139,8 +2113,7 @@ struct ManagedTensorSlice[
         ), "The tensor is already bound to a fusion struct"
         return {
             self._ptr,
-            self._spec,
-            self._runtime_strides,
+            self._runtime_layout,
             rebind[type_of(result).InFusion](_NoFusionIn()),
             rebind[type_of(result).OutFusion](_NoFusionOut()),
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
@@ -2177,27 +2150,9 @@ struct ManagedTensorSlice[
             ],
         ],
     ):
-        var shape_tuple = Coord[*Self.static_spec.static_layout._shape_types]()
-        var stride_tuple = Coord[
-            *Self.static_spec.static_layout._stride_types
-        ]()
-        var shape = self.shape()
-        var stride = self.strides()
-
-        comptime for i in range(Self.rank):
-            comptime if not shape_tuple.element_types[i].is_static_value:
-                shape_tuple[i] = rebind[shape_tuple.element_types[i]](
-                    Scalar[shape_tuple.element_types[i].DTYPE](shape[i])
-                )
-
-            comptime if not stride_tuple.element_types[i].is_static_value:
-                stride_tuple[i] = rebind[stride_tuple.element_types[i]](
-                    Scalar[stride_tuple.element_types[i].DTYPE](stride[i])
-                )
-
         return {
             self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-            TileLayout(shape_tuple, stride_tuple),
+            self._runtime_layout,
         }
 
     def write_to(self, mut writer: Some[Writer]):
@@ -2254,7 +2209,7 @@ def trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
     Returns:
         A string representation of the buffer with its shape and data type.
     """
-    return trace_arg(name, buf._runtime_strides, buf.dtype)
+    return trace_arg(name, buf.strides(), buf.dtype)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2368,15 +2323,11 @@ struct VariadicTensors[
         """
         comptime assert index < Self.size
         var tensor = self._tensors[index]
-        return {
+        return type_of(result)(
             tensor._ptr,
-            tensor._spec,
-            tensor._runtime_strides,
-            _NoFusionIn(),
-            _NoFusionOut(),
-            _NoComputeFusion(),
-            _NoComputeFusionTile(),
-        }
+            tensor.shape(),
+            tensor.strides(),
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2482,8 +2433,9 @@ struct _FusedInputVariadicTensors[
         var tensor = self._tensors[index]
         return {
             tensor._ptr,
-            tensor._spec,
-            tensor._runtime_strides,
+            type_of(result)._make_runtime_layout(
+                tensor.shape(), tensor.strides()
+            ),
             self._fusions[index],
             rebind[type_of(result).OutFusion](_NoFusionOut()),
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),
@@ -2573,8 +2525,9 @@ struct _FusedOutputVariadicTensors[
         var tensor = self._tensors[index]
         return {
             tensor._ptr,
-            tensor._spec,
-            tensor._runtime_strides,
+            type_of(result)._make_runtime_layout(
+                tensor.shape(), tensor.strides()
+            ),
             rebind[type_of(result).InFusion](_NoFusionIn()),
             self._fusions[index],
             rebind[type_of(result).ComputeFusion](_NoComputeFusion()),

@@ -38,6 +38,7 @@ from layout import (
     row_major,
     coord_to_index_list,
 )
+from layout.tile_layout import Layout
 from std.memory import memcpy
 from std.memory.unsafe_pointer import unsafe_cast
 
@@ -300,7 +301,7 @@ def mgp_tensor_extract_buffer[
 ](buffer: DynamicTensor[dtype, buffer_rank]) -> MutByteBuffer:
     # Unwrap the tensor into a size-less buffer pointer.
     return MutByteBuffer(
-        buffer.unsafe_ptr[DType.int8](), IndexList[1](buffer.spec().bytecount())
+        buffer.unsafe_ptr[DType.int8](), IndexList[1](buffer.bytecount())
     )
 
 
@@ -1124,6 +1125,36 @@ def mogg_tensor_init[
     Helper for constructing a ManagedTensorSlice.
     """
     return {ptr.bitcast[Scalar[dtype]](), shape}
+
+
+@always_inline
+def mogg_tensor_init[
+    dtype: DType,
+    rank: Int,
+    mut: Bool,
+    input: IO,
+    alignment: Int,
+](
+    ptr: OpaquePointer[MutAnyOrigin],
+    shape: Coord,
+    strides: Coord,
+) -> ManagedTensorSlice[
+    io_spec=IOSpec[mut, input](),
+    static_spec=StaticTensorSpec[
+        dtype,
+        rank,
+        static_layout=Layout[
+            shape_types=shape.element_types,
+            stride_types=strides.element_types,
+        ],
+    ](alignment, AddressSpace.GENERIC),
+]:
+    """
+    Helper for constructing a ManagedTensorSlice.
+    """
+    var shape_list = rebind[IndexList[rank]](coord_to_index_list(shape))
+    var strides_list = rebind[IndexList[rank]](coord_to_index_list(strides))
+    return {ptr.bitcast[Scalar[dtype]](), shape_list, strides_list}
 
 
 @register_internal("mogg.async.ready")
