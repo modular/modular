@@ -13,7 +13,7 @@
 """Trait and utilities for copying data between `TileTensor`s."""
 
 from std.bit import log2_floor
-from std.collections import Optional
+from std.collections import Optional, OptionalReg
 from std.gpu import block_dim, lane_id, thread_idx
 from std.gpu.memory import AddressSpace, CacheEviction, async_copy
 from std.sys import align_of, size_of
@@ -686,12 +686,60 @@ struct GenericToSharedAsyncTileCopier[
         The copy is issued via `cp.async` on NVIDIA. Callers must commit
         and wait on the copy before using the destination tile.
 
+        This satisfies the `AsyncTileCopier` trait; the masked bound is
+        derived from `src.dim[0]()`. For an explicit-bound copy (a `src`
+        whose row dim is static), call `copy_bounded` directly.
+
         Parameters:
             element_size: Number of scalar elements per logical element.
 
         Args:
             dst: Destination tile in shared memory.
             src: Source tile in generic memory.
+        """
+        self.copy_bounded(dst, src, None)
+
+    @always_inline("nodebug")
+    def copy_bounded[
+        element_size: Int
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            address_space=Self.dst_address_space,
+            element_size=element_size,
+            ...,
+        ],
+        src: TileTensor[
+            address_space=Self.src_address_space,
+            element_size=element_size,
+            ...,
+        ],
+        src_num_valid_rows: OptionalReg[Int],
+    ):
+        """Asynchronously copies `src` into `dst` with an optional explicit
+        masked-bound override.
+
+        Identical to `copy` except for the masked-bound source. This is NOT a
+        trait method (the `AsyncTileCopier` trait fixes the `copy` signature);
+        it is the explicit-bound entry point.
+
+        Parameters:
+            element_size: Number of scalar elements per logical element.
+
+        Args:
+            dst: Destination tile in shared memory.
+            src: Source tile in generic memory.
+            src_num_valid_rows: Explicit valid-row count for the masked bound.
+                When `None`, the masked bound is derived from `src.dim[0]()`
+                (byte-identical to the legacy behavior). When provided, it
+                overrides `src.dim[0]()` in the
+                `src_idx_bound = rows * row_stride - src_frag_offset`
+                computation; everything else is unchanged. This lets callers
+                whose `src` carries a static row dim (e.g. a `TileTensor.tile`
+                sub-view, which does not runtime-clip dim0) still drive a
+                correct partial-tile zero-fill by passing the runtime clip
+                directly. Only consulted when `masked` is `True`.
         """
         comptime assert (
             src.dtype == dst.dtype
@@ -766,8 +814,18 @@ struct GenericToSharedAsyncTileCopier[
         # the comparison free of scalar-dtype unification fights.
         comptime row_stride_static = src.LayoutType.static_stride[0]
         var src_frag_offset = Int(src_fragments._distance(src.ptr))
+        # The valid-row count drives the masked zero-fill bound. By default it
+        # is `src.dim[0]()` (legacy behavior). A caller may override it with an
+        # explicit runtime value when `src`'s own dim0 is static (e.g. a
+        # `.tile[...]` sub-view, which does not runtime-clip dim0 the way the
+        # legacy `LayoutTensor` iterator did).
+        var src_num_rows = (
+            src_num_valid_rows.value() if src_num_valid_rows else Int(
+                src.dim[0]()
+            )
+        )
         var src_idx_bound = (
-            Int(src.dim[0]()) * Int(row_stride_static) - src_frag_offset
+            src_num_rows * Int(row_stride_static) - src_frag_offset
         )
 
         # When swizzling, the destination address is computed in absolute
@@ -841,3 +899,366 @@ struct GenericToSharedAsyncTileCopier[
                         src_global_ptr + src_idx,
                         dst_shared_ptr + dst_idx,
                     )
+
+
+# ===----------------------------------------------------------------------=== #
+# Free-function wrappers
+# ===----------------------------------------------------------------------=== #
+#
+# Thin module-level wrappers that delegate to the `TileCopier` structs above.
+# They mirror the names (and the common-case parameter sets) of the legacy
+# free `copy_*` functions so that migrating callers off the legacy tensor type
+# requires only a type change at the call site, not a rename.
+#
+# These intentionally cover only the common case. The following variants are
+# deliberately deferred as follow-ups (they have no `TileCopier` backing yet,
+# or require behavior the structs do not implement):
+#   - All AMD `buffer_load`/`buffer_store` overloads (the
+#     `src_iter`/`bound`/`dst_base`/`src_base`/`offset`/`cache_policy`
+#     parameter family).
+#   - `copy_local_to_local` (no corresponding `TileCopier` exists).
+#   - `binary_op` fusion on the SRAM -> DRAM path.
+#   - fp32 -> half-precision downcast.
+#   - The `axis` (SRAM -> LOCAL), `row_major` (LOCAL -> SHARED), and
+#     `fill`/mask parameters.
+#   - `block_dim_count`: the legacy functions used it to recover a flat
+#     worker index across multi-dimensional block launches. `_get_worker_idx`
+#     (used by every `TileCopier` here) already computes the flat 3D index
+#     unconditionally, so the common single-launch case needs no equivalent
+#     parameter; multi-block-tile launches that relied on `block_dim_count`
+#     are left to the follow-up that ports those callers.
+
+
+@always_inline("nodebug")
+def copy_dram_to_sram[
+    thread_layout: Layout,
+    *,
+    swizzle: Optional[Swizzle] = None,
+    num_threads: Int = thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    element_size: Int,
+](
+    dst: TileTensor[
+        mut=True,
+        address_space=AddressSpace.SHARED,
+        element_size=element_size,
+        ...,
+    ],
+    src: TileTensor[
+        address_space=AddressSpace.GENERIC, element_size=element_size, ...
+    ],
+):
+    """Synchronously copies a tile from DRAM (generic memory) to SRAM (shared).
+
+    Delegates to `GenericToSharedTileCopier`.
+
+    Parameters:
+        thread_layout: Layout describing how threads are organized over the
+            copy.
+        swizzle: Optional swizzle applied to the shared-memory destination for
+            bank-conflict mitigation. `None` produces a straight copy.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` do not participate.
+        thread_scope: Scope at which thread operations are performed.
+        element_size: Number of scalar elements per logical element; inferred
+            from the source and destination tiles.
+
+    Args:
+        dst: Destination tile in shared memory.
+        src: Source tile in generic memory.
+    """
+    GenericToSharedTileCopier[
+        thread_layout,
+        swizzle=swizzle,
+        num_threads=num_threads,
+        thread_scope=thread_scope,
+    ]().copy(dst, src)
+
+
+@always_inline("nodebug")
+def copy_sram_to_dram[
+    thread_layout: Layout,
+    *,
+    swizzle: Optional[Swizzle] = None,
+    num_threads: Int = thread_layout.size(),
+    element_size: Int,
+](
+    dst: TileTensor[
+        mut=True,
+        address_space=AddressSpace.GENERIC,
+        element_size=element_size,
+        ...,
+    ],
+    src: TileTensor[
+        address_space=AddressSpace.SHARED, element_size=element_size, ...
+    ],
+):
+    """Synchronously copies a tile from SRAM (shared memory) to DRAM (generic).
+
+    Delegates to `SharedToGenericTileCopier`. The `binary_op` fusion and
+    fp32 -> half-precision downcast paths of the legacy free function are not
+    supported here.
+
+    Parameters:
+        thread_layout: Layout describing how threads are organized over the
+            copy.
+        swizzle: Swizzle the shared-memory tile was populated with; must match
+            the swizzle used when the tile was written.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` do not participate.
+        element_size: Number of scalar elements per logical element; inferred
+            from the source and destination tiles.
+
+    Args:
+        dst: Destination tile in generic memory.
+        src: Source tile in shared memory.
+    """
+    SharedToGenericTileCopier[
+        thread_layout,
+        swizzle=swizzle,
+        num_threads=num_threads,
+    ]().copy(dst, src)
+
+
+@always_inline("nodebug")
+def copy_local_to_dram[
+    thread_layout: Layout,
+    *,
+    num_threads: Int = thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    element_size: Int,
+](
+    dst: TileTensor[
+        mut=True,
+        address_space=AddressSpace.GENERIC,
+        element_size=element_size,
+        ...,
+    ],
+    src: TileTensor[
+        address_space=AddressSpace.LOCAL, element_size=element_size, ...
+    ],
+):
+    """Synchronously copies a tile from registers (LOCAL) to DRAM (generic).
+
+    Delegates to `LocalToGenericTileCopier`. The AMD `buffer_store` path of
+    the legacy free function is not supported here.
+
+    Parameters:
+        thread_layout: Layout describing how threads are organized over the
+            copy.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` do not participate.
+        thread_scope: Scope at which thread operations are performed.
+        element_size: Number of scalar elements per logical element; inferred
+            from the source and destination tiles.
+
+    Args:
+        dst: Destination tile in generic memory.
+        src: Source tile in local memory.
+    """
+    LocalToGenericTileCopier[
+        thread_layout,
+        num_threads=num_threads,
+        thread_scope=thread_scope,
+    ]().copy(dst, src)
+
+
+@always_inline("nodebug")
+def copy_dram_to_local[
+    thread_layout: Layout,
+    *,
+    num_threads: Int = thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    element_size: Int,
+](
+    dst: TileTensor[
+        mut=True,
+        address_space=AddressSpace.LOCAL,
+        element_size=element_size,
+        ...,
+    ],
+    src: TileTensor[
+        address_space=AddressSpace.GENERIC, element_size=element_size, ...
+    ],
+):
+    """Synchronously copies a tile from DRAM (generic memory) to registers.
+
+    Delegates to `GenericToLocalTileCopier`. The AMD `buffer_load` path of the
+    legacy free function is not supported here.
+
+    Parameters:
+        thread_layout: Layout describing how threads are organized over the
+            copy.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` do not participate.
+        thread_scope: Scope at which thread operations are performed.
+        element_size: Number of scalar elements per logical element; inferred
+            from the source and destination tiles.
+
+    Args:
+        dst: Destination tile in local memory.
+        src: Source tile in generic memory.
+    """
+    GenericToLocalTileCopier[
+        thread_layout,
+        num_threads=num_threads,
+        thread_scope=thread_scope,
+    ]().copy(dst, src)
+
+
+@always_inline("nodebug")
+def copy_local_to_shared[
+    thread_layout: Layout,
+    *,
+    swizzle: Optional[Swizzle] = None,
+    num_threads: Int = thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    element_size: Int,
+](
+    dst: TileTensor[
+        mut=True,
+        address_space=AddressSpace.SHARED,
+        element_size=element_size,
+        ...,
+    ],
+    src: TileTensor[
+        address_space=AddressSpace.LOCAL, element_size=element_size, ...
+    ],
+):
+    """Synchronously copies a tile from registers (LOCAL) to SRAM (shared).
+
+    Delegates to `LocalToSharedTileCopier`. The AMD `row_major` prefetch
+    pattern and fp32 -> half-precision downcast of the legacy free function
+    are not supported here.
+
+    Parameters:
+        thread_layout: Layout describing how threads are organized over the
+            copy.
+        swizzle: Optional swizzle applied to the shared-memory destination;
+            the same swizzle must be used by any subsequent reader of the tile.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` do not participate.
+        thread_scope: Scope at which thread operations are performed.
+        element_size: Number of scalar elements per logical element; inferred
+            from the source and destination tiles.
+
+    Args:
+        dst: Destination tile in shared memory.
+        src: Source tile in local memory.
+    """
+    LocalToSharedTileCopier[
+        thread_layout,
+        swizzle=swizzle,
+        num_threads=num_threads,
+        thread_scope=thread_scope,
+    ]().copy(dst, src)
+
+
+@always_inline("nodebug")
+def copy_sram_to_local[
+    thread_layout: Layout,
+    *,
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    element_size: Int,
+](
+    dst: TileTensor[
+        mut=True,
+        address_space=AddressSpace.LOCAL,
+        element_size=element_size,
+        ...,
+    ],
+    src: TileTensor[
+        address_space=AddressSpace.SHARED, element_size=element_size, ...
+    ],
+):
+    """Synchronously copies a tile from SRAM (shared memory) to registers.
+
+    Delegates to `SharedToLocalTileCopier`. The `axis`-based distribution of
+    the legacy free function is not supported here.
+
+    Parameters:
+        thread_layout: Warp layout describing how threads are organized over
+            the copy.
+        thread_scope: Scope at which thread operations are performed.
+        element_size: Number of scalar elements per logical element; inferred
+            from the source and destination tiles.
+
+    Args:
+        dst: Destination tile in local memory.
+        src: Source tile in shared memory.
+    """
+    SharedToLocalTileCopier[
+        thread_layout,
+        thread_scope=thread_scope,
+    ]().copy(dst, src)
+
+
+@always_inline("nodebug")
+def copy_dram_to_sram_async[
+    thread_layout: Layout,
+    *,
+    swizzle: Optional[Swizzle] = None,
+    masked: Bool = False,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    num_threads: Int = thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+    element_size: Int,
+](
+    dst: TileTensor[
+        mut=True,
+        address_space=AddressSpace.SHARED,
+        element_size=element_size,
+        ...,
+    ],
+    src: TileTensor[
+        address_space=AddressSpace.GENERIC, element_size=element_size, ...
+    ],
+    src_num_valid_rows: OptionalReg[Int] = None,
+):
+    """Asynchronously copies a tile from DRAM (generic memory) to SRAM (shared).
+
+    Delegates to `GenericToSharedAsyncTileCopier`, which issues NVIDIA
+    `cp.async` instructions (falling back to synchronous loads/stores on AMD
+    and Apple GPUs). The copy is asynchronous: callers must commit it via
+    `async_copy_commit_group()` and synchronize via `async_copy_wait_all()`
+    or `async_copy_wait_group()` before reading the destination tile.
+
+    Unlike the legacy free function, whose `swizzle: Bool` auto-derived an
+    ldmatrix swizzle, this wrapper takes an `Optional[Swizzle]` directly and
+    does not replicate that auto-derivation; pass an explicit swizzle (for
+    example from `make_swizzle[..., access_size=element_size]`) when one is
+    required.
+
+    Parameters:
+        thread_layout: Layout describing how threads are organized over the
+            copy.
+        swizzle: Optional swizzle applied to the shared-memory destination for
+            bank-conflict mitigation. `None` produces a straight copy.
+            Subsequent readers of the tile must use the same swizzle.
+        masked: When `True`, performs per-vector bounds-checking; vectors past
+            the bound issue zero-filling `cp.async` operations.
+        eviction_policy: Cache eviction policy for the source data.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` do not participate.
+        thread_scope: Scope at which thread operations are performed.
+        element_size: Number of scalar elements per logical element; inferred
+            from the source and destination tiles.
+
+    Args:
+        dst: Destination tile in shared memory.
+        src: Source tile in generic memory.
+        src_num_valid_rows: Explicit valid-row count for the masked bound.
+            When `None` (default) the bound is derived from `src.dim[0]()`
+            (byte-identical to legacy). When provided it overrides
+            `src.dim[0]()` so a `src` with a static row dim (e.g. a
+            `TileTensor.tile` sub-view) can still drive a correct partial-tile
+            zero-fill. Only consulted when `masked` is `True`.
+    """
+    GenericToSharedAsyncTileCopier[
+        thread_layout,
+        swizzle=swizzle,
+        masked=masked,
+        eviction_policy=eviction_policy,
+        num_threads=num_threads,
+        thread_scope=thread_scope,
+    ]().copy_bounded(dst, src, src_num_valid_rows)

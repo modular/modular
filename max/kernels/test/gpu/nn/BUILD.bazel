@@ -3,6 +3,9 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
+    # Bounded masked DRAM->SRAM copy proof; the masked `cp.async` zero-fill
+    # is NVIDIA-specific and verified on B200 only.
+    "scout_tt_bounded_copy.mojo": ["//:nvidia_gpu"],
     "test_mma_ws_ts.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
