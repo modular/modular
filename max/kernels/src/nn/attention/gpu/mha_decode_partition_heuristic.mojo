@@ -26,7 +26,7 @@ def _bucket_partitions(n: Int) -> Int:
     halve the worst-case over-partitioning above 32 while keeping the
     bucket count small enough for HIP graph capture.
 
-    Ladder: 1, 2, 4, 8, 16, 32, 48, 64, 96, 128.
+    Ladder: 1, 2, 4, 8, 16, 32, 48, 64, 96, 128, 192, 256.
 
     The SM100 path has an analogous helper, `_bucket_num_partitions` in
     `nvidia/sm100/mla_decode_dispatch.mojo`, with a different ladder
@@ -42,7 +42,11 @@ def _bucket_partitions(n: Int) -> Int:
         return 64
     if n <= 96:
         return 96
-    return 128
+    if n <= 128:
+        return 128
+    if n <= 192:
+        return 192
+    return 256
 
 
 def cuda_mha_decoding_num_partitions(
@@ -108,18 +112,21 @@ def hip_mha_decoding_num_partitions(
         bs=16 ctx=131K → np=16  (work_floor 103 capped by two_wave=16)
 
     AMD reducer constraint: `mla_splitk_reduce` supports MAX_PARTITIONS
-    up to `parts_per_lane × WARP_SIZE = 128`. Cap at 128.
+    up to `parts_per_lane × WARP_SIZE`; the 256-partition specialization
+    (parts_per_lane=4) lifts the MLA-style cap to 256. Only nk >= 64K
+    (pages >= 256) actually reaches np=256 — smaller nk is page-limited.
 
     Tunables (MLA-style):
         BM                   = 32   (MLA decode block-M on MI355)
         SPLIT_PAGE_SIZE      = 256  (min keys per partition)
         MAX_PAGES_PER_SPLIT  = 5    (= 1280 keys per partition cap)
-        MAX_HIP_PARTITIONS   = 128  (reducer's MAX_PARTITIONS limit)
+        MAX_HIP_PARTITIONS   = 256  (reducer's MAX_PARTITIONS limit; the
+                                     MHA-style branch above stays pinned ≤64)
     """
     comptime BM = 32
     comptime SPLIT_PAGE_SIZE = 256
     comptime MAX_PAGES_PER_SPLIT = 5
-    comptime MAX_HIP_PARTITIONS = 128
+    comptime MAX_HIP_PARTITIONS = 256
     # Empirically-tuned divisor used in the MHA HIGH_OCC branch to scale
     # partitions inversely with work_items. NOT WARP_SIZE — it's a
     # workload-shaping constant inherited from the pre-Phase-1 heuristic
@@ -142,7 +149,9 @@ def hip_mha_decoding_num_partitions(
             var occupancy_scale = max(1, work_items // MHA_OCC_SCALE_DIVISOR)
             var np_mha = min(
                 ceildiv(num_keys, SPLIT_PAGE_SIZE * occupancy_scale),
-                MAX_HIP_PARTITIONS // 2,  # cheap reducer (≤ 64)
+                # MHA-style cheap-reducer cap; pinned at 64 so the MLA-only
+                # MAX_HIP_PARTITIONS bump (128->256) does not change MHA grids.
+                64,
             )
             return min(_bucket_partitions(np_mha), MAX_HIP_PARTITIONS)
         # Low occupancy MHA: rare. Fall through to MLA-style formula
@@ -159,7 +168,7 @@ def hip_mha_decoding_num_partitions(
     var np_target = max(one_wave, min(work_floor, two_wave))
     var num_partitions = min(np_target, pages, MAX_HIP_PARTITIONS)
 
-    # Bucket to a fixed ladder (1, 2, 4, ..., 32, 48, 64, 96, 128) so
+    # Bucket to a fixed ladder (1, 2, ..., 64, 96, 128, 192, 256) so
     # HIP graph capture sees a small number of decode grid shapes.
     return min(_bucket_partitions(num_partitions), MAX_HIP_PARTITIONS)
 

@@ -876,6 +876,15 @@ def flare_mla_decoding_dispatch[
                     comptime W_PARTS_128 = get_defined_int[
                         "MODULAR_MLA_REDUCE_WPARTS_128", 16
                     ]()
+                    # 256-partition reducer for launch-starved large-num_keys
+                    # bs=1 decode (nk>=64K): W_PARTS=16 => 1024 threads/CTA
+                    # (the block-dim ceiling), giving parts_per_warp=16 (2x
+                    # the 8 sweet spot, but the np=128->256 decode-parallelism
+                    # win dominates here — the decode grid was launch-starved
+                    # at ~128 blocks / 256 CUs).
+                    comptime W_PARTS_256 = get_defined_int[
+                        "MODULAR_MLA_REDUCE_WPARTS_256", 16
+                    ]()
                     # Two specializations: 64-kernel covers np <= 64
                     # (short context); 128-kernel covers np > 64 (long
                     # context). Picking per dispatch keeps O(MAX_PARTITIONS)
@@ -901,6 +910,16 @@ def flare_mla_decoding_dispatch[
                         MAX_PARTITIONS=128,
                         use_exp2=reduce_use_exp2,
                     ]
+                    comptime kernel_reduce_256 = mla_splitk_reduce[
+                        intermediate_dtype,
+                        output.dtype,
+                        depth=depth_v,
+                        num_heads=num_heads,
+                        D_TILES=D_TILES,
+                        W_PARTS=W_PARTS_256,
+                        MAX_PARTITIONS=256,
+                        use_exp2=reduce_use_exp2,
+                    ]
                     if num_partitions_value <= 64:
                         ctx.enqueue_function[kernel_reduce_64](
                             output_intermediate_data,
@@ -912,7 +931,7 @@ def flare_mla_decoding_dispatch[
                             grid_dim=(D_TILES, num_heads, batch_size),
                             block_dim=(W_PARTS_64 * WARP_SIZE, 1, 1),
                         )
-                    else:
+                    elif num_partitions_value <= 128:
                         ctx.enqueue_function[kernel_reduce_128](
                             output_intermediate_data,
                             output_device,
@@ -922,6 +941,17 @@ def flare_mla_decoding_dispatch[
                             num_partitions_value,
                             grid_dim=(D_TILES, num_heads, batch_size),
                             block_dim=(W_PARTS_128 * WARP_SIZE, 1, 1),
+                        )
+                    else:
+                        ctx.enqueue_function[kernel_reduce_256](
+                            output_intermediate_data,
+                            output_device,
+                            exp_sum_device,
+                            qk_max_device,
+                            batch_size,
+                            num_partitions_value,
+                            grid_dim=(D_TILES, num_heads, batch_size),
+                            block_dim=(W_PARTS_256 * WARP_SIZE, 1, 1),
                         )
                 else:
                     comptime kernel_reduce = mha_splitk_reduce[
