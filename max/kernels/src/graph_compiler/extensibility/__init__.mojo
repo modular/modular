@@ -40,5 +40,4 @@ from .managed_tensor_slice import (
     _MutableInputVariadicTensors,
     _dot_prod,
     _shape_types_compatible,
-    _slice_to_tuple,
 )

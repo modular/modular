@@ -16,7 +16,7 @@ A custom kernel's entry-point signature uses these:
 
 - `ManagedTensorSlice` — view of a tensor argument.
 - `IOSpec` (and `IO`) — input/output/mutability annotations.
-- `RuntimeTensorSpec` / `StaticTensorSpec` — runtime + compile-time tensor
+- `StaticTensorSpec` — runtime + compile-time tensor
   metadata.
 - Fusion traits (`InputFusion`, `OutputFusion`, ...) and their `_NoFusion*`
   sentinels.
@@ -141,28 +141,6 @@ comptime _FusedComputeOutputTile = IOSpec[True, IO._FusedComputeOutputTile]()
 
 
 # ===----------------------------------------------------------------------=== #
-# RuntimeTensorSpec
-# ===----------------------------------------------------------------------=== #
-
-
-@fieldwise_init
-struct RuntimeTensorSpec[dtype: DType, rank: Int](TrivialRegisterPassable):
-    var shape: IndexList[Self.rank]
-
-    def __getitem__(self, idx: Int) -> Int:
-        return self.shape[idx]
-
-    def bytecount(self) -> Int:
-        """
-        Gets the total byte count.
-
-        Returns:
-          The total byte count.
-        """
-        return product(self.shape) * size_of[Self.dtype]()
-
-
-# ===----------------------------------------------------------------------=== #
 # Indexing helpers
 # ===----------------------------------------------------------------------=== #
 
@@ -174,21 +152,6 @@ def _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
     comptime for i in range(rank):
         offset += x[i] * y[i]
     return offset
-
-
-@always_inline
-def _slice_to_tuple[
-    func: def(Slice) capturing[_] -> Int, rank: Int
-](slices: InlineArray[Slice, rank]) -> IndexList[rank]:
-    """Takes a tuple of `Slice`s and returns a tuple of Ints.
-    `func` is used to extract the appropriate field (i.e. start, stop or end)
-    of the Slice.
-    """
-    var tuple = IndexList[rank]()
-
-    comptime for i in range(rank):
-        tuple[i] = func(slices[i])
-    return tuple
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1216,82 +1179,6 @@ struct ManagedTensorSlice[
                 Self.static_spec.static_layout._stride_types
             ](strides),
         )
-
-    def __init__(
-        out self,
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
-        slices: InlineArray[Slice, Self.rank],
-        slicer_spec: RuntimeTensorSpec[Self.dtype, Self.rank],
-    ):
-        """Initializes a ManagedTensorSlice from a pointer, array of slices and
-        tensor spec.
-
-        In general, custom operations should not create `ManagedTensorSlice`
-        instances, but instead use the ones provided by the MAX inference
-        engine.
-        """
-
-        @parameter
-        @always_inline
-        def start_fn(slice: Slice) -> Int:
-            return slice.start.value()
-
-        @parameter
-        @always_inline
-        def stop_fn(slice: Slice) -> Int:
-            return slice.end.value()
-
-        @parameter
-        @always_inline
-        def step_fn(slice: Slice) -> Int:
-            return slice.step.or_else(1)
-
-        var start = _slice_to_tuple[start_fn](slices)
-        var stop = _slice_to_tuple[stop_fn](slices)
-        var step = _slice_to_tuple[step_fn](slices)
-
-        var adjusted_shape = IndexList[Self.rank]()
-        for i in range(Self.rank):
-            adjusted_shape[i] = Int(
-                ceil(Float64(stop[i] - start[i]) / Float64(step[i]))
-            )
-
-        var slicer_strides = adjusted_shape.get_row_major_strides()
-        var start_offset = _dot_prod(start, slicer_strides)
-
-        var strides = IndexList[Self.rank]()
-
-        comptime for i in range(Self.rank):
-            strides[i] = step[i] * slicer_strides[i]
-
-        self._ptr = ptr + start_offset
-        self._runtime_layout = Self._make_runtime_layout(
-            adjusted_shape, strides
-        )
-        self.in_fusion = Self._sentinel_in_fusion()
-        self.out_fusion = Self._sentinel_out_fusion()
-        self.compute_fusion = Self._sentinel_compute_fusion()
-        self.compute_fusion_tile = Self._sentinel_compute_fusion_tile()
-
-    def __init__(
-        out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=True]],
-        spec: RuntimeTensorSpec[Self.dtype, Self.rank],
-        strides: IndexList[Self.rank],
-    ):
-        """Initializes a ManagedTensorSlice from a pointer, runtime tensor spec,
-        and strides.
-
-        In general, custom operations should not create `ManagedTensorSlice`
-        instances, but instead use the ones provided by the MAX inference
-        engine.
-        """
-        self._ptr = ptr
-        self._runtime_layout = Self._make_runtime_layout(spec.shape, strides)
-        self.in_fusion = Self._sentinel_in_fusion()
-        self.out_fusion = Self._sentinel_out_fusion()
-        self.compute_fusion = Self._sentinel_compute_fusion()
-        self.compute_fusion_tile = Self._sentinel_compute_fusion_tile()
 
     def __init__(
         out self,
