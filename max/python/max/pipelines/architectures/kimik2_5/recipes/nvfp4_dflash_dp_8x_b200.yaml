@@ -28,6 +28,7 @@ draft_model:
   device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
   data_parallel_degree: 8
   quantization_encoding: bfloat16
+  sliding_window: 4096
 
 speculative:
   speculative_method: dflash

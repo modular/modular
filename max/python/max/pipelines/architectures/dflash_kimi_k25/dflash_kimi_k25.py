@@ -113,7 +113,11 @@ class _DFlashKimiK25Layer(Module):
             clip_qkv=config.clip_qkv,
             use_qk_norm=config.use_qk_norm,
             rms_norm_eps=config.rms_norm_eps,
-            mask_variant=MHAMaskVariant.NULL_MASK,
+            mask_variant=(
+                MHAMaskVariant.SLIDING_WINDOW_NONCAUSAL_MASK
+                if config.sliding_window is not None
+                else MHAMaskVariant.NULL_MASK
+            ),
             sliding_window=config.sliding_window,
         )
         self.self_attn: AttentionWithRope

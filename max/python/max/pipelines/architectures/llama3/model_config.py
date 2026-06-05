@@ -133,6 +133,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     target_layer_ids: list[int] | None = None
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
+    sliding_window: int | None = None
 
     @staticmethod
     def calculate_attention_multiplier(
