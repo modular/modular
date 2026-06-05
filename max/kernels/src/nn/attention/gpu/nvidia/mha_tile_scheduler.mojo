@@ -20,7 +20,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu.host.info import H100
 from std.gpu import block_idx, thread_idx
 from std.gpu.sync import barrier, named_barrier
-from nn.attention.gpu.nvidia.sm90.attention import NullPointer, OptionalPointer
+from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
 
 from std.builtin.device_passable import DevicePassable
 

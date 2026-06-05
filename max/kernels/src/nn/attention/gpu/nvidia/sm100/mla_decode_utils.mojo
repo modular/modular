@@ -62,7 +62,7 @@ from layout.tma_async import (
     TMATensorTile,
 )
 from std.memory import bitcast
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
 )
 from nn.attention.mha_mask import MHAMask, MASK_VALUE
@@ -84,7 +84,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     MBarPipeline,
     sub_ftz,
 )
-from nn.attention.gpu.nvidia.sm90.attention import KVTMATile
+from nn.attention.gpu.nvidia.common import KVTMATile
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.sys._assembly import inlined_assembly
 

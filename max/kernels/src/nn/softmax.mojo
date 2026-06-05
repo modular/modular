@@ -741,15 +741,27 @@ def softmax_kernel[
         for row_idx in range(block_idx.x, num_rows, grid_dim.x):
             var sink_val = Scalar[accum_type].MIN
 
-            comptime if sink:
-                sink_val = sink_weights.load_linear[width=1](
-                    IndexList[1](umod(row_idx, Int(sink_weights.dim[0]())))
-                ).cast[accum_type]()
-
             # Step 1: compute max in row
             var row_coords = _get_nd_indices_from_flat_index(
                 row_idx, shape, axis
             )
+
+            comptime if sink:
+                # Sinks are per-head, and the head lives in the OUTERMOST
+                # row dim (e.g. attention lays the softmax rows out as
+                # `(batch*num_heads, prompt_len, num_keys)`, head-major).
+                # Indexing by the flat `row_idx` only recovers the head when
+                # `prompt_len == 1` (decode); for prefill (`prompt_len > 1`)
+                # it mis-maps the sink to a position instead of a head. Index
+                # by the outermost coordinate so `coord % num_sinks == head`
+                # holds for any `prompt_len`. For rank-2 inputs
+                # `row_coords[0] == row_idx`, so this is a no-op there.
+                sink_val = sink_weights.load_linear[width=1](
+                    IndexList[1](
+                        umod(Int(row_coords[0]), Int(sink_weights.dim[0]()))
+                    )
+                ).cast[accum_type]()
+
             var row_max = row_reduce[
                 BLOCK_SIZE,
                 input_fn,

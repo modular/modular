@@ -31,7 +31,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
     elect_mma_arrive,
 )
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     MHAPosition,
 )

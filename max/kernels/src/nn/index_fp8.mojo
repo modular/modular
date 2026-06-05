@@ -28,7 +28,7 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.sync import barrier
 from std.gpu.memory import external_memory
 from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
-from nn.attention.gpu.nvidia.sm90.attention import q_tma
+from nn.attention.gpu.nvidia.common import q_tma
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 

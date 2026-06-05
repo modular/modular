@@ -59,7 +59,8 @@ from nn.attention.mha_operand import MHAOperand, KVCacheMHAOperand
 from nn.attention.mha_mask import MHAMask
 from kv_cache.types import KVCacheT
 from nn.attention.mha_utils import OptionallyStaticInt, MHAPartitionScheme
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
+    elect,
     OptionalPointer,
     NullPointer,
     NonNullPointer,
@@ -1308,6 +1309,11 @@ struct MLAPrefillSparse[
         k: UInt32,
         num_k_blocks: UInt32,
     ):
+        # The caller runs this method under an `elect_one_sync()` guard (a single
+        # lane of warp 12), so `elect()` returns 1 here. Forward it to every MMA
+        # below instead of a hard-coded `1`, keeping the predicate
+        # `elect.sync`-derived (and self-protecting if that guard is widened).
+        var e = elect()
         if k < num_k_blocks:
             # QK^T MMA
             # wait for k load p0
@@ -1345,7 +1351,7 @@ struct MLAPrefillSparse[
                 k_p0_smem_desc,
                 Self.P_TMEM_ADDR,
                 c_scale=0,
-                elect=1,
+                elect=e,
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 qk_ss_done[cur_buf].unsafe_ptr(),
@@ -1377,7 +1383,7 @@ struct MLAPrefillSparse[
                     k_p1_smem_desc,
                     Self.P_TMEM_ADDR,
                     c_scale=1,
-                    elect=1,
+                    elect=e,
                 )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 qk_ts_done[cur_buf].unsafe_ptr(),
@@ -1451,14 +1457,14 @@ struct MLAPrefillSparse[
                 v_atom1_p0_desc,
                 Self.O_TMEM_ADDR,
                 c_scale=sv_p0_c_scale,
-                elect=1,
+                elect=e,
             )
             Self.SVMMAType.SS_P0MMAType.mma(
                 s_p0_smem_desc,
                 v_atom2_p0_desc,
                 UInt32(Self.O_TMEM_ADDR_ATOM2),
                 c_scale=sv_p0_c_scale,
-                elect=1,
+                elect=e,
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 sv_p0_done[curr_buf].unsafe_ptr(),
@@ -1484,14 +1490,14 @@ struct MLAPrefillSparse[
                 v_atom1_p1_desc,
                 Self.O_TMEM_ADDR,
                 c_scale=1,
-                elect=1,
+                elect=e,
             )
             Self.SVMMAType.SS_P1MMAType.mma(
                 s_p1_smem_desc,
                 v_atom2_p1_desc,
                 UInt32(Self.O_TMEM_ADDR_ATOM2),
                 c_scale=1,
-                elect=1,
+                elect=e,
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 sv_p1_done[curr_buf].unsafe_ptr(),

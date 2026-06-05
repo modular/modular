@@ -1530,17 +1530,15 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
     comptime pred_prefix = String(
         "{ .reg .pred %p_el; setp.eq.s32 %p_el, $",
         elect_idx,
-        ", 0; @%p_el bra L_el_tma; ",
+        ", 0; @!%p_el ",
     )
-    comptime pred_suffix = " L_el_tma: }"
 
     comptime if cache_hint:
         comptime if rank == 3:
             inlined_assembly[
                 pred_prefix
                 + tma_asm
-                + " [$0], [$1, {$3, $4, $5}], [$2], $6;"
-                + pred_suffix,
+                + " [$0], [$1, {$3, $4, $5}], [$2], $6; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,l,r",
             ](
@@ -1555,10 +1553,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             )
         elif rank == 2:
             inlined_assembly[
-                pred_prefix
-                + tma_asm
-                + " [$0], [$1, {$3, $4}], [$2], $5;"
-                + pred_suffix,
+                pred_prefix + tma_asm + " [$0], [$1, {$3, $4}], [$2], $5; }",
                 NoneType,
                 constraints="r,l,r,r,r,l,r",
             ](
@@ -1572,10 +1567,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             )
         elif rank == 1:
             inlined_assembly[
-                pred_prefix
-                + tma_asm
-                + " [$0], [$1, {$3}], [$2], $4;"
-                + pred_suffix,
+                pred_prefix + tma_asm + " [$0], [$1, {$3}], [$2], $4; }",
                 NoneType,
                 constraints="r,l,r,r,l,r",
             ](
@@ -1590,8 +1582,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             inlined_assembly[
                 pred_prefix
                 + tma_asm
-                + " [$0], [$1, {$3, $4, $5, $6}], [$2], $7;"
-                + pred_suffix,
+                + " [$0], [$1, {$3, $4, $5, $6}], [$2], $7; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,r,l,r",
             ](
@@ -1609,8 +1600,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             inlined_assembly[
                 pred_prefix
                 + tma_asm
-                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], $8;"
-                + pred_suffix,
+                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], $8; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,r,r,l,r",
             ](
@@ -1628,10 +1618,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
     else:
         comptime if rank == 3:
             inlined_assembly[
-                pred_prefix
-                + tma_asm
-                + " [$0], [$1, {$3, $4, $5}], [$2];"
-                + pred_suffix,
+                pred_prefix + tma_asm + " [$0], [$1, {$3, $4, $5}], [$2]; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,r",
             ](
@@ -1645,10 +1632,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             )
         elif rank == 2:
             inlined_assembly[
-                pred_prefix
-                + tma_asm
-                + " [$0], [$1, {$3, $4}], [$2];"
-                + pred_suffix,
+                pred_prefix + tma_asm + " [$0], [$1, {$3, $4}], [$2]; }",
                 NoneType,
                 constraints="r,l,r,r,r,r",
             ](
@@ -1661,10 +1645,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             )
         elif rank == 1:
             inlined_assembly[
-                pred_prefix
-                + tma_asm
-                + " [$0], [$1, {$3}], [$2];"
-                + pred_suffix,
+                pred_prefix + tma_asm + " [$0], [$1, {$3}], [$2]; }",
                 NoneType,
                 constraints="r,l,r,r,r",
             ](
@@ -1678,8 +1659,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             inlined_assembly[
                 pred_prefix
                 + tma_asm
-                + " [$0], [$1, {$3, $4, $5, $6}], [$2];"
-                + pred_suffix,
+                + " [$0], [$1, {$3, $4, $5, $6}], [$2]; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,r,r",
             ](
@@ -1696,8 +1676,7 @@ def cp_async_bulk_tensor_shared_cluster_global_elect[
             inlined_assembly[
                 pred_prefix
                 + tma_asm
-                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2];"
-                + pred_suffix,
+                + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2]; }",
                 NoneType,
                 constraints="r,l,r,r,r,r,r,r,r",
             ](

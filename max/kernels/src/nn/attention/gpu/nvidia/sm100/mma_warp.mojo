@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """MMA warp logic for FA4 (SM100 Flash Attention)."""
 
-from std.math import align_up
+from std.math import align_up, ceildiv
 from std.sys import size_of
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
+    MMASmemDescriptorPair,
     UMMAKind,
     mma_arrive_multicast,
 )
@@ -29,6 +30,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     KConsumerPipeline,
     VConsumerPipeline,
     StagedPipeline,
+    MBarType,
 )
 from nn.attention.mha_mask import MHAMask
 from linalg.arch.sm100.mma import smem_descriptor
@@ -91,6 +93,13 @@ def fa4_mma[
         mma_kind=mma_kind,
     ]
 
+    # Runtime-k partial-page gate. Only the last KV tile can be partially
+    # loaded (paged sub-tiles, page_size < BN), and skipping its unloaded V
+    # tail in P@V avoids reading uninitialized SMEM (`0 * NaN = NaN`).
+    # supported() guarantees page_size % MMA_K == 0 here, so the loaded
+    # boundary is MMA_K-aligned and the cut is exact.
+    comptime PARTIAL_K = page_size > 0 and page_size < BN
+
     var tmem_addr: UInt32 = broadcast(smem.tmem_addr_ptr()[])
     var q_smem = smem.q_smem()
 
@@ -142,6 +151,51 @@ def fa4_mma[
                 mma_arrive_multicast[cta_group](mbar, UInt16(0x3))
         else:
             elect_mma_arrive(mbar, e)
+
+    # P@V contraction loop, factored out of the call sites below so the
+    # wait + MMA body is written once. `_pv_full` is the original bulk path
+    # (hot path, codegen unchanged); `_pv_partial` cuts the contraction at
+    # the loaded-V boundary for a partially-loaded last KV tile (paged
+    # sub-tiles). Each call site keeps its own `comptime if PARTIAL_K [and
+    # num_qo == 2]` gate and `valid_k_mmas` computation; only the duplicated
+    # loop body lives here.
+    @parameter
+    @always_inline
+    def _pv_full(
+        s_tmem: UInt32,
+        v: MMASmemDescriptorPair,
+        o_tmem: UInt32,
+        consumer_s: MBarType,
+        wait_phase: UInt32,
+        c_scale: UInt32,
+    ):
+        comptime for pv_stage in range(num_pv_stages):
+            _ = consumer_s[pv_stage].wait(wait_phase)
+            UMMA1Type.mma[stage_idx=pv_stage](
+                s_tmem, v, o_tmem, elect=e, c_scale=c_scale
+            )
+
+    @parameter
+    @always_inline
+    def _pv_partial(
+        s_tmem: UInt32,
+        v: MMASmemDescriptorPair,
+        o_tmem: UInt32,
+        consumer_s: MBarType,
+        wait_phase: UInt32,
+        c_scale: UInt32,
+        valid_k_mmas: UInt32,
+    ):
+        comptime for pv_stage in range(num_pv_stages):
+            _ = consumer_s[pv_stage].wait(wait_phase)
+            UMMA1Type.mma_maybe_partial_k[stage_idx=pv_stage](
+                s_tmem,
+                v,
+                o_tmem,
+                c_scale=c_scale,
+                elect=e,
+                valid_k_mmas=valid_k_mmas,
+            )
 
     comptime if config.use_fused_kv:
         # ---- Fused KV mode ----
@@ -221,11 +275,13 @@ def fa4_mma[
             # total_iters_combined == 1 && warp_group_idx == 1).
             if total_iters_runtime == UInt32(1):
                 v0 = kv_desc_v + slot1_offset
-                comptime for pv_stage in range(num_pv_stages):
-                    _ = consumer_s0[pv_stage].wait(0)
-                    UMMA1Type.mma[stage_idx=pv_stage](
-                        s0_tmem, v0, o0_tmem, elect=e, c_scale=0
+                comptime if PARTIAL_K:
+                    var vkm = ceildiv(
+                        min(num_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
                     )
+                    _pv_partial(s0_tmem, v0, o0_tmem, consumer_s0, 0, 0, vkm)
+                else:
+                    _pv_full(s0_tmem, v0, o0_tmem, consumer_s0, 0, 0)
                 _commit(pipeline_o0.producer_mbar())
                 _commit(kv_pipeline.consumer_mbar())  # release V_e[0]
                 return
@@ -251,11 +307,16 @@ def fa4_mma[
         kv_pipeline.consumer_wait()
         var v_prev_idx: UInt32 = kv_pipeline.state.index()
         v0 = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
-        comptime for pv_stage in range(num_pv_stages):
-            _ = consumer_s0[pv_stage].wait(0)
-            UMMA1Type.mma[stage_idx=pv_stage](
-                s0_tmem, v0, o0_tmem, elect=e, c_scale=0
+        comptime if PARTIAL_K and num_qo == 2:
+            # 2Q peeled o0 contracts tile 0, which is the last (and only)
+            # tile only when total_iters == 1; vkm self-clamps to full
+            # (num_keys >= BN) otherwise.
+            var vkm = ceildiv(
+                min(num_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
             )
+            _pv_partial(s0_tmem, v0, o0_tmem, consumer_s0, 0, 0, vkm)
+        else:
+            _pv_full(s0_tmem, v0, o0_tmem, consumer_s0, 0, 0)
         _commit(pipeline_o0.producer_mbar())
         var phase: UInt32 = 0
 
@@ -332,11 +393,20 @@ def fa4_mma[
             kv_pipeline.consumer_wait()
             v_prev_idx = kv_pipeline.state.index()
             vn = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
-            comptime for pv_stage in range(num_pv_stages):
-                _ = consumer_s0[pv_stage].wait(phase)
-                UMMA1Type.mma[stage_idx=pv_stage](
-                    s0_tmem, vn, o0_tmem, elect=e, c_scale=1
-                )
+            comptime if PARTIAL_K and num_qo == 2:
+                # 2Q: Vn is the last tile exactly when iter_count == 0
+                # (the final main-loop iteration); otherwise full.
+                var vkm = ceildiv(
+                    min(
+                        num_keys
+                        - (total_iters_runtime - UInt32(1)) * UInt32(BN),
+                        UInt32(BN),
+                    ),
+                    UInt32(UMMA1Type.MMA_K),
+                ) if iter_count == 0 else UInt32(UMMA1Type.num_k_mmas)
+                _pv_partial(s0_tmem, vn, o0_tmem, consumer_s0, phase, 1, vkm)
+            else:
+                _pv_full(s0_tmem, vn, o0_tmem, consumer_s0, phase, 1)
             _commit(pipeline_o0.producer_mbar())
 
             # 1Q: release V_e[n] (single use); load V_o[n] and hold
@@ -346,11 +416,19 @@ def fa4_mma[
 
         # ---- Epilogue ----
         v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
-        comptime for pv_stage in range(num_pv_stages):
-            _ = consumer_s1[pv_stage].wait(phase)
-            UMMA1Type.mma[stage_idx=pv_stage](
-                s1_tmem, v_prev, o1_tmem, elect=e, c_scale=c_scale
+        comptime if PARTIAL_K:
+            var vkm = ceildiv(
+                min(
+                    num_keys - (total_iters_runtime - UInt32(1)) * UInt32(BN),
+                    UInt32(BN),
+                ),
+                UInt32(UMMA1Type.MMA_K),
             )
+            _pv_partial(
+                s1_tmem, v_prev, o1_tmem, consumer_s1, phase, c_scale, vkm
+            )
+        else:
+            _pv_full(s1_tmem, v_prev, o1_tmem, consumer_s1, phase, c_scale)
         _commit(pipeline_o1.producer_mbar())
         _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # release V_last
 
@@ -412,11 +490,15 @@ def fa4_mma[
             if total_iters_runtime == UInt32(1):
                 var vlatest_t1 = pipeline_v.get_v()
                 pipeline_v.wait_v()
-                comptime for pv_stage in range(num_pv_stages):
-                    _ = consumer_s0[pv_stage].wait(0)
-                    UMMA1Type.mma[stage_idx=pv_stage](
-                        s0_tmem, vlatest_t1, o0_tmem, elect=e, c_scale=0
+                comptime if PARTIAL_K:
+                    var vkm = ceildiv(
+                        min(num_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
                     )
+                    _pv_partial(
+                        s0_tmem, vlatest_t1, o0_tmem, consumer_s0, 0, 0, vkm
+                    )
+                else:
+                    _pv_full(s0_tmem, vlatest_t1, o0_tmem, consumer_s0, 0, 0)
                 _commit(pipeline_o0.producer_mbar())
                 var ve_idx = pipeline_v.pipeline.state.index()
                 pipeline_v.pipeline.consumer_release_at(ve_idx, e)
@@ -456,12 +538,15 @@ def fa4_mma[
 
         # For the first V tile in the current KV stage buffer:
         # Use the SAME base pointer you used for K (no manual offset).
-        comptime for pv_stage in range(num_pv_stages):
-            _ = consumer_s0[pv_stage].wait(0)
-
-            UMMA1Type.mma[stage_idx=pv_stage](
-                s0_tmem, vlatest, o0_tmem, elect=e, c_scale=0
+        comptime if PARTIAL_K and num_qo == 2:
+            # 2Q peeled o0 contracts tile 0; last (and only) tile only when
+            # total_iters == 1 -- vkm self-clamps to full otherwise.
+            var vkm = ceildiv(
+                min(num_keys, UInt32(BN)), UInt32(UMMA1Type.MMA_K)
             )
+            _pv_partial(s0_tmem, vlatest, o0_tmem, consumer_s0, 0, 0, vkm)
+        else:
+            _pv_full(s0_tmem, vlatest, o0_tmem, consumer_s0, 0, 0)
         _commit(pipeline_o0.producer_mbar())
         var phase: UInt32 = 0
 
@@ -571,11 +656,21 @@ def fa4_mma[
             vlatest = pipeline_v.get_v()  # [kv_{2n+1}]
             pipeline_v.wait_v()  # [kv_{2n+1}]
 
-            comptime for pv_stage in range(num_pv_stages):
-                _ = consumer_s0[pv_stage].wait(phase)
-                UMMA1Type.mma[stage_idx=pv_stage](
-                    s0_tmem, vlatest, o0_tmem, elect=e, c_scale=1
+            comptime if PARTIAL_K and num_qo == 2:
+                # 2Q: Vn is the last tile exactly when iter_count == 0.
+                var vkm = ceildiv(
+                    min(
+                        num_keys
+                        - (total_iters_runtime - UInt32(1)) * UInt32(BN),
+                        UInt32(BN),
+                    ),
+                    UInt32(UMMA1Type.MMA_K),
+                ) if iter_count == 0 else UInt32(UMMA1Type.num_k_mmas)
+                _pv_partial(
+                    s0_tmem, vlatest, o0_tmem, consumer_s0, phase, 1, vkm
                 )
+            else:
+                _pv_full(s0_tmem, vlatest, o0_tmem, consumer_s0, phase, 1)
             _commit(pipeline_o0.producer_mbar())
 
             # 1Q: release V_e[n] (single use); advance to V_o[n];
@@ -591,9 +686,17 @@ def fa4_mma[
                 vo_prev_idx = pipeline_v.pipeline.state.index()
                 pipeline_v.pipeline.state.step()  # advance; do NOT release
 
-        comptime for pv_stage in range(num_pv_stages):
-            _ = consumer_s1[pv_stage].wait(phase)
-            UMMA1Type.mma[stage_idx=pv_stage](
-                s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
+        comptime if PARTIAL_K:
+            var vkm = ceildiv(
+                min(
+                    num_keys - (total_iters_runtime - UInt32(1)) * UInt32(BN),
+                    UInt32(BN),
+                ),
+                UInt32(UMMA1Type.MMA_K),
             )
+            _pv_partial(
+                s1_tmem, vlatest, o1_tmem, consumer_s1, phase, c_scale, vkm
+            )
+        else:
+            _pv_full(s1_tmem, vlatest, o1_tmem, consumer_s1, phase, c_scale)
         _commit(pipeline_o1.producer_mbar())

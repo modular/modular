@@ -214,8 +214,19 @@ def execute_kv_cache_ragged_flash_attention[
         output_dev_buffer,
         row_major((total_seq_len, Idx[num_q_heads], Idx[head_dim])),
     )
-    # Paged LUT allocation
-    var paged_lut_cols = ceildiv(max_context_length, page_size)
+    # Paged LUT allocation. The LUT row stride (columns per sequence)
+    # must satisfy `PagedKVCache.populate`'s SIMD-path contract: round
+    # the page count up to a multiple of 8 so the `ld.global.v{chunk}.u32`
+    # read (chunk capped at 8) is naturally aligned for every
+    # `batch_idx * row_stride` offset, and add a 16-element tail pad so a
+    # max-width SIMD load at any valid `first_lut_idx` stays in-bounds.
+    # Mirrors `_padded_lut_cols` (cache_manager.py) / `padded_lut_cols`
+    # (kv_cache_test_utils.mojo). Without it, an odd page count yields an
+    # odd row stride and odd `batch_idx` produces a 4-byte-misaligned
+    # v2.u32 load -> CUDA_ERROR_MISALIGNED_ADDRESS.
+    var paged_lut_cols = (
+        (ceildiv(max_context_length, page_size) + 7) // 8
+    ) * 8 + 16
     var paged_lut_size = batch_size * paged_lut_cols
 
     def _ri(v: Int) -> Int64:

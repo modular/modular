@@ -169,6 +169,14 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # SM100 FA4 1Q attention-sink double-count regression. SM100-only
+    # (exercises the FA4 `fa4_softmax` 1Q warp-specialized path).
+    "attention/test_mha_sm100_1q_sink.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # SM100 MHA with fp8 KV via dequant-staging + existing bf16 FA4 path.
+    # SM100-only.
     "attention/test_mha_sm100_fp8_kv_d256_prefill.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
