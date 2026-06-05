@@ -829,6 +829,67 @@ def softmax_kernel[
 comptime _SinkWeightsTTLayout = LTToTTLayout[Layout.row_major(UNKNOWN_VALUE)]
 
 
+@__name(t"softmax_warp_{dtype}_{WARP_ROWS}")
+def _softmax_warp_kernel[
+    WARP_ROWS: Int,
+    input_fn: def[_dtype: DType, _simd_width: Int, _rank: Int](
+        IndexList[_rank]
+    ) capturing[_] -> SIMD[_dtype, _simd_width],
+    dtype: DType,
+    rank: Int,
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    shape: IndexList[rank],
+    output: TileTensor[mut=True, dtype, OutputLayoutType, output_origin],
+):
+    """Warp-local softmax for short inner axes (no shared memory).
+
+    Loads via input_fn (fusion-safe). Stores via output TileTensor.
+    For row_size <= WARP_SIZE each lane loads one element (coalesced).
+    """
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert accum_type.is_floating_point()
+    comptime axis = rank - 1
+
+    var row_size = shape[axis]
+    var num_rows = ufloordiv(shape.flattened_length(), row_size)
+
+    var warp_idx = thread_idx.x // WARP_SIZE
+    var lane = Int(lane_id())
+    var row_stride = grid_dim.x * WARP_ROWS
+
+    with PDL():
+        for row_idx in range(
+            block_idx.x * WARP_ROWS + warp_idx, num_rows, row_stride
+        ):
+            var row_coords = _get_nd_indices_from_flat_index(
+                row_idx, shape, axis
+            )
+
+            var val = min_or_neg_inf[accum_type]()
+            var has_data = lane < row_size
+            if has_data:
+                var coords = row_coords
+                coords[axis] = lane
+                val = input_fn[dtype, 1, rank](coords).cast[accum_type]()[0]
+
+            var row_max = warp.max(SIMD[accum_type, 1](val))[0]
+
+            var local_sum = Scalar[accum_type](0)
+            if has_data:
+                local_sum = exp(val - row_max)
+            var exp_sum = warp.sum(SIMD[accum_type, 1](local_sum))[0]
+            var recip = Scalar[accum_type](1) / exp_sum
+
+            if has_data:
+                var coords = row_coords
+                coords[axis] = lane
+                var out_val = (exp(val - row_max) * recip).cast[dtype]()
+                output.store_linear[width=1](coords, SIMD[dtype, 1](out_val))
+
+
 def _softmax_gpu[
     dtype: DType,
     simd_width: Int,
@@ -867,44 +928,80 @@ def _softmax_gpu[
     # the legacy 3-pass kernel below.
     comptime if not sink and not logsoftmax:
         comptime BLOCK_SIZE = 256
-        var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
+        comptime WARP_ROWS = 4
 
-        # Vectorised loads need each row to start on a `simd_width`-element
-        # boundary so per-row strides stay aligned, and need enough work
-        # per row to amortise the wider tile dispatch. Otherwise downgrade
-        # to scalar; `unswitch` lifts the predicate so each kernel variant
-        # has one inner-loop shape.
+        # Short inner axes (<32) use a warp-local kernel with one
+        # element per lane for coalesced loads. Longer rows stay on the
+        # block/online path below.
         @parameter
-        @__copy_capture(num_blocks, shape, output)
-        def dispatch[use_vectorized: Bool]() raises:
-            comptime kernel_simd_width = simd_width if use_vectorized else 1
-            comptime kernel = _softmax_temperature_kernel[
-                BLOCK_SIZE,
-                kernel_simd_width,
-                input_fn_wrapper,
-                dtype,
-                DType.float32,
-                rank,
-                output.LayoutType,
-                output.origin,
-            ]
-            ctx.enqueue_function[kernel](
-                shape,
-                output,
-                Float32(1),
-                Optional[
-                    UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]
-                ](),
-                grid_dim=num_blocks,
-                block_dim=BLOCK_SIZE,
-                attributes=pdl_launch_attributes(PDLLevel.ON),
-            )
+        @__copy_capture(num_rows, shape, output, sm_count)
+        def dispatch_warp_or_block[use_warp: Bool]() raises:
+            comptime if use_warp:
+                comptime WARP_BLOCK_SIZE = WARP_SIZE * WARP_ROWS
+                var warp_num_blocks = min(
+                    ceildiv(num_rows, WARP_ROWS),
+                    sm_overprovision_factor * sm_count,
+                )
+                comptime warp_kernel = _softmax_warp_kernel[
+                    WARP_ROWS,
+                    input_fn_wrapper,
+                    dtype,
+                    rank,
+                    output.LayoutType,
+                    output.origin,
+                ]
+                ctx.enqueue_function[warp_kernel](
+                    shape,
+                    output,
+                    grid_dim=warp_num_blocks,
+                    block_dim=WARP_BLOCK_SIZE,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
+                )
+            else:
+                var num_blocks = min(
+                    num_rows, sm_overprovision_factor * sm_count
+                )
 
-        unswitch[dispatch](
-            simd_width > 1
-            and shape[axis] % simd_width == 0
-            and shape[axis] >= 4 * BLOCK_SIZE * simd_width
-        )
+                # Vectorised loads need each row to start on a `simd_width`-element
+                # boundary so per-row strides stay aligned, and need enough work
+                # per row to amortise the wider tile dispatch. Otherwise downgrade
+                # to scalar; `unswitch` lifts the predicate so each kernel variant
+                # has one inner-loop shape.
+                @parameter
+                @__copy_capture(num_blocks, shape, output)
+                def dispatch[use_vectorized: Bool]() raises:
+                    comptime kernel_simd_width = (
+                        simd_width if use_vectorized else 1
+                    )
+                    comptime kernel = _softmax_temperature_kernel[
+                        BLOCK_SIZE,
+                        kernel_simd_width,
+                        input_fn_wrapper,
+                        dtype,
+                        DType.float32,
+                        rank,
+                        output.LayoutType,
+                        output.origin,
+                    ]
+                    ctx.enqueue_function[kernel](
+                        shape,
+                        output,
+                        Float32(1),
+                        Optional[
+                            UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]
+                        ](),
+                        grid_dim=num_blocks,
+                        block_dim=BLOCK_SIZE,
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
+                    )
+
+                unswitch[dispatch](
+                    simd_width > 1
+                    and shape[axis] % simd_width == 0
+                    and shape[axis] >= 4 * BLOCK_SIZE * simd_width
+                )
+
+        unswitch[dispatch_warp_or_block](shape[axis] <= WARP_SIZE)
     else:
         # Fallback: sink-attention or logsoftmax variants stay on the legacy
         # 3-pass kernel until those variants are added to the online path.
