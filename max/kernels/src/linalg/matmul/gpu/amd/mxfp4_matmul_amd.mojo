@@ -1200,12 +1200,41 @@ def mxfp4_block_scaled_matmul_amd[
     comptime SK16_WM = 16
     comptime SK16_WN = 64
 
+    # Wide-N short-K decode gate (e.g. down-proj N=16384, K<=3072). For wide
+    # N the plain launch already yields ceildiv(N, BN) CTAs that fill the GPU,
+    # and split-K's reduce kernel cost scales with the large output M*N —
+    # measured ~41% of total for N=16384,K=2048 (matmul 6.6us + reduce 4.7us),
+    # while at num_splits=4 the steady-state K-loop is empty. A single small-BN
+    # kernel keeps the CTA count high WITHOUT the reduce tax and matches/beats
+    # aiter (whose autotuned config sets NUM_KSPLIT=1 for this exact shape).
+    # Two conditions:
+    #   * wide N: ceildiv(N, 32) >= sm_count, so BN=32 alone gives >=1 CTA/CU
+    #     (down-proj N=16384 -> 512 CTAs; up-proj N=2304 -> 72 and Kimi N=4096
+    #     -> 128 fall through to split-K, which is correct for their narrow N /
+    #     long K, matching aiter NUM_KSPLIT>1).
+    #   * short K: K_BYTES <= 1536 (K <= 3072 FP4 elems). At larger K each CTA's
+    #     full-K loop becomes latency-bound under the single-buffer pipeline and
+    #     split-K (shorter per-CTA loop) wins instead — measured crossover sits
+    #     between K=3072 (single ~= split) and K=4096 (split wins).
+    # Measured: single BN=32 closes the down-proj gap vs aiter from +25..36%
+    # (split-K) to +2..8% at K=2048, and is faster than aiter at K=2560.
+    comptime _wide_n_short_k_decode = (
+        ceildiv(N, 32) >= _gpu.sm_count and K_BYTES <= 1536 and can_use_bk_512
+    )
+
     # Runtime M-bucket dispatch. Tile shapes tuned for Kimi K2.5 on MI355.
-    #   M <=  16  → decode → narrow split-K (BM=16, no wasted M rows)
+    #   M <=  16  → decode → single small-BN kernel for the wide-N short-K
+    #               regime, else narrow split-K (BM=16, no wasted M rows)
     #   M <=  64  → decode / short-prefill → BM=64 split-K
     #   else      → general prefill / training (unchanged, no split-K)
     if M <= 16:
-        comptime if can_use_bk_256 and _sk_splits > 1:
+        comptime if _wide_n_short_k_decode:
+            # Single kernel, no split-K, no reduce. BN=32 → ceildiv(N,32) CTAs
+            # fill the GPU; BM=16 wastes no M rows. Mirrors aiter NUM_KSPLIT=1.
+            _launch_mxfp4[BM=16, BN=32, BK_ELEMS=512, WM=16, WN=16](
+                c, a, b, a_scales, b_scales, M, ctx
+            )
+        elif can_use_bk_256 and _sk_splits > 1:
             _launch_mxfp4_split_k[
                 BM=SK16_BM,
                 BN=SK16_BN,
