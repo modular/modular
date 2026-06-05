@@ -278,8 +278,8 @@ The key interfaces are:
 
 - [`PipelineModel`](/max/api/python/generated/max.pipelines.PipelineModel):
   Abstract base class for model implementations. Defines methods like
-  `execute()`, `calculate_max_seq_len()`, and input preparation methods that all
-  architectures must implement.
+  `execute()` and input preparation methods that all architectures must
+  implement.
 
 These interfaces are task-agnostic. Specialized variants like
 [`TextGenerationInputs`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationInputs)
@@ -429,17 +429,14 @@ accordingly.
 The
 [`PipelineModel`](/max/api/python/generated/max.pipelines.PipelineModel)
 abstract class defines the interface for model implementations. Every model
-architecture must implement these methods:
+architecture must implement certain methods:
 
 ```python
 from max.pipelines.lib import PipelineModel, ModelInputs, ModelOutputs
 
 class MyModel(PipelineModel):
-
-    @classmethod
-    def calculate_max_seq_len(cls, pipeline_config, huggingface_config) -> int:
-        """Return the maximum sequence length this model supports."""
-        ...
+    # Link to your architecture config class for max_seq_len and KV params
+    model_config_cls = MyModelConfig
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Run inference on the compiled model."""
@@ -452,14 +449,32 @@ class MyModel(PipelineModel):
         ...
 ```
 
-In this example, these methods define the interface that all model
-implementations must provide. The `execute()` method runs your model's forward
-pass on the compiled executable. `prepare_initial_token_inputs` builds the
-tensors for each scheduled batch (prefill and decode steps share this path in
-the serving pipeline):
+The `execute()` method runs your model's forward pass on the compiled
+executable. `prepare_initial_token_inputs()` builds the tensors for each
+scheduled batch (prefill and decode steps share this path in the serving
+pipeline):
 
 1. **Prefill**: Process the entire prompt at once, building up the KV cache.
 2. **Decode**: Generate tokens one at a time, reusing the cached keys/values.
+
+#### Linking to the architecture config
+
+The `model_config_cls` class variable links your pipeline model to the
+architecture configuration class. This connection enables the base
+`PipelineModel` to delegate key behaviors to the config.
+
+The base class delegates the following through `model_config_cls`:
+
+- **Maximum sequence length**: The `calculate_max_seq_len()` method determines
+  the model's sequence length limit. The base class calls
+  `model_config_cls.calculate_max_seq_len()` or initializes the config and
+  calls `get_max_seq_len()`.
+
+- **KV cache parameters**: The `get_kv_params()` method constructs the KV cache
+  configuration. The base class calls `model_config_cls.construct_kv_params()`
+  to build the appropriate `KVCacheParams` for your architecture.
+
+You can override `calculate_max_seq_len()` or `get_kv_params()` if needed.
 
 ### When to customize `ModelInputs`
 
