@@ -52,7 +52,7 @@ def _string_free_comptime_assert[
     """
 
     __mlir_op.`kgen.param.assert`[
-        cond=cond.__mlir_i1__(),
+        cond=cond.__mlir_bool__(),
         message=_get_kgen_string[msg, *extra](),
     ]()
 
