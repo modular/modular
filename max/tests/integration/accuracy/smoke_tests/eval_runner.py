@@ -220,7 +220,7 @@ def call_eval(
         logger.info(f"Running eval with:\n {' '.join(args)}")
         eval_timeout = None if disable_timeouts else 600
         tokens_before = (
-            get_completion_tokens(metrics_url) if metrics_url else None
+            get_num_tokens_generated(metrics_url) if metrics_url else None
         )
         try:
             check_call(args, timeout=eval_timeout)
@@ -230,11 +230,11 @@ def call_eval(
                 "You can pass --disable-timeouts to opt-out of this."
             ) from None
         tokens_after = (
-            get_completion_tokens(metrics_url) if metrics_url else None
+            get_num_tokens_generated(metrics_url) if metrics_url else None
         )
 
         results, samples = parse_eval_results(Path(tempdir))
-        results["completion_tokens"] = (
+        results["num_tokens_generated"] = (
             tokens_after - tokens_before
             if tokens_before is not None and tokens_after is not None
             else None
@@ -242,8 +242,8 @@ def call_eval(
         return results, samples
 
 
-def get_completion_tokens(metrics_url: str) -> int | None:
-    """Reads the completion-token count from Prometheus, or None if missing."""
+def get_num_tokens_generated(metrics_url: str) -> int | None:
+    """Reads the generated-token count from Prometheus, or None if missing."""
     try:
         r = requests.get(metrics_url, timeout=(5, 30))
         r.raise_for_status()
@@ -289,7 +289,7 @@ class EvalSummary:
     accuracy_stderr: float
     total_evaluation_time_seconds: float
     task_hash: str
-    completion_tokens: int | None = None
+    num_tokens_generated: int | None = None
 
 
 def build_eval_summary(
@@ -329,7 +329,7 @@ def build_eval_summary(
                 accuracy_stderr=accuracy_stderr,
                 total_evaluation_time_seconds=total_secs,
                 task_hash=result["task_hashes"][task],
-                completion_tokens=result.get("completion_tokens"),
+                num_tokens_generated=result.get("num_tokens_generated"),
             )
         )
 
