@@ -35,6 +35,13 @@ def test_max_measurement() -> None:
     m.commit()
 
 
+def test_time_per_output_token_measurement() -> None:
+    common.configure_metrics(Settings())
+    assert "maxserve.time_per_output_token" in metrics.SERVE_METRICS
+    m = metrics.MaxMeasurement("maxserve.time_per_output_token", 1.5)
+    m.commit()  # Should not raise
+
+
 def test_serialization() -> None:
     measurements = [
         metrics.MaxMeasurement("maxserve.itl", 1),

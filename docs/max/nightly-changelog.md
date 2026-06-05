@@ -35,6 +35,12 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Added a `maxserve.time_per_output_token` Prometheus histogram (milliseconds).
+  Emitted once per request, it reports the mean decode-phase latency per
+  generated token (`decode_time / (num_generated_tokens - 1)`), excluding the
+  first token and prefill time. Because the denominator counts the tokens the
+  model actually produced, the metric accounts for speculative decoding.
+
 - MAX Serve now returns a clearer 400 Bad Request with the underlying
   message when a prompt is too long for the model, instead of a generic
   "Value error." response (or, for streaming completions, a 500 Internal

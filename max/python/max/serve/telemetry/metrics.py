@@ -128,6 +128,15 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.itl": _meter.create_histogram(
         "maxserve.itl", unit="ms", description="inter token latency"
     ),  # type: ignore
+    "maxserve.time_per_output_token": _meter.create_histogram(
+        "maxserve.time_per_output_token",
+        unit="ms",
+        description=(
+            "Mean decode-phase latency per generated token, emitted once per "
+            "request: decode_time / (num_generated_tokens - 1). Excludes the "
+            "first token and prefill/TTFT; accounts for speculative decoding."
+        ),
+    ),  # type: ignore
     "maxserve.pipeline_load": _meter.create_counter(
         "maxserve.pipeline_load",
         description="Count of pipelines loaded for each model",
@@ -533,6 +542,14 @@ class _AsyncMetrics:
     def itl(self, ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.itl", ms, self.extra_attributes),
+            MetricLevel.BASIC,
+        )
+
+    def time_per_output_token(self, ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.time_per_output_token", ms, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 
