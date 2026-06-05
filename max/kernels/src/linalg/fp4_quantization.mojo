@@ -32,6 +32,7 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     row_major,
+    coord_to_index_list,
 )
 from layout.tile_layout import TensorLayout
 from std.logger import Logger
@@ -1561,14 +1562,13 @@ def block_scaled_matmul_with_epilogue[
             @parameter
             @__copy_capture(c, n)
             def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
+                simd_width: Int, alignment: Int = 1
+            ](idx: Coord):
                 var c_val = rebind[SIMD[c_type, simd_width]](
-                    c.raw_load[width=simd_width](idx[0] * n + idx[1])
+                    c.load[width=simd_width](idx)
                 )
                 epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
+                    Index(idx[0].value(), idx[1].value()), c_val
                 )
 
             matmul[scales_type=scales_dtype](
@@ -1582,9 +1582,7 @@ def block_scaled_matmul_with_epilogue[
                 transpose_b=True,
                 c_row_major=True,
             )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
+            elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
 
 
 # ===----------------------------------------------------------------------=== #

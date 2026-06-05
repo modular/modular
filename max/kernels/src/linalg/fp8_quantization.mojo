@@ -113,7 +113,10 @@ def quantize_static_scaled_fp8[
     def scaled_fp8_quant_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
         scaled_fp8_quant[width, idx.rank, alignment](coord_to_index_list(idx))
 
-    _elementwise_impl_gpu[simd_width=target_simd_width](
+    _elementwise_impl_gpu[
+        simd_width=target_simd_width,
+        trace_description="scaled_fp8_quant",
+    ](
         scaled_fp8_quant_unified,
         shape=(Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
         ctx=context,
@@ -1659,7 +1662,10 @@ def convert_e4m3fn_to_e4m3fnuz(
     def convert_kernel_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
         convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
-    _elementwise_impl_gpu[simd_width=target_simd_width](
+    _elementwise_impl_gpu[
+        simd_width=target_simd_width,
+        trace_description="fp8_e4m3fn_to_e4m3fnuz_convert",
+    ](
         convert_kernel_unified,
         shape=(
             Int(input_buffer.dim[0]()),
@@ -1761,12 +1767,11 @@ def blockwise_scaled_fp8_with_epilogue[
             @parameter
             @__copy_capture(c)
             def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
-                var c_val = c.load_linear[simd_width](idx)
+                simd_width: Int, alignment: Int = 1
+            ](idx: Coord):
+                var c_val = c.load[simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
+                    Index(idx[0].value(), idx[1].value()), c_val
                 )
 
             blockwise_fp8_matmul[
@@ -1777,7 +1782,7 @@ def blockwise_scaled_fp8_with_epilogue[
                 n_scale_granularity=scales_granularity_mnk[1],
             ](c, a, b, a_scales, b_scales, ctx)
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
+                Coord(m, n), ctx
             )
 
     else:

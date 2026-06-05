@@ -31,7 +31,6 @@ from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
-    upper_bounded_default,
 )
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
@@ -78,9 +77,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
 
-    def get_max_seq_len(self) -> int:
-        return self.max_seq_len
-
     @classmethod
     def construct_kv_params(
         cls,
@@ -125,24 +121,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 1.0 / float(Llama3Config.get_head_dim(huggingface_config))
             ),
         )
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Llama3, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
 
     @override
     @classmethod

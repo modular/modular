@@ -738,22 +738,29 @@ def _get_accumulator_size[
 @always_inline
 def _tile_fits_full_tma[
     a_scales_type: DType, BM: Int
-](expert_end_row: Int, m_tile_global_start: Int, total_m: Int) -> Bool:
+](m_tile_global_start: Int, total_m: Int) -> Bool:
     """Whether a full BM-row A/a_scales TMA is safe for this tile.
 
-    Three conditions must hold (all enforce the scales TMA's 16-byte
-    strided-coord byte-offset alignment; misalignment faults with
-    ``ILLEGAL_INSTRUCTION``):
-      * the tile lies entirely within the current expert's rows,
-      * ``m_tile_global_start`` is aligned (column offset within a K row),
-        and
-      * ``total_m`` is aligned, since it is the K-row stride: at any K>0
-        the byte offset is ``k * total_m * size_of(scales)``, which is only
-        16-byte aligned when the stride itself is.
+    The bound is the A buffer, not the current expert. A tile may read BM rows
+    past this expert's end into the next expert's rows: that read is in-bounds
+    as long as the whole BM strip lies within total_m, and the epilogue masks
+    the over-read rows with m < M (per-expert count) so they are never written.
+    The next expert's own tile recomputes them correctly. That makes the
+    expert boundary irrelevant to safety and lets small-M-per-expert decode
+    tiles keep the fast TMA path instead of falling onto the partial copy.
+
+    Three conditions must hold:
+      * the full BM-row strip stays within total_m, so the TMA load and the
+        matching a_scales strip never read past the A buffer,
+      * m_tile_global_start is aligned (column offset within a K row), and
+      * total_m is aligned, since it is the K-row stride: at any K>0 the scales
+        byte offset is k * total_m * size_of(scales), which is only 16-byte
+        aligned when the stride itself is. Misalignment faults with
+        ILLEGAL_INSTRUCTION.
     """
     comptime SCALES_M_ALIGN = 16 // size_of[a_scales_type]()
     return (
-        (expert_end_row - m_tile_global_start) >= BM
+        (total_m - m_tile_global_start) >= BM
         and m_tile_global_start % SCALES_M_ALIGN == 0
         and total_m % SCALES_M_ALIGN == 0
     )
@@ -796,11 +803,14 @@ def _copy_partial_a_tile_blockwise_from_gmem[
     iter_idx: Int,
 ):
     """Cooperative warp copy of A and matching `a_scales` strip from gmem into
-    SMEM. Rows beyond `expert_end_row` are zeroed so MMA sees a full BM×BK
-    tile without issuing a TMA past the expert boundary. Writes go to the
-    physical SMEM offset produced by `make_swizzle` so the MMA descriptor's
-    swizzle XOR reads back the value we just stored. All lanes of the calling
-    warp must execute this."""
+    SMEM. Used when the full-width TMA load is ineligible: the final
+    buffer-tail tile whose BM-row strip would run past total_m, or a misaligned
+    scale stride that the scales TMA cannot address. Rows at or past the current
+    expert's end are zeroed so MMA still sees a full BM×BK tile without reading
+    past the activation buffer; the epilogue masks those rows, so the fill only
+    needs to be safe, not exact. Writes go to the physical SMEM offset produced
+    by `make_swizzle` so the MMA descriptor's swizzle XOR reads back the value
+    we just stored. All lanes of the calling warp must execute this."""
     comptime BM = block_tile_shape[0]
     comptime BK = block_tile_shape[2]
     comptime a_sw = make_swizzle[a_type, a_swizzle]()
@@ -1289,7 +1299,7 @@ def multi_stage_reg_epilogue[
 
         if (
             size_of[c_type]() != 2
-            or UInt32(coord_m) + UInt32(TMA_BM) >= group_end_idx
+            or UInt32(coord_m) + UInt32(TMA_BM) > group_end_idx
         ):
             comptime output_threads = num_output_warps * WARP_SIZE
             comptime c_smem_M = c_smem_tile.layout.shape[0].value()
@@ -2069,7 +2079,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             var m_tile_global_start = Int(work_info.m)
             var use_full_tma = _tile_fits_full_tma[
                 a_scales_type, config.block_tile_shape[0]
-            ](expert_end_row, m_tile_global_start, total_m)
+            ](m_tile_global_start, total_m)
 
             for i in range(num_iters):
                 if not use_full_tma:

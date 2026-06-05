@@ -13,16 +13,17 @@
 """Python projection of HAL ``Queue``."""
 
 from std.collections import List
-from std.memory import ArcPointer, UnsafePointer
+from std.memory import ArcPointer, OpaquePointer, UnsafePointer
 from std.os import abort
 from std.python import PythonObject
 from std.sys._hal.device import get_device_spec
 from std.sys._hal.event import EVENT_FLAG_CPU_VISIBLE
-from std.sys._hal.plugin import EventHandle, RawDriver
+from std.sys._hal.plugin import EventHandle, FunctionHandle, RawDriver
 from std.sys._hal.queue import Queue as HALQueue
 
 from .buffer import Buffer
 from .event import Event
+from .function import Function
 
 
 @fieldwise_init
@@ -116,6 +117,49 @@ struct Queue(Movable, Writable):
             handles.append(evt_ptr[]._hal._handle())
         self_ptr[]._raw[].wait_for_events(
             self_ptr[]._arc[]._handle, handles.unsafe_ptr(), UInt32(n)
+        )
+
+    @staticmethod
+    def execute(
+        py_self: PythonObject,
+        func_obj: PythonObject,
+        grid_obj: PythonObject,
+        block_obj: PythonObject,
+        args_obj: PythonObject,
+        arg_sizes_obj: PythonObject,
+        shared_mem_bytes_obj: PythonObject,
+    ) raises:
+        var self_ptr = Self._self_ptr(py_self)
+        var func_ptr = func_obj.downcast_value_ptr[Function]()
+        var grid = (
+            UInt32(Int(py=grid_obj[0])),
+            UInt32(Int(py=grid_obj[1])),
+            UInt32(Int(py=grid_obj[2])),
+        )
+        var block = (
+            UInt32(Int(py=block_obj[0])),
+            UInt32(Int(py=block_obj[1])),
+            UInt32(Int(py=block_obj[2])),
+        )
+        var n = len(args_obj)
+        var args = List[OpaquePointer[MutExternalOrigin]](capacity=n)
+        var arg_sizes = List[UInt64](capacity=n)
+        for i in range(n):
+            args.append(
+                OpaquePointer[MutExternalOrigin](
+                    unsafe_from_address=Int(py=args_obj[i])
+                )
+            )
+            arg_sizes.append(UInt64(Int(py=arg_sizes_obj[i])))
+        var shared_mem_bytes = UInt32(Int(py=shared_mem_bytes_obj))
+        self_ptr[]._arc[].execute(
+            func_ptr[]._handle,
+            grid,
+            block,
+            args.unsafe_ptr(),
+            arg_sizes.unsafe_ptr(),
+            UInt32(n),
+            shared_mem_bytes=shared_mem_bytes,
         )
 
     def write_to(self, mut writer: Some[Writer]):

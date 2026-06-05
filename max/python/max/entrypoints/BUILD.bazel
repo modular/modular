@@ -55,6 +55,7 @@ modular_py_library(
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max:_core",
+        "//max/python/max/profiler",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve:config",
         "//max/python/max/pipelines/modeling",
@@ -85,6 +86,7 @@ modular_py_binary(
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/profiler",
         "//max/python/max/serve:config",
         "//max/python/max/serve/telemetry",
         requirement("click"),

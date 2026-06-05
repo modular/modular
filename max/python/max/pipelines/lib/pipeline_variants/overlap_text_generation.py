@@ -120,6 +120,7 @@ from max.pipelines.modeling.types import (
     EOSTracker,
     PipelineOutputsDict,
     PipelineTokenizer,
+    ReasoningPipelineTokenizer,
     RequestID,
     SpecDecodingState,
     TextGenerationContextType,
@@ -149,6 +150,12 @@ if TYPE_CHECKING:
 
 from dataclasses import dataclass
 
+from max.pipelines.sampling import (
+    FusedSamplingProcessor,
+    apply_logits_processors,
+    token_sampler,
+)
+
 from ..graph_capture import ServeGraphCaptureRunner
 from ..interfaces import (
     ModelInputs,
@@ -157,11 +164,6 @@ from ..interfaces import (
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
 )
-from ..sampling import (
-    FusedSamplingProcessor,
-    apply_logits_processors,
-    token_sampler,
-)
 from ..utils import CompilationTimer
 
 logger = logging.getLogger("max.pipelines")
@@ -169,6 +171,12 @@ logger = logging.getLogger("max.pipelines")
 _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 _OOB_IDX = np.iinfo(np.int32).min
 _MAGIC_DRAFT_TOKEN_ID = 42
+
+# Bound for ``sync_prime`` waiting on the prior iter's async bitmask
+# callback worker. A worker that died before its ``finally`` (dispatch
+# failure, AsyncRT shutdown) never sets the event; capping the wait
+# degrades that to a noisy bitmask race instead of a silent hang.
+_SYNC_PRIME_CALLBACK_TIMEOUT_S = 120.0
 
 
 @runtime_checkable
@@ -226,38 +234,21 @@ def _get_draft_kv_blocks(
 
 
 def _resolve_thinking_token_ids(
-    tokenizer: PipelineTokenizer[Any, Any, Any],
+    tokenizer: ReasoningPipelineTokenizer[Any, Any, Any],
 ) -> tuple[int, int]:
-    """Resolve ``<think>``/``</think>`` ids; returns ``(-1, -1)`` on failure."""
-    delegate = getattr(tokenizer, "delegate", None)
-    if delegate is None:
-        logger.warning(
-            "Reasoning parser is configured but tokenizer has no "
-            "'delegate'; thinking-mode temperature scaling disabled."
-        )
-        return (-1, -1)
+    """Resolve reasoning-delimiter token ids from a reasoning-aware tokenizer.
 
-    def _encode_one(text: str) -> int:
-        try:
-            ids = delegate.encode(text, add_special_tokens=False)
-        except TypeError:
-            # TikToken delegates omit add_special_tokens.
-            ids = delegate.encode(text)
-        if len(ids) != 1:
-            raise ValueError(
-                f"Token {text!r} did not map to a single id (got {ids!r})"
-            )
-        return int(ids[0])
-
-    try:
-        return (_encode_one("<think>"), _encode_one("</think>"))
-    except Exception as exc:
-        logger.warning(
-            "Failed to resolve <think>/</think> token ids; "
-            "thinking-mode temperature scaling disabled (%s)",
-            exc,
-        )
-        return (-1, -1)
+    Architecture-specific tokenizers that drive a reasoning parser declare
+    their delimiter ids by implementing
+    :class:`~max.pipelines.modeling.types.ReasoningPipelineTokenizer` (Gemma 4's
+    ``<|channel>``/``<channel|>``, Kimi K2.5's and MiniMax M2's
+    ``<think>``/``</think>``, etc.) and resolving the ids once at
+    construction.
+    """
+    return (
+        tokenizer.reasoning_start_token_id,
+        tokenizer.reasoning_end_token_id,
+    )
 
 
 @dataclass
@@ -765,7 +756,6 @@ class AsyncBatch(Generic[TextGenerationContextType]):
             outputs = update_context_and_prepare_responses(
                 generated_tokens_np.reshape((batch_size, 1)),
                 self.inputs.flat_batch,
-                num_steps=1,
                 overwrite_future=self.overwrite_future,
             )
             wrapped_outputs = _AsyncBatchOutput(output_dict=outputs)
@@ -1511,6 +1501,15 @@ class OverlapTextGenerationPipeline(
         self._think_start_token_id: int = -1
         self._think_end_token_id: int = -1
         if pipeline_config.runtime.reasoning_parser is not None:
+            if not isinstance(tokenizer, ReasoningPipelineTokenizer):
+                raise ValueError(
+                    f"reasoning_parser={pipeline_config.runtime.reasoning_parser!r} "
+                    f"requires the architecture's tokenizer to implement "
+                    f"ReasoningPipelineTokenizer, but "
+                    f"{type(tokenizer).__name__} does not. "
+                    f"Implement reasoning_start_token_id and "
+                    f"reasoning_end_token_id on the tokenizer."
+                )
             self._think_start_token_id, self._think_end_token_id = (
                 _resolve_thinking_token_ids(tokenizer)
             )
@@ -2517,14 +2516,22 @@ class OverlapTextGenerationPipeline(
             # (not a CUDA event), so no ``device.synchronize()``.
             prev_evt = spec_state.last_callback_done_event
             if prev_evt is not None and not prev_evt.is_set():
-                # Bounded so a worker that died before reaching the
-                # ``finally`` (dispatch failure, AsyncRT shutdown) degrades
-                # to a noisy bitmask race instead of a silent hang.
-                if not prev_evt.wait(timeout=5.0):
+                if not prev_evt.wait(timeout=_SYNC_PRIME_CALLBACK_TIMEOUT_S):
+                    batch_request_ids = [
+                        str(ctx.request_id) for ctx in context_batch
+                    ]
+                    callback_request_ids = [
+                        str(rid)
+                        for rid in (spec_state.callback_request_ids or [])
+                    ]
                     logger.error(
                         "Async bitmask callback's done_event was not set "
-                        "within 5s; proceeding with sync_prime — pinned "
-                        "bitmask may have been stomped by the worker."
+                        "within %ss; proceeding with sync_prime — pinned "
+                        "bitmask may have been stomped by the worker. "
+                        "batch_request_ids=%s callback_request_ids=%s",
+                        _SYNC_PRIME_CALLBACK_TIMEOUT_S,
+                        batch_request_ids,
+                        callback_request_ids,
                     )
             # Cleared here so the next sync_prime doesn't re-wait on this
             # already-consumed event after a callback-less iter (e.g.
@@ -3184,7 +3191,8 @@ class OverlapTextGenerationPipeline(
 
         if inputs.num_steps > 1:
             raise ValueError(
-                "Max num steps > 1 is not supported with the Overlap scheduler."
+                f"num_steps > 1 is not supported by the overlap pipeline, "
+                f"got {inputs.num_steps}."
             )
 
         # Initialize variables that may be set conditionally below.

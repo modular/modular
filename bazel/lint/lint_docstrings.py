@@ -33,6 +33,7 @@ This linter enforces the following rules from docs/internal/PythonDocstringStyle
 from __future__ import annotations
 
 import ast
+import os
 import re
 import sys
 from collections.abc import Iterator
@@ -363,4 +364,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if path := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        os.chdir(path)
     sys.exit(main())

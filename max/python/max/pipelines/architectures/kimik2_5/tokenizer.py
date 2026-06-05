@@ -27,8 +27,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
+from max.pipelines.core import GrammarEnforcementState
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
-from max.pipelines.lib.tokenizer import run_with_default_executor
+from max.pipelines.lib.tokenizer import (
+    resolve_single_special_token,
+    run_with_default_executor,
+)
 from max.pipelines.modeling.types import (
     ImageMetadata,
     TextGenerationRequest,
@@ -129,6 +133,12 @@ def _sanitize_kimi_schema_node(node: Any) -> Any:
 # EOS set so generation stops.
 _IM_END_TOKEN = "<|im_end|>"
 
+# Reasoning span delimiters. Both are special tokens in the Kimi K2.5
+# tokenizer vocab; resolving them at init lets us implement the
+# ``ReasoningPipelineTokenizer`` protocol.
+_THINK_START_TOKEN = "<think>"
+_THINK_END_TOKEN = "</think>"
+
 
 class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
     """Kimi K2.5 tokenizer for multimodal (text + vision) inputs.
@@ -189,6 +199,13 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.media_pad_token_id: int = media_pad_id
         self.vision_token_ids = [self.media_pad_token_id]
 
+        self._reasoning_start_token_id: int = resolve_single_special_token(
+            self.delegate, _THINK_START_TOKEN
+        )
+        self._reasoning_end_token_id: int = resolve_single_special_token(
+            self.delegate, _THINK_END_TOKEN
+        )
+
         # Build the custom vision processor from HF config.
         media_proc_cfg = getattr(config, "media_proc_cfg", None)
         self.vision_processor = KimiK2_5VisionProcessor(
@@ -200,6 +217,16 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.rope_max_width: int = int(
             getattr(vision_cfg, "rope_max_width", 512)
         )
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """Token id of ``<think>`` (opens a Kimi K2.5 reasoning span)."""
+        return self._reasoning_start_token_id
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """Token id of ``</think>`` (closes a Kimi K2.5 reasoning span)."""
+        return self._reasoning_end_token_id
 
     async def encode(
         self, prompt: str | Sequence[int], add_special_tokens: bool = True
@@ -411,6 +438,13 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             request.response_format.grammar if request.response_format else None
         )
 
+        # Carry grammar enforcement state (grammar_enforced, tools_forced,
+        # has_json_schema) from the response format.
+        # Mirrors TextTokenizer / TextAndVisionTokenizer.
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
+        )
+
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
                 f"encoded_prompt length {encoded_prompt.shape[0]} is greater than the max_length of the tokenizer {self.max_length}"
@@ -428,11 +462,13 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             request_id=request.request_id,
             eos_tracker=await self.create_eos_tracker(request),
             tokens=token_buffer,
+            vocab_size=self.tokenizer_vocab_size,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
             grammar=grammar,
+            grammar_state=grammar_state,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             grid_thws=grid_thws,

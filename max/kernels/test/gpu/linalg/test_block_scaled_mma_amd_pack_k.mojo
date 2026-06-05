@@ -39,7 +39,7 @@ from std.memory import bitcast
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import Coord, TensorLayout, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
@@ -92,19 +92,17 @@ def _pack_k_kernel[
     packed_out: TileTensor[DType.float32, PackedLayout, MutAnyOrigin],
     broadcast_out: TileTensor[DType.float32, BroadcastLayout, MutAnyOrigin],
 ):
-    var lane = Int(lane_id())
-    var a_frag = SIMD[DType.uint8, 32](UInt8(0x21))
-    var b_frag = SIMD[DType.uint8, 32](UInt8(0x12))
+    var lane = lane_id()
+    var a_frag = SIMD[DType.uint8, 16](UInt8(0x21))
+    var b_frag = SIMD[DType.uint8, 16](UInt8(0x12))
 
-    var packed_a = _packed_scale_word(
-        Float32(1.0), Float32(2.0), Float32(4.0), Float32(8.0)
-    )
-    var packed_b = _broadcast_scale_word(Float32(1.0))
+    var packed_a = _packed_scale_word(1.0, 2.0, 4.0, 8.0)
+    var packed_b = _broadcast_scale_word(1.0)
 
-    var bcast_a0 = _broadcast_scale_word(Float32(1.0))
-    var bcast_a1 = _broadcast_scale_word(Float32(2.0))
-    var bcast_a2 = _broadcast_scale_word(Float32(4.0))
-    var bcast_a3 = _broadcast_scale_word(Float32(8.0))
+    var bcast_a0 = _broadcast_scale_word(1.0)
+    var bcast_a1 = _broadcast_scale_word(2.0)
+    var bcast_a2 = _broadcast_scale_word(4.0)
+    var bcast_a3 = _broadcast_scale_word(8.0)
 
     # 4 MFMAs against the packed word with byte indices 0..3 on the A side.
     var packed_acc0 = SIMD[DType.float32, 4](0.0)
@@ -170,22 +168,15 @@ def _pack_k_kernel[
     ](bcast_acc3, a_frag, b_frag, packed_b, bcast_a3)
 
     # Store packed acc[i] at row (4*i + lane), broadcast acc[i] same row in second buffer.
-    packed_out.store[width=4](Coord(0 * WARP_SIZE + lane, Idx[0]), packed_acc0)
-    packed_out.store[width=4](Coord(1 * WARP_SIZE + lane, Idx[0]), packed_acc1)
-    packed_out.store[width=4](Coord(2 * WARP_SIZE + lane, Idx[0]), packed_acc2)
-    packed_out.store[width=4](Coord(3 * WARP_SIZE + lane, Idx[0]), packed_acc3)
-    broadcast_out.store[width=4](
-        Coord(0 * WARP_SIZE + lane, Idx[0]), bcast_acc0
-    )
-    broadcast_out.store[width=4](
-        Coord(1 * WARP_SIZE + lane, Idx[0]), bcast_acc1
-    )
-    broadcast_out.store[width=4](
-        Coord(2 * WARP_SIZE + lane, Idx[0]), bcast_acc2
-    )
-    broadcast_out.store[width=4](
-        Coord(3 * WARP_SIZE + lane, Idx[0]), bcast_acc3
-    )
+    packed_out.store(Coord(0 * WARP_SIZE + lane, 0), packed_acc0)
+    packed_out.store(Coord(1 * WARP_SIZE + lane, 0), packed_acc1)
+    packed_out.store(Coord(2 * WARP_SIZE + lane, 0), packed_acc2)
+    packed_out.store(Coord(3 * WARP_SIZE + lane, 0), packed_acc3)
+
+    broadcast_out.store(Coord(0 * WARP_SIZE + lane, 0), bcast_acc0)
+    broadcast_out.store(Coord(1 * WARP_SIZE + lane, 0), bcast_acc1)
+    broadcast_out.store(Coord(2 * WARP_SIZE + lane, 0), bcast_acc2)
+    broadcast_out.store(Coord(3 * WARP_SIZE + lane, 0), bcast_acc3)
 
 
 def test_pack_k_byte_index(ctx: DeviceContext) raises:
@@ -198,21 +189,11 @@ def test_pack_k_byte_index(ctx: DeviceContext) raises:
 
     var packed_tt = TileTensor(
         packed_dev,
-        row_major(
-            Coord(
-                Idx[WARP_SIZE * num_dispatches],
-                Idx[num_acc_per_dispatch],
-            )
-        ),
+        row_major[WARP_SIZE * num_dispatches, num_acc_per_dispatch](),
     )
     var bcast_tt = TileTensor(
         bcast_dev,
-        row_major(
-            Coord(
-                Idx[WARP_SIZE * num_dispatches],
-                Idx[num_acc_per_dispatch],
-            )
-        ),
+        row_major[WARP_SIZE * num_dispatches, num_acc_per_dispatch](),
     )
 
     comptime kernel = _pack_k_kernel[

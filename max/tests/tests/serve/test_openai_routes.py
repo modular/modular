@@ -248,7 +248,29 @@ async def test_openai_chat_completion_input_error_returns_400(app) -> None:  # n
         )
 
         assert response_json.status_code == 400
-        assert response_json.json()["detail"] == "invalid image input"
+        assert response_json.json()["error"]["message"] == "invalid image input"
+        assert response_json.json()["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
+async def test_openai_error_envelope_shape(app) -> None:  # noqa: ANN001
+    """HTTP errors are returned in the OpenAI ``{"error": {...}}`` envelope."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline.all_tokens = AsyncMock(
+            side_effect=InputError("bad request")
+        )
+
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="test data"),
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"]["message"] == "bad request"
+        assert body["error"]["type"] == "invalid_request_error"
+        assert body["error"]["code"] == "400"
+        assert "detail" not in body
 
 
 def test_validate_decodable_images_rejects_bad_bytes() -> None:
@@ -1646,7 +1668,7 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_defau
         response = await client.post("/v1/chat/completions", json=body)
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["detail"].lower()
+    assert "overlap" in response.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -1687,7 +1709,7 @@ async def test_chat_completion_extra_field_rejected_by_default(
         response = await client.post("/v1/chat/completions", json=body)
 
     assert response.status_code == 400
-    assert "dynamic_temperature" in response.json()["detail"]
+    assert "dynamic_temperature" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -1727,7 +1749,7 @@ async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
         )
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["detail"].lower()
+    assert "overlap" in response.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -1775,7 +1797,7 @@ async def test_completion_extra_field_rejected_by_default(
         )
 
     assert response.status_code == 400
-    assert "dynamic_temperature" in response.json()["detail"]
+    assert "dynamic_temperature" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

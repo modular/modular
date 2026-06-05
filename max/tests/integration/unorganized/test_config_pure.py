@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import logging
 import pickle
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -1560,7 +1561,6 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
             }
         ),
         runtime=PipelineRuntimeConfig(
-            max_num_steps=42,
             force=force,
             max_batch_size=max_batch_size,
         ),
@@ -1570,7 +1570,6 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
     assert config.runtime.device_graph_capture is expected_device_graph_capture
     if expected_device_graph_capture:
         assert config.runtime.enable_overlap_scheduler is True
-        assert config.runtime.max_num_steps == 1
 
 
 @prepare_registry
@@ -1604,7 +1603,6 @@ def test_validate_and_resolve_overlap_scheduler__no_device_graph_capture_for_pre
             }
         ),
         runtime=PipelineRuntimeConfig(
-            max_num_steps=42,
             max_batch_size=16,
             pipeline_role="prefill_only",
         ),
@@ -1613,7 +1611,6 @@ def test_validate_and_resolve_overlap_scheduler__no_device_graph_capture_for_pre
 
     # Overlap scheduling should be auto-enabled for prefill_only.
     assert config.runtime.enable_overlap_scheduler is True
-    assert config.runtime.max_num_steps == 1
     # But device graph capture should NOT be auto-enabled.
     assert config.runtime.device_graph_capture is False
 
@@ -1661,11 +1658,10 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
                         )
                     }
                 ),
-                runtime=PipelineRuntimeConfig(max_num_steps=42),
+                runtime=PipelineRuntimeConfig(),
             )
             config._validate_and_resolve_overlap_scheduler()
             assert config.runtime.enable_overlap_scheduler is True
-            assert config.runtime.max_num_steps == 1
 
     # Don't override if the device is CPU
     with patch_retrieve_architecture("LlamaForCausalLM"):
@@ -1714,7 +1710,6 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             )
             config._validate_and_resolve_overlap_scheduler()
             assert config.runtime.enable_overlap_scheduler is True
-            assert config.runtime.max_num_steps == 1
 
     # Don't override for other architectures
     with patch_retrieve_architecture("SomeOtherArchitecture"):
@@ -1774,8 +1769,7 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
 
-    # prefill_only with overlap scheduler is now allowed (experimental),
-    # the runtime just logs a warning and sets max_num_steps=1.
+    # prefill_only with overlap scheduler is now allowed (experimental).
     config = PipelineConfig(
         models=ModelManifest(
             {
@@ -1792,7 +1786,6 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     )
     config._validate_and_resolve_overlap_scheduler()
     assert config.runtime.enable_overlap_scheduler is True
-    assert config.runtime.max_num_steps == 1
 
     # Error out if user tries to enable overlap scheduler with structured output
     config = PipelineConfig(
@@ -1809,6 +1802,49 @@ def test_validate_and_resolve_overlap_scheduler__validate(
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_validate_and_resolve_max_num_steps_deprecated_override(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Non-1 max_num_steps is deprecated, warned, and forced to 1."""
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
+        ),
+        runtime=PipelineRuntimeConfig(max_num_steps=10),
+    )
+    with caplog.at_level(logging.WARNING):
+        config._validate_and_resolve_max_num_steps()
+    assert config.runtime.max_num_steps == 1
+    assert "deprecated" in caplog.text.lower()
+    assert "10" in caplog.text
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_validate_and_resolve_max_num_steps_legacy_default() -> None:
+    """Legacy max_num_steps=-1 resolves silently to 1."""
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
+        ),
+        runtime=PipelineRuntimeConfig(max_num_steps=-1),
+    )
+    config._validate_and_resolve_max_num_steps()
+    assert config.runtime.max_num_steps == 1
 
 
 @prepare_registry

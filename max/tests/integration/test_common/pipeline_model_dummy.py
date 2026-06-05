@@ -106,21 +106,6 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
             kv_cache_inputs=None,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> DummyModelInputs:
-        """Prepares the secondary inputs to be passed to `.execute()`.
-
-        While `prepare_initial_token_inputs` is responsible for managing the initial inputs.
-        This function is responsible for updating the inputs, for each step in a multi-step execution pattern.
-        """
-        return DummyModelInputs(
-            input1=Buffer.zeros((0, 0), DType.float32),
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
     @classmethod
     def _get_num_kv_heads(cls, hf_config: Any) -> int:
         if hasattr(hf_config, "num_key_value_heads"):

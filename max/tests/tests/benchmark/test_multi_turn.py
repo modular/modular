@@ -19,6 +19,7 @@ import dataclasses
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets.types import (
@@ -38,6 +39,10 @@ from max.benchmark.benchmark_shared.request import (
     RequestDriver,
     RequestFuncInput,
     RequestFuncOutput,
+)
+from max.benchmark.benchmark_shared.warmup import (
+    _prefix_delays_ms,
+    pick_warmup_population,
 )
 
 
@@ -265,7 +270,8 @@ def test_prefix_turns_dont_count_against_max_requests() -> None:
 
 
 def test_prefix_turns_no_server_or_delays() -> None:
-    """Prefix turns are built locally: no server calls, no delays."""
+    """Prefix turns are built locally: no server calls. Pre-warmed sessions
+    get a phase-spread jitter before turn 3, plus the turn 3→4 inter-turn delay."""
     sleep_calls: list[float] = []
 
     async def mock_sleep(seconds: float) -> None:
@@ -290,9 +296,11 @@ def test_prefix_turns_no_server_or_delays() -> None:
     total_calls = asyncio.run(run_test())
     # Prefix turns don't hit the server.
     assert total_calls == 2
-    # Only turn 3 has a delay (turn 4 has no delay_until_next_message).
-    assert len(sleep_calls) == 1
-    assert sleep_calls[0] == pytest.approx(5.0)
+    # sleep[0]: phase-spread jitter in [0, 5.0] from messages[3] (last prefix asst)
+    # sleep[1]: inter-turn delay after turn 3 (5.0 s)
+    assert len(sleep_calls) == 2
+    assert 0.0 <= sleep_calls[0] <= 5.0
+    assert sleep_calls[1] == pytest.approx(5.0)
 
 
 def test_prefix_turns_zero_is_noop() -> None:
@@ -547,19 +555,76 @@ def test_concurrent_turns_driver_expired_deadline_cancels_without_calling_base()
     mock_driver.request.assert_not_called()
 
 
-def test_chat_session_driver_stops_when_inter_turn_delay_exceeds_deadline() -> (
-    None
-):
-    """When an inter-turn delay would land past the deadline, the driver
-    breaks instead of sleeping and dispatching another turn."""
+def _make_prewarmed_session(
+    prefix_turns: int = 2, delay_ms: float = 2000.0
+) -> ChatSession:
+    """4-turn session with delay_ms on the last prefix assistant turn."""
+    messages = []
+    for i in range(4):
+        messages.append(
+            SessionMessage(source="user", content=f"U{i}", num_tokens=5)
+        )
+        delay = delay_ms if i == prefix_turns - 1 else 0.0
+        messages.append(
+            SessionMessage(
+                source="assistant",
+                content=f"A{i}",
+                num_tokens=5,
+                delay_until_next_message=delay if delay > 0 else None,
+            )
+        )
+    return ChatSession(id=0, messages=messages, prefix_turns=prefix_turns)
 
-    async def run() -> tuple[list[RequestFuncOutput], float]:
-        session = _make_4turn_session(prefix_turns=0, delay_ms=60000.0)
+
+def test_prewarmed_phase_spread_uses_correct_message() -> None:
+    """Phase-spread jitter draws from messages[content_idx-1], not messages[content_idx+1]."""
+    sleep_calls: list[float] = []
+    uniform_calls: list[tuple[float, float]] = []
+
+    async def mock_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    def mock_uniform(a: float, b: float) -> float:
+        uniform_calls.append((a, b))
+        return b * 0.5  # deterministic midpoint
+
+    async def run_test() -> int:
+        session = _make_prewarmed_session(prefix_turns=2, delay_ms=2000.0)
         counter = RequestCounter(max_requests=100)
         driver = _CapturingDriver()
-        deadline_ns = time.perf_counter_ns() + int(0.05 * 1e9)
-        start = time.perf_counter()
-        outputs = await chat_session_driver(
+        with (
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            patch("random.uniform", side_effect=mock_uniform),
+        ):
+            await chat_session_driver(
+                model_id="test",
+                api_url="http://localhost:8000/v1/chat/completions",
+                request_driver=driver,
+                request_counter=counter,
+                chat_session=session,
+                max_chat_len=4096,
+                sampling=SamplingConfig(),
+            )
+        return len(driver.calls)
+
+    total_calls = asyncio.run(run_test())
+    assert total_calls == 2  # 2 measured turns
+    # uniform was called with (0, 2000.0) — the delay on messages[3] (content_idx-1=3)
+    assert len(uniform_calls) >= 1
+    assert uniform_calls[0] == (0, 2000.0)
+    # sleep was called with 0.5 * 2000/1000 = 1.0 before the first request
+    assert sleep_calls[0] == pytest.approx(1.0)
+
+
+def test_prewarmed_phase_spread_deadline_skip() -> None:
+    """Phase-spread jitter returns early when the sleep would exceed the deadline."""
+
+    async def run_test() -> list[RequestFuncOutput]:
+        session = _make_prewarmed_session(prefix_turns=2, delay_ms=5000.0)
+        counter = RequestCounter(max_requests=100)
+        driver = _CapturingDriver()
+        deadline = time.perf_counter_ns()  # already at deadline
+        return await chat_session_driver(
             model_id="test",
             api_url="http://localhost:8000/v1/chat/completions",
             request_driver=driver,
@@ -567,10 +632,199 @@ def test_chat_session_driver_stops_when_inter_turn_delay_exceeds_deadline() -> (
             chat_session=session,
             max_chat_len=4096,
             sampling=SamplingConfig(),
-            benchmark_should_end_time=deadline_ns,
+            benchmark_should_end_time=deadline,
         )
-        return outputs, time.perf_counter() - start
 
-    outputs, elapsed = asyncio.run(run())
-    assert len(outputs) == 1
-    assert elapsed < 1.0
+    outputs = asyncio.run(run_test())
+    assert outputs == []  # returned before any request
+
+
+def test_interturn_sleep_deadline_skip() -> None:
+    """Inter-turn sleep exceeding the deadline causes early return after turn 1."""
+
+    async def run_test() -> list[RequestFuncOutput]:
+        session = ChatSession(
+            id=0,
+            messages=[
+                SessionMessage(source="user", content="Q1", num_tokens=5),
+                SessionMessage(
+                    source="assistant",
+                    content="",
+                    num_tokens=5,
+                    delay_until_next_message=60_000,  # 60 s
+                ),
+                SessionMessage(source="user", content="Q2", num_tokens=5),
+                SessionMessage(source="assistant", content="", num_tokens=5),
+            ],
+        )
+        counter = RequestCounter(max_requests=100)
+        driver = _CapturingDriver()
+        deadline = time.perf_counter_ns() + 1_000_000  # 1 ms from now
+        return await chat_session_driver(
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=driver,
+            request_counter=counter,
+            chat_session=session,
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            benchmark_should_end_time=deadline,
+        )
+
+    outputs = asyncio.run(run_test())
+    assert len(outputs) == 1  # only turn 1 completed before deadline
+
+
+# ---------------------------------------------------------------------------
+# warmup.py: delay-biased session and prefix-turn selection
+# ---------------------------------------------------------------------------
+
+
+def _make_session_with_delays(
+    session_id: int,
+    delays_ms: list[float],
+) -> ChatSession:
+    """Build a session whose inter-turn delays match ``delays_ms``.
+
+    Each element in ``delays_ms`` is the delay on the assistant message of
+    that turn.  The session has ``len(delays_ms)`` turns (one user+assistant
+    pair per entry).
+    """
+    messages: list[SessionMessage] = []
+    for i, d in enumerate(delays_ms):
+        messages.append(
+            SessionMessage(source="user", content=f"U{i}", num_tokens=5)
+        )
+        messages.append(
+            SessionMessage(
+                source="assistant",
+                content=f"A{i}",
+                num_tokens=5,
+                delay_until_next_message=d if d > 0 else None,
+            )
+        )
+    return ChatSession(id=session_id, messages=messages)
+
+
+def test_prefix_delays_ms_returns_correct_array() -> None:
+    """_prefix_delays_ms maps prefix position k to messages[2k-1]'s delay."""
+    session = _make_session_with_delays(0, [100.0, 200.0, 300.0])
+    # 3 turns → valid prefix_turns in {1, 2} → delays for turns 0 and 1
+    delays = _prefix_delays_ms(session)
+    assert list(delays) == pytest.approx([100.0, 200.0])
+
+
+def test_prefix_delays_ms_single_turn_is_empty() -> None:
+    """Single-turn sessions return an empty array (no valid prefix position)."""
+    session = _make_session_with_delays(0, [500.0])
+    assert len(_prefix_delays_ms(session)) == 0
+
+
+def test_prefix_delays_ms_none_delay_stored_as_zero() -> None:
+    """Turns with delay_until_next_message=None are stored as 0.0."""
+    # 3-turn session: delays on turns 0 and 1 → array length 2
+    session = _make_session_with_delays(0, [0.0, 400.0, 0.0])
+    delays = _prefix_delays_ms(session)
+    assert len(delays) == 2
+    assert delays[0] == pytest.approx(0.0)  # turn 0 has no delay
+    assert delays[1] == pytest.approx(400.0)  # turn 1 has 400 ms delay
+
+
+def test_pick_warmup_population_delay_biased_never_picks_prefix_zero() -> None:
+    """When delays are configured, prefix_turns is always >= 1 (session is mid-sleep)."""
+    rng = np.random.default_rng(42)
+    sessions = [
+        _make_session_with_delays(i, [1000.0, 2000.0, 3000.0])
+        for i in range(20)
+    ]
+    result, report = pick_warmup_population(
+        sessions,
+        warmup_count=10,
+        warmup_to_steady_state=True,
+        warmup_oversample_factor=2,
+        main_pool_target=0,
+        rng=rng,
+        delay_biased=True,
+    )
+    warmup = result[:10]
+    assert all(s.prefix_turns >= 1 for s in warmup)
+    assert report is not None
+    assert report.delay_biased is True
+    assert report.weight_unit == "delay-ms"
+
+
+def test_pick_warmup_population_delay_biased_prefix_proportional_to_delay() -> (
+    None
+):
+    """prefix_turns selection is proportional to the delay at each position.
+
+    Session has 3 turns with delays [100, 900] ms.  Over many draws the
+    fraction of picks at prefix_turns=1 should be ~10% and at
+    prefix_turns=2 should be ~90%.
+    """
+    # Single session so all picks come from it.
+    session = _make_session_with_delays(0, [100.0, 900.0, 0.0])
+    # Need a large pool so PPS doesn't cap the single session.
+    sessions = [dataclasses.replace(session, id=i) for i in range(200)]
+
+    rng = np.random.default_rng(0)
+    picks_at_1 = 0
+    picks_at_2 = 0
+    n_trials = 100
+    for _ in range(n_trials):
+        result, _ = pick_warmup_population(
+            sessions,
+            warmup_count=1,
+            warmup_to_steady_state=True,
+            warmup_oversample_factor=2,
+            main_pool_target=0,
+            rng=rng,
+            delay_biased=True,
+        )
+        pt = result[0].prefix_turns
+        if pt == 1:
+            picks_at_1 += 1
+        elif pt == 2:
+            picks_at_2 += 1
+
+    # Expect ~10 picks at 1 and ~90 picks at 2 (±20 at 3-sigma for binomial).
+    assert 0 <= picks_at_1 <= 30, f"too many/few prefix_turns=1: {picks_at_1}"
+    assert 70 <= picks_at_2 <= 100, f"too many/few prefix_turns=2: {picks_at_2}"
+
+
+def test_pick_warmup_population_no_delays_fallback_to_turn_counts() -> None:
+    """With the flag on but no delays present, falls back to turn-count weighting."""
+    rng = np.random.default_rng(7)
+    sessions = [_make_session_with_delays(i, [0.0, 0.0]) for i in range(20)]
+    _result, report = pick_warmup_population(
+        sessions,
+        warmup_count=10,
+        warmup_to_steady_state=True,
+        warmup_oversample_factor=2,
+        main_pool_target=0,
+        rng=rng,
+        delay_biased=True,
+    )
+    assert report is not None
+    assert report.delay_biased is False
+    assert report.weight_unit == "turns"
+
+
+def test_pick_warmup_population_delay_biased_off_by_default() -> None:
+    """Delays present but flag off (the default): stays turn-based."""
+    rng = np.random.default_rng(11)
+    sessions = [
+        _make_session_with_delays(i, [1000.0, 2000.0, 3000.0])
+        for i in range(20)
+    ]
+    _result, report = pick_warmup_population(
+        sessions,
+        warmup_count=10,
+        warmup_to_steady_state=True,
+        warmup_oversample_factor=2,
+        main_pool_target=0,
+        rng=rng,
+    )
+    assert report is not None
+    assert report.delay_biased is False
+    assert report.weight_unit == "turns"

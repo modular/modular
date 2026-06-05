@@ -49,10 +49,10 @@ if TYPE_CHECKING:
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 from max.pipelines.speculative.standalone import (
     _StandaloneSpeculativeDecodingPipeline,
 )
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel

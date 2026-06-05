@@ -232,19 +232,6 @@ test:ci --remote_download_outputs=minimal
 build:ci-gpu-common --config=ci
 build:ci-gpu-common --test_tag_filters=gpu,-lint-test
 
-build:remote-h100 --config=remote
-build:remote-h100 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
-build:remote-h100 --platforms=//:h100-platform
-build:remote-h100 --extra_execution_platforms=//:m7i-platform,//:h100-platform,@mojo_host_platform
-build:remote-h100 --spawn_strategy=remote,worker,sandboxed,standalone
-build:remote-h100 --repo_env=MODULAR_TARGET=linux:x86_64
-build:remote-h100 --build_metadata=TAG_GPU=h100
-build:remote-h100 --build_metadata=TAG_TARGET_OS=linux
-
-build:ci-remote-h100 --config=ci-gpu-common
-build:ci-remote-h100 --config=remote-h100
-build:ci-remote-h100 --test_keep_going=false
-
 build:remote-b200 --config=remote
 build:remote-b200 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
 build:remote-b200 --platforms=//:b200-platform

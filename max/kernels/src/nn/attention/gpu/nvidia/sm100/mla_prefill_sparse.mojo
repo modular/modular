@@ -76,6 +76,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     sub_ftz,
     mul_ftz,
     fma_ftz,
+    exp2_emulation,
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
@@ -773,15 +774,18 @@ struct MLAPrefillSparse[
                 Self.V_DEPTH_PER_CTA // O_RESCALE_CHUNK
             )
 
-            # Per-thread base offset (in units of bf16x8 = uint128) into
-            # the scores smem, matching the K-major SW128B layout the
-            # subsequent SV MMA expects. See phase1.cuh:166-167 — base =
-            # (idx%64) + 64*((idx/64)*8). Upper-half threads write the
-            # left half of S; lower-half threads write the right half.
-            var s_smem_uint128_base = (
-                scores_ptr.bitcast[SIMD[Self.qkv_dtype, 8]]()
-                + (idx_in_wg % UInt32(64))
-                + UInt32(64) * ((idx_in_wg / UInt32(64)) * UInt32(8))
+            # Per-thread base bf16 element offset into the scores smem,
+            # matching the K-major SW128B layout the subsequent SV MMA
+            # expects. See phase1.cuh:166-167 — uint128 base =
+            # (idx%64) + 64*((idx/64)*8); ×8 converts uint128 units to bf16
+            # elements. Upper-half threads write the left half of S;
+            # lower-half threads write the right half.
+            var s_smem_bf16_elem_base = Int(
+                (
+                    (idx_in_wg % UInt32(64))
+                    + UInt32(512) * (idx_in_wg / UInt32(64))
+                )
+                * UInt32(8)
             )
 
             for k in range(num_k_blocks):
@@ -876,16 +880,25 @@ struct MLAPrefillSparse[
 
                 # S = exp2(P * scale_log2e - new_max), accumulate li, and
                 # convert to bf16 ready for the SV MMA.
+                #
+                # Emulate exp2 on the FMA pipe instead of calling hardware
+                # `ex2`: the SM100 softmax warpgroup is MUFU-bound on the
+                # critical path, so this is ~14% faster here. Don't replace
+                # with `exp2(d)`.
                 var s_bf16 = InlineArray[Scalar[Self.qkv_dtype], P_PER_THREAD](
                     uninitialized=True
                 )
-                comptime for i in range(P_PER_THREAD):
-                    var d: Float32 = (
-                        rebind[Float32](p[i]) * scale_log2e - new_max
+                var vscale = SIMD[DType.float32, 2](scale_log2e)
+                var vneg_max = SIMD[DType.float32, 2](-new_max)
+                comptime for j in range(P_PER_THREAD // 2):
+                    var pj = SIMD[DType.float32, 2](
+                        rebind[Float32](p[2 * j]),
+                        rebind[Float32](p[2 * j + 1]),
                     )
-                    var ed: Float32 = exp2(d)
-                    li = li + ed
-                    s_bf16[i] = ed.cast[Self.qkv_dtype]()
+                    var ed2 = exp2_emulation(fma_ftz(pj, vscale, vneg_max))
+                    li = li + ed2[0] + ed2[1]
+                    s_bf16[2 * j] = ed2[0].cast[Self.qkv_dtype]()
+                    s_bf16[2 * j + 1] = ed2[1].cast[Self.qkv_dtype]()
 
                 # Wait until the previous SV MMA has drained the scores
                 # smem before overwriting it. (sv_p1_done implies the
@@ -898,10 +911,27 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
+                var o_chunk_prefetch = InlineArray[
+                    Scalar[DType.float32], O_RESCALE_CHUNK
+                ](uninitialized=True)
+                if k > 0 and should_scale_o:
+                    tcgen05_fence_after()
+                    o_chunk_prefetch = tcgen05_ld[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        dtype=DType.float32,
+                        pack=False,
+                        width=O_RESCALE_CHUNK,
+                    ](UInt32(Self.O_TMEM_ADDR))
+
                 # Write S to scores smem as 8 bf16 per uint128, stride 64
-                # uint128 between writes — exactly the SS-MMA layout.
+                # uint128 between writes--exactly the K-major SW128B layout
+                # the SS-MMA reads. Keep the packed 128-bit store: a plain
+                # SIMD[bf16, 8] store scalarizes into bank-conflicting
+                # half-word stores.
                 comptime for i in range(P_PER_THREAD // 8):
-                    s_smem_uint128_base[i * 64] = SIMD[Self.qkv_dtype, 8](
+                    var s_vec = SIMD[Self.qkv_dtype, 8](
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 0]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 1]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 2]),
@@ -911,12 +941,31 @@ struct MLAPrefillSparse[
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 6]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 7]),
                     )
+                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
+                        scores_ptr,
+                        s_smem_bf16_elem_base + i * 512,
+                        bitcast[DType.uint32, 4](s_vec),
+                    )
 
-                # Rescale O (in TMEM) if mi changed materially. The first
-                # iteration (k==0) has no O to scale yet.
+                # Rescale O (in TMEM) if mi changed materially; chunk 0
+                # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
-                    tcgen05_fence_after()
-                    comptime for chunk_idx in range(NUM_O_RESCALE_CHUNKS):
+                    tcgen05_load_wait()
+                    var o_scaled_0 = InlineArray[
+                        Scalar[DType.float32], O_RESCALE_CHUNK
+                    ](uninitialized=True)
+                    comptime for j in range(O_RESCALE_CHUNK):
+                        o_scaled_0[j] = mul_ftz(
+                            rebind[Float32](o_chunk_prefetch[j]),
+                            scale_for_old,
+                        )
+                    tcgen05_st[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        pack=False,
+                    ](UInt32(Self.O_TMEM_ADDR), o_scaled_0)
+                    comptime for chunk_idx in range(1, NUM_O_RESCALE_CHUNKS):
                         var o_chunk = tcgen05_ld[
                             datapaths=32,
                             bits=32,
@@ -2788,10 +2837,18 @@ struct MLAPrefillSparse[
                 Self.V_DEPTH_PER_CTA // O_RESCALE_CHUNK
             )
 
-            var s_smem_uint128_base = (
-                scores_ptr.bitcast[SIMD[Self.qkv_dtype, 8]]()
-                + (idx_in_wg % UInt32(64))
-                + UInt32(64) * ((idx_in_wg / UInt32(64)) * UInt32(8))
+            # Per-thread base bf16 element offset into the scores smem,
+            # matching the K-major SW128B layout the subsequent SV MMA
+            # expects. See phase1.cuh:166-167 — uint128 base =
+            # (idx%64) + 64*((idx/64)*8); ×8 converts uint128 units to bf16
+            # elements. Upper-half threads write the left half of S;
+            # lower-half threads write the right half.
+            var s_smem_bf16_elem_base = Int(
+                (
+                    (idx_in_wg % UInt32(64))
+                    + UInt32(512) * (idx_in_wg / UInt32(64))
+                )
+                * UInt32(8)
             )
 
             for k in range(num_k_blocks):
@@ -2877,8 +2934,27 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
+                var o_chunk_prefetch = InlineArray[
+                    Scalar[DType.float32], O_RESCALE_CHUNK
+                ](uninitialized=True)
+                if k > 0 and should_scale_o:
+                    tcgen05_fence_after()
+                    o_chunk_prefetch = tcgen05_ld[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        dtype=DType.float32,
+                        pack=False,
+                        width=O_RESCALE_CHUNK,
+                    ](UInt32(Self.O_TMEM_ADDR))
+
+                # Write S to scores smem as 8 bf16 per uint128, stride 64
+                # uint128 between writes--exactly the K-major SW128B layout
+                # the SS-MMA reads. Keep the packed 128-bit store: a plain
+                # SIMD[bf16, 8] store scalarizes into bank-conflicting
+                # half-word stores.
                 comptime for i in range(P_PER_THREAD // 8):
-                    s_smem_uint128_base[i * 64] = SIMD[Self.qkv_dtype, 8](
+                    var s_vec = SIMD[Self.qkv_dtype, 8](
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 0]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 1]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 2]),
@@ -2888,10 +2964,31 @@ struct MLAPrefillSparse[
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 6]),
                         rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 7]),
                     )
+                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
+                        scores_ptr,
+                        s_smem_bf16_elem_base + i * 512,
+                        bitcast[DType.uint32, 4](s_vec),
+                    )
 
+                # Rescale O (in TMEM) if mi changed materially; chunk 0
+                # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
-                    tcgen05_fence_after()
-                    comptime for chunk_idx in range(NUM_O_RESCALE_CHUNKS):
+                    tcgen05_load_wait()
+                    var o_scaled_0 = InlineArray[
+                        Scalar[DType.float32], O_RESCALE_CHUNK
+                    ](uninitialized=True)
+                    comptime for j in range(O_RESCALE_CHUNK):
+                        o_scaled_0[j] = mul_ftz(
+                            rebind[Float32](o_chunk_prefetch[j]),
+                            scale_for_old,
+                        )
+                    tcgen05_st[
+                        datapaths=32,
+                        bits=32,
+                        repeat=O_RESCALE_CHUNK,
+                        pack=False,
+                    ](UInt32(Self.O_TMEM_ADDR), o_scaled_0)
+                    comptime for chunk_idx in range(1, NUM_O_RESCALE_CHUNKS):
                         var o_chunk = tcgen05_ld[
                             datapaths=32,
                             bits=32,

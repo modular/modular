@@ -26,6 +26,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
+from std.utils.coord import Coord
 
 from std.sys.info import has_apple_gpu_accelerator
 
@@ -91,19 +92,19 @@ def split_copy_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, in_ptr, out_stride0, dim2, axis_offset, in_stride0)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = idx[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         var i0, rem = divmod(i, out_stride0)
         var j, i2 = divmod(rem, dim2)
         var in_flat = i0 * in_stride0 + (j + axis_offset) * dim2 + i2
         out_ptr[i] = in_ptr[in_flat]
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=1](IndexList[1](total), ctx)
+        elementwise[func, simd_width=1](Coord(IndexList[1](total)), ctx)
     else:
         comptime if has_accelerator():
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), ctx
+                Coord(IndexList[1](total)), ctx
             )
         else:
             raise Error("No GPU accelerator available")

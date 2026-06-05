@@ -60,6 +60,13 @@ VISION_TASK = "chartqa"
 EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
+# Prometheus field where each framework exposes its generated-token count.
+_COMPLETION_TOKEN_METRICS = (
+    "maxserve_num_output_tokens_total",  # max / max-ci
+    "vllm:generation_tokens_total",  # vllm
+    "sglang:generation_tokens_total",  # sglang
+)
+
 
 def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
@@ -155,6 +162,7 @@ def call_eval(
     max_concurrent: int,
     num_questions: int,
     disable_timeouts: bool,
+    metrics_url: str | None = None,
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
@@ -211,6 +219,9 @@ def call_eval(
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
         eval_timeout = None if disable_timeouts else 600
+        tokens_before = (
+            get_completion_tokens(metrics_url) if metrics_url else None
+        )
         try:
             check_call(args, timeout=eval_timeout)
         except TimeoutExpired:
@@ -218,8 +229,43 @@ def call_eval(
                 f"Evals did not finish within the expected timeout={eval_timeout}s. "
                 "You can pass --disable-timeouts to opt-out of this."
             ) from None
+        tokens_after = (
+            get_completion_tokens(metrics_url) if metrics_url else None
+        )
 
-        return parse_eval_results(Path(tempdir))
+        results, samples = parse_eval_results(Path(tempdir))
+        results["completion_tokens"] = (
+            tokens_after - tokens_before
+            if tokens_before is not None and tokens_after is not None
+            else None
+        )
+        return results, samples
+
+
+def get_completion_tokens(metrics_url: str) -> int | None:
+    """Reads the completion-token count from Prometheus, or None if missing."""
+    try:
+        r = requests.get(metrics_url, timeout=(5, 30))
+        r.raise_for_status()
+    except requests.RequestException:
+        return None
+
+    for metric in _COMPLETION_TOKEN_METRICS:
+        total = 0.0
+        found = False
+        for line in r.text.splitlines():
+            if not line or line.startswith("#"):
+                continue
+            # A sample line is ``name{labels} value`` or ``name value``.
+            name = line.split("{", 1)[0].split(" ", 1)[0]
+            if name != metric:
+                continue
+            total += float(line.rsplit(" ", 1)[1])
+            found = True
+        if found:
+            return int(total)
+
+    return None
 
 
 def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:
@@ -243,6 +289,7 @@ class EvalSummary:
     accuracy_stderr: float
     total_evaluation_time_seconds: float
     task_hash: str
+    completion_tokens: int | None = None
 
 
 def build_eval_summary(
@@ -282,6 +329,7 @@ def build_eval_summary(
                 accuracy_stderr=accuracy_stderr,
                 total_evaluation_time_seconds=total_secs,
                 task_hash=result["task_hashes"][task],
+                completion_tokens=result.get("completion_tokens"),
             )
         )
 

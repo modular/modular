@@ -526,3 +526,18 @@ async def test_multi_cache_lifecycle() -> None:
     # Single release covers all caches.
     kv_manager.release(ctx.request_id, replica_idx=0)
     assert not kv_manager.contains(ctx.request_id, replica_idx=0)
+
+
+def test_alloc_dummy_uses_null_block_without_refcount() -> None:
+    """Dummy requests map to the null block."""
+    kv_manager = _make_kv_manager(total_num_pages=8)
+    pool = kv_manager._replica[0].block_manager.device_block_pool
+    assert pool.null_block.is_null
+    assert pool.null_block.bid == 8
+    assert 8 not in pool.free_blocks
+    assert pool.num_free_blocks == 8
+
+    dummy_id = RequestID("dummy-test")
+    kv_manager.alloc_dummy(dummy_id, replica_idx=0)
+    assert pool.num_free_blocks == 8
+    assert kv_manager.get_req_blocks(dummy_id, replica_idx=0) == [8]
