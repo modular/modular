@@ -475,6 +475,14 @@ class OpenAIChatResponseGenerator(
                 n_reasoning_tokens + n_tokens,
             )
 
+            if request.response_format is not None:
+                logger.info(
+                    "Tool/constrained request %s succeeded (stream=true): type=%s, tool_calls_emitted=%s",
+                    request.request_id,
+                    request.response_format.type,
+                    has_emitted_tool_calls,
+                )
+
             # If `include_usage=True`, send a final chunk with usage statistics
             if self.stream_options and self.stream_options.get("include_usage"):
                 final_usage = CompletionUsage(
@@ -673,6 +681,15 @@ class OpenAIChatResponseGenerator(
                 service_tier=None,
                 usage=usage,
             )
+            if request.response_format is not None:
+                logger.info(
+                    "Tool/constrained request %s succeeded (stream=false): type=%s, tool_calls_emitted=%s",
+                    request.request_id,
+                    request.response_format.type,
+                    any(
+                        choice.message.tool_calls for choice in response_choices
+                    ),
+                )
             return response
         finally:
             record_request_end(
