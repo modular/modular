@@ -16,6 +16,7 @@ from std.bit import log2_floor
 from std.collections import Optional, OptionalReg
 from std.gpu import block_dim, lane_id, thread_idx
 from std.gpu.memory import AddressSpace, CacheEviction, async_copy
+from std.math.uutils import umod
 from std.sys import align_of, size_of
 
 from layout import Idx
@@ -308,19 +309,25 @@ struct SharedToGenericTileCopier[
             comptime dst_align = align_of[SIMD[dst.dtype, simd_size]]()
             comptime swizzle_fn = Self.swizzle.value()
 
-            var src_frag_offset = src_fragments._distance(src.ptr)
+            var src_frag_offset = Scalar[src.linear_idx_type](
+                src_fragments._distance(src.ptr)
+            )
             comptime num_stores_per_thread = (
                 src_fragments.LayoutType.static_product // simd_size
             )
 
             comptime for i in range(num_stores_per_thread):
-                var src_idx = src_fragments.layout(Idx[i * simd_size])
+                var src_idx = src_fragments.layout[
+                    linear_idx_type=src.linear_idx_type
+                ](Idx[i * simd_size])
                 var dst_idx = dst_fragments.layout(Idx[i * simd_size])
-                var src_idx_base = src_idx % Int64(swizzle_fn.size())
+                var src_idx_base = umod(
+                    src_idx,
+                    Scalar[src.linear_idx_type](swizzle_fn.size()),
+                )
                 var src_idx_diff = src_idx - src_idx_base
                 var swizzled_idx = swizzle_fn(
-                    Scalar[src.linear_idx_type](src_frag_offset)
-                    + Scalar[src.linear_idx_type](src_idx_base)
+                    src_frag_offset + src_idx_base
                 ) + Scalar[src.linear_idx_type](src_idx_diff)
 
                 var src_vec = src.ptr.load[
@@ -594,17 +601,23 @@ struct LocalToSharedTileCopier[
             comptime dst_align = align_of[SIMD[dst.dtype, simd_size]]()
             comptime swizzle_fn = Self.swizzle.value()
 
-            var dst_frag_offset = dst_fragments._distance(dst.ptr)
+            var dst_frag_offset = Scalar[dst.linear_idx_type](
+                dst_fragments._distance(dst.ptr)
+            )
             comptime num_vecs = src.LayoutType.static_product // simd_size
 
             comptime for i in range(num_vecs):
                 var src_idx = src.layout(Idx[i * simd_size])
-                var dst_idx = dst_fragments.layout(Idx[i * simd_size])
-                var dst_idx_base = dst_idx % Int64(swizzle_fn.size())
+                var dst_idx = dst_fragments.layout[
+                    linear_idx_type=dst.linear_idx_type
+                ](Idx[i * simd_size])
+                var dst_idx_base = umod(
+                    dst_idx,
+                    Scalar[dst.linear_idx_type](swizzle_fn.size()),
+                )
                 var dst_idx_diff = dst_idx - dst_idx_base
                 var swizzled_idx = swizzle_fn(
-                    Scalar[dst.linear_idx_type](dst_frag_offset)
-                    + Scalar[dst.linear_idx_type](dst_idx_base)
+                    dst_frag_offset + dst_idx_base
                 ) + Scalar[dst.linear_idx_type](dst_idx_diff)
                 var src_vec = src.ptr.load[
                     width=simd_size, alignment=src_align
@@ -840,14 +853,16 @@ struct GenericToSharedAsyncTileCopier[
             )
             comptime for i in range(num_issues):
                 var src_idx = Int(src_fragments.layout(Idx[i]))
-                var dst_idx_raw = dst_fragments.layout(Idx[i])
-                var dst_idx_base = dst_idx_raw % Int64(swizzle_fn.size())
+                var dst_idx_raw = dst_fragments.layout[
+                    linear_idx_type=dst.linear_idx_type
+                ](Idx[i])
+                var dst_idx_base = umod(
+                    dst_idx_raw,
+                    Scalar[dst.linear_idx_type](swizzle_fn.size()),
+                )
                 var dst_idx_diff = dst_idx_raw - dst_idx_base
                 var swizzled_idx = (
-                    swizzle_fn(
-                        dst_frag_offset_typed
-                        + Scalar[dst.linear_idx_type](dst_idx_base)
-                    )
+                    swizzle_fn(dst_frag_offset_typed + dst_idx_base)
                     + Scalar[dst.linear_idx_type](dst_idx_diff)
                     - dst_frag_offset_typed
                 )

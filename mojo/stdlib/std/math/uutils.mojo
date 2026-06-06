@@ -18,6 +18,8 @@ slower when performed using signed integers on some accelerators, as correctly
 handling negative values requires additional instructions.
 """
 
+from std.builtin.dtype import _unsigned_integral_type_of
+
 
 @always_inline
 def ufloordiv(a: Int, b: Int) -> Int:
@@ -76,6 +78,37 @@ def umod(a: Int, b: Int) -> Int:
         The remainder of unsigned division.
     """
     return Int(UInt(a) % UInt(b))
+
+
+@always_inline
+def umod[
+    dtype: DType, width: Int, //
+](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Perform unsigned modulo (`%`) on `SIMD` arguments.
+
+    This function reinterprets both arguments as unsigned values of the same
+    bit width and performs unsigned modulo, which is faster than signed modulo
+    on NVIDIA GPUs.
+
+    For correctness, both arguments should be non-negative integers.
+
+    Constraints:
+        `dtype` must be an integral type.
+
+    Parameters:
+        dtype: The integral data type of the operands.
+        width: The number of elements in each `SIMD` vector.
+
+    Args:
+        a: The dividend (treated as unsigned).
+        b: The divisor (treated as unsigned).
+
+    Returns:
+        The elementwise remainder of unsigned division.
+    """
+    comptime assert dtype.is_integral(), "umod requires an integral dtype"
+    comptime utype = _unsigned_integral_type_of[dtype]()
+    return (a.cast[utype]() % b.cast[utype]()).cast[dtype]()
 
 
 @always_inline
