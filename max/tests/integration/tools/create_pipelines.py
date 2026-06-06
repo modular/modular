@@ -2125,6 +2125,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "kv_cache_format": "float8_e4m3fn",
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
         model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
