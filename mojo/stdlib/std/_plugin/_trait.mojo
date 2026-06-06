@@ -19,6 +19,7 @@ from std.gpu import PDLLevel
 from std.gpu.host import DeviceContext
 
 from std.utils.index import Index, IndexList, StaticTuple
+from std.math.math import _ExpPluginHookFnType, _TanhPluginHookFnType
 
 
 trait PluginHooks:
@@ -35,11 +36,7 @@ trait PluginHooks:
     `debug_assert` and deadlock comptime instantiation.
     """
 
-    comptime exp_fn: Optional[
-        def[
-            dtype: DType, width: Int, //
-        ](SIMD[dtype, width]) thin -> SIMD[dtype, width]
-    ]
+    comptime exp_fn: Optional[_ExpPluginHookFnType]
     """Elementwise exponential override.
 
     Parameters:
@@ -53,11 +50,7 @@ trait PluginHooks:
         Elementwise `exp(x)` computed on the vendor backend.
     """
 
-    comptime tanh_fn[dtype: DType, width: Int]: Optional[
-        def[
-            dtype: DType, width: Int, //
-        ](SIMD[dtype, width]) thin -> SIMD[dtype, width]
-    ]
+    comptime tanh_fn[dtype: DType, width: Int]: Optional[_TanhPluginHookFnType]
     """Elementwise hyperbolic tangent override.
 
     Parameters:
@@ -205,16 +198,10 @@ comptime ReduceGeneratorFnType = (
 struct DefaultPlugin(PluginHooks):
     """Default `PluginHooks` implementation used when no plugin is active."""
 
-    comptime exp_fn: Optional[
-        def[
-            dtype: DType, width: Int, //
-        ](SIMD[dtype, width]) thin -> SIMD[dtype, width]
-    ] = None
+    comptime exp_fn: Optional[_ExpPluginHookFnType] = None
 
     comptime tanh_fn[dtype: DType, width: Int]: Optional[
-        def[
-            dtype: DType, width: Int, //
-        ](SIMD[dtype, width]) thin -> SIMD[dtype, width]
+        _TanhPluginHookFnType
     ] = None
 
     comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
