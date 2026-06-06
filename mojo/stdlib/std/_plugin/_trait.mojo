@@ -20,6 +20,8 @@ from std.gpu.host import DeviceContext
 
 from std.utils.index import Index, IndexList, StaticTuple
 from std.math.math import _ExpPluginHookFnType, _TanhPluginHookFnType
+from std.memory.stack_allocation import _StackAllocationPluginHookFnType
+from std.memory.unsafe_pointer import _UnsafeDanglingPluginHookFnType
 
 
 trait PluginHooks:
@@ -65,18 +67,10 @@ trait PluginHooks:
     """
 
     comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
-        def[
-            count: Int,
-            type: AnyType,
-            /,
-            name: Optional[StaticString],
-            alignment: Int,
-        ]() thin -> UnsafePointer[
-            type, MutExternalOrigin, address_space=address_space
-        ]
+        _StackAllocationPluginHookFnType[address_space]
     ]
 
-    comptime unsafe_dangling_fn: Optional[def[alignment: Int]() thin -> Int]
+    comptime unsafe_dangling_fn: Optional[_UnsafeDanglingPluginHookFnType]
     """`UnsafePointer.unsafe_dangling()` address override.
 
     Parameters:
@@ -205,19 +199,11 @@ struct DefaultPlugin(PluginHooks):
     ] = None
 
     comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
-        def[
-            count: Int,
-            type: AnyType,
-            /,
-            name: Optional[StaticString],
-            alignment: Int,
-        ]() thin -> UnsafePointer[
-            type, MutExternalOrigin, address_space=address_space
-        ]
+        _StackAllocationPluginHookFnType[address_space]
     ] = None
 
     comptime unsafe_dangling_fn: Optional[
-        def[alignment: Int]() thin -> Int
+        _UnsafeDanglingPluginHookFnType
     ] = None
 
     comptime print_emit_fn: Optional[PrintEmitFnType] = None
