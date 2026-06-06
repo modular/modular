@@ -838,6 +838,7 @@ logit_verification_pipelines:
     relative_tolerance: 9.6e-01
     cos_dist_threshold: 2.0e-03
     kl_div_threshold: 5.0e+00
+    timeout: 1440
 
   amd/Kimi-K2.5-MXFP4:
     pre_submit_agents: []
@@ -851,6 +852,7 @@ logit_verification_pipelines:
       json_file: "vllm_amd_kimi-k2_5-mxfp4_golden.json"
     cos_dist_threshold: 1.7e-02
     kl_div_threshold: 1.0e+00
+    timeout: 1440
 
   # Text-only DeepseekV3 conversion of the Kimi-K2.5-NVFP4 weights (vision
   # stack stripped, key prefixes rewritten), loaded from a directory pre-staged
@@ -871,6 +873,7 @@ logit_verification_pipelines:
       json_file: "vllm_nvidia_Kimi-K2.5-NVFP4__internal_float4_e2m1fnx2_golden.json"
     cos_dist_threshold: 2.1e-04
     kl_div_threshold: 5.1e-02
+    timeout: 1440
 
   MiniMaxAI/MiniMax-M2.7:
     pre_submit_agents: []
