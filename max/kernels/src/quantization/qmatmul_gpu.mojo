@@ -2137,14 +2137,19 @@ def matmul_gpu_qint4_impl[
 def gpu_qint4_repack_Q4_0[
     target: StaticString,
 ](
-    b: LayoutTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_packed: LayoutTensor[
+    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    b_packed_tt: TileTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: Optional[DeviceContext] = None,
 ) raises:
+    # Host signature accepts TileTensor; bridge inward to LayoutTensor for the
+    # downstream `enqueue_function` whose kernel params are still LayoutTensor.
+    # Mirrors `matmul_gpu_qint4` above. Per
+    # Kernels/claude_kb/entries/exceptions/host-function-signatures.md the
+    # bridge moves inward, it does not disappear.
+    var b = b_tt.to_layout_tensor()
+    var b_packed = b_packed_tt.to_layout_tensor()
     comptime assert b.rank == 2
     comptime assert b_packed.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
@@ -2182,8 +2187,10 @@ def gpu_qint4_repack_GPTQ[
     group_size: Int,
     target: StaticString,
 ](
-    b: LayoutTensor[mut=False, DType.uint8, ...],
-    b_packed: LayoutTensor[mut=True, DType.uint8, ...],
+    b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    b_packed_tt: TileTensor[
+        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
+    ],
     perm_idx: OptionalReg[
         LayoutTensor[
             mut=False,
@@ -2194,6 +2201,12 @@ def gpu_qint4_repack_GPTQ[
     ] = None,
     ctx: Optional[DeviceContext] = None,
 ) raises:
+    # `b`/`b_packed` host params accept TileTensor and bridge inward to
+    # LayoutTensor for `enqueue_function` (same pattern as `matmul_gpu_qint4`).
+    # `perm_idx` stays LayoutTensor: the caller builds a bespoke immutable
+    # LayoutTensor view for it, so it is left out of this rotation.
+    var b = b_tt.to_layout_tensor()
+    var b_packed = b_packed_tt.to_layout_tensor()
     comptime assert b.rank == 2
     comptime assert b_packed.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
