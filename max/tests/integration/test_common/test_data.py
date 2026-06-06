@@ -20,10 +20,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
+from max.pipelines.context import SamplingParams
 from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
-    SamplingParams,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,

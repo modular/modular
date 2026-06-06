@@ -53,9 +53,9 @@ from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     PagedCacheValues,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.modeling.types import RequestID, TokenBuffer
+from max.pipelines.modeling.types import RequestID
 
 # ---------------------------------------------------------------------------
 # Test configuration

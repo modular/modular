@@ -21,13 +21,15 @@ from collections.abc import AsyncGenerator, AsyncIterator, Generator
 from typing import Any, Generic
 
 import zmq
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     BaseContextType,
+    TextGenerationContext,
+)
+from max.pipelines.modeling.types import (
     EmbeddingsContext,
     PipelineOutputType,
     PipelineTask,
     RequestID,
-    TextGenerationContext,
 )
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler_result import SchedulerResult
@@ -225,10 +227,10 @@ def _response_type_for_task(
     pipeline_task: PipelineTask,
 ) -> type[Any]:
     """Maps a PipelineTask to the correct msgspec response type for ZMQ deserialization."""
-    from max.pipelines.modeling.types.generation import GenerationOutput
+    from max.pipelines.context import TextGenerationOutput
+    from max.pipelines.context.outputs import GenerationOutput
     from max.pipelines.modeling.types.pipeline_variants import (
         EmbeddingsGenerationOutput,
-        TextGenerationOutput,
     )
 
     if pipeline_task == PipelineTask.TEXT_GENERATION:

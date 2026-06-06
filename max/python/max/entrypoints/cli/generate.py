@@ -30,16 +30,18 @@ from max.pipelines import (
     TextAndVisionTokenizer,
     TextTokenizer,
 )
+from max.pipelines.context import (
+    LogitsProcessor,
+    ProcessorInputs,
+    SamplingParams,
+    TextGenerationContext,
+)
 from max.pipelines.modeling.types import (
     ImageContentPart,
-    LogitsProcessor,
     Pipeline,
     PipelineTokenizer,
-    ProcessorInputs,
     RequestID,
-    SamplingParams,
     TextContentPart,
-    TextGenerationContext,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )

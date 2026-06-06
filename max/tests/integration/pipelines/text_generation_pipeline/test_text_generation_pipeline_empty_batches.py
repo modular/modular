@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 from max.driver import Buffer
 from max.dtype import DType
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,

@@ -16,7 +16,6 @@
 from max.pipelines.weights.hf_utils import download_weight_files
 
 from .architectures import register_all_models
-from .core import PixelContext, TextAndVisionContext, TextContext
 from .diffusion.pipeline import PixelGenerationPipeline
 from .lib.config import (
     KVCacheConfig,
@@ -78,7 +77,6 @@ __all__ = [
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",
-    "PixelContext",
     "PixelGenerationPipeline",
     "ProfilingConfig",
     "PrometheusMetricsMode",
@@ -88,9 +86,7 @@ __all__ = [
     "SpeculativeConfig",
     "SupportedArchitecture",
     "SupportedEncoding",
-    "TextAndVisionContext",
     "TextAndVisionTokenizer",
-    "TextContext",
     "TextGenerationPipeline",
     "TextGenerationPipelineInterface",
     "TextTokenizer",

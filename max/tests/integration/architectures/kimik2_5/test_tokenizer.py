@@ -21,13 +21,15 @@ from max.pipelines.architectures.kimik2_5.tokenizer import (
     _sanitize_kimi_schema_node,
     _sanitize_kimi_tool_schemas,
 )
+from max.pipelines.context import (
+    SamplingParams,
+    TextGenerationResponseFormat,
+)
 from max.pipelines.modeling.types import (
     RequestID,
-    SamplingParams,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TextGenerationResponseFormat,
 )
 
 

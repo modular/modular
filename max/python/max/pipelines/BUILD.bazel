@@ -9,7 +9,6 @@ modular_py_library(
     ],
     deps = [
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",

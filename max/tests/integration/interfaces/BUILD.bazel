@@ -18,6 +18,7 @@ modular_py_test(
         ],
     ),
     deps = [
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/request",
         "//max/python/max/serve:queue",

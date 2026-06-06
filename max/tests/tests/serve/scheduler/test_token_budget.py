@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
-from max.pipelines.core import TextContext
-from max.pipelines.modeling.types import TokenBuffer
+from max.pipelines.context import TextContext, TokenBuffer
 from max.serve.scheduler.batch_constructor.token_budget import (
     ActiveTokenBudget,
     BudgetStatus,

@@ -31,7 +31,7 @@ from max.graph.weights import (
 )
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import (
     IncrementCacheLengthsProcessor,
     PagedKVCacheManager,

@@ -17,20 +17,22 @@ from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    GenerationStatus,
+    TextContext,
+    TextGenerationOutput,
+    TokenBuffer,
+    TokenSlice,
+)
 from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.lib import build_eos_tracker_for_request
 from max.pipelines.modeling.types import (
-    GenerationStatus,
     Pipeline,
     PipelineTokenizer,
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TokenBuffer,
-    TokenSlice,
 )
 
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.pipelines.modeling.types.tokens import Range, TokenBuffer
+from max.pipelines.context.tokens import Range, TokenBuffer
 
 
 def test_token_buffer__tokens_validation_during_init() -> None:

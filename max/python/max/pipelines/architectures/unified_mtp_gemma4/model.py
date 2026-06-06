@@ -29,7 +29,7 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,

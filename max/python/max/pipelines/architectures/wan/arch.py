@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import validate_wan_max_pixel_area
+from max.pipelines.context import validate_wan_max_pixel_area
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig

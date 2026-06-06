@@ -26,7 +26,7 @@ Example:
 .. code-block:: python
 
     import numpy as np
-    from max.pipelines.modeling.types.tokens import TokenBuffer
+    from max.pipelines.context.tokens import TokenBuffer
 
     # Create a token buffer with initial prompt tokens
     prompt_tokens = np.array([1, 2, 3, 4], dtype=np.int64)
@@ -45,12 +45,12 @@ Example:
 from __future__ import annotations
 
 import dataclasses
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
 import numpy as np
 import numpy.typing as npt
 
-__all__ = ["Range", "TokenBuffer", "TokenSlice"]
+__all__ = ["ImageMetadata", "Range", "TokenBuffer", "TokenSlice"]
 
 
 @dataclasses.dataclass(frozen=False, slots=True)
@@ -747,3 +747,41 @@ class TokenBuffer:
             f"  total_tokens={total_length}, "
             f"  tokens_preview={tokens_preview})"
         )
+
+
+@dataclasses.dataclass(kw_only=True)
+class ImageMetadata:
+    """Metadata about an image in the prompt.
+
+    Each image corresponds to a range in the text token array [start_idx, end_idx).
+    """
+
+    start_idx: int
+    """Index of the first <vision_token_id> special token for the image"""
+
+    end_idx: int
+    """One after the index of the last <vision_token_id> special token for the image"""
+
+    pixel_values: npt.NDArray[Any]
+    """Pixel values for the image.
+
+    Can be various dtypes depending on the vision model:
+
+    - float32: Original precision
+    - uint16: BFloat16 bits stored as uint16 (workaround for NumPy's lack of
+      native bfloat16 support). Reinterpreted as bfloat16 on GPU.
+    """
+
+    image_hash: int | None = None
+    """Hash of the image, for use in prefix caching"""
+
+    def __post_init__(self) -> None:
+        if self.start_idx < 0:
+            raise ValueError("Images must have a valid start index")
+        if self.end_idx <= self.start_idx:
+            raise ValueError(
+                "Images must have a valid start and end index containing at least one <vision_token_id>"
+            )
+
+    def __repr__(self):
+        return f"ImageMetadata(start_idx={self.start_idx}, end_idx={self.end_idx}, pixel_values={self.pixel_values.shape})"

@@ -22,15 +22,17 @@ import pytest
 from max.driver import Buffer, DeviceSpec, accelerator_count
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    SamplingParams,
+    TextContext,
+    TokenBuffer,
+)
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     RequestID,
-    SamplingParams,
-    TokenBuffer,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.standalone import (

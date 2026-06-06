@@ -26,20 +26,20 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.core import (
+from max.pipelines.context import (
+    EOSTracker,
     GrammarEnforcementState,
+    ImageMetadata,
     TextAndVisionContext,
     TextContext,
+    TokenBuffer,
 )
-from max.pipelines.core.exceptions import PromptTooLongError
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.modeling.types import (
-    EOSTracker,
-    ImageMetadata,
     PipelineTokenizer,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image

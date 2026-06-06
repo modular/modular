@@ -18,7 +18,7 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lora import LoRAConfig, LoRAManager, LoRAStatus
 
 

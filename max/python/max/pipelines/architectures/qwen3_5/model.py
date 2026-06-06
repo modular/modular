@@ -38,7 +38,7 @@ from max.pipelines.architectures.qwen3vl_moe.context import (
     Qwen3VLTextAndVisionContext,
     VisionEncodingData,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     ModelInputs,

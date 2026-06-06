@@ -23,16 +23,18 @@ import numpy.typing as npt
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
+from max.pipelines.context import (
+    GenerationStatus,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
 from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
-    GenerationStatus,
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
     RequestType,
-    TextGenerationContextType,
     TextGenerationInputs,
-    TextGenerationOutput,
 )
 
 from .pipeline_model import PipelineModelWithKVCache

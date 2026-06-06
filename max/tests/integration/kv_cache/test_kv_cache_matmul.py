@@ -32,7 +32,7 @@ from max.nn.kernels import (
     matmul_kv_cache_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.pipelines import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context

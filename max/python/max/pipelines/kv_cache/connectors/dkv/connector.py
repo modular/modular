@@ -47,6 +47,7 @@ from max._core import nixl
 from max.driver import Buffer, Device
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.context import TextGenerationContext
 from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -55,7 +56,7 @@ from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
     TransferReqData,
     _get_nixl_backend_type,
 )
-from max.pipelines.modeling.types import RequestID, TextGenerationContext
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 
 logger = logging.getLogger("max.pipelines")

@@ -20,12 +20,15 @@ from typing import Any
 import numpy as np
 import pytest
 import zmq
-from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     ImageMetadata,
+    TextAndVisionContext,
+    TextContext,
+    TokenBuffer,
+)
+from max.pipelines.modeling.types import (
     RequestID,
     SharedMemoryArray,
-    TokenBuffer,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )

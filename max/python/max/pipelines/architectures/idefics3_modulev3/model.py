@@ -37,7 +37,7 @@ from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,

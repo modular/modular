@@ -39,9 +39,10 @@ from max.nn.kv_cache.utils import (
     AttentionDispatchResolver,
     build_max_lengths_tensor,
 )
+from max.pipelines.context import TextGenerationContext
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
-from max.pipelines.modeling.types import RequestID, TextGenerationContext
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 

@@ -51,7 +51,7 @@ import diffusers
 import torch
 from max.driver import DeviceSpec
 from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
-from max.pipelines.core import PixelContext
+from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.diffusion.interface import DiffusionPipeline
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline

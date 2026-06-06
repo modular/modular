@@ -17,7 +17,7 @@ from contextlib import contextmanager
 
 import hf_repo_lock
 from max.driver import DeviceSpec, scan_available_devices
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import TextGenerationPipeline, generate_local_model_path
 
 from .pipeline_config import (

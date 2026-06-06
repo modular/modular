@@ -23,7 +23,7 @@ from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import sgmv_qkv_lora_kernel
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack

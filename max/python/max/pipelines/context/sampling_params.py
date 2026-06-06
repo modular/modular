@@ -32,16 +32,13 @@ from .status import GenerationStatus
 def _validate_temperature(value: float, name: str) -> None:
     """Validate that a temperature-style parameter is in ``[0.0, 2.0]``.
 
-    Raises ``ValueError`` rather than ``max.pipelines.core.exceptions.
-    InputError``: importing that class into ``max.pipelines.modeling.types``
-    creates an init-time cycle through ``max.pipelines.core.context``'s
-    ``EOSTracker`` reference. Aligns with the surrounding ``min_p`` /
-    ``top_p`` / ``repetition_penalty`` validations which also raise
-    ``ValueError``. The chat-completion route maps ``ValueError`` to
-    ``HTTPException(400, detail="Value error.")`` so the descriptive
-    message is lost to the client; a broader cleanup to break the
-    cycle and switch every ``__post_init__`` validation to
-    ``InputError`` is tracked separately.
+    Raises ``ValueError`` rather than ``max.pipelines.context.exceptions.
+    InputError``: this keeps the import simple. Aligns with the surrounding
+    ``min_p`` / ``top_p`` / ``repetition_penalty`` validations which also
+    raise ``ValueError``. The chat-completion route maps ``ValueError`` to
+    ``HTTPException(400, detail="Value error.")`` so the descriptive message
+    is lost to the client; switch every ``__post_init__`` validation to
+    ``InputError`` to fix this.
     """
     if not math.isfinite(value) or not 0.0 <= value <= 2.0:
         raise ValueError(f"{name} must be in [0.0, 2.0], was {value}.")

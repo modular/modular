@@ -18,17 +18,19 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    TextContext,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
+from max.pipelines.context.tokens import TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
     BatchType,
     Pipeline,
     RequestID,
-    TextGenerationContextType,
     TextGenerationInputs,
-    TextGenerationOutput,
 )
-from max.pipelines.modeling.types.tokens import TokenBuffer
 
 
 @dataclass

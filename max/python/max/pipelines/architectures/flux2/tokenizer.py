@@ -20,15 +20,14 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
-from max.pipelines.core import PixelContext
-from max.pipelines.core.exceptions import InputError, PromptTooLongError
+from max.pipelines.context import PixelContext, TokenBuffer
+from max.pipelines.context.exceptions import InputError, PromptTooLongError
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.pixel_tokenizer import (
     PipelineClassName,
     PixelGenerationTokenizer,
     run_with_default_executor,
 )
-from max.pipelines.modeling.types import TokenBuffer
 from max.pipelines.request import OpenResponsesRequest
 from max.pipelines.request.provider_options import ImageProviderOptions
 

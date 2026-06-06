@@ -25,6 +25,7 @@ from max.driver import DeviceSpec, accelerator_count
 from max.dtype import DType
 from max.entrypoints.cli.config import parse_task_flags
 from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.context import SamplingParamsGenerationConfigDefaults
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -39,7 +40,6 @@ from max.pipelines.lib.config.config import (
 )
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
-from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
 from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (

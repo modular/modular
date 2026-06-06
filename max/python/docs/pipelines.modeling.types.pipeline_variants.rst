@@ -20,31 +20,14 @@ Text generation
    :template: autosummary/class.rst
 
    BatchType
+   ImageContentPart
    MessageContent
-   SpecDecodingState
    TextContentPart
-   TextGenerationContext
-   TextGenerationContextType
    TextGenerationInputs
-   TextGenerationOutput
    TextGenerationRequest
    TextGenerationRequestFunction
    TextGenerationRequestMessage
    TextGenerationRequestTool
-   TextGenerationResponseFormat
-   VLMContextType
-   VLMTextGenerationContext
-
-Image content
--------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   ImageContentPart
-   ImageMetadata
    VideoContentPart
 
 Embeddings
@@ -68,6 +51,4 @@ Image generation
    :toctree: generated
    :template: autosummary/class.rst
 
-   PixelGenerationContext
-   PixelGenerationContextType
    PixelGenerationInputs

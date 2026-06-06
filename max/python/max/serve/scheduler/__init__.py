@@ -16,7 +16,13 @@ import contextlib
 from collections.abc import AsyncGenerator
 from typing import Any, cast
 
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    BaseContextType,
+    PixelGenerationContext,
+    TextContext,
+    TextGenerationOutput,
+)
+from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.diffusion.pipeline import (
     PixelGenerationPipeline,
 )
@@ -26,18 +32,14 @@ from max.pipelines.lib import (
     TextGenerationPipeline,
 )
 from max.pipelines.modeling.types import (
-    BaseContextType,
     EmbeddingsContext,
     EmbeddingsGenerationOutput,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
-    PixelGenerationContext,
     PixelGenerationInputs,
     RequestID,
-    TextGenerationOutput,
 )
-from max.pipelines.modeling.types.generation import GenerationOutput
 from max.serve.config import Settings
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.interface import Scheduler

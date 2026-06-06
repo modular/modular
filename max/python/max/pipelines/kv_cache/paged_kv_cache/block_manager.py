@@ -30,13 +30,13 @@ from collections import defaultdict
 from collections.abc import Iterable
 
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.pipelines.kv_cache.kv_connector import KVConnector
-from max.pipelines.kv_cache.memory_tier import MemoryTier
-from max.pipelines.modeling.types import (
-    RequestID,
+from max.pipelines.context import (
     TextGenerationContext,
     VLMTextGenerationContext,
 )
+from max.pipelines.kv_cache.kv_connector import KVConnector
+from max.pipelines.kv_cache.memory_tier import MemoryTier
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 

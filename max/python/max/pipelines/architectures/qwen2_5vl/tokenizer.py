@@ -31,7 +31,12 @@ from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     fetch_image,
     process_vision_info,
 )
-from max.pipelines.core.exceptions import PromptTooLongError
+from max.pipelines.context import (
+    EOSTracker,
+    ImageMetadata,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
     float32_to_bfloat16_as_uint16,
@@ -39,12 +44,9 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.modeling.types import (
-    EOSTracker,
-    ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image

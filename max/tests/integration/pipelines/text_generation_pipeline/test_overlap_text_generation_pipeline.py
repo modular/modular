@@ -17,8 +17,12 @@ from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
-from max.pipelines.core import StructuredOutputRegionDelimiters, TextContext
-from max.pipelines.core.context import FUTURE_TOKEN
+from max.pipelines.context import (
+    StructuredOutputRegionDelimiters,
+    TextContext,
+    TokenBuffer,
+)
+from max.pipelines.context.context import FUTURE_TOKEN
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     TextGenerationPipeline,
@@ -37,7 +41,6 @@ from max.pipelines.modeling.types import (
     PipelineTask,
     RequestID,
     TextGenerationInputs,
-    TokenBuffer,
 )
 
 

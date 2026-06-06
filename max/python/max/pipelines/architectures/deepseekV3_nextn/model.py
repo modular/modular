@@ -29,7 +29,7 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,

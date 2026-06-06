@@ -24,15 +24,17 @@ import numpy as np
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from max.pipelines.core.exceptions import PromptTooLongError
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     BaseContext,
     GenerationStatus,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
+from max.pipelines.context.outputs import GenerationOutput
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.modeling.types import (
     PipelineTokenizer,
     RequestID,
 )
-from max.pipelines.modeling.types.generation import GenerationOutput
 from max.pipelines.request import OpenResponsesRequest
 from max.pipelines.request.open_responses import (
     OutputImageContent,

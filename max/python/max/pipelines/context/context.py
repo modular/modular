@@ -11,40 +11,533 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Standardized context object for Pipeline Inference."""
+"""Context objects and protocols for pipeline inference."""
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 import llguidance
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.modeling.types import (
-    EOSTracker,
-    GenerationStatus,
-    GrammarEnforcementSnapshot,
-    ImageMetadata,
-    LogProbabilities,
-    PixelGenerationContext,
-    RequestID,
-    SamplingParams,
-    SpecDecodingState,
-    TextGenerationContext,
-    TextGenerationOutput,
-    TextGenerationResponseFormat,
-    TokenBuffer,
-    VLMTextGenerationContext,
-)
-from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.request import RequestID
 from max.pipelines.request.open_responses import OutputImageContent
 
-CHUNK_SIZE = 128
+from .eos_tracking import EOSTracker
+from .log_probabilities import LogProbabilities
+from .outputs import GenerationOutput, TextGenerationOutput
+from .sampling_params import BaseContext, SamplingParams
+from .status import GenerationStatus
+from .tokens import ImageMetadata, TokenBuffer
+
+_CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
 
-logger = logging.getLogger("max.pipelines")
+_logger = logging.getLogger("max.pipelines")
+
+
+# ---------------------------------------------------------------------------
+# Response format
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TextGenerationResponseFormat:
+    """Represents the response format specification for a text generation request."""
+
+    type: str
+    """The type of response format, for example, ``json_object`` or ``grammar``."""
+
+    json_schema: dict[str, Any] = field(default_factory=dict)
+    """A JSON schema dictionary that defines the structure and validation rules for the generated response."""
+
+    grammar: str | None = None
+    """Grammar for constrained decoding.
+
+    When set with ``type="grammar"``, this takes precedence over ``json_schema``.
+    Used for model-specific constrained decoding formats like Kimi's tool call grammar.
+    """
+
+    grammar_enforced: bool = False
+    """Whether to actively enforce grammar via bitmask.
+
+    When True from the start, enforce grammar from the first token.
+    When False initially (for tool_choice=auto without response_format), the
+    grammar is compiled but not enforced until a tool call start token is
+    detected.
+    """
+
+    tools_forced: bool = False
+    """Whether tool calling was forced (tool_choice=required or named function).
+
+    Controls whether ``grammar_enforced`` is ``True`` from the first generated
+    token. Independent of the ``--enable-structured-output`` flag (which only
+    gates user-supplied schemas; see ``requires_structured_output_flag``).
+    """
+
+    requires_structured_output_flag: bool = False
+    """Whether this request requires ``--enable-structured-output`` to be set.
+
+    True when the constraint includes a user-supplied JSON schema (from
+    ``response_format``). False for pure tool-call grammars derived from
+    the model's tool parser, which work without the operator flag because
+    the grammar is server-controlled, not user-controlled.
+    """
+
+    has_json_schema: bool = False
+    """Whether this request includes a JSON schema response format."""
+
+
+# ---------------------------------------------------------------------------
+# Snapshot / state helpers
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class GrammarEnforcementSnapshot:
+    """Captured grammar-enforcement state for rollback.
+
+    The speculative bitmask path walks the enforcement state through
+    draft tokens to compute downstream slot constraints and then
+    restores this snapshot so committed-token processing on the next
+    batch replays the same transitions from a clean state. Lives next
+    to :class:`TextGenerationContext` because the protocol exposes it
+    via :meth:`TextGenerationContext.snapshot_grammar_state` /
+    :meth:`TextGenerationContext.restore_grammar_state`; the concrete
+    implementation in :class:`TextContext` constructs and consumes instances.
+    """
+
+    in_thinking_region: bool
+    grammar_enforced: bool
+    tool_calling_match_buffer: list[int]
+    thinking_match_buffer: list[int]
+
+
+@dataclass
+class SpecDecodingState:
+    """Per-request state for speculative decoding."""
+
+    draft_tokens_to_verify: list[int] = field(default_factory=list)
+    """The draft tokens to verify in the next batch"""
+
+    maybe_accepted_draft_tokens: list[int] = field(default_factory=list)
+    """The draft tokens that are being verified in the current batch
+
+    We are unsure whether these tokens will be accepted or not. However, to ensure
+    that we allocate enough KV, we conservatively assume that they will all be
+    accepted.
+
+    This should only be present when running with overlap scheduler."""
+
+
+# ---------------------------------------------------------------------------
+# TextGenerationContext protocol and TypeVar
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class TextGenerationContext(BaseContext, Protocol):
+    """Protocol defining the interface for text generation contexts in token generation.
+
+    A ``TextGenerationContext`` represents model inputs for text generation pipelines,
+    managing the state of tokens throughout the generation process. It handles token
+    arrays, generation status, sampling parameters, and various indices that track
+    different stages of token processing.
+    """
+
+    @property
+    def tokens(self) -> TokenBuffer:
+        """The token buffer for the context."""
+        ...
+
+    @property
+    def eos_tracker(self) -> EOSTracker:
+        """Holds EOS-related settings for this sequence and performs EOS/stop checks.
+
+        Returns:
+            The ``EOSTracker`` for this sequence.
+        """
+        ...
+
+    @property
+    def max_length(self) -> int | None:
+        """The maximum allowed length for this sequence.
+
+        When set, generation will stop when this length is reached, regardless
+        of other stopping criteria.
+
+        Returns:
+            The maximum sequence length limit, or ``None`` if no limit is set.
+        """
+        ...
+
+    def reset(self) -> None:
+        """Resets the context's state by combining all tokens into a new prompt.
+
+        This method is used when a request is evicted, meaning that the context
+        needed to be re-encoded in the following CE iteration.
+        """
+        ...
+
+    def compute_num_available_steps(
+        self,
+        max_seq_len: int,
+    ) -> int:
+        """Computes the maximum number of generation steps available.
+
+        Args:
+            max_seq_len: The maximum allowed sequence length for this context.
+
+        Returns:
+            The number of generation steps that can be executed before reaching
+            the sequence length limit.
+        """
+        ...
+
+    @property
+    def min_tokens(self) -> int:
+        """The minimum number of new tokens that must be generated.
+
+        Returns:
+            The minimum number of new tokens to generate.
+        """
+        ...
+
+    @property
+    def log_probabilities(self) -> int:
+        """The number of top tokens to return log probabilities for.
+
+        Returns:
+            The number of top tokens to include in log probability output.
+            Returns 0 if log probabilities are disabled.
+        """
+        ...
+
+    @property
+    def log_probabilities_echo(self) -> bool:
+        """Whether to include input tokens in the returned log probabilities.
+
+        Returns:
+            ``True`` if input tokens should be included in log probability output,
+            ``False`` otherwise.
+        """
+        ...
+
+    def get_min_token_logit_mask(
+        self, num_steps: int
+    ) -> list[npt.NDArray[np.int32]]:
+        """Returns the token indices that should be masked in the output logits.
+
+        Args:
+            num_steps: The number of generation steps to compute masks for.
+
+        Returns:
+            A list of NumPy arrays, where each array contains token indices
+            that should be masked for the corresponding generation step.
+        """
+        ...
+
+    def advance_token_buffer(
+        self,
+        new_token: int,
+        log_probabilities: LogProbabilities | None = None,
+    ) -> None:
+        """Advance the token buffer without touching FSM state.
+
+        Args:
+            new_token: The token to append to the buffer.
+            log_probabilities: Optional log probabilities for this token.
+        """
+        ...
+
+    def advance_fsm(self, token: int) -> bool:
+        """Advance the FSM matcher state by one token.
+
+        Args:
+            token: The token to consume in the FSM.
+
+        Returns:
+            True if the token was accepted by the matcher, False if no
+            matcher is present.
+        """
+        ...
+
+    def update(
+        self,
+        new_token: int,
+        log_probabilities: LogProbabilities | None = None,
+    ) -> None:
+        """Advance both token buffer and FSM state.
+
+        Args:
+            new_token: The token ID to add to the generation sequence.
+            log_probabilities: Optional log probability data for the new token
+                and alternatives.
+        """
+        ...
+
+    def update_with_future_token(self) -> None:
+        """Append a placeholder future token to the generated tokens.
+
+        This is primarily used for overlap scheduling.
+        """
+        ...
+
+    def realize_future_token(
+        self, new_token: int, log_probabilities: LogProbabilities | None = None
+    ) -> None:
+        """Overwrite the placeholder future token with the actual token.
+
+        This is primarily used for overlap scheduling.
+        """
+        ...
+
+    @property
+    def matcher(self) -> Any | None:
+        """The grammar matcher for structured output generation, if configured.
+
+        Returns:
+            The grammar matcher instance, or ``None`` if no structured generation
+            is configured for this context.
+        """
+        ...
+
+    @property
+    def json_schema(self) -> str | None:
+        """The JSON schema for constrained decoding, if configured.
+
+        Returns:
+            The JSON schema string, or ``None`` if no schema constraint is active.
+        """
+        ...
+
+    @property
+    def grammar(self) -> str | None:
+        """Grammar for constrained decoding, if configured."""
+        return None
+
+    def set_matcher(self, matcher: Any) -> None:
+        """Set a grammar matcher for constrained decoding.
+
+        Args:
+            matcher: The grammar matcher instance to use for constraining output.
+        """
+        ...
+
+    @property
+    def sampling_params(self) -> SamplingParams:
+        """The sampling parameters configured for this generation request.
+
+        Returns:
+            The :class:`SamplingParams` instance containing all sampling
+            configuration for this context.
+        """
+        ...
+
+    @property
+    def is_initial_prompt(self) -> bool:
+        """Whether this context contains only the initial prompt.
+
+        Returns:
+            ``True`` if no tokens have been generated yet, ``False`` if
+            generation has begun.
+        """
+        ...
+
+    def to_generation_output(self) -> TextGenerationOutput:
+        """Converts this context to a :class:`TextGenerationOutput` object.
+
+        Returns:
+            The output object containing the results of the text generation.
+        """
+        ...
+
+    @property
+    def spec_decoding_state(self) -> SpecDecodingState:
+        """Returns the speculative decoding state."""
+        ...
+
+    cached_prefix_length: int | None
+    """Prompt tokens served from the KV prefix cache on first admission."""
+
+    in_reasoning_phase: bool
+    """Whether the latest committed tokens are inside a ``<think>...</think>``
+    block."""
+
+    grammar_enforced: bool
+    """Whether grammar is currently being enforced via bitmask."""
+
+    tools_forced: bool
+    """Whether tool calling was forced (tool_choice=required or named function)."""
+
+    requires_structured_output_flag: bool
+    """Whether this request requires ``--enable-structured-output`` to be set."""
+
+    def set_tool_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        """Set token sequences for conditional tool call enforcement.
+
+        Args:
+            start_token_ids: Token IDs marking tool call start.
+            end_token_ids: Token IDs marking tool call end.
+        """
+        ...
+
+    def set_thinking_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        """Configure thinking region for conditional grammar enforcement.
+
+        Args:
+            start_token_ids: Token IDs marking thinking start.
+            end_token_ids: Token IDs marking thinking end (e.g., ``</think>``).
+        """
+        ...
+
+    def update_enforcement_state(self, token: int) -> bool:
+        """Advance the grammar-enforcement state machine by one token.
+
+        Args:
+            token: The newly committed token.
+
+        Returns:
+            True if the matcher should consume the token.
+        """
+        ...
+
+    def snapshot_grammar_state(self) -> GrammarEnforcementSnapshot:
+        """Capture enforcement state for a speculative rollback."""
+        ...
+
+    def restore_grammar_state(
+        self, snapshot: GrammarEnforcementSnapshot
+    ) -> None:
+        """Restore state captured by ``snapshot_grammar_state``."""
+        ...
+
+
+TextGenerationContextType = TypeVar(
+    "TextGenerationContextType", bound=TextGenerationContext
+)
+"""Type variable for text generation context types, constrained to TextGenerationContext."""
+
+
+# ---------------------------------------------------------------------------
+# VLM protocol and TypeVar
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class VLMTextGenerationContext(TextGenerationContext, Protocol):
+    """Protocol defining the interface for VLM input contexts."""
+
+    @property
+    def image_idx(self) -> int:
+        """Index of the next unencoded image in the prompt."""
+        ...
+
+    @property
+    def images(self) -> list[ImageMetadata]:
+        """The images in the context."""
+        ...
+
+    @property
+    def next_images(self) -> list[ImageMetadata]:
+        """The images that are not yet encoded."""
+        ...
+
+    @property
+    def needs_vision_encoding(self) -> bool:
+        """Whether vision encoding is needed for this context."""
+        ...
+
+    @property
+    def image_token_indices(self) -> npt.NDArray[np.int32]:
+        """Positions of image-placeholder tokens within this context's token buffer."""
+        ...
+
+    def compute_image_aligned_idx(self, idx: int) -> int:
+        """Aligns an index downward to avoid splitting an image token span.
+
+        Args:
+            idx: The candidate index into the token sequence.
+
+        Returns:
+            The adjusted index, guaranteed not to split an image token span.
+        """
+        ...
+
+
+VLMContextType = TypeVar("VLMContextType", bound=VLMTextGenerationContext)
+"""Type variable for VLM context types, constrained to VLMTextGenerationContext."""
+
+
+# ---------------------------------------------------------------------------
+# Pixel generation protocol and TypeVar
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class PixelGenerationContext(BaseContext, Protocol):
+    """Protocol defining the interface for pixel generation contexts.
+
+    A ``PixelGenerationContext`` represents model inputs for pixel generation
+    pipelines, managing the state and parameters needed for generating images
+    or videos.
+    """
+
+    @property
+    def tokens(self) -> TokenBuffer:
+        """The token buffer for the context."""
+        ...
+
+    @property
+    def latents(self) -> npt.NDArray[np.float32]:
+        """The latents for the context."""
+        ...
+
+    @property
+    def height(self) -> int:
+        """Height of generated output in pixels."""
+        ...
+
+    @property
+    def width(self) -> int:
+        """Width of generated output in pixels."""
+        ...
+
+    @property
+    def num_inference_steps(self) -> int:
+        """Number of denoising steps."""
+        ...
+
+    @property
+    def guidance_scale(self) -> float:
+        """Classifier-free guidance scale (1.0 to disable CFG)."""
+        ...
+
+    @property
+    def num_images_per_prompt(self) -> int:
+        """Number of images to generate."""
+        ...
+
+
+PixelGenerationContextType = TypeVar(
+    "PixelGenerationContextType", bound=PixelGenerationContext
+)
+"""Type variable for pixel generation context types, constrained to PixelGenerationContext."""
+
+
+# ---------------------------------------------------------------------------
+# Concrete helpers used by the context implementations below
+# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -67,44 +560,15 @@ class StructuredOutputRegionDelimiters:
 class GrammarEnforcementState:
     """Manages grammar enforcement state for constrained decoding.
 
-    Encapsulates the logic for:
-    - Tracking whether grammar is currently being enforced
-    - Detecting tool call start/end token sequences
-    - Detecting thinking region end sequences (for thinking + constrained decoding)
-    - Managing the token buffer for multi-token sequence matching
+    Encapsulates the logic for tracking whether grammar is currently being
+    enforced, detecting tool call and thinking region boundary token sequences,
+    and managing the token buffer for multi-token sequence matching.
 
-    State machine scenarios:
-
-    1. ``tool_choice=auto`` without thinking (tool region set):
-       - Starts with ``grammar_enforced=False``
-       - Detects tool_start -> ``grammar_enforced=True``
-       - Detects tool_end -> ``grammar_enforced=False``
-
-    2. ``tool_choice=auto`` with thinking (thinking + tool region set):
-       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
-       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=False``
-       - Detects tool_start -> ``grammar_enforced=True``
-       - Detects tool_end -> ``grammar_enforced=False``
-
-    3. ``tool_choice=required`` with thinking (thinking region set):
-       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
-       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
-
-    4. ``response_format: json_schema`` with thinking (thinking region set):
-       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
-       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
-
-    5. ``tool_choice=auto`` + ``response_format: json_schema`` + thinking:
-       - Combined grammar constrains to tool calls OR JSON schema
-       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
-       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
-         (``has_json_schema`` triggers re-enforcement even with ``tool_region`` set)
-
-    For section-wrapped parsers (e.g. Kimi K2.5, DeepSeek V3) that define
-    ``SECTION_BEGIN``/``SECTION_END``, the tool region end tag turns off
-    enforcement after the entire tool-calling section.  For flat parsers
-    (e.g. Gemma 4) the tool region has no end tag — the grammar handles
-    termination.
+    The key transitions are: detecting ``</think>`` exits the thinking region,
+    and detecting tool-call start/end tokens toggles enforcement on/off for
+    ``tool_choice=auto``. For ``tool_choice=required`` or a JSON schema,
+    enforcement is active from the first generated token (after any thinking
+    region is exited).
     """
 
     grammar_enforced: bool = False
@@ -277,12 +741,17 @@ class GrammarEnforcementState:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Concrete context implementations
+# ---------------------------------------------------------------------------
+
+
 @dataclass(kw_only=True)
 class TextContext:
     """A base class for model context, specifically for Text model variants.
 
-    This class manages the state and processing of text generation, including token management,
-    caching, and generation parameters.
+    This class manages the state and processing of text generation, including
+    token management, caching, and generation parameters.
 
     Configuration:
         request_id: A unique identifier for this sequence.
@@ -672,9 +1141,9 @@ class TextContext:
         Matcher rejection is not expected at this point (assuming the
         bitmask was applied correctly). But if the matcher does reject
         a token, enforcement is disabled for the rest of the request.
-        Continuing to enforce against a desynced matcher would produce schema-shaped nonsense
-        (every downstream bitmask would be filtered against a stale
-        grammar position with no relation to what was emitted).
+        Continuing to enforce against a desynced matcher would produce
+        schema-shaped nonsense (every downstream bitmask would be filtered
+        against a stale grammar position with no relation to what was emitted).
         Instead we let the request finish unconstrained.
 
         Args:
@@ -698,7 +1167,7 @@ class TextContext:
             self.grammar_state.update_enforcement_state(token)
             and self.matcher.try_consume_tokens([token]) != 1
         ):
-            logger.error(
+            _logger.error(
                 "Matcher rejected token %d (request %s); disabling "
                 "enforcement for the rest of the request. "
                 "matcher_errors=%s matcher_warnings=%s",

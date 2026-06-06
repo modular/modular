@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 
 
 @dataclass(kw_only=True)

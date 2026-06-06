@@ -16,13 +16,16 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.context import (
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationOutput,
+    TokenBuffer,
+)
 from max.pipelines.kv_cache import DummyKVCache
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
 )
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig

@@ -18,9 +18,9 @@ from typing import Any
 import msgspec
 import numpy as np
 import numpy.typing as npt
+from max.pipelines.context.outputs import GenerationOutput
+from max.pipelines.context.status import GenerationStatus
 from max.pipelines.modeling.types import RequestID
-from max.pipelines.modeling.types.generation import GenerationOutput
-from max.pipelines.modeling.types.status import GenerationStatus
 from max.pipelines.modeling.types.utils.serialization import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,

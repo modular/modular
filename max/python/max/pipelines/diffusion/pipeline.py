@@ -19,15 +19,17 @@ from typing import TYPE_CHECKING, Any, Generic
 
 import numpy as np
 from max.driver import load_devices
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     GenerationStatus,
+    PixelGenerationContextType,
+)
+from max.pipelines.context.outputs import GenerationOutput
+from max.pipelines.modeling.types import (
     Pipeline,
     PipelineOutputsDict,
-    PixelGenerationContextType,
     PixelGenerationInputs,
     RequestID,
 )
-from max.pipelines.modeling.types.generation import GenerationOutput
 from max.pipelines.request.open_responses import (
     OutputImageContent,
     OutputVideoContent,

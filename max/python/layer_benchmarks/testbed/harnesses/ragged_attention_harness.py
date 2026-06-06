@@ -31,13 +31,13 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.core import TextContext
-from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.modeling.types import (
-    RequestID,
+from max.pipelines.context import (
+    TextContext,
     TextGenerationContext,
     TokenBuffer,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.modeling.types import RequestID
 from typing_extensions import TypeVar
 
 from testbed.harness import CompiledLayerBundle, LayerTestHarness

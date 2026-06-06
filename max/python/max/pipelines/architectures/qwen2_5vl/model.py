@@ -38,7 +38,7 @@ from max.nn.kv_cache import KVCacheInputs
 from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,

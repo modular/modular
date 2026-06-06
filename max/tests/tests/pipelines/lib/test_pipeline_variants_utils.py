@@ -13,13 +13,13 @@
 """Tests for pipeline_variants/utils.py."""
 
 import numpy as np
-from max.pipelines.core import TextContext
-from max.pipelines.lib.pipeline_variants.utils import build_response
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     GenerationStatus,
-    RequestID,
+    TextContext,
     TokenBuffer,
 )
+from max.pipelines.lib.pipeline_variants.utils import build_response
+from max.pipelines.modeling.types import RequestID
 
 
 def create_text_context(prompt_len: int, max_length: int) -> TextContext:

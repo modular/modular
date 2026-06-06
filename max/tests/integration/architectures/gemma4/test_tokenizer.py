@@ -23,17 +23,19 @@ import numpy as np
 import pytest
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.architectures.gemma4.video_processor import VideoMetadata
-from max.pipelines.core.exceptions import PromptTooLongError
+from max.pipelines.context import (
+    SamplingParams,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.modeling.types import (
     ImageContentPart,
     ReasoningPipelineTokenizer,
     RequestID,
-    SamplingParams,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TextGenerationResponseFormat,
     VideoContentPart,
 )
 from PIL import Image

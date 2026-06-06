@@ -18,12 +18,11 @@ import string
 from collections.abc import Sequence
 
 import numpy as np
-from max.pipelines.core import TextContext
-from max.pipelines.core.exceptions import PromptTooLongError
+from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TextGenerationRequest,
-    TokenBuffer,
 )
 
 

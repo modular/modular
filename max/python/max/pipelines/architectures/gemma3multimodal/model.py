@@ -31,7 +31,7 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,

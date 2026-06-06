@@ -27,14 +27,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
-from max.pipelines.core import PixelContext
-from max.pipelines.core.exceptions import PromptTooLongError
+from max.pipelines.context import PixelContext, TokenBuffer
+from max.pipelines.context.exceptions import PromptTooLongError
+from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.diffusion.schedulers import SchedulerFactory
-from max.pipelines.modeling.types import (
-    PipelineTokenizer,
-    TokenBuffer,
-)
-from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.modeling.types import PipelineTokenizer
 from max.pipelines.request import OpenResponsesRequest
 from max.pipelines.request.open_responses import (
     InputImageContent,

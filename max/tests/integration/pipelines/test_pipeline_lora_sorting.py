@@ -23,7 +23,11 @@ from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    TextContext,
+    TextGenerationOutput,
+    TokenBuffer,
+)
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
@@ -43,8 +47,6 @@ from max.pipelines.lora import LoRAManager, LoRAModel
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
 )
 from transformers import AutoConfig
 

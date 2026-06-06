@@ -27,9 +27,12 @@ from max.pipelines import (
     TextAndVisionTokenizer,
     TextTokenizer,
 )
-from max.pipelines.core import (
+from max.pipelines.context import (
+    SamplingParams,
     TextAndVisionContext,
     TextContext,
+    TextGenerationResponseFormat,
+    TokenBuffer,
     validate_only_one_image,
 )
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, SamplingConfig
@@ -39,14 +42,11 @@ from max.pipelines.modeling.types import (
     ImageContentPart,
     MessageContent,
     RequestID,
-    SamplingParams,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestFunction,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TextGenerationResponseFormat,
-    TokenBuffer,
 )
 from test_common.mocks import mock_estimate_memory_footprint
 from transformers import AutoConfig

@@ -27,7 +27,7 @@ from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,

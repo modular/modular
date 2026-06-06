@@ -16,7 +16,8 @@ from __future__ import annotations
 import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.graph.weights import WeightsFormat
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.context import TextContext
 from max.pipelines.lib import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig

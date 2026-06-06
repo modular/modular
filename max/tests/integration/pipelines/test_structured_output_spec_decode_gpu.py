@@ -27,7 +27,11 @@ import numpy as np
 import pytest
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    SamplingParams,
+    TextContext,
+    TextGenerationResponseFormat,
+)
 from max.pipelines.lib import MAXModelConfig, SamplingConfig, TextTokenizer
 from max.pipelines.lib.config import SpeculativeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
@@ -38,11 +42,9 @@ from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
 from max.pipelines.lib.registry import PipelineRegistry
 from max.pipelines.modeling.types import (
     RequestID,
-    SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TextGenerationResponseFormat,
 )
 
 pytest_plugins = "test_common.registry"

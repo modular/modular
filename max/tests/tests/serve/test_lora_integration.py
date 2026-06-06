@@ -25,7 +25,7 @@ from unittest.mock import MagicMock, NonCallableMock
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lora import (
     LoRAConfig,
     LoRAManager,
@@ -437,7 +437,7 @@ def test_lora_allocation_respects_protected_tg_loras(
     - Can allocate when LoRA is already active (just refreshes LRU)
     - Non-protected globally active LoRAs can be evicted
     """
-    from max.pipelines.core.context import TextContext
+    from max.pipelines.context.context import TextContext
     from max.serve.scheduler.lora_scheduler_utils import (
         can_allocate_lora_request,
     )

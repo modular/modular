@@ -113,28 +113,30 @@ from max.nn.kv_cache import (
     compute_num_host_blocks,
 )
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
-from max.pipelines.core.exceptions import (
+from max.pipelines.context import (
+    EOSTracker,
+    SpecDecodingState,
+    TextContext,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
+from max.pipelines.context.exceptions import (
     InputError,  # noqa: F401 (for docstring)
 )
+from max.pipelines.context.tokens import TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager, load_multi_kv_managers
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     _contiguous_prefix_2d,
 )
 from max.pipelines.modeling.types import (
     BatchType,
-    EOSTracker,
     PipelineOutputsDict,
     PipelineTokenizer,
     ReasoningPipelineTokenizer,
     RequestID,
-    SpecDecodingState,
-    TextGenerationContextType,
     TextGenerationInputs,
-    TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.pipelines.modeling.types.tokens import TokenBuffer
 from max.pipelines.speculative.base import _SpeculativeDecodingMetrics
 from max.pipelines.speculative.ragged_token_merger import (
     _shape_to_scalar,

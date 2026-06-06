@@ -49,7 +49,7 @@ from max.pipelines.architectures.qwen3.text_encoder import (
 from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
 from max.pipelines.architectures.wan.wan_executor import WanExecutor
-from max.pipelines.core import PixelContext
+from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.lib import PipelineRuntimeConfig, PixelGenerationPipeline
 from max.pipelines.lib.model_manifest import ModelManifest

@@ -26,9 +26,9 @@ from http import HTTPStatus
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context.exceptions import InputError
+from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.modeling.types import OpenResponsesRequest
-from max.pipelines.modeling.types.generation import GenerationOutput
 from max.pipelines.request.open_responses import (
     OutputContent,
     OutputImageContent,
