@@ -326,17 +326,24 @@ struct FileHandle(Defaultable, Movable, Writer):
             raise Error("invalid file handle")
 
         var fd = self._get_raw_fd()
-        var bytes_read = external_call["read", c_ssize_t](
-            fd,
-            buffer.unsafe_ptr(),
-            len(buffer) * size_of[dtype](),
-        )
+        var total_bytes = len(buffer) * size_of[dtype]()
+        var total_read = 0
 
-        if bytes_read < 0:
-            var err = get_errno()
-            raise Error("Failed to read from file: " + String(err))
+        while total_read < total_bytes:
+            var bytes_read = external_call["read", c_ssize_t](
+                fd,
+                buffer.unsafe_ptr().bitcast[UInt8]() + total_read,
+                total_bytes - total_read,
+            )
 
-        return bytes_read
+            if bytes_read < 0:
+                var err = get_errno()
+                raise Error("Failed to read from file: " + String(err))
+            if bytes_read == 0:
+                break  # EOF
+            total_read += bytes_read
+
+        return total_read
 
     def read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
