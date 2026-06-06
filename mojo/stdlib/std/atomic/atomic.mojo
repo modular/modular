@@ -396,6 +396,21 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         ](value._mlir_value, ptr.address)
 
     @always_inline
+    def store[
+        *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
+    ](mut self, value: Scalar[Self.dtype]):
+        """Performs an atomic store.
+
+        Parameters:
+            ordering: The memory ordering of the store.
+
+        Args:
+            value: The value to store.
+        """
+        var value_addr = UnsafePointer(to=self.value)
+        Self.store[ordering=ordering](value_addr, value)
+
+    @always_inline
     def fetch_add[
         *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](mut self, rhs: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
