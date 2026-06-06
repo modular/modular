@@ -244,6 +244,10 @@ This version is still a work in progress.
   `max-batch-input-tokens=16384` needs 640 MiB in bf16). This adds ~512 MiB
   of per-GPU memory use for any multi-GPU model.
 
+- Added `max.experimental.functional.ceil`, an element-wise unary op that
+  rounds each element of a floating-point tensor up toward positive infinity.
+  Complements the existing `floor`, `round`, and `trunc` ops.
+
 - `max.experimental.functional.while_loop` now passes `Tensor` (not
   `TensorValue`) into its `predicate` and `body` callbacks. Callbacks can
   use ordinary `Tensor` operations directly, without wrapping arguments
