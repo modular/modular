@@ -17,6 +17,8 @@ from std.time import (
     perf_counter_ns,
     sleep,
     time_function,
+    wall_clock,
+    wall_clock_ns,
 )
 
 from std.testing import assert_true, TestSuite
@@ -47,6 +49,27 @@ def time_capturing_function(iters: Int) -> Int:
         sleep(1.0)
 
     return Int(time_function(time_fn))
+
+
+def test_wall_clock() raises:
+    """Test that wall_clock returns plausible real-world timestamps."""
+    comptime ns_per_sec = 1_000_000_000
+
+    var t_ns = wall_clock_ns()
+    # Wall clock should return a positive value (since Unix epoch).
+    assert_true(t_ns > 0)
+    # Should be well past the year 2000 (~946 billion seconds since epoch).
+    assert_true(t_ns > 946_684_800 * ns_per_sec)
+
+    var t_sec = wall_clock()
+    assert_true(t_sec > 946_684_800)
+
+
+def test_wall_clock_ordering() raises:
+    """Test that two consecutive wall_clock calls are non-decreasing."""
+    var t1 = wall_clock_ns()
+    var t2 = wall_clock_ns()
+    assert_true(t2 >= t1)
 
 
 def test_time() raises:

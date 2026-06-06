@@ -10,12 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Timing operations: monotonic clocks, performance counters, sleep, time_function.
+"""Timing operations: monotonic clocks, performance counters, wall clock, sleep, time_function.
 
-The `time` package provides utilities for measuring elapsed time, benchmarking
-code performance, and introducing delays. It offers monotonic clocks that are
-unaffected by system clock adjustments, making them suitable for measuring
-intervals and profiling execution time.
+The `time` package provides utilities for measuring elapsed time, getting the
+current wall clock time, benchmarking code performance, and introducing delays.
+It offers monotonic clocks that are unaffected by system clock adjustments,
+making them suitable for measuring intervals and profiling execution time, as
+well as a wall clock for real (calendar) time queries.
 
 Use this package for performance measurement, benchmarking, profiling, or when
 you need to introduce delays in your code.
@@ -28,4 +29,6 @@ from .time import (
     perf_counter_ns,
     sleep,
     time_function,
+    wall_clock,
+    wall_clock_ns,
 )

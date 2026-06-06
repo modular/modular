@@ -291,6 +291,39 @@ def time_function[FuncType: def() -> None](func: FuncType) -> UInt:
 
 
 # ===-----------------------------------------------------------------------===#
+# wall_clock
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def wall_clock() -> Float64:
+    """Returns the current wall clock time in fractional seconds.
+
+    This returns the real (calendar) time, which may be affected by system
+    time adjustments (e.g., NTP synchronization). Use `perf_counter()` or
+    `monotonic()` for measuring durations.
+
+    Returns:
+        The current wall clock time in seconds.
+    """
+    return Float64(_realtime_nanoseconds()) / _NSEC_PER_SEC
+
+
+@always_inline
+def wall_clock_ns() -> UInt:
+    """Returns the current wall clock time in nanoseconds.
+
+    This returns the real (calendar) time, which may be affected by system
+    time adjustments (e.g., NTP synchronization). Use `perf_counter_ns()` or
+    `monotonic()` for measuring durations.
+
+    Returns:
+        The current wall clock time in nanoseconds.
+    """
+    return _realtime_nanoseconds()
+
+
+# ===-----------------------------------------------------------------------===#
 # sleep
 # ===-----------------------------------------------------------------------===#
 
