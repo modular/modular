@@ -45,12 +45,6 @@ struct DenseMapInfo<SMFixIt> {
         SMLoc::getFromPointer(DenseMapInfo<const char *>::getEmptyKey()), "");
   }
 
-  static inline KeyTy getTombstoneKey() {
-    return SMFixIt(
-        SMLoc::getFromPointer(DenseMapInfo<const char *>::getTombstoneKey()),
-        "");
-  }
-
   static unsigned getHashValue(const KeyTy &k) {
     SMRange range = k.getRange();
     return DenseMapInfo<std::tuple<const char *, const char *, StringRef>>::
