@@ -41,7 +41,7 @@ from nn.fused_qk_rope import rope_value
 from nn.rope import get_safetensors_idx
 from std.utils.index import IndexList
 
-from comm.fp8_utils import guarded_inv_scale
+from internal_utils.fp8_utils import guarded_inv_scale
 
 
 # ===-----------------------------------------------------------------------===#

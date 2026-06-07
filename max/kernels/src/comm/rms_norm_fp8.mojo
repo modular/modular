@@ -36,7 +36,7 @@ from std.utils.numerics import get_accum_type
 
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
+from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 
 @always_inline
