@@ -23,7 +23,13 @@ from linalg.fp8_quantization import (
 from std.sys import has_nvidia_gpu_accelerator
 from std.testing import assert_equal, assert_true, assert_almost_equal
 
-from std.utils.numerics import get_accum_type, max_finite, min_finite
+from std.utils.numerics import (
+    get_accum_type,
+    isinf,
+    isnan,
+    max_finite,
+    min_finite,
+)
 
 
 def test_static_scaled_fp8_quant[
@@ -409,8 +415,233 @@ def test_batched_dynamic_fp8_quant[
     scales_host_ptr.free()
 
 
+def test_dynamic_fp8_quant_near_zero[
+    out_dtype: DType,
+    in_dtype: DType,
+    scales_dtype: DType,
+    group_size: Int,
+    MType: CoordLike,
+    NType: CoordLike,
+](ctx: DeviceContext, m: MType, n: NType) raises:
+    """Regression for the FP8 dynamic-quant `0*Inf` NaN on a near-zero group.
+
+    When a group's max-abs is a tiny f32 denormal (~1e-38), the dynamic scale
+    `scale_factor = group_max / fp8_max` underflows to a NONZERO denormal, so
+    `scale_factor_recip = 1/scale_factor` OVERFLOWS to +Inf (the `==0` guard
+    misses it). `fp8_quantize` then computes `value * Inf` (NaN on a zero lane,
+    Inf otherwise) and casts to fp8 — and on NVIDIA `use_clamp` is False, so the
+    NaN/Inf flows into the output. A correct quant emits finite fp8 (the group
+    is effectively zero → ~0). Asserts FINITENESS of every output element.
+    """
+    var shape = row_major(Coord(m, n))
+    var scales_shape = row_major(
+        Coord(Idx[NType.static_value // group_size], m)
+    )
+    var total_size = Int(m.value()) * Int(n.value())
+    var scales_size = (Int(n.value()) // group_size) * Int(m.value())
+
+    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var in_host = TileTensor(in_host_ptr, shape)
+
+    # Fill the whole input with a near-zero magnitude (~1e-38) and a zero lane
+    # at the start of each group — so every group's max-abs is a tiny denormal
+    # and each group has an exactly-zero element (the 0*Inf lane).
+    for i in range(total_size):
+        in_host_ptr[i] = Scalar[in_dtype](1e-38)
+    for i in range(Int(m.value())):
+        for g in range(Int(n.value()) // group_size):
+            in_host_ptr[i * Int(n.value()) + g * group_size] = Scalar[in_dtype](
+                0
+            )
+
+    var in_device = ctx.enqueue_create_buffer[in_dtype](total_size)
+    var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
+    var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_size)
+    out_device.enqueue_fill(
+        Scalar[out_dtype](0)
+    )  # so unwritten cells are finite
+    ctx.enqueue_copy(in_device, in_host_ptr)
+
+    var in_tensor = TileTensor(in_device, shape)
+    var out_tensor = TileTensor(out_device, shape)
+    var scales_tensor = TileTensor(scales_device, scales_shape)
+
+    @__copy_capture(in_tensor)
+    @always_inline
+    @parameter
+    def input_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+        return in_tensor.load[width=width, alignment=alignment]((row, col))
+
+    quantize_dynamic_scaled_fp8[
+        input_fn, group_size, in_tensor.static_shape[1]
+    ](out_tensor, scales_tensor, 1200.0, ctx, Int(in_tensor.dim[0]()))
+
+    ctx.enqueue_copy(out_host_ptr, out_device)
+    ctx.synchronize()
+
+    # Post-#87813 the cast clamp saturates the 0*Inf/+Inf, so a finiteness-only
+    # check passes even WITHOUT the guard (vacuous — see
+    # test_dynamic_tensor_fp8_quant_near_zero). Assert the VALUES are a clean fp8
+    # zero, which the guard produces (scale_recip = 0) and the unguarded +Inf
+    # path does NOT (it saturates to +-max_finite).
+    var n_nonfinite = 0
+    var n_nonzero = 0
+    for i in range(total_size):
+        var v = out_host_ptr[i].cast[DType.float32]()
+        if isnan(v) or isinf(v):
+            n_nonfinite += 1
+        if v != 0.0:
+            n_nonzero += 1
+    print(
+        "  near-zero group: fp8 out num_nonfinite =",
+        n_nonfinite,
+        " num_nonzero =",
+        n_nonzero,
+    )
+    assert_equal(n_nonfinite, 0)
+    assert_equal(n_nonzero, 0)
+
+    in_host_ptr.free()
+    out_host_ptr.free()
+    scales_host_ptr.free()
+
+
+def test_dynamic_tensor_fp8_quant_near_zero[
+    out_dtype: DType,
+    in_dtype: DType,
+    scales_dtype: DType,
+    group_size: Int,
+    MType: CoordLike,
+    NType: CoordLike,
+](ctx: DeviceContext, m: MType, n: NType) raises:
+    """Regression for the FP8 dynamic-quant `0*Inf` NaN on the PER-TENSOR path.
+
+    Same denormal-scale reciprocal overflow as test_dynamic_fp8_quant_near_zero,
+    but routed through `quantize_tensor_dynamic_scaled_fp8` with num_rows > 1, so
+    it exercises the two-launch per-tensor reduction (compute_scales_fp8_kernel +
+    quantize_fp8_kernel_per_tensor). That second kernel re-derives the scale from
+    the tensor-wide max and previously open-coded a `== 0`-only reciprocal guard,
+    so the denormal-max overflow could still NaN here (the per-group near-zero
+    test above does not reach it). Asserts FINITENESS of every output element.
+    """
+    var shape = row_major(Coord(m, n))
+    var scales_shape = row_major(
+        Coord(Idx[NType.static_value // group_size], m)
+    )
+    var total_size = Int(m.value()) * Int(n.value())
+    var scales_size = (Int(n.value()) // group_size) * Int(m.value())
+
+    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var in_host = TileTensor(in_host_ptr, shape)
+
+    # Every group's max-abs is a tiny f32 denormal (~1e-38) with an exactly-zero
+    # lane at each group start (the 0*Inf lane). With num_rows > 1 the per-tensor
+    # path reduces all group maxes to one tensor-wide denormal scale.
+    for i in range(total_size):
+        in_host_ptr[i] = Scalar[in_dtype](1e-38)
+    for i in range(Int(m.value())):
+        for g in range(Int(n.value()) // group_size):
+            in_host_ptr[i * Int(n.value()) + g * group_size] = Scalar[in_dtype](
+                0
+            )
+
+    var in_device = ctx.enqueue_create_buffer[in_dtype](total_size)
+    var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
+    var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_size)
+    out_device.enqueue_fill(
+        Scalar[out_dtype](0)
+    )  # so unwritten cells are finite
+    ctx.enqueue_copy(in_device, in_host_ptr)
+
+    var in_tensor = TileTensor(in_device, shape)
+    var out_tensor = TileTensor(out_device, shape)
+    var scales_tensor = TileTensor(scales_device, scales_shape)
+
+    @__copy_capture(in_tensor)
+    @always_inline
+    @parameter
+    def input_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+        return in_tensor.load[width=width, alignment=alignment]((row, col))
+
+    quantize_tensor_dynamic_scaled_fp8[
+        input_fn, group_size, in_tensor.static_shape[1]
+    ](out_tensor, scales_tensor, 1200.0, ctx, Int(in_tensor.dim[0]()))
+
+    ctx.enqueue_copy(out_host_ptr, out_device)
+    ctx.synchronize()
+
+    # WITH the reciprocal guard a near-zero group quantizes to a CLEAN fp8 zero
+    # (scale_recip = 0 -> value*0 = 0). WITHOUT it, scale_recip = +Inf and every
+    # lane saturates to +-max_finite at the cast clamp (use_clamp on since
+    # #87813): finite, but WRONG. A finiteness-only check is therefore MASKED by
+    # the clamp and would not catch a missing guard, so assert the VALUES are 0.
+    var n_nonfinite = 0
+    var n_nonzero = 0
+    for i in range(total_size):
+        var v = out_host_ptr[i].cast[DType.float32]()
+        if isnan(v) or isinf(v):
+            n_nonfinite += 1
+        if v != 0.0:
+            n_nonzero += 1
+    print(
+        "  near-zero per-tensor: fp8 out num_nonfinite =",
+        n_nonfinite,
+        " num_nonzero =",
+        n_nonzero,
+    )
+    assert_equal(n_nonfinite, 0)
+    assert_equal(n_nonzero, 0)
+
+    in_host_ptr.free()
+    out_host_ptr.free()
+    scales_host_ptr.free()
+
+
 def main() raises:
     with DeviceContext() as ctx:
+        # Regression: FP8 dynamic-quant must not emit NaN on a near-zero group
+        # (the 0*Inf / denormal-scale-reciprocal bug). Run first.
+        #
+        # The scales dtype is load-bearing for whether the bug even manifests:
+        # for a near-zero group `scale_factor = group_max / fp8_max` is ~2e-41.
+        # With FLOAT32 scales that value is preserved (a nonzero f32 denormal),
+        # so `1/scale_factor` overflows to +Inf and the unguarded `==0`-only
+        # check misses it — this is the case the fix exists for. With BFLOAT16
+        # scales the same ~2e-41 underflows below bf16's min denormal (~9.2e-41)
+        # and FLUSHES to exactly 0, so the `==0` guard already catches it and no
+        # overflow occurs. Cover BOTH so the regression actually exercises the
+        # overflow path (float32) and not just the benign bf16-flush path.
+        test_dynamic_fp8_quant_near_zero[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.float32,
+            group_size=128,
+        ](ctx, Int(4), Idx[512])
+        test_dynamic_fp8_quant_near_zero[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            group_size=128,
+        ](ctx, Int(4), Idx[512])
+        # Same near-zero denormal-scale regression on the PER-TENSOR path
+        # (quantize_tensor_dynamic_scaled_fp8 -> quantize_fp8_kernel_per_tensor).
+        # num_rows > 1 (m=4) forces the two-launch reduce-then-requantize path,
+        # whose reciprocal was previously only `== 0`-guarded. Float32 scales so
+        # the denormal survives to overflow `1/scale` (see the dtype note above).
+        test_dynamic_tensor_fp8_quant_near_zero[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.float32,
+            group_size=128,
+        ](ctx, Int(4), Idx[512])
         test_static_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,

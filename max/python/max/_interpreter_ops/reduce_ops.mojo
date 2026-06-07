@@ -25,6 +25,7 @@ from std.algorithm import sum as reduce_sum
 from std.algorithm import mean as reduce_mean
 from std.algorithm import product as reduce_product
 from std.algorithm.functional import IndexList
+from std.utils.coord import Coord
 
 from std.sys.info import has_apple_gpu_accelerator
 
@@ -107,7 +108,7 @@ def _reduce_max[
         output_fn,
         target=target,
         reduce_dim=1,
-    ](input_shape, context)
+    ](Coord(input_shape), context)
 
 
 def _reduce_min[
@@ -131,7 +132,7 @@ def _reduce_min[
         output_fn,
         target=target,
         reduce_dim=1,
-    ](input_shape, context)
+    ](Coord(input_shape), context)
 
 
 def _reduce_sum[
@@ -155,7 +156,7 @@ def _reduce_sum[
         output_fn,
         target=target,
         reduce_dim=1,
-    ](input_shape, context)
+    ](Coord(input_shape), context)
 
 
 def _reduce_mean[
@@ -185,7 +186,7 @@ def _reduce_mean[
         output_fn,
         target=target,
         reduce_dim=1,
-    ](input_shape, output_shape, context)
+    ](Coord(input_shape), Coord(output_shape), context)
 
 
 def _reduce_mul[
@@ -209,7 +210,7 @@ def _reduce_mul[
         output_fn,
         target=target,
         reduce_dim=1,
-    ](input_shape, context)
+    ](Coord(input_shape), context)
 
 
 # =============================================================================

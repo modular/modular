@@ -122,9 +122,7 @@ def test_block_scales_interleave_fp4[
                         col_idx * SF_VECTOR_SIZE,
                     )
                     if row_idx < m and col_idx < n:
-                        var ref_sf = rebind[Scalar[scales_dtype]](
-                            input_host_tensor[row_idx, col_idx]
-                        )
+                        var ref_sf = input_host_tensor[row_idx, col_idx]
                         assert_equal(
                             ref_sf.cast[DType.float64](),
                             swizzled_sf.cast[DType.float64](),

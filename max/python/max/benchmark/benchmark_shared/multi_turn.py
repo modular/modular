@@ -72,6 +72,8 @@ async def chat_session_driver(
     benchmark_should_end_time: int | None = None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
+    est_ttft_ms: float = 0.0,
+    est_tpot_ms: float = 0.0,
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
@@ -163,12 +165,23 @@ async def chat_session_driver(
             if (
                 content_idx > 0
             ):  # pre-warmed: phase-spread across inter-turn window
-                delay_ms = messages[content_idx - 1].delay_until_next_message
-                if delay_ms and delay_ms > 0:
-                    sleep_s = random.uniform(0, delay_ms) / 1000
-                    if exceeds_deadline(sleep_s, benchmark_should_end_time):
-                        return session_outputs
-                    await asyncio.sleep(sleep_s)
+                # Spread the first measured turn across the just-completed
+                # turn's occupancy window R_{k} + D_{k} (generation + sleep).
+                # A draw landing in the generation portion (u < R_k) means the
+                # session would still be generating, so fire immediately;
+                # otherwise sleep the remaining delay u - R_k. With zero runtime
+                # estimates R_k = 0 and this is uniform[0, D_k] as before.
+                prev_msg = messages[content_idx - 1]
+                delay_ms = prev_msg.delay_until_next_message or 0.0
+                runtime_ms = est_ttft_ms + est_tpot_ms * prev_msg.num_tokens
+                window_ms = delay_ms + runtime_ms
+                if window_ms > 0:
+                    u = random.uniform(0, window_ms)
+                    sleep_s = max(0.0, u - runtime_ms) / 1000
+                    if sleep_s > 0:
+                        if exceeds_deadline(sleep_s, benchmark_should_end_time):
+                            return session_outputs
+                        await asyncio.sleep(sleep_s)
 
         if deadline_passed(benchmark_should_end_time):
             response = RequestFuncOutput(
@@ -210,8 +223,8 @@ async def chat_session_driver(
         )
         chat_len += output_len
 
-        if delay_ms := messages[content_idx + 1].delay_until_next_message:
-            sleep_s = delay_ms / 1000
+        if next_delay_ms := messages[content_idx + 1].delay_until_next_message:
+            sleep_s = next_delay_ms / 1000
             if exceeds_deadline(sleep_s, benchmark_should_end_time):
                 return session_outputs
             await asyncio.sleep(sleep_s)
@@ -340,6 +353,8 @@ async def run_multiturn_benchmark(
     run_prefix_len: int = 0,
     request_rate: float = float("inf"),
     burstiness: float = 1.0,
+    est_ttft_ms: float = 0.0,
+    est_tpot_ms: float = 0.0,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run multi-turn chat benchmark scenario.
 
@@ -378,6 +393,8 @@ async def run_multiturn_benchmark(
                 benchmark_should_end_time=benchmark_should_end_time,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
+                est_ttft_ms=est_ttft_ms,
+                est_tpot_ms=est_tpot_ms,
             )
         session_id = (
             str(chat_session.id)
@@ -489,6 +506,8 @@ async def run_kv_cache_stress_benchmark(
     run_prefix_len: int = 0,
     request_rate: float = float("inf"),
     burstiness: float = 1.0,
+    est_ttft_ms: float = 0.0,
+    est_tpot_ms: float = 0.0,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
 
@@ -600,6 +619,8 @@ async def run_kv_cache_stress_benchmark(
                 benchmark_should_end_time=benchmark_should_end_time,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
+                est_ttft_ms=est_ttft_ms,
+                est_tpot_ms=est_tpot_ms,
             )
             session_id = (
                 str(chat_session.id)

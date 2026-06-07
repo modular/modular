@@ -48,7 +48,7 @@ from layout.tma_async import (
 )
 from layout import ComptimeInt, CoordLike, Layout, RowMajorLayout, TileTensor
 from layout.tile_layout import row_major as tt_row_major
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     KVTMATile,
 )

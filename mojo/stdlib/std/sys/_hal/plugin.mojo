@@ -48,14 +48,14 @@ from .device import DeviceSpec
 
 
 @fieldwise_init
-struct M_driver_slice(TrivialRegisterPassable):
-    var data: ImmutPointer[UInt8, StaticConstantOrigin]
+struct M_driver_slice[origin: ImmutOrigin](TrivialRegisterPassable):
+    var data: ImmutPointer[UInt8, Self.origin]
     var size: UInt64
 
 
 @fieldwise_init
-struct M_driver_static_bundle(TrivialRegisterPassable):
-    var mapped_data: M_driver_slice
+struct M_driver_static_bundle[origin: ImmutOrigin](TrivialRegisterPassable):
+    var mapped_data: M_driver_slice[Self.origin]
     var file_type: ImmutPointer[Int8, StaticConstantOrigin]
     var file_type_len: UInt64
 
@@ -167,7 +167,11 @@ comptime QueueHandle = Handle[M_driver_queue]
 comptime EventHandle = Handle[M_driver_event]
 comptime FunctionHandle = Handle[M_driver_function]
 comptime MemoryHandle = Handle[M_driver_memory]
-comptime StaticBundleHandle = Handle[M_driver_static_bundle]
+# Pick a sensible nominal origin for the plugin function pointer. `load_bundle` rebinds the
+# concrete bundle (whatever its asm origin) into this for the FFI call. See MOCO-3661.
+comptime StaticBundleHandle = Handle[
+    M_driver_static_bundle[StaticConstantOrigin]
+]
 comptime RuntimeBundleHandle = Handle[M_driver_runtime_bundle]
 comptime ExecuteConfigHandle = Handle[M_driver_queue_execute_config]
 comptime CompilationOptionsHandle = Handle[M_driver_bundle_compilation_options]

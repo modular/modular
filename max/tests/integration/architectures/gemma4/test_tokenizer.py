@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.architectures.gemma4.video_processor import VideoMetadata
+from max.pipelines.core.exceptions import PromptTooLongError
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.modeling.types import (
     ImageContentPart,
@@ -300,7 +301,7 @@ async def test_prompt_too_long(
     mocker: MockerFixture,
     mock_pipeline_config: MagicMock,
 ) -> None:
-    """Prompt exceeding max_length raises ValueError."""
+    """Prompt exceeding max_length raises PromptTooLongError."""
     delegate = _make_mock_delegate()
     delegate.model_max_length = 5
     long_tokens = list(range(10))
@@ -320,11 +321,10 @@ async def test_prompt_too_long(
         model_name="test-model",
     )
 
-    with pytest.raises(
-        ValueError,
-        match="encoded_prompt is greater than the max_length",
-    ):
+    with pytest.raises(PromptTooLongError) as exc_info:
         await tokenizer.new_context(request)
+    assert exc_info.value.num_tokens == 10
+    assert exc_info.value.max_length == 5
 
 
 @pytest.mark.asyncio

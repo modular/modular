@@ -21,11 +21,11 @@ from std.gpu.host import (
     Dim,
     FuncAttribute,
 )
-from nn.attention.gpu.nvidia.sm90.attention import ImmutTileTensor1D
+from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     NonNullPointer,
     NullPointer,
     OptionalPointer,
@@ -295,7 +295,9 @@ def mha_sm100_dispatch[
     # comptime gate prevents constructing fa4_config_1q (and its
     # supported() assert) on shapes 1Q can't run. Outside the gate
     # we unconditionally use 2Q.
-    comptime can_use_1q: Bool = False
+    comptime can_use_1q: Bool = (
+        not pair_cta and config.depth >= 64 and config.depth <= 256
+    )
     comptime if can_use_1q:
         comptime fa4_config_1q = FA4Config[KVType.dtype](
             num_q_heads=config.num_heads,

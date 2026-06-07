@@ -35,6 +35,43 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Added a `maxserve.startup_time` Prometheus histogram (seconds) that
+  records model-worker startup time, previously only available in the
+  server logs. It is split by a `component` tag (`build`, `compile`, `init`,
+  `graph_capture`, `pinned_memory`, `spawn`, and `total`), so a single metric
+  can be plotted broken down by startup phase to track pod startup time in
+  production.
+
+- Added a `maxserve.time_per_output_token` Prometheus histogram (milliseconds).
+  Emitted once per request, it reports the mean decode-phase latency per
+  generated token (`decode_time / (num_generated_tokens - 1)`), excluding the
+  first token and prefill time. Because the denominator counts the tokens the
+  model actually produced, the metric accounts for speculative decoding.
+
+- MAX Serve now returns a clearer 400 Bad Request with the underlying
+  message when a prompt is too long for the model, instead of a generic
+  "Value error." response (or, for streaming completions, a 500 Internal
+  Server Error). All architectures now raise a structured
+  `PromptTooLongError` exposing `num_tokens` and `max_length` attributes
+  so callers can handle the failure programmatically. The user-facing
+  message identifies the relevant limit (LLM context window vs. diffusion
+  text encoder sequence length): for example, "Prompt is too long: N
+  tokens exceeds the configured maximum context length of M tokens.
+  Please shorten your prompt."
+
+- Fixed an FP8 dynamic-quantization bug that mis-quantized near-zero groups on
+  NVIDIA GPUs (writing NaN into FP8 activations and the FP8 KV cache, surfacing
+  downstream as non-finite logits). When a quantization group was near zero, its
+  dynamic scale `max_abs / fp8_max` underflowed to a tiny denormal whose
+  reciprocal overflowed to infinity; multiplying lanes by that infinity produced
+  `+inf` (and `0 * inf = NaN` on zero lanes) *before* the FP8 cast. This is
+  upstream of, and not addressed by, the saturating FP8 cast: clamping the
+  result would turn the near-zero group into `±max_finite` garbage rather than
+  the correct zero. The reciprocal is now guarded to be finite, so a near-zero
+  group quantizes to a clean FP8 zero. Fixes the shared dynamic-scale helper
+  (used by FP8 quantization, fused RMSNorm, and the residual-add AllReduce
+  RMSNorm) and the fused RoPE plus KV-store path.
+
 - Fixed a KV cache offloading correctness bug that corrupted output for
   multi-cache models (such as Gemma 4's interleaved sliding-window plus
   global attention) when the `local` or `tiered` KV connector was enabled.

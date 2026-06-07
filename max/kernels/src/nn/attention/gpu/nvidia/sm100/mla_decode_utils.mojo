@@ -62,7 +62,7 @@ from layout.tma_async import (
     TMATensorTile,
 )
 from std.memory import bitcast
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
 )
 from nn.attention.mha_mask import MHAMask, MASK_VALUE
@@ -84,7 +84,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     MBarPipeline,
     sub_ftz,
 )
-from nn.attention.gpu.nvidia.sm90.attention import KVTMATile
+from nn.attention.gpu.nvidia.common import KVTMATile
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.sys._assembly import inlined_assembly
 
@@ -3638,9 +3638,7 @@ struct MLA_SM100_Decode_Common[
             comptime for i in range(0, half_load // 2):
                 var element = float2_register[i]
                 float2_register[i] = exp2(element.fma(log2e_f32, -new_max))
-                float2_current_sum += rebind[SIMD[Self.AccumType, 2]](
-                    float2_register[i]
-                )
+                float2_current_sum += float2_register[i]
 
             # compute softmax using S_tmem_slot -> produce probabilities in regs
             # Expose correction scalars in SMEM for Correction warpgroup.

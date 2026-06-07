@@ -212,6 +212,7 @@ modular_py_library(
     # installed. They are loaded lazily inside functions and are not available
     # in the default //conditions:default build configuration.
     ignore_unresolved_imports = [
+        "flashinfer_cubin",
         "huggingface_hub",
         "huggingface_hub.hf_hub_download",
         "test_common.vllm_hook_core",

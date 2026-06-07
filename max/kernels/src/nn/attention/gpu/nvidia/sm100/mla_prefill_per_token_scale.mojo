@@ -21,7 +21,7 @@ from std.math import ceildiv
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.gpu.nvidia.mha_tile_scheduler import TransientScheduler
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     get_seq_info,
     kv_coord,
     KVTMATile,

@@ -20,8 +20,13 @@ project that provide AI assistants with build commands, coding conventions,
 and project structure.
 
 - **Cursor project rules** (`.cursor/rules/`): Modular-specific rules that
-activate based on the files you're editing, providing consistent guidance for
-MAX development (and Mojo when using rules from the Modular repository).
+  activate based on the files you're editing, providing consistent guidance for
+  MAX development (and Mojo when using rules from the Modular repository).
+
+- **Modular skills**: Reusable AI agent skills that follow the Agent Skills
+  Standard, equipping coding agents with standard workflows to build Mojo
+  projects, write optimized GPU kernels, and bring new model architectures to
+  MAX.
 
 ## Giving our docs to your AI assistant
 
@@ -171,3 +176,23 @@ To ensure compatibility with other tools, we provide both `CLAUDE.md` and
 [`AGENTS.md`](https://github.com/modular/modular/blob/main/AGENTS.md) file is
 just a symlink to the
 [`CLAUDE.md`](https://github.com/modular/modular/blob/main/CLAUDE.md) file.
+
+### Skills
+
+Modular skills are official AI agent skills that encapsulate modern
+best-practices for working with the Modular Platform, including MAX and Mojo.
+They allow AI coding agents to become fluent in developing new Mojo projects,
+writing correct Mojo syntax, programming GPUs, and importing new model
+architectures into MAX.
+
+To get started, install the skills:
+
+```sh
+npx skills add modular/skills
+```
+
+The skills are structured to follow the
+[Agent Skills Standard](https://agentskills.io/specification).
+
+For details on available skills, installation, and usage examples, see the
+[Modular Skills repository](https://github.com/modular/skills).
