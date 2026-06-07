@@ -22,12 +22,17 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.context import (
+    ImageMetadata,
+    TextAndVisionContext,
+    TextContext,
+    TokenBuffer,
+)
 from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     _LUT_FILL_PATTERN,
 )
-from max.pipelines.modeling.types import ImageMetadata, RequestID, TokenBuffer
+from max.pipelines.modeling.types import RequestID
 from max.support.image import hash_image
 from test_common.context_utils import create_text_context
 

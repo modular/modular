@@ -42,6 +42,7 @@ from std.memory import stack_allocation
 from std.atomic import Atomic
 
 from std.utils import IndexList
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from std.sys import get_defined_int
@@ -774,9 +775,7 @@ def saturated_reduce_kernel[
             ]()
 
             comptime for i in range(num_reductions):
-                row_accum_cast[i] = rebind[SIMD[dtype, simd_width]](
-                    val[i].cast[dtype]()
-                )
+                row_accum_cast[i] = val[i].cast[dtype]()
 
             # Write output
             row_coords[axis] = 0
@@ -860,8 +859,20 @@ def reduce_launch[
         shape[reduce_dim] > unsaturated_block_size
     )
 
-    # This assumes row-major layout:
-    var reduce_contig_dim: Bool = reduce_dim == rank - 1
+    # This assumes row-major layout. The reduce dim is contiguous (innermost)
+    # not only when it is the final dim, but also whenever every dim after it
+    # is unit-sized: trailing size-1 dims do not break contiguity. Callers
+    # routinely normalize an N-D reduction to a rank-3 (outer, reduce, inner)
+    # shape where `inner` is the product of the dims after the axis, so a
+    # last-axis reduction arrives here as reduce_dim=1, rank=3 with inner==1.
+    # Checking `reduce_dim == rank - 1` alone would misclassify that
+    # physically-contiguous reduction as non-contiguous and route it to
+    # `saturated_reduce_kernel`, whose cross-row SIMD packing is only valid
+    # when a real inner dim supplies the adjacent rows.
+    var inner_size = 1
+    comptime for i in range(reduce_dim + 1, rank):
+        inner_size *= shape[i]
+    var reduce_contig_dim: Bool = inner_size == 1
 
     # --- Tier 1: Thread-saturated, non-contiguous reduce_dim ---
     # Each thread handles a whole row. SIMD packing across adjacent rows.
@@ -999,7 +1010,7 @@ def _reduce_generator_gpu[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=DType.int64],
+    shape_coord: Coord,
     init: StaticTuple[Scalar[init_type], num_reductions],
     ctx: DeviceContext,
 ) raises:
@@ -1017,7 +1028,7 @@ def _reduce_generator_gpu[
         reduce_dim: The dimension we are reducing.
 
     Args:
-        shape: The shape of the tensor we are reducing.
+        shape_coord: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
         ctx: The pointer to DeviceContext.
 
@@ -1025,6 +1036,7 @@ def _reduce_generator_gpu[
         If the GPU kernel launch fails.
     """
 
+    var shape = coord_to_index_list(shape_coord)
     comptime reduce_dim_normalized = (
         shape.size + reduce_dim
     ) if reduce_dim < 0 else reduce_dim

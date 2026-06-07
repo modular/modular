@@ -34,6 +34,11 @@ from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_rope_index,
     get_seqlens,
 )
+from max.pipelines.context import (
+    ImageMetadata,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
     max_tokens_to_generate,
@@ -41,13 +46,11 @@ from max.pipelines.lib import (
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.modeling.types import (
     ImageContentPart,
-    ImageMetadata,
     MessageContent,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
@@ -631,9 +634,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
-            raise ValueError(
-                "encoded_prompt is greater than the max_length of the tokenizer"
-            )
+            raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
         # Step 5: Process vision model inputs for Qwen3VL using image processing results
         vision_data: VisionEncodingData | None = None

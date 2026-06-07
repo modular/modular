@@ -59,6 +59,7 @@ def wait_for_server_ready(
     timeout_s: int = 120 * 60,
     interval_s: float = 5.0,
     backend: str,
+    liveness_check: Callable[[], bool] | None = None,
 ) -> float:
     """Polls ``http://<host>:<port>/<path>`` until it responds with HTTP 200.
 
@@ -70,6 +71,13 @@ def wait_for_server_ready(
 
     When *backend* is ``"mcloud"``, the server is externally managed and
     assumed ready, so the function returns ``0.0`` immediately.
+
+    When *liveness_check* is provided, it is invoked after each failed poll;
+    if it returns ``False`` the server process is assumed to have exited and
+    a :class:`RuntimeError` is raised immediately rather than blocking until
+    *timeout_s*. This lets an orchestrator that launched the server abort
+    promptly on a crashed/failed bring-up instead of hanging for the full
+    timeout.
     """
     # TODO: remove once BENTO-168 is fixed
     if backend == "mcloud":
@@ -84,6 +92,10 @@ def wait_for_server_ready(
                     return time.monotonic() - start
         except (urllib.error.URLError, ConnectionError, OSError):
             pass
+        if liveness_check is not None and not liveness_check():
+            raise RuntimeError(
+                f"Server process exited before {url} became ready"
+            )
         if time.monotonic() >= deadline:
             raise RuntimeError(f"Server at {url} not ready after {timeout_s}s")
         time.sleep(interval_s)

@@ -13,8 +13,10 @@
 
 import std.sys
 from std.collections import Set
+from std.ffi import external_call
 from std.pathlib import Path
-from std.subprocess import run
+from std.python import Python
+from std import os
 
 # We can't check much more than this at the moment, because the license year
 # changes and the language is not mature enough to do regex yet.
@@ -53,22 +55,21 @@ def is_ignored_file(filename: StringSlice) -> Bool:
 
 
 def get_git_files() raises -> Set[String]:
-    # Need to get tracked, untracked, and deleted files separately
-    tracked = run("git ls-files")
-    untracked = run("git ls-files --exclude-standard --others")
-    deleted = run("git ls-files --deleted")
+    # Defer file discovery to the shared lint_helpers Python library so this
+    # linter stays consistent with the other wrappers (FAST picks changed vs.
+    # all files; jj/git is handled there).
+    var lint_helpers = Python.import_module("lint_helpers")
 
-    def _get_files(stdout: String) -> Set[String]:
-        result = Set[String]()
-        for file in stdout.split("\n"):
-            # Manually replace escaped 🔥 with a literal 🔥
-            newfile = file.replace(r"\360\237\224\245", "🔥").strip('"')
+    var py_files = lint_helpers.get_changed_files() if Bool(
+        py=lint_helpers.is_fast()
+    ) else lint_helpers.get_all_files()
 
-            if not is_ignored_file(newfile):
-                result.add(String(newfile))
-        return result^
-
-    return (_get_files(tracked) | _get_files(untracked)) - _get_files(deleted)
+    var result = Set[String]()
+    for file in py_files:
+        var name = String(py=file)
+        if not is_ignored_file(name):
+            result.add(name)
+    return result^
 
 
 def check_path(path: Path, mut files_without_license: List[Path]) raises:
@@ -87,6 +88,17 @@ def check_path(path: Path, mut files_without_license: List[Path]) raises:
 
 
 def main() raises:
+    # Import lint_helpers (and thereby initialize the embedded CPython) before
+    # the chdir below: libpython is dlopen'd via a runfiles-relative path, so it
+    # must be loaded while the current directory is still the runfiles root.
+    var lint_helpers = Python.import_module("lint_helpers")
+
+    if workspace := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        # TODO: this should be in stdlib
+        _ = external_call["chdir", Int32](
+            workspace.as_c_string_slice().unsafe_ptr()
+        )
+
     target_paths = std.sys.argv()
 
     fix = False
@@ -94,6 +106,8 @@ def main() raises:
         if arg == "--fix":
             fix = True
             break
+    if os.getenv("CHECK"):
+        fix = not Bool(py=lint_helpers.is_check())
 
     files_without_license = List[Path]()
     if (
@@ -110,8 +124,7 @@ def main() raises:
                 continue
             if target_paths[i] == "--fix":
                 continue
-            path = Path(target_paths[i])
-            check_path(path, files_without_license)
+            check_path(Path(target_paths[i]), files_without_license)
 
     if len(files_without_license) > 0:
         if fix:

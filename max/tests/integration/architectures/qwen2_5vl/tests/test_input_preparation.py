@@ -41,17 +41,19 @@ from max.pipelines.architectures.qwen2_5vl.context import (
 )
 from max.pipelines.architectures.qwen2_5vl.model import Qwen2_5VLModel
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import (
+    EOSTracker,
+    SamplingParams,
+    TextAndVisionContext,
+    TokenBuffer,
+)
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.modeling.types import (
-    EOSTracker,
     ImageContentPart,
     RequestID,
-    SamplingParams,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-    TokenBuffer,
 )
 from pytest_mock import MockerFixture
 from transformers import Qwen2_5_VLConfig

@@ -32,7 +32,8 @@ from std.gpu.host.info import is_cpu, is_valid_target
 
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
-from std.utils.index import Index, IndexList, StaticTuple
+from std.utils.index import IndexList, StaticTuple
+from std.utils.coord import Coord, coord_to_index_list
 from std.sys.info import has_apple_gpu_accelerator
 
 from std._plugin import CurrentPlugin
@@ -42,6 +43,29 @@ from .backend.cpu.reduction import _reduce_generator_cpu
 
 # Import GPU implementations.
 from .backend.gpu.reduction import _reduce_generator_gpu, reduce_launch
+
+
+comptime _ReduceGeneratorPluginHookFnType = (
+    def[
+        num_reductions: Int,
+        init_type: DType,
+        input_0_fn: def[dtype: DType, width: Int, rank: Int](
+            IndexList[rank]
+        ) capturing[_] -> SIMD[dtype, width],
+        output_0_fn: def[dtype: DType, width: Int, rank: Int](
+            IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+        ) capturing[_] -> None,
+        reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
+            SIMD[ty, width], SIMD[ty, width]
+        ) capturing[_] -> SIMD[ty, width],
+    ](
+        shape: IndexList[_, element_type=DType.int64],
+        init: StaticTuple[Scalar[init_type], num_reductions],
+        reduce_dim: Int,
+    ) thin
+)
+"""Plugin-hook signature for `PluginHooks.reduce_generator_fn`; keep in sync with `_reduce_generator`."""
+
 
 # ===-----------------------------------------------------------------------===#
 # ND indexing helper
@@ -123,7 +147,7 @@ def _reduce_generator[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=DType.int64],
+    shape: Coord,
     init: StaticTuple[Scalar[init_type], num_reductions],
     context: Optional[DeviceContext] = None,
 ) raises:
@@ -148,8 +172,13 @@ def _reduce_generator[
     """
     comptime assert is_valid_target[target](), "unsupported target"
 
-    for i in range(len(shape)):
-        if shape[i] == 0:
+    # The plugin hook only accepts an `IndexList`, and the empty-dimension
+    # check below needs runtime indexing that a `Coord` does not support, so
+    # materialize an `IndexList` view of the shape once.
+    var shape_index_list = coord_to_index_list(shape)
+
+    for i in range(len(shape_index_list)):
+        if shape_index_list[i] == 0:
             return
 
     comptime if is_cpu[target]():
@@ -170,7 +199,7 @@ def _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](shape, init, reduce_dim)
+        ](shape_index_list, init, reduce_dim)
     else:
         _reduce_generator_gpu[
             num_reductions,
@@ -198,11 +227,7 @@ def _reduce_generator_wrapper[
     target: StaticString = "cpu",
     *,
     reduce_dim: Int,
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init: Scalar,
-    context: Optional[DeviceContext] = None,
-) raises:
+](shape: Coord, init: Scalar, context: Optional[DeviceContext] = None,) raises:
     @always_inline
     @parameter
     def input_fn_wrapper[
@@ -253,11 +278,7 @@ def _reduce_generator[
     target: StaticString = "cpu",
     *,
     reduce_dim: Int,
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init: Scalar,
-    context: Optional[DeviceContext] = None,
-) raises:
+](shape: Coord, init: Scalar, context: Optional[DeviceContext] = None,) raises:
     """Reduce the given tensor using the given reduction function.
 
     Constraints:
@@ -328,10 +349,7 @@ def max[
     target: StaticString = "cpu",
     *,
     reduce_dim: Int,
-](
-    input_shape: IndexList[_, element_type=DType.int64],
-    context: Optional[DeviceContext] = None,
-) raises:
+](input_shape: Coord, context: Optional[DeviceContext] = None,) raises:
     """Computes the max across the input and output shape.
 
     This performs the max computation on the domain specified by `input_shape`,
@@ -396,10 +414,7 @@ def min[
     target: StaticString = "cpu",
     *,
     reduce_dim: Int,
-](
-    input_shape: IndexList[_, element_type=DType.int64],
-    context: Optional[DeviceContext] = None,
-) raises:
+](input_shape: Coord, context: Optional[DeviceContext] = None,) raises:
     """Computes the min across the input and output shape.
 
     This performs the min computation on the domain specified by `input_shape`,
@@ -464,10 +479,7 @@ def sum[
     target: StaticString = "cpu",
     *,
     reduce_dim: Int,
-](
-    input_shape: IndexList[_, element_type=DType.int64],
-    context: Optional[DeviceContext] = None,
-) raises:
+](input_shape: Coord, context: Optional[DeviceContext] = None,) raises:
     """Computes the sum across the input and output shape.
 
     This performs the sum computation on the domain specified by `input_shape`,
@@ -532,10 +544,7 @@ def product[
     target: StaticString = "cpu",
     *,
     reduce_dim: Int,
-](
-    input_shape: IndexList[_, element_type=DType.int64],
-    context: Optional[DeviceContext] = None,
-) raises:
+](input_shape: Coord, context: Optional[DeviceContext] = None,) raises:
     """Computes the product across the input and output shape.
     This performs the product computation on the domain specified by `input_shape`,
     loading the inputs using the `input_fn`. The results are stored using
@@ -600,7 +609,7 @@ def mean[
     *,
     reduce_dim: Int,
 ](
-    input_shape: IndexList[_, element_type=DType.int64],
+    input_shape: Coord,
     output_shape: type_of(input_shape),
     context: Optional[DeviceContext] = None,
 ) raises:
@@ -626,14 +635,21 @@ def mean[
         If the operation fails.
     """
 
+    # `trace_arg` and the runtime `input_shape[reduce_dim]` lookup below both
+    # require an `IndexList`, which a `Coord` does not provide, so materialize
+    # an `IndexList` view of the input shape once.
+    var input_shape_index_list = coord_to_index_list(input_shape)
+
     @always_inline
     @parameter
     def description_fn() -> String:
         return ";".join(
             Span(
                 [
-                    trace_arg("input", input_shape, dtype),
-                    trace_arg("output", output_shape, dtype),
+                    trace_arg("input", input_shape_index_list, dtype),
+                    trace_arg(
+                        "output", coord_to_index_list(output_shape), dtype
+                    ),
                 ]
             )
         )
@@ -663,7 +679,7 @@ def mean[
             # Apply mean division before storing to the output lambda.
             comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
             var reciprocal = Scalar[float_type](1.0) / Scalar[float_type](
-                input_shape[reduce_dim]
+                input_shape_index_list[reduce_dim]
             )
 
             @always_inline
@@ -691,7 +707,7 @@ def mean[
 
         else:
             # For ints just a normal divide.
-            var dim_size = input_shape[reduce_dim]
+            var dim_size = input_shape_index_list[reduce_dim]
 
             @always_inline
             @__copy_capture(dim_size)
@@ -913,7 +929,7 @@ def reduce[
     ]:
         return reduce_fn(acc, val)
 
-    var shape = Index(len(src))
+    var shape = Coord((len(src),))
 
     _reduce_generator[
         input_fn,
@@ -1178,7 +1194,7 @@ def sum[
     ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return acc + val
 
-    var shape = IndexList[1](length)
+    var shape = Coord((length,))
 
     _reduce_generator[
         input_fn_nd,
@@ -1413,7 +1429,7 @@ def variance[
     ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return acc + val
 
-    var shape = IndexList[1](length)
+    var shape = Coord((length,))
 
     _reduce_generator[
         input_fn_nd,

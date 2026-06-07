@@ -247,6 +247,57 @@ def _dpp_reduce_and_broadcast[
     return out
 
 
+@always_inline
+def _dpp_prefix_sum[
+    dtype: DType, //, exclusive: Bool
+](val: Scalar[dtype]) -> Scalar[dtype]:
+    comptime assert _cdna_4_or_newer(), "Requires CDNA4 or newer"
+
+    comptime _DPP_ROW_SHR_1 = 0x111
+    comptime _DPP_ROW_SHR_2 = 0x112
+    comptime _DPP_ROW_SHR_4 = 0x114
+    comptime _DPP_ROW_SHR_8 = 0x118
+    comptime _DPP_WAVE_SHR_1 = 0x138
+    comptime _DPP_ROW_BCAST_15 = 0x142
+    comptime _DPP_ROW_BCAST_31 = 0x143
+
+    var out = val
+    var lane = lane_id()
+    var row_lane = lane % 16
+
+    # Steps 1-4: Intra-row prefix sum.
+    var shr_1 = _dpp_move[_DPP_ROW_SHR_1](out)
+    if row_lane >= 1:
+        out += shr_1
+
+    var shr_2 = _dpp_move[_DPP_ROW_SHR_2](out)
+    if row_lane >= 2:
+        out += shr_2
+
+    var shr_4 = _dpp_move[_DPP_ROW_SHR_4](out)
+    if row_lane >= 4:
+        out += shr_4
+
+    var shr_8 = _dpp_move[_DPP_ROW_SHR_8](out)
+    if row_lane >= 8:
+        out += shr_8
+
+    # Steps 5-6: Cross-row prefix sum propagation.
+    var bcast_15 = _dpp_move[_DPP_ROW_BCAST_15](out)
+    if (lane % 32) >= 16:
+        out += bcast_15
+
+    var bcast_31 = _dpp_move[_DPP_ROW_BCAST_31](out)
+    if lane >= 32:
+        out += bcast_31
+
+    # Optionally shift up for exclsusive mode.
+    comptime if exclusive:
+        out = _dpp_move[_DPP_WAVE_SHR_1](out)
+
+    return out
+
+
 # ===-----------------------------------------------------------------------===#
 # utilities
 # ===-----------------------------------------------------------------------===#
@@ -1072,20 +1123,23 @@ def prefix_sum[
         A scalar containing the prefix sum at the current thread's position in
         the warp, cast to the specified output dtype.
     """
-    var res = x.cast[intermediate_type]().reduce_add()
+    var res = x.cast[intermediate_type]()
 
-    var lane = lane_id()
+    comptime if _cdna_4_or_newer():
+        res = _dpp_prefix_sum[exclusive](res)
+    else:
+        var lane = lane_id()
 
-    comptime for i in range(log2_floor(WARP_SIZE)):
-        comptime offset = 1 << i
-        var n = shuffle_up(res, UInt32(offset))
-        if lane >= offset:
-            res += n
+        comptime for i in range(log2_floor(WARP_SIZE)):
+            comptime offset = 1 << i
+            var n = shuffle_up(res, UInt32(offset))
+            if lane >= offset:
+                res += n
 
-    comptime if exclusive:
-        res = shuffle_up(res, 1)
-        if lane == 0:
-            res = 0
+        comptime if exclusive:
+            res = shuffle_up(res, 1)
+            if lane == 0:
+                res = 0
 
     return res.cast[output_type]()
 

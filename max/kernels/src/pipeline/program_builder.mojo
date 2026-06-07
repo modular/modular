@@ -1185,8 +1185,11 @@ def single_buffer_reorder(
     steady-state, so the output has len(logical) + 1 ops.
 
     Output order:
-        frag[1..T-1], compute[0], sync, store_shared, load_global,
-        compute[1..T-1], sync, frag[0]
+
+    ```text
+    frag[1..T-1], compute[0], sync, store_shared, load_global,
+    compute[1..T-1], sync, frag[0]
+    ```
     """
     var lc = config.loop_carried
     var result = List[OpDesc]()
@@ -1327,7 +1330,9 @@ def mma_block_interleave[
     Takes the logical iteration in causal order — what one ping-pong half
     computes:
 
-        global_loads → fragment_loads → MMAs
+    ```text
+    global_loads → fragment_loads → MMAs
+    ```
 
     Distributes them across MMA blocks so fragment loads and global loads
     execute during MMA stalls. Fragment loads are placed just before their

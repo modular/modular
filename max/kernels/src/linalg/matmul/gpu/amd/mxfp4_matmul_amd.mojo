@@ -464,11 +464,6 @@ struct BlockScaledMmaOp[
 # MXFP4MatmulAMD — kernel struct
 # ===----------------------------------------------------------------------=== #
 
-# TODO hardcoded support multiple MMAs in the future
-comptime MXFP4_MMA_M = 16
-comptime MXFP4_MMA_N = 16
-comptime MXFP4_MMA_K = 128
-
 
 struct MXFP4MatmulAMD[
     BM: Int = 128,
@@ -476,6 +471,9 @@ struct MXFP4MatmulAMD[
     BK_ELEMS: Int = 128,
     WM: Int = 64,
     WN: Int = 64,
+    MMA_M: Int = 16,
+    MMA_N: Int = 16,
+    MMA_K: Int = 128,
 ]:
     """Native MXFP4 block-scaled matmul for AMD CDNA4.
 
@@ -489,13 +487,12 @@ struct MXFP4MatmulAMD[
         BK_ELEMS: Block tile K in logical FP4 elements. Default 128.
         WM: Warp tile rows. BM must be divisible by WM. Default 64.
         WN: Warp tile cols. BN must be divisible by WN. Default 64.
+        MMA_M: MFMA tile rows. WM must be divisible by MMA_M. Default 16.
+        MMA_N: MFMA tile cols. WN must be divisible by MMA_N. Default 16.
+        MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
     """
 
     comptime BK_BYTES = Self.BK_ELEMS // 2
-
-    comptime MMA_M = MXFP4_MMA_M
-    comptime MMA_N = MXFP4_MMA_N
-    comptime MMA_K = MXFP4_MMA_K
 
     comptime num_warps_m = Self.BM // Self.WM
     comptime num_warps_n = Self.BN // Self.WN
@@ -549,8 +546,6 @@ struct MXFP4MatmulAMD[
         no-split path (`split_id == 0`, full K range, zero offset).
         """
         comptime BK_BYTES = Self.BK_BYTES
-        comptime MMA_M = Self.MMA_M
-        comptime MMA_N = Self.MMA_N
         comptime num_m_mmas = Self.num_m_mmas
         comptime num_n_mmas = Self.num_n_mmas
         comptime c_frag_size = Self.c_frag_size
@@ -667,7 +662,7 @@ struct MXFP4MatmulAMD[
 
         # === MMA operator ===
         var mma_op = BlockScaledMmaOp[
-            mma_shape=IndexList[3](MMA_M, MMA_N, Self.MMA_K),
+            mma_shape=IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K),
             num_m_mmas=num_m_mmas,
             num_n_mmas=num_n_mmas,
             num_k_tiles=num_k_tiles,
@@ -687,9 +682,9 @@ struct MXFP4MatmulAMD[
         var c_split = TileTensor(
             c.ptr + split_id * M * N, row_major((Int(M), Idx[N]))
         )
-        var c_writer = RegTileWriter[out_dtype, MMA_M, WARP_SIZE // MMA_M](
-            c_split
-        )
+        var c_writer = RegTileWriter[
+            out_dtype, Self.MMA_M, WARP_SIZE // Self.MMA_M
+        ](c_split)
 
         # === Pipeline helpers ===
         # Both counters start at this split's first BK-tile. The DRAM
@@ -734,14 +729,14 @@ struct MXFP4MatmulAMD[
             """Cooperatively load scale tiles from GMEM to SMEM.
 
             Scale tile per BK iteration: [Self.BM, scales_per_mma] for A and
-            [Self.BN, scales_per_mma] for B, both uint8. Each row is 4 bytes.
+            [Self.BN, scales_per_mma] for B, both uint8. Each row is
+            scales_per_mma * num_k_tiles bytes.
             Threads 0..BM-1 load A scales, threads Self.BM..BM+Self.BN-1 load B.
-            Each active thread loads one 4-byte row as an Int32, giving
-            coalesced 4-byte aligned GMEM reads.
+            Each active thread loads SCALE_WORDS_PER_ROW Int32 dwords per BK
+            iteration, giving coalesced 4-byte aligned GMEM reads.
             """
-            # Per BK iteration we load num_k_tiles MFMAs' worth of scales
-            # per row. Each thread writes num_k_tiles contiguous Int32
-            # dwords at row `tid` in the interleaved SMEM layout.
+            comptime SCALE_WORDS_PER_ROW = (scales_per_mma * num_k_tiles) // 4
+
             var tid = Int(thread_idx.x)
             var base_scale_k = k_scale_counter * scales_per_mma * num_k_tiles
             var a_base_row = Int(block_idx.y) * Self.BM
@@ -751,39 +746,33 @@ struct MXFP4MatmulAMD[
             if tid < Self.BM:
                 var row = a_base_row + tid
                 if row < M:
-                    comptime for k in range(num_k_tiles):
-                        var src_off = (
-                            row * K_SCALES + base_scale_k + k * scales_per_mma
-                        )
-                        var src_word = sfa.ptr.bitcast[Scalar[DType.int32]]()[
-                            src_off // scales_per_mma
+                    var src_word_base = (row * K_SCALES + base_scale_k) // 4
+                    comptime for w in range(SCALE_WORDS_PER_ROW):
+                        sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                            tid * SCALE_WORDS_PER_ROW + w
+                        ] = sfa.ptr.bitcast[Scalar[DType.int32]]()[
+                            src_word_base + w
                         ]
-                        sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[
-                            tid * num_k_tiles + k
-                        ] = src_word
                 else:
-                    comptime for k in range(num_k_tiles):
+                    comptime for w in range(SCALE_WORDS_PER_ROW):
                         sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[
-                            tid * num_k_tiles + k
+                            tid * SCALE_WORDS_PER_ROW + w
                         ] = Int32(0)
             # B scales: guard N-OOB rows (B is transposed).
             if tid < Self.BN:
                 var row = b_base_row + tid
                 if row < N:
-                    comptime for k in range(num_k_tiles):
-                        var src_off = (
-                            row * K_SCALES + base_scale_k + k * scales_per_mma
-                        )
-                        var src_word = sfb.ptr.bitcast[Scalar[DType.int32]]()[
-                            src_off // scales_per_mma
+                    var src_word_base = (row * K_SCALES + base_scale_k) // 4
+                    comptime for w in range(SCALE_WORDS_PER_ROW):
+                        sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                            tid * SCALE_WORDS_PER_ROW + w
+                        ] = sfb.ptr.bitcast[Scalar[DType.int32]]()[
+                            src_word_base + w
                         ]
-                        sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[
-                            tid * num_k_tiles + k
-                        ] = src_word
                 else:
-                    comptime for k in range(num_k_tiles):
+                    comptime for w in range(SCALE_WORDS_PER_ROW):
                         sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[
-                            tid * num_k_tiles + k
+                            tid * SCALE_WORDS_PER_ROW + w
                         ] = Int32(0)
 
             k_scale_counter += 1
@@ -832,8 +821,8 @@ struct MXFP4MatmulAMD[
                 num_m_mmas=num_m_mmas,
                 num_n_mmas=num_n_mmas,
                 num_k_mmas=num_k_tiles,
-                MMA_M=MMA_M,
-                MMA_N=MMA_N,
+                MMA_M=Self.MMA_M,
+                MMA_N=Self.MMA_N,
                 a_loads_per_thread=a_loads_per_thread,
                 b_loads_per_thread=b_loads_per_thread,
             ]()
@@ -915,11 +904,18 @@ struct MXFP4MatmulAMD[
         var c_block = c_split.tile[Self.BM, Self.BN](block_idx.y, block_idx.x)
         var c_warp = c_block.tile[Self.WM, Self.WN](warp_m, warp_n)
 
+        # AMD buffer_store dispatches at most 16 bytes per lane. For 16x16
+        # MFMA `c_frag_size == 4` and vectorize[1, 4] hits 16 bytes exactly.
+        # For 32x32 `c_frag_size == 16` (16 FP32 per lane per MMA), so we
+        # keep the vectorize at literal 4 and use `store[mfma32=True]`,
+        # which iterates the source as 4 register groups of 4 floats and
+        # reorders them via the CDNA 32x32 register permutation
+        # (`src[4*n + 16*m]` → fragment position `4*m + n`).
         comptime for m_mma in range(num_m_mmas):
             comptime for n_mma in range(num_n_mmas):
-                c_writer.store(
-                    c_warp.tile[MMA_M, MMA_N](m_mma, n_mma).vectorize[
-                        1, c_frag_size
+                c_writer.store[mfma32=Self.MMA_M == 32](
+                    c_warp.tile[Self.MMA_M, Self.MMA_N](m_mma, n_mma).vectorize[
+                        1, 4
                     ](),
                     c_reg.tile[1, c_frag_size](m_mma, n_mma),
                 )
@@ -931,7 +927,14 @@ struct MXFP4MatmulAMD[
 
 
 def _launch_mxfp4[
-    BM: Int, BN: Int, BK_ELEMS: Int, WM: Int, WN: Int
+    BM: Int,
+    BN: Int,
+    BK_ELEMS: Int,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int = 16,
+    MMA_N: Int = 16,
+    MMA_K: Int = 128,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,
@@ -943,7 +946,14 @@ def _launch_mxfp4[
 ) raises:
     """Instantiate MXFP4MatmulAMD with the given tile shape and launch."""
     comptime Kernel = MXFP4MatmulAMD[
-        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
+        BM=BM,
+        BN=BN,
+        BK_ELEMS=BK_ELEMS,
+        WM=WM,
+        WN=WN,
+        MMA_M=MMA_M,
+        MMA_N=MMA_N,
+        MMA_K=MMA_K,
     ]
     comptime N = type_of(c).static_shape[1]
 
@@ -1085,7 +1095,11 @@ def _pick_num_splits[
     return best
 
 
-def mxfp4_block_scaled_matmul_amd(
+def mxfp4_block_scaled_matmul_amd[
+    MMA_M: Int = 16,
+    MMA_N: Int = 16,
+    MMA_K: Int = 128,
+](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, DType.uint8, ...],
     b: TileTensor[mut=False, DType.uint8, ...],
@@ -1103,6 +1117,12 @@ def mxfp4_block_scaled_matmul_amd(
     Tile shape is selected at runtime based on M to match the expected
     arithmetic intensity regime (decode vs. prefill). A proper
     (N, K)-keyed dispatch table is planned for a follow-up PR.
+
+    Parameters:
+        MMA_M: MFMA tile rows. Default 16. Pass 32 to opt into the
+            32x32x64 MFMA shape (must be paired with MMA_N=32, MMA_K=64).
+        MMA_N: MFMA tile cols. Default 16.
+        MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
 
     Args:
         c: Output [M, N] (any float dtype, e.g. float32 or bfloat16).
@@ -1180,12 +1200,41 @@ def mxfp4_block_scaled_matmul_amd(
     comptime SK16_WM = 16
     comptime SK16_WN = 64
 
+    # Wide-N short-K decode gate (e.g. down-proj N=16384, K<=3072). For wide
+    # N the plain launch already yields ceildiv(N, BN) CTAs that fill the GPU,
+    # and split-K's reduce kernel cost scales with the large output M*N —
+    # measured ~41% of total for N=16384,K=2048 (matmul 6.6us + reduce 4.7us),
+    # while at num_splits=4 the steady-state K-loop is empty. A single small-BN
+    # kernel keeps the CTA count high WITHOUT the reduce tax and matches/beats
+    # aiter (whose autotuned config sets NUM_KSPLIT=1 for this exact shape).
+    # Two conditions:
+    #   * wide N: ceildiv(N, 32) >= sm_count, so BN=32 alone gives >=1 CTA/CU
+    #     (down-proj N=16384 -> 512 CTAs; up-proj N=2304 -> 72 and Kimi N=4096
+    #     -> 128 fall through to split-K, which is correct for their narrow N /
+    #     long K, matching aiter NUM_KSPLIT>1).
+    #   * short K: K_BYTES <= 1536 (K <= 3072 FP4 elems). At larger K each CTA's
+    #     full-K loop becomes latency-bound under the single-buffer pipeline and
+    #     split-K (shorter per-CTA loop) wins instead — measured crossover sits
+    #     between K=3072 (single ~= split) and K=4096 (split wins).
+    # Measured: single BN=32 closes the down-proj gap vs aiter from +25..36%
+    # (split-K) to +2..8% at K=2048, and is faster than aiter at K=2560.
+    comptime _wide_n_short_k_decode = (
+        ceildiv(N, 32) >= _gpu.sm_count and K_BYTES <= 1536 and can_use_bk_512
+    )
+
     # Runtime M-bucket dispatch. Tile shapes tuned for Kimi K2.5 on MI355.
-    #   M <=  16  → decode → narrow split-K (BM=16, no wasted M rows)
+    #   M <=  16  → decode → single small-BN kernel for the wide-N short-K
+    #               regime, else narrow split-K (BM=16, no wasted M rows)
     #   M <=  64  → decode / short-prefill → BM=64 split-K
     #   else      → general prefill / training (unchanged, no split-K)
     if M <= 16:
-        comptime if can_use_bk_256 and _sk_splits > 1:
+        comptime if _wide_n_short_k_decode:
+            # Single kernel, no split-K, no reduce. BN=32 → ceildiv(N,32) CTAs
+            # fill the GPU; BM=16 wastes no M rows. Mirrors aiter NUM_KSPLIT=1.
+            _launch_mxfp4[BM=16, BN=32, BK_ELEMS=512, WM=16, WN=16](
+                c, a, b, a_scales, b_scales, M, ctx
+            )
+        elif can_use_bk_256 and _sk_splits > 1:
             _launch_mxfp4_split_k[
                 BM=SK16_BM,
                 BN=SK16_BN,
@@ -1195,13 +1244,27 @@ def mxfp4_block_scaled_matmul_amd(
                 num_splits=_sk_splits,
             ](c, a, b, a_scales, b_scales, M, ctx)
         elif can_use_bk_512:
-            _launch_mxfp4[BM=64, BN=32, BK_ELEMS=512, WM=64, WN=32](
-                c, a, b, a_scales, b_scales, M, ctx
-            )
+            _launch_mxfp4[
+                BM=64,
+                BN=32,
+                BK_ELEMS=512,
+                WM=64,
+                WN=32,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                MMA_K=MMA_K,
+            ](c, a, b, a_scales, b_scales, M, ctx)
         else:
-            _launch_mxfp4[BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64](
-                c, a, b, a_scales, b_scales, M, ctx
-            )
+            _launch_mxfp4[
+                BM=128,
+                BN=128,
+                BK_ELEMS=128,
+                WM=64,
+                WN=64,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                MMA_K=MMA_K,
+            ](c, a, b, a_scales, b_scales, M, ctx)
     elif M <= 64:
         comptime if can_use_bk_256 and _sk_splits > 1:
             _launch_mxfp4_split_k[
@@ -1224,14 +1287,35 @@ def mxfp4_block_scaled_matmul_amd(
             # legal there either. There is simply nothing to split at
             # K=512, so the non-split BK512 tile is correct for this
             # tiny-K corner (rare in production: Kimi up=7168, down=2048).
-            _launch_mxfp4[BM=64, BN=32, BK_ELEMS=512, WM=64, WN=32](
-                c, a, b, a_scales, b_scales, M, ctx
-            )
+            _launch_mxfp4[
+                BM=64,
+                BN=32,
+                BK_ELEMS=512,
+                WM=64,
+                WN=32,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                MMA_K=MMA_K,
+            ](c, a, b, a_scales, b_scales, M, ctx)
         else:
-            _launch_mxfp4[BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64](
-                c, a, b, a_scales, b_scales, M, ctx
-            )
+            _launch_mxfp4[
+                BM=128,
+                BN=128,
+                BK_ELEMS=128,
+                WM=64,
+                WN=64,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                MMA_K=MMA_K,
+            ](c, a, b, a_scales, b_scales, M, ctx)
     else:
-        _launch_mxfp4[BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64](
-            c, a, b, a_scales, b_scales, M, ctx
-        )
+        _launch_mxfp4[
+            BM=128,
+            BN=128,
+            BK_ELEMS=128,
+            WM=64,
+            WN=64,
+            MMA_M=MMA_M,
+            MMA_N=MMA_N,
+            MMA_K=MMA_K,
+        ](c, a, b, a_scales, b_scales, M, ctx)

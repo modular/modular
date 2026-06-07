@@ -22,7 +22,7 @@ import queue
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -37,7 +37,13 @@ from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient, HTTPStatusError
 from jinja2.exceptions import UndefinedError
 from llguidance import LLMatcher
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context import (
+    GenerationStatus,
+    SamplingParams,
+    SamplingParamsInput,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
@@ -47,20 +53,16 @@ from max.pipelines.lib.tool_parsing import (
 )
 from max.pipelines.lora import LoRAOperation, LoRARequest, LoRAStatus
 from max.pipelines.modeling.types import (
-    GenerationStatus,
     ImageContentPart,
     MessageContent,
     ParsedToolResponse,
     PipelineTokenizer,
     RequestID,
-    SamplingParams,
-    SamplingParamsInput,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestFunction,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TextGenerationResponseFormat,
     VideoContentPart,
 )
 from max.profiler import Tracer, traced
@@ -475,6 +477,14 @@ class OpenAIChatResponseGenerator(
                 n_reasoning_tokens + n_tokens,
             )
 
+            if request.response_format is not None:
+                logger.info(
+                    "Tool/constrained request %s succeeded (stream=true): type=%s, tool_calls_emitted=%s",
+                    request.request_id,
+                    request.response_format.type,
+                    has_emitted_tool_calls,
+                )
+
             # If `include_usage=True`, send a final chunk with usage statistics
             if self.stream_options and self.stream_options.get("include_usage"):
                 final_usage = CompletionUsage(
@@ -673,6 +683,15 @@ class OpenAIChatResponseGenerator(
                 service_tier=None,
                 usage=usage,
             )
+            if request.response_format is not None:
+                logger.info(
+                    "Tool/constrained request %s succeeded (stream=false): type=%s, tool_calls_emitted=%s",
+                    request.request_id,
+                    request.response_format.type,
+                    any(
+                        choice.message.tool_calls for choice in response_choices
+                    ),
+                )
             return response
         finally:
             record_request_end(
@@ -922,7 +941,7 @@ async def openai_parse_chat_completion_request(
             messages.append(
                 TextGenerationRequestMessage(
                     role=_normalize_openai_role(m["role"]),
-                    content=content if content else "",
+                    content=content or "",
                     tool_calls=tool_calls,
                     tool_call_id=tool_call_id,
                     reasoning_content=reasoning_content,
@@ -1430,7 +1449,7 @@ async def openai_create_chat_completion(
 
 
 def _convert_chat_completion_tools_to_token_generator_tools(
-    chat_tools: list[ChatCompletionFunctionToolParam] | None,
+    chat_tools: Iterable[ChatCompletionFunctionToolParam] | None,
 ) -> list[TextGenerationRequestTool] | None:
     """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:

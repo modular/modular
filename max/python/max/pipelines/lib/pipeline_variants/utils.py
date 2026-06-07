@@ -28,20 +28,20 @@ import numpy as np
 import numpy.typing as npt
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
-from max.pipelines.core import StructuredOutputRegionDelimiters
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context import (
+    GenerationStatus,
+    LogProbabilities,
+    StructuredOutputRegionDelimiters,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
     get_parser_cls,
 )
 from max.pipelines.lib.utils import upper_bounded_default
-from max.pipelines.modeling.types import (
-    GenerationStatus,
-    LogProbabilities,
-    RequestID,
-    TextGenerationContextType,
-    TextGenerationOutput,
-)
+from max.pipelines.modeling.types import RequestID
 from max.profiler import Tracer, traced
 from transformers import (
     AutoConfig,

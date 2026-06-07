@@ -490,5 +490,51 @@ def test_multiblock_reduce() raises:
         )
 
 
+def test_thread_saturated_contiguous_reduce() raises:
+    """Regression test for a contiguous last-axis reduction that saturates the
+    device.
+
+    An N-D last-axis reduction is normalized to a rank-3 (outer, reduce, 1)
+    shape with reduce_dim=1, so the reduce dim is still physically contiguous
+    even though it is not the final index. `reduce_launch` previously decided
+    contiguity with `reduce_dim == rank - 1`, so the trailing unit dim made it
+    treat the reduction as non-contiguous and, once `num_rows` reached
+    `256 * sm_count`, dispatch to `saturated_reduce_kernel`. That kernel packs
+    adjacent rows into SIMD lanes, which is only valid when a real inner dim
+    supplies those rows; with inner == 1 it summed the wrong elements and
+    produced wrong results. Concretely, `Tensor.mean(-1)` on a (37888, 64)
+    tensor was wrong on a 148-SM B200, since 37888 == 256 * 148. This pins the
+    fix: the reduction must stay correct at and beyond the saturation
+    boundary.
+    """
+
+    @parameter
+    def reduce_add[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return x + y
+
+    with DeviceContext() as ctx:
+        var sm_count = ctx.default_device_info.sm_count
+        comptime reduce_size = 64
+
+        # Exactly hit (and clear) the `num_rows >= 256 * sm_count`
+        # thread-saturation boundary that selects `saturated_reduce_kernel`.
+        for outer in [256 * sm_count, 256 * sm_count + 1]:
+            var expected = List[Float32](capacity=outer)
+            for o in range(outer):
+                # Each element of row `o` is `o + 1`, so the row sums to
+                # reduce_size * (o + 1).
+                expected.append(Float32(reduce_size * (o + 1)))
+
+            reduce_inner_test[reduce_add, axis=1](
+                IndexList[3](outer, reduce_size, 1),
+                Float32(0),
+                expected,
+                ctx,
+            )
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1565,7 +1565,7 @@ class ResponseResource(BaseModel):
             an assistant message in the output field.
 
         Example:
-            >>> from max.pipelines.modeling.types.generation import GenerationOutput
+            >>> from max.pipelines.context import GenerationOutput
             >>> from max.pipelines.request import RequestID
             >>> from max.pipelines.request.open_responses import OutputImageContent
             >>> from max.pipelines.modeling.types.status import GenerationStatus

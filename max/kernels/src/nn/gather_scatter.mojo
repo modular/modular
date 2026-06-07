@@ -1123,7 +1123,7 @@ def scatter_elements[
         ](curr, updates.to_tile_tensor()[indices_coords])
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[update_func, 1](Coord(indices.shape()), ctx)
+    elementwise[update_func, 1](indices.shape_coord(), ctx)
 
 
 @always_inline

@@ -15,7 +15,7 @@ from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.deepseekV3.tool_parser import (
     resolve_deepseekv3_tool_parser,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -32,6 +32,7 @@ deepseekV3_modulev3_arch = SupportedArchitecture(
     default_encoding="bfloat16",
     supported_encodings={
         "bfloat16",
+        "float8_e4m3fn",
     },
     multi_gpu_supported=False,
     pipeline_model=DeepseekV3Model,

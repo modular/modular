@@ -1948,6 +1948,8 @@ struct Split:
 
         check_axis_in_range[output.rank](axis)
 
+        comptime normalized_axis = axis + rank if axis < 0 else axis
+
         var output_bufs = StaticTuple[
             TileTensor[
                 output.dtype,
@@ -1967,9 +1969,13 @@ struct Split:
                 ),
             )
 
-        split[dtype, target=target, trace_description=_trace_name](
+        split[
+            dtype,
+            target=target,
+            trace_description=_trace_name,
+            axis=normalized_axis,
+        ](
             input.to_tile_tensor[DType.int64](),
-            normalize_neg_index(axis, rank),
             output_bufs,
             ctx,
         )
@@ -2250,8 +2256,8 @@ struct AdvancedIndexingSetItem:
             static_spec=output_tensor.static_spec,
         ](
             output_tensor._ptr,
-            output_tensor._spec,
-            output_tensor._runtime_strides,
+            output_tensor.shape(),
+            output_tensor.strides(),
         )
         AdvancedIndexingSetItemInplace.execute[
             target=target,

@@ -59,7 +59,8 @@ from nn.attention.mha_operand import MHAOperand, KVCacheMHAOperand
 from nn.attention.mha_mask import MHAMask
 from kv_cache.types import KVCacheT
 from nn.attention.mha_utils import OptionallyStaticInt, MHAPartitionScheme
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
+    elect,
     OptionalPointer,
     NullPointer,
     NonNullPointer,
@@ -844,7 +845,7 @@ struct MLAPrefillSparse[
                     min_or_neg_inf[DType.float32]()
                 )
                 comptime for i in range(P_PER_THREAD):
-                    cur_pi_max = max(cur_pi_max, rebind[Float32](p[i]))
+                    cur_pi_max = max(cur_pi_max, p[i])
                 cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
 
                 # Cross-thread max reduction: threads t and t^64 own the
@@ -892,8 +893,8 @@ struct MLAPrefillSparse[
                 var vneg_max = SIMD[DType.float32, 2](-new_max)
                 comptime for j in range(P_PER_THREAD // 2):
                     var pj = SIMD[DType.float32, 2](
-                        rebind[Float32](p[2 * j]),
-                        rebind[Float32](p[2 * j + 1]),
+                        p[2 * j],
+                        p[2 * j + 1],
                     )
                     var ed2 = exp2_emulation(fma_ftz(pj, vscale, vneg_max))
                     li = li + ed2[0] + ed2[1]
@@ -932,14 +933,14 @@ struct MLAPrefillSparse[
                 # half-word stores.
                 comptime for i in range(P_PER_THREAD // 8):
                     var s_vec = SIMD[Self.qkv_dtype, 8](
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 0]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 1]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 2]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 3]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 4]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 5]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 6]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 7]),
+                        s_bf16[i * 8 + 0],
+                        s_bf16[i * 8 + 1],
+                        s_bf16[i * 8 + 2],
+                        s_bf16[i * 8 + 3],
+                        s_bf16[i * 8 + 4],
+                        s_bf16[i * 8 + 5],
+                        s_bf16[i * 8 + 6],
+                        s_bf16[i * 8 + 7],
                     )
                     st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
                         scores_ptr,
@@ -956,7 +957,7 @@ struct MLAPrefillSparse[
                     ](uninitialized=True)
                     comptime for j in range(O_RESCALE_CHUNK):
                         o_scaled_0[j] = mul_ftz(
-                            rebind[Float32](o_chunk_prefetch[j]),
+                            o_chunk_prefetch[j],
                             scale_for_old,
                         )
                     tcgen05_st[
@@ -983,7 +984,7 @@ struct MLAPrefillSparse[
                         ](uninitialized=True)
                         comptime for j in range(O_RESCALE_CHUNK):
                             o_scaled[j] = mul_ftz(
-                                rebind[Float32](o_chunk[j]),
+                                o_chunk[j],
                                 scale_for_old,
                             )
                         tcgen05_st[
@@ -1099,14 +1100,8 @@ struct MLAPrefillSparse[
                     tcgen05_load_wait()
 
                     comptime for i in range(CHUNK // 2):
-                        var v0_f32 = (
-                            rebind[Scalar[DType.float32]](c_chunk[2 * i])
-                            * output_scale
-                        )
-                        var v1_f32 = (
-                            rebind[Scalar[DType.float32]](c_chunk[2 * i + 1])
-                            * output_scale
-                        )
+                        var v0_f32 = c_chunk[2 * i] * output_scale
+                        var v1_f32 = c_chunk[2 * i + 1] * output_scale
                         var v = SIMD[Self.qkv_dtype, 2](
                             v0_f32.cast[Self.qkv_dtype](),
                             v1_f32.cast[Self.qkv_dtype](),
@@ -1314,6 +1309,11 @@ struct MLAPrefillSparse[
         k: UInt32,
         num_k_blocks: UInt32,
     ):
+        # The caller runs this method under an `elect_one_sync()` guard (a single
+        # lane of warp 12), so `elect()` returns 1 here. Forward it to every MMA
+        # below instead of a hard-coded `1`, keeping the predicate
+        # `elect.sync`-derived (and self-protecting if that guard is widened).
+        var e = elect()
         if k < num_k_blocks:
             # QK^T MMA
             # wait for k load p0
@@ -1351,7 +1351,7 @@ struct MLAPrefillSparse[
                 k_p0_smem_desc,
                 Self.P_TMEM_ADDR,
                 c_scale=0,
-                elect=1,
+                elect=e,
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 qk_ss_done[cur_buf].unsafe_ptr(),
@@ -1383,7 +1383,7 @@ struct MLAPrefillSparse[
                     k_p1_smem_desc,
                     Self.P_TMEM_ADDR,
                     c_scale=1,
-                    elect=1,
+                    elect=e,
                 )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 qk_ts_done[cur_buf].unsafe_ptr(),
@@ -1457,14 +1457,14 @@ struct MLAPrefillSparse[
                 v_atom1_p0_desc,
                 Self.O_TMEM_ADDR,
                 c_scale=sv_p0_c_scale,
-                elect=1,
+                elect=e,
             )
             Self.SVMMAType.SS_P0MMAType.mma(
                 s_p0_smem_desc,
                 v_atom2_p0_desc,
                 UInt32(Self.O_TMEM_ADDR_ATOM2),
                 c_scale=sv_p0_c_scale,
-                elect=1,
+                elect=e,
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 sv_p0_done[curr_buf].unsafe_ptr(),
@@ -1490,14 +1490,14 @@ struct MLAPrefillSparse[
                 v_atom1_p1_desc,
                 Self.O_TMEM_ADDR,
                 c_scale=1,
-                elect=1,
+                elect=e,
             )
             Self.SVMMAType.SS_P1MMAType.mma(
                 s_p1_smem_desc,
                 v_atom2_p1_desc,
                 UInt32(Self.O_TMEM_ADDR_ATOM2),
                 c_scale=1,
-                elect=1,
+                elect=e,
             )
             mma_arrive_multicast[cta_group=Self.config.cta_group](
                 sv_p1_done[curr_buf].unsafe_ptr(),
@@ -2889,7 +2889,7 @@ struct MLAPrefillSparse[
                     min_or_neg_inf[DType.float32]()
                 )
                 comptime for i in range(P_PER_THREAD):
-                    cur_pi_max = max(cur_pi_max, rebind[Float32](p[i]))
+                    cur_pi_max = max(cur_pi_max, p[i])
                 cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
 
                 named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
@@ -2920,9 +2920,7 @@ struct MLAPrefillSparse[
                     uninitialized=True
                 )
                 comptime for i in range(P_PER_THREAD):
-                    var d: Float32 = (
-                        rebind[Float32](p[i]) * scale_log2e - new_max
-                    )
+                    var d: Float32 = p[i] * scale_log2e - new_max
                     var ed: Float32 = exp2(d)
                     li = li + ed
                     s_bf16[i] = ed.cast[Self.qkv_dtype]()
@@ -2955,14 +2953,14 @@ struct MLAPrefillSparse[
                 # half-word stores.
                 comptime for i in range(P_PER_THREAD // 8):
                     var s_vec = SIMD[Self.qkv_dtype, 8](
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 0]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 1]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 2]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 3]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 4]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 5]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 6]),
-                        rebind[Scalar[Self.qkv_dtype]](s_bf16[i * 8 + 7]),
+                        s_bf16[i * 8 + 0],
+                        s_bf16[i * 8 + 1],
+                        s_bf16[i * 8 + 2],
+                        s_bf16[i * 8 + 3],
+                        s_bf16[i * 8 + 4],
+                        s_bf16[i * 8 + 5],
+                        s_bf16[i * 8 + 6],
+                        s_bf16[i * 8 + 7],
                     )
                     st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
                         scores_ptr,
@@ -2979,7 +2977,7 @@ struct MLAPrefillSparse[
                     ](uninitialized=True)
                     comptime for j in range(O_RESCALE_CHUNK):
                         o_scaled_0[j] = mul_ftz(
-                            rebind[Float32](o_chunk_prefetch[j]),
+                            o_chunk_prefetch[j],
                             scale_for_old,
                         )
                     tcgen05_st[
@@ -3006,7 +3004,7 @@ struct MLAPrefillSparse[
                         ](uninitialized=True)
                         comptime for j in range(O_RESCALE_CHUNK):
                             o_scaled[j] = mul_ftz(
-                                rebind[Float32](o_chunk[j]),
+                                o_chunk[j],
                                 scale_for_old,
                             )
                         tcgen05_st[
@@ -3087,14 +3085,8 @@ struct MLAPrefillSparse[
                     tcgen05_load_wait()
 
                     comptime for i in range(CHUNK // 2):
-                        var v0_f32 = (
-                            rebind[Scalar[DType.float32]](c_chunk[2 * i])
-                            * output_scale
-                        )
-                        var v1_f32 = (
-                            rebind[Scalar[DType.float32]](c_chunk[2 * i + 1])
-                            * output_scale
-                        )
+                        var v0_f32 = c_chunk[2 * i] * output_scale
+                        var v1_f32 = c_chunk[2 * i + 1] * output_scale
                         var v = SIMD[Self.qkv_dtype, 2](
                             v0_f32.cast[Self.qkv_dtype](),
                             v1_f32.cast[Self.qkv_dtype](),

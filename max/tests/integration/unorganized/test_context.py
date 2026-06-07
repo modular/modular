@@ -17,23 +17,23 @@ from typing import Any
 
 import numpy as np
 import pytest
-from max.pipelines.core import (
-    PixelContext,
-    SpecDecodingState,
-    TextAndVisionContext,
-    TextContext,
-)
-from max.pipelines.core.context import FUTURE_TOKEN
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     EOSTracker,
     GenerationStatus,
     ImageMetadata,
+    PixelContext,
     PixelGenerationContext,
-    RequestID,
     SamplingParams,
+    SpecDecodingState,
+    TextAndVisionContext,
+    TextContext,
     TextGenerationContext,
     TokenBuffer,
     VLMTextGenerationContext,
+)
+from max.pipelines.context.context import FUTURE_TOKEN
+from max.pipelines.modeling.types import (
+    RequestID,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )

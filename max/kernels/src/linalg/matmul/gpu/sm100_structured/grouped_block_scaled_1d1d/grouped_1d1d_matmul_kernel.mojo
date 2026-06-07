@@ -1164,9 +1164,7 @@ struct Grouped1D1DMatmulKernel[
                 if use_group_cache:
                     s_scale = sched_expert_scales[Int(grp)]
                 else:
-                    s_scale = rebind[Scalar[DType.float32]](
-                        expert_scales[Int(eid)]
-                    )
+                    s_scale = expert_scales[Int(eid)]
                 found = True
                 break
             grp += 1
@@ -1912,9 +1910,7 @@ struct Grouped1D1DMatmulKernel[
                     # Hoist loop-invariant SF coords outside k_tile loop.
                     # sfb_n_coord must be visible to ALL lanes (cp.async
                     # needs it per-lane), so compute outside elect_one_sync.
-                    var a_scale_offset = rebind[Scalar[DType.uint32]](
-                        a_scale_offsets[Int(ctx.group_idx())]
-                    )
+                    var a_scale_offset = a_scale_offsets[Int(ctx.group_idx())]
                     var _sfa_coord: Int
                     var sfb_n_coord: Int
                     _sfa_coord, sfb_n_coord = Self._get_sf_coords(
@@ -2242,9 +2238,9 @@ struct Grouped1D1DMatmulKernel[
                 for i in range(lane, num_active_experts, WARP_SIZE):
                     var eid = expert_ids[i]
                     sched_expert_ids[i] = eid
-                    sched_expert_scales[i] = rebind[Scalar[DType.float32]](
-                        expert_scales[Int(eid)]
-                    ) if eid >= 0 else Float32(1.0)
+                    sched_expert_scales[i] = expert_scales[
+                        Int(eid)
+                    ] if eid >= 0 else Float32(1.0)
 
             # --- Steady-state: use SMEM cache (fast) ---
             # warp.broadcast() is shuffle_idx with full mask — it includes an
@@ -2535,9 +2531,7 @@ struct Grouped1D1DMatmulKernel[
 
                 # Scale factor load with offset
                 # TMA 4D now has TileTensor overload - pass tiles directly
-                var a_scale_offset = rebind[Scalar[DType.uint32]](
-                    a_scale_offsets[Int(group_idx)]
-                )
+                var a_scale_offset = a_scale_offsets[Int(group_idx)]
 
                 var sfa_m_coord: Int
                 var sfb_n_coord: Int
@@ -2802,11 +2796,7 @@ struct Grouped1D1DMatmulKernel[
 
         # Per-expert SF-block base in the 5D scale tile. Computed once per
         # epilogue call; mirrors `ep_comm.mojo:4068-4070`.
-        var scales_offset_blocks = Int(
-            rebind[Scalar[DType.uint32]](
-                a_scale_offsets[Int(active_expert_idx)]
-            )
-        )
+        var scales_offset_blocks = Int(a_scale_offsets[Int(active_expert_idx)])
         var sf_block_base = (
             Int(m_start) // SF_MN_GROUP_SIZE + scales_offset_blocks
         ) * SF_MN_GROUP_SIZE

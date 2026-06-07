@@ -970,6 +970,45 @@ class MoCastOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
+class MoCeilOp(max._core.Operation):
+    """
+    Returns the elementwise smallest integer greater than `x`, where `x` is
+    input tensor.
+
+    ```mlir
+      %arg: !mo.tensor<[2, 3], f32>
+      %res = rmo.mo.ceil(%arg) : !mo.tensor<[2, 3], f32>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        input_values: Sequence[max._core.Value[max._core.Type]],
+        graph_op: max._core.dialects.mo.GraphOp,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
 class MoConvOp(max._core.Operation):
     """
     Computes the convolution product of the input with the given filter,

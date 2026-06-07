@@ -519,6 +519,11 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
                 quantization_granularity=64,
             )
 
+        num_spec_tokens = (
+            pipeline_config.speculative.num_speculative_tokens
+            if pipeline_config.speculative
+            else 0
+        )
         sliding_window_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.text_config.num_key_value_heads,
@@ -527,6 +532,12 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
+            speculative_method=(
+                pipeline_config.speculative.speculative_method
+                if pipeline_config.speculative
+                else None
+            ),
+            num_draft_tokens=num_spec_tokens,
         )
         global_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
@@ -536,6 +547,12 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
+            speculative_method=(
+                pipeline_config.speculative.speculative_method
+                if pipeline_config.speculative
+                else None
+            ),
+            num_draft_tokens=num_spec_tokens,
         )
         return MultiKVCacheParams.from_params(
             sliding_window_kv_params, global_kv_params

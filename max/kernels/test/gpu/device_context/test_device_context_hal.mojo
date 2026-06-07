@@ -494,6 +494,63 @@ def test_compile_function_reuse(ctx: DeviceContext) raises:
         assert_equal(host_out[i], Float32(i) + Float32(i) + Float32(7))
 
 
+def test_enqueue_unified(ctx: DeviceContext) raises:
+    comptime length = 1024
+
+    var in0_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var in1_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
+
+    for i in range(length):
+        in0_host[i] = Float32(i)
+        in1_host[i] = Float32(2)
+
+    var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
+
+    ctx.enqueue_copy(in0_device, in0_host)
+    ctx.enqueue_copy(in1_device, in1_host)
+
+    var block_dim = 32
+    var supplement = 5
+
+    var output = Span(ptr=out_device.unsafe_ptr(), length=length)
+    var in0 = Span(ptr=in0_device.unsafe_ptr(), length=length)
+    var in1 = Span(ptr=in1_device.unsafe_ptr(), length=length)
+
+    def vec_closure() {var supplement, var in0, var in1, var output}:
+        var tid = global_idx.x
+        if tid >= length:
+            return
+        output[tid] = in0[tid] + in1[tid] + Float32(supplement)
+
+    ctx.enqueue_function(
+        vec_closure,
+        grid_dim=(length // block_dim),
+        block_dim=block_dim,
+    )
+
+    ctx.enqueue_copy(out_host, out_device)
+    ctx.synchronize()
+
+    var expected: List[Float32] = [
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0,
+        13.0,
+        14.0,
+        15.0,
+        16.0,
+    ]
+    for i in range(10):
+        assert_equal(out_host[i], expected[i])
+
+
 def test_external_shared_mem(ctx: DeviceContext) raises:
     print("== test_external_shared_mem")
 
@@ -616,5 +673,6 @@ def main() raises:
         test_host_buffer_context(ctx)
         test_enqueue_function_with_args(ctx)
         test_compile_function_reuse(ctx)
+        test_enqueue_unified(ctx)
         test_external_shared_mem(ctx)
         test_stream_enqueue_function(ctx)
