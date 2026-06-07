@@ -1425,14 +1425,10 @@ struct TileWriter[
             var casted = frags.cast[Self.epilogue_dtype]()
 
             comptime for _i in range(Self.rep_frag_size):
-                upper_frag_casted[_i] = rebind[Scalar[Self.epilogue_dtype]](
-                    casted.upper[_i]
-                )
+                upper_frag_casted[_i] = casted.upper[_i]
 
             comptime for _i in range(Self.rep_frag_size):
-                lower_frag_casted[_i] = rebind[Scalar[Self.epilogue_dtype]](
-                    casted.lower[_i]
-                )
+                lower_frag_casted[_i] = casted.lower[_i]
 
             comptime if stage == Self.num_stages - 1:
                 AccumBarrier[Self.cta_group].arrive(

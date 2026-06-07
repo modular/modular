@@ -33,9 +33,14 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     SamplingConfig,
 )
+from max.pipelines.lib.config.config import (
+    _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES,
+    _DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
+from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (
     mock_estimate_memory_footprint,
@@ -1540,7 +1545,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
         MAXModelConfig, "architecture_name", property(lambda self: arch_name)
     )
     # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch.
-    arch = SimpleNamespace(name=arch_name)
+    arch = SimpleNamespace(name=arch_name, task=PipelineTask.TEXT_GENERATION)
     monkeypatch.setattr(
         PIPELINE_REGISTRY,
         "retrieve_architecture",
@@ -1574,6 +1579,59 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
 
 @prepare_registry
 @mock_pipeline_config_resolve
+def test_validate_and_resolve_overlap_scheduler__no_auto_enable_for_non_text_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Embeddings (and other non-text-generation) architectures must not
+    auto-enable the overlap scheduler or device graph capture.
+
+    Both features only support ``PipelineTask.TEXT_GENERATION`` (see
+    ``get_pipeline_for_task`` in registry.py). The auto-enable logic uses a
+    blacklist, so an embeddings architecture that is absent from the blacklist
+    (e.g. ``MPNetForMaskedLM``) would otherwise be incorrectly auto-enabled and
+    crash pipeline construction. Regression test for QUA-460.
+    """
+    arch_name = "MPNetForMaskedLM"
+    # Sanity check: the architecture is intentionally NOT in the blacklist, so
+    # the only thing preventing auto-enable is the pipeline-task guard.
+    assert arch_name not in _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
+    assert arch_name not in _DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES
+
+    monkeypatch.setattr(
+        MAXModelConfig, "architecture_name", property(lambda self: arch_name)
+    )
+    arch = SimpleNamespace(
+        name=arch_name, task=PipelineTask.EMBEDDINGS_GENERATION
+    )
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch),
+    )
+    monkeypatch.setattr(
+        "max.pipelines.lib.config.config.accelerator_api",
+        Mock(return_value="cuda"),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
+        ),
+        runtime=PipelineRuntimeConfig(max_batch_size=16),
+    )
+    config._validate_and_resolve_overlap_scheduler()
+
+    assert config.runtime.device_graph_capture is False
+    assert config.runtime.enable_overlap_scheduler is False
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
 def test_validate_and_resolve_overlap_scheduler__no_device_graph_capture_for_prefill_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1582,7 +1640,7 @@ def test_validate_and_resolve_overlap_scheduler__no_device_graph_capture_for_pre
     monkeypatch.setattr(
         MAXModelConfig, "architecture_name", property(lambda self: arch_name)
     )
-    arch = SimpleNamespace(name=arch_name)
+    arch = SimpleNamespace(name=arch_name, task=PipelineTask.TEXT_GENERATION)
     monkeypatch.setattr(
         PIPELINE_REGISTRY,
         "retrieve_architecture",
@@ -1632,7 +1690,9 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
                 property(lambda self: arch_name),
             )
             # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch
-            arch = SimpleNamespace(name=arch_name)
+            arch = SimpleNamespace(
+                name=arch_name, task=PipelineTask.TEXT_GENERATION
+            )
             m.setattr(
                 PIPELINE_REGISTRY,
                 "retrieve_architecture",
@@ -1865,7 +1925,10 @@ def test_auto_device_graph_capture_eagle_gating(
 ) -> None:
     """Eagle arch auto-enables graph capture only when num_speculative_tokens <= 1."""
     monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
-    arch = SimpleNamespace(name="UnifiedEagleLlama3ForCausalLM")
+    arch = SimpleNamespace(
+        name="UnifiedEagleLlama3ForCausalLM",
+        task=PipelineTask.TEXT_GENERATION,
+    )
     monkeypatch.setattr(
         PIPELINE_REGISTRY,
         "retrieve_architecture",

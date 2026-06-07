@@ -16,6 +16,7 @@ import uuid
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
@@ -34,13 +35,19 @@ from max.pipelines.architectures.kimik2_5.tool_parser import (
 from max.pipelines.core import (
     GrammarEnforcementState,
     StructuredOutputRegionDelimiters,
+    TextContext,
 )
+from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
+    _MAGIC_DRAFT_TOKEN_ID,
+)
+from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.lib.tool_parsing import StreamingToolCallState
 from max.pipelines.modeling.types import (
     ParsedToolCall,
     ParsedToolCallDelta,
     ParsedToolResponse,
     PipelineTokenizer,
+    TokenBuffer,
 )
 
 
@@ -1193,3 +1200,116 @@ def test_parser_handles_json_content_when_no_tool_calls() -> None:
     assert len(result.tool_calls) == 0
     # Content should be returned as-is
     assert result.content == json_response
+
+
+def test_sync_fill_constrains_name_only_after_section_consumed(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """Slot 0 is constrained only once the FSM has consumed the section opener.
+
+    With ``grammar_enforced`` still False (section opener not yet consumed)
+    the first sampled slot is unconstrained; after the
+    FSM advances through the section / call / "functions." prefix it is
+    constrained to the menu. This is why the sync path must wait for the
+    callback's FSM advance.
+    """
+    section_begin = 256  # _MinimalTokenizer special-token id
+    section_end = 257
+    call_begin = 258
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+
+    helper = StructuredOutputHelper(
+        enabled=True,
+        vocab_size=_MinimalTokenizer._N_VOCAB,
+        tool_call_region_delimiters=StructuredOutputRegionDelimiters(
+            start_token_ids=[section_begin], end_token_ids=[section_end]
+        ),
+    )
+
+    ctx = TextContext(max_length=4096, tokens=TokenBuffer(np.array([1])))
+    ctx._matcher = matcher
+    ctx.set_tool_region(
+        start_token_ids=[section_begin], end_token_ids=[section_end]
+    )
+    assert not ctx.grammar_enforced  # auto mode, before the section opener
+
+    num_positions = 2
+    drafts = np.zeros((1, num_positions - 1), dtype=np.int64)
+
+    # Stale FSM: section opener not yet consumed -> the name slot (slot 0) is
+    # left fully unconstrained, so the model could sample any name.
+    stale = helper.compute_speculative_bitmasks([ctx], drafts, num_positions)
+    assert stale[0, 0].all()
+
+    # Advance the FSM through the section/call/"functions." prefix, exactly as
+    # the async callback's Part 1 would before the sync fill reads it.
+    prefix = [section_begin, call_begin] + list(b"functions.")
+    for tok in prefix:
+        if ctx.update_enforcement_state(tok):
+            assert matcher.try_consume_tokens([tok]) == 1
+    assert ctx.grammar_enforced
+
+    # Current FSM: the name slot is now constrained to the menu. The first
+    # byte of "get_weather" is allowed; a byte no menu name starts with is not.
+    current = helper.compute_speculative_bitmasks([ctx], drafts, num_positions)
+    assert not current[0, 0].all()
+    assert current[0, 0, ord("g")]  # tool: get_weather
+    assert not current[0, 0, ord("z")]
+
+
+def test_sync_fill_with_placeholder_drafts_leaves_bonus_slot_unconstrained(
+    ll_tokenizer: LLTokenizer,
+    mock_tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> None:
+    """Reproduces the residual composition-change desync.
+
+    On the sync-prime path the draft tokens are MAGIC placeholders (the real
+    drafts live only on-device, scattered in by ``realize_future_tokens``). The
+    speculative fill breaks at the first invalid placeholder, leaving every
+    slot after slot 0 -- including the bonus position -- unconstrained. With
+    ``num_accepted >= 1`` the bonus is then sampled freely and the matcher
+    rejects it on replay. A real draft constrains that slot, which is what
+    gather-by-rid restores by reusing the callback's real-draft precompute.
+    """
+    section_begin, section_end, call_begin = 256, 257, 258
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tools=_tools("get_weather"), tokenizer=mock_tokenizer
+    )
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    helper = StructuredOutputHelper(
+        enabled=True,
+        vocab_size=_MinimalTokenizer._N_VOCAB,
+        tool_call_region_delimiters=StructuredOutputRegionDelimiters(
+            start_token_ids=[section_begin], end_token_ids=[section_end]
+        ),
+    )
+    ctx = TextContext(max_length=4096, tokens=TokenBuffer(np.array([1])))
+    ctx._matcher = matcher
+    ctx.set_tool_region(
+        start_token_ids=[section_begin], end_token_ids=[section_end]
+    )
+    # Advance into the tool-call header so the name slot is constrained.
+    for tok in [section_begin, call_begin] + list(b"functions."):
+        if ctx.update_enforcement_state(tok):
+            assert matcher.try_consume_tokens([tok]) == 1
+    assert ctx.grammar_enforced
+
+    num_positions = 2  # K=1 -> slot 0 (first sampled) + slot 1 (bonus)
+
+    # Placeholder draft (what the sync path actually has): the fill breaks at
+    # the invalid placeholder, leaving the bonus slot unconstrained.
+    magic = np.full((1, 1), _MAGIC_DRAFT_TOKEN_ID, dtype=np.int64)
+    bad = helper.compute_speculative_bitmasks([ctx], magic, num_positions)
+    assert not bad[0, 0].all()  # slot 0 still constrained
+    assert bad[0, 1].all()  # bonus slot UNCONSTRAINED -- the bug
+
+    # Real draft (what adopt / gather provides): the bonus slot is constrained.
+    real = np.array([[ord("g")]], dtype=np.int64)  # first byte of get_weather
+    good = helper.compute_speculative_bitmasks([ctx], real, num_positions)
+    assert not good[0, 1].all()  # bonus slot constrained
+    assert good[0, 1, ord("e")]  # "get_weather" continues with 'e'
+    assert not good[0, 1, ord("z")]  # an out-of-name byte is forbidden

@@ -47,7 +47,10 @@ from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
-from max.serve.pipelines.llm import TokenGeneratorOutput
+from max.serve.pipelines.llm import (
+    TokenGeneratorOutput,
+    TokenGeneratorPipeline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -225,8 +228,6 @@ async def test_llm_new_context_value_error_stream(
 @pytest.mark.asyncio
 async def test_ttft_recorded_once_per_chunk() -> None:
     """Test that TTFT is recorded exactly once per request, with ITL per chunk."""
-    from max.serve.pipelines.llm import TokenGeneratorPipeline
-
     mock_metrics = MagicMock()
 
     # Create 3 chunks with 2, 3, 2 tokens = 7 total
@@ -288,6 +289,13 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     assert mock_metrics.itl.call_count == 2
     assert len(chunks) == 3
 
+    # TPOT is emitted exactly once per request, after the stream completes:
+    # decode_elapsed_ms / (num_generated_tokens - 1). With 7 generated tokens
+    # the denominator is 6, and the decode span is a small positive duration.
+    assert mock_metrics.time_per_output_token.call_count == 1
+    (tpot_value,) = mock_metrics.time_per_output_token.call_args.args
+    assert tpot_value >= 0.0
+
     # Verify token counts are preserved
     total_tokens = sum(chunk.token_count for chunk in chunks)
     assert total_tokens == 7
@@ -309,6 +317,54 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     mock_metrics.input_tokens.assert_called_once_with(10)
 
 
+@pytest.mark.asyncio
+async def test_tpot_not_recorded_for_single_token() -> None:
+    """TPOT is skipped when only one token is generated (no decode span).
+
+    The guard ``num_generated_tokens > 1`` mirrors vLLM's
+    ``num_generation_tokens - 1 > 0`` and avoids a divide-by-zero.
+    """
+    mock_metrics = MagicMock()
+
+    test_request_id = RequestID(value="test-request")
+    scheduler_responses = [
+        TextGenerationOutput(
+            request_id=test_request_id,
+            tokens=[101],
+            final_status=GenerationStatus.END_OF_SEQUENCE,
+        ),
+    ]
+
+    async def mock_stream(
+        request_id: str, context: Any
+    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
+        for response in scheduler_responses:
+            yield [response]
+
+    mock_tokens = Mock()
+    mock_tokens.prompt_length = 10
+    mock_context = Mock(request_id=test_request_id, tokens=mock_tokens)
+    mock_request = Mock(request_id=test_request_id, tools=None)
+    mock_request.sampling_params.stop = []
+
+    pipeline = Mock()
+    pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
+    pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
+    pipeline.model_worker.stream = mock_stream
+    pipeline.debug_logging = False
+    pipeline._reasoning_parser = AsyncMock(return_value=None)
+
+    with patch("max.serve.pipelines.llm.METRICS", mock_metrics):
+        bound_method = TokenGeneratorPipeline.next_token_chunk.__get__(
+            pipeline, type(pipeline)
+        )
+        chunks = [chunk async for chunk in bound_method(mock_request)]
+
+    assert len(chunks) == 1
+    # One token generated -> no inter-token span, so TPOT is not emitted.
+    assert mock_metrics.time_per_output_token.call_count == 0
+
+
 THINK_START_TOKEN_ID = 1
 THINK_END_TOKEN_ID = 2
 
@@ -325,7 +381,6 @@ async def _run_reasoning_pipeline(
     from max.pipelines.architectures.kimik2_5.reasoning import (
         KimiK2_5ReasoningParser,
     )
-    from max.serve.pipelines.llm import TokenGeneratorPipeline
 
     test_request_id = RequestID(value="test-request")
 
@@ -520,8 +575,6 @@ async def test_next_token_chunk_stop_sequence_ignores_reasoning() -> None:
 async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
     """Status is END_OF_SEQUENCE when a stop sequence matches, even if the
     model response itself is still ACTIVE."""
-    from max.serve.pipelines.llm import TokenGeneratorPipeline
-
     test_request_id = RequestID(value="test-request")
 
     async def mock_stream(

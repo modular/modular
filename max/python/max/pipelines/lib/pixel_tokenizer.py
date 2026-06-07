@@ -28,6 +28,7 @@ import numpy as np
 import numpy.typing as npt
 import PIL.Image
 from max.pipelines.core import PixelContext
+from max.pipelines.core.exceptions import PromptTooLongError
 from max.pipelines.diffusion.schedulers import SchedulerFactory
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
@@ -578,11 +579,10 @@ class PixelGenerationTokenizer(
                 add_special_tokens=add_special_tokens,
             )
             if max_sequence_length and len(raw_ids) > max_sequence_length:
-                raise ValueError(
-                    f"Prompt is too long for this model's text"
-                    f" encoder: {len(raw_ids)} tokens exceeds"
-                    f" the maximum of {max_sequence_length}"
-                    " tokens. Please shorten your prompt."
+                raise PromptTooLongError(
+                    len(raw_ids),
+                    max_sequence_length,
+                    limit_description="text encoder's maximum sequence length",
                 )
 
             return delegate(
@@ -634,9 +634,10 @@ class PixelGenerationTokenizer(
             max_sequence_length is not None
             and input_ids_array.shape[1] > max_sequence_length
         ):
-            raise ValueError(
-                "Input string is larger than tokenizer's max length "
-                f"({input_ids_array.shape[1]} > {max_sequence_length})."
+            raise PromptTooLongError(
+                input_ids_array.shape[1],
+                max_sequence_length,
+                limit_description="text encoder's maximum sequence length",
             )
 
         encoded_prompt = input_ids_array[0].astype(np.int64, copy=False)

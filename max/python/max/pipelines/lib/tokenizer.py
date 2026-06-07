@@ -21,6 +21,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
@@ -30,6 +31,7 @@ from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
 )
+from max.pipelines.core.exceptions import PromptTooLongError
 from max.pipelines.modeling.types import (
     EOSTracker,
     ImageMetadata,
@@ -410,7 +412,7 @@ class TextTokenizer(
                 elif isinstance(eos, list):
                     self._default_eos_token_ids.update(eos)
 
-    @property
+    @cached_property
     def tokenizer_vocab_size(self) -> int:
         """Vocabulary size of the HuggingFace tokenizer delegate."""
         return len(self.delegate)
@@ -488,9 +490,7 @@ class TextTokenizer(
             )
 
             if self.max_length and len(encoded_prompt) > self.max_length:
-                raise ValueError(
-                    f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {self.max_length})."
-                )
+                raise PromptTooLongError(len(encoded_prompt), self.max_length)
 
             encoded_prompt = np.array(encoded_prompt)
         else:
@@ -754,7 +754,7 @@ class TextAndVisionTokenizer(
         ):
             self.vision_token_ids.append(image_break_token_id)
 
-    @property
+    @cached_property
     def tokenizer_vocab_size(self) -> int:
         """Vocabulary size of the HuggingFace tokenizer delegate."""
         return len(self.delegate)
@@ -823,9 +823,7 @@ class TextAndVisionTokenizer(
 
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
-                raise ValueError(
-                    f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {max_length})."
-                )
+                raise PromptTooLongError(len(encoded_prompt), max_length)
 
             encoded_prompt = np.array(encoded_prompt)
         else:
@@ -963,9 +961,7 @@ class TextAndVisionTokenizer(
         )
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
-            raise ValueError(
-                "encoded_prompt is greater than the max_length of the tokenizer"
-            )
+            raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
 
         start_and_end_idxs = find_contiguous_ranges(
             encoded_prompt, self.vision_token_ids

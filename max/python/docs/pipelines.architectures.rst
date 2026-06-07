@@ -36,6 +36,7 @@ family.
    pipelines.architectures.gemma3multimodal
    pipelines.architectures.gemma3multimodal_modulev3
    pipelines.architectures.gemma4
+   pipelines.architectures.gemma4_assistant
    pipelines.architectures.glm5_1
    pipelines.architectures.gpt_oss
    pipelines.architectures.gpt_oss_modulev3
@@ -78,6 +79,7 @@ family.
    pipelines.architectures.unified_dflash_llama3
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
+   pipelines.architectures.unified_mtp_gemma4
    pipelines.architectures.wan
    pipelines.architectures.z_image_modulev3
 
@@ -103,6 +105,7 @@ Text generation
    ~max.pipelines.architectures.gemma3multimodal
    ~max.pipelines.architectures.gemma3multimodal_modulev3
    ~max.pipelines.architectures.gemma4
+   ~max.pipelines.architectures.gemma4_assistant
    ~max.pipelines.architectures.glm5_1
    ~max.pipelines.architectures.gpt_oss
    ~max.pipelines.architectures.gpt_oss_modulev3
@@ -139,6 +142,7 @@ Text generation
    ~max.pipelines.architectures.unified_dflash_llama3
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3
+   ~max.pipelines.architectures.unified_mtp_gemma4
 
 Embeddings
 ----------
