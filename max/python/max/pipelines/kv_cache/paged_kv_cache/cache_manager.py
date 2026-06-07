@@ -62,9 +62,6 @@ KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
 #: ``ld.global.v{N}.u32`` vector loads.
 _LUT_TAIL_PAD = 16
 
-#: Sentinel pad value for lookup table.
-_LUT_FILL_PATTERN = 0xCCCCCCCC
-
 
 def _padded_lut_cols(cols: int) -> int:
     """Round an LUT inner dim up to a multiple of 8 plus a SIMD tail pad.
@@ -602,8 +599,15 @@ class PagedKVCacheManager:
         assert all(buffer.is_contiguous for buffer in lut_table_by_device)
 
         lut_table_np = lut_table_host.to_numpy()
-        assert _LUT_FILL_PATTERN > self._total_num_pages
-        lut_table_np.fill(_LUT_FILL_PATTERN)
+        # Fill value is load-bearing: must be exactly `total_num_pages` (the
+        # null-block index). The SIMD `populate` path in `PagedKVCache`
+        # (types.mojo) multiplies every LUT entry by `page_stride` with no
+        # sentinel check, including tail-padding columns it over-reads for
+        # SIMD alignment. `total_num_pages * page_stride` resolves to the
+        # null-block page, which is in-bounds because `allocate_buffers`
+        # allocates N+1 pages. Any other fill value (e.g. a magic constant)
+        # computes an out-of-bounds GPU address → CUDA_ERROR_ILLEGAL_ADDRESS.
+        lut_table_np.fill(self._total_num_pages)
 
         cache_lengths_np = cache_lengths_host.to_numpy()
         cache_lengths_np.fill(0)

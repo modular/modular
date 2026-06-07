@@ -541,3 +541,59 @@ def test_alloc_dummy_uses_null_block_without_refcount() -> None:
     kv_manager.alloc_dummy(dummy_id, replica_idx=0)
     assert pool.num_free_blocks == 8
     assert kv_manager.get_req_blocks(dummy_id, replica_idx=0) == [8]
+
+
+def test_lut_tail_padding_sentinel_is_total_num_pages() -> None:
+    """Regression test: LUT tail-padding must be filled with total_num_pages.
+
+    The SIMD populate path in PagedKVCache multiplies every LUT entry by
+    page_stride with no sentinel guard. Tail-padding columns (past a request's
+    last real block) and dummy-request rows must contain total_num_pages so that
+    the multiply produces the null-block address rather than an out-of-bounds
+    GPU address (CUDA_ERROR_ILLEGAL_ADDRESS).
+    """
+    total_num_pages = 16
+    page_size = 4
+    # Real request spans 3 pages; dummy has 1 null-block entry.
+    # LUT row width = _padded_lut_cols(3) >> 3, so columns 3.. are tail-padding.
+    num_real_pages = 3
+    kv_manager = _make_kv_manager(
+        total_num_pages=total_num_pages,
+        page_size=page_size,
+    )
+
+    real_ctx = create_text_context(
+        np.zeros(page_size * num_real_pages, dtype=np.int64)
+    )
+    kv_manager.claim(real_ctx.request_id, replica_idx=0)
+    kv_manager.alloc(real_ctx, replica_idx=0, num_steps=1)
+
+    dummy_ctx = create_text_context(np.zeros(1, dtype=np.int64))
+    kv_manager.alloc_dummy(dummy_ctx.request_id, replica_idx=0)
+
+    lut = (
+        kv_manager.runtime_inputs([[real_ctx, dummy_ctx]])
+        .inputs[0]
+        .lookup_table.to_numpy()
+    )
+
+    # No cell should contain the poison value 0xCCCCCCCC — that value times any
+    # realistic page_stride overflows into unmapped GPU memory.
+    assert not np.any(lut == 0xCCCCCCCC), (
+        "LUT contains 0xCCCCCCCC — SIMD over-reads would compute illegal GPU"
+        " addresses; fill must be total_num_pages"
+    )
+
+    # Tail-padding on the real request's row (columns past num_real_pages)
+    # must be total_num_pages so populate's multiply lands on the null block.
+    assert np.all(lut[0, num_real_pages:] == total_num_pages), (
+        f"Real-request tail-padding should be {total_num_pages},"
+        f" got: {lut[0, num_real_pages:]}"
+    )
+
+    # Dummy request: column 0 is the null block (== total_num_pages), and all
+    # remaining columns are tail-padding fill — also total_num_pages.
+    assert np.all(lut[1, :] == total_num_pages), (
+        f"Dummy-request LUT row should be all {total_num_pages},"
+        f" got: {lut[1, :]}"
+    )
