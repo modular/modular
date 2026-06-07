@@ -18,6 +18,7 @@ from std.builtin.simd import SIMD
 
 from extensibility import InputTensor, OutputTensor, foreach
 
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
@@ -36,9 +37,10 @@ struct Grayscale:
         @always_inline
         def color_to_grayscale[
             simd_width: Int
-        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
-            var row = idx[0]
-            var col = idx[1]
+        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+            var idx_l = coord_to_index_list(idx)
+            var row = idx_l[0]
+            var col = idx_l[1]
 
             var r_idx = IndexList[3](row, col, 0)
             var g_idx = IndexList[3](row, col, 1)
@@ -70,7 +72,7 @@ struct Brightness:
         @always_inline  # Added for consistency
         def brighten[
             simd_width: Int  # Renamed 'width' to 'simd_width'
-        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
             var pixels_f32 = img_in.load[simd_width](idx).cast[DType.float32]()
 
             var brightened_f32 = pixels_f32 * brightness
@@ -95,7 +97,7 @@ struct Blur:
         @always_inline
         def blur_kernel[
             simd_width: Int
-        ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
             """
             Computes the blurred value for a SIMD vector of pixels.
             """
@@ -103,8 +105,9 @@ struct Blur:
             var width = img_in.shape()[1]
             var size = Int(blur_size)  # Surrounding pixels to average
 
-            var base_row: Int = idx[0]
-            var base_col: Int = idx[1]
+            var idx_l = coord_to_index_list(idx)
+            var base_row: Int = idx_l[0]
+            var base_col: Int = idx_l[1]
 
             var pix_val_accum = 0
             var pixel_count = 0

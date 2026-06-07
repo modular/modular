@@ -544,6 +544,10 @@ def detect_infra_errors() -> Generator[None, None, None]:
         yield
     except ValueError as exc:
         exc_str = str(exc)
+        if "429" in exc_str and (
+            "huggingface.co" in exc_str or "hf.co" in exc_str
+        ):
+            raise InfraError("HuggingFace API rate limit") from exc
         if (
             'failed to create device: No supported "gpu" device available.'
             in exc_str

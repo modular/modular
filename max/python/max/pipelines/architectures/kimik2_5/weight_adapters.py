@@ -504,13 +504,13 @@ def convert_eagle3_draft_state_dict(
         for before, after in _EAGLE3_KEY_MAP.items():
             if name.startswith(before):
                 new_name = after + name[len(before) :]
-                result[new_name] = weight.data()
+                result[new_name] = _cast_vision_weight(name, weight)
                 mapped = True
                 break
 
         if not mapped:
             # fc.*, norm.*, lm_head.* pass through directly
-            result[name] = weight.data()
+            result[name] = _cast_vision_weight(name, weight)
 
     return result
 
@@ -563,10 +563,10 @@ def convert_llama_eagle3_draft_state_dict(
         for before, after in _LLAMA_EAGLE3_KEY_MAP.items():
             if name.startswith(before):
                 new_name = after + name[len(before) :]
-                result[new_name] = weight.data()
+                result[new_name] = _cast_vision_weight(name, weight)
                 mapped = True
                 break
         if not mapped:
             # fc.*, norm.*, lm_head.* and any other top-level keys.
-            result[name] = weight.data()
+            result[name] = _cast_vision_weight(name, weight)
     return result

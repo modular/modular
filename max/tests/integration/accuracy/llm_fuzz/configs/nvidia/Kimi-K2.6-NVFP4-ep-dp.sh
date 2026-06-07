@@ -10,18 +10,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-model:
-  model_path: nvidia/Kimi-K2.5-NVFP4
-  trust_remote_code: true
-  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
-  data_parallel_degree: 1
-  kv_cache:
-    kv_cache_format: float8_e4m3fn
-    device_memory_utilization: 0.75
-    kv_connector: tiered
-    kv_connector_config:
-      use_debug_tiered_mode: true
 
-runtime:
-  ep_size: 8
-  max_batch_input_tokens: 4096
+# shellcheck disable=SC2034  # Variables are used when sourced
+
+batch_size=64
+max_length=262144
+
+extra_pipelines_args=(
+  --device-memory-utilization=0.8
+  --ep-size 8
+  --data-parallel-degree 8
+  --max-batch-input-tokens 4096
+  --max-num-steps 1
+  --enable-prefix-caching
+  --enable-structured-output
+  --ep-use-allreduce
+  --kv-cache-format float8_e4m3fn
+  --trust-remote-code
+  # Mirrors ``nvfp4_kimi_k2_6_dpep_8x_b200.yaml`` (DP attention + EP MoE).
+)
+
+# llm-fuzz knobs. Empty scenarios runs the tool's full default suite.
+model_profile=kimi-k2.5
+scenarios=
+k2vv_mode=full
+circuit_breaker=0

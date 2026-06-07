@@ -26,6 +26,7 @@ from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import SafetensorWeights
 from max.nn.kv_cache import KVCacheParamInterface
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
 from ..deepseekV2_modulev3.model import DeepseekV2Inputs, DeepseekV2Model
@@ -76,6 +77,19 @@ class DeepseekV3Model(DeepseekV2Model):
             )
 
         huggingface_config = self.huggingface_config
+        raw_state_dict = {
+            key: value.data() for key, value in self.weights.items()
+        }
+
+        # Detect block-scaled FP8 quant config from the HF state dict
+        # (uses the `weight_scale` substring match in the parser).
+        dtype = self.dtype
+        quant_config = None
+        if dtype == DType.float8_e4m3fn:
+            quant_config = parse_quant_config(
+                huggingface_config, raw_state_dict, dtype
+            )
+
         if self.adapter:
             state_dict = self.adapter(
                 dict(self.weights.items()),
@@ -83,15 +97,14 @@ class DeepseekV3Model(DeepseekV2Model):
                 pipeline_config=self.pipeline_config,
             )
         else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
+            state_dict = raw_state_dict
 
         model_config = DeepseekV3Config.initialize(self.pipeline_config)
         model_config.max_batch_context_length = (
             self.pipeline_config.runtime.max_batch_total_tokens
             or model_config.max_batch_context_length
         )
+        model_config.quant_config = quant_config
 
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
@@ -105,7 +118,13 @@ class DeepseekV3Model(DeepseekV2Model):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        with F.lazy(), default_dtype(model_config.dtype):
+        # When the weights are FP8, build the module with a bf16 default so
+        # the non-quantized parameters (norms, biases, embeddings) match the
+        # checkpoint's bf16 storage.
+        module_default_dtype = (
+            DType.bfloat16 if quant_config is not None else model_config.dtype
+        )
+        with F.lazy(), default_dtype(module_default_dtype):
             nn_model = DeepseekV3(model_config, self.kv_params)
             nn_model.to(self.devices[0])
 

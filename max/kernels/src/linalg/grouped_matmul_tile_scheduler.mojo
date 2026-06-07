@@ -284,10 +284,8 @@ struct TileScheduler[
         )
         comptime uint_type2 = div_num_blocks_in_group.uint_type
         m_block_idx = first_block_idx + UInt32(
-            rebind[Scalar[uint_type2]](in_group_idx) % div_num_blocks_in_group
+            in_group_idx % div_num_blocks_in_group
         )
-        n_block_idx = UInt32(
-            rebind[Scalar[uint_type2]](in_group_idx) / div_num_blocks_in_group
-        )
+        n_block_idx = UInt32(in_group_idx / div_num_blocks_in_group)
 
         return (m_block_idx, n_block_idx)

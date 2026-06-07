@@ -5729,7 +5729,10 @@ def mha_gpu_naive[
     var v_operand = KVCacheMHAOperand(v)
 
     mha_gpu_naive[
-        _use_valid_length=True, _is_cache_length_accurate=False, sink=sink
+        ragged=ragged,
+        _use_valid_length=True,
+        _is_cache_length_accurate=False,
+        sink=sink,
     ](
         q,
         k_operand,

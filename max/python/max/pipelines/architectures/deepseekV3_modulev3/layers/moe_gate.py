@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.moe import MoEGate
 from max.experimental.tensor import Tensor
@@ -85,7 +86,9 @@ class DeepseekV3TopKRouter(MoEGate):
         self.routed_scaling_factor = routed_scaling_factor
         self.norm_topk_prob = norm_topk_prob
 
-        self.e_score_correction_bias = Tensor.zeros([num_experts])
+        self.e_score_correction_bias = Tensor.zeros(
+            [num_experts], dtype=DType.float32
+        )
 
     def forward(self, hidden_states: Tensor) -> tuple[Tensor, Tensor]:
         """Compute expert routing weights and indices for input hidden states.

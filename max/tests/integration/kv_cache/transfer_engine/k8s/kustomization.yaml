@@ -1,4 +1,3 @@
-#!/bin/bash
 ##===----------------------------------------------------------------------===##
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -12,14 +11,9 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-set -euo pipefail
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
 
-if [[ $# -gt 0 ]]; then
-    echo "error: //:format does not accept arguments." >&2
-    echo "Run './bazelw run //:format' without arguments to format all files." >&2
-    exit 1
-fi
-
-# Set RUNFILES_DIR so the multirun script can find its dependencies
-export RUNFILES_DIR="${0}.runfiles"
-exec "${RUNFILES_DIR}/_main/bazel/lint/fix.bash"
+resources:
+  - sender.yaml
+  - receiver.yaml
