@@ -309,7 +309,7 @@ def test_unsafe_ptr_matches_buffer_at_offset_zero() raises:
     var ctx = create_test_device_context()
     var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
     var p = buf.device_ptr()
-    assert_true(p.unsafe_ptr() == buf.unsafe_ptr())
+    assert_equal(p.unsafe_ptr(), buf.unsafe_ptr().as_any_origin())
 
 
 def test_unsafe_ptr_advances_by_offset() raises:

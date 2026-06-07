@@ -170,7 +170,9 @@ def call_with_pack_metal[
         Int32(0),
     )
 
-    var metal_args_addrs = stack_allocation[1, OpaquePointer[MutAnyOrigin]]()
+    var metal_args_addrs = stack_allocation[
+        1, OpaquePointer[origin_of(metal_args)]
+    ]()
     metal_args_addrs[0] = UnsafePointer(to=metal_args).bitcast[NoneType]()
 
     _checked_call[func](
@@ -183,7 +185,7 @@ def call_with_pack_metal[
             num_attributes,
             metal_args_addrs,
             UInt32(num_args + num_captures),
-            None,
+            Optional[UnsafePointer[UInt64, MutExternalOrigin]](),
         ),
         device_context=device_context,
         location=location,
@@ -347,7 +349,9 @@ def call_with_pack_checked_metal[
     )
 
     var metal_args_addrs = stack_allocation[1, OpaquePointer[MutAnyOrigin]]()
-    metal_args_addrs[0] = UnsafePointer(to=metal_args).bitcast[NoneType]()
+    metal_args_addrs[0] = (
+        UnsafePointer(to=metal_args).bitcast[NoneType]().as_any_origin()
+    )
 
     _checked_call[func](
         ctx.enqueue(
@@ -359,7 +363,7 @@ def call_with_pack_checked_metal[
             num_attributes,
             metal_args_addrs,
             UInt32(num_translated_args + num_captures),
-            None,
+            Optional[UnsafePointer[UInt64, MutExternalOrigin]](),
         ),
         device_context=device_context,
         location=location,

@@ -968,7 +968,7 @@ struct DevicePointer[dtype: DType](
         """
         # TODO: GEX-3693: Assert/raise when target doesn't support raw device
         # pointer access
-        return self._buffer.unsafe_ptr() + self._offset
+        return (self._buffer.unsafe_ptr() + self._offset).as_any_origin()
 
     # ===------------------------------------------------------------------=== #
     # Pointer arithmetic
@@ -1875,17 +1875,19 @@ trait _FunctionEnqueuer:
     the underlying function called varies between implementers.
     """
 
-    def enqueue(
+    def enqueue[
+        args_origin: MutOrigin, //
+    ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: UnsafePointer[LaunchAttribute, MutAnyOrigin],
+        attributes: UnsafePointer[mut=True, LaunchAttribute, _],
         num_attributes: Int,
-        args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+        args: UnsafePointer[mut=True, OpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
+        arg_sizes: OptionalUnsafePointer[mut=True, UInt64, _],
     ) -> _CString[]:
         """Dispatches a kernel launch via the AsyncRT C ABI.
 
@@ -1947,17 +1949,19 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     """Internal handle to the native stream object."""
 
     @always_inline
-    def enqueue(
+    def enqueue[
+        args_origin: MutOrigin, //
+    ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: UnsafePointer[LaunchAttribute, MutAnyOrigin],
+        attributes: UnsafePointer[mut=True, LaunchAttribute, _],
         num_attributes: Int,
-        args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+        args: UnsafePointer[mut=True, OpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
+        arg_sizes: OptionalUnsafePointer[mut=True, UInt64, _],
     ) -> _CString[]:
         """Enqueues a kernel launch on this stream.
 
@@ -2692,7 +2696,7 @@ struct DeviceFunction[
                 _DeviceFunctionPtr[mut=True],
                 CStringSlice[StaticConstantOrigin],
                 c_size_t,
-                OpaquePointer[ImmutAnyOrigin],
+                OpaquePointer[type_of(mapping.ptr).origin],
                 c_size_t,
             ](
                 self._handle,
@@ -2941,6 +2945,7 @@ struct DeviceFunction[
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
                 .unsafe_mut_cast[True]()
+                .as_any_origin()
             )
 
         @parameter
@@ -2972,7 +2977,7 @@ struct DeviceFunction[
             # to store the captured values in dense_args_addrs, they need to
             # not go out of the scope before dense_args_addr is being use.
             var capture_args_start = dense_args_addrs + num_args
-            populate(capture_args_start.bitcast[NoneType]())
+            populate(capture_args_start.bitcast[NoneType]().as_any_origin())
 
         if self._context.api() == "metal":
             call_with_pack_metal[
@@ -3004,7 +3009,7 @@ struct DeviceFunction[
                     shared_mem_bytes.or_else(0),
                     attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
                     len(attributes),
-                    dense_args_addrs,
+                    dense_args_addrs.as_any_origin(),
                     UInt32(num_args + num_captures),
                     dense_args_sizes,
                 ),
@@ -3203,7 +3208,7 @@ struct DeviceFunction[
             # to call `populate` here even though `ctx.enqueue` below is
             # nested inside the per-backend branch.
             var capture_args_start = dense_args_addrs + num_translated_args
-            populate(capture_args_start.bitcast[NoneType]())
+            populate(capture_args_start.bitcast[NoneType]().as_any_origin())
 
         if self._context.api() == "metal":
             call_with_pack_checked_metal[
@@ -3259,7 +3264,9 @@ struct DeviceFunction[
                         device_type_encoder, first_word_addr
                     )
 
-                    dense_args_addrs[translated_arg_idx] = first_word_addr
+                    dense_args_addrs[
+                        translated_arg_idx
+                    ] = first_word_addr.as_any_origin()
                     translated_arg_idx += 1
 
             _checked_call[Self.func](
@@ -3268,11 +3275,11 @@ struct DeviceFunction[
                     grid_dim,
                     block_dim,
                     shared_mem_bytes.or_else(0),
-                    attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+                    attributes.unsafe_ptr().as_any_origin(),
                     len(attributes),
-                    dense_args_addrs,
+                    dense_args_addrs.as_any_origin(),
                     UInt32(num_translated_args + num_captures),
-                    None,
+                    Optional[UnsafePointer[UInt64, MutExternalOrigin]](),
                 ),
                 device_context=self._context,
                 location=location.or_else(call_location()),
@@ -3538,7 +3545,7 @@ struct DeviceExternalFunction:
                 self._handle,
                 mapping.name.as_c_string_slice(),
                 c_size_t(mapping.name.byte_length()),
-                mapping.ptr,
+                mapping.ptr.as_any_origin(),
                 c_size_t(mapping.byte_count),
             )
         )
@@ -3590,6 +3597,7 @@ struct DeviceExternalFunction:
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
                 .unsafe_mut_cast[True]()
+                .as_any_origin()
             )
 
         if cluster_dim:
@@ -3634,9 +3642,9 @@ struct DeviceExternalFunction:
                 c_uint(block_dim.y()),
                 c_uint(block_dim.z()),
                 c_uint(shared_mem_bytes.or_else(0)),
-                attributes.unsafe_ptr(),
+                attributes.unsafe_ptr().as_any_origin(),
                 c_uint(len(attributes)),
-                dense_args_addrs.unsafe_ptr(),
+                dense_args_addrs.unsafe_ptr().as_any_origin(),
                 c_uint(num_args),
                 None,
             )
@@ -4311,7 +4319,7 @@ struct DeviceGraphBuilder(Movable):
                 dst._handle,
                 value,
                 c_size_t(size_of[dtype]()),
-                dep_args.ids,
+                dep_args.ids.as_any_origin(),
                 dep_args.count,
             )
         )
@@ -4354,7 +4362,7 @@ struct DeviceGraphBuilder(Movable):
                 _DeviceGraphBuilderPtr[mut=True],
                 UnsafePointer[Int32, ImmutAnyOrigin],
                 Int64,
-            ](self._handle, dep_args.ids, dep_args.count)
+            ](self._handle, dep_args.ids.as_any_origin(), dep_args.count)
         )
         return self._last_node().value()
 
@@ -4500,17 +4508,19 @@ struct _DeviceGraphBuilderEnqueuer[
         self._dependencies = dependencies^
 
     @always_inline
-    def enqueue(
+    def enqueue[
+        args_origin: MutOrigin, //
+    ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: UnsafePointer[LaunchAttribute, MutAnyOrigin],
+        attributes: UnsafePointer[mut=True, LaunchAttribute, _],
         num_attributes: Int,
-        args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+        args: UnsafePointer[mut=True, OpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
+        arg_sizes: OptionalUnsafePointer[mut=True, UInt64, _],
     ) -> _CString[]:
         """Adds a kernel-dispatch node to the borrowed graph builder.
 
@@ -4604,17 +4614,19 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     var _owning: Bool
 
     @always_inline
-    def enqueue(
+    def enqueue[
+        args_origin: MutOrigin, //
+    ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: UnsafePointer[LaunchAttribute, MutAnyOrigin],
+        attributes: UnsafePointer[mut=True, LaunchAttribute, _],
         num_attributes: Int,
-        args: UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
+        args: UnsafePointer[mut=True, OpaquePointer[args_origin], _],
         arg_count: UInt32,
-        arg_sizes: Optional[UnsafePointer[UInt64, MutAnyOrigin]],
+        arg_sizes: OptionalUnsafePointer[mut=True, UInt64, _],
     ) -> _CString[]:
         """Enqueues a kernel launch on this context's default stream.
 
@@ -4708,7 +4720,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 Int32,
             ](
                 UnsafePointer(to=result),
-                api.as_c_string_slice().unsafe_ptr(),
+                api.as_c_string_slice().unsafe_ptr().as_any_origin(),
                 Int32(device_id),
             )
         )

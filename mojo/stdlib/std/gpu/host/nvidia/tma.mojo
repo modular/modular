@@ -405,14 +405,18 @@ def create_tma_descriptor[
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
             _CString[],
-            OpaquePointer[MutAnyOrigin],  # tensorMap
+            OpaquePointer[origin_of(tma_descriptor)],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
             type_of(global_buf._handle),  #  globalAddress
-            UnsafePointer[Int64, MutAnyOrigin],  # globalDim
-            UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
-            UnsafePointer[Int32, MutAnyOrigin],  # boxDim
-            UnsafePointer[Int32, MutAnyOrigin],  # elementStrides
+            UnsafePointer[Int64, origin_of(global_dim_arg)],  # globalDim
+            UnsafePointer[
+                Int64, origin_of(global_strides_arg)
+            ],  # globalStrides
+            UnsafePointer[Int32, origin_of(box_dim_arg)],  # boxDim
+            UnsafePointer[
+                Int32, origin_of(element_stride_arg)
+            ],  # elementStrides
             Int32,  # interleave
             Int32,  # swizzle
             Int32,  # l2Promotion
