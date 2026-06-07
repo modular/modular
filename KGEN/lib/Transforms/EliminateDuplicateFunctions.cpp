@@ -56,8 +56,7 @@ struct DuplicateFuncOpEquivalenceInfo : public llvm::DenseMapInfo<FuncOp> {
   static bool isEqual(FuncOp lhs, FuncOp rhs) {
     if (lhs == rhs)
       return true;
-    if (lhs == getTombstoneKey() || lhs == getEmptyKey() ||
-        rhs == getTombstoneKey() || rhs == getEmptyKey())
+    if (lhs == getEmptyKey() || rhs == getEmptyKey())
       return false;
 
     DictionaryAttr lhsDictAttr = lhs->getAttrDictionary();

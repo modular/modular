@@ -571,9 +571,6 @@ struct DenseMapInfo<ParameterUseDefGraphNode> {
   static inline ParameterUseDefGraphNode getEmptyKey() {
     return {nullptr, DenseMapInfo<StringAttr>::getEmptyKey()};
   }
-  static inline ParameterUseDefGraphNode getTombstoneKey() {
-    return {nullptr, DenseMapInfo<StringAttr>::getTombstoneKey()};
-  }
   static unsigned getHashValue(const ParameterUseDefGraphNode &node) {
     return DenseMapInfo<StringAttr>::getHashValue(node.param);
   }

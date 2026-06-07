@@ -2284,10 +2284,6 @@ struct DenseMapInfo<GraphEdge> {
     return {DenseMapInfo<PParamNode *>::getEmptyKey(),
             DenseMapInfo<size_t>::getEmptyKey()};
   }
-  static GraphEdge getTombstoneKey() {
-    return {DenseMapInfo<PParamNode *>::getTombstoneKey(),
-            DenseMapInfo<size_t>::getTombstoneKey()};
-  }
   static unsigned getHashValue(GraphEdge node) {
     return DenseMapInfo<std::pair<PParamNode *, size_t>>::getHashValue(
         {node.pnode, node.depIdx});

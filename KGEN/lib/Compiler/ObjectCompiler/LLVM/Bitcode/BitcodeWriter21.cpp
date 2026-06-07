@@ -5362,7 +5362,7 @@ void IndexBitcodeWriter::writeCombinedGlobalValueSummary() {
     if (CfiIndex.empty())
       return;
     for (GlobalValue::GUID GUID : DefOrUseGUIDs) {
-      auto Defs = CfiIndex.forGuid(GUID);
+      auto Defs = CfiIndex.getNamesForGUID(GUID);
       llvm::append_range(Functions, Defs);
     }
     if (Functions.empty())

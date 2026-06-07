@@ -17,6 +17,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/DenseMap.h"
@@ -300,7 +301,7 @@ filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
   func->walk([&](LLVM::DbgValueOp op) {
     Value value = op.getValue();
     // Don't build debug info for token values.
-    if (isa<LLVM::LLVMTokenType>(value.getType())) {
+    if (isa<mlir::TokenType>(value.getType())) {
       op->erase();
       return;
     }

@@ -948,12 +948,16 @@ static LogicalResult concretizeLocsInScope(Block &scope, ImplNode *inode) {
 /// considering we're about to delete the op itself.
 static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
   ParameterUseDefGraph &paramGraph = node->paramGraph;
-  auto eraseScopes = [op](ParameterUseDefGraph &graph) mutable {
+  auto eraseScopes = [op](ParameterUseDefGraph &graph) {
     // Erase any regions from the nested scopes that belong either to this op
-    // or under this op.
+    // or under this op. Collect first — DenseMap::erase invalidates all
+    // iterators, so we cannot erase during iteration.
+    SmallVector<Region *> toErase;
     for (auto &[r, _] : graph.nestedScopes)
       if (op->isAncestor(r->getParentOp()))
-        graph.nestedScopes.erase(r);
+        toErase.push_back(r);
+    for (Region *r : toErase)
+      graph.nestedScopes.erase(r);
 
     // Do the same for nested decls. These two are somehow not always in sync,
     // so we have to check both separately.
@@ -963,9 +967,15 @@ static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
     graph.nestedDecls.erase(newEnd, graph.nestedDecls.end());
   };
   // Delete references to this nested declaration from all nested graphs.
-  eraseScopes(paramGraph);
-  for (auto &[scope, graph] : paramGraph.nestedScopes)
-    eraseScopes(graph);
+  // ParameterUseDefGraph nests recursively, so we must traverse all levels —
+  // erasing only the top level leaves stale Region* in deeper sub-graphs.
+  SmallVector<ParameterUseDefGraph *> worklist = {&paramGraph};
+  while (!worklist.empty()) {
+    ParameterUseDefGraph *g = worklist.pop_back_val();
+    eraseScopes(*g);
+    for (auto &[scope, nested] : g->nestedScopes)
+      worklist.push_back(&nested);
+  }
 }
 
 ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
@@ -2279,10 +2289,6 @@ struct DenseMapInfo<GraphEdge> {
   static GraphEdge getEmptyKey() {
     return {DenseMapInfo<ParamNode *>::getEmptyKey(),
             DenseMapInfo<size_t>::getEmptyKey()};
-  }
-  static GraphEdge getTombstoneKey() {
-    return {DenseMapInfo<ParamNode *>::getTombstoneKey(),
-            DenseMapInfo<size_t>::getTombstoneKey()};
   }
   static unsigned getHashValue(GraphEdge node) {
     return DenseMapInfo<std::pair<ParamNode *, size_t>>::getHashValue(

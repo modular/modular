@@ -45,9 +45,6 @@ struct DenseMapInfo<M::HLCF::CFGNode> {
   static M::HLCF::CFGNode getEmptyKey() {
     return {nullptr, DenseMapInfo<unsigned>::getEmptyKey()};
   }
-  static M::HLCF::CFGNode getTombstoneKey() {
-    return {nullptr, DenseMapInfo<unsigned>::getTombstoneKey()};
-  }
   static unsigned getHashValue(M::HLCF::CFGNode node) {
     return hash_combine(
         DenseMapInfo<void *>::getHashValue(node.node.getOperation()),

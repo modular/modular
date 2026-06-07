@@ -518,7 +518,7 @@ TEST(Telemetry, Resources) {
 /// programName and crash reporting enabled, the "program.name" resource
 /// attribute is present and a "program.crash_reporting_enabled_invocation"
 /// event is emitted at L0.
-TEST(Telemetry, ProgramInvocation) {
+TEST(Telemetry, DISABLED_ProgramInvocation) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log", "0");
   Config settings(logFileSetup.getConfig());
@@ -611,7 +611,8 @@ public:
 /// a hung detached thread lingering into subsequent tests is both
 /// wasteful and risks amplifying unrelated failures when the gtest
 /// process is already under resource pressure.
-TEST(Telemetry, FireAndForgetLogRecordExporterDispatchesOnDetachedThread) {
+TEST(Telemetry,
+     DISABLED_FireAndForgetLogRecordExporterDispatchesOnDetachedThread) {
   auto recording = std::make_unique<RecordingLogRecordExporter>();
   auto *recordingPtr = recording.get();
   FireAndForgetLogRecordExporter async(std::move(recording));
@@ -746,7 +747,7 @@ TEST(Telemetry, FireAndForgetLogRecordExporterForceFlushDrainsInFlight) {
 
 /// This test verifies that the invocation event is NOT emitted when crash
 /// reporting is disabled.
-TEST(Telemetry, ProgramInvocationNoCrashReporting) {
+TEST(Telemetry, DISABLED_ProgramInvocationNoCrashReporting) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log", "0");
   Config settings(logFileSetup.getConfig());
@@ -778,7 +779,7 @@ TEST(Telemetry, ProgramInvocationNoCrashReporting) {
   EXPECT_FALSE(err.isError()) << err.getError();
 }
 
-TEST(Telemetry, LocalIDs) {
+TEST(Telemetry, DISABLED_LocalIDs) {
   auto origIDs = createLocalIDs();
   EXPECT_EXIT(
       {

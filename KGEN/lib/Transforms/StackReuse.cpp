@@ -118,9 +118,6 @@ struct DenseMapInfo<PotentialValue> {
   static PotentialValue getEmptyKey() {
     return DenseMapInfo<Value>::getEmptyKey();
   }
-  static PotentialValue getTombstoneKey() {
-    return DenseMapInfo<Value>::getTombstoneKey();
-  }
   static unsigned getHashValue(PotentialValue value) {
     if (isa<Value>(value))
       return DenseMapInfo<Value>::getHashValue(cast<Value>(value));
