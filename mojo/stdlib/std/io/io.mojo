@@ -24,6 +24,7 @@ from std.ffi import (
     c_size_t,
     c_ssize_t,
     external_call,
+    CStringSlice,
     _CPointer,
 )
 from std.memory.unsafe_pointer import unsafe_cast
@@ -49,6 +50,15 @@ from std.sys.intrinsics import _type_is_eq
 from std.memory import bitcast
 
 from .file_descriptor import FileDescriptor
+
+
+# FIXME(MOCO-3871): Alias is to workaround function type comparison bug.
+comptime _PrintEmitPluginHookFnType = def[O: Origin](
+    cstr: CStringSlice[O],
+    file_value: FileDescriptor,
+) thin -> None
+"""Plugin-hook signature for `PluginHooks.print_emit_fn`; keep in sync with the `print` emit path."""
+
 
 # ===----------------------------------------------------------------------=== #
 #  _file_handle

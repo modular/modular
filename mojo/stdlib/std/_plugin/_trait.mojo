@@ -13,15 +13,15 @@
 
 from std.reflection.location import SourceLocation
 from std.sys.info import _TargetType, _current_target
-from std.io import FileDescriptor
-from std.ffi import CStringSlice
 from std.gpu import PDLLevel
 from std.gpu.host import DeviceContext
 
-from std.utils.index import Index, IndexList, StaticTuple
+from std.utils.index import IndexList
 from std.math.math import _ExpPluginHookFnType, _TanhPluginHookFnType
 from std.memory.stack_allocation import _StackAllocationPluginHookFnType
 from std.memory.unsafe_pointer import _UnsafeDanglingPluginHookFnType
+from std.io.io import _PrintEmitPluginHookFnType
+from std.algorithm.reduction import _ReduceGeneratorPluginHookFnType
 
 
 trait PluginHooks:
@@ -81,12 +81,12 @@ trait PluginHooks:
         The raw integer address used to construct the dangling pointer.
     """
 
-    comptime print_emit_fn: Optional[PrintEmitFnType]
+    comptime print_emit_fn: Optional[_PrintEmitPluginHookFnType]
     """Plugin hook for emitting a `print()` UTF-8 byte buffer to a file
     descriptor."""
 
     comptime reduce_generator_fn[target: StaticString]: Optional[
-        ReduceGeneratorFnType
+        _ReduceGeneratorPluginHookFnType
     ]
 
     @staticmethod
@@ -156,34 +156,6 @@ trait PluginHooks:
     `elementwise_fn[target, ...]`."""
 
 
-# FIXME(MOCO-3871): Alias is to workaround function type comparison bug.
-comptime PrintEmitFnType = def[O: Origin](
-    cstr: CStringSlice[O],
-    file_value: FileDescriptor,
-) thin -> None
-
-
-comptime ReduceGeneratorFnType = (
-    def[
-        num_reductions: Int,
-        init_type: DType,
-        input_0_fn: def[dtype: DType, width: Int, rank: Int](
-            IndexList[rank]
-        ) capturing[_] -> SIMD[dtype, width],
-        output_0_fn: def[dtype: DType, width: Int, rank: Int](
-            IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-        ) capturing[_] -> None,
-        reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
-            SIMD[ty, width], SIMD[ty, width]
-        ) capturing[_] -> SIMD[ty, width],
-    ](
-        shape: IndexList[_, element_type=DType.int64],
-        init: StaticTuple[Scalar[init_type], num_reductions],
-        reduce_dim: Int,
-    ) thin
-)
-
-
 # ===-----------------------------------------------------------------------===#
 # DefaultPlugin
 # ===-----------------------------------------------------------------------===#
@@ -206,10 +178,10 @@ struct DefaultPlugin(PluginHooks):
         _UnsafeDanglingPluginHookFnType
     ] = None
 
-    comptime print_emit_fn: Optional[PrintEmitFnType] = None
+    comptime print_emit_fn: Optional[_PrintEmitPluginHookFnType] = None
 
     comptime reduce_generator_fn[target: StaticString]: Optional[
-        ReduceGeneratorFnType
+        _ReduceGeneratorPluginHookFnType
     ] = None
 
     @staticmethod
