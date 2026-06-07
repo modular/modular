@@ -50,7 +50,7 @@ from layout.tma_async import (
     _gather4_box_width,
 )
 from layout import ComptimeInt, CoordLike, RowMajorLayout, TileTensor
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
 )
 from nn.attention.mha_mask import MHAMask

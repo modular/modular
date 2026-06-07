@@ -81,14 +81,9 @@ class LLM:
     .. code-block:: python
 
         from max.entrypoints.llm import LLM
-        from max.pipelines import MAXModelConfig, PipelineConfig
-        from max.pipelines.lib.model_manifest import ModelManifest
+        from max.pipelines import PipelineConfig
 
-        pipeline_config = PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path="LiquidAI/LFM2.5-350M")}
-            ),
-        )
+        pipeline_config = PipelineConfig(model_path="LiquidAI/LFM2.5-350M")
         llm = LLM(pipeline_config)
 
         prompts = [

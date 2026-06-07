@@ -252,6 +252,11 @@ class PagedKVCacheManager:
             assert isinstance(params, KVCacheParams)
             self._cache_params = [params]
         self._num_caches = len(self._cache_params)
+        # TODO(SERVOPT-942): Generalize to support 3+ caches
+        if not 1 <= self._num_caches <= 2:
+            raise ValueError(
+                f"PagedKVCacheManager requires 1 or 2 caches, got {self._num_caches}."
+            )
 
         primary_params = self._cache_params[0]
         devices = [d.to_device() for d in primary_params.devices]
@@ -295,9 +300,14 @@ class PagedKVCacheManager:
             )
 
             draft_dispatch_resolver: AttentionDispatchResolver | None = None
-            if self._num_caches > 1:
+            # TODO(SERVOPT-942): Generalize to support 3+ caches
+            if self._has_secondary_cache:
                 draft_params = self._cache_params[1]
-                if draft_params.is_mla != primary_params.is_mla:
+                if (
+                    draft_params.is_mla != primary_params.is_mla
+                    or draft_params.n_kv_heads_per_device
+                    != primary_params.n_kv_heads_per_device
+                ):
                     draft_dispatch_resolver = AttentionDispatchResolver(
                         devices=[
                             DeviceRef.from_device(d) for d in replica_devices
@@ -370,6 +380,12 @@ class PagedKVCacheManager:
     def num_caches(self) -> int:
         """Number of KV caches managed (1 for single-cache, N for multi)."""
         return self._num_caches
+
+    @property
+    def _has_secondary_cache(self) -> bool:
+        """True when a second KV cache exists alongside the primary."""
+        # TODO(SERVOPT-942): Generalize to support 3+ caches
+        return self._num_caches == 2
 
     def cache_params(self, cache_idx: int = 0) -> KVCacheParams:
         """Returns the ``KVCacheParams`` for a specific cache."""
@@ -718,12 +734,34 @@ class PagedKVCacheManager:
             draft_mla_num_partitions_buf = None
             draft_mla_effective_split_len_buf = None
 
+        # TODO(SERVOPT-942): Generalize to support 3+ caches
+        secondary_resolved_metadata: list[Buffer]
+        if (
+            self._has_secondary_cache
+            and replica.draft_attention_dispatch_resolver is not None
+        ):
+            secondary_resolved_metadata = (
+                replica.draft_attention_dispatch_resolver.resolve_for_replica(
+                    batch_size,
+                    max_prompt_len,
+                    absolute_max_cached_len,
+                )
+            )
+        else:
+            secondary_resolved_metadata = resolved_metadata
+
         ret_list: list[KVCacheInputsPerDevice] = []
         for cache_idx in range(self._num_caches):
             device_buffer = replica.device_buffers[cache_idx]
+            # TODO(SERVOPT-942): Generalize to support 3+ caches
+            is_secondary_cache = cache_idx == 1
 
             for tp_shard in range(num_tp_shards):
-                metadata = resolved_metadata[tp_shard]
+                metadata = (
+                    secondary_resolved_metadata[tp_shard]
+                    if is_secondary_cache
+                    else resolved_metadata[tp_shard]
+                )
                 draft_metadata = (
                     draft_resolved_metadata[tp_shard]
                     if draft_resolved_metadata is not None

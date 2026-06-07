@@ -43,7 +43,7 @@ async def test_imgen_pipeline(runtime: LocalRuntime) -> None:
         num_steps=3,
         output_format="JPEG",
     )
-    image_data = await pipeline.generate(req, "a beautiful sunset")
+    image_data = await pipeline.generate_image(req, "a beautiful sunset")
 
     raw = (
         image_data.tobytes()
@@ -53,3 +53,28 @@ async def test_imgen_pipeline(runtime: LocalRuntime) -> None:
     image = Image.open(io.BytesIO(raw))
     assert image.size[0] > 0
     assert image.size[1] > 0
+
+
+@pytest.mark.asyncio
+async def test_imgen_pipeline_streaming(runtime: LocalRuntime) -> None:
+    pipeline = await build_dummy_imgen_pipeline()
+    await pipeline.deploy(runtime)
+
+    num_steps = 3
+    req = ImageGenRequest(
+        width=64,
+        height=64,
+        num_steps=num_steps,
+        output_format="JPEG",
+    )
+
+    frames = [
+        frame async for frame in pipeline.generate_image_streaming(req, "a cat")
+    ]
+    # The denoiser emits one frame per denoising step and the downstream
+    # streaming workers forward the stream verbatim.
+    assert len(frames) == num_steps
+    for frame in frames:
+        assert isinstance(frame, bytes)
+        image = Image.open(io.BytesIO(frame))
+        assert image.size == (64, 64)

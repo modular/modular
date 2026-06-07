@@ -148,6 +148,9 @@ class TokenGeneratorPipeline(
         """
         itl = StopWatch()
         total_sw = StopWatch()
+        decode_sw = StopWatch()
+        decode_elapsed_ms = 0.0
+        num_generated_tokens = 0
         self.logger.debug(
             "%s: Started: Elapsed: %0.2f ms",
             request.request_id,
@@ -246,6 +249,8 @@ class TokenGeneratorPipeline(
                     assert len(responses) > 0
                     assert isinstance(responses[0], TextGenerationOutput)
                     response = TextGenerationOutput.merge(responses)
+
+                    num_generated_tokens += len(response.tokens)
 
                     tokens: list[int] | None = response.tokens
                     token_log_probs = response.log_probabilities
@@ -360,9 +365,11 @@ class TokenGeneratorPipeline(
                     is_first_chunk = not first_chunk_yielded
                     if is_first_chunk:
                         METRICS.ttft(itl.elapsed_ms)
+                        decode_sw.reset()
                         first_chunk_yielded = True
                     else:
                         METRICS.itl(itl.elapsed_ms)
+                        decode_elapsed_ms = decode_sw.elapsed_ms
                     itl.reset()
 
                     yield TokenGeneratorOutput(
@@ -380,6 +387,10 @@ class TokenGeneratorPipeline(
                         stop_sequence=stop_sequence_match,
                     )
         finally:
+            if first_chunk_yielded and num_generated_tokens > 1:
+                METRICS.time_per_output_token(
+                    decode_elapsed_ms / (num_generated_tokens - 1)
+                )
             if self.debug_logging:
                 self.logger.debug(
                     "%s: Completed: Elapsed: %0.2f ms",

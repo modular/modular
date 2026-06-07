@@ -79,6 +79,8 @@ struct FA4Config[
     var use_fused_kv: Bool
     var pair_cta: Bool
     var num_qo: Int
+    var page_size: Int
+    var is_mla: Bool
 
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
     comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
@@ -189,6 +191,8 @@ struct FA4Config[
         self.qk_depth = qk_depth
         self.pair_cta = pair_cta
         self.num_qo = num_qo
+        self.page_size = page_size
+        self.is_mla = is_mla
         self.MMA_M = 256 if pair_cta else 128
         # num_qo=1 halves BM to MMA_M (=128) — each CTA now covers half as
         # many Q rows. supported() forbids num_qo=1 with pair_cta, so MMA_M
@@ -419,6 +423,20 @@ struct FA4Config[
         self.smem_used = smem_use
 
     def supported(self) -> Bool:
+        # Runtime-k partial-page contraction (mma_maybe_partial_k, used only
+        # by the non-MLA fa4_mma path) cuts the P@V contraction at the loaded
+        # V boundary to avoid reading uninitialized SMEM. That cut is only
+        # safe when the loaded region is MMA_K-aligned, i.e. page_size is a
+        # multiple of MMA_K. A sub-tile page (page_size < BN) that is not
+        # MMA_K-aligned is therefore unsupported here. MLA prefill has its own
+        # MMA warps (does not use fa4_mma) and is exempt.
+        if (
+            not self.is_mla
+            and self.page_size != 0
+            and self.page_size < self.BN
+            and self.page_size % Self.MMA_K != 0
+        ):
+            return False
         base = (
             self.BN >= 64
             and self.num_kv_stages >= 2
