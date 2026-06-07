@@ -23,7 +23,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
     BatchType,

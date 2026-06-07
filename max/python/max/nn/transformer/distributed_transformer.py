@@ -52,13 +52,13 @@ def distributed_logits_postprocess(
     h: Sequence[TensorValue],
     input_row_offsets: Sequence[TensorValue],
     return_n_logits: TensorValue,
-    norm_shards: Sequence[Callable[[TensorValue], TensorValue]],
     lm_head: Callable[
         [list[TensorValue], Sequence[BufferValue]], Sequence[TensorValue]
     ],
     signal_buffers: Sequence[BufferValue],
     return_logits: ReturnLogits,
     device: DeviceRef,
+    norm_shards: Sequence[Callable[[TensorValue], TensorValue]] | None = None,
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     logits_scaling: float = 1.0,
 ) -> tuple[TensorValue, ...]:
@@ -72,26 +72,34 @@ def distributed_logits_postprocess(
         h: Per-device hidden states from the final transformer layer.
         input_row_offsets: Per-device row offsets for ragged batching.
         return_n_logits: Number of logits to return per sequence.
-        norm_shards: Per-device normalization functions.
         lm_head: Language model head (takes per-device inputs + signal buffers).
         signal_buffers: Signal buffers for collective operations.
         return_logits: Which logits to return.
         device: Primary device for scalar ops (e.g. ops.range).
+        norm_shards: Per-device normalization functions. When None, hidden
+            states are passed directly to lm_head without normalization.
         return_hidden_states: Which hidden states to return.
         logits_scaling: Scaling factor for logits.
 
     Returns:
         Tuple of (last_logits, [logits, offsets], [hidden_states]).
     """
+
+    def _maybe_norm(
+        tensors: Sequence[TensorValue],
+    ) -> list[TensorValue]:
+        if norm_shards is not None:
+            return forward_sharded_layers(norm_shards, tensors)
+        return list(tensors)
+
     # Gather last tokens per device and compute last-token logits.
     last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
     last_token_h = [
         ops.gather(h_device, indices, axis=0)
         for h_device, indices in zip(h, last_token_indices, strict=True)
     ]
-    norm_last_token = forward_sharded_layers(norm_shards, last_token_h)
     last_logits = ops.cast(
-        lm_head(norm_last_token, signal_buffers)[0],
+        lm_head(_maybe_norm(last_token_h), signal_buffers)[0],
         DType.float32,
     )
 
@@ -99,43 +107,42 @@ def distributed_logits_postprocess(
     offsets = None
 
     if return_logits == ReturnLogits.VARIABLE and h:
-        return_range = ops.range(
-            start=return_n_logits[0],
-            stop=0,
-            step=-1,
-            out_dim="return_n_logits_range",
-            dtype=DType.int64,
-            device=device,
-        )
         last_indices = [
             ops.reshape(
-                ops.unsqueeze(row_offset[1:], -1) - return_range,
+                ops.unsqueeze(row_offset[1:], -1)
+                - ops.range(
+                    start=return_n_logits[0],
+                    stop=0,
+                    step=-1,
+                    out_dim="return_n_logits_range",
+                    dtype=DType.int64,
+                    device=row_offset.device,
+                ),
                 shape=(-1,),
             )
             for row_offset in input_row_offsets
         ]
 
-        variable_tokens = [
-            norm(ops.gather(h_device, indices, axis=0))
-            for norm, h_device, indices in zip(
-                norm_shards, h, last_indices, strict=True
-            )
-        ]
+        variable_tokens = _maybe_norm(
+            [
+                ops.gather(h_device, indices, axis=0)
+                for h_device, indices in zip(h, last_indices, strict=True)
+            ]
+        )
         logits = ops.cast(
             lm_head(variable_tokens, signal_buffers)[0], DType.float32
         )
         offsets = ops.range(
             0,
-            last_indices[0].shape[0] + return_n_logits[0],
+            TensorValue(last_indices[0].shape[0]) + return_n_logits[0],
             return_n_logits[0],
             out_dim="logit_offsets",
             dtype=DType.int64,
             device=device,
         )
     elif return_logits == ReturnLogits.ALL and h:
-        all_normalized = forward_sharded_layers(norm_shards, h)
         logits = ops.cast(
-            lm_head(all_normalized, signal_buffers)[0], DType.float32
+            lm_head(_maybe_norm(h), signal_buffers)[0], DType.float32
         )
         offsets = input_row_offsets[0]
 

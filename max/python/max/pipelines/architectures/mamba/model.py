@@ -26,7 +26,7 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import LogProbabilities, TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -39,7 +39,7 @@ from max.pipelines.lib.log_probabilities import (
     log_probabilities_ragged_graph,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
-from max.pipelines.modeling.types import LogProbabilities, RequestID
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from transformers import AutoConfig
 

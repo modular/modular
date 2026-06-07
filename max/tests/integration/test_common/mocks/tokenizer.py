@@ -18,11 +18,11 @@ import string
 from collections.abc import Sequence
 
 import numpy as np
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TextGenerationRequest,
-    TokenBuffer,
 )
 
 
@@ -87,9 +87,7 @@ class MockTextTokenizer(
 
         if self.max_length:
             if len(encoded) > self.max_length:
-                raise ValueError(
-                    "encoded is greater than the max_length of the tokenizer"
-                )
+                raise PromptTooLongError(len(encoded), self.max_length)
 
         if request.sampling_params.max_new_tokens:
             max_length = len(encoded) + request.sampling_params.max_new_tokens

@@ -19,6 +19,7 @@ from std.gpu.host import DeviceContext
 
 from extensibility import InputTensor, OutputTensor, foreach
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
@@ -36,9 +37,7 @@ struct AddOne:
     ) raises:
         @parameter
         @always_inline
-        def elementwise_add_one[
-            width: Int
-        ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        def elementwise_add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[elementwise_add_one, target=target](output, ctx)

@@ -380,7 +380,7 @@ class TestDefaultEncodingFallback:
         falls back to the architecture's default_encoding.
         """
         from max.graph.weights import WeightsFormat
-        from max.pipelines import TextContext
+        from max.pipelines.context import TextContext
         from max.pipelines.modeling.types import PipelineTask
 
         # Create an architecture with default_encoding="float32" compatible with CPU
@@ -680,7 +680,7 @@ class TestRequiredArguments:
     @prepare_registry
     def test_required_arguments_override_user_config(self) -> None:
         """Architecture required_arguments should override conflicting config values."""
-        from max.pipelines import TextContext
+        from max.pipelines.context import TextContext
         from max.pipelines.modeling.types import PipelineTask
 
         arch_with_required = SupportedArchitecture(

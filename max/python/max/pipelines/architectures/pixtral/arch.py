@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import TextAndVisionContext
-from max.pipelines.core.context_validators import (
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.context.context_validators import (
     validate_requires_vision_context,
 )
 from max.pipelines.lib import SupportedArchitecture

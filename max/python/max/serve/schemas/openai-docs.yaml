@@ -1131,7 +1131,7 @@ components:
       properties:
         role:
           type: string
-          enum: [system, user, assistant, function]
+          enum: [system, user, assistant, developer, function]
           description: |
             The role of the message author.
         content:

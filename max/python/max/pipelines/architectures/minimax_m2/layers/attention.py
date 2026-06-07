@@ -33,11 +33,12 @@ from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.attention.attention_with_rope import _compute_shard_range
 from max.nn.kernels import (
+    apply_qk_rms_norm,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
-    row_mean_of_squares,
+    row_mean_of_squares_qk,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
@@ -407,10 +408,10 @@ class MiniMaxM2Attention(Module, Shardable):
 
         # Per-row mean of squares (float32 accum) via a warp-tiled reduction
         # kernel instead of the generic ops.mean(x*x) reduce, which is heavily
-        # over-provisioned at decode-time small M (~24us -> ~4us each).
-        q_var = row_mean_of_squares(q)  # [total_seq_len, 1] float32
-        k_var = row_mean_of_squares(k)  # [total_seq_len, 1] float32
-        qk_var_local = ops.concat([q_var, k_var], axis=-1)  # [total_seq_len, 2]
+        # over-provisioned at decode-time small M. Fused into a single launch
+        # that emits [total_seq_len, 2] directly (col 0 = mean(q^2), col 1 =
+        # mean(k^2)), avoiding two launches plus a concat.
+        qk_var_local = row_mean_of_squares_qk(q, k)  # [total_seq_len, 2] f32
         return q, k, v, qk_var_local
 
     def tp_finish(
@@ -431,16 +432,23 @@ class MiniMaxM2Attention(Module, Shardable):
                 of squares for Q and K (already averaged across TP ranks).
         """
         head_dim = self.kv_params.head_dim
-        q_var = ops.slice_tensor(qk_var_global, [slice(None), slice(0, 1)])
-        k_var = ops.slice_tensor(qk_var_global, [slice(None), slice(1, 2)])
 
-        # Normalize with global RMS scale, then apply the local gamma slice.
+        # Fused cross-head QK-RMSNorm apply: a single kernel does the rsqrt
+        # scale (from the all-reduced [M, 2] statistics), the per-column gamma
+        # multiply, and the downcast for both Q and K. This replaces the ~7
+        # small slice/cast/rsqrt/mul/View kernels the unfused form lowers to at
+        # decode-time small M. The gamma casts fold to constants at compile
+        # time (q_norm/k_norm are weights).
         gamma_q = ops.cast(self.q_norm.to(q.device), DType.float32)
         gamma_k = ops.cast(self.k_norm.to(k.device), DType.float32)
-        qf = ops.cast(q, DType.float32) * ops.rsqrt(q_var + self.qk_norm_eps)
-        kf = ops.cast(k, DType.float32) * ops.rsqrt(k_var + self.qk_norm_eps)
-        q = ops.cast(qf * gamma_q, self.dtype)
-        k = ops.cast(kf * gamma_k, self.dtype)
+        q, k = apply_qk_rms_norm(
+            q,
+            k,
+            qk_var_global,
+            gamma_q,
+            gamma_k,
+            self.qk_norm_eps,
+        )
 
         total_seq_len = q.shape[0]
         q = ops.reshape(q, shape=[-1, self.n_heads, head_dim])

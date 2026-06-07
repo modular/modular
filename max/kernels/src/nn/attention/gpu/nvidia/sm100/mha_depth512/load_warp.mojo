@@ -53,7 +53,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     kv_sub_tile_rows,
     kv_num_sub_tiles,
 )
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     KVTMATile,
     MHAPosition,
     OptionalPointer,

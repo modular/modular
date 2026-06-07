@@ -36,8 +36,8 @@ from max.graph import (
 )
 from max.nn import KVCacheInputs, kernels
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.core import TextContext
-from max.pipelines.core.context import FUTURE_TOKEN
+from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.context.context import FUTURE_TOKEN
 from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
@@ -51,7 +51,6 @@ from max.pipelines.lib.pipeline_variants import overlap_text_generation
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
-    TokenBuffer,
 )
 
 GPU_SECONDS = 0.5

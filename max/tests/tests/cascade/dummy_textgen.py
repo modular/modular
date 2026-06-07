@@ -81,7 +81,7 @@ class DummyTextGenPipeline(CascadePipeline, TextGenInterface):
     tokenizer: AsciiTokenizer
     transformer: Transformer
 
-    def generate(
+    def generate_text(
         self,
         req: GenerateRequest,
         prompt: str | ChatMessages,

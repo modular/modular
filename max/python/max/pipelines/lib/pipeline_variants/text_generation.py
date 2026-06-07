@@ -42,7 +42,13 @@ from max.graph.weights import (
 )
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.pipelines.core.exceptions import (
+from max.pipelines.context import (
+    BatchLogitsProcessor,
+    LogProbabilities,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
+from max.pipelines.context.exceptions import (
     InputError,  # noqa: F401 (for docstring)
 )
 from max.pipelines.kv_cache import (
@@ -51,15 +57,11 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from max.pipelines.modeling.types import (
-    BatchLogitsProcessor,
-    LogProbabilities,
     Pipeline,
     PipelineOutputsDict,
     PipelineTokenizer,
     RequestID,
-    TextGenerationContextType,
     TextGenerationInputs,
-    TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.profiler import Tracer, traced

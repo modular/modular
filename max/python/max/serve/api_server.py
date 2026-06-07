@@ -29,12 +29,12 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from max.pipelines.context import BaseContext
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     PipelineConfig,
 )
 from max.pipelines.modeling.types import (
-    BaseContext,
     PipelineOutput,
     PipelinesFactory,
     PipelineTask,

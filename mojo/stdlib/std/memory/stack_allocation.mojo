@@ -55,6 +55,16 @@ def stack_allocation[
     ]()
 
 
+comptime _StackAllocationPluginHookFnType[address_space: AddressSpace] = def[
+    count: Int,
+    type: AnyType,
+    /,
+    name: Optional[StaticString],
+    alignment: Int,
+]() thin -> UnsafePointer[type, MutExternalOrigin, address_space=address_space]
+"""Plugin-hook signature for `PluginHooks.stack_allocation_fn`; keep in sync with `stack_allocation`."""
+
+
 # TODO(MSTDL-2015): ASAN error when updating to use `UnsafePointer`.
 @always_inline
 def stack_allocation[
