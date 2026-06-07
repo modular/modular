@@ -44,6 +44,7 @@ from nn.attention.mha_mask import (
     MHAMask,
     NullMask,
     SlidingWindowCausalMask,
+    SlidingWindowNonCausalMask,
 )
 
 from std.utils.index import Index, IndexList
@@ -681,6 +682,11 @@ def dispatch_mask[
             local_window_size > 0
         ), "You must specify local_window_size for SlidingWindowCausalMask"
         return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
+    elif MaskName.SLIDING_WINDOW_NONCAUSAL == mask_type:
+        comptime assert (
+            local_window_size > 0
+        ), "You must specify local_window_size for SlidingWindowNonCausalMask"
+        return outer_wrapper(SlidingWindowNonCausalMask[local_window_size]())
     elif MaskName.CHUNKED_CAUSAL == mask_type:
         comptime assert (
             local_window_size > 0

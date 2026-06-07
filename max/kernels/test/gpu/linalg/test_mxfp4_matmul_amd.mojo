@@ -116,11 +116,15 @@ def test_mxfp4_matmul[
     BK_ELEMS: Int = 128,
     WM: Int = 64,
     WN: Int = 64,
+    MMA_M: Int = 16,
+    MMA_N: Int = 16,
+    MMA_K: Int = 128,
 ](ctx: DeviceContext) raises:
     """Test MXFP4MatmulAMD against a GPU reference kernel.
 
-    Launches MXFP4MatmulAMD directly with the provided BM/BN/BK_ELEMS/WM/WN.
-    Defaults match the current production tile config.
+    Launches MXFP4MatmulAMD directly with the provided BM/BN/BK_ELEMS/WM/WN
+    and MMA shape. Defaults match the current production tile config and
+    the 16x16x128 MFMA shape.
 
     Parameters:
         M_static: Number of rows in A / C.
@@ -131,6 +135,9 @@ def test_mxfp4_matmul[
         BK_ELEMS: Block tile K in logical FP4 elements.
         WM: Warp tile rows.
         WN: Warp tile cols.
+        MMA_M: MFMA tile rows. Default 16.
+        MMA_N: MFMA tile cols. Default 16.
+        MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
     """
     comptime assert (
         K_static % 128 == 0
@@ -158,6 +165,12 @@ def test_mxfp4_matmul[
         WM,
         " WN=",
         WN,
+        " MMA=",
+        MMA_M,
+        "x",
+        MMA_N,
+        "x",
+        MMA_K,
         "]",
     )
 
@@ -225,6 +238,9 @@ def test_mxfp4_matmul[
         BK_ELEMS=BK_ELEMS,
         WM=WM,
         WN=WN,
+        MMA_M=MMA_M,
+        MMA_N=MMA_N,
+        MMA_K=MMA_K,
     ]
     comptime kernel = Kernel.run[
         DType.float32,
@@ -547,6 +563,25 @@ def main() raises:
             BK_ELEMS=1024,
             WN=32,
         ](ctx)
+
+        print("\n--- T3: 32x32x64 MFMA shape ---")
+
+        # Aligned square shapes — sanity that the 32x32 path produces
+        # correct results across one and multiple block tiles.
+        test_mxfp4_matmul[128, 128, 128, MMA_M=32, MMA_N=32, MMA_K=64](ctx)
+        test_mxfp4_matmul[256, 256, 256, MMA_M=32, MMA_N=32, MMA_K=64](ctx)
+
+        # Partial-M (73 rows) — exercises buffer_store OOB clamp on the
+        # new mfma32=True path.
+        test_mxfp4_matmul[73, 128, 256, MMA_M=32, MMA_N=32, MMA_K=64](ctx)
+
+        # Single-row decode regime — most aggressive M-tail.
+        test_mxfp4_matmul[1, 128, 256, MMA_M=32, MMA_N=32, MMA_K=64](ctx)
+
+        # Production-scale K — exercises the SCALE_WORDS_PER_ROW loader
+        # across many BK iterations at a Kimi K2.5 shape. Mirrors the
+        # 73x4096x7168 case in bucket B but at the 32x32x64 MFMA shape.
+        test_mxfp4_matmul[73, 4096, 7168, MMA_M=32, MMA_N=32, MMA_K=64](ctx)
 
         print("\n--- SK: inter-block split-K (workspace + reduce) ---")
 

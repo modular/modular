@@ -53,6 +53,7 @@ from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     batched_quantize_dynamic_scaled_fp8,
 )
+from comm.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.fused_qk_rope import rope_k_cache, rope_q_proj, rope_value
 from nn.kv_cache import KVCollectionT, KVCacheT
@@ -248,7 +249,7 @@ def fused_rope_rmsnorm_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         idx,
-                        norm_val.cast[k_dtype](),
+                        cast_saturating[k_dtype](norm_val),
                     )
 
 
@@ -395,7 +396,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         head_dim_idx + kv_norm_dim,
-                        roped_val.cast[cache_dtype](),
+                        cast_saturating[cache_dtype](roped_val),
                     )
 
             # The last block of this worker processes RMSNorm.
@@ -440,7 +441,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         idx,
-                        norm_val.cast[cache_dtype](),
+                        cast_saturating[cache_dtype](norm_val),
                     )
 
 
@@ -1483,7 +1484,9 @@ def convert_bf16_to_fp8_e4m3fn(
 
         output_buffer.store_linear(
             idx,
-            input_buffer.load_linear[width](idx).cast[DType.float8_e4m3fn](),
+            cast_saturating[DType.float8_e4m3fn](
+                input_buffer.load_linear[width](idx)
+            ),
         )
 
     comptime target_simd_width = simd_width_of[

@@ -31,6 +31,7 @@ from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import (
     fetch_image,
     process_vision_info,
 )
+from max.pipelines.core.exceptions import PromptTooLongError
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
     float32_to_bfloat16_as_uint16,
@@ -468,9 +469,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         # Expand input_ids/attention_mask for image token ids
         if image_grid_thw is None:
             if self.max_length and input_ids.shape[0] > self.max_length:
-                raise ValueError(
-                    "input_ids is greater than the max_length of the tokenizer"
-                )
+                raise PromptTooLongError(input_ids.shape[0], self.max_length)
 
             return input_ids, attention_mask
 
@@ -500,9 +499,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             )
 
         if self.max_length and input_ids.shape[0] > self.max_length:
-            raise ValueError(
-                "input_ids is greater than the max_length of the tokenizer"
-            )
+            raise PromptTooLongError(input_ids.shape[0], self.max_length)
 
         return input_ids, attention_mask
 

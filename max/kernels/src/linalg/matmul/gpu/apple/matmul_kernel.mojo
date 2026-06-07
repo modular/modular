@@ -22,13 +22,17 @@ Block-to-tile: each threadgroup decodes `block_idx.x` via
 to the next pow2). Threadgroups outside `(grid_m, grid_n)` early-return.
 """
 
+from std.collections import Optional
 from std.gpu import WARP_SIZE, block_idx, thread_idx
 from std.gpu.host import DeviceContext
+from std.sys import align_of
+from std.utils import IndexList
 from std.utils.type_functions import ConditionalType
 from layout import TileTensor, Idx
 from layout.tile_layout import Layout, TensorLayout, row_major
 from layout.coord import Coord
 from linalg.arch.apple.mma import MmaOpApple
+from linalg.utils import elementwise_epilogue_type
 
 
 comptime BM: Int = 64
@@ -146,9 +150,11 @@ def morton_decode_2d_rect(
 
 def apple_matmul_kernel[
     in_type: DType,
+    c_type: DType = DType.float32,
     transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    d_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     a_ptr: UnsafePointer[Scalar[in_type], MutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[in_type], MutAnyOrigin],
     m: Int,
@@ -190,8 +196,6 @@ def apple_matmul_kernel[
     if tile_m >= grid_m or tile_n >= grid_n:
         return
 
-    var d_mat = TileTensor(d_ptr, row_major(m, n))
-
     comptime Mma = MmaOpApple[
         DType.float32,
         in_type,
@@ -218,8 +222,6 @@ def apple_matmul_kernel[
     var k_full_strips = k_i32 // BK_i32
     var has_k_tail = (k_i32 % BK_i32) != 0
 
-    var d_sub = d_mat.tile[SG_M, SG_N](Int(sg_row_idx), Int(sg_col_idx))
-
     # A slab: shape (SG_M, k), strides (k, 1). Tiling in the K-loop uses
     # (0, k16), making the row offset loop-invariant.
     var a_row_offset = Int(sg_row_idx * SG_M_i32 * k_i32)
@@ -239,6 +241,89 @@ def apple_matmul_kernel[
     var b_slab = TileTensor(
         b_ptr + b_col_offset, _pick_b_slab_layout[transpose_b](k, n)
     )
+
+    # Stay on the fp32-out, no-lambda fast path for parity with PR #84575;
+    # everything else flows through the per-fragment epilogue below.
+    comptime use_epilogue_path = (
+        c_type != DType.float32 or elementwise_lambda_fn
+    )
+
+    # Cast-then-store. Matches AMD's contract: the lambda receives
+    # `SIMD[c_type, width]`. See `AMDMatmul.run`'s `elementwise_lambda_fn`
+    # branch in `amd_matmul.mojo`.
+    @always_inline
+    @parameter
+    def _apply_epilogue[bounded: Bool](tile_row_base: Int, tile_col_base: Int):
+        @always_inline
+        @parameter
+        def _write_one(row: Int, col: Int, x_fp32: SIMD[DType.float32, 1]):
+            var y_ctype = x_fp32.cast[c_type]()
+            comptime if elementwise_lambda_fn:
+                comptime epilogue = elementwise_lambda_fn.value()
+                epilogue[c_type, 1](IndexList[2](row, col), y_ctype)
+            else:
+                d_ptr[row * n + col] = y_ctype[0]
+
+        @always_inline
+        @parameter
+        def _write_four(row: Int, col0: Int, x_fp32: SIMD[DType.float32, 4]):
+            var y_ctype = x_fp32.cast[c_type]()
+            comptime if elementwise_lambda_fn:
+                comptime epilogue = elementwise_lambda_fn.value()
+                # Element alignment only: `row * n` is unaligned for odd `n`.
+                comptime align = align_of[Scalar[c_type]]()
+                epilogue[c_type, 4, alignment=align](
+                    IndexList[2](row, col0), y_ctype
+                )
+            else:
+                (d_ptr + row * n + col0).store(y_ctype)
+
+        @always_inline
+        @parameter
+        def _write_half(row: Int, col0: Int, v_fp32: SIMD[DType.float32, 4]):
+            comptime if bounded:
+                if row < m:
+                    if col0 + 3 < n:
+                        _write_four(row, col0, v_fp32)
+                    else:
+                        var amt = min(4, n - col0)
+                        for e in range(amt):
+                            _write_one(
+                                row,
+                                col0 + e,
+                                SIMD[DType.float32, 1](v_fp32[e]),
+                            )
+            else:
+                _write_four(row, col0, v_fp32)
+
+        comptime for mi in range(Mma.num_m_mmas):
+            comptime for ni in range(Mma.num_n_mmas):
+                var frag_fp32 = accum[mi * Mma.num_n_mmas + ni]
+                var col0 = tile_col_base + ni * 16 + Int(mma_op.cb)
+                var row_lo = tile_row_base + mi * 16 + Int(mma_op.rb)
+                var row_hi = row_lo + 8
+                _write_half(row_lo, col0, frag_fp32.slice[4, offset=0]())
+                _write_half(row_hi, col0, frag_fp32.slice[4, offset=4]())
+
+    # `rebind` to fp32 so `mma_op.store{,_bounded}` typechecks; this branch
+    # is only entered when `c_type == fp32` (use_epilogue_path is False),
+    # so the rebind is a no-op at runtime.
+    @always_inline
+    @parameter
+    def _fast_path_store[
+        bounded: Bool
+    ](valid_rows: Int = 0, valid_cols: Int = 0):
+        var d_ptr_fp32 = rebind[
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+        ](d_ptr)
+        var d_mat_fp32 = TileTensor(d_ptr_fp32, row_major(m, n))
+        var d_sub_fp32 = d_mat_fp32.tile[SG_M, SG_N](
+            Int(sg_row_idx), Int(sg_col_idx)
+        )
+        comptime if bounded:
+            mma_op.store_bounded(accum, d_sub_fp32, valid_rows, valid_cols)
+        else:
+            mma_op.store(accum, d_sub_fp32)
 
     # K-loop loads A/B directly from device memory each step.
     # Threadgroup-memory staging *degrades* matmul on Apple Silicon.
@@ -264,7 +349,10 @@ def apple_matmul_kernel[
                 b_valid_cols=Int(valid_cols),
                 k_valid=Int(k_valid),
             )
-        mma_op.store_bounded(accum, d_sub, Int(valid_rows), Int(valid_cols))
+        comptime if use_epilogue_path:
+            _apply_epilogue[bounded=True](Int(row_base), Int(col_base))
+        else:
+            _fast_path_store[bounded=True](Int(valid_rows), Int(valid_cols))
     else:
         for k16 in range(k_full_strips):
             var a_sub = a_slab.tile[SG_M, BK](0, Int(k16))
@@ -282,15 +370,20 @@ def apple_matmul_kernel[
                 b_valid_cols=SG_N,
                 k_valid=Int(k_tail),
             )
-        mma_op.store(accum, d_sub)
+        comptime if use_epilogue_path:
+            _apply_epilogue[bounded=False](Int(row_base), Int(col_base))
+        else:
+            _fast_path_store[bounded=False]()
 
 
 @always_inline
 def enqueue_apple_matmul[
     in_type: DType,
+    c_type: DType = DType.float32,
     transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, DType.float32, ...],
+    c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[in_type, ...],
     b: TileTensor[in_type, ...],
     ctx: DeviceContext,
@@ -318,6 +411,13 @@ def enqueue_apple_matmul[
                 " future generations."
             ),
         )
+
+    comptime assert (
+        c_type == DType.float16
+        or c_type == DType.bfloat16
+        or c_type == DType.float32
+    ), "enqueue_apple_matmul: c_type must be one of {fp16, bf16, fp32}"
+
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
     var k = Int(a.dim[1]())
@@ -376,7 +476,9 @@ def enqueue_apple_matmul[
 
     comptime kernel = apple_matmul_kernel[
         in_type=in_type,
+        c_type=c_type,
         transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
     ]
     ctx.enqueue_function[kernel](
         c.ptr,

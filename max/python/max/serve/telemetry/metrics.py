@@ -125,8 +125,27 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="Time to load a model",
     ),  # type: ignore
+    "maxserve.startup_time": _meter.create_histogram(
+        "maxserve.startup_time",
+        unit="s",
+        description=(
+            "Model-worker startup duration in seconds, split by the "
+            "'component' tag (build, compile, init, graph_capture, "
+            "pinned_memory, spawn, total). Mirrors the per-phase breakdown "
+            "in the model worker's startup log lines."
+        ),
+    ),  # type: ignore
     "maxserve.itl": _meter.create_histogram(
         "maxserve.itl", unit="ms", description="inter token latency"
+    ),  # type: ignore
+    "maxserve.time_per_output_token": _meter.create_histogram(
+        "maxserve.time_per_output_token",
+        unit="ms",
+        description=(
+            "Mean decode-phase latency per generated token, emitted once per "
+            "request: decode_time / (num_generated_tokens - 1). Excludes the "
+            "first token and prefill/TTFT; accounts for speculative decoding."
+        ),
     ),  # type: ignore
     "maxserve.pipeline_load": _meter.create_counter(
         "maxserve.pipeline_load",
@@ -530,9 +549,36 @@ class _AsyncMetrics:
             MetricLevel.BASIC,
         )
 
+    def startup_time(self, seconds: float, component: str) -> None:
+        """Record a model-worker startup phase duration in seconds.
+
+        Args:
+            seconds: The duration of the startup phase.
+            component: The phase name (e.g. ``"build"``, ``"compile"``,
+                ``"init"``, ``"graph_capture"``, ``"pinned_memory"``,
+                ``"spawn"``, ``"total"``). Recorded as the ``component`` tag
+                so a single metric can be split by phase.
+        """
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.startup_time",
+                seconds,
+                {**self.extra_attributes, "component": component},
+            ),
+            MetricLevel.BASIC,
+        )
+
     def itl(self, ms: float) -> None:
         self.client.send_measurement(
             MaxMeasurement("maxserve.itl", ms, self.extra_attributes),
+            MetricLevel.BASIC,
+        )
+
+    def time_per_output_token(self, ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.time_per_output_token", ms, self.extra_attributes
+            ),
             MetricLevel.BASIC,
         )
 

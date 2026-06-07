@@ -99,7 +99,13 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         # Wait for the model load metric to be available (metrics propagate async)
         # There shouldn't be any request metrics yet since the server is just started up.
         assert_metrics(
-            expected_metrics=["maxserve_model_load_time_milliseconds_bucket"],
+            expected_metrics=[
+                "maxserve_model_load_time_milliseconds_bucket",
+                # Per-phase startup breakdown, one metric split by component.
+                "maxserve_startup_time_seconds_bucket",
+                'component="total"',
+                'component="compile"',
+            ],
             absent_metrics=["maxserve_request_time_milliseconds_bucket"],
         )
 

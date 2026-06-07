@@ -42,6 +42,7 @@ from max.benchmark.benchmark_shared.request import (
 )
 from max.benchmark.benchmark_shared.warmup import (
     _prefix_delays_ms,
+    _prefix_occupancy_ms,
     pick_warmup_population,
 )
 
@@ -828,3 +829,215 @@ def test_pick_warmup_population_delay_biased_off_by_default() -> None:
     assert report is not None
     assert report.delay_biased is False
     assert report.weight_unit == "turns"
+
+
+# ---------------------------------------------------------------------------
+# Runtime-aware (occupancy) warmup weighting.
+# ---------------------------------------------------------------------------
+
+
+def _make_session_with_delays_and_outputs(
+    session_id: int,
+    delays_ms: list[float],
+    output_lens: list[int],
+) -> ChatSession:
+    """Like ``_make_session_with_delays`` but with per-turn assistant output
+    token counts so occupancy (``R_k + D_k``) can be exercised."""
+    assert len(delays_ms) == len(output_lens)
+    messages: list[SessionMessage] = []
+    for i, (d, out_len) in enumerate(zip(delays_ms, output_lens, strict=False)):
+        messages.append(
+            SessionMessage(source="user", content=f"U{i}", num_tokens=5)
+        )
+        messages.append(
+            SessionMessage(
+                source="assistant",
+                content=f"A{i}",
+                num_tokens=out_len,
+                delay_until_next_message=d if d > 0 else None,
+            )
+        )
+    return ChatSession(id=session_id, messages=messages)
+
+
+def test_prefix_occupancy_zero_estimates_equals_delays() -> None:
+    """With zero runtime estimates, occupancy reduces to the inter-turn delay."""
+    session = _make_session_with_delays_and_outputs(
+        0, [100.0, 200.0, 300.0], [10, 20, 30]
+    )
+    occ = _prefix_occupancy_ms(session)
+    assert list(occ) == pytest.approx(list(_prefix_delays_ms(session)))
+    assert list(occ) == pytest.approx([100.0, 200.0])
+
+
+def test_prefix_occupancy_adds_runtime() -> None:
+    """Occupancy at position k is D_k + ttft + tpot * output_len_k."""
+    # 3 turns → valid prefix positions for turns 0 and 1.
+    session = _make_session_with_delays_and_outputs(
+        0, [100.0, 200.0, 0.0], [10, 50, 7]
+    )
+    occ = _prefix_occupancy_ms(session, est_ttft_ms=5.0, est_tpot_ms=2.0)
+    # turn 0: 100 + 5 + 2*10 = 125; turn 1: 200 + 5 + 2*50 = 305
+    assert list(occ) == pytest.approx([125.0, 305.0])
+
+
+def test_pick_warmup_population_occupancy_weight_unit_label() -> None:
+    """Runtime estimates flip the diagnostic unit to occupancy-ms."""
+    rng = np.random.default_rng(3)
+    sessions = [
+        _make_session_with_delays_and_outputs(
+            i, [1000.0, 1000.0, 1000.0], [10, 10, 10]
+        )
+        for i in range(20)
+    ]
+    _result, report = pick_warmup_population(
+        sessions,
+        warmup_count=10,
+        warmup_to_steady_state=True,
+        warmup_oversample_factor=2,
+        main_pool_target=0,
+        rng=rng,
+        delay_biased=True,
+        est_ttft_ms=50.0,
+        est_tpot_ms=10.0,
+    )
+    assert report is not None
+    assert report.delay_biased is True
+    assert report.weight_unit == "occupancy-ms"
+
+
+def test_pick_warmup_population_occupancy_biases_long_output_position() -> None:
+    """Equal delays but unequal output_len: high-runtime position dominates.
+
+    Turn 0 has a short output, turn 1 a long one, with equal delays. Under
+    delay-only weighting the two positions are equiprobable; with a large TPOT
+    estimate the long-output position should be picked far more often.
+    """
+    # 3 turns, equal 100ms delays, outputs [10, 1000] at positions 0, 1.
+    session = _make_session_with_delays_and_outputs(
+        0, [100.0, 100.0, 0.0], [10, 1000, 7]
+    )
+    sessions = [dataclasses.replace(session, id=i) for i in range(200)]
+
+    rng = np.random.default_rng(0)
+    picks_at_1 = 0
+    picks_at_2 = 0
+    n_trials = 100
+    for _ in range(n_trials):
+        result, _ = pick_warmup_population(
+            sessions,
+            warmup_count=1,
+            warmup_to_steady_state=True,
+            warmup_oversample_factor=2,
+            main_pool_target=0,
+            rng=rng,
+            delay_biased=True,
+            est_ttft_ms=0.0,
+            est_tpot_ms=10.0,  # R_1 = 10*1000 = 10000 >> R_0 = 100
+        )
+        pt = result[0].prefix_turns
+        if pt == 1:
+            picks_at_1 += 1
+        elif pt == 2:
+            picks_at_2 += 1
+
+    # occupancy: pos0 = 100+100 = 200, pos1 = 100+10000 = 10100 → ~98% at pos1.
+    assert picks_at_2 >= 90, (
+        f"expected long-output position to dominate: {picks_at_2}"
+    )
+    assert picks_at_1 <= 10
+
+
+def test_pick_warmup_population_runtime_engages_with_zero_delays() -> None:
+    """No inter-turn delays but nonzero estimates: occupancy still biases.
+
+    Without estimates this falls back to turn-count weighting (delay_biased
+    False). With estimates, occupancy = R_k > 0 so biasing engages.
+    """
+    rng = np.random.default_rng(5)
+    sessions = [
+        _make_session_with_delays_and_outputs(i, [0.0, 0.0, 0.0], [10, 20, 30])
+        for i in range(20)
+    ]
+    _result, report = pick_warmup_population(
+        sessions,
+        warmup_count=10,
+        warmup_to_steady_state=True,
+        warmup_oversample_factor=2,
+        main_pool_target=0,
+        rng=rng,
+        delay_biased=True,
+        est_ttft_ms=1.0,
+        est_tpot_ms=1.0,
+    )
+    assert report is not None
+    assert report.delay_biased is True
+    assert report.weight_unit == "occupancy-ms"
+
+
+def _jitter_trial_fired_immediately() -> bool:
+    """Run one pre-warmed session and report whether the initial jitter slept.
+
+    prefix_turns=2 → just-completed turn is messages[3] (output 5 tokens,
+    delay 10ms). With tpot=1000ms/tok, R = 5000ms >> D = 10ms, so the phase
+    draw lands in the generation portion (fire immediately) ~99.8% of the time.
+    The turn 3→4 inter-turn delay (10ms = 0.01s) always fires regardless.
+    """
+    sleep_calls: list[float] = []
+
+    async def mock_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    async def run_test() -> None:
+        session = _make_4turn_session(prefix_turns=2, delay_ms=10.0)
+        counter = RequestCounter(max_requests=100)
+        driver = _CapturingDriver()
+        with patch("asyncio.sleep", side_effect=mock_sleep):
+            await chat_session_driver(
+                model_id="test",
+                api_url="http://localhost:8000/v1/chat/completions",
+                request_driver=driver,
+                request_counter=counter,
+                chat_session=session,
+                max_chat_len=4096,
+                sampling=SamplingConfig(),
+                est_ttft_ms=0.0,
+                est_tpot_ms=1000.0,
+            )
+
+    asyncio.run(run_test())
+    # Only the inter-turn delay (0.01s) firing means the jitter collapsed to
+    # fire-now; an extra sleep means the draw landed in the sleep portion.
+    jitter_fired = [s for s in sleep_calls if s != pytest.approx(0.01)]
+    return not jitter_fired
+
+
+def test_jitter_collapse_fires_immediately_when_runtime_dominates() -> None:
+    """When R_k >> D_k, most pre-warmed sessions fire immediately (no sleep)."""
+    n_trials = 60
+    fire_immediately = sum(
+        _jitter_trial_fired_immediately() for _ in range(n_trials)
+    )
+    # R/(R+D) = 5000/5010 ≈ 0.998, so nearly every trial fires immediately.
+    assert fire_immediately >= 55, (
+        f"expected mostly fire-now: {fire_immediately}"
+    )
+
+
+def test_warmup_runtime_estimates_require_delay_biased() -> None:
+    """Setting estimates without --warmup-delay-biased is a config error."""
+    from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
+
+    with pytest.raises(ValueError, match="warmup-delay-biased"):
+        ServingBenchmarkConfig(warmup_delay_estimated_ttft_ms=10.0)
+
+    with pytest.raises(ValueError, match="warmup-delay-biased"):
+        ServingBenchmarkConfig(warmup_delay_estimated_tpot_ms=1.0)
+
+    # Valid when paired with the flag.
+    cfg = ServingBenchmarkConfig(
+        warmup_delay_biased=True,
+        warmup_delay_estimated_ttft_ms=10.0,
+        warmup_delay_estimated_tpot_ms=1.0,
+    )
+    assert cfg.warmup_delay_estimated_ttft_ms == 10.0

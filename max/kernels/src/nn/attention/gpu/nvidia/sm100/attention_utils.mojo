@@ -54,6 +54,11 @@ from layout.tile_layout import (
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
+
+# `elect` is defined in the shared NVIDIA module so SM90 and SM100 can both use
+# it without a cross-architecture import. Re-exported here for the many SM100
+# callers (and tests) that import it from `attention_utils`.
+from nn.attention.gpu.nvidia.common import elect
 from nn.attention.mha_mask import MHAMask, MASK_VALUE, MaskStrategy
 from nn.attention.mha_operand import (
     MHAOperand,
@@ -881,6 +886,74 @@ struct SM100TensorAccumulatorTS[
                 elect,
             )
 
+    @staticmethod
+    @always_inline("nodebug")
+    def mma_maybe_partial_k[
+        *, stage_idx: Int = 0
+    ](
+        a: UInt32,
+        b: Self.BType,
+        c: UInt32,
+        *,
+        c_scale: UInt32,
+        elect: Int32,
+        valid_k_mmas: UInt32,
+    ):
+        # P@V contraction for the last KV tile, where only `valid_k_mmas`
+        # MMA_K-blocks (the loaded V pages) hold real data. Skipping the
+        # unloaded tail blocks is bit-identical to the full contraction
+        # (their P is exactly 0 after masking) AND avoids reading
+        # uninitialized V SMEM (the `0 * NaN = NaN` bug). Requires
+        # page_size % MMA_K == 0 so the loaded boundary is MMA_K-aligned;
+        # enforced by FA4Config.supported().
+        #
+        # Both full and partial last tiles run the partial primitive below: for
+        # a full tile every `@!%pv` validity guard is never-true, so it
+        # degenerates to the plain contraction.
+
+        # comptime k-block range owned by this pv stage -- mirror `mma`'s
+        # stage split as top-scope ternaries (NOT a `comptime if` block,
+        # whose branch scope would hide ks_start/ks_end from the loop).
+        comptime _multi = Self.num_stages != 1
+        comptime _start = 3 * stage_idx if Self.use_3_then_1_split else stage_idx
+        comptime _end = (
+            stage_idx + 3
+        ) if Self.use_3_then_1_split else stage_idx + 1
+        comptime ks_start = (
+            Self.num_k_blocks_per_stage * _start
+        ) if _multi else 0
+        comptime ks_end = min(
+            Self.num_k_blocks_per_stage * _end, Self.num_k_mmas
+        ) if _multi else Self.num_k_mmas
+
+        # Issue this stage's k-blocks as one fused inline-asm sequence.
+        # `bulk_mma_partial` predicates each block `jj` on a SEPARATE,
+        # warp-uniform validity guard (`@!%pv`, run iff `jj < valid_k_mmas`)
+        # while passing `elect` through UNMODIFIED, so the elect codegen
+        # matches the full-tile path (no BSYNC.RECONVERGENT) --
+        # unlike folding the test into `elect` via the old per-block
+        # `step_elect`. `a`/`b` are the stage-0 bases (as in the `mma` fast
+        # path above); the builder applies absolute per-block offsets, so no
+        # b_layout linearity is assumed. `c_scale` initializes `o` on stage 0's
+        # first block (jj 0; always valid since valid_k_mmas >= 1); every later
+        # block accumulates.
+        bulk_mma_partial[
+            Self.b_layout,
+            mma_k=Self.MMA_K,
+            num_k_mmas=ks_end - ks_start,
+            operand_size=Self.operand_size,
+            k_start=ks_start,
+            cta_group=Self.cta_group,
+        ](
+            Self.idesc,
+            a,
+            b,
+            c,
+            c_scale,
+            elect,
+            valid_k_mmas,
+        )
+
 
 def build_mma_ss(
     kind: String,
@@ -907,7 +980,9 @@ def build_mma_ss(
 .reg .pred %ps;
 setp.eq.s32 %pj, $6, 0;
 """
-    tcgen05_mma = "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+    tcgen05_mma = (
+        "@!%pj tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+    )
     mask = (
         "{$1, $1, $1, $1}" if cta_group
         == 1 else "{$1, $1, $1, $1, $1, $1, $1, $1}"
@@ -927,9 +1002,7 @@ setp.eq.s32 %pj, $6, 0;
             mma += "mov.b64 %rdb, {%rb, $5};\n"
             if k == 1:  # set predicate to 1
                 mma += "setp.ne.b32 %ps, 1, 0;\n"
-        mma += String("@%pj bra skip", k, ";\n")
         mma += tcgen05_mma + " [$0], %rda, %rdb, $2, " + mask + ", %ps;\n"
-        mma += String("skip", k, ":\n")
     return mma + "}"
 
 
@@ -958,7 +1031,9 @@ def build_mma_ts(
 .reg .pred %ps;
 setp.eq.s32 %pj, $6, 0;
 """
-    tcgen05_mma = "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+    tcgen05_mma = (
+        "@!%pj tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+    )
     mask = (
         "{$1, $1, $1, $1}" if cta_group
         == 1 else "{$1, $1, $1, $1, $1, $1, $1, $1}"
@@ -978,7 +1053,97 @@ setp.eq.s32 %pj, $6, 0;
             if k == 1:  # set predicate to 1
                 mma += "setp.ne.b32 %ps, 1, 0;\n"
         a_operand = "$7" if k == 0 else "%rab"
+        mma += String(
+            tcgen05_mma,
+            " [$0], [",
+            a_operand,
+            "], %rdb, $2, ",
+            mask,
+            ", %ps;\n",
+        )
+    return mma + "}"
+
+
+def build_mma_ts_partial(
+    kind: String,
+    layout_b: Layout,
+    *,
+    operand_size: Int,
+    mma_k: Int,
+    num_k_mmas: Int,
+    k_start: Int,
+    cta_group: Int = 1,
+) -> String:
+    # Partial-K variant of `build_mma_ts` for the last (partially loaded) KV
+    # tile. The A/B descriptor setup, the scale predicate `%ps`, and -- most
+    # importantly -- the elect predicate `%pj` ($6) are kept byte-identical to
+    # `build_mma_ts`. Keeping `%pj` a pure function of the unmodified `elect`
+    # operand is what preserves the compiler's single-lane elect recognition:
+    # folding the `jj < valid_k_mmas` test into the elect value (the old
+    # `step_elect = elect if ... else 0`) defeated that recognition and forced
+    # a `BSYNC.RECONVERGENT B0` into the SASS.
+    #
+    # Instead, validity rides a SEPARATE, warp-uniform predicate
+    # `%pv = (valid_k_mmas <= jj)` ($8 holds the warp-uniform `valid_k_mmas`),
+    # kept independent of `%pj`. Each loaded-conditional MMA is guarded `@!%pv`
+    # (runs iff loaded); validity is never folded into `%pj`. A block's MMA thus
+    # runs iff it is both loaded (`jj < valid_k_mmas`) and elected, and `%pv` --
+    # being warp-uniform -- never diverges, so no reconvergence is needed.
+    #
+    # Blocks use ABSOLUTE k-index `jj = k_start + k` (matching the per-block
+    # offsets the caller previously computed by hand), so the caller passes the
+    # un-offset (stage-0) A/B base and the absolute `valid_k_mmas`.
+    mma = """{
+.reg .b64 %rdb;
+.reg .s32 %ra;
+.reg .b32 %rab;
+.reg .s32 %rb;
+.reg .pred %pj;
+.reg .pred %ps;
+.reg .pred %pv;
+setp.eq.s32 %pj, $6, 0;
+"""
+    tcgen05_mma = "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+    mask = (
+        "{$1, $1, $1, $1}" if cta_group
+        == 1 else "{$1, $1, $1, $1, $1, $1, $1, $1}"
+    )
+    a_stride = mma_k * operand_size // 4  # tmem column stride per k-mma
+    for k in range(num_k_mmas):
+        jj = k_start + k
+        # Warp-uniform validity guard ($8 = valid_k_mmas): set `%pv` true once
+        # an absolute k-index lands past the loaded region; the MMA below is
+        # guarded `@!%pv`, so it runs only while loaded. Block jj == 0 is always
+        # loaded (valid_k_mmas >= 1) and needs no guard.
+        if jj != 0:
+            mma += String("setp.le.u32 %pv, $8, ", jj, ";\n")
+        if jj == 0:
+            mma += "mov.b64 %rdb, {$4, $5};\n"
+        else:
+            a_offset = a_stride * jj
+            mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
+            mma += String("mov.b32 %rab, %ra;\n")
+            b_offset = (layout_b(IntTuple(0, mma_k * jj)) * operand_size) >> 4
+            mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
+            mma += "mov.b64 %rdb, {%rb, $5};\n"
+        # Scale predicate: the absolute first block (jj == 0) initializes `o`
+        # from the runtime c_scale ($3); the first accumulate block pins
+        # %ps = 1 and it stays set for every later block.
+        if jj == 0:
+            mma += "setp.ne.b32 %ps, $3, 0;\n"
+        elif k == 0 or jj == 1:
+            mma += "setp.ne.b32 %ps, 1, 0;\n"
+        a_operand = "$7" if jj == 0 else "%rab"
+        # Elect predicate ($6) -- per-block `skip`, byte-identical to
+        # build_mma_ts; do NOT fold %pv in here, or the single-lane elect
+        # codegen breaks (forces BSYNC.RECONVERGENT).
         mma += String("@%pj bra skip", k, ";\n")
+        # Guard the MMA on the warp-uniform validity predicate (`@!%pv`, run
+        # only when loaded). jj == 0 is always loaded, so it is never guarded.
+        # `%pv` stays separate from the elect `%pj`, so the elect codegen is
+        # unchanged.
+        if jj != 0:
+            mma += "@!%pv "
         mma += String(
             tcgen05_mma,
             " [$0], [",
@@ -1060,21 +1225,49 @@ def bulk_mma[
     )
 
 
-@always_inline
-def elect() -> Int32:
-    # CAUTION: This function cannot be used to guard a `print`, else it will
-    # introduce a deadlock!
-    return inlined_assembly[
-        """{
-            .reg .b32 %re;
-            .reg .pred %pa;
-            mov.s32 $0, 0;
-            elect.sync %re|%pa, $1;
-            @%pa mov.s32 $0, 1;
-        }""",
-        Int32,
-        constraints="=r,r",
-    ](-1)
+@always_inline("nodebug")
+def bulk_mma_partial[
+    kind: UMMAKind,
+    //,
+    layout_b: Layout,
+    *,
+    mma_k: Int,
+    num_k_mmas: Int,
+    operand_size: Int,
+    k_start: Int = 0,
+    cta_group: Int = 1,
+](
+    idesc: UMMAInsDescriptor[kind],
+    a: UInt32,
+    b: MMASmemDescriptorPair,
+    c_tmem: UInt32,
+    c_scale: UInt32,
+    elect: Int32,
+    valid_k_mmas: UInt32,
+):
+    # P@V contraction for a partially-loaded last KV tile. Issues this stage's
+    # `num_k_mmas` k-blocks (absolute indices `k_start ..< k_start + num_k_mmas`)
+    # as a SINGLE fused inline-asm sequence. Each block's MMA carries a
+    # warp-uniform validity guard derived from `valid_k_mmas` (the count of
+    # loaded MMA_K blocks) that is kept entirely SEPARATE from the `elect`
+    # predicate -- so the elect codegen is identical to the full-tile `bulk_mma`
+    # (no BSYNC.RECONVERGENT). `a`/`b` are the un-offset (stage-0) bases; the
+    # builder applies absolute per-block offsets. See `build_mma_ts_partial`.
+    comptime assert num_k_mmas >= 1 and num_k_mmas <= 16
+    comptime assert cta_group in (1, 2)
+    comptime mma_string = build_mma_ts_partial(
+        String(kind),
+        layout_b,
+        operand_size=operand_size,
+        mma_k=mma_k,
+        num_k_mmas=num_k_mmas,
+        k_start=k_start,
+        cta_group=cta_group,
+    )
+
+    inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r,r"](
+        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a, valid_k_mmas
+    )
 
 
 @always_inline
@@ -1250,13 +1443,11 @@ def elect_mma_arrive[
 
     inlined_assembly[
         """{
-        .reg .pred %pb;
-        setp.eq.s32  %pb, $1, 0;
-        @%pb bra skip;
-        tcgen05.commit.cta_group::"""
+        .reg .pred %p;
+        setp.eq.s32  %p, $1, 0;
+        @!%p tcgen05.commit.cta_group::"""
         + String(cta_group)
         + """.mbarrier::arrive::one.shared::cluster.b64 [$0];
-        skip:
         }""",
         NoneType,
         constraints="r, r",

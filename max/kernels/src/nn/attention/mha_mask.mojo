@@ -33,6 +33,7 @@ struct MaskName(Writable):
     comptime CAUSAL = Self("causal")
     comptime CHUNKED = Self("chunked")
     comptime SLIDING_WINDOW_CAUSAL = Self("sliding_window_causal")
+    comptime SLIDING_WINDOW_NONCAUSAL = Self("sliding_window_noncausal")
     comptime MATERIALIZED = Self("materialized")
     comptime CHUNKED_CAUSAL = Self("chunked_causal")
     comptime CAUSAL_PADDING = Self("causal_padding")
@@ -1203,6 +1204,224 @@ struct SlidingWindowCausalMask[window_size: Int](
                 UInt32(0xFFFF_FFFF) << UInt32(mask_off)
             ) if mask_off < 32 else UInt32(0)
         return bits
+
+    @staticmethod
+    def sliding_window_size() -> Int:
+        return Self.window_size
+
+
+# ===-----------------------------------------------------------------------===#
+# SlidingWindowNonCausalMask
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct SlidingWindowNonCausalMask[window_size: Int](
+    MHAMask, TrivialRegisterPassable
+):
+    """Non-causal sliding-window attention mask.
+
+    A `(q, k)` pair is visible iff `k + window_size > q`. Unlike
+    `SlidingWindowCausalMask` there is no causal upper bound, so future keys
+    (`k > q`) are always visible: a windowed context plus a bidirectional
+    block. Used by windowed block-diffusion speculative-decode drafts (DFlash).
+
+    Example with Q_len = K_len = 7, window_size = 3 (upper triangle all 1s,
+    unlike `SlidingWindowCausalMask`):
+        K > 0 1 2 3 4 5 6
+        Q v x------------x
+        0 | 1 1 1 1 1 1 1
+        1 | 1 1 1 1 1 1 1
+        2 | 1 1 1 1 1 1 1
+        3 | 0 1 1 1 1 1 1
+        4 | 0 0 1 1 1 1 1
+        5 | 0 0 0 1 1 1 1
+        6 | 0 0 0 0 1 1 1
+    """
+
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "SlidingWindowNonCausalMask"
+
+    @staticmethod
+    def name() -> String:
+        return "SlidingWindowNonCausalMask[" + String(Self.window_size) + "]"
+
+    @always_inline
+    def mask[
+        dtype: DType,
+        width: SIMDSize,
+        *,
+        element_type: DType = DType.uint32,
+    ](
+        self,
+        coord: IndexList[4, element_type=element_type],
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        comptime index_type = coord.element_type
+
+        comptime assert (
+            width <= Self.window_size
+        ), "SIMD width of sliding window mask must be <= window size"
+
+        var q_idx = coord[2]
+        var k_idx = coord[3]
+
+        # Visible iff `k + window > q` (addition form is underflow-safe).
+        return (
+            (
+                iota[index_type, width](Scalar[index_type](k_idx))
+                + Scalar[index_type](Self.window_size)
+            )
+            .gt(SIMD[index_type, width](q_idx))
+            .select(score_vec, SIMD[dtype, width](MASK_VALUE))
+        )
+
+    @always_inline
+    def status[
+        *, element_type: DType = DType.uint32
+    ](
+        self,
+        seq_id: UInt32,
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
+    ) -> TileMaskStatus:
+        # FULL_MASK iff the least-masked corner `(q0, k0+k_size-1)` is masked:
+        # `q0 + 1 >= k0 + k_size + window_size` (addition form, underflow-safe).
+        # No causal "too far right" case: future keys are always visible.
+        var lhs = tile_offset.data[0] + 1
+        var rhs = (
+            tile_offset.data[1]
+            + tile_size.data[1]
+            + Scalar[element_type](Self.window_size)
+        )
+        if lhs >= rhs:
+            return TileMaskStatus.FULL_MASK
+
+        # NO_MASK iff the most-masked corner `(q0+q_size-1, k0)` is visible:
+        # `k0 + window_size > q0 + q_size - 1`. No diagonal upper bound (unlike
+        # causal): future keys are always visible.
+        var max_query_within_window_of_min_key = (
+            tile_offset.data[1] + Scalar[element_type](Self.window_size)
+            > tile_offset.data[0] + tile_size.data[0] - 1
+        )
+
+        if max_query_within_window_of_min_key:
+            return TileMaskStatus.NO_MASK
+
+        return TileMaskStatus.PARTIAL_MASK
+
+    @always_inline
+    def start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32) -> UInt32:
+        # Window lower bound `row - window_size + 1` (same as causal). Align
+        # down so iterators stepping by BN/page_size never overshoot num_keys.
+        var col: UInt32 = UInt32(
+            max(Int32(row) - Int32(Self.window_size) + 1, 0)
+        )
+        comptime align_to = BN if page_size <= 1 else min(page_size, BN)
+        return align_down(col, UInt32(align_to))
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # Matches `align_to` in `start_column`.
+        return BN if page_size <= 1 else min(page_size, BN)
+
+    @always_inline
+    def total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        # Lower bound shifted by the window; no upper bound (iterate to
+        # num_cols) since every tile from start_column on is non-FULL.
+        start_col = self.start_column[BM, BN, page_size](seq_id, row)
+        return ceildiv(num_cols - start_col, UInt32(BN))
+
+    @staticmethod
+    def count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 2
+
+    @always_inline
+    def last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+
+    @always_inline
+    def masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        # Monotonic scan from start_column: PARTIAL tiles (window edge) then
+        # NO_MASK (above the band). PARTIAL run is `start_col <= k0 < thresh`,
+        # thresh = row + BM - window_size, computed underflow-safe.
+        start_col = self.start_column[BM, BN, page_size](seq_id, row)
+        var total = self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+
+        var row_plus_bm: UInt32 = row + UInt32(BM)
+        var partial_end: UInt32
+        if row_plus_bm <= UInt32(Self.window_size):
+            # Window covers the whole query block: no PARTIAL tiles.
+            partial_end = 0
+        else:
+            var thresh: UInt32 = row_plus_bm - UInt32(Self.window_size)
+            if thresh <= start_col:
+                partial_end = 0
+            else:
+                var hi = min(thresh, num_cols)
+                partial_end = ceildiv(hi - start_col, UInt32(BN))
+        return {partial_end, total}
+
+    @staticmethod
+    def nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        # PARTIAL near the window edge, then NO_MASK above (mirror of causal).
+        return {TileMaskStatus.PARTIAL_MASK, TileMaskStatus.NO_MASK}
+
+    @staticmethod
+    def mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.BITMASK, MaskStrategy.NO_MASK}
+
+    @always_inline
+    def mask_bits(
+        self,
+        seq_id: UInt32,
+        score_row: Int32,
+        col_start: Int32,
+        num_keys: Int32,
+    ) -> UInt32:
+        # Visible iff `col + window > score_row` AND `col < num_keys` (OOB
+        # clip). Clear the low `max(L - col_start, 0)` bits, L = score_row -
+        # window + 1; no high-bit clear (no causal upper bound).
+        var n_below: Int32 = max(
+            score_row - Int32(Self.window_size) + 1 - col_start, 0
+        )
+        var low_mask: UInt32 = (
+            UInt32(0xFFFF_FFFF) << UInt32(n_below)
+        ) if n_below < 32 else UInt32(0)
+
+        var n_oob: Int32 = max(num_keys - col_start, 0)
+        var oob_mask: UInt32 = (
+            (UInt32(1) << UInt32(n_oob)) - UInt32(1)
+        ) if n_oob < 32 else UInt32(0xFFFF_FFFF)
+
+        return low_mask & oob_mask
 
     @staticmethod
     def sliding_window_size() -> Int:

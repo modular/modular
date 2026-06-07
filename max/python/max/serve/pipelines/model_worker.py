@@ -316,6 +316,21 @@ class ModelWorker:
                 warmup_duration_s,
             )
 
+            # Emit the same per-phase breakdown as OTel metrics so pod
+            # startup time can be tracked in production. One metric split by
+            # the 'component' tag keeps the dashboard aligned with the logs
+            # above. model_load_time (above) remains the aggregate.
+            METRICS.startup_time(compile_stats.build_seconds, "build")
+            METRICS.startup_time(compile_stats.compile_seconds, "compile")
+            METRICS.startup_time(compile_stats.init_seconds, "init")
+            METRICS.startup_time(warmup_duration_s, "graph_capture")
+            METRICS.startup_time(prime_duration_s, "pinned_memory")
+            if spawn_duration_s is not None:
+                METRICS.startup_time(spawn_duration_s, "spawn")
+            METRICS.startup_time(
+                (spawn_duration_s or 0.0) + total_in_run_s, "total"
+            )
+
             # Boot up the api worker comms
             worker_queues = await exit_stack.enter_async_context(
                 model_worker_interface.model_worker_queues()
