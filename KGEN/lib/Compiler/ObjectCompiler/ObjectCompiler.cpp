@@ -59,6 +59,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
@@ -756,11 +757,16 @@ loadBitcodeFromResource(llvm::LLVMContext &context,
     return Error("Failed to get bitcode blob from resource attribute");
 
   ArrayRef<char> bitcodeData = blob->getData();
-  llvm::MemoryBufferRef bufferRef(
-      StringRef(bitcodeData.begin(), bitcodeData.size()), "package_bitcode");
+  // Wrap the borrowed blob bytes in an owning MemoryBuffer handle. This does
+  // not copy the data (RequiresNullTerminator=false wraps the existing bytes);
+  // the lazy module takes ownership of the handle so the buffer stays alive
+  // for on-demand materialization during linking.
+  std::unique_ptr<llvm::MemoryBuffer> buffer = llvm::MemoryBuffer::getMemBuffer(
+      StringRef(bitcodeData.begin(), bitcodeData.size()), "package_bitcode",
+      /*RequiresNullTerminator=*/false);
 
   llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
-      llvm::getLazyBitcodeModule(bufferRef, context);
+      llvm::getOwningLazyBitcodeModule(std::move(buffer), context);
   if (!moduleOr)
     return Error("Failed to parse bitcode from package: " +
                  llvm::toString(moduleOr.takeError()));
