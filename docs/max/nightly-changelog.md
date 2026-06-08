@@ -89,6 +89,15 @@ This version is still a work in progress.
   schema-conformant JSON). The tokenizer now derives enforcement state from the
   response format, matching the text tokenizers.
 
+- Fixed an intermittent constrained-decoding correctness bug under EAGLE
+  speculative decoding. On the first decode step after a prefill (and after any
+  batch that did not verify draft tokens), the speculative token bitmask was
+  built from placeholder draft tokens instead of the real drafts being
+  verified, leaving the bonus and later speculative slots unconstrained. A
+  grammar-illegal token could then be sampled and committed, producing
+  occasional JSON `response_format` or tool-call grammar violations. The bitmask
+  is now built from the realized drafts.
+
 - MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
   normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
   o1/o3 chat-completion spec uses `developer` in place of `system`, and
