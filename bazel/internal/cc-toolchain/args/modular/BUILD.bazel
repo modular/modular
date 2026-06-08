@@ -77,6 +77,10 @@ cc_args(
             "-gline-tables-only",
             "-O2",
         ],
+        "//:modular_config_dev": [
+            "-gline-tables-only",
+            "-O2",
+        ],
         "//:modular_config_debug_modular": [
             "-gline-tables-only",
             "-O2",
