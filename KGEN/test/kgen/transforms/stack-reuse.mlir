@@ -1,3 +1,6 @@
+// The --kgen-stack-reuse-promote-to-global-threshold flag is only registered
+// in !MODULAR_PRODUCTION builds (see KGEN/include/KGEN/ToolCommon/CLOptions.h).
+// UNSUPPORTED: production
 // RUN: kgen-opt %s -stack-reuse -split-input-file --kgen-stack-reuse-promote-to-global-threshold=16 | FileCheck %s
 
 // CHECK-LABEL: @two_overlapping
