@@ -1,9 +1,11 @@
-// RUN: kgen-opt -lower-kgen-to-llvm -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -lower-kgen-to-llvm -lower-runtime-closures -split-input-file %s | FileCheck %s
 //
-// Tests for kgen.call → llvm.call lowering for abi("C") callees.
+// Tests for kgen.call / kgen.call_indirect → llvm.call lowering for abi("C")
+// callees.
 //
 // TRANSFORM UNDER TEST:
 //   KGEN/lib/KGENToLLVM/LowerKGENToLLVM.cpp  — ConvertKGENCall
+//   KGEN/lib/KGENToLLVM/LowerKGENClosuresToLLVM.cpp  — CallIndirectOpConversion
 //   KGEN/lib/KGENToLLVM/CABICallHelpers.cpp  — CABICallHelper
 //
 // Focus: interaction between TailKind and the sret return convention.
@@ -60,9 +62,58 @@ kgen.func @callee_reg(%s: !llvm.struct<(i32)>) cabi -> !llvm.struct<(i32)> {
 
 // CHECK-LABEL: llvm.func internal @caller_reg
 kgen.func @caller_reg(%s: !llvm.struct<(i32)>) -> !llvm.struct<(i32)> {
-  // Tail call preserved: register return has no sret alloca on the caller's frame.
+  // Tail call preserved: register return has no sret alloca.
   // CHECK: llvm.call tail @callee_reg
   %r = kgen.call tail @callee_reg(%s) : (!llvm.struct<(i32)>) -> !llvm.struct<(i32)>
+  kgen.return %r : !llvm.struct<(i32)>
+}
+
+} // module
+
+//===----------------------------------------------------------------------===//
+// T3: indirect sret return — tail call must be suppressed.
+//
+// This mirrors T1 for a bare abi("C") function pointer. The indirect call path
+// builds the same sret alloca, so it must also drop TailKind::Tail.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+
+// CHECK-LABEL: llvm.func internal @caller_indirect_sret
+kgen.func @caller_indirect_sret(
+    %callee: !kgen.generator<(!llvm.struct<(i64, i64, i64)>) cabi -> !llvm.struct<(i64, i64, i64)>>,
+    %s: !llvm.struct<(i64, i64, i64)>
+) -> !llvm.struct<(i64, i64, i64)> {
+  // Regular call (no tail): the sret alloca is on the caller's frame.
+  // CHECK-NOT: llvm.call tail
+  // CHECK:     llvm.call %arg0
+  %r = kgen.call_indirect tail %callee(%s) : (!llvm.struct<(i64, i64, i64)>) cabi -> !llvm.struct<(i64, i64, i64)>
+  kgen.return %r : !llvm.struct<(i64, i64, i64)>
+}
+
+} // module
+
+//===----------------------------------------------------------------------===//
+// T4: indirect register return — tail call must be preserved.
+//
+// This mirrors T2 for a bare abi("C") function pointer. No sret alloca is
+// created, so TailKind::Tail must flow through to the lowered llvm.call.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+
+// CHECK-LABEL: llvm.func internal @caller_indirect_reg
+kgen.func @caller_indirect_reg(
+    %callee: !kgen.generator<(!llvm.struct<(i32)>) cabi -> !llvm.struct<(i32)>>,
+    %s: !llvm.struct<(i32)>
+) -> !llvm.struct<(i32)> {
+  // Tail call preserved: register return has no sret alloca.
+  // CHECK: llvm.call tail %arg0
+  %r = kgen.call_indirect tail %callee(%s) : (!llvm.struct<(i32)>) cabi -> !llvm.struct<(i32)>
   kgen.return %r : !llvm.struct<(i32)>
 }
 

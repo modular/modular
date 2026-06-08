@@ -352,7 +352,13 @@ struct CallIndirectOpConversion
       cabi.applyByvalAttrsToCall(llvmCall, prep.argClass,
                                  adaptor.getArguments().getTypes(),
                                  prep.usesSRet, rewriter);
-      applyTailKind(llvmCall, op.getTailKind());
+      // A tail call is only safe when the callee and the caller's return ABIs
+      // match. If the callee changed to using an sret "out pointer" due to the
+      // ABI("C") annotation, that may no longer match the caller's return ABI,
+      // leading to an ABI mismatch. If that's the case, avoid marking this
+      // call as `tail` optimizable.
+      if (!prep.usesSRet)
+        applyTailKind(llvmCall, op.getTailKind());
 
       // Reverse-coerce the return value and replace the op.
       if (op.getNumResults() == 0) {
