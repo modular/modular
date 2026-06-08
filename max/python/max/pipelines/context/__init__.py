@@ -13,6 +13,8 @@
 
 from .context import (
     FUTURE_TOKEN,
+    BaseContext,
+    BaseContextType,
     GrammarEnforcementSnapshot,
     GrammarEnforcementState,
     PixelContext,
@@ -52,8 +54,6 @@ from .pixel_context_validators import (
     validate_wan_max_pixel_area,
 )
 from .sampling_params import (
-    BaseContext,
-    BaseContextType,
     SamplingParams,
     SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,

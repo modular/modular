@@ -22,18 +22,16 @@ import numpy.typing as npt
 import pytest
 from max.driver import Buffer
 from max.pipelines.context import (
+    GenerationStatus,
     GrammarEnforcementSnapshot,
     ImageMetadata,
     LogProbabilities,
+    SamplingParams,
     SpecDecodingState,
     TextGenerationOutput,
 )
 from max.pipelines.context.context import TokenBuffer
 from max.pipelines.context.eos_tracking import EOSTracker
-from max.pipelines.context.sampling_params import (
-    GenerationStatus,
-    SamplingParams,
-)
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.pipelines.request import RequestID
