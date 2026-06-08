@@ -16,9 +16,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-from max.driver import Buffer, Device
+from max.driver import Device
 from max.dtype import DType
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
@@ -46,26 +46,20 @@ class DebugTieredConnector:
     @traced
     def __init__(
         self,
-        params: KVCacheParams,
         devices: Sequence[Device],
-        device_buffers: list[Buffer],
+        kv_memory: list[KVCacheMemory],
         total_num_host_blocks: int,
         disk_cache_dir: str,
         max_disk_size_gb: float,
     ) -> None:
-        if not params.enable_prefix_caching:
-            raise ValueError(
-                "TieredConnector requires prefix caching to be enabled"
-            )
         if total_num_host_blocks <= 0:
             raise ValueError("TieredConnector requires host blocks")
 
         self._devices = list(devices)
-        self._block_size = params.page_size
         self._total_num_host_blocks = total_num_host_blocks
 
         self._block_copy_engine = DebugBlockOffloadEngine(
-            total_num_host_blocks, device_buffers
+            total_num_host_blocks, kv_memory
         )
         self._host_buffer = self._block_copy_engine.host_buffer
 

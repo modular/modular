@@ -17,7 +17,7 @@ import logging
 import math
 import os
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from functools import reduce
 from operator import mul
@@ -74,20 +74,50 @@ class KVConnectorType(str, Enum):
 
 
 @dataclass
+class KVCacheMemory:
+    """A single KV cache shard as a 2-D ``uint8`` view.
+
+    ``buffer`` has shape ``[num_pages, bytes_per_page]`` with dtype
+    ``uint8``.  This is the form consumed by the offload engine and KV
+    connectors.  :class:`ReplicatedKVCacheMemory` subclasses this for
+    caches that are replicated across TP shards (MLA).
+    """
+
+    buffer: Buffer
+
+
+@dataclass
+class ReplicatedKVCacheMemory(KVCacheMemory):
+    """A replicated KV cache unit (rank-0 shard plus its TP peers).
+
+    All shards hold identical data (MLA); D2H reads from ``buffer``
+    (rank-0) and H2D broadcasts back to ``buffer`` and every entry in
+    ``peers``.  Each buffer has shape ``[num_pages, bytes_per_page]``
+    with dtype ``uint8``.
+    """
+
+    peers: list[Buffer] = field(default_factory=list)
+
+
+@dataclass
 class KVCacheBuffer:
-    """This is a collection of the KVCache buffers.
+    """A collection of KVCache buffers for one data-parallel replica.
 
-    There are two types of supported buffers: values and scales.
-    The scales are optional and used for FP8 quantization.
+    Two buffer kinds are supported: ``values`` and (optionally, for FP8
+    quantization) ``scales``. The length of each list corresponds to the
+    tensor-parallel degree, with one buffer per TP shard.
 
-    The length of the list of buffers correspond to the tensor parallel degree
-    where each buffer in the list corresponds to a single TP shard.
-
-    For DP, we would have multiple instances of KVCacheBuffer per replica.
+    ``page_size`` and ``replicates_kv_across_tp`` describe the physical layout
+    so KV connectors can offload this cache without a separate
+    ``KVCacheParams`` reference: ``replicates_kv_across_tp`` is ``True`` when
+    the KV data is replicated identically across TP shards (MLA) and ``False``
+    when it is sharded (MHA).
     """
 
     total_num_pages: int
     values: list[Buffer]
+    page_size: int
+    replicates_kv_across_tp: bool
     scales: list[Buffer] | None = None
 
     def __post_init__(self) -> None:
@@ -125,6 +155,45 @@ class KVCacheBuffer:
             *self.values,
             *(self.scales if self.scales is not None else []),
         ]
+
+    def to_memory(self) -> list[KVCacheMemory]:
+        """Convert to a flat list of offload-ready memory units.
+
+        Each unit covers one buffer kind (values or scales) and one
+        logical TP group.  Non-replicated shards become individual
+        :class:`KVCacheMemory` entries; replicated shards become one
+        :class:`ReplicatedKVCacheMemory` entry (root + peers).
+
+        Every buffer is re-viewed as a 2-D ``[num_pages, bytes_per_page]``
+        ``uint8`` array so the offload engine can treat all caches
+        uniformly regardless of original dtype or shape.
+
+        Returns:
+            A list of memory units ready for use by KV connectors and the
+            offload engine.
+        """
+        result: list[KVCacheMemory] = []
+        shard_lists: list[list[Buffer]] = [self.values]
+        if self.scales is not None:
+            shard_lists.append(self.scales)
+        for shards in shard_lists:
+            viewed = [
+                b.view(
+                    dtype=DType.uint8,
+                    shape=[
+                        b.shape[0],
+                        b.num_elements * b.dtype.size_in_bytes // b.shape[0],
+                    ],
+                )
+                for b in shards
+            ]
+            if self.replicates_kv_across_tp:
+                result.append(
+                    ReplicatedKVCacheMemory(buffer=viewed[0], peers=viewed[1:])
+                )
+            else:
+                result.extend(KVCacheMemory(buffer=v) for v in viewed)
+        return result
 
 
 @dataclass
@@ -686,6 +755,8 @@ class KVCacheParams(KVCacheParamInterface):
                 values=values,
                 scales=scales,
                 total_num_pages=total_num_pages,
+                page_size=self.page_size,
+                replicates_kv_across_tp=self.replicates_kv_across_tp,
             )
             kv_cache_buffers.append(kv_cache_buffer)
         return kv_cache_buffers

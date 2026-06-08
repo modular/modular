@@ -124,8 +124,7 @@ def test_mla_replicated_fp8_offload_roundtrip() -> None:
         _write_page(s, src_page, scale_bytes)
 
     connector = LocalConnector(
-        params=params,
-        device_buffers=kv_buf.all_buffers,
+        kv_memory=kv_buf.to_memory(),
         total_num_host_blocks=4,
     )
 

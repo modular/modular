@@ -22,8 +22,7 @@ from __future__ import annotations
 
 import logging
 
-from max.driver import Buffer
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
@@ -44,29 +43,19 @@ class LocalConnector:
     @traced
     def __init__(
         self,
-        params: KVCacheParams,
-        device_buffers: list[Buffer],
+        kv_memory: list[KVCacheMemory],
         total_num_host_blocks: int,
-        non_replicated_device_buffers_to_offload: list[Buffer] | None = None,
     ) -> None:
         """Initialize the local host memory connector."""
-        if not params.enable_prefix_caching:
-            raise ValueError(
-                "LocalConnector requires prefix caching to be enabled"
-            )
         if total_num_host_blocks <= 0:
             raise ValueError("LocalConnector requires host blocks")
-
-        self._block_size = params.page_size
 
         self._total_num_host_blocks = total_num_host_blocks
 
         # Create BlockOffloadEngine for memory transfers
         self._block_copy_engine = BlockOffloadEngine(
             total_num_host_blocks,
-            device_buffers,
-            replicate_kv_across_tp=params.replicates_kv_across_tp,
-            non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
+            kv_memory,
         )
 
         # Host block pool for managing host memory

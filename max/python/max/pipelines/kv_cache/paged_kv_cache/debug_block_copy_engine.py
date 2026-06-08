@@ -19,39 +19,29 @@ import logging
 
 from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
+from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.profiler import traced
 
 logger = logging.getLogger("max.pipelines")
-
-
-def _bytes_per_page(buffer: Buffer) -> int:
-    num_pages = buffer.shape[0]
-    return buffer.num_elements * buffer.dtype.size_in_bytes // num_pages
 
 
 class DebugBlockOffloadEngine:
     """Debug class."""
 
     def __init__(
-        self, total_num_host_blocks: int, device_buffers: list[Buffer]
+        self,
+        total_num_host_blocks: int,
+        kv_memory: list[KVCacheMemory],
     ) -> None:
-        num_device_pages = device_buffers[0].shape[0]
-        viewed = [
-            buffer.view(
-                dtype=DType.uint8,
-                shape=[num_device_pages, _bytes_per_page(buffer)],
-            )
-            for buffer in device_buffers
-        ]
-        gpu0 = device_buffers[0].device
+        gpu0 = kv_memory[0].buffer.device
         if gpu0.is_host:
             raise ValueError(
-                "KVCacheBuffer is on the CPU. Unable to allocate host"
+                "KVCacheMemory is on the CPU. Unable to allocate host"
                 " offload buffer for already-on-CPU buffers."
             )
 
-        self.device_buffers = viewed
-        bytes_per_page = sum(_bytes_per_page(b) for b in self.device_buffers)
+        self.device_buffers: list[Buffer] = [u.buffer for u in kv_memory]
+        bytes_per_page = sum(b.shape[1] for b in self.device_buffers)
         self.host_buffer = DevicePinnedBuffer(
             shape=[total_num_host_blocks, bytes_per_page],
             dtype=DType.uint8,
