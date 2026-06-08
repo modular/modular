@@ -87,3 +87,81 @@ def main():
     # CHECK: note: function declared here
     # CHECK-NEXT: def constraint_fn[a: Int, b: Int]() where (a > 0)    # note - synthetic signature
     comptime _ = diags_package.constraint_fn[0, 1]
+
+
+# CHECK: error: name conflict between parameter 'a' in the default trait method and a parameter in the struct
+# CHECK-NEXT: struct ConflictStruct[a: Int](diags_package.ConflictTraitName):
+# CHECK: note: trait method declared here
+# CHECK-NEXT: def test[a: Int](self: _Self)    # note - synthetic signature
+struct ConflictStruct[a: Int](diags_package.ConflictTraitName):
+    pass
+
+
+# FIXME: Crashes when loaded from bytecode. See MOCO-4102.
+# struct ConflictMethod(diags_package.OtherConflictTraitMethod):
+#    pass
+
+
+# CHECK: error: 'StructViolation' does not implement all requirements for 'NoDefaultFunc'
+# CHECK-NEXT: struct StructViolation(diags_package.StillNoDefaultFunc):
+# CHECK: note: required function 'doSomething' is not implemented
+# CHECK-NEXT: def doSomething(self: _Self)    # note - synthetic signature
+# CHECK: note: trait 'NoDefaultFunc' declared here
+# CHECK-NEXT: trait NoDefaultFunc    # note - synthetic signature
+# CHECK: note: inherited through 'StillNoDefaultFunc' here
+# CHECK-NEXT: trait StillNoDefaultFunc    # note - synthetic signature
+struct StructViolation(diags_package.StillNoDefaultFunc):
+    def doEverything(self):
+        pass
+
+
+# CHECK: note: method 'handle' has constraints that cannot be proven or disproven from conformance constraint
+# CHECK: note: required by trait method here
+# CHECK-NEXT: def handle(self: _Self)    # note - synthetic signature
+# CHECK: note: trait 'UnprovableCandidateTrait' declared here
+# CHECK-NEXT: trait UnprovableCandidateTrait    # note - synthetic signature
+struct UnprovableWithValidCandidate[T: Movable](
+    Movable,
+    diags_package.UnprovableCandidateTrait where conforms_to(T, Copyable),
+):
+    # Unprovable: Intable is unrelated to Copyable - can't prove or disprove.
+    def handle(self) where conforms_to(Self.T, Intable):
+        pass
+
+    # Provable: Copyable matches the conformance constraint.
+    # But we still error because we can't rule out the above candidate.
+    def handle(self) where conforms_to(Self.T, Copyable):
+        pass
+
+
+# CHECK: error: 'StructConformingExplicitlyWithNoMatchingAlias' does not implement all requirements for 'TraitWithMember'
+# CHECK: note: required member 'N' is not specified
+# FIXME: Show the synthetic comptime member here too
+# CHECK: note: trait 'TraitWithMember' declared here
+# CHECK-NEXT: trait TraitWithMember    # note - synthetic signature
+struct StructConformingExplicitlyWithNoMatchingAlias(
+    diags_package.TraitWithMember
+):
+    pass
+
+
+# CHECK: error: 'StructConformingExplicitlyWithMismatchedAlias' does not implement all requirements for 'TraitWithMember'
+# CHECK: note: comptime member 'N' type 'Bool' does not conform to trait's required type 'Int'
+# FIXME: Show the synthetic comptime member here too
+# CHECK: note: trait 'TraitWithMember' declared here
+# CHECK-NEXT: trait TraitWithMember    # note - synthetic signature
+struct StructConformingExplicitlyWithMismatchedAlias(
+    diags_package.TraitWithMember
+):
+    comptime N: Bool = Bool()
+
+
+# CHECK: error: 'StructConformingExplicitlyWithMemberSameName' does not implement all requirements for 'TraitWithMember'
+# CHECK: note: required member 'N' is not specified
+# FIXME: Show the synthetic comptime member here too
+# CHECK: note: trait 'TraitWithMember' declared here
+# CHECK-NEXT: trait TraitWithMember    # note - synthetic signature
+struct StructConformingExplicitlyWithMemberSameName(
+    diags_package.TraitWithMember
+):
+    var N: Int

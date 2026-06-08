@@ -380,7 +380,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
             << "name conflict between parameter " << traitPog.getName()
             << " in the default trait method and a parameter in the struct";
 
-        diag.attachNote(traitFn.getLoc()) << "trait method declared here";
+        diag.attachNote(*traitFnDecl) << "trait method declared here";
 
         return failure();
       }
@@ -592,7 +592,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
         collectMethodsWithNameFromDecls(structDecl, name, relevantExtensions);
 
     if (decls.empty()) {
-      diag->attachNote(traitFnDecl->getLoc())
+      diag->attachNote(*traitFnDecl)
           << "required function '" + name.str() + "' is not implemented";
       return failure(); // Stop the outer loop.
     }
@@ -688,13 +688,12 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
         // This follows overload selection rules: we can't prove or disprove
         // this candidate, so we can't definitively select a witness.
         for (ASTDecl *unprovableDecl : unprovableDecls) {
-          diag->attachNote(unprovableDecl->getLoc())
+          diag->attachNote(*unprovableDecl)
               << "method '" << name.str()
               << "' has constraints that cannot be proven or disproven from "
                  "conformance constraint";
         }
-        diag->attachNote(traitFnDecl->getLoc())
-            << "required by trait method here";
+        diag->attachNote(*traitFnDecl) << "required by trait method here";
         return failure();
       }
     }
@@ -703,7 +702,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     OverloadSet ov(name, provableDecls, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic);
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
-      return diag->attachNote(traitFnDecl->getLoc());
+      return diag->attachNote(*traitFnDecl);
     };
     auto [result, selectedStructMethod] = ov.filterOverloadSetForValueType(
         traitSignature, emitter.getDeclScope(), emitError);
@@ -742,7 +741,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     // otherwise we should have already reported "redefinition" error.
     if (decls.empty() ||
         !isa_and_nonnull<AliasDeclOp>(decls.front()->getIfOperation())) {
-      diag->attachNote(traitAlias->getLoc())
+      diag->attachNote(*traitAliasDecl)
           << "required member '" << name.str() << "' is not specified";
       return failure(); // Stop the outer loop.
     }
@@ -767,7 +766,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       if (!IREmitter::canImplicitlyConvertToType({initializerExpr, &synthNode},
                                                  traitAliasType,
                                                  emitter.getDeclScope())) {
-        diag->attachNote(traitAliasDecl->getLoc())
+        diag->attachNote(*traitAliasDecl)
             << "comptime member "
             << "'" + name.str() + "'" << " type " << ASTType(structAliasType)
             << " does not conform to trait's required type "
@@ -912,14 +911,14 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   }
 
   // Otherwise, emit the set of requirements that are missing.
-  diag->attachNote(traitDecl.getLoc())
+  diag->attachNote(traitDecl)
       << "trait " << ASTType(TraitType::get(parent)) << " declared here";
   if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
     if (auto it = inheritedFrom->find(parent);
         it != inheritedFrom->end() && it->second.first != parent) {
       ASTDecl &parentDecl =
           emitter.getDeclResolver().getDeclForTypeSymbol(it->second.first);
-      diag->attachNote(parentDecl.getLoc())
+      diag->attachNote(parentDecl)
           << "inherited through '" << *parentDecl.getUserNameIfOperation()
           << "' here";
     }

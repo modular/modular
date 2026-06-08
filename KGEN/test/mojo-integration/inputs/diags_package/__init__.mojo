@@ -51,3 +51,38 @@ def unprovable_constraints[x: Int]() where unfoldable_predicate(x):
 
 struct Conflict:
     pass
+
+
+trait ConflictTraitName:
+    def test[a: Int](self):
+        pass
+
+
+trait NoDefaultFunc:
+    def doSomething(self):
+        ...
+
+
+trait StillNoDefaultFunc(NoDefaultFunc):
+    def doEverything(self):
+        ...
+
+
+trait UnprovableCandidateTrait:
+    # expected-note @below {{required by trait method here}}
+    def handle(self):
+        ...
+
+
+# FIXME: We crash when loading conflicting traits from bytecode. See MOCO-4102.
+# trait ConflictTraitMethod:
+#    def test(self) -> Bool:
+#        return True
+
+# trait OtherConflictTraitMethod(ConflictTraitMethod):
+#    def test(self) -> Bool:
+#        return False
+
+
+trait TraitWithMember:
+    comptime N: Int
