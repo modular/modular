@@ -19,6 +19,10 @@ cc_args(
             "-g",
             "-O3",
         ],
+        "//:modular_config_dev": [
+            "-g",
+            "-O2",
+        ],
         "//:modular_config_debug_modular": [
             "-DMODULAR_DEBUG",
             "-g",
