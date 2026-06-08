@@ -35,4 +35,5 @@ speculative:
 
 runtime:
   ep_size: 8
+  ep_use_allreduce: true
   max_batch_input_tokens: 4096

@@ -150,7 +150,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/Kimi-K2.5-NVFP4__local_kvconnector": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.5-NVFP4__debug_tiered_kvconnector": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector": NON_XL | {"4xMI355"},
 }

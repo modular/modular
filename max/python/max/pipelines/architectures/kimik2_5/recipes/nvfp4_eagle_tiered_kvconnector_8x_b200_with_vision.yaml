@@ -19,13 +19,6 @@ model:
     kv_cache_format: float8_e4m3fn
     device_memory_utilization: 0.75
     kv_connector: tiered
-    # Right now we have to duplicate this between target and draft.
-    # We should just be able to define it once.
-    kv_connector_config:
-      host_kvcache_swap_space_gb: 512
-      disk_offload_max_gb: 4096
-      disk_offload_dir: /tmp/max_kv_tiered
-      disk_offload_direct_io: false
 
 draft_model:
   model_path: nvidia/Kimi-K2.5-Thinking-Eagle3
@@ -35,11 +28,6 @@ draft_model:
   kv_cache:
     kv_cache_format: float8_e4m3fn
     kv_connector: tiered
-    kv_connector_config:
-      host_kvcache_swap_space_gb: 512.0
-      disk_offload_max_gb: 4096
-      disk_offload_dir: /tmp/max_kv_tiered
-      disk_offload_direct_io: false
 
 speculative:
   speculative_method: eagle
