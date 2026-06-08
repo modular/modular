@@ -220,6 +220,34 @@ modular_py_test(
     ],
 )
 
+modular_py_binary(
+    name = "check_logit_verification_eligibility",
+    testonly = True,
+    srcs = ["check_logit_verification_eligibility.py"],
+    data = ["logit_verification_ignore_list.yaml"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+        requirement("pyyaml"),
+    ],
+)
+
+modular_py_test(
+    name = "test_check_logit_verification_eligibility",
+    size = "small",
+    srcs = ["test_check_logit_verification_eligibility.py"],
+    imports = ["."],
+    # TODO: Investigate and enable on macOS if needed
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":check_logit_verification_eligibility",
+        requirement("click"),
+    ],
+)
+
 modular_py_test(
     name = "test_verify",
     size = "large",
