@@ -19,6 +19,7 @@ namespace KGEN {
 namespace LIT {
 class MojoInflightDiag;
 class AliasDeclOp;
+class TraitDeclOp;
 class ASTDecl;
 class FnOp;
 class SharedState;
@@ -47,18 +48,16 @@ struct SignatureOffsets {
 
 /// Print a Mojo-syntax signature for the given function op.
 ///
-/// No leading `def` keyword is emitted. If `contextDecl` is non-null, it
-/// is installed as the current diagnostic decl context for the duration of the
-/// call so dependent parameter references can be rendered with their source
-/// names; otherwise dependent names may fall back to index references.
+/// If `contextDecl` is non-null, it is installed as the current diagnostic decl
+/// context for the duration of the call so dependent parameter references can
+/// be rendered with their source names; otherwise dependent names may fall back
+/// to index references.
 void printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
                             llvm::raw_string_ostream &os,
                             const LIT::ASTDecl *contextDecl = nullptr,
                             const SignatureOffsets &offsets = {});
 
 /// Print a Mojo-syntax signature for the given struct op.
-///
-/// No leading `struct` keyword is emitted.
 void printStructSignature(LIT::StructDeclOp structOp, LIT::SharedState &shared,
                           llvm::raw_string_ostream &os,
                           const LIT::ASTDecl *contextDecl = nullptr,
@@ -68,6 +67,12 @@ void printStructSignature(LIT::StructDeclOp structOp, LIT::SharedState &shared,
 ///
 /// No leading `comptime` keyword is emitted.
 void printAliasSignature(LIT::AliasDeclOp aliasOp, LIT::SharedState &shared,
+                         llvm::raw_string_ostream &os,
+                         const LIT::ASTDecl *contextDecl = nullptr,
+                         const SignatureOffsets &offsets = {});
+
+/// Print a Mojo-syntax signature for the given trait op.
+void printTraitSignature(LIT::TraitDeclOp traitOp, LIT::SharedState &shared,
                          llvm::raw_string_ostream &os,
                          const LIT::ASTDecl *contextDecl = nullptr,
                          const SignatureOffsets &offsets = {});

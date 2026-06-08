@@ -167,6 +167,18 @@ void M::KGEN::printAliasSignature(LIT::AliasDeclOp aliasOp,
                                os, offsets);
 }
 
+void M::KGEN::printTraitSignature(LIT::TraitDeclOp traitOp,
+                                  LIT::SharedState &shared,
+                                  llvm::raw_string_ostream &os,
+                                  const LIT::ASTDecl *contextDecl,
+                                  const SignatureOffsets &offsets) {
+  DeclResolver::DiagnosticDeclContextChanger scope(
+      const_cast<LIT::ASTDecl *>(contextDecl));
+
+  auto name = demangleParameterName(traitOp.getName(), /*forUser=*/true);
+  os << "trait " << name;
+}
+
 //===----------------------------------------------------------------------===//
 // Diagnostic-oriented helpers
 //===----------------------------------------------------------------------===//
@@ -186,6 +198,9 @@ std::string M::KGEN::synthesizeDeclSignature(Operation *op, SharedState &shared,
       })
       .Case<AliasDeclOp>([&](AliasDeclOp aliasOp) {
         printAliasSignature(aliasOp, shared, os, contextDecl);
+      })
+      .Case<TraitDeclOp>([&](TraitDeclOp traitOp) {
+        printTraitSignature(traitOp, shared, os, contextDecl);
       })
       .Default([](Operation *) {});
   return out;
