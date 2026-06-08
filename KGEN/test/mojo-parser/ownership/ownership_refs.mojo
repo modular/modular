@@ -67,7 +67,7 @@ def testParametricMut(i: MemExample, mut m: MemExample):
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"testUseConditional
-def testUseConditional(cond: __mlir_type.i1):
+def testUseConditional(cond: __mlir_type.`!kgen.scalar<bool>`):
   # CHECK-NOT: __del__
 
   # CHECK: lit.call {{.*}}__init__{{.*}}(%a)
@@ -93,7 +93,7 @@ def testUseConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: lifetime.end %a
 
 # CHECK-LABEL: lit.fn @"testDefConditional
-def testDefConditional(cond: __mlir_type.i1):
+def testDefConditional(cond: __mlir_type.`!kgen.scalar<bool>`):
   # CHECK-NOT: lit.call {{[^)]*}}__del__
 
   var a = MemExample()
@@ -151,7 +151,7 @@ def testDefConditional(cond: __mlir_type.i1):
 
 # CHECK-LABEL: lit.fn @"testUseConditionalReference
 
-def testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
+def testUseConditionalReference(cond: __mlir_type.`!kgen.scalar<bool>`, imm: MemExample):
   # CHECK: %a = lit.var.decl {{.*}} : !lit.ref<!MemExample, mut *"a`1">
   # CHECK: lit.call {{.*}}__init__{{.*}}(%a)
 

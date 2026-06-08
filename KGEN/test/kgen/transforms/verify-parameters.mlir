@@ -3,7 +3,7 @@
 // CHECK-LABEL: no_constrains_deduplication
 kgen.generator @no_constrains_deduplication() {
   kgen.param.declare cond = <1>
-  kgen.param.if <to_builtin(:scalar<bool> eq(cond, 1))> {
+  kgen.param.if <eq(cond, 1)> {
     kgen.param.declare B0 : !kgen.string = <"foo">
     // CHECK: kgen.param.assert <false>, "foo"
     kgen.param.assert <eq(2, 3)>, B0

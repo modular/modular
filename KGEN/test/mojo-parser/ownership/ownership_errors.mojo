@@ -461,7 +461,7 @@ def testWrapperNestedInt():
 # ===----------------------------------------------------------------------=== #
 
 
-def testConditionalImmut(cond: __mlir_type.i1):
+def testConditionalImmut(cond: __mlir_type.`!kgen.scalar<bool>`):
     var a = MemExample()
     var b: MemExample  # expected-note {{'b' declared here}}
 
@@ -473,7 +473,7 @@ def testConditionalImmut(cond: __mlir_type.i1):
     cptr[].noop()
 
 
-def testConditionalMut(cond: __mlir_type.i1):
+def testConditionalMut(cond: __mlir_type.`!kgen.scalar<bool>`):
     var a = MemExample()
     var b: MemExample  # expected-note {{'b' declared here}}
 

@@ -16,8 +16,8 @@ def no_impl() -> __mlir_type.index:
     return __mlir_attr.`0 : index`
 
 
-def make_true() -> __mlir_type.i1:
-    return __mlir_attr.true
+def make_true() -> __mlir_type.`!kgen.scalar<bool>`:
+    return __mlir_attr.`#kgen.simd<true> : !kgen.scalar<bool>`
 
 
 @export

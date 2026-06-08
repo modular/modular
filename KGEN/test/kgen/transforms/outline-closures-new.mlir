@@ -894,7 +894,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.param<x>) -> index {
   kgen.return %0 : index
 }
 
-kgen.generator @foo<FuncType: type, flag: i1>(%arg1: !kgen.param<FuncType>) {
+kgen.generator @foo<FuncType: type, flag: scalar<bool>>(%arg1: !kgen.param<FuncType>) {
   %0 = kgen.closure.init(%arg1)() -> index {
     kgen.param.declare call: (!kgen.param<FuncType>) -> index = <#kgen.get_witness<FuncType, "closure_trait", "__call__">>
     %1 = kgen.call_param[(!kgen.param<FuncType>) -> index: call](%arg1)

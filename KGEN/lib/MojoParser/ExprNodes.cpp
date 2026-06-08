@@ -3856,7 +3856,7 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
 }
 
 AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
-  RValue condRVal = emitter.emitExprI1(condExpr, EC_BoolCondition);
+  RValue condRVal = emitter.emitExprScalarBool(condExpr, EC_BoolCondition);
   Location ifLoc = getLocation(emitter);
 
   // This function is used to get a CValue for an operand, inferring the type of
@@ -4065,8 +4065,8 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   // the live branch, preventing dead-branch ops (e.g. `comptime assert False`)
   // from ever being elaborated.
   if (PValue condPVal = condRVal.getIfPValue()) {
-    if (IntegerAttr asInt = sugarDynCast<IntegerAttr>(condPVal.get())) {
-      if (asInt.getValue().isZero())
+    if (SIMDAttr asBool = sugarDynCast<SIMDAttr>(condPVal.get())) {
+      if (!asBool.getAsBool())
         emitter.emitWarning(this->getLoc())
             << "left hand side expression of 'if False' is dead";
       else
@@ -4133,9 +4133,11 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
         });
   }
 
-  // Otherwise, emit HLCF::IfOp.
+  // Otherwise, emit HLCF::IfOp, which expects an i1 condition.
+  // TODO: migrate hlcf.if to using scalar<bool> as well.
   Value condValue =
-      emitter.emitSRValue({AnyValue(condRVal), condExpr}, EC_BoolCondition);
+      emitter.emitSRValue({AnyValue(condRVal), condExpr}, EC_BoolCondition,
+                          IntegerType::get(emitter.getContext(), 1));
 
   if (!condValue)
     return {};

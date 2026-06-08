@@ -1938,12 +1938,13 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   CValue hasNextRes = emitter.emitIndirectCall(
       hasNext, CallOperands(CallSyntax::kMethodCall, seqExpr, EC_ForIterator,
                             {{iterValue, seqExpr}}));
-  auto hasNextI1 = emitter.emitI1({hasNextRes, seqExpr}, EC_ForIterator);
-  if (!hasNextI1)
+  auto hasNextBool =
+      emitter.emitScalarBool({hasNextRes, seqExpr}, EC_ForIterator);
+  if (!hasNextBool)
     return failure();
-  assert(hasNextI1.getIfPValue() && "expected PValue in param context");
+  assert(hasNextBool.getIfPValue() && "expected PValue in param context");
   auto paramIf =
-      ParamIfOp::create(builder, forLocation, hasNextI1.getIfPValue());
+      ParamIfOp::create(builder, forLocation, hasNextBool.getIfPValue());
 
   // Keep going if we have more elements.
   builder.createBlock(&paramIf.getThenRegion());
@@ -2738,7 +2739,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
     // For a comptime if we emit the condition as a PValue
     // without a builder.
     RValue condRVal = getParamEmitter(EC_ComptimeIfCondition)
-                          .emitExprI1(condExp, EC_ComptimeIfCondition);
+                          .emitExprScalarBool(condExp, EC_ComptimeIfCondition);
     if (!condRVal)
       return failure();
     PValue condPVal = condRVal.getIfPValue();
@@ -2755,8 +2756,7 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
   auto buildBranchAssumption = [&](Location loc,
                                    bool invertCondition) -> ConstraintAttr {
     // Convert `x and y` to `x & y` so we get better canonicalization.
-    TypedAttr branchCondition =
-        LIT::deShortCircuitCond(CastFromBuiltinAttr::get(paramIfOp.getCond()));
+    TypedAttr branchCondition = LIT::deShortCircuitCond(paramIfOp.getCond());
     if (invertCondition)
       branchCondition = ParamOperatorAttr::getNot(branchCondition);
     return ConstraintAttr::get(branchCondition, loc);

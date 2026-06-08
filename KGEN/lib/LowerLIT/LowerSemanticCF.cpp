@@ -772,8 +772,8 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
             &(constantCondValue ? ifOp.getElseRegion() : ifOp.getThenRegion());
       }
     } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
-      if (auto cond = dyn_cast<BoolAttr>(ifOp.getCond())) {
-        constantCondValue = cond.getValue();
+      if (auto cond = sugarDynCast<SIMDAttr>(ifOp.getCond())) {
+        constantCondValue = cond.getAsBool();
         deadRegion =
             &(constantCondValue ? ifOp.getElseRegion() : ifOp.getThenRegion());
       }

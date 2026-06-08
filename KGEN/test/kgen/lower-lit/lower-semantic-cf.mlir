@@ -847,12 +847,12 @@ lit.fn @self_recursive_arg(%a: index, %cond: i1) -> !kgen.none {
   lit.end_fn
 }
 
-lit.fn @self_recursive_param<a: index, cond: i1>() -> !kgen.none attributes {sourceName = "self_recursive_param", specialFnKind = 0 : i8} {
+lit.fn @self_recursive_param<a: index, cond: scalar<bool>>() -> !kgen.none attributes {sourceName = "self_recursive_param", specialFnKind = 0 : i8} {
   // expected-warning @+1 {{self recursive call will cause an infinite loop}}
-  %0 = lit.call @self_recursive_param<a, :i1 cond>() : !lit.generator<() -> !kgen.none>
+  %0 = lit.call @self_recursive_param<a, :scalar<bool> cond>() : !lit.generator<() -> !kgen.none>
   kgen.param.if <cond> {
     // No warning.
-    %1 = lit.call @self_recursive_param<a, :i1 cond>() : !lit.generator<() -> !kgen.none>
+    %1 = lit.call @self_recursive_param<a, :scalar<bool> cond>() : !lit.generator<() -> !kgen.none>
     kgen.param.yield
   } else {
     kgen.param.yield
@@ -1070,7 +1070,7 @@ lit.fn @containsEarlyReturn(%arg: i1) -> !kgen.none {
 }
 
 // CHECK-LABEL: lit.fn @fallthrough
-lit.fn @fallthrough<cond0: i1, cond1: i1>(%lhs: index, %rhs: index, %cond2 : i1) -> index {
+lit.fn @fallthrough<cond0: scalar<bool>, cond1: scalar<bool>>(%lhs: index, %rhs: index, %cond2 : i1) -> index {
 // CHECK: kgen.param.if <cond0> {
 // CHECK-NEXT:   kgen.return %lhs : index
 // CHECK-NEXT: } else {
@@ -1154,7 +1154,7 @@ lit.fn @consecutiveElifs(%arg0: index, %arg1: index) -> index {
 }
 
 // CHECK-LABEL: lit.fn @param_if_call_throws
-lit.fn @param_if_call_throws<paramb: i1>() throws -> i1 {
+lit.fn @param_if_call_throws<paramb: scalar<bool>>() throws -> i1 {
   // CHECK: kgen.param.if <paramb> {
   kgen.param.if <paramb> {
     %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
@@ -1221,7 +1221,7 @@ lit.fn @crashing_try_warning(%cond: i1) -> !kgen.none {
 // We had some weirdness where the outer kgen.param.if was incorrectly using
 // the hlcf.elif's doesFallThrough as its own doesFallThrough, and then that was
 // causing it to not replace the lit.end_fn with a kgen.unreachable.
-lit.fn @weird_fallthroughs<parambool: i1>(%runbool: i1) -> i1 {
+lit.fn @weird_fallthroughs<parambool: scalar<bool>>(%runbool: i1) -> i1 {
   kgen.param.if <parambool> {
     lit.return %runbool : i1
     kgen.param.yield

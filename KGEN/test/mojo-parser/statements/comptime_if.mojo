@@ -10,8 +10,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-# CHECK-LABEL: lit.fn @"comptime_if_basic{{.*}}"<a: i1>()
-def comptime_if_basic[a: __mlir_type.i1]():
+# CHECK-LABEL: lit.fn @"comptime_if_basic{{.*}}"<a: scalar<bool>>()
+def comptime_if_basic[a: __mlir_type.`!kgen.scalar<bool>`]():
     # CHECK: kgen.param.if <a> {
     comptime if a:
         # CHECK: lit.var.decl "inside" var
@@ -20,14 +20,14 @@ def comptime_if_basic[a: __mlir_type.i1]():
     # CHECK: }
 
 
-# CHECK-LABEL: lit.fn @"comptime_if_elif{{.*}}"<a: i1, b: !Bool>()
-def comptime_if_elif[a: __mlir_type.i1, b: Bool]():
+# CHECK-LABEL: lit.fn @"comptime_if_elif{{.*}}"<a: scalar<bool>, b: !Bool>()
+def comptime_if_elif[a: __mlir_type.`!kgen.scalar<bool>`, b: Bool]():
     # CHECK: kgen.param.if <a> {
     comptime if a:
         # CHECK: lit.var.decl "inside_1" var
         var inside_1: Int
     # CHECK: } else {
-    # CHECK:     kgen.param.if <to_builtin(:scalar<bool> #lit.struct.extract<:!Bool b, "_mlir_value">)> {
+    # CHECK:     kgen.param.if <#lit.struct.extract<:!Bool b, "_mlir_value">> {
     elif b:
         # CHECK:     lit.var.decl "inside_2" var
         var inside_2: Int
@@ -37,8 +37,8 @@ def comptime_if_elif[a: __mlir_type.i1, b: Bool]():
     # CHECK: }
 
 
-# CHECK-LABEL: lit.fn @"comptime_if_else{{.*}}"<a: i1>()
-def comptime_if_else[a: __mlir_type.i1]():
+# CHECK-LABEL: lit.fn @"comptime_if_else{{.*}}"<a: scalar<bool>>()
+def comptime_if_else[a: __mlir_type.`!kgen.scalar<bool>`]():
     # CHECK: kgen.param.if <a> {
     comptime if a:
         # CHECK: lit.var.decl "inside_then" var
@@ -55,8 +55,8 @@ def comptime_if_else[a: __mlir_type.i1]():
 # ===----------------------------------------------------------------------=== #
 
 
-# CHECK-LABEL: lit.fn @"param_if{{.*}}"<a: i1, b: !Bool>()
-def param_if[a: __mlir_type.i1, b: Bool]():
+# CHECK-LABEL: lit.fn @"param_if{{.*}}"<a: scalar<bool>, b: !Bool>()
+def param_if[a: __mlir_type.`!kgen.scalar<bool>`, b: Bool]():
     # CHECK: kgen.param.if <a> {
     # expected-warning @+1 {{'@parameter if' is deprecated; use 'comptime if'}}
     @parameter
@@ -64,7 +64,7 @@ def param_if[a: __mlir_type.i1, b: Bool]():
         # CHECK: lit.var.decl "inside_1" var
         var inside_1: Int
     # CHECK: } else {
-    # CHECK:     kgen.param.if <to_builtin(:scalar<bool> #lit.struct.extract<:!Bool b, "_mlir_value">)> {
+    # CHECK:     kgen.param.if <#lit.struct.extract<:!Bool b, "_mlir_value">> {
     elif b:
         # CHECK:     lit.var.decl "inside_2" var
         var inside_2: Int
@@ -74,9 +74,9 @@ def param_if[a: __mlir_type.i1, b: Bool]():
     # CHECK: }
 
 
-# CHECK-LABEL: lit.fn @"param_if_andor_i1{{.*}}"<a: i1, b: i1>()
-def param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
-    # CHECK: kgen.param.if <cond(from_builtin(:i1 a), b, a)>
+# CHECK-LABEL: lit.fn @"param_if_andor_i1{{.*}}"<a: scalar<bool>, b: scalar<bool>>()
+def param_if_andor_i1[a: __mlir_type.`!kgen.scalar<bool>`, b: __mlir_type.`!kgen.scalar<bool>`]():
+    # CHECK: kgen.param.if <cond(a, b, a)>
     # expected-warning @+1 {{'@parameter if' is deprecated; use 'comptime if'}}
     @parameter
     if a and b:
@@ -84,7 +84,7 @@ def param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
         var v: Int
     # CHECK:   kgen.param.yield
     # CHECK: } else {
-    # CHECK: kgen.param.if <cond(from_builtin(:i1 a), a, b)>
+    # CHECK: kgen.param.if <cond(a, a, b)>
     elif a or b:
         # CHECK:   lit.var.decl "w" var
         var w: Int
@@ -92,7 +92,7 @@ def param_if_andor_i1[a: __mlir_type.i1, b: __mlir_type.i1]():
 
 # CHECK-LABEL: lit.fn @"param_if_and{{.*}}"<a: !Bool, b: !Bool>()
 def param_if_and[a: Bool, b: Bool]():
-    # CHECK: kgen.param.if <to_builtin(:scalar<bool> #lit.struct.extract<:!Bool cond(#lit.struct.extract<:!Bool a, "_mlir_value">, b, a), "_mlir_value">)> {
+    # CHECK: kgen.param.if <#lit.struct.extract<:!Bool cond(#lit.struct.extract<:!Bool a, "_mlir_value">, b, a), "_mlir_value">> {
     # expected-warning @+1 {{'@parameter if' is deprecated; use 'comptime if'}}
     @parameter
     if a and b:

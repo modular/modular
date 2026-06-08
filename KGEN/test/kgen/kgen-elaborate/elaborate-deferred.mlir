@@ -1,7 +1,7 @@
 // RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=false" -allow-unregistered-dialect | FileCheck %s
 // RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck %s
 
-kgen.generator @select_pred<*"cmp`2x": i1>() -> !kgen.deferred {
+kgen.generator @select_pred<*"cmp`2x": scalar<bool>>() -> !kgen.deferred {
   kgen.param.if <*"cmp`2x"> {
     %0 = kgen.param.constant: !kgen.deferred = <#kgen<deferred #index<cmp_predicate sle>>>
     kgen.return %0 : !kgen.deferred
@@ -12,17 +12,17 @@ kgen.generator @select_pred<*"cmp`2x": i1>() -> !kgen.deferred {
   kgen.unreachable
 }
 
-// CHECK-LABEL: @"test_select_pred,cmp=0"
+// CHECK-LABEL: @"test_select_pred,cmp=false"
 // CHECK: %[[CMP_RESULT:.*]] = index.cmp sgt(%arg0, %arg1)
 // CHECK-NEXT: pop.store %[[CMP_RESULT]], %arg2 : !kgen.pointer<i1>
 
-// CHECK-LABEL: @"test_select_pred,cmp=1"
+// CHECK-LABEL: @"test_select_pred,cmp=true"
 // CHECK: %[[CMP_RESULT:.*]] = index.cmp sle(%arg0, %arg1)
 // CHECK-NEXT: pop.store %[[CMP_RESULT]], %arg2 : !kgen.pointer<i1>
-kgen.generator @test_select_pred<cmp: i1>(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1> byref_result) throws -> i1 {
+kgen.generator @test_select_pred<cmp: scalar<bool>>(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1> byref_result) throws -> i1 {
   %0 = kgen.param.constant: i1 = <0>
-  kgen.param.declare select_pred: <i1>() -> !kgen.deferred = <@select_pred>
-  kgen.param.apply *"(lifted)apply_0" = [() -> !kgen.deferred: bind_params(:<i1>() -> !kgen.deferred select_pred, cmp)]()
+  kgen.param.declare select_pred: <scalar<bool>>() -> !kgen.deferred = <@select_pred>
+  kgen.param.apply *"(lifted)apply_0" = [() -> !kgen.deferred: bind_params(:<scalar<bool>>() -> !kgen.deferred select_pred, cmp)]()
   %1 = kgen.deferred "index.cmp"(%arg0, %arg1 : index, index) {pred = #kgen.param.decl.ref<"(lifted)apply_0"> : !kgen.deferred} : i1
   pop.store %1, %arg2 : !kgen.pointer<i1>
   kgen.return %0 : i1
@@ -84,8 +84,8 @@ kgen.generator @to_str<mut: i1, *"value`2x": string>(%arg0: !kgen.struct<()>) ->
 }
 
 kgen.generator export @test(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1> byref_result) throws {
-  %0 = kgen.call @test_select_pred<:i1 1>(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
-  %1 = kgen.call @test_select_pred<:i1 0>(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
+  %0 = kgen.call @test_select_pred<:scalar<bool> true>(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
+  %1 = kgen.call @test_select_pred<:scalar<bool> false>(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
   %2 = kgen.call @test_elaborate_deferred_op(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
   %20 = kgen.call @test_elaborate_deferred_op_props_only(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
   %21 = kgen.call @test_elaborate_deferred_op_props_deferred(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
