@@ -33,7 +33,7 @@ from std.gpu.host.info import is_cpu, is_valid_target
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils.index import IndexList, StaticTuple
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.coord import Coord, CoordLike, DynamicCoord, coord_to_index_list
 from std.sys.info import has_apple_gpu_accelerator
 
 from std._plugin import CurrentPlugin
@@ -73,9 +73,15 @@ comptime _ReduceGeneratorPluginHookFnType = (
 
 
 @always_inline
-def _get_nd_indices_from_flat_index(
-    flat_index: Int, shape: IndexList, skip_dim: Int, out res: type_of(shape)
-):
+def _get_nd_indices_from_flat_index[
+    element_types: TypeList[Trait=CoordLike, ...],
+    //,
+    out_dtype: DType = Coord[*element_types].DTYPE,
+](
+    flat_index: Int,
+    shape: Coord[*element_types],
+    skip_dim: Int,
+) -> DynamicCoord[out_dtype, Coord[*element_types].rank]:
     """Converts a flat index into ND indices but skip over one of the dimensions.
 
     The ND indices will iterate from right to left. I.E
@@ -89,6 +95,70 @@ def _get_nd_indices_from_flat_index(
     We ignore the Nth dimension to allow that to be traversed in the elementwise
     function.
 
+    Parameters:
+        element_types: The element types of the shape `Coord`.
+        out_dtype: The dtype of the returned coordinate values.
+
+    Args:
+        flat_index: The flat index to convert.
+        shape: The shape of the ND space we are converting into.
+        skip_dim: The dimension to skip over. This represents the dimension
+                  which is being iterated across.
+
+    Constraints:
+        The shape `Coord` must be flat (no nested `Coord` elements).
+
+    Returns:
+        Constructed ND-index.
+    """
+    comptime assert Coord[
+        *element_types
+    ].is_flat, "`_get_nd_indices_from_flat_index` requires a flat `Coord` shape"
+
+    comptime rank = Coord[*element_types].rank
+    comptime Result = DynamicCoord[out_dtype, rank]
+    var res = Result()
+
+    # The inner dimensions ([outer, outer, inner]) are not traversed if
+    # drop last is set.
+    comptime if rank == 2:
+        if skip_dim == 1:
+            res[0] = rebind[Result.element_types[0]](
+                Scalar[out_dtype](flat_index)
+            )
+            res[1] = rebind[Result.element_types[1]](Scalar[out_dtype](0))
+        else:
+            res[0] = rebind[Result.element_types[0]](Scalar[out_dtype](0))
+            res[1] = rebind[Result.element_types[1]](
+                Scalar[out_dtype](flat_index)
+            )
+        return res
+
+    var curr_index = Scalar[out_dtype](flat_index)
+
+    comptime for i in reversed(range(rank)):
+        # There is one dimension we skip, this represents the inner loop that
+        # is being traversed.
+        if i == skip_dim:
+            res[i] = rebind[Result.element_types[i]](Scalar[out_dtype](0))
+        else:
+            var quotient, remainder = divmod(
+                curr_index, Scalar[out_dtype](shape[i].value())
+            )
+            curr_index = quotient
+            res[i] = rebind[Result.element_types[i]](remainder)
+
+    return res
+
+
+@always_inline
+def _get_nd_indices_from_flat_index(
+    flat_index: Int, shape: IndexList, skip_dim: Int, out res: type_of(shape)
+):
+    """Converts a flat index into ND indices but skip over one of the dimensions.
+
+    This overload forwards to the `Coord` implementation. See it for details.
+
     Args:
         flat_index: The flat index to convert.
         shape: The shape of the ND space we are converting into.
@@ -97,29 +167,14 @@ def _get_nd_indices_from_flat_index(
     Returns:
         Constructed ND-index.
     """
-
-    # The inner dimensions ([outer, outer, inner]) are not traversed if
-    # drop last is set.
-    comptime if shape.size == 2:
-        if skip_dim == 1:
-            return {flat_index, 0}
-        else:
-            return {0, flat_index}
-
-    comptime IntType = type_of(shape)._int_type
+    comptime dtype = type_of(shape).element_type
+    var coords = _get_nd_indices_from_flat_index[out_dtype=dtype](
+        flat_index, Coord(shape), skip_dim
+    )
 
     res = {}
-    var curr_index = IntType(flat_index)
-
-    comptime for i in reversed(range(shape.size)):
-        # There is one dimension we skip, this represents the inner loop that
-        # is being traversed.
-        if i == skip_dim:
-            res[i] = 0
-        else:
-            curr_index, res.data[i] = divmod(
-                curr_index, IntType(shape.get[i]())
-            )
+    comptime for i in range(type_of(shape).size):
+        res.data[i] = rebind[type_of(shape)._int_type](coords[i].value())
 
 
 # ===-----------------------------------------------------------------------===#
