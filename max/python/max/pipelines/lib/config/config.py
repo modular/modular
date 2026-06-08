@@ -180,11 +180,8 @@ _DISABLE_AUTO_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "Phi3ForCausalLM_ModuleV3",
     "Qwen2ForCausalLM",
     "Qwen2_5_VLForConditionalGeneration",
-    "Qwen3ForCausalLM",
-    "Qwen3MoeForCausalLM",
     "Qwen3VLForConditionalGeneration",
     "Qwen3VLMoeForConditionalGeneration",
-    "Qwen3_5ForConditionalGeneration",
     "Step3p5ForCausalLM",
 )
 
@@ -229,8 +226,6 @@ _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "Phi3ForCausalLM_ModuleV3",
     "Qwen2ForCausalLM",
     "Qwen2_5_VLForConditionalGeneration",
-    "Qwen3ForCausalLM",
-    "Qwen3MoeForCausalLM",
     "Qwen3VLForConditionalGeneration",
     "Qwen3VLMoeForConditionalGeneration",
     "Qwen3_5ForConditionalGeneration",
