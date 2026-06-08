@@ -4137,6 +4137,11 @@ static void replaceTraitAliasSelfTypes(AliasDeclOp alias,
       ParamDeclAttr::get(alias.getParamDecl().getName(),
                          // Get updated type with new Self.
                          replacer.replace(alias.getParamDecl().getType())));
+  // Also rewrite Self references in the alias's value expression so they
+  // point at the child trait's `_Self` rather than the parent's.
+  if (TypedAttr value = alias.getValueAttr()) {
+    alias.setValueAttr(cast<TypedAttr>(replacer.replace(value)));
+  }
 }
 
 void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,

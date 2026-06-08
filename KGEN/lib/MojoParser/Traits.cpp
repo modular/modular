@@ -816,12 +816,26 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       aliasValue = convertedValue.getIfPValue();
     } else {
       // Handle cases where this is a default value.
-      // Check if the alias was already satisfied by the default from
-      // another (refined) trait?
+      //
+      // `structAliasDeclOp` already points at the defaulted alias that
+      // satisfies this requirement (resolved as part of the trait body
+      // it lives in). When the struct doesn't declare the alias
+      // directly, `insertDefaultDecl` inserts the most-refined defaulted
+      // version from the conformance chain. For example, with
+      // `trait B(A)` where `B` provides `T = Int` and `struct Foo(B)`
+      // doesn't, the struct's `T` decl wraps B's defaulted `T`.
+      //
       // Clone from this struct-side defaulted op directly rather than
-      // re-looking up on `traitDecl` and resolving from there.
+      // re-looking up on `traitDecl` and resolving from there: when
+      // `traitDecl` is a less-refined parent (e.g., A) whose own `T` is
+      // abstract, the lookup would produce a non-defaulted, valueless
+      // alias and break subsequent conformance checks against the
+      // refining trait.
+      //
       // Skip the clone if a prior conformance check (e.g. Foo→A) already
-      // materialized this default into the struct body to avoid duplication.
+      // materialized this default into the struct body — otherwise the
+      // second pass (Foo→B) would duplicate the decl and trigger a
+      // "redeclaration" error during elaboration.
       AliasDeclOp clonedDefault;
       if (structAliasDecl->resolvedness == DeclResolvedness::body) {
         clonedDefault = structAliasDeclOp;
