@@ -476,13 +476,13 @@
             },
             {
               "type": "category",
-              "label": "core",
+              "label": "context",
               "link": {
                 "type": "doc",
-                "id": "max/api/python/pipelines.core"
+                "id": "max/api/python/pipelines.context"
               },
               "items": [
-                "__AUTOGEN:max.pipelines.core__"
+                "__AUTOGEN:max.pipelines.context__"
               ]
             },
             {
