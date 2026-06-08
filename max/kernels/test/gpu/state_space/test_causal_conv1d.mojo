@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, exp
+from std.sys import size_of
 
 from std.gpu.host import DeviceContext
 from layout import (
@@ -58,14 +59,22 @@ def run_causal_conv1d_gpu[
     width: Int,
     ctx: DeviceContext,
     rtol: Float64 = 0.01,
+    x_inner: Int = 1,
 ) raises:
-    """Test causal conv1d GPU kernel against CPU reference."""
+    """Test causal conv1d GPU kernel against CPU reference.
+
+    `x_inner` > 1 makes the input non-contiguous in L (inner stride = x_inner),
+    exercising the kernel's scalar strided-load fallback (the layout the Mamba
+    pipeline passes after permute+split). Output stays contiguous so the
+    comparison loop is unchanged.
+    """
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
-    var input_heap = ctx.enqueue_create_host_buffer[dtype](batch * dim * seqlen)
+    var x_count = batch * dim * seqlen * x_inner
+    var input_heap = ctx.enqueue_create_host_buffer[dtype](x_count)
     var input_h = LayoutTensor[dtype, layout_3d, _](
         input_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
@@ -93,8 +102,8 @@ def run_causal_conv1d_gpu[
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
-    # Initialize input data
-    rand[dtype](input_h.ptr, input_h.size())
+    # Initialize input data (fill the full strided extent)
+    rand[dtype](input_h.ptr, x_count)
     rand[dtype](weight_h.ptr, weight_h.size())
     rand[dtype](bias_h.ptr, bias_h.size())
 
@@ -104,10 +113,11 @@ def run_causal_conv1d_gpu[
     var result_gpu_buf = result_gpu_h
     var result_cpu_buf = result_cpu_h
 
-    # Strides for channel-first layout (B, C, L)
-    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var x_c_stride: UInt32 = UInt32(seqlen)
-    var x_l_stride: UInt32 = 1
+    # Strides for channel-first layout (B, C, L). Input inner stride = x_inner
+    # (non-contiguous when x_inner > 1); output stays contiguous.
+    var x_batch_stride: UInt32 = UInt32(dim * seqlen * x_inner)
+    var x_c_stride: UInt32 = UInt32(seqlen * x_inner)
+    var x_l_stride: UInt32 = UInt32(x_inner)
     var weight_c_stride: UInt32 = UInt32(width)
     var weight_width_stride: UInt32 = 1
     var out_batch_stride: UInt32 = UInt32(dim * seqlen)
@@ -158,7 +168,7 @@ def run_causal_conv1d_gpu[
     )
 
     # Allocate device buffers
-    var input_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
+    var input_device = ctx.enqueue_create_buffer[dtype](x_count)
     var weight_device = ctx.enqueue_create_buffer[dtype](dim * width)
     var bias_device = ctx.enqueue_create_buffer[dtype](dim)
     var output_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
@@ -209,7 +219,8 @@ def run_causal_conv1d_gpu[
 
     # Run GPU kernel
     comptime kNThreads = 128
-    comptime kNElts = 4
+    # 16-byte LDG: 8 elements for fp16/bf16, 4 for fp32.
+    comptime kNElts = 16 // size_of[dtype]()
 
     if width == 1:
         comptime kWidth = 1
@@ -250,7 +261,7 @@ def run_causal_conv1d_gpu[
                 out_l_stride,
                 bias_stride,
                 silu_activation_int8,
-                grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
+                grid_dim=(dim, batch),
                 block_dim=(kNThreads),
             )
     elif width == 2:
@@ -292,7 +303,7 @@ def run_causal_conv1d_gpu[
                 out_l_stride,
                 bias_stride,
                 silu_activation_int8,
-                grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
+                grid_dim=(dim, batch),
                 block_dim=(kNThreads),
             )
     elif width == 3:
@@ -334,7 +345,7 @@ def run_causal_conv1d_gpu[
                 out_l_stride,
                 bias_stride,
                 silu_activation_int8,
-                grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
+                grid_dim=(dim, batch),
                 block_dim=(kNThreads),
             )
     elif width == 4:
@@ -376,7 +387,7 @@ def run_causal_conv1d_gpu[
                 out_l_stride,
                 bias_stride,
                 silu_activation_int8,
-                grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
+                grid_dim=(dim, batch),
                 block_dim=(kNThreads),
             )
     else:
@@ -474,4 +485,61 @@ def test_gpu_causal_conv1d_strict_tolerance() raises:
         return
     run_causal_conv1d_gpu[DType.float32, "silu"](
         1, 1536, 7, 4, ctx=ctx, rtol=0.0001
+    )
+
+
+def test_gpu_causal_conv1d_multichunk() raises:
+    """Multi-chunk seqlen (> kNThreads*kNElts) exercises the chunk loop and the
+    inter-chunk halo carry."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    # fp32 kChunkSize = 128*4 = 512; 1100 spans 3 chunks (last partial).
+    run_causal_conv1d_gpu[DType.float32, "silu"](2, 8, 1100, 4, ctx=ctx)
+    run_causal_conv1d_gpu[DType.float32, "none"](1, 16, 1024, 3, ctx=ctx)
+
+
+def test_gpu_causal_conv1d_bf16() raises:
+    """BF16 (the production Mamba dtype) — kNElts=8, kChunkSize=1024. Covers the
+    16-byte vector path (aligned), the scalar path (unaligned seqlen) and a
+    multi-chunk seqlen."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    # bf16 needs a looser tolerance than fp32.
+    run_causal_conv1d_gpu[DType.bfloat16, "silu"](
+        2, 16, 1024, 4, ctx=ctx, rtol=0.03
+    )
+    run_causal_conv1d_gpu[DType.bfloat16, "none"](
+        2, 16, 1024, 4, ctx=ctx, rtol=0.03
+    )
+    # unaligned seqlen (35 % 8 != 0) -> scalar path
+    run_causal_conv1d_gpu[DType.bfloat16, "silu"](
+        2, 16, 35, 3, ctx=ctx, rtol=0.03
+    )
+    # multi-chunk (2100 > 1024) with partial tail
+    run_causal_conv1d_gpu[DType.bfloat16, "silu"](
+        1, 32, 2100, 4, ctx=ctx, rtol=0.03
+    )
+
+
+def test_gpu_causal_conv1d_noncontiguous() raises:
+    """Non-contiguous-L input (inner stride > 1) exercises the scalar strided
+    fallback — the layout the Mamba pipeline passes after permute+split."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    # x_inner=2: x_l_stride=2 disables the vector path, forcing strided loads.
+    run_causal_conv1d_gpu[DType.float32, "silu"](
+        2, 8, 64, 4, ctx=ctx, x_inner=2
+    )
+    run_causal_conv1d_gpu[DType.float32, "none"](
+        2, 8, 17, 3, ctx=ctx, x_inner=2
+    )
+    run_causal_conv1d_gpu[DType.bfloat16, "silu"](
+        2, 8, 64, 4, ctx=ctx, rtol=0.03, x_inner=3
+    )
+    # multi-chunk + strided
+    run_causal_conv1d_gpu[DType.float32, "silu"](
+        1, 16, 600, 4, ctx=ctx, x_inner=2
     )
