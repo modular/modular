@@ -3860,16 +3860,23 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
 
   // Process field decorators syntactically to avoid recursive scope lookups
   // that can arise when using the IR emitter from within a struct's scope.
-  // Currently only @doc_hidden is supported on struct fields.
+  // Currently only @doc_hidden and @__allow_legacy_any_origin_fields are
+  // supported on struct fields.
   for (auto &[decorator, _] : decoratorExprs) {
-    if (auto *declRef = dyn_cast<DeclRefNode>(decorator);
-        declRef && declRef->spelling == "doc_hidden") {
-      fieldOp.setIsDocHiddenAttr(UnitAttr::get(fieldOp.getContext()));
-    } else {
-      shared.emitError(decorator->getLoc(),
-                       "decorators not supported on this statement")
-          << SourceRange(decorator->getRangeStart(), decorator->getRangeEnd());
+    if (auto *declRef = dyn_cast<DeclRefNode>(decorator)) {
+      if (declRef->spelling == "doc_hidden") {
+        fieldOp.setIsDocHiddenAttr(UnitAttr::get(fieldOp.getContext()));
+        continue;
+      }
+      if (declRef->spelling == "__allow_legacy_any_origin_fields") {
+        fieldOp.setAllowLegacyAnyOriginAttr(
+            UnitAttr::get(fieldOp.getContext()));
+        continue;
+      }
     }
+    shared.emitError(decorator->getLoc(),
+                     "decorators not supported on this statement")
+        << SourceRange(decorator->getRangeStart(), decorator->getRangeEnd());
   }
 
   shared.notifyListenerOnStructFieldDecl(decl, identifierLoc);
