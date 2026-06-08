@@ -272,21 +272,14 @@ def _execute_ragged_increment_cache_lengths_graph(
         all_inputs[i].draft_attention_dispatch_metadata
         for i in range(len(all_inputs))
     ]
-    # MLA capturable-graph scalars: 1-element CPU buffers carried per
+    # MLA capturable-graph scalar: 1-element CPU buffer carried per
     # shard. Same value across the shards of a replica, so we just
     # pass through.
     mla_num_partitions = [
         all_inputs[i].mla_num_partitions for i in range(len(all_inputs))
     ]
-    mla_effective_split_len = [
-        all_inputs[i].mla_effective_split_len for i in range(len(all_inputs))
-    ]
     draft_mla_num_partitions = [
         all_inputs[i].draft_mla_num_partitions for i in range(len(all_inputs))
-    ]
-    draft_mla_effective_split_len = [
-        all_inputs[i].draft_mla_effective_split_len
-        for i in range(len(all_inputs))
     ]
     devices_per_replica = split_into_groups(
         devices, params.data_parallel_degree
@@ -381,11 +374,7 @@ def _execute_ragged_increment_cache_lengths_graph(
                         draft_attention_dispatch_metadata[gidx]
                     ),
                     mla_num_partitions=mla_num_partitions[gidx],
-                    mla_effective_split_len=mla_effective_split_len[gidx],
                     draft_mla_num_partitions=draft_mla_num_partitions[gidx],
-                    draft_mla_effective_split_len=(
-                        draft_mla_effective_split_len[gidx]
-                    ),
                 )
 
         input_replica_start += n_shards * num_caches

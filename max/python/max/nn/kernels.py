@@ -3031,7 +3031,6 @@ def mla_decode_graph(
     v_head_dim: int,
     scalar_args: TensorValue,
     num_partitions_scalar: TensorValue,
-    effective_split_len_scalar: TensorValue,
     *,
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
@@ -3162,10 +3161,10 @@ def mla_decode_graph(
             sparse_attn_sink,
         ]
 
-    # Capturable-graph scalars are appended after the optional sparse
+    # Capturable-graph scalar is appended after the optional sparse
     # tensors so the input order matches the MoGG op signature
     # (see graph_compiler/builtin_kernels/attention.mojo).
-    input_values += [num_partitions_scalar, effective_split_len_scalar]
+    input_values += [num_partitions_scalar]
 
     return ops.inplace_custom(
         op_name,
@@ -3197,7 +3196,6 @@ def mla_prefill_decode_graph(
     v_head_dim: int,
     scalar_args: TensorValue,
     num_partitions_scalar: TensorValue,
-    effective_split_len_scalar: TensorValue,
     *,
     w_k_scale: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
@@ -3327,8 +3325,8 @@ def mla_prefill_decode_graph(
             sparse_attn_sink,
         ]
 
-    # Capturable-graph scalars appended last (see MoGG op signature).
-    input_values += [num_partitions_scalar, effective_split_len_scalar]
+    # Capturable-graph scalar appended last (see MoGG op signature).
+    input_values += [num_partitions_scalar]
 
     return ops.inplace_custom(
         op_name,

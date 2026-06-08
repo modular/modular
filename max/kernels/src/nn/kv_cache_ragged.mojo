@@ -2922,10 +2922,9 @@ def generic_flare_mla_decode_kv_cache_ragged[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
-    # Capturable-graph scalars: forwarded from the MoGG op so SM100 grid
+    # Capturable-graph scalar: forwarded from the MoGG op so SM100 grid
     # sizing matches the kernel's divmod on scalar_args_buf[2].
     num_partitions_in: Optional[Int] = None,
-    effective_split_len_in: Optional[Int] = None,
 ) raises:
     @always_inline
     @parameter
@@ -2983,7 +2982,6 @@ def generic_flare_mla_decode_kv_cache_ragged[
             extra_topk_lengths,
             extra_scales_ptr,
             num_partitions_in,
-            effective_split_len_in,
         )
 
 
@@ -3027,11 +3025,10 @@ def _flare_mla_decode_kv_cache_ragged[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
-    # Capturable-graph scalars from the dispatcher input list. Optional[Int]
+    # Capturable-graph scalar from the dispatcher input list. Optional[Int]
     # is not @__copy_capture-able, so we unpack to (has, value) before the
     # closure and rebuild Optional[Int] inside it.
     num_partitions_in: Optional[Int] = None,
-    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
@@ -3058,7 +3055,6 @@ def _flare_mla_decode_kv_cache_ragged[
         extra_topk_lengths: Optional per-batch lengths for extra stream.
         extra_scales_ptr: Optional extra stream scales.
         num_partitions_in: Capturable-graph num_partitions override.
-        effective_split_len_in: Capturable-graph effective_split_len override.
     """
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
@@ -3079,10 +3075,6 @@ def _flare_mla_decode_kv_cache_ragged[
     var num_partitions_val = (
         num_partitions_in.value() if has_num_partitions else 0
     )
-    var has_effective_split_len = effective_split_len_in.__bool__()
-    var effective_split_len_val = (
-        effective_split_len_in.value() if has_effective_split_len else 0
-    )
 
     @parameter
     @always_inline
@@ -3099,16 +3091,11 @@ def _flare_mla_decode_kv_cache_ragged[
         extra_scales_ptr,
         has_num_partitions,
         num_partitions_val,
-        has_effective_split_len,
-        effective_split_len_val,
     )
     def _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         var _num_partitions_in: Optional[Int] = Optional[Int](
             num_partitions_val
         ) if has_num_partitions else Optional[Int](None)
-        var _effective_split_len_in: Optional[Int] = Optional[Int](
-            effective_split_len_val
-        ) if has_effective_split_len else Optional[Int](None)
         flare_mla_decoding[
             rank=q.rank,
             config=MHAConfig[q_dtype](_q_num_heads, _q_head_dim),
@@ -3135,7 +3122,6 @@ def _flare_mla_decode_kv_cache_ragged[
             extra_topk_lengths=extra_topk_lengths,
             extra_scales_ptr=extra_scales_ptr,
             num_partitions_in=_num_partitions_in,
-            effective_split_len_in=_effective_split_len_in,
         )
 
     dispatch_mask[
