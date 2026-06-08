@@ -3,7 +3,7 @@
 
 // CHECK-LABEL: kgen.func @loc_ref
 kgen.generator @loc_ref() {
-  kgen.param.if <0> {
+  kgen.param.if <false> {
     kgen.param.yield
   } else {
     kgen.param.declare A = <1>
@@ -11,7 +11,7 @@ kgen.generator @loc_ref() {
     kgen.param.constant = <1> loc(fused<#kgen.param.decl.ref<"A">:index>["a":0:0])
     kgen.param.yield
   }
-  kgen.param.if <0> {
+  kgen.param.if <false> {
     kgen.param.yield
   } else {
     kgen.param.declare A = <2>

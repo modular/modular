@@ -222,7 +222,7 @@ def testGetAsUninitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, 
 # CHECK-LABEL: testCondGetAsUninitializedObject
 # Early exit from def using __get_address_as_uninit_lvalue should work.
 # https://github.com/modularml/modular/issues/27472
-def testCondGetAsUninitializedObject(exit_early: __mlir_type.i1,
+def testCondGetAsUninitializedObject(exit_early: __mlir_type.`!kgen.scalar<bool>`,
                                   ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
   # CHECK: hlcf.elif
   if exit_early:
@@ -404,7 +404,7 @@ def impl_mutable_arg(mut a: FieldSensitiveMemExample, mut b: FieldSensitiveMemEx
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.fn @"test_result_consume_reg
-def test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
+def test_result_consume_reg(cond: __mlir_type.`!kgen.scalar<bool>`) -> RegExample:
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
   # CHECK-NEXT: %example2 = lit.var.decl
   # CHECK-NEXT: lit.var.lifetime.start %example2
@@ -412,6 +412,7 @@ def test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
   var example2 = RegExample()
 
   # CHECK-NEXT: hlcf.elif
+  # CHECK-NEXT: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
   # CHECK-NEXT: hlcf.elif.yield
   # CHECK-NEXT: } then {
   if (cond):
@@ -433,7 +434,7 @@ def consumeMem(var x: MemExample):
   pass
 
 # CHECK: lit.fn @"test_result_consume_mem
-def test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
+def test_result_consume_mem(cond: __mlir_type.`!kgen.scalar<bool>`) -> MemExample:
   # CHECK-NEXT: %example = lit.var.decl
   # CHECK-NEXT: lifetime.start %example
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%example)
@@ -562,7 +563,7 @@ def bigreg_test():
 
 # CHECK-LABEL: lit.struct.decl @ExoticDelExample
 struct ExoticDelExample(RegisterPassable):
-  var cond: __mlir_type.i1
+  var cond: __mlir_type.`!kgen.scalar<bool>`
   var b: BigRegExample
   var c: RegExample
 
@@ -576,7 +577,8 @@ struct ExoticDelExample(RegisterPassable):
     # CHECK-NEXT: hlcf.elif
     # CHECK-NEXT: [[CONDPTR:%.*]] = lit.ref.struct.ger %self[cond]
     # CHECK-NEXT: [[CONDVAL:%.*]] = lit.ref.load [[CONDPTR]]
-    # CHECK-NEXT: hlcf.elif.yield [[CONDVAL]]
+    # CHECK-NEXT: [[CONDI1:%.*]] = pop.cast_to_builtin [[CONDVAL]] : !kgen.scalar<bool> to i1
+    # CHECK-NEXT: hlcf.elif.yield [[CONDI1]]
     # CHECK-NEXT: } then {
     if self.cond:
       # This side we manually consume for c.
@@ -820,14 +822,15 @@ def call_variadic_owned_mems(var c: MemExample, var d: MemExample):
 
 
 # CHECK-LABEL: lit.fn @"test_partial_overwrite
-def test_partial_overwrite(cond: __mlir_type.i1):
+def test_partial_overwrite(cond: __mlir_type.`!kgen.scalar<bool>`):
   # CHECK-NEXT: %pair = lit.var.decl "pair"
   # CHECK-NEXT: lifetime.start %pair
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%pair)
   var pair = MemPair()
 
   # CHECK-NEXT: hlcf.elif
-  # CHECK-NEXT: hlcf.elif.yield %cond
+  # CHECK-NEXT: [[CONDI1:%.*]] = pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
+  # CHECK-NEXT: hlcf.elif.yield [[CONDI1]]
   # CHECK-NEXT: } then {
   if cond:
     # Inserted destruction of incoming pair.b
@@ -1201,11 +1204,12 @@ def test_origin_ctor_folding[orig1: Origin](abcdef: A):
 def useMemory(a: MemExample): pass
 
 # CHECK-LABEL: lit.fn @"testConds1
-def testConds1(cond: __mlir_type.i1, reg: RegExample, i: Int):
+def testConds1(cond: __mlir_type.`!kgen.scalar<bool>`, reg: RegExample, i: Int):
   # Implicit conversions.
   # Mojo Issue #49: https://github.com/modular/mojo/issues/49
 
-  # CHECK-NEXT: hlcf.if %cond -> !RegExample {
+  # CHECK-NEXT: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
+  # CHECK-NEXT: hlcf.if {{%.*}} -> !RegExample {
   # CHECK:        [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}copy"
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -1214,7 +1218,8 @@ def testConds1(cond: __mlir_type.i1, reg: RegExample, i: Int):
   # CHECK-NEXT: }
   _ = reg if cond else i
 
-  # CHECK: hlcf.if %cond -> !RegExample {
+  # CHECK: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
+  # CHECK-NEXT: hlcf.if {{%.*}} -> !RegExample {
   # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}(%i)
   # CHECK-NEXT:   hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -1228,8 +1233,9 @@ def testConds1(cond: __mlir_type.i1, reg: RegExample, i: Int):
 
 # Memory only conds. Issue (#13379)
 # CHECK-LABEL: lit.fn @"testConds2
-def testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
-  # CHECK:      [[IF:%.*]] = hlcf.if %cond
+def testConds2(cond: __mlir_type.`!kgen.scalar<bool>`, a: MemExample, b: MemExample) -> MemExample:
+  # CHECK:      pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if
   # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %a
   # CHECK-NEXT:   hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -1243,8 +1249,9 @@ def testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample
   # TODO(ternary memory optimization): The moveinit doesn't seem necessary,
   # could direct construct into the dest and elide the temp.
 
+  # CHECK-NEXT: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
   # CHECK-NEXT: [[IF:%.*]] = lit.var.decl "anonymous
-  # CHECK-NEXT: hlcf.if %cond
+  # CHECK-NEXT: hlcf.if {{%.*}}
   # CHECK-NEXT:   [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT:   lit.var.lifetime.start [[TMP]]
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[TMP]])
@@ -1265,7 +1272,8 @@ def testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample
   # CHECK-NEXT: lit.var.lifetime.end [[IF]]
 
 
-  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
+  # CHECK-NEXT: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if
   # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %a
   # CHECK-NEXT:   hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -1277,10 +1285,11 @@ def testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample
   return a if cond else b
 
 # CHECK-LABEL: lit.fn @"testConds3
-def testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
+def testConds3(cond: __mlir_type.`!kgen.scalar<bool>`, var a: MemExample, var b: MemExample,
               var m: RegExample, var n: RegExample):
+  # CHECK-NEXT: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
   # CHECK-NEXT: %t1 = lit.var.decl
-  # CHECK-NEXT: hlcf.if %cond
+  # CHECK-NEXT: hlcf.if {{%.*}}
   # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
   # CHECK-NEXT:    lit.ownership.use %a
   # CHECK-NEXT:    lit.var.lifetime.start %t1
@@ -1295,7 +1304,8 @@ def testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
   # CHECK-NEXT: }
   var t1 = a^ if cond else b^
 
-  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
+  # CHECK-NEXT: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if
   # CHECK-NEXT:    lit.call {{.*}}RegExample::@"__del__{{.*}}(%n)
   # CHECK-NEXT:    lit.ownership.use %m
   # CHECK-NEXT:    [[TMP:%.*]] = lit.load.consume %m
@@ -1316,8 +1326,9 @@ def testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
 
 # CHECK-LABEL: lit.fn @"my_min1
 # CHECK-SAME: !lit.ref<!Int, mut=and(*"x_is_mut`", *"y_is_mut`2"), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
-def my_min1(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [x, y] Int:
-  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
+def my_min1(cond: __mlir_type.`!kgen.scalar<bool>`, ref x: Int, ref y: Int) -> ref [x, y] Int:
+  # CHECK-NEXT: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %x
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {

@@ -987,7 +987,7 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
   // then elaborate them. We can do this by splicing the op list into the parent
   // block. We splice it this way to avoid remapping the ops when we process
   // them later.
-  bool resultBool = cast<BoolAttr>(value).getValue();
+  bool resultBool = cast<SIMDAttr>(value).getAsBool();
   // Get the appropriate region.
   Region &toProcess = op->getRegion(!resultBool);
 

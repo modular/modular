@@ -24,7 +24,7 @@ struct IterRange(ImplicitlyCopyable, Iterator):
         return self.value
 
 
-def test_parameter_if[a: __mlir_type.i1]():
+def test_parameter_if[a: __mlir_type.`!kgen.scalar<bool>`]():
     # CHECK: warning: '@parameter if' is deprecated; use 'comptime if'
     @parameter
     if a:
@@ -40,7 +40,7 @@ def test_parameter_for[a: Int]():
 
 # Test that 'comptime if' and 'comptime for' do NOT issue deprecation warnings.
 # CHECK-NOT: '@parameter
-def test_comptime_if[a: __mlir_type.i1]():
+def test_comptime_if[a: __mlir_type.`!kgen.scalar<bool>`]():
     comptime if a:
         var inside: Int
 

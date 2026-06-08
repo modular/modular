@@ -500,21 +500,22 @@ LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
     }
   }
 
-  auto condAttr = dyn_cast<BoolAttr>(op.getCond());
+  auto condAttr = sugarDynCast<SIMDAttr>(op.getCond());
   if (!condAttr)
     return b.notifyMatchFailure(op.getLoc(), "condition is not a constant");
+  bool condValue = condAttr.getAsBool();
 
   // We can't fold away the op entirely, because it defines a parameter scope
   // and this could create param decl conflicts. Instead, purge the dead region
   // and insert a `kgen.unreachable`.
-  Block &deadBlock = op->getRegion(condAttr.getValue()).front();
+  Block &deadBlock = op->getRegion(condValue).front();
 
   // Don't match again if the dead block is already purged.
   if (isa<UnreachableOp>(deadBlock.front()))
     return b.notifyMatchFailure(op.getLoc(), "dead block already purged");
 
   // Hoist all the non parameter defining ops out of the live region.
-  Block &liveBlock = op->getRegion(!condAttr.getValue()).front();
+  Block &liveBlock = op->getRegion(!condValue).front();
   while (!liveBlock.front().hasTrait<OpTrait::IsTerminator>()) {
     // Stop if we hit an operation defining a parameter. We don't hoist these as
     // the parameter regions could conflict.
@@ -570,10 +571,8 @@ ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
                                 ParametricInterpreterState &state) {
   Attribute cond = state.getReboundAttribute(getCond());
   unsigned regionId = 2;
-  if (auto result = dyn_cast<BoolAttr>(cond)) {
-    regionId = result.getValue() == 0 ? 1 : 0;
-  } else if (auto result = dyn_cast<IntegerAttr>(cond)) {
-    regionId = result.getValue() == 0 ? 1 : 0;
+  if (auto result = sugarDynCast<SIMDAttr>(cond)) {
+    regionId = result.getAsBool() ? 0 : 1;
   }
 
   if (regionId < 2) {

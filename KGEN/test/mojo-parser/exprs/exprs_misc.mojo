@@ -353,11 +353,12 @@ struct TypeE(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.fn @"test_mergewith
 def test_mergewith(
-    cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD
+    cond: __mlir_type.`!kgen.scalar<bool>`, a: TypeA, b: TypeB, c: TypeC, d: TypeD
 ):
     # One merges to the other.
     _ = a if cond else b
-    # CHECK: hlcf.if %cond
+    # CHECK: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
+    # CHECK-NEXT: hlcf.if
     # CHECK-NEXT:   [[ARES:%.*]] = lit.call {{.*}}TypeA::@"__merge_with__
     # CHECK-NEXT:   hlcf.yield [[ARES]]
     # CHECK-NEXT: } else {
@@ -366,7 +367,8 @@ def test_mergewith(
 
     # This merge with two merge_with
     _ = a if cond else c
-    # CHECK: hlcf.if %cond
+    # CHECK: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
+    # CHECK-NEXT: hlcf.if
     # CHECK:   [[ARES:%.*]] = lit.call {{.*}}TypeA::@"__merge_with__
     # CHECK:   hlcf.yield [[ARES]]
     # CHECK: } else {
@@ -376,7 +378,8 @@ def test_mergewith(
 
     # One merge and one implicit conversion.
     _ = c if cond else d
-    # CHECK: hlcf.if %cond
+    # CHECK: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
+    # CHECK-NEXT: hlcf.if
     # CHECK:   [[CRES:%.*]] = lit.call {{.*}}TypeC::@"__merge_with__
     # CHECK:   hlcf.yield [[CRES]]
     # CHECK: } else {

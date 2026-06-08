@@ -386,7 +386,7 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
 // CHECK-LABEL: @none_hlcf_controlflownode_donot_crash
 kgen.generator @none_hlcf_controlflownode_donot_crash() -> index {
   // COM: Conservatively mark all results as Unknown, but process the subregions.
-  kgen.param.declare condition: i1 = <0>
+  kgen.param.declare condition: scalar<bool> = <false>
   %0 = kgen.param.if <condition> -> index {
     %i0 = index.constant 0
     kgen.param.yield %i0: index

@@ -45,7 +45,7 @@ def test_and_bool[
 # CHECK-LABEL: lit.fn @"call_test_and_bool()"
 def call_test_and_bool():
     # There should still be a `cond` here.
-    # CHECK-NEXT: kgen.param.if <to_builtin(:scalar<bool> #lit.struct.extract<:!Bool cond
+    # CHECK-NEXT: kgen.param.if <#lit.struct.extract<:!Bool cond
     comptime if bool_pred(1) and bool_pred(2) and bool_pred(3):
         test_and_bool[1, 2, 3]()
 

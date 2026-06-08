@@ -430,10 +430,10 @@ kgen.generator @callee() always_inline {
 
 // CHECK-LABEL: kgen.generator @parent() {
 kgen.generator @parent() {
-  // CHECK-NEXT: kgen.param.if <1> {
+  // CHECK-NEXT: kgen.param.if <true> {
   // CHECK-NEXT:   kgen.param.declare A0 = <0>
 
-  // CHECK:        kgen.param.if <0> {
+  // CHECK:        kgen.param.if <false> {
   // CHECK-NEXT:     kgen.param.yield
   // CHECK-NEXT:   } else {
   // CHECK-NEXT:     kgen.param.declare A0 = <1>
@@ -446,11 +446,11 @@ kgen.generator @parent() {
 
 // CHECK: kgen.generator @callee
 kgen.generator @callee() always_inline {
-  kgen.param.if <1> {
+  kgen.param.if <true> {
     kgen.param.declare A = <0>
     kgen.param.yield
   } else {
-    kgen.param.if <0> {
+    kgen.param.if <false> {
       kgen.param.yield
     } else {
       kgen.param.declare A = <1>
@@ -467,14 +467,14 @@ kgen.generator @callee() always_inline {
 kgen.generator @parent() {
   // CHECK-NEXT: kgen.param.declare A: i1 = <0>
   kgen.param.declare A: i1 = <0>
-  // CHECK-NEXT: kgen.param.declare A1: i1 = <1>
+  // CHECK-NEXT: kgen.param.declare A1: scalar<bool> = <true>
   // CHECK-NEXT: kgen.param.if <A1> {
   // CHECK-NEXT:   kgen.param.declare A0 = <2>
   // CHECK-NEXT:   kgen.param.yield
   // CHECK-NEXT: } else {
-  // CHECK-NEXT:   kgen.param.declare A0: i1 = <A1>
+  // CHECK-NEXT:   kgen.param.declare A0: scalar<bool> = <A1>
   // CHECK-NEXT:   kgen.param.if <A0> {
-  // CHECK-NEXT:     kgen.param.declare B: i1 = <A1>
+  // CHECK-NEXT:     kgen.param.declare B: scalar<bool> = <A1>
   // CHECK-NOT: kgen.call @callee
   kgen.call @callee() : () -> ()
   kgen.return
@@ -482,14 +482,14 @@ kgen.generator @parent() {
 
 // CHECK: kgen.generator @callee
 kgen.generator @callee() always_inline {
-  kgen.param.declare A: i1 = <1>
+  kgen.param.declare A: scalar<bool> = <true>
   kgen.param.if <A> {
     kgen.param.declare A0 = <2>
     kgen.param.yield
   } else {
-    kgen.param.declare A0: i1 = <A>
+    kgen.param.declare A0: scalar<bool> = <A>
     kgen.param.if <A0> {
-      kgen.param.declare B: i1 = <A>
+      kgen.param.declare B: scalar<bool> = <A>
       kgen.param.yield
     } else {
       kgen.param.yield
@@ -570,7 +570,7 @@ kgen.generator @callee() always_inline {
 // -----
 
 // CHECK-LABEL: kgen.generator @inline_call_in_param_if
-kgen.generator @inline_call_in_param_if<cond: i1>() {
+kgen.generator @inline_call_in_param_if<cond: scalar<bool>>() {
   // CHECK-NEXT: kgen.param.if
   kgen.param.if <cond> {
     // CHECK: inlined.a
@@ -688,7 +688,7 @@ kgen.generator @struct_extract(%arg0: !kgen.struct<(simd<2, f32>)>) {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<size, type: dtype>(%arg0: !kgen.struct<(simd<size, type>)>) always_inline {
-  kgen.param.declare cond: i1 = <1>
+  kgen.param.declare cond: scalar<bool> = <true>
   kgen.param.if <cond> {
     %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(simd<size, type>)>
     kgen.param.yield
@@ -792,14 +792,14 @@ kgen.generator @main() {
 
 // COM: Give up on recursive elaboration instead of emitting an error.
 
-kgen.generator @passthrough<cond: i1>() always_inline {
-  kgen.call @recursive<:i1 cond>() : () -> ()
+kgen.generator @passthrough<cond: scalar<bool>>() always_inline {
+  kgen.call @recursive<:scalar<bool> cond>() : () -> ()
   kgen.return
 }
 
-kgen.generator @recursive<cond: i1>() always_inline {
+kgen.generator @recursive<cond: scalar<bool>>() always_inline {
   kgen.param.if <cond> {
-    kgen.call @passthrough<:i1 0>() : () -> ()
+    kgen.call @passthrough<:scalar<bool> false>() : () -> ()
     kgen.param.yield
   } else {
     kgen.param.yield
@@ -810,7 +810,7 @@ kgen.generator @recursive<cond: i1>() always_inline {
 // CHECK-LABEL: kgen.generator @root
 kgen.generator @root() {
   // CHECK-NEXT: kgen.call @recursive
-  kgen.call @recursive<:i1 1>() : () -> ()
+  kgen.call @recursive<:scalar<bool> true>() : () -> ()
   kgen.return
 }
 
@@ -820,41 +820,41 @@ kgen.generator @root() {
 // COM: https://github.com/modularml/modular/issues/10174
 
 kgen.generator @deeply_nested_paramif<value>() always_inline {
-  kgen.param.if<to_builtin(:scalar<bool> eq(value, 0))> {
+  kgen.param.if<eq(value, 0)> {
     kgen.param.yield
   } else {
-    kgen.param.if<to_builtin(:scalar<bool> eq(value, 1))> {
+    kgen.param.if<eq(value, 1)> {
       kgen.param.yield
     } else {
-      kgen.param.if<to_builtin(:scalar<bool> eq(value, 2))> {
+      kgen.param.if<eq(value, 2)> {
         kgen.param.yield
       } else {
-        kgen.param.if<to_builtin(:scalar<bool> eq(value, 3))> {
+        kgen.param.if<eq(value, 3)> {
           kgen.param.yield
         } else {
-          kgen.param.if<to_builtin(:scalar<bool> eq(value, 4))> {
+          kgen.param.if<eq(value, 4)> {
             kgen.param.yield
           } else {
-            kgen.param.if<to_builtin(:scalar<bool> eq(value, 5))> {
+            kgen.param.if<eq(value, 5)> {
               kgen.param.yield
             } else {
-              kgen.param.if<to_builtin(:scalar<bool> eq(value, 6))> {
+              kgen.param.if<eq(value, 6)> {
                 kgen.call @deeply_nested_paramif_0<1>() : () -> ()
                 kgen.param.yield
               } else {
-                kgen.param.if<to_builtin(:scalar<bool> eq(value, 7))> {
+                kgen.param.if<eq(value, 7)> {
                   kgen.param.yield
                 } else {
-                  kgen.param.if<to_builtin(:scalar<bool> eq(value, 8))> {
+                  kgen.param.if<eq(value, 8)> {
                     kgen.param.yield
                   } else {
-                    kgen.param.if<to_builtin(:scalar<bool> eq(value, 9))> {
+                    kgen.param.if<eq(value, 9)> {
                       kgen.param.yield
                     } else {
-                      kgen.param.if<to_builtin(:scalar<bool> eq(value, 10))> {
+                      kgen.param.if<eq(value, 10)> {
                         kgen.param.yield
                       } else {
-                        kgen.param.if<to_builtin(:scalar<bool> eq(value, 11))> {
+                        kgen.param.if<eq(value, 11)> {
                           kgen.param.yield
                         } else {
                           kgen.param.yield
@@ -885,40 +885,40 @@ kgen.generator @deeply_nested_paramif<value>() always_inline {
 }
 
 kgen.generator @deeply_nested_paramif_0<value>() always_inline {
-  kgen.param.if<to_builtin(:scalar<bool> eq(value, 0))> {
+  kgen.param.if<eq(value, 0)> {
     kgen.param.yield
   } else {
-    kgen.param.if<to_builtin(:scalar<bool> eq(value, 1))> {
+    kgen.param.if<eq(value, 1)> {
       kgen.param.yield
     } else {
-      kgen.param.if<to_builtin(:scalar<bool> eq(value, 2))> {
+      kgen.param.if<eq(value, 2)> {
         kgen.param.yield
       } else {
-        kgen.param.if<to_builtin(:scalar<bool> eq(value, 3))> {
+        kgen.param.if<eq(value, 3)> {
           kgen.param.yield
         } else {
-          kgen.param.if<to_builtin(:scalar<bool> eq(value, 4))> {
+          kgen.param.if<eq(value, 4)> {
             kgen.param.yield
           } else {
-            kgen.param.if<to_builtin(:scalar<bool> eq(value, 5))> {
+            kgen.param.if<eq(value, 5)> {
               kgen.param.yield
             } else {
-              kgen.param.if<to_builtin(:scalar<bool> eq(value, 6))> {
+              kgen.param.if<eq(value, 6)> {
                 kgen.param.yield
               } else {
-                kgen.param.if<to_builtin(:scalar<bool> eq(value, 7))> {
+                kgen.param.if<eq(value, 7)> {
                   kgen.param.yield
                 } else {
-                  kgen.param.if<to_builtin(:scalar<bool> eq(value, 8))> {
+                  kgen.param.if<eq(value, 8)> {
                     kgen.param.yield
                   } else {
-                    kgen.param.if<to_builtin(:scalar<bool> eq(value, 9))> {
+                    kgen.param.if<eq(value, 9)> {
                       kgen.param.yield
                     } else {
-                      kgen.param.if<to_builtin(:scalar<bool> eq(value, 10))> {
+                      kgen.param.if<eq(value, 10)> {
                         kgen.param.yield
                       } else {
-                        kgen.param.if<to_builtin(:scalar<bool> eq(value, 11))> {
+                        kgen.param.if<eq(value, 11)> {
                           kgen.param.yield
                         } else {
                           kgen.param.yield

@@ -17,7 +17,7 @@ kgen.generator @simple() {
 kgen.generator @nestedRegions() {
   // COM: reorder param decl to before use.
   // CHECK: kgen.param.declare cond_var
-  %0 = kgen.param.if <to_builtin(:scalar<bool> lt(cond_var, 10))> -> index {
+  %0 = kgen.param.if <lt(cond_var, 10)> -> index {
     // CHECK: kgen.param.declare next_lt
     // CHECK-NEXT: "should.not.appear"
     %1 = "should.not.appear"() : () -> index
@@ -54,7 +54,7 @@ kgen.generator @reorder_asserts() {
   kgen.param.assert <lt(q, w)>, "q is less than w"
 
   // CHECK: kgen.param.if
-  %1 = kgen.param.if <to_builtin(:scalar<bool> lt(q, w))> -> index {
+  %1 = kgen.param.if <lt(q, w)> -> index {
     // CHECK-NEXT: kgen.param.assert <ge(:scalar<index> from_builtin(q), 3)>
     // CHECK-NEXT: kgen.param.declare next_lt
     // CHECK-NEXT: kgen.param.assert <lt(:scalar<index> from_builtin(next_lt), from_builtin(q))>
@@ -93,7 +93,7 @@ kgen.generator @reorder_asserts_def_in_parent<q, w>() {
         // CHECK: kgen.param.assert <ge(:scalar<index> from_builtin(q), 3)>, "q is no less than 3"
         kgen.param.assert <ge(q, 3)>, "q is no less than 3"
         // CHECK: kgen.param.if
-        %1 = kgen.param.if <to_builtin(:scalar<bool> lt(q, iter))> -> index {
+        %1 = kgen.param.if <lt(q, iter)> -> index {
           // CHECK-NEXT: kgen.param.assert <ge(:scalar<index> from_builtin(iter), 3)>
           // CHECK-NEXT: kgen.param.assert <ge(:scalar<index> from_builtin(q), 3)>
           // CHECK-NEXT: %2 = "produce.value"() : () -> index
@@ -109,7 +109,7 @@ kgen.generator @reorder_asserts_def_in_parent<q, w>() {
       } else {
         // CHECK: kgen.param.assert <lt(:scalar<index> from_builtin(w), 3)>, "w is less than 3"
         // CHECK: kgen.param.if
-        %1 = kgen.param.if <to_builtin(:scalar<bool> lt(q, iter))> -> index {
+        %1 = kgen.param.if <lt(q, iter)> -> index {
           // CHECK-NEXT: kgen.param.assert <ge(:scalar<index> from_builtin(q), 3)>
           %2 = "produce.value"() : () -> index
           kgen.param.assert <ge(q, 3)>, "q is no less than 3"

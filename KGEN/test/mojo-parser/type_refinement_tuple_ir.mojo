@@ -37,7 +37,7 @@ def tuple_unpack_param_no_call[T: Base & Copyable & ImplicitlyCopyable](
 # CHECK: [[OUTER_B:%.*]] = lit.var.decl "b" var : !lit.ref<:!Base_Copyable_ImplicitlyCopyable T, mut
 # CHECK: kgen.rebind [[OUTER_A]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}
 # CHECK: kgen.rebind [[OUTER_B]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}
-# CHECK: kgen.param.if <1> {
+# CHECK: kgen.param.if <true> {
 # CHECK: [[INNER_A:%.*]] = lit.var.decl "a" var : !lit.ref<:!Base_Copyable_ImplicitlyCopyable T, mut
 # CHECK: [[INNER_B:%.*]] = lit.var.decl "b" var : !lit.ref<:!Base_Copyable_ImplicitlyCopyable T, mut
 # CHECK: kgen.rebind [[INNER_A]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!Base_Copyable_ImplicitlyCopyable T){{.*}}

@@ -36,8 +36,7 @@ kgen.generator export @main() {
   hlcf.loop "inlined_cf_scope" {
       kgen.param.declare _19x17_T: type = <string>
       kgen.param.apply *"(lifted)apply_0" = [() -> !kgen.scalar<bool>: @"_mlirtype_is_eq"<:type _19x17_T, :type index>]()
-      kgen.param.apply *"(lifted)apply_1" = [(!kgen.scalar<bool> read) -> i1: @"__mlir_i1__"](*"(lifted)apply_0")
-      kgen.param.if <*"(lifted)apply_1"> {
+      kgen.param.if <*"(lifted)apply_0"> {
         hlcf.break "inlined_cf_scope"
       } else {
         kgen.param.apply *"(lifted)apply_2" = [() -> !kgen.scalar<bool>: @"_mlirtype_is_eq"<:type _19x17_T, :type none>]()

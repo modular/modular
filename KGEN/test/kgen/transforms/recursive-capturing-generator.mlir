@@ -7,7 +7,7 @@ kgen.generator @use(%a: index) no_inline {
   kgen.return
 }
 
-kgen.generator @test<recurse: i1, inner: () capturing -> index>(%a: index) always_inline {
+kgen.generator @test<recurse: scalar<bool>, inner: () capturing -> index>(%a: index) always_inline {
   kgen.param.declare.region thing = () capturing -> index always_inline {
     kgen.return %a : index
   }
@@ -21,7 +21,7 @@ kgen.generator @test<recurse: i1, inner: () capturing -> index>(%a: index) alway
       kgen.return %idx42 : index
     }
     %idx77 = index.constant 77
-    kgen.call @test<:i1 0, :() capturing -> index noop>(%idx77) : (index) -> ()
+    kgen.call @test<:scalar<bool> false, :() capturing -> index noop>(%idx77) : (index) -> ()
 
     %second = kgen.call_param[() capturing -> index: thing]()
     kgen.call @use(%second) : (index) -> ()
@@ -43,7 +43,7 @@ kgen.generator export @top() {
   %idx11 = index.constant 11
   // CHECK-NEXT: call @use(%idx11)
   // CHECK-NEXT: call @use(%idx11)
-  kgen.call @test<:i1 1, :() capturing -> index noop>(%idx11) : (index) -> ()
+  kgen.call @test<:scalar<bool> true, :() capturing -> index noop>(%idx11) : (index) -> ()
   // CHECK-NEXT: return
   kgen.return
 }

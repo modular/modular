@@ -1210,7 +1210,7 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
   }];
 
   let arguments = (ins
-    AttrOfType<I1>:$cond,
+    AttrOfType<BoolScalar>:$cond,
     UnitAttr:$thenIsolated,
     UnitAttr:$elseIsolated
   );
@@ -1233,7 +1233,7 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
   }];
 
   let assemblyFormat = [{
-    ` ` `<` custom<ParamValue>($cond, "$_builder.getI1Type()") `` `>`
+    ` ` `<` custom<ScalarBoolParamValue>($cond) `` `>`
     (`->` type($results)^)?  $thenRegion `else` $elseRegion attr-dict
   }];
 
