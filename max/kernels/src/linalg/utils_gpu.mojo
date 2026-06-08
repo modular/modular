@@ -21,6 +21,7 @@ from std.sys import (
     size_of,
 )
 from std.ffi import external_call, _get_global_or_null
+from std.os import getenv
 
 from std.gpu import WARP_SIZE
 from std.gpu.primitives.grid_controls import PDLLevel
@@ -506,6 +507,22 @@ def _vendor_blas_fallback_disabled() -> Bool:
     ]()
     comptime bench_disabled = not get_defined_bool["use_vendor_blas", True]()
     return globally_disabled or bench_disabled
+
+
+def _apple_m5_matmul_enabled() -> Bool:
+    """Whether `MODULAR_APPLE_M5_MATMUL=1` opts in to the M5 matmul (else naive).
+
+    Runtime `getenv`, not a `get_defined_bool` compile-define: KGEN bakes the
+    latter at kernel-compile time and misses the runtime env in the MAX JIT path.
+    """
+    return getenv("MODULAR_APPLE_M5_MATMUL", "0") == "1"
+
+
+def _apple_m5_allow_lossy_f32_matmul() -> Bool:
+    """Whether `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL=1` opts fp32 a/b into the
+    M5 matmul. Off by default: the simdgroup MMA truncates fp32 operands to fp19.
+    """
+    return getenv("MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL", "0") == "1"
 
 
 def create_hilbert_lut(
