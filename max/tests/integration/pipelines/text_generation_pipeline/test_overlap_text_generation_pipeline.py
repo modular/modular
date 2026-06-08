@@ -13,6 +13,7 @@
 
 
 import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 import numpy as np
@@ -23,6 +24,9 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.context import FUTURE_TOKEN
+from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
+    _compute_seq_len,
+)
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     TextGenerationPipeline,
@@ -188,6 +192,7 @@ def test_warmup_graph_capture_batch_size(
     pipeline._kv_manager = MagicMock()
     mock_kv_params = MagicMock()
     mock_kv_params.page_size = 128
+    mock_kv_params.num_draft_tokens = 0
     pipeline._kv_manager.params = mock_kv_params
     pipeline._kv_manager.cache_params.return_value = mock_kv_params
     pipeline._kv_manager._total_num_pages = 100
@@ -219,6 +224,116 @@ def test_warmup_graph_capture_batch_size(
             pipeline._max_graph_capture_batch_size
             == expected_capture_batch_size
         )
+
+
+def _make_effective_cache_length_pipeline(
+    *,
+    max_seq_len: int,
+    num_draft_tokens: int,
+    num_draft_tokens_per_step: int,
+    total_num_pages: int,
+    page_size: int = 128,
+) -> OverlapTextGenerationPipeline[TextContext]:
+    pipeline = OverlapTextGenerationPipeline.__new__(
+        OverlapTextGenerationPipeline
+    )
+    mock_model = MagicMock()
+    mock_model.max_seq_len = max_seq_len
+    pipeline._pipeline_model = mock_model
+    pipeline._kv_manager = MagicMock()
+    mock_kv_params = MagicMock()
+    mock_kv_params.page_size = page_size
+    mock_kv_params.num_draft_tokens = num_draft_tokens
+    mock_kv_params.num_draft_tokens_per_step = num_draft_tokens_per_step
+    pipeline._kv_manager.params = mock_kv_params
+    pipeline._kv_manager._total_num_pages = total_num_pages
+    return pipeline
+
+
+@pytest.mark.parametrize(
+    ("num_draft_tokens", "num_draft_tokens_per_step", "expected_slack"),
+    [
+        (0, 1, 0),  # speculative decoding disabled: strict no-op
+        (3, 1, 10),  # eagle/mtp autoregressive drafts: 3*3 + 0 + 1
+        (4, 4, 14),  # dflash block drafts: 3*4 + 1 + 1
+    ],
+    ids=["disabled", "eagle", "dflash"],
+)
+def test_effective_max_cache_length_spec_slack(
+    num_draft_tokens: int,
+    num_draft_tokens_per_step: int,
+    expected_slack: int,
+) -> None:
+    """The capture bound folds in the worst-case speculative-decode slack."""
+    max_seq_len = 2048
+    pipeline = _make_effective_cache_length_pipeline(
+        max_seq_len=max_seq_len,
+        num_draft_tokens=num_draft_tokens,
+        num_draft_tokens_per_step=num_draft_tokens_per_step,
+        # Pool far larger than the bound so the capacity cap does not engage.
+        total_num_pages=10_000,
+    )
+    assert pipeline._effective_max_cache_length == max_seq_len + expected_slack
+
+
+@pytest.mark.parametrize(
+    ("num_draft_tokens", "num_draft_tokens_per_step"),
+    [
+        (3, 1),  # eagle/mtp
+        (4, 4),  # dflash
+    ],
+    ids=["eagle", "dflash"],
+)
+def test_effective_max_cache_length_covers_compute_seq_len(
+    num_draft_tokens: int,
+    num_draft_tokens_per_step: int,
+) -> None:
+    """The capture bound must cover the requirement ``runtime_inputs`` enforces.
+
+    ``PagedKVCacheManager.runtime_inputs`` rejects any batch whose
+    ``_compute_seq_len`` exceeds the captured ``max_cache_length``. Pin the
+    bound to ``_compute_seq_len`` directly so a future change to its
+    speculative-slack accounting is caught here rather than crashing
+    capture-replay at the context boundary (GEX-3748 / MAX-615).
+    """
+    max_seq_len = 2048
+    pipeline = _make_effective_cache_length_pipeline(
+        max_seq_len=max_seq_len,
+        num_draft_tokens=num_draft_tokens,
+        num_draft_tokens_per_step=num_draft_tokens_per_step,
+        total_num_pages=10_000,
+    )
+
+    # Worst-case boundary request: committed tokens fill the context window and
+    # carry the FUTURE_TOKEN placeholder, with the previous overlap batch's
+    # drafts all counted as accepted.
+    boundary_ctx = SimpleNamespace(
+        tokens=[0] * (max_seq_len + 1),
+        spec_decoding_state=SimpleNamespace(
+            maybe_accepted_draft_tokens=[0] * num_draft_tokens
+        ),
+    )
+    required = _compute_seq_len(
+        boundary_ctx,
+        num_steps=1,
+        num_draft_tokens=num_draft_tokens,
+        num_draft_tokens_per_step=num_draft_tokens_per_step,
+    )
+    assert pipeline._effective_max_cache_length >= required
+
+
+def test_effective_max_cache_length_capped_to_pool_capacity() -> None:
+    """The bound never exceeds the pages the pool actually allocated."""
+    pipeline = _make_effective_cache_length_pipeline(
+        max_seq_len=2048,
+        num_draft_tokens=3,
+        num_draft_tokens_per_step=1,
+        # One page of capacity: the bound clamps to page_size regardless of
+        # max_seq_len + slack.
+        total_num_pages=1,
+        page_size=128,
+    )
+    assert pipeline._effective_max_cache_length == 128
 
 
 def _make_pipeline_config_mock(

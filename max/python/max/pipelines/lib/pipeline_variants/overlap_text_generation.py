@@ -1790,11 +1790,30 @@ class OverlapTextGenerationPipeline(
 
     @property
     def _effective_max_cache_length(self) -> int:
-        """Max cache length capped to the KV pool capacity."""
+        """Capture-time upper bound on a request's runtime cache length.
+
+        ``PagedKVCacheManager.runtime_inputs`` rejects any batch whose
+        ``_compute_seq_len`` exceeds this bound, so it folds in the worst-case
+        speculative-decode slack a context-boundary request adds beyond
+        ``max_seq_len``. Capped to pool capacity, which already carries that
+        headroom, so capture never reserves more pages than were allocated.
+        """
+        params = self._kv_manager.params
+        spec_slack = 0
+        if params.num_draft_tokens > 0:
+            # Worst-case slack, matching `_compute_seq_len`: drafts verified
+            # and written next batch (2x), the prior overlap batch's drafts
+            # assumed accepted (1x), the DFlash block-draft slot, and the
+            # FUTURE_TOKEN placeholder.
+            block_draft_extra = (
+                1
+                if params.num_draft_tokens_per_step == params.num_draft_tokens
+                else 0
+            )
+            spec_slack = 3 * params.num_draft_tokens + block_draft_extra + 1
         return min(
-            self._pipeline_model.max_seq_len,
-            self._kv_manager._total_num_pages
-            * self._kv_manager.params.page_size,
+            self._pipeline_model.max_seq_len + spec_slack,
+            self._kv_manager._total_num_pages * params.page_size,
         )
 
     @property
