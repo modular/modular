@@ -147,14 +147,14 @@ paths:
                           type: integer
                           description: |
                             Output image height in pixels. Must be at least 128
-                            and a multiple of 16. Defaults to the model's
+                            and a multiple of 8. Defaults to the model's
                             native resolution.
                           minimum: 128
                         width:
                           type: integer
                           description: |
                             Output image width in pixels. Must be at least 128
-                            and a multiple of 16. Defaults to the model's
+                            and a multiple of 8. Defaults to the model's
                             native resolution.
                           minimum: 128
                         steps:
