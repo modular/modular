@@ -1261,7 +1261,8 @@ Type StructFieldOp::getReboundType(StructType structSelfType,
 
 void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,
                           StringAttr name, Type type) {
-  build(builder, odsState, name, type, /*docString=*/{}, /*isDocHidden=*/false);
+  build(builder, odsState, name, type, /*docString=*/{}, /*isDocHidden=*/false,
+        /*allowLegacyAnyOrigin=*/false);
 }
 
 void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,

@@ -502,7 +502,9 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     TypeAttr:$type,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // Set if the field has an @doc_hidden decorator on it.
-    UnitAttr:$isDocHidden
+    UnitAttr:$isDocHidden,
+    // Set if the field allows legacy AnyOrigin usage.
+    UnitAttr:$allowLegacyAnyOrigin
   );
   let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
 
