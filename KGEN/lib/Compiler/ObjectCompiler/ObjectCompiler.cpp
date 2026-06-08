@@ -760,7 +760,7 @@ loadBitcodeFromResource(llvm::LLVMContext &context,
       StringRef(bitcodeData.begin(), bitcodeData.size()), "package_bitcode");
 
   llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
-      llvm::parseBitcodeFile(bufferRef, context);
+      llvm::getLazyBitcodeModule(bufferRef, context);
   if (!moduleOr)
     return Error("Failed to parse bitcode from package: " +
                  llvm::toString(moduleOr.takeError()));
