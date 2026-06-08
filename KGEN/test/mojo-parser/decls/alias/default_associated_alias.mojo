@@ -64,3 +64,29 @@ struct Bar(D):
     # CHECK:      kgen.conformance @"{{.*}}::D"
     # CHECK-NEXT:   kgen.witness "T" : !AnyType = !Int
     pass
+
+
+# COM: When a refining trait inherits a defaulted alias whose default
+# COM: references `Self.X`, the clone in the child trait must rebind
+# COM: `_Self` to the child trait's own parameter.
+
+# CHECK-LABEL: lit.trait.decl @Parent
+trait Parent:
+    # CHECK:      lit.alias.decl *"A`{{[0-9]+}}": !Int = <{1}>
+    # CHECK-SAME:   {defaultedAssociatedAlias}
+    comptime A: Int = 1
+    # In Parent, `Self.X` lowers to references against Parent's `_Self`.
+    # CHECK:      lit.alias.decl *"B`{{[0-9]+}}": !Int = <sugar_member_alias(!kgen.param<:!Parent *"_Self`">, "A", #kgen.get_witness<:!Parent *"_Self`", "{{.*}}::Parent", "A">)>
+    # CHECK-SAME:   {defaultedAssociatedAlias}
+    comptime B: Int = Self.A
+
+# CHECK-LABEL: lit.trait.decl @Child
+trait Child(Parent):
+    # `A` has no Self references in its value, so the clone keeps `<{1}>`.
+    # CHECK:      lit.alias.decl *"A`{{[0-9]+}}": !Int = <{1}>
+    # CHECK-SAME:   {defaultedAssociatedAlias, inheritedFrom = @{{.*}}::@Parent}
+    # `B`'s value DOES reference `_Self`; after cloning into Child, those
+    # `_Self` references must be retyped from `!Parent` to `!Child`.
+    # CHECK:      lit.alias.decl *"B`{{[0-9]+}}": !Int = <sugar_member_alias(!kgen.param<:!Child *"_Self`">, "A", #kgen.get_witness<:!Child *"_Self`", "{{.*}}::Parent", "A">)>
+    # CHECK-SAME:   {defaultedAssociatedAlias, inheritedFrom = @{{.*}}::@Parent}
+    pass
