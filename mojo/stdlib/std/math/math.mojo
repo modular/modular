@@ -32,7 +32,7 @@ from std.sys import (
 )
 from std.sys._assembly import inlined_assembly
 from std.ffi import _external_call_const
-from std.sys.info import _is_sm_9x_or_newer, is_32bit
+from std.sys.info import _is_sm_8x_or_newer, _is_sm_9x_or_newer, is_32bit
 
 from std.algorithm import vectorize
 from std.bit import count_trailing_zeros
@@ -398,17 +398,31 @@ def exp2[
                     scalar_constraints="=h,h",
                     vector_constraints="=r,r",
                 ](x)
-            else:
+            elif _is_sm_8x_or_newer():
                 return _call_ptx_intrinsic[
                     instruction="ex2.approx.f16", constraints="=h,h"
                 ](x)
-        elif dtype == DType.bfloat16 and _is_sm_9x_or_newer():
-            return _call_ptx_intrinsic[
-                scalar_instruction="ex2.approx.ftz.bf16",
-                vector2_instruction="ex2.approx.ftz.bf16x2",
-                scalar_constraints="=h,h",
-                vector_constraints="=r,r",
-            ](x)
+            else:
+                # Pre-Ampere (Volta sm_70, Turing sm_75): `ex2.approx.f16`
+                # requires PTX ISA 7.0+, which is not emitted for these targets.
+                # Compute in float32 instead. See issue #6653.
+                return _call_ptx_intrinsic[
+                    instruction="ex2.approx.ftz.f32", constraints="=f,f"
+                ](x.cast[DType.float32]()).cast[dtype]()
+        elif dtype == DType.bfloat16:
+            comptime if _is_sm_9x_or_newer():
+                return _call_ptx_intrinsic[
+                    scalar_instruction="ex2.approx.ftz.bf16",
+                    vector2_instruction="ex2.approx.ftz.bf16x2",
+                    scalar_constraints="=h,h",
+                    vector_constraints="=r,r",
+                ](x)
+            else:
+                # `ex2.approx.bf16` is only available on sm_90+; compute in
+                # float32 on older NVIDIA GPUs. See issue #6653.
+                return _call_ptx_intrinsic[
+                    instruction="ex2.approx.ftz.f32", constraints="=f,f"
+                ](x.cast[DType.float32]()).cast[dtype]()
         elif dtype == DType.float32:
             return _call_ptx_intrinsic[
                 instruction="ex2.approx.ftz.f32", constraints="=f,f"
@@ -1132,6 +1146,17 @@ def tanh[
 
     comptime if is_nvidia_gpu():
         comptime instruction = "tanh.approx.f32"
+
+        comptime if not _is_sm_8x_or_newer():
+            # Pre-Ampere (Volta sm_70, Turing sm_75): every `tanh.approx.*` PTX
+            # instruction (including the f32 form) requires PTX ISA 7.0+, which
+            # is not emitted for these targets. Compute tanh from `exp2`
+            # (`ex2.approx.ftz.f32`, valid on all NVIDIA targets) in float32:
+            #   tanh(x) = 1 - 2 / (exp2(2*log2(e) * x) + 1)
+            # The `1 - 2/(...)` form stays finite for large |x|. See issue #6653.
+            comptime two_log2e = 2.8853900817779269  # 2 * log2(e)
+            var e2x = exp2(x.cast[DType.float32]() * two_log2e)
+            return (1.0 - 2.0 / (e2x + 1.0)).cast[dtype]()
 
         comptime if dtype == DType.float16:
             return _call_ptx_intrinsic[
