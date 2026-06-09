@@ -373,6 +373,15 @@ This version is still a work in progress.
   through this trait must now spell it out explicitly, for example
   `T: Indexer & ImplicitlyDestructible`.
 
+- Added the `UntrackedOrigin` and `UnsafeAnyOrigin` origin aliases (and their
+  `Mut`/`Immut` variants) as the new names for `ExternalOrigin` and
+  `AnyOrigin`, respectively. `UntrackedOrigin` is the empty origin: it aliases
+  nothing, so the lifetime checker has nothing to track, and it remains a
+  supported tool for interfacing with memory from outside the Mojo program.
+  `UnsafeAnyOrigin` is the universal origin: it might alias anything, defeating
+  lifetime extension and exclusivity checking, so its `Unsafe` prefix marks it
+  as an escape hatch slated for deprecation and removal.
+
 ## Tooling changes
 
 - Importing a Mojo module from Python no longer fails when the module lives in a
