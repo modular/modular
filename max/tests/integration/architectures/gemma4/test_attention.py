@@ -36,6 +36,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
+from test_common.graph_utils import is_b100_b200
 from torch.utils.dlpack import from_dlpack
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
 
@@ -82,16 +83,18 @@ def compiled_global_bf16(
 
 
 # ---------------------------------------------------------------------------
-# FP8 compiled fixtures
+# Native pure-fp8 compiled fixtures (no per-block scales, scale=1)
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
-def compiled_local_fp8(
+def compiled_local_native_fp8(
     session: InferenceSession,
     text_config: Gemma3TextConfig,
     attention_weights_local: dict[str, torch.Tensor],
 ) -> CompiledAttention:
+    if not is_b100_b200():
+        pytest.skip("Native FP8 MHA requires B200 (SM100)")
     return build_max_attention(
         session,
         text_config,
@@ -100,16 +103,17 @@ def compiled_local_fp8(
         DeviceRef.GPU(),
         layer_idx=0,
         cache_dtype=DType.float8_e4m3fn,
-        quantization_granularity=64,
     )
 
 
 @pytest.fixture(scope="module")
-def compiled_global_fp8(
+def compiled_global_native_fp8(
     session: InferenceSession,
     text_config: Gemma3TextConfig,
     attention_weights_global: dict[str, torch.Tensor],
 ) -> CompiledAttention:
+    if not is_b100_b200():
+        pytest.skip("Native FP8 MHA requires B200 (SM100)")
     return build_max_attention(
         session,
         text_config,
@@ -118,7 +122,6 @@ def compiled_global_fp8(
         DeviceRef.GPU(),
         layer_idx=5,
         cache_dtype=DType.float8_e4m3fn,
-        quantization_granularity=64,
     )
 
 
@@ -176,54 +179,29 @@ def test_attention_global(
 
 
 # ---------------------------------------------------------------------------
-# FP8 KV regression tests
+# Native pure-fp8 regression tests
 # ---------------------------------------------------------------------------
-# Regression: fp8 KV path must match bf16 KV path closely.
-#
-# `interleaved` controls the RoPE rotation PAIRING (`(2k, 2k+1)` vs HF's
-# `(k, k+head_dim/2)`).  Trained Gemma4 weights expect the HF pairing; a
-# kernel-driven flip to `interleaved=True` would rotate the wrong
-# dimension pairs and corrupt attention scores.
-#
-# The fp8 K-store kernel writes the rope output contiguously regardless
-# of the pairing convention — Q·K dot product is permutation-invariant
-# so this works as long as Q and K share the storage layout (they do).
-#
-# **Sensitivity caveat** (verified empirically): with random weights at
-# checkpoint-matched STD (~0.03) and a single 11-token prefill, both
-# `interleaved=True` (broken) and `interleaved=False` (correct) produce
-# attention outputs with cosine ~0.9997 — the bug does not manifest
-# without trained-weight structure to amplify the wrong-pair rotation.
-# So this unit test is a **smoke gate**, not a sufficient bug-detector.
-# The authoritative ground truth is a server-level smoke (math /
-# multi-turn coherent generation) under a real Gemma4 checkpoint.
-#
-# What these tests DO guarantee:
-# 1. The fp8 KV graph compiles and runs end-to-end without crash.
-# 2. The fp8 KV path's attention output is cosine-close to bf16, ruling
-#    out catastrophic layout/scale/dequant errors (which would drop
-#    cosine to < 0.9 even on random weights).
-# 3. The fp8 path exercises `use_interleaved_rope=True` (matching
-#    production gemma4.py wiring) so a future regression that reads
-#    that flag back through the rope_interleaved override would route
-#    the wrong way and surface here only if the actual kernel-level
-#    contract is broken (e.g. the storage-order scale blocking
-#    regresses).
+# These exercise the native pure-fp8 path: fp8 Q/K/V read directly from the
+# paged cache, Q@K^T and P@V both raw fp8 MMAs at tensorwise scale=1, bf16
+# output. Routes through `mo.rope_split_store.ragged.paged` (outputs roped Q
+# as fp8) and `mo.mha.ragged.paged` (fp8 Q+KV in, bf16 out).
+# Cosine vs the bf16 baseline must clear the same 0.99 smoke bar. Same
+# sensitivity caveat: random-weight smoke gate, not a sufficient bug-detector
+# — end-to-end serving accuracy (e.g. gsm8k under a real checkpoint) is the
+# authoritative correctness gate.
 
 
-def test_attention_fp8_kv_matches_bf16_local(
+def test_attention_native_fp8_matches_bf16_local(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
     compiled_local_bf16: CompiledAttention,
-    compiled_local_fp8: CompiledAttention,
+    compiled_local_native_fp8: CompiledAttention,
     device: Device,
 ) -> None:
-    """Regression: sliding (head_dim=256) layer fp8-vs-bf16 cosine must
-    stay above 0.99.  Catches RoPE pairing / storage-layout mismatches.
-    """
+    """Native pure-fp8 (no scales) sliding (head_dim=256) layer vs bf16."""
     assert_fp8_matches_bf16(
         compiled_local_bf16,
-        compiled_local_fp8,
+        compiled_local_native_fp8,
         input_tensor,
         device,
         layer_idx=0,
@@ -231,19 +209,17 @@ def test_attention_fp8_kv_matches_bf16_local(
     )
 
 
-def test_attention_fp8_kv_matches_bf16_global(
+def test_attention_native_fp8_matches_bf16_global(
     text_config: Gemma3TextConfig,
     input_tensor: torch.Tensor,
     compiled_global_bf16: CompiledAttention,
-    compiled_global_fp8: CompiledAttention,
+    compiled_global_native_fp8: CompiledAttention,
     device: Device,
 ) -> None:
-    """Regression: global (head_dim=512) layer fp8-vs-bf16 cosine must
-    stay above 0.99.  Catches RoPE pairing / storage-layout mismatches.
-    """
+    """Native pure-fp8 (no scales) global (head_dim=512) layer vs bf16."""
     assert_fp8_matches_bf16(
         compiled_global_bf16,
-        compiled_global_fp8,
+        compiled_global_native_fp8,
         input_tensor,
         device,
         layer_idx=5,

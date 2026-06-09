@@ -282,7 +282,7 @@ def execute_pure_fp8_test[
 
 
 # ===-----------------------------------------------------------------------===#
-# Entry point — d=512 prefill cases (mirrors test_mha_sm100_fp8_kv_d512_prefill)
+# Entry point — d=512 prefill cases
 # ===-----------------------------------------------------------------------===#
 
 

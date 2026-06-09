@@ -10,21 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-# Gemma4-31B-IT-NVFP4 on B200 with FP8 KV cache.
-#
-# Doubles the KV page pool (~1029 → ~2058 pages at 0.99 utilization) so that
-# max_seq_len resolves to the full 262144 without auto-clamping.
-# Scale config (granularity=64, scale_dtype=float32) is wired automatically
-# through construct_kv_params when kv_cache_format=float8_e4m3fn.
 model:
-  model_path: nvidia/Gemma-4-31B-IT-NVFP4
+  model_path: google/gemma-4-31B-it
   kv_cache:
     kv_cache_format: float8_e4m3fn
-    device_memory_utilization: 0.99
-    enable_prefix_caching: true
     kv_cache_page_size: 128
 
 runtime:
-  max_batch_size: 128
-  max_batch_input_tokens: 32768
-  enable_chunked_prefill: true
+  device_graph_capture: true

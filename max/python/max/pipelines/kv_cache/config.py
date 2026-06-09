@@ -92,7 +92,9 @@ class KVCacheConfig(ConfigFileModel):
 
     kv_cache_page_size: int = Field(
         default=128,
-        description="The number of tokens in a single page in the paged KVCache.",
+        description=(
+            "The number of tokens in a single page in the paged KVCache."
+        ),
     )
     """The number of tokens in a single page in the paged KV cache."""
 

@@ -198,7 +198,6 @@ class KVCacheBuffer:
             raise ValueError(
                 "Values and scales must have the same number of pages"
             )
-
         for value, scale in zip(self.values, self.scales, strict=True):
             if value.device != scale.device:
                 raise ValueError(
@@ -415,11 +414,14 @@ class KVCacheParams(KVCacheParamInterface):
             # Data parallel mode: simply duplicate the heads across all devices
             if self.n_devices < self.data_parallel_degree:
                 raise ValueError(
-                    f"Data parallelism degree ({self.data_parallel_degree}) cannot be greater than the number of devices ({self.n_devices})"
+                    f"Data parallelism degree ({self.data_parallel_degree})"
+                    " cannot be greater than the number of devices"
+                    f" ({self.n_devices})"
                 )
             if self.data_parallel_degree < self.n_devices:
                 raise ValueError(
-                    f"We do not yet support DP + TP at the same time. Found {self.data_parallel_degree=} and {self.n_devices=}"
+                    "We do not yet support DP + TP at the same time. Found"
+                    f" {self.data_parallel_degree=} and {self.n_devices=}"
                 )
             self.n_kv_heads_per_device = self.n_kv_heads
             self.num_q_heads_per_device = self.num_q_heads
@@ -432,7 +434,9 @@ class KVCacheParams(KVCacheParamInterface):
             else:
                 if self.n_kv_heads % self.n_devices != 0:
                     raise ValueError(
-                        f"Number of KV heads ({self.n_kv_heads}) must be divisible by the number of devices ({self.n_devices})"
+                        f"Number of KV heads ({self.n_kv_heads}) must be"
+                        " divisible by the number of devices"
+                        f" ({self.n_devices})"
                     )
                 self.n_kv_heads_per_device = max(
                     self.n_kv_heads // self.n_devices, 1
@@ -443,7 +447,9 @@ class KVCacheParams(KVCacheParamInterface):
             if self.num_q_heads is not None:
                 if self.num_q_heads % self.n_devices != 0:
                     raise ValueError(
-                        f"Number of query heads ({self.num_q_heads}) must be divisible by the number of devices ({self.n_devices})"
+                        f"Number of query heads ({self.num_q_heads}) must be"
+                        " divisible by the number of devices"
+                        f" ({self.n_devices})"
                     )
                 self.num_q_heads_per_device = max(
                     self.num_q_heads // self.n_devices, 1
@@ -456,11 +462,13 @@ class KVCacheParams(KVCacheParamInterface):
         ):
             if not self.enable_prefix_caching:
                 raise ValueError(
-                    f"KV connector '{self.kv_connector.value}' requires prefix caching to be enabled"
+                    f"KV connector '{self.kv_connector.value}' requires prefix"
+                    " caching to be enabled"
                 )
             if self.host_kvcache_swap_space_gb is None:
                 raise ValueError(
-                    f"host_kvcache_swap_space_gb is required when kv_connector is '{self.kv_connector.value}'"
+                    "host_kvcache_swap_space_gb is required when kv_connector"
+                    f" is '{self.kv_connector.value}'"
                 )
 
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
@@ -471,7 +479,8 @@ class KVCacheParams(KVCacheParamInterface):
                 != 0
             ):
                 raise ValueError(
-                    "KVCache quantization granularity must evenly divide KV head dimension."
+                    "KVCache quantization granularity must evenly divide KV"
+                    " head dimension."
                 )
             if self.kvcache_quant_config is None:
                 raise ValueError("KVCache quantization config required.")
@@ -629,8 +638,8 @@ class KVCacheParams(KVCacheParamInterface):
         """
         if self.n_devices % self.data_parallel_degree != 0:
             raise ValueError(
-                f"Number of devices ({self.n_devices}) must be evenly divisible "
-                f"by data parallel degree ({self.data_parallel_degree})"
+                f"Number of devices ({self.n_devices}) must be evenly divisible"
+                f" by data parallel degree ({self.data_parallel_degree})"
             )
 
         devices_per_replica = split_into_groups(
@@ -893,19 +902,22 @@ class MultiKVCacheParams(KVCacheParamInterface):
         data_parallel_degrees = {p.data_parallel_degree for p in self.params}
         if len(data_parallel_degrees) > 1:
             raise ValueError(
-                f"All params must use the same data parallel degree, got: {data_parallel_degrees}"
+                "All params must use the same data parallel degree, got:"
+                f" {data_parallel_degrees}"
             )
 
         n_devices = {p.n_devices for p in self.params}
         if len(n_devices) > 1:
             raise ValueError(
-                f"All params must use the same number of devices, got: {n_devices}"
+                "All params must use the same number of devices, got:"
+                f" {n_devices}"
             )
 
         kv_connectors = {p.kv_connector for p in self.params}
         if len(kv_connectors) > 1:
             raise ValueError(
-                f"All params must use the same kv_connector, got: {kv_connectors}"
+                "All params must use the same kv_connector, got:"
+                f" {kv_connectors}"
             )
 
         host_kvcache_swap_space_gb = {
@@ -913,19 +925,22 @@ class MultiKVCacheParams(KVCacheParamInterface):
         }
         if len(host_kvcache_swap_space_gb) > 1:
             raise ValueError(
-                f"All params must use the same host_kvcache_swap_space_gb, got: {host_kvcache_swap_space_gb}"
+                "All params must use the same host_kvcache_swap_space_gb, got:"
+                f" {host_kvcache_swap_space_gb}"
             )
 
         speculative_methods = {p.speculative_method for p in self.params}
         if len(speculative_methods) > 1:
             raise ValueError(
-                f"All params must use the same speculative_method, got: {speculative_methods}"
+                "All params must use the same speculative_method, got:"
+                f" {speculative_methods}"
             )
 
         num_draft_tokens_set = {p.num_draft_tokens for p in self.params}
         if len(num_draft_tokens_set) > 1:
             raise ValueError(
-                f"All params must use the same num_draft_tokens, got: {num_draft_tokens_set}"
+                "All params must use the same num_draft_tokens, got:"
+                f" {num_draft_tokens_set}"
             )
 
     @property
@@ -1010,7 +1025,7 @@ def compute_num_device_blocks(
     )
     if num_allocable_blocks == 0:
         raise RuntimeError(
-            f"Insufficient cache memory to allocate even a single page.\n"
+            "Insufficient cache memory to allocate even a single page.\n"
             f"One page requires {single_page_size_bytes_str} but only "
             f"{cache_memory_str} are available{across_x_devices_str}."
         )
@@ -1020,10 +1035,11 @@ def compute_num_device_blocks(
             max_batch_size * params.bytes_per_block
         )
         logger.warning(
-            f"Insufficient cache memory to support a batch containing {max_batch_size} "
-            f"requests with one token per request. Need to allocate at least {max_batch_size} "
-            f"pages ({memory_needed_str}), but only have enough memory for {num_allocable_blocks} "
-            f"pages ({cache_memory_str}{across_x_devices_str})."
+            "Insufficient cache memory to support a batch containing"
+            f" {max_batch_size} requests with one token per request. Need to"
+            f" allocate at least {max_batch_size} pages ({memory_needed_str}),"
+            f" but only have enough memory for {num_allocable_blocks} pages"
+            f" ({cache_memory_str}{across_x_devices_str})."
         )
 
     if (
@@ -1034,11 +1050,12 @@ def compute_num_device_blocks(
             max_blocks_per_req * params.bytes_per_block
         )
         logger.warning(
-            f"Insufficient cache memory to support a batch containing one request "
-            f"at the max sequence length of {max_seq_len} tokens. "
-            f"Need to allocate at least {max_blocks_per_req} "
-            f"pages ({memory_needed_str}), but only have enough memory for "
-            f"{num_allocable_blocks} pages ({cache_memory_str}{across_x_devices_str})."
+            "Insufficient cache memory to support a batch containing one"
+            f" request at the max sequence length of {max_seq_len} tokens. Need"
+            f" to allocate at least {max_blocks_per_req} pages"
+            f" ({memory_needed_str}), but only have enough memory for"
+            f" {num_allocable_blocks} pages"
+            f" ({cache_memory_str}{across_x_devices_str})."
         )
 
     return num_blocks
@@ -1121,9 +1138,11 @@ def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
 
     if num_host_blocks == 0:
         raise RuntimeError(
-            f"Insufficient cache memory to allocate even a single page.\n"
-            f"One page requires {to_human_readable_bytes(params.bytes_per_block)} but only "
-            f"{to_human_readable_bytes(host_gb_per_replica * GiB)} are available on host."
+            "Insufficient cache memory to allocate even a single page.\nOne"
+            " page requires"
+            f" {to_human_readable_bytes(params.bytes_per_block)} but only"
+            f" {to_human_readable_bytes(host_gb_per_replica * GiB)} are"
+            " available on host."
         )
 
     return num_host_blocks

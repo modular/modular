@@ -385,14 +385,32 @@ def flash_attention[
     comptime assert (
         not ragged or q.rank == 3
     ), "only support rank 3 inputs for ragged inputs."
+
+    # Native FP8 SM100 path. K/V are FP8 in the paged cache.
+    # Q@K^T and P@V run as FP8 MMAs at tensorwise scale=1.
+    # Output is BF16.
+    comptime is_native_fp8_sm100 = (
+        q.dtype.is_float8()
+        and cache_t.dtype.is_float8()
+        and output.dtype == DType.bfloat16
+        and _is_sm10x_gpu(ctx.default_device_info)
+    )
+
     comptime assert (
-        q.dtype == cache_t.dtype == output.dtype
-    ), "Q, K, V, output should have same type."
+        q.dtype == cache_t.dtype == output.dtype or is_native_fp8_sm100
+    ), (
+        "Q, K, V, output should have same dtype, or Q=K=V=float8,"
+        " output=bfloat16 for the native FP8 SM100 path."
+    )
     comptime assert (
         q.dtype == DType.float32
         or q.dtype.is_half_float()
         or (q.dtype.is_float8() and has_amd_gpu_accelerator())
-    ), "Only support single, half, and float8 (AMD only) precision."
+        or is_native_fp8_sm100
+    ), (
+        "Only support single, half, float8 (AMD), and float8->bfloat16"
+        " (SM100) precision."
+    )
 
     # TODO docstring
     @always_inline
