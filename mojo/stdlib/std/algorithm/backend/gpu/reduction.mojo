@@ -859,8 +859,20 @@ def reduce_launch[
         shape[reduce_dim] > unsaturated_block_size
     )
 
-    # This assumes row-major layout:
-    var reduce_contig_dim: Bool = reduce_dim == rank - 1
+    # This assumes row-major layout. The reduce dim is contiguous (innermost)
+    # not only when it is the final dim, but also whenever every dim after it
+    # is unit-sized: trailing size-1 dims do not break contiguity. Callers
+    # routinely normalize an N-D reduction to a rank-3 (outer, reduce, inner)
+    # shape where `inner` is the product of the dims after the axis, so a
+    # last-axis reduction arrives here as reduce_dim=1, rank=3 with inner==1.
+    # Checking `reduce_dim == rank - 1` alone would misclassify that
+    # physically-contiguous reduction as non-contiguous and route it to
+    # `saturated_reduce_kernel`, whose cross-row SIMD packing is only valid
+    # when a real inner dim supplies the adjacent rows.
+    var inner_size = 1
+    comptime for i in range(reduce_dim + 1, rank):
+        inner_size *= shape[i]
+    var reduce_contig_dim: Bool = inner_size == 1
 
     # --- Tier 1: Thread-saturated, non-contiguous reduce_dim ---
     # Each thread handles a whole row. SIMD packing across adjacent rows.

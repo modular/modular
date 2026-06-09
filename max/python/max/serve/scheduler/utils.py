@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 
 from max.driver import Buffer
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
     BatchType,

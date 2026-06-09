@@ -32,10 +32,10 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.type import BufferType
 from max.graph.weights import WeightData, Weights
 from max.nn.comm import Signals
+from max.pipelines.context import TokenBuffer
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
-from max.pipelines.modeling.types import TokenBuffer
 from PIL import Image
 
 from ..model_config import VisionConfig

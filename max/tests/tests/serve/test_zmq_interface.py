@@ -23,8 +23,8 @@ from typing import cast
 from unittest.mock import Mock
 
 import pytest
+from max.pipelines.context import BaseContext
 from max.pipelines.modeling.types import (
-    BaseContext,
     PipelineOutput,
     RequestID,
 )

@@ -21,12 +21,9 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext, TextGenerationContextType
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.pipelines.lib.pipeline_variants.utils import calculate_num_steps
-from max.pipelines.modeling.types import (
-    TextGenerationContextType,
-)
 
 __all__: list[str] = []
 

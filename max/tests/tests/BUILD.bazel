@@ -37,7 +37,7 @@ modular_py_test(
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/mlir",
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/context",
         requirement("numpy"),
     ],
 )

@@ -29,8 +29,8 @@ from max.graph.weights import (
     weights_format,
 )
 from max.nn.transformer import ReturnLogits
+from max.pipelines.context import BaseContextType
 from max.pipelines.modeling.types import (
-    BaseContextType,
     EmbeddingsContext,
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,

@@ -41,7 +41,7 @@ from max.graph.value import TensorValue
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.lora import SupportsLoRA
-from max.pipelines.modeling.types import TextGenerationContextType
+from max.pipelines.context import TextGenerationContextType
 from max.pipelines.modeling.types.pipeline import (
     Pipeline,
     PipelineInputsType,

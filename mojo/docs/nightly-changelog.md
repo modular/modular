@@ -604,6 +604,17 @@ This version is still a work in progress.
 
 ## Fixed
 
+- Fixed a GPU reduction correctness bug that produced wrong results for a
+  contiguous last-axis reduction (for example `mean` over the last axis) once
+  the number of rows reached `256 * sm_count` (37888 rows on a 148-SM GPU).
+  An N-D reduction is normalized to a rank-3 `(outer, reduce, inner)` shape, so
+  a last-axis reduction has a trailing `inner == 1` dimension; the kernel
+  launcher treated that as a non-contiguous reduction and, once the device was
+  thread-saturated, dispatched a kernel whose cross-row SIMD packing is only
+  valid when a real inner dimension supplies the adjacent rows. Contiguity is
+  now derived from the layout (the reduce dimension is innermost whenever every
+  dimension after it is unit-sized).
+
 - Reduced the virtual address space reserved by every `mojo` invocation by
   ~1 GiB. The JIT memory mapper's reservation granularity was 1 GiB, so each
   fresh reservation was rounded up to that size and mmapped

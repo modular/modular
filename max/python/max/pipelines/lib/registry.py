@@ -24,7 +24,12 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 import numpy as np
 import numpy.typing as npt
 from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
+from max.pipelines.context import (
+    PixelContext,
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationContext,
+)
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
     InputModality,
@@ -32,7 +37,6 @@ from max.pipelines.modeling.types import (
     PipelineTask,
     PipelineTokenizer,
     ReasoningParser,
-    TextGenerationContext,
     TextGenerationRequest,
 )
 from transformers import (

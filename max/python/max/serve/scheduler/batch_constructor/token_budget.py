@@ -16,7 +16,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum
 
-from max.pipelines.modeling.types.pipeline_variants import TextGenerationContext
+from max.pipelines.context import TextGenerationContext
 
 
 class RequestType(str, Enum):

@@ -22,17 +22,19 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.core import TextAndVisionContext
-from max.pipelines.core.exceptions import PromptTooLongError
+from max.pipelines.context import (
+    ImageMetadata,
+    TextAndVisionContext,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import TextAndVisionTokenizer
 from max.pipelines.modeling.types import (
     ImageContentPart,
-    ImageMetadata,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
