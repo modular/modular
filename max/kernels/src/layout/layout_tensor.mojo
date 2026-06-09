@@ -862,6 +862,32 @@ struct LayoutTensor[
         self.runtime_layout = other.runtime_layout
         self.runtime_element_layout = other.runtime_element_layout
 
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambig: Int = 0
+    ](
+        other: LayoutTensor[mut=True, ...],
+        out self: type_of(other).OriginCastType[MutAnyOrigin],
+    ):
+        self.ptr = other.ptr.as_any_origin()
+        self.runtime_layout = other.runtime_layout
+        self.runtime_element_layout = other.runtime_element_layout
+
+    @always_inline("builtin")
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambig: Int = 0
+    ](
+        other: LayoutTensor[...],
+        out self: type_of(other).OriginCastType[ImmutAnyOrigin],
+    ):
+        self.ptr = other.ptr.as_any_origin()
+        self.runtime_layout = other.runtime_layout
+        self.runtime_element_layout = other.runtime_element_layout
+
     @always_inline("nodebug")
     def __merge_with__[
         other_type: type_of(

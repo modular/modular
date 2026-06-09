@@ -240,9 +240,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         SF_ATOM_K,
     )
 
-    var a_scales_tensor_host = LayoutTensor[
-        scales_dtype, a_scales_5d_layout, MutAnyOrigin
-    ](
+    var a_scales_tensor_host = LayoutTensor[scales_dtype, a_scales_5d_layout](
         a_scales_host_ptr,
         RuntimeLayout[a_scales_5d_layout].row_major(
             IndexList[5](
@@ -255,9 +253,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ),
     )
 
-    var b_scales_tensor_host = LayoutTensor[
-        scales_dtype, b_scales_5d_layout, MutAnyOrigin
-    ](
+    var b_scales_tensor_host = LayoutTensor[scales_dtype, b_scales_5d_layout](
         b_scales_host_ptr,
         RuntimeLayout[b_scales_5d_layout].row_major(
             IndexList[5](
