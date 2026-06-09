@@ -621,6 +621,63 @@ def naive_block_scaled_matmul[
     )
 
 
+def naive_block_scaled_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    //,
+    *,
+    scaling_kind: UMMAKind,
+    SF_VECTOR_SIZE: Int,
+    accum_type: DType = DType.float32,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    BLOCK_DIM: Int = 16,
+](
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    a_scales: TileTensor[
+        a_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    b_scales: TileTensor[
+        b_scales_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    ctx: DeviceContext,
+    alpha: Float32 = 1.0,
+) raises:
+    """TileTensor overload for the naive reference block-scaled matmul.
+
+    The reference implementation remains LayoutTensor-based outside SM100.
+    Keep that compatibility shim here so the SM100 testbed can stay
+    TileTensor-native.
+    """
+    var c_lt = c.to_layout_tensor()
+    var a_lt = a.to_layout_tensor()
+    var b_lt = b.to_layout_tensor()
+    var a_scales_lt = a_scales.to_layout_tensor()
+    var b_scales_lt = b_scales.to_layout_tensor()
+
+    naive_block_scaled_matmul[
+        scaling_kind=scaling_kind,
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        accum_type=accum_type,
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        BLOCK_DIM=BLOCK_DIM,
+    ](
+        c_lt,
+        a_lt,
+        b_lt,
+        a_scales_lt,
+        b_scales_lt,
+        ctx,
+        alpha,
+    )
+
+
 @__name(t"naive_block_scaled_matmul")
 def naive_block_scaled_matmul_kernel[
     c_type: DType,

@@ -10,11 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""SM100 matmul - COMPATIBILITY LAYER for grouped_matmul.
+"""SM100 matmul - TileTensor-native compatibility layer for grouped_matmul.
 
 NOTE: This module is maintained for backward compatibility with grouped_matmul
 implementations that depend on internal functions (WarpRole, consumer_main_loop,
 stsm_helper, shared_memory_epilogue, register_epilogue, accum_arrive).
+The helper surface is TileTensor-native; legacy callers should adapt at their
+own boundary before entering this module.
 
 For new code, use sm100_structured directly:
 - Import configs from: linalg.matmul.gpu.sm100_structured.config
@@ -40,14 +42,10 @@ from layout import (
     IntTuple,
     Idx,
     Layout,
-    LayoutTensor,
-    RuntimeTuple,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
     col_major,
 )
-from layout.runtime_tuple import idx2crd
 from layout.swizzle import Swizzle
 from layout.tile_layout import (
     TensorLayout,
@@ -166,7 +164,7 @@ def consumer_main_loop[
 ):
     """TileTensor overload of `consumer_main_loop`.
 
-    Accepts `SMemTileArray2D` instead of `LayoutTensorIter`, indexing directly
+    Accepts `SMemTileArray2D` instead of iterator-based shared-memory tiles, indexing directly
     into the tile arrays to get TileTensor tiles for MMA. The tile dimension
     and swizzle parameters (a_dim0, a_dim1, etc.) are explicit because Mojo
     requires them for overload resolution with parametric struct arguments.
@@ -210,8 +208,7 @@ def f32_frag_to_smem[
     ],
 ):
     # Manual implementation of dst.vectorize[1, 2]().distribute[row_major(8, 4)]
-    # because the compiler can't prove `all_dims_known` through layout types
-    # produced by `lt_to_tt()`. See MSTDL-2422.
+    # because the compiler can't prove `all_dims_known` through migrated layout types. See MSTDL-2422.
     comptime stride0: Int = dst.static_stride[0]
     comptime shape0 = dst.static_shape[0]
     comptime shape1 = dst.static_shape[1]
@@ -321,196 +318,6 @@ def stsm_helper[
         st_matrix[simd_width=stmtx_simd_width, transpose=transpose_c](
             dst.ptr + offset, bitcast[DType.float32, stmtx_simd_width](v)
         )
-
-
-@always_inline
-def shared_memory_epilogue[
-    MMA_M: Int,
-    data_paths: Int,
-    num_stages: Int,
-    stage: Int,
-    stageN: Int,
-    c_type: DType,
-    shared_n: Int,
-    simd_size: Int,
-    c_smem_upper_layout: Layout,
-    c_smem_lower_layout: Layout,
-    swizzle: Swizzle,
-    compute_lambda_fn: elementwise_compute_lambda_type,
-    num_output_warps: Int,
-](
-    M: UInt32,
-    N: UInt32,
-    c_col: Int,
-    c_row: Int,
-    c_smem_warp_tile_upper: LayoutTensor[
-        c_type, c_smem_upper_layout, MutAnyOrigin, ...
-    ],
-    c_smem_warp_tile_lower: LayoutTensor[
-        c_type, c_smem_lower_layout, MutAnyOrigin, ...
-    ],
-):
-    # Here we start keeping track of the index / indices this thread is
-    # responsible for in shared memory. This is represented with shared_memory_row
-    # and shared_memory_column and the children of these values shared_memory_row_upper_half
-    # shared_memory_row_lower_half. We also need to update the global memory column c_col by
-    # stageN since we are sliding through the overall compute block.
-
-    var staged_c_col = c_col + stage * stageN
-
-    var warp_id = warp_id()
-    var shared_memory_row = warp_id * 32
-
-    var shared_memory_row_upper_half: Int = shared_memory_row
-    var shared_memory_row_lower_half: Int = shared_memory_row + 16
-
-    # This distribute layout allocates vectors to corresponding threads. If stageN is 32, 8 x 4 is used since each row of
-    # 4 threads can access 8 elements (8 x 4 = 32). If stageN is 16 then 16 x 2 is used. Since each fragment contains 16 rows,
-    # there will be 2 chunks created when using 8x4.
-
-    comptime distribute_cols = stageN // simd_size
-    comptime distribute_rows = WARP_SIZE // distribute_cols
-
-    comptime distribute_layout = Layout.row_major(
-        distribute_rows, distribute_cols
-    )
-    var c_smem_upper_frag = c_smem_warp_tile_upper.vectorize[
-        1, simd_size
-    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
-
-    var c_smem_lower_frag = c_smem_warp_tile_lower.vectorize[
-        1, simd_size
-    ]().distribute[distribute_layout, swizzle=swizzle](lane_id())
-
-    comptime fragment_size = c_smem_upper_frag.layout.size()
-
-    var local_row, local_col = udivmod(lane_id(), distribute_cols)
-
-    var shared_memory_col = local_col * simd_size
-    shared_memory_row_lower_half += local_row
-    shared_memory_row_upper_half += local_row
-
-    comptime for i in range(fragment_size):
-        comptime alignment = align_of[SIMD[c_type, simd_size]]()
-
-        # these offsets are swizzled so to retrieve the corresponding gmem offset we need to remove the swizzle
-        # luckily removing the swizzle is as simple as swizzling a second time
-        var swz_offset_upper = (
-            shared_memory_row_upper_half * shared_n + shared_memory_col
-        )
-        var swz_offset_lower = (
-            shared_memory_row_lower_half * shared_n + shared_memory_col
-        )
-
-        var offset_upper = swizzle(swz_offset_upper)
-        var offset_lower = swizzle(swz_offset_lower)
-
-        var shared_upper_row: Int64
-        var shared_upper_col: Int64
-        var shared_lower_row: Int64
-        var shared_lower_col: Int64
-
-        # Now that we have the true index we, need to add the global tile index to find the corresponding
-        # index, in gmem. However the data will be stored in tensor memory differently depending on
-        # MMA_M size, we take that into account here.
-
-        comptime if MMA_M != 256:
-            comptime blocked_m_128_layout = blocked_product(
-                Layout.row_major(data_paths * 2, stageN),
-                Layout.col_major(2, 2),
-                coalesce_output=True,
-            )
-
-            var upper_coord = idx2crd(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_upper),
-                RuntimeTuple[
-                    blocked_m_128_layout.shape,
-                    element_type=DType.int64,
-                ](),
-                RuntimeTuple[
-                    blocked_m_128_layout.stride,
-                    element_type=DType.int64,
-                ](),
-            )
-
-            var lower_coord = idx2crd(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_lower),
-                RuntimeTuple[
-                    blocked_m_128_layout.shape,
-                    element_type=DType.int64,
-                ](),
-                RuntimeTuple[
-                    blocked_m_128_layout.stride,
-                    element_type=DType.int64,
-                ](),
-            )
-
-            shared_upper_row = upper_coord[0].get_int()
-            shared_lower_row = lower_coord[0].get_int()
-
-            var section_offset_upper = upper_coord[1][1].get_int()
-            var col_offset_upper = upper_coord[1][0].get_int()
-
-            var section_offset_lower = lower_coord[1][1].get_int()
-            var col_offset_lower = lower_coord[1][0].get_int()
-
-            shared_upper_col = (
-                section_offset_upper * Int64(num_stages * stageN)
-                + col_offset_upper
-            )
-            shared_lower_col = (
-                section_offset_lower * Int64(num_stages * stageN)
-                + col_offset_lower
-            )
-
-        else:
-            # can't cast to uint64 as it's not supported yet
-            # this will cost us slightly in performance
-            comptime fast_div = FastDiv[DType.uint32](shared_n)
-
-            shared_upper_row = (
-                Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
-                / fast_div
-            ).cast[DType.int64]()
-            shared_upper_col = Int64(offset_upper % shared_n)
-
-            shared_lower_row = (
-                Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
-                / fast_div
-            ).cast[DType.int64]()
-            shared_lower_col = Int64(offset_lower % shared_n)
-
-        # now we need to add the global tile offset
-        var global_upper_row = shared_upper_row + Int64(c_row)
-        var global_upper_col = shared_upper_col + Int64(staged_c_col)
-        var global_lower_row = shared_lower_row + Int64(c_row)
-        var global_lower_col = shared_lower_col + Int64(staged_c_col)
-
-        if global_upper_row < Int64(Int(M)) and global_upper_col < Int64(
-            Int(N)
-        ):
-            var reg_val = compute_lambda_fn[alignment=alignment](
-                (Int(global_upper_row), Int(global_upper_col)),
-                c_smem_upper_frag[i, 0],
-            )
-            c_smem_upper_frag[i, 0] = reg_val
-
-        if global_lower_row < Int64(Int(M)) and global_lower_col < Int64(
-            Int(N)
-        ):
-            var reg_val = compute_lambda_fn[alignment=alignment](
-                (Int(global_lower_row), Int(global_lower_col)),
-                c_smem_lower_frag[i, 0],
-            )
-            c_smem_lower_frag[i, 0] = reg_val
-
-        # If more than one chunk is created (happens when 8x4 is used)
-        # they will be spaced 8 rows away from each other
-
-        shared_memory_row_upper_half += distribute_rows
-        shared_memory_row_lower_half += distribute_rows
-
-    named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @always_inline

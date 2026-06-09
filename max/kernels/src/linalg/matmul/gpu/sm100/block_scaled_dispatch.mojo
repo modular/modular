@@ -13,7 +13,7 @@
 
 
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
+from layout import Coord, Idx, Layout, TileTensor, row_major
 from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from linalg.fp4_utils import (

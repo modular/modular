@@ -344,10 +344,10 @@ def copy_accum_to_gmem[
                     c_smem_warp_tt.tile[data_paths, stageN](1, 0),
                 )
 
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
+            var c_smem_warp_tile_upper = c_smem_warp_tt.tile[
                 data_paths, stageN
             ](0, 0)
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
+            var c_smem_warp_tile_lower = c_smem_warp_tt.tile[
                 data_paths, stageN
             ](1, 0)
 
@@ -365,8 +365,6 @@ def copy_accum_to_gmem[
                         c_smem_warp_tile_upper.dtype,
                         c_smem_tile.shape[1](),
                         simd_size,
-                        c_smem_warp_tile_upper.layout,
-                        c_smem_warp_tile_lower.layout,
                         swizzle,
                         elementwise_compute_lambda_fn.value(),
                         num_output_warps,
