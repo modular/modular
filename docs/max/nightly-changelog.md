@@ -35,6 +35,21 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Chat completion responses now emit reasoning under both `reasoning` and
+  `reasoning_content`. Reasoning models previously exposed their
+  chain-of-thought only under `reasoning`; adding the `reasoning_content`
+  alias (the field used by vLLM, SGLang, and the DeepSeek API, in both
+  streaming deltas and the final message) lets a wider range of
+  OpenAI-compatible clients surface it. The two fields always hold the same
+  text.
+
+- `response_format` JSON schemas with a non-object root are now accepted when
+  the root `type` is missing (any) or a type union that includes `object`
+  (for example `{"type": ["object", "array", "string"]}`); these are valid
+  JSON Schema and compile to a constraining grammar. A root pinned to a single
+  non-object type (for example `{"type": "string"}`) is still rejected,
+  matching OpenAI's structured-outputs contract.
+
 - Added a `maxserve.startup_time` Prometheus histogram (seconds) that
   records model-worker startup time, previously only available in the
   server logs. It is split by a `component` tag (`build`, `compile`, `init`,
@@ -88,6 +103,15 @@ This version is still a work in progress.
   `response_format=json_schema` request returned prose instead of
   schema-conformant JSON). The tokenizer now derives enforcement state from the
   response format, matching the text tokenizers.
+
+- Fixed an intermittent constrained-decoding correctness bug under EAGLE
+  speculative decoding. On the first decode step after a prefill (and after any
+  batch that did not verify draft tokens), the speculative token bitmask was
+  built from placeholder draft tokens instead of the real drafts being
+  verified, leaving the bonus and later speculative slots unconstrained. A
+  grammar-illegal token could then be sampled and committed, producing
+  occasional JSON `response_format` or tool-call grammar violations. The bitmask
+  is now built from the realized drafts.
 
 - MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
   normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
@@ -335,6 +359,12 @@ This version is still a work in progress.
   most for shorter sequences (measured ~1.05x–1.5x faster on B200, bf16,
   head_dim=128 across seq lengths 128–2048). On by default; disable with
   `-D MHA_PDL=false`.
+- Added a simdgroup-tiled matmul kernel for the Apple M5 GPU, bringing
+  neural-accelerator-backed matmul to the MAX framework. In-range MAX matmuls
+  (`m >= 64`, `n >= 64`, `k >= 16`; ragged K supported) now use it: fp16/bf16
+  always, and fp32 a/b by default (accepting the simdgroup MMA's fp19
+  truncation). Set `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL=0` for the precise
+  naive fp32 path.
 
 ## Breaking changes
 

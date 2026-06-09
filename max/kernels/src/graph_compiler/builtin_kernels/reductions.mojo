@@ -1183,12 +1183,8 @@ struct Softmax:
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
+        def input_fn[width: Int](coords: Coord) -> SIMD[output.dtype, width]:
+            return input._lambda_load[width=width](coords)
 
         comptime simd_width = simd_width_of[
             output.dtype, target=get_gpu_target()
@@ -1201,7 +1197,7 @@ struct Softmax:
             input_fn,
             target,
         ](
-            output.shape(),
+            Coord(output.shape()),
             output.to_tile_tensor[DType.int64](),
             axis,
             context=ctx,
@@ -1222,12 +1218,8 @@ struct LogSoftmax:
         # For adapting input fusion lambda required by call
         @parameter
         @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
+        def input_fn[width: Int](coords: Coord) -> SIMD[output.dtype, width]:
+            return input._lambda_load[width=width](coords)
 
         logsoftmax[
             output.dtype,
@@ -1236,7 +1228,7 @@ struct LogSoftmax:
             input_fn,
             target,
         ](
-            output.shape(),
+            Coord(output.shape()),
             output.to_tile_tensor[DType.int64](),
             axis,
             context=ctx,

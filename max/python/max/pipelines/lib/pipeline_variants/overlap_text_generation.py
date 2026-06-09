@@ -180,6 +180,7 @@ _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 _OOB_IDX = np.iinfo(np.int32).min
 _MAGIC_DRAFT_TOKEN_ID = 42
 
+
 # Log that the async bitmask callback is lagging, but keep waiting for it.
 _CALLBACK_LAG_WARN_S = 5.0
 # A live callback always signals via its ``finally``; exceeding this means the
@@ -225,6 +226,46 @@ class _SpecDecodeSamplingBuffers:
     min_top_p: Buffer
     in_thinking_phase: Buffer
     seed: Buffer
+
+
+def _host_mirror_realized_drafts(
+    draft_tokens_np: npt.NDArray[np.int64],
+    prev_to_curr_map: npt.NDArray[np.int64],
+    prev_next_draft_tokens: npt.NDArray[np.int64],
+) -> npt.NDArray[np.int64]:
+    """Reconstruct the post-realize device draft buffer on the host.
+
+    The device draft buffer for an EAGLE verify step is built as the
+    H2D copy of ``draft_tokens_np`` (its pre-scatter state), then
+    overwritten for rows present in the previous batch by the realize scatter
+    (``RealizeFutureTokenProcessor``) using ``prev_to_curr_map``. This mirrors
+    that mapping exactly so the constrained-decoding synchronous-fill builds the bitmask from
+    the drafts the GPU actually verifies.
+    Note that:
+
+      1. An unmapped current row keeps its ``draft_tokens_np`` value -- the MAGIC
+        placeholder, or a preempted/resumed request's real saved drafts.
+      2. A mapped current row takes the previous batch's ``next_draft_tokens``.
+
+    Using ``prev_to_curr_map`` (the same scatter map the device graph uses)
+    keeps this a line-for-line mirror of the device scatter.
+
+    Args:
+        draft_tokens_np: ``[curr_batch, K]`` pre-scatter device state (the host
+            array copied to the device draft buffer before the realize scatter).
+        prev_to_curr_map: ``[prev_batch]`` mapping prev-batch row -> current
+            row, with ``_OOB_IDX`` for prev rows absent from the current batch.
+        prev_next_draft_tokens: ``[prev_batch, K]`` previous batch's next drafts.
+
+    Returns:
+        ``[curr_batch, K]`` host mirror of the device draft buffer.
+    """
+    realized = draft_tokens_np.copy()
+    curr_batch_size = realized.shape[0]
+    for prev_i, curr_i in enumerate(prev_to_curr_map):
+        if 0 <= curr_i < curr_batch_size:
+            realized[curr_i] = prev_next_draft_tokens[prev_i]
+    return realized
 
 
 def _get_draft_kv_blocks(
@@ -382,6 +423,19 @@ class SpecDecodeState:
     ``sync_prime`` so the worker can't overwrite ``prime()``'s pinned
     writes. Lives on the process-lifetime state because ``_prev_batch``
     is cleared between requests."""
+
+    realized_draft_tokens_host: npt.NDArray[np.int64] | None = None
+    """Host-realized EAGLE drafts for the current batch, row-permuted from the
+    prev batch's ``next_draft_tokens_host`` via the realize map (the same
+    permutation ``realize_future_tokens`` applies on device).
+
+    Set only when the current batch verifies drafts and the prev batch did not
+    (``prev.spec_decode.fsm_advanced_by_callback`` is False) -- i.e. exactly the
+    synchronous-fill case, where the early-sync guard has already made
+    ``next_draft_tokens_host`` host-complete (D2H copy finished). ``None``
+    otherwise. Consumed by ``_assign_bitmask_inputs`` on the synchronous-fill
+    path so the speculative bitmask is built from the real drafts the GPU
+    verifies, not MAGIC placeholders."""
 
     @classmethod
     def load(
@@ -1366,18 +1420,24 @@ class RealizeFutureTokenProcessor:
         prev_batch: AsyncBatch[TextGenerationContextType],
         inputs: TextGenerationInputs[TextGenerationContextType],
         model_inputs: ModelInputs,
-    ) -> None:
+        draft_tokens_np: npt.NDArray[np.int64] | None = None,
+    ) -> npt.NDArray[np.int64] | None:
         """Scatters generated tokens from the previous batch into placeholder slots.
 
         Fills placeholder future tokens in the current batch on the GPU.
         Returns ragged_input_tokens unchanged if there is no overlap between
         the previous and current batch.
+
+        Returns:
+            Host mirror of the device draft scatter ``[curr_batch, K]`` for the
+            synchronous-fill bitmask, or ``None`` (see ``realized_draft_tokens_host``).
         """
         assert isinstance(model_inputs, _HasRaggedTokens)
+        realized_draft_tokens_host: npt.NDArray[np.int64] | None = None
         mappings = self._compute_mappings(prev_batch, inputs)
 
         if mappings is None:
-            return
+            return None
 
         assert self._graph is not None, (
             "RealizeFutureTokenProcessor is None but there are tokens to scatter."
@@ -1480,13 +1540,28 @@ class RealizeFutureTokenProcessor:
                     model_inputs.kv_cache_inputs.inputs[i],
                     cache_lengths=cache_lengths[i % len(cache_lengths)],
                 )
+            # Host mirror of the device draft buffer for the constrained-
+            # decoding synchronous-fill (see _host_mirror_realized_drafts). Only on the
+            # synchronous-fill case -- prev did not advance the FSM via callback -- where
+            # the early-sync guard has already made next_draft_tokens_host
+            # complete.
+            if (
+                num_draft_tokens_to_verify > 0
+                and not prev_batch.spec_decode.fsm_advanced_by_callback
+                and draft_tokens_np is not None
+            ):
+                realized_draft_tokens_host = _host_mirror_realized_drafts(
+                    draft_tokens_np,
+                    prev_to_curr_map.to_numpy(),
+                    prev_batch.spec_decode.next_draft_tokens_host.to_numpy(),
+                )
         else:
             (new_ragged_input_tokens,) = out
             model_inputs.tokens = new_ragged_input_tokens
 
         # Update the model inputs with the new ragged input tokens.
 
-        return
+        return realized_draft_tokens_host
 
 
 @dataclass
@@ -1790,11 +1865,30 @@ class OverlapTextGenerationPipeline(
 
     @property
     def _effective_max_cache_length(self) -> int:
-        """Max cache length capped to the KV pool capacity."""
+        """Capture-time upper bound on a request's runtime cache length.
+
+        ``PagedKVCacheManager.runtime_inputs`` rejects any batch whose
+        ``_compute_seq_len`` exceeds this bound, so it folds in the worst-case
+        speculative-decode slack a context-boundary request adds beyond
+        ``max_seq_len``. Capped to pool capacity, which already carries that
+        headroom, so capture never reserves more pages than were allocated.
+        """
+        params = self._kv_manager.params
+        spec_slack = 0
+        if params.num_draft_tokens > 0:
+            # Worst-case slack, matching `_compute_seq_len`: drafts verified
+            # and written next batch (2x), the prior overlap batch's drafts
+            # assumed accepted (1x), the DFlash block-draft slot, and the
+            # FUTURE_TOKEN placeholder.
+            block_draft_extra = (
+                1
+                if params.num_draft_tokens_per_step == params.num_draft_tokens
+                else 0
+            )
+            spec_slack = 3 * params.num_draft_tokens + block_draft_extra + 1
         return min(
-            self._pipeline_model.max_seq_len,
-            self._kv_manager._total_num_pages
-            * self._kv_manager.params.page_size,
+            self._pipeline_model.max_seq_len + spec_slack,
+            self._kv_manager._total_num_pages * params.page_size,
         )
 
     @property
@@ -1913,6 +2007,10 @@ class OverlapTextGenerationPipeline(
                 ]
             )
         with self._kv_manager.reserve(replica_batches, num_steps=1):
+            warmup_flat_batch = [
+                ctx for replica in replica_batches for ctx in replica
+            ]
+
             max_cache_length = self._effective_max_cache_length
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 replica_batches,
@@ -1957,9 +2055,6 @@ class OverlapTextGenerationPipeline(
                     self._spec_decode_state.draft_kv_blocks
                 )
 
-                warmup_flat_batch = [
-                    ctx for replica in replica_batches for ctx in replica
-                ]
                 sampling_buffers = self._build_spec_decode_sampling_buffers(
                     warmup_flat_batch
                 )
@@ -2011,7 +2106,21 @@ class OverlapTextGenerationPipeline(
                     model_inputs.wait_payload = overlap_state.wait_payload
                     model_inputs.device_bitmask_scratch = scratch_view
 
-            yield model_inputs
+            try:
+                yield model_inputs
+            finally:
+                # The KV cache is freed by the ``reserve`` context manager
+                # above, but architectures with additional per-request state
+                # (e.g. Qwen3.5 GatedDeltaNet slots, Mamba/LFM2 SSM slots,
+                # Gemma4 vision-encoder cache) manage it via
+                # ``PipelineModel.release``. Warmup builds throwaway contexts
+                # with fresh request IDs each iteration; without releasing
+                # them here their state leaks and exhausts the pool partway
+                # through capture. Mirror the serving release path's guarded
+                # check (see ``release`` below).
+                if hasattr(self._pipeline_model, "release"):
+                    for ctx in warmup_flat_batch:
+                        self._pipeline_model.release(ctx.request_id)
 
     def warmup_graph_capture(self) -> None:
         """Initializes and runs overlap device graph capture warmup."""
@@ -2308,17 +2417,26 @@ class OverlapTextGenerationPipeline(
             model_inputs.min_top_p = sampling_buffers.min_top_p
             model_inputs.seed = sampling_buffers.seed
             model_inputs.in_thinking_phase = sampling_buffers.in_thinking_phase
+        realized_draft_tokens_host: npt.NDArray[np.int64] | None = None
         if (
             self._prev_batch is not None
             and self._realize_future_token_processor is not None
         ):
-            self._realize_future_token_processor.realize_future_tokens(
-                prev_batch=self._prev_batch,
-                inputs=inputs,
-                model_inputs=model_inputs,
+            realized_draft_tokens_host = (
+                self._realize_future_token_processor.realize_future_tokens(
+                    prev_batch=self._prev_batch,
+                    inputs=inputs,
+                    model_inputs=model_inputs,
+                    draft_tokens_np=draft_tokens_np,
+                )
             )
             if debug_verify_model_inputs is not None:
                 debug_verify_model_inputs.tokens = model_inputs.tokens
+        # Save off realized draft tokens (None unless realize produced them for the synchronous-fill case).
+        if self._spec_decode_state is not None:
+            self._spec_decode_state.realized_draft_tokens_host = (
+                realized_draft_tokens_host
+            )
 
         # Compute speculative bitmasks here, as late as possible before graph
         # replay, so that all model-input preparation above can overlap with
@@ -2567,6 +2685,16 @@ class OverlapTextGenerationPipeline(
         # Consumed this iteration regardless of how it is used below.
         spec_state.has_precomputed_bitmask = False
 
+        # Synchronous fills build the bitmask from the real drafts realize_future_tokens
+        # scattered onto the device buffer (host mirror), not the MAGIC
+        # placeholders in draft_tokens_np. Non-None only on the synchronous-fill path
+        # (see realized_draft_tokens_host); falls back to draft_tokens_np otherwise.
+        drafts = (
+            spec_state.realized_draft_tokens_host
+            if spec_state.realized_draft_tokens_host is not None
+            else draft_tokens_np
+        )
+
         if callback_available and self._callback_layout_matches(
             context_batch, callback_rids
         ):
@@ -2576,7 +2704,7 @@ class OverlapTextGenerationPipeline(
             pass
         else:
             # Wait for the prior callback so its FSM advance and pinned write
-            # are done: sync fills below read a current FSM, and gather reads
+            # are done: synchronous fills below read a current FSM, and gather reads
             # the callback's pinned rows. Keep waiting through normal lag (warn
             # at 5s); only proceed at the 120s dead-worker deadline.
             prev_evt = spec_state.last_callback_done_event
@@ -2607,17 +2735,17 @@ class OverlapTextGenerationPipeline(
             if callback_available:
                 # Adopt the callback's row for each continuing request (gather
                 # by request_id, robust to reorder / completion / growth);
-                # sync-fill only rows with no FSM state to advance.
+                # synchronous-fill only rows with no FSM state to advance.
                 bitmask_np = self._gather_bitmask(
-                    context_batch, callback_rids, draft_tokens_np, num_positions
+                    context_batch, callback_rids, drafts, num_positions
                 )
             else:
                 # No callback output to adopt: every row is new or was advanced
-                # synchronously, so a full sync fill reads a current FSM.
+                # synchronously, so a full synchronous fill reads a current FSM.
                 bitmask_np = (
                     self._structured_output.compute_speculative_bitmasks(
                         context_batch=context_batch,
-                        draft_tokens=draft_tokens_np,
+                        draft_tokens=drafts,
                         num_positions=num_positions,
                     )
                 )
@@ -2654,7 +2782,7 @@ class OverlapTextGenerationPipeline(
             return False
         for idx, ctx in enumerate(context_batch):
             if ctx.matcher is None:
-                # New constrained row (matcher not built) needs a sync fill.
+                # New constrained row (matcher not built) needs a synchronous fill.
                 if ctx.grammar is not None or ctx.json_schema is not None:
                     return False
                 continue
@@ -2669,7 +2797,7 @@ class OverlapTextGenerationPipeline(
         draft_tokens_np: npt.NDArray[np.int64],
         num_positions: int,
     ) -> npt.NDArray[np.bool_]:
-        """Gather continuing rows from the callback; sync-fill only new rows.
+        """Gather continuing rows from the callback; synchronous-fill only new rows.
 
         The callback advanced the FSM and wrote its rows before signaling
         ``done_event`` (already waited on), so gathered rows are current and
@@ -2686,8 +2814,10 @@ class OverlapTextGenerationPipeline(
             (len(context_batch), num_positions, overlap_state.vocab_size),
             dtype=np.bool_,
         )
-        # ``is_initial_prompt`` rows (fresh / reactivated) have no FSM state to
-        # advance and no callback row, so they fall to the sync fill.
+        # Rows the callback didn't cover fall to the synchronous fill. ``src is
+        # None`` means the request wasn't in the prev (callback) batch -- a
+        # preempted-then-resumed decode -- so it has no prev-batch FSM state to
+        # gather and its bitmask is built from scratch.
         sync_indices: list[int] = []
         for i, ctx in enumerate(context_batch):
             src = rid_to_row.get(ctx.request_id)

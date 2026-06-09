@@ -342,15 +342,9 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                             mla_num_partitions=kv_caches_per_dev[
                                 dev_idx
                             ].mla_num_partitions,
-                            mla_effective_split_len=kv_caches_per_dev[
-                                dev_idx
-                            ].mla_effective_split_len,
                             draft_mla_num_partitions=kv_caches_per_dev[
                                 dev_idx
                             ].draft_mla_num_partitions,
-                            draft_mla_effective_split_len=kv_caches_per_dev[
-                                dev_idx
-                            ].draft_mla_effective_split_len,
                         )
                     )
 

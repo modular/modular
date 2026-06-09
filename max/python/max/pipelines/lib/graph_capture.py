@@ -214,9 +214,7 @@ def _create_model_inputs_with_dispatch_metadata(
     target_is_mla: bool = False,
     draft_is_mla: bool = False,
     mla_num_partitions: Buffer | None = None,
-    mla_effective_split_len: Buffer | None = None,
     draft_mla_num_partitions: Buffer | None = None,
-    draft_mla_effective_split_len: Buffer | None = None,
 ) -> ModelInputs:
     """Returns a copy of *model_inputs* with capture dispatch metadata."""
     max_cache_u32 = np.uint32(max_cache_valid_length)
@@ -246,14 +244,8 @@ def _create_model_inputs_with_dispatch_metadata(
                 mla_num_partitions=(
                     mla_num_partitions if target_is_mla else None
                 ),
-                mla_effective_split_len=(
-                    mla_effective_split_len if target_is_mla else None
-                ),
                 draft_mla_num_partitions=(
                     draft_mla_num_partitions if draft_is_mla else None
-                ),
-                draft_mla_effective_split_len=(
-                    draft_mla_effective_split_len if draft_is_mla else None
                 ),
             )
         )
@@ -267,7 +259,6 @@ def _patch_kv_cache_for_capture(
     dispatch_metadata: Buffer,
     max_cache_valid_length: int,
     mla_num_partitions: Buffer | None = None,
-    mla_effective_split_len: Buffer | None = None,
 ) -> KVCacheInputs:
     """Patches max_lengths and dispatch metadata on a KV cache for capture."""
     max_cache_u32 = np.uint32(max_cache_valid_length)
@@ -284,11 +275,6 @@ def _patch_kv_cache_for_capture(
                     mla_num_partitions
                     if mla_num_partitions is not None
                     else kv_per_device.mla_num_partitions
-                ),
-                mla_effective_split_len=(
-                    mla_effective_split_len
-                    if mla_effective_split_len is not None
-                    else kv_per_device.mla_effective_split_len
                 ),
             )
         )
@@ -394,8 +380,6 @@ class ServeGraphCaptureRunner:
             Buffer | None,
             Buffer | None,
             Buffer | None,
-            Buffer | None,
-            Buffer | None,
         ]
     ]:
         """Returns capture metadata selected by the probe strategy.
@@ -407,8 +391,7 @@ class ServeGraphCaptureRunner:
         captured.
 
         Each entry is ``(length, target_metadata, draft_metadata,
-        mla_num_partitions, mla_effective_split_len,
-        draft_mla_num_partitions, draft_mla_effective_split_len)`` where the
+        mla_num_partitions, draft_mla_num_partitions)`` where the
         MLA scalar buffers are ``None`` for MHA (or for the draft component
         when there is no spec-dec).
         """
@@ -434,15 +417,12 @@ class ServeGraphCaptureRunner:
                 Buffer | None,
                 Buffer | None,
                 Buffer | None,
-                Buffer | None,
-                Buffer | None,
             ],
         ] = {}
         for length in probe_lengths:
             (
                 target_bufs,
                 target_np,
-                target_esl,
             ) = self._target_resolver.resolve_for_replica_with_scalars(
                 batch_size, q_max_seq_len, length
             )
@@ -452,16 +432,10 @@ class ServeGraphCaptureRunner:
                 if target_np is not None
                 else None
             )
-            mla_esl_buf: Buffer | None = (
-                Buffer.from_numpy(np.array([target_esl], dtype=np.int64))
-                if target_esl is not None
-                else None
-            )
             if q_max_seq_len > 1:
                 (
                     draft_bufs,
                     draft_np_int,
-                    draft_esl_int,
                 ) = self._draft_resolver.resolve_for_replica_with_scalars(
                     batch_size, self._draft_q_at_capture, length
                 )
@@ -472,16 +446,10 @@ class ServeGraphCaptureRunner:
                     if draft_np_int is not None
                     else None
                 )
-                draft_mla_esl_buf: Buffer | None = (
-                    Buffer.from_numpy(np.array([draft_esl_int], dtype=np.int64))
-                    if draft_esl_int is not None
-                    else None
-                )
             else:
                 metadata_draft = None
                 draft_np = 0
                 draft_mla_np_buf = None
-                draft_mla_esl_buf = None
             num_partitions, _ = _unpack_dispatch_metadata(metadata)
             dispatch_key = (num_partitions, draft_np)
             metadata_by_dispatch_key[dispatch_key] = (
@@ -489,9 +457,7 @@ class ServeGraphCaptureRunner:
                 metadata,
                 metadata_draft,
                 mla_np_buf,
-                mla_esl_buf,
                 draft_mla_np_buf,
-                draft_mla_esl_buf,
             )
         return list(metadata_by_dispatch_key.values())
 
@@ -530,9 +496,7 @@ class ServeGraphCaptureRunner:
                     dispatch_metadata,
                     draft_dispatch_metadata,
                     mla_num_partitions_buf,
-                    mla_effective_split_len_buf,
                     draft_mla_num_partitions_buf,
-                    draft_mla_effective_split_len_buf,
                 ) in dispatch_entries:
                     num_partitions, _ = _unpack_dispatch_metadata(
                         dispatch_metadata
@@ -560,12 +524,8 @@ class ServeGraphCaptureRunner:
                             target_is_mla=self._target_is_mla,
                             draft_is_mla=self._draft_is_mla,
                             mla_num_partitions=mla_num_partitions_buf,
-                            mla_effective_split_len=mla_effective_split_len_buf,
                             draft_mla_num_partitions=(
                                 draft_mla_num_partitions_buf
-                            ),
-                            draft_mla_effective_split_len=(
-                                draft_mla_effective_split_len_buf
                             ),
                         )
                     )
@@ -580,7 +540,6 @@ class ServeGraphCaptureRunner:
                         (
                             extra_bufs,
                             extra_np,
-                            extra_esl,
                         ) = self._draft_resolver.resolve_for_replica_with_scalars(
                             batch_size,
                             self._num_speculative_tokens + 1,
@@ -594,13 +553,6 @@ class ServeGraphCaptureRunner:
                             if extra_np is not None
                             else None
                         )
-                        extra_mla_esl_buf: Buffer | None = (
-                            Buffer.from_numpy(
-                                np.array([extra_esl], dtype=np.int64)
-                            )
-                            if extra_esl is not None
-                            else None
-                        )
                         for cache_idx in range(1, self._num_kv_caches):
                             start = cache_idx * self._n_devices
                             end = start + self._n_devices
@@ -609,7 +561,6 @@ class ServeGraphCaptureRunner:
                                 extra_dispatch,
                                 max_cache_valid_length,
                                 mla_num_partitions=extra_mla_np_buf,
-                                mla_effective_split_len=extra_mla_esl_buf,
                             )
                             all_inputs[start:end] = list(patched.inputs)
                         capture_inputs.kv_cache_inputs = KVCacheInputs(

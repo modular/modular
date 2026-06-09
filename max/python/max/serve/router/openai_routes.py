@@ -413,6 +413,7 @@ class OpenAIChatResponseGenerator(
                                 role="assistant",
                                 refusal=None,
                                 reasoning=chunk.decoded_reasoning_tokens,
+                                reasoning_content=chunk.decoded_reasoning_tokens,
                                 tool_calls=tool_call_chunks
                                 if tool_call_chunks
                                 else None,
@@ -658,6 +659,7 @@ class OpenAIChatResponseGenerator(
             if reasoning_message is not None:
                 for choice in response_choices:
                     choice.message.reasoning = reasoning_message
+                    choice.message.reasoning_content = reasoning_message
 
             usage = None
             if n_reasoning_tokens > 0 or n_tokens > 0:
@@ -1840,6 +1842,14 @@ def get_tool_parser(app: FastAPI) -> ToolParser | None:
 class OpenAICompletionResponseGenerator(
     OpenAIResponseGenerator[CreateCompletionResponse]
 ):
+    def __init__(
+        self,
+        pipeline: TokenGeneratorPipeline,
+        stream_options: ChatCompletionStreamOptionsParam | None = None,
+    ) -> None:
+        super().__init__(pipeline)
+        self.stream_options = stream_options
+
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
@@ -1849,6 +1859,7 @@ class OpenAICompletionResponseGenerator(
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
+        n_cached_prompt_tokens = 0
         status_code = 200
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
@@ -1865,6 +1876,8 @@ class OpenAICompletionResponseGenerator(
 
                 if chunk.prompt_token_count:
                     n_prompt_tokens = chunk.prompt_token_count
+                if chunk.cached_token_count is not None:
+                    n_cached_prompt_tokens = chunk.cached_token_count
                 n_reasoning_tokens += chunk.reasoning_token_count or 0
                 n_tokens += chunk.token_count
 
@@ -1921,6 +1934,30 @@ class OpenAICompletionResponseGenerator(
                 request,
                 n_reasoning_tokens + n_tokens,
             )
+
+            # If `include_usage=True`, send a final chunk with usage statistics.
+            # https://platform.openai.com/docs/api-reference/completions/create#completions_create-stream_options
+            if self.stream_options and self.stream_options.get("include_usage"):
+                final_usage = CompletionUsage(
+                    prompt_tokens=n_prompt_tokens,
+                    completion_tokens=n_reasoning_tokens + n_tokens,
+                    total_tokens=n_prompt_tokens
+                    + n_reasoning_tokens
+                    + n_tokens,
+                    prompt_tokens_details=PromptTokensDetails(
+                        cached_tokens=n_cached_prompt_tokens,
+                    ),
+                )
+                final_response = CompletionStreamResponse(
+                    id=request.request_id.value,
+                    choices=[],
+                    created=int(datetime.now().timestamp()),
+                    model=request.model_name,
+                    object="text_completion",
+                    usage=final_usage,
+                )
+                yield final_response.model_dump_json()
+
             yield "[DONE]"
         except queue.Full:
             logger.exception("Request queue full %s", request.request_id)
@@ -1964,6 +2001,7 @@ class OpenAICompletionResponseGenerator(
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
+        n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=requests[0].timestamp_ns)
         status_code = 200
 
@@ -1979,6 +2017,11 @@ class OpenAICompletionResponseGenerator(
                 n_tokens += sum(chunk.token_count for chunk in req_outputs)
                 if req_outputs and req_outputs[0].prompt_token_count:
                     n_prompt_tokens += req_outputs[0].prompt_token_count
+                if (
+                    req_outputs
+                    and req_outputs[0].cached_token_count is not None
+                ):
+                    n_cached_prompt_tokens += req_outputs[0].cached_token_count
 
                 log_probs = _process_log_probabilities(req_outputs)
                 response_message = "".join(
@@ -1997,6 +2040,14 @@ class OpenAICompletionResponseGenerator(
                         logprobs=log_probs,
                     )
                 )
+            usage = CompletionUsage(
+                prompt_tokens=n_prompt_tokens,
+                completion_tokens=n_reasoning_tokens + n_tokens,
+                total_tokens=n_prompt_tokens + n_reasoning_tokens + n_tokens,
+                prompt_tokens_details=PromptTokensDetails(
+                    cached_tokens=n_cached_prompt_tokens,
+                ),
+            )
             response = CreateCompletionResponse(
                 # CreateCompletionResponse.id refers to the http request, while
                 # request.request_id refers to the prompt. We don't have access to the
@@ -2007,6 +2058,7 @@ class OpenAICompletionResponseGenerator(
                 model=requests[0].model_name,
                 object="text_completion",
                 system_fingerprint=None,
+                usage=usage,
             )
             return response
         except:
@@ -2111,7 +2163,9 @@ async def openai_create_completion(
                     " field."
                 )
 
-        response_generator = OpenAICompletionResponseGenerator(pipeline)
+        response_generator = OpenAICompletionResponseGenerator(
+            pipeline, stream_options=completion_request.stream_options
+        )
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
         # Use request-level temperature/thinking_temperature if provided, else server defaults.

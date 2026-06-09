@@ -10,6 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Re-exports FP8 quantization utilities from comm.fp8_utils."""
 
-from comm.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
+from .attention import VAEAttention
+from .downsampling import Downsample2D
+from .resnet import ResnetBlock2D
+from .upsampling import Upsample2D
+
+__all__ = ["Downsample2D", "ResnetBlock2D", "Upsample2D", "VAEAttention"]
