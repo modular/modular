@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -split-input-file -I=%S -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -split-input-file -I=%S/inputs -verify-diagnostics %s
 
 # Test that importing a package allows access to arbitrarily deep sub-packages.
 

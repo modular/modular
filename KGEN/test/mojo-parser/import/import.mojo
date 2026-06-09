@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -verify-diagnostics -I=%S %s | FileCheck %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -I=%S/inputs %s | FileCheck %s
 
 # Test import of a module, and we properly allow import of an imported decl.
 

@@ -4,14 +4,7 @@ package(default_visibility = ["//visibility:private"])
 
 _DATA = [
     "**/inputs/**/*.mojo",
-    "**/debuginfo_module.mojo",
-    "**/imported_cached_module.mojo",
-    "**/imported_module.mojo",
     "**/test_package.foo",
-    "**/test_package/**",
-    "**/test_from_relative_self_import/**/*.mojo",
-    "**/test_package_user/**/*.mojo",
-    "**/test_reexport_name_collision/**/*.mojo",
     "**/test_std_mock/**",
     "**/test_std_mock_reexporter/**",
 ]

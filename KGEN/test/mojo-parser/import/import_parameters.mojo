@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s -I=%S/inputs | FileCheck %s
 
 from test_package.module import ParameterizedType
 

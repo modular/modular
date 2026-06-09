@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %parse-mojo-isolated -split-input-file -I=unknownincludedir -I=%S %s 2>&1 | FileCheck %s
+# RUN: not %parse-mojo-isolated -split-input-file -I=unknownincludedir -I=%S/inputs %s 2>&1 | FileCheck %s
 
 import imported_module.does_not_exist
 

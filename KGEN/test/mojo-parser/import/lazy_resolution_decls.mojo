@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # COM: Run parsing twice to ensure the cache is populated.
-# RUN: %parse-mojo-isolated -I=%S %s -o /dev/null
+# RUN: %parse-mojo-isolated -I=%S/inputs %s -o /dev/null
 
 # CHECK: !Trait = !lit.trait<@imported_cached_module::@Trait>
 

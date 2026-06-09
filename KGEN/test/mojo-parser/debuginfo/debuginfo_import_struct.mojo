@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -I %S -debug-level full -mlir-print-debuginfo %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I %S/inputs -debug-level full -mlir-print-debuginfo %s | FileCheck %s
 
 from debuginfo_module import VeryUniqueStruct
 

@@ -10,7 +10,7 @@
 # This is the wildcard-import counterpart of
 # import_reexport_name_collision.mojo (which tests explicit imports).
 
-# RUN: %parse-mojo-isolated -I=%S %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I=%S/inputs %s | FileCheck %s
 
 # Wildcard import should bring in the re-exported functions, not the modules.
 from test_reexport_name_collision import *

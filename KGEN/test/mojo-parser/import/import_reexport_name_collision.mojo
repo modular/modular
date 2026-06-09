@@ -12,7 +12,7 @@
 # `__init__.mojo` does `from .foo import foo`), importing via the package
 # should resolve to the function, not the module.
 
-# RUN: %parse-mojo-isolated -I=%S %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I=%S/inputs %s | FileCheck %s
 
 # The direct import path works:
 from test_reexport_name_collision.foo import foo as foo_direct

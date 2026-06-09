@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated -I %S %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I %S/inputs %s | FileCheck %s
 
 # COM: Run it twice to ensure it works on a cache hit.
 
