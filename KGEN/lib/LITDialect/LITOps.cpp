@@ -193,8 +193,10 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getInputParams() { return {}; }
 
 void PackageOp::build(OpBuilder &builder, OperationState &state,
                       StringAttr name) {
-  state.addAttribute(getSymNameAttrName(state.name), name);
-  state.addRegion()->push_back(new Block());
+  build(builder, state, name, /*docString=*/{},
+        /*dependencies=*/{}, /*externLLVMBitcodeModules=*/{});
+  assert(state.regions.size() == 1);
+  state.regions.back()->push_back(new Block());
 }
 
 void ImportOp::build(OpBuilder &builder, OperationState &state,

@@ -681,6 +681,10 @@ struct SharedState::ModuleState {
   /// The set of nested modules.
   SmallVector<std::unique_ptr<ModuleState>> nestedModuleAllocations;
   DenseMap<StringAttr, ModuleState *> nestedModules;
+
+  /// Keeps the bytecode buffer alive for deferred lazy materialization.
+  /// BytecodeReader holds bufferOwnerRef by reference, so this must outlive it.
+  std::shared_ptr<llvm::SourceMgr> sourceMgr;
 };
 
 //===----------------------------------------------------------------------===//
@@ -1647,7 +1651,10 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
   ModuleState &moduleState = parentState.insertNestedModule(
       declName, std::make_unique<ModuleState>(&decl));
   moduleState.bytecodeReader = std::move(bytecodeReader);
+  // keep buffer alive for deferred materialize
+  moduleState.sourceMgr = sourceMgr;
   moduleState.tmpModule = tmpModule;
+
   impl->moduleStates[&decl] = &moduleState;
   impl->packageStates[cast_or_null<PackageOp>(decl.getIfOperation())] =
       &moduleState;

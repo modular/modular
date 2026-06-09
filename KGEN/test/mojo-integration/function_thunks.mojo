@@ -36,25 +36,20 @@ def test_fn():
     var f: def(Int) thin -> None = thunk[Int]
 
 
-# Checking for 'postParseModule' ensures it was loaded from bytecode.
+# The imported `@std` package is loaded from precompiled bytecode.
 
-# CHECK-LABEL: lit.package @std attributes {
-# CHECK-SAME: postParseModule =
+# CHECK-LABEL: lit.package @std
 
 # CHECK-NOT: lit.fn @"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
 
 # CHECK-LABEL: lit.package @func_package_foo
-# CHECK-SAME: postParseModule
 # CHECK: lit.fn @"foo
 # CHECK: kgen.create_closure{{.*}}@"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
 
 # CHECK-COUNT-1: lit.fn @"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
 
 # CHECK-LABEL: lit.package @func_package_bar
-# CHECK-SAME: postParseModule
 # CHECK: lit.fn @"bar
 # CHECK: kgen.create_closure{{.*}}@"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
 
 # CHECK-NOT: lit.fn @"def(::Int) -> None|def(::Int) -> None|{{.*}}[def(::Int) -> None](::Int)"
-
-# CHECK-LABEL: dialect_resources

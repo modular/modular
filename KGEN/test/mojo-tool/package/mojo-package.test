@@ -5,7 +5,6 @@
 
 // CHECK: lit.package @test_package
 // CHECK-SAME: dependencies = #kgen<link.dependencies[@std]>
-// CHECK-SAME: postParseModule = {{.*}}
 
 // CHECK: lit.package @inner1
 // CHECK:   lit.file_module @myfile
@@ -27,9 +26,3 @@
 // CHECK: lit.end_fn
 
 // CHECK-DAG: !subroutine{{[0-9]+}} =
-
-// CHECK: {-#
-// CHECK: dialect_resources
-// CHECK: builtin
-// CHECK: bytecode_{{.*}}: {{.*}}
-// CHECK-NOT: archive_{{.*}}: {{.*}}

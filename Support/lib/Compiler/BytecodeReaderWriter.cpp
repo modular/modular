@@ -78,28 +78,6 @@ LogicalResult M::writeAttrToBytecodeFile(Attribute attr, raw_ostream &os) {
 }
 
 //===----------------------------------------------------------------------===//
-// writeModuleToBytecodeAttr
-//===----------------------------------------------------------------------===//
-
-DenseResourceElementsAttr M::writeModuleToBytecodeAttr(ModuleOp module) {
-  // Write the package bytecode to the given buffer. This will be attached to
-  // the exported high level functions.
-  WriteableBufferRef str = WriteableBuffer::get();
-  if (failed(mlir::writeBytecodeToFile(module, *str)))
-    return nullptr;
-
-  // Hash the bytecode itself - this will give us a unique'd attr name that
-  // shouldn't clash even when a large number of packages get imported - and
-  // if they do clash, they're guaranteed to be exactly the same.
-  std::string hashKey = llvm::utohexstr(
-      xxh3_64bits(ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
-                                    (const uint8_t *)str->getBufferEnd())),
-      /*LowerCase=*/true, /*Width=*/16);
-  return createResourceAttr(module->getContext(), std::move(str),
-                            "bytecode_" + hashKey);
-}
-
-//===----------------------------------------------------------------------===//
 // loadSymbolsFromBytecode
 //===----------------------------------------------------------------------===//
 
