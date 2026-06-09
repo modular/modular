@@ -13,46 +13,34 @@
 # test_hard_keywords_function_names.mojo
 # Test that hard keywords cannot be used as function names without escaping.
 # This test file verifies the fix for issue #6630.
+from std.testing import assert_equal
 
-# These should all cause compilation errors because hard keywords
-# are not allowed as function names without backtick escaping.
 
-# ERROR: 'match' is a hard keyword and cannot be used as a function name
-# def match():
-#     pass
+# --- Escaped keyword functions ---
 
-# ERROR: 'class' is a hard keyword and cannot be used as a function name
-# def class():
-#     pass
 
-# ERROR: 'yield' is a hard keyword and cannot be used as a function name
-# def yield():
-#     pass
-
-# ERROR: 'del' is a hard keyword and cannot be used as a function name
-# def del():
-#     pass
-
-# However, these SHOULD work with backtick escaping:
-
-def `match`():
+def `match`() -> Int:
     """Function using escaped keyword as name."""
     return 42
 
-def `class`():
+
+def `class`() -> String:
     """Function using escaped keyword as name."""
     return "class"
 
-def `yield`():
+
+def `yield`() -> Int:
     """Function using escaped keyword as name."""
     return 100
 
-def `del`():
+
+def `del`() -> Bool:
     """Function using escaped keyword as name."""
     return True
 
-# And hard keywords SHOULD be allowed as struct method names
-# because the dot operator disambiguates them:
+
+# --- Struct with keyword method names ---
+
 
 struct Foo:
     def __init__(out self):
@@ -75,10 +63,11 @@ struct Foo:
         return False
 
 
-def test_escaped_keywords():
-    """Test that escaped keywords work as function names."""
-    from std.testing import assert_equal
+# --- Tests ---
 
+
+def test_escaped_keywords() raises:
+    """Test that escaped keywords work as function names."""
     # Escaped keyword functions should work
     assert_equal(`match`(), 42)
     assert_equal(`class`(), "class")
@@ -93,6 +82,6 @@ def test_escaped_keywords():
     assert_equal(f.del(), False)
 
 
-def main():
+def main() raises:
     test_escaped_keywords()
     print("All tests passed!")
