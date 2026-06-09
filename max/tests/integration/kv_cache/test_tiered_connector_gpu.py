@@ -880,7 +880,6 @@ def _build_multi_cache_manager(
         disk_offload_dir=disk_dir,
         disk_offload_max_gb=1.0,
         disk_offload_direct_io=False,
-        use_debug_tiered_mode=False,
         host_kvcache_swap_space_gb=999.0,
     )
     sliding = _fp8_cache_params(cfg, n_kv_heads=4, head_dim=256)  # idx0

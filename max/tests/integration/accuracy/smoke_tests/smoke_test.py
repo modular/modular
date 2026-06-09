@@ -108,7 +108,6 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_local_kvconnector.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_tiered_kvconnector.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__debug_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_debug_tiered_kvconnector.yaml",
     "microsoft/Phi-3.5-mini-instruct__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi35_mini.yaml",
     "microsoft/phi-4__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi4.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
@@ -131,7 +130,6 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tiered_kvconnector_8x_b200.yaml",
     "nvidia/Kimi-K2.5-NVFP4__local_kvconnector": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_local_kvconnector_8x_b200_with_vision.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__debug_tiered_kvconnector": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_debug_tiered_kvconnector_8x_b200_with_vision.yaml",
 })
 # fmt: on
 
