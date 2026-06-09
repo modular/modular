@@ -86,6 +86,7 @@ def LIT_FnOp : LITOp<"fn", [
     OptionalAttr<StrAttr>:$namedResult,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
+    OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,
     // Present if the decl has an @stable decorator on it.
     UnitAttr:$hasStableDecorator,
     // Present if the decl has an @stable(since="version") decorator.
@@ -406,6 +407,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
+    OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,
     // Present if the decl has an @stable decorator on it.
     UnitAttr:$hasStableDecorator,
     // Present if the decl has an @stable(since="version") decorator.
@@ -696,6 +698,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     UnitAttr:$definesClosure,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
+    OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,
     // Present if the decl has an @stable decorator on it.
     UnitAttr:$hasStableDecorator,
     // Present if the decl has an @stable(since="version") decorator.
@@ -898,6 +901,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     OptionalAttr<TypedAttrInterface>:$value,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
+    OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,
     // The trait symbol this function is inherited from. None if self-declared.
     OptionalAttr<SymbolRefAttr>:$inheritedFrom,
     // Present for defaulted associated alias. This bit should be set before
@@ -932,7 +936,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     OpBuilder<(ins "ParamDeclAttr":$decl,
               CArg<"TypedAttr", "{}">:$value), [{
       build($_builder, $_state, decl, value, /*docString=*/{},
-            /*deprecationInfo=*/{},
+            /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
             /*inheritedFrom=*/{}, /*defaultedAssociatedAlias=*/false,
             /*hasStableDecorator=*/false, /*stableSinceVersion=*/{},
             /*hasDocHiddenDecorator=*/false);

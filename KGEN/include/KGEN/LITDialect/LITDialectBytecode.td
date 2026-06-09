@@ -145,6 +145,13 @@ def DeprecationInfoAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
+def UnavailableInfoAttr : DialectAttribute<(attr
+  StringAttr:$reason,
+  OptionalAttribute<"StringAttr">:$replacement
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
+
 def DocStringAttr : DialectAttribute<(attr
   StringAttr:$string,
   OptionalAttribute<"FileLineColLoc">:$location
@@ -298,6 +305,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     TypeConventionAttr,
     VarDeclKindAttr,
     DeprecationInfoAttr,
+    UnavailableInfoAttr,
     ComptimeOriginAttr,
     StaticOriginAttr,
     WrappedIndirectOriginAttr,

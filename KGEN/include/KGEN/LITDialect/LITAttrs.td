@@ -150,6 +150,45 @@ def LIT_DeprecationInfoAttr : LITAttr<"DeprecationInfo", "deprecation"> {
 }
 
 //===----------------------------------------------------------------------===//
+// UnavailableInfoAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_UnavailableInfoAttr : LITAttr<"UnavailableInfo", "unavailable"> {
+  let summary = "Unavailability information for a declaration";
+  let description = [{
+    The `#lit.unavailable` attribute contains unavailability information for a
+    declaration marked with the `@unavailable` decorator. It stores the
+    diagnostic message and optionally the replacement identifier (from
+    `@unavailable(use=X)`).
+
+    Unlike `@deprecated`, references to declarations marked `@unavailable`
+    produce an error rather than a warning.
+
+    Example:
+
+    ```mlir
+    #lit.unavailable<"use byte_length() or codepoint_length() instead">
+    #lit.unavailable<"use 'new_func' instead", "new_func">
+    ```
+  }];
+
+  let parameters = (ins
+    "StringAttr":$reason,
+    OptionalParameter<"StringAttr">:$replacement
+  );
+  let assemblyFormat = "`<` $reason (`,` $replacement^)? `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "StringAttr":$reason,
+      CArg<"StringAttr", "{}">:$replacement
+    ), [{
+      return get(reason.getContext(), reason, replacement);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // DocStringAttr
 //===----------------------------------------------------------------------===//
 

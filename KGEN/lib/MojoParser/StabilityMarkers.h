@@ -62,6 +62,29 @@ void checkDeprecationAndWarn(ASTDecl &decl, llvm::SMLoc useLoc,
                              CallSyntax syntax = CallSyntax::kDirectCall,
                              llvm::SMLoc fixitLoc = {});
 
+/// Check if accessing the given declaration should emit an unavailable-API
+/// error. This should be called from name resolution when a symbol is
+/// referenced.
+///
+/// An error is emitted when the declaration has an @unavailable decorator.
+/// Unlike deprecation, unavailability is always an error and is never
+/// suppressed. If the declaration has a replacement identifier (from
+/// @unavailable(use=X)), a fixit will be emitted for direct calls (not for
+/// operator/subscript syntax).
+///
+/// \param decl The declaration being accessed
+/// \param useLoc Location of the use site (for error emission)
+/// \param shared SharedState for diagnostics
+/// \param range Source range to highlight in the diagnostic
+/// \param syntax The call syntax (used to determine if fixit should be emitted)
+/// \param fixitLoc Location for fixit replacement (defaults to useLoc if
+///                 invalid). For method calls, this should be the method
+///                 identifier location, not the full expression location.
+void checkUnavailableAndError(ASTDecl &decl, llvm::SMLoc useLoc,
+                              SharedState &shared, M::SourceRange range,
+                              CallSyntax syntax = CallSyntax::kDirectCall,
+                              llvm::SMLoc fixitLoc = {});
+
 /// Unified function to check for both deprecation and stability warnings.
 /// This should be the primary entry point for callers who want to check
 /// both types of warnings at once.
