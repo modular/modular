@@ -39,98 +39,6 @@ using namespace LIT;
 // Diagnostic emission implementation
 //===----------------------------------------------------------------------===//
 
-namespace {
-/// Helper class to emit errors without cluttering the evaluation logic.
-struct DiagEmitter : public SharedStateUser {
-  DiagEmitter(SharedState &shared, SMLoc callLoc)
-      : SharedStateUser(shared), callLoc(callLoc) {}
-
-  MojoInflightDiag
-  unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const;
-  MojoInflightDiag wrongParamCount(size_t expectedNumParams,
-                                   size_t actualNumParams) const;
-  MojoInflightDiag wrongArgCountWithPack(size_t minRequiredArgs,
-                                         size_t maxAllowedArgs,
-                                         size_t numOperands) const;
-  MojoInflightDiag unresolvedPackCount(size_t numOperands) const;
-  MojoInflightDiag wrongPosOnlyCount(size_t minRequiredArgs,
-                                     size_t maxAllowedArgs, size_t numOperands,
-                                     const Twine &argOrParam) const;
-  MojoInflightDiag resultGenericMemType(Type outputType) const;
-  MojoInflightDiag argGenericMemType(size_t expectedArgIdx, Type expectedType,
-                                     PogListAttr argListAttr) const;
-  MojoInflightDiag missingArgs(ArrayRef<StringAttr> missingArgs,
-                               const Twine &kindStr) const;
-  MojoInflightDiag
-  posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const;
-  MojoInflightDiag tooManyPosArgs(size_t maxAllowedArgs,
-                                  size_t numPosOperands) const;
-  MojoInflightDiag byPosAndKw(ArrayRef<StringAttr> names) const;
-  MojoInflightDiag badImplicitConversion(ASTType fromType,
-                                         ASTType toType) const;
-
-private:
-  SMLoc callLoc;
-
-  MojoInflightDiag initDiag() const { return shared.emitError(callLoc); }
-};
-} // namespace
-
-MojoInflightDiag
-DiagEmitter::unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const {
-  auto diag = initDiag();
-  emitUnknownKeywords(diag, unknownKwOperands, "argument");
-  return diag;
-}
-
-MojoInflightDiag DiagEmitter::wrongParamCount(size_t expectedNumParams,
-                                              size_t actualNumParams) const {
-  auto diag = initDiag() << "callee";
-  emitWrongArgOrParamCount(diag, /*minRequired=*/expectedNumParams,
-                           /*maxAllowed=*/expectedNumParams, actualNumParams,
-                           "parameter");
-  return diag;
-}
-
-MojoInflightDiag DiagEmitter::wrongArgCountWithPack(size_t minRequiredArgs,
-                                                    size_t maxAllowedArgs,
-                                                    size_t numOperands) const {
-  auto diag = initDiag() << "callee with non-empty variadic pack argument";
-  emitWrongArgOrParamCount(diag, minRequiredArgs, maxAllowedArgs, numOperands,
-                           "positional operand");
-  return diag;
-}
-
-MojoInflightDiag DiagEmitter ::unresolvedPackCount(size_t numOperands) const {
-  return initDiag() << "assigning " << numOperands << " operand"
-                    << plural(numOperands)
-                    << " to an unresolvable variadic pack argument";
-}
-
-MojoInflightDiag DiagEmitter::wrongPosOnlyCount(size_t minRequiredArgs,
-                                                size_t maxAllowedArgs,
-                                                size_t numOperands,
-                                                const Twine &argOrParam) const {
-  auto diag = initDiag() << "callee";
-  emitWrongArgOrParamCount(diag, minRequiredArgs, maxAllowedArgs, numOperands,
-                           "positional " + argOrParam);
-  return diag;
-}
-
-MojoInflightDiag DiagEmitter::resultGenericMemType(Type outputType) const {
-  return initDiag()
-         << "result cannot bind __TypeOfAllTypes type to memory-only type "
-         << ASTType(outputType);
-}
-
-MojoInflightDiag DiagEmitter::argGenericMemType(size_t argIdx,
-                                                Type expectedType,
-                                                PogListAttr argListAttr) const {
-  return initDiag() << "cannot bind __TypeOfAllTypes type to memory-only type "
-                    << ASTType(expectedType) << " expected by argument "
-                    << argListAttr.getPogs()[argIdx].getName();
-}
-
 /// Attach extra type conversion error detail or hints to the user when
 /// reporting an error passing `operand` to an argument of type `argType`.
 static void addTypeConversionDetail(MojoInflightDiag &diag,
@@ -284,47 +192,6 @@ void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
   addTypeConversionDetail(diag, operand, expectedType, shared);
 }
 } // namespace M::KGEN::LIT
-
-MojoInflightDiag DiagEmitter::missingArgs(ArrayRef<StringAttr> missingArgs,
-                                          const Twine &kindStr) const {
-  MojoInflightDiag diag = initDiag();
-  emitMissing(diag, missingArgs, kindStr + " argument");
-  return diag;
-}
-
-MojoInflightDiag
-DiagEmitter::posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const {
-  MojoInflightDiag diag = initDiag();
-  emitPosOnlyPassedByKw(diag, posOnlyPassedByKw, "argument");
-  return diag;
-}
-
-MojoInflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
-                                             size_t numPosOperands) const {
-  MojoInflightDiag diag = initDiag();
-  diag << "expected at most " << maxAllowedArgs << " positional argument"
-       << plural(maxAllowedArgs) << ", got " << numPosOperands;
-  return diag;
-}
-
-MojoInflightDiag DiagEmitter::byPosAndKw(ArrayRef<StringAttr> names) const {
-  MojoInflightDiag diag = initDiag();
-  emitByPosAndKw(diag, names, "argument");
-  return diag;
-}
-
-MojoInflightDiag DiagEmitter::badImplicitConversion(ASTType fromType,
-                                                    ASTType toType) const {
-  MojoInflightDiag diag = initDiag();
-  diag << "cannot implicitly convert";
-  if (fromType)
-    diag << " " << fromType;
-
-  // Add target type to diag
-  if (toType)
-    diag << " to " << toType << ": add an explicit cast";
-  return diag;
-}
 
 //===----------------------------------------------------------------------===//
 // OverloadFitness
@@ -483,7 +350,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   SMLoc callLoc = callable.getExpr()->getLoc();
   SharedState &shared = callable.getShared();
-  DiagEmitter emitDiagFor(shared, callLoc);
 
   if (!operands.empty()) {
     if (auto selfCValue = operands[0].ir.getIfCValue()) {
@@ -510,14 +376,23 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   auto [kwDiagRes, kwDiagNames] =
       operands.diagnoseKeywordOperands(argListAttr, variadicKwOperands);
   switch (kwDiagRes) {
-  case CallOperands::KwDiagResult::kMissingKwOnly:
-    return emitDiagFor.missingArgs(kwDiagNames, "keyword-only");
+  case CallOperands::KwDiagResult::kMissingKwOnly: {
+    auto diag = shared.emitError(callLoc);
+    emitMissing(diag, kwDiagNames, "keyword-only argument");
+    return std::move(diag);
+  }
   case CallOperands::KwDiagResult::kOutOfOrderInferredKw:
     llvm_unreachable("no inferred arguments");
-  case CallOperands::KwDiagResult::kPosOnlyPassedByKw:
-    return emitDiagFor.posOnlyPassedByKw(kwDiagNames);
-  case CallOperands::KwDiagResult::kUnknownKeywords:
-    return emitDiagFor.unexpectedKwArgs(kwDiagNames);
+  case CallOperands::KwDiagResult::kPosOnlyPassedByKw: {
+    auto diag = shared.emitError(callLoc);
+    emitPosOnlyPassedByKw(diag, kwDiagNames, "argument");
+    return std::move(diag);
+  }
+  case CallOperands::KwDiagResult::kUnknownKeywords: {
+    auto diag = shared.emitError(callLoc);
+    emitUnknownKeywords(diag, kwDiagNames, "argument");
+    return std::move(diag);
+  }
   default:
     break;
   }
@@ -546,18 +421,24 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   };
   switch (posDiagRes) {
   case CallOperands::PosDiagResult::kMissingPos: {
-    auto diag = emitDiagFor.missingArgs(posDiagNames, "positional");
+    auto diag = shared.emitError(callLoc);
+    emitMissing(diag, posDiagNames, "positional argument");
     attachPackSplatNote(diag);
-    return diag;
+    return std::move(diag);
   }
   case CallOperands::PosDiagResult::kTooManyPos: {
     size_t numPosMaximum = countNumPositional(argListAttr);
-    auto diag = emitDiagFor.tooManyPosArgs(numPosMaximum, numPosOperands);
+    auto diag = shared.emitError(callLoc);
+    diag << "expected at most " << numPosMaximum << " positional argument"
+         << plural(numPosMaximum) << ", got " << numPosOperands;
     attachPackSplatNote(diag);
-    return diag;
+    return std::move(diag);
   }
-  case CallOperands::PosDiagResult::kByPosAndKw:
-    return emitDiagFor.byPosAndKw(posDiagNames);
+  case CallOperands::PosDiagResult::kByPosAndKw: {
+    auto diag = shared.emitError(callLoc);
+    emitByPosAndKw(diag, posDiagNames, "argument");
+    return std::move(diag);
+  }
   default:
     break;
   }
@@ -639,8 +520,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.
   for (Type outputType : signature.getResults())
-    if (!ASTType(outputType).isRegisterPassable(callLoc, shared))
-      return emitDiagFor.resultGenericMemType(outputType);
+    if (!ASTType(outputType).isRegisterPassable(callLoc, shared)) {
+      return shared.emitError(callLoc)
+             << "result cannot bind __TypeOfAllTypes type to memory-only type "
+             << ASTType(outputType);
+    }
 
   // Fail if this is a constructor call that returns the wrong result type. This
   // can happen with weird things like this:
@@ -678,9 +562,12 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // Fail if this is an implicit conversion but the ctor is not marked @implicit
   if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
       !cast<FnOp>(funcIfDirect->getIfOperation()).isImplicitConversion()) {
-    ASTType fromType = operands[0].ir.getRValueTypeIfResolvable();
-    return emitDiagFor.badImplicitConversion(fromType,
-                                             signature.getUserResultType());
+    MojoInflightDiag diag = shared.emitError(callLoc);
+    diag << "cannot implicitly convert";
+    if (ASTType fromType = operands[0].ir.getRValueTypeIfResolvable())
+      diag << " " << fromType;
+    diag << " to " << signature.getUserResultType() << ": add an explicit cast";
+    return std::move(diag);
   }
 
   // Otherwise we succeeded!
