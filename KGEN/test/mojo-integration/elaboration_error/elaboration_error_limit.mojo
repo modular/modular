@@ -15,19 +15,19 @@
 
 # expected-error @+2{{function instantiation failed}}
 @export
-def entry_method0():
+def entry_method0() abi("Mojo"):
     foo()  # expected-note {{call expansion failed}}
 
 
 # expected-error @+3{{function instantiation failed}}
 # expected-note @+2{{too many errors emitted, stopping now}}
 @export
-def entry_method1():
+def entry_method1() abi("Mojo"):
     bar()  # expected-note {{call expansion failed}}
 
 
 @export
-def entry_method2():
+def entry_method2() abi("Mojo"):
     baz()
 
 

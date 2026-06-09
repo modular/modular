@@ -23,5 +23,5 @@ def call_it[T: SelfMethod](x: T):
 
 
 @export
-def pass_it(x: SelfStruct):
+def pass_it(x: SelfStruct) abi("Mojo"):
     call_it(x)

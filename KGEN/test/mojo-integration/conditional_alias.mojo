@@ -21,5 +21,5 @@ def make_true() -> __mlir_type.`!kgen.scalar<bool>`:
 
 
 @export
-def conditional_alias():
+def conditional_alias() abi("Mojo"):
     comptime value = __mlir_attr.`1 : index` if make_true() else no_impl()

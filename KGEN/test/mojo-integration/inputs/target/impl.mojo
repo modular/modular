@@ -10,5 +10,5 @@ from test_dependency import *
 
 
 @export
-def anchor() -> __mlir_type.index:
+def anchor() abi("Mojo") -> __mlir_type.index:
     return use_me()

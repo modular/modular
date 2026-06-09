@@ -1287,12 +1287,12 @@ def bad_raises_fn2() raises:
 
 # expected-error @+1 {{@export can not be applied on parametric functions}}
 @export
-def foo(s: SIMD):
+def foo(s: SIMD) abi("Mojo"):
     pass
 
 # expected-error @+1 {{@export can not be applied on parametric functions}}
 @export
-def bar[n: Int]():
+def bar[n: Int]() abi("Mojo"):
     pass
 
 

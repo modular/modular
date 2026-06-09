@@ -76,7 +76,7 @@ def repro_issue[
 
 
 @export
-def callIt() -> Int:
+def callIt() abi("Mojo") -> Int:
     var t = MainImplT()
     var a = repro_issue(t, t)
     return a

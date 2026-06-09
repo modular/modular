@@ -30,7 +30,7 @@ def borrowed_generic[T: AnyType](x: T):
 # CHECK-SAME: %arg0: !kgen.struct<(scalar<f32>, scalar<f32>)> owned,
 # CHECK-SAME: %arg1: !kgen.pointer<struct<(index, index) memoryOnly>> owned_in_mem)
 @export
-def test_owned(var x: RegPassable, var y: MemOnly):
+def test_owned(var x: RegPassable, var y: MemOnly) abi("Mojo"):
     # CHECK: [[LEN:%.*]] = kgen.param.constant = <16>
     # CHECK: kgen.call {{.*}}borrowed_generic{{.*}}"(%arg0)
     borrowed_generic(x)
@@ -58,7 +58,7 @@ def test_owned(var x: RegPassable, var y: MemOnly):
 # CHECK-SAME: %arg0: !kgen.struct<(scalar<f32>, scalar<f32>)>,
 # CHECK-SAME: %arg1: !kgen.pointer<struct<(index, index) memoryOnly>> read_mem)
 @export
-def test_borrowed(x: RegPassable, y: MemOnly):
+def test_borrowed(x: RegPassable, y: MemOnly) abi("Mojo"):
     # CHECK: [[LEN:%.*]] = kgen.param.constant = <16>
     # CHECK: kgen.call {{.*}}borrowed_generic{{.*}}"(%arg0)
     borrowed_generic(x)

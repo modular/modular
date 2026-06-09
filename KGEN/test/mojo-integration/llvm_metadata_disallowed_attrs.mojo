@@ -14,10 +14,10 @@
 # CHECK: 'llvm.target_cpu' is not allowed to be set via @__llvm_metadata
 @export
 @__llvm_metadata(`llvm.target_cpu`=__mlir_attr.`"znver4"`)
-def fn_disallowed_target_cpu():
+def fn_disallowed_target_cpu() abi("Mojo"):
     pass
 
 
 @export
-def use():
+def use() abi("Mojo"):
     fn_disallowed_target_cpu()

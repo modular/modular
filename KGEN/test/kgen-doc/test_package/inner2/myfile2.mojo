@@ -6,5 +6,5 @@
 
 
 @export
-def bar():
+def bar() abi("Mojo"):
     return

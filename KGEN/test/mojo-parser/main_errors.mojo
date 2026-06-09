@@ -41,7 +41,7 @@ def main[input: Int]():
 
 # expected-error @below {{'main' can only be exported as 'main'}}
 @export("foo")
-def main():
+def main() abi("Mojo"):
     return
 
 
@@ -50,5 +50,5 @@ def main():
 
 # expected-error @below {{only 'main' can be exported as 'main'}}
 @export("main")
-def fooMain():
+def fooMain() abi("Mojo"):
     return

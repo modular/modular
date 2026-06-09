@@ -11,5 +11,5 @@
 
 
 @export
-def use_int(a: Int):
+def use_int(a: Int) abi("Mojo"):
     return
