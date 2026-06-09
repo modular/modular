@@ -42,7 +42,7 @@ from max.pipelines.context import (
     LogProbabilities,
 )
 from max.pipelines.kv_cache.config import KVCacheConfig
-from max.pipelines.lora import LoRAManager
+from max.pipelines.lora import LoRAInputs, LoRAManager
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 
@@ -188,11 +188,8 @@ class ModelInputs:
 
     kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None
 
-    lora_ids: Buffer | None = None
-    """Buffer containing the LoRA ids."""
-
-    lora_ranks: Buffer | None = None
-    """Buffer containing the LoRA ranks"""
+    lora: LoRAInputs | None = None
+    """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
 
     hidden_states: Buffer | list[Buffer] | None = None
     """Hidden states for a variable number of tokens per sequence.
