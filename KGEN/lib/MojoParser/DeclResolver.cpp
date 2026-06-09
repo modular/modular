@@ -845,13 +845,18 @@ LogicalResult DeclResolver::importDeclFromModule(
                                  sourceName.getValue() + "'");
     return failure();
   }
-  ArrayRef<ASTDecl *> results = result.getIfSuccess();
+  // Copy the entries out of the scope's symbol table. The lookups below
+  // (re-export resolution, extension imports) can resolve further decls and
+  // invalidate the underlying storage, leaving a dangling reference.
+  SmallVector<ASTDecl *> results(result.getIfSuccess());
   assert(!results.empty() && "other cases handled above");
 
   // If the initial lookup only found submodule/package decls in a package,
-  // the name might also refer to a re-exported symbol from __init__.mojo.
-  // The directory-scan creates whole-module imports that shadow wildcard
-  // imports from __init__, so look up the name directly in __init__'s scope.
+  // the name might also refer to a re-exported symbol from __init__.mojo
+  // (e.g. `foo.mojo` defines `def foo` and __init__ does `from .foo import
+  // foo`). The directory-scan creates whole-module imports that shadow
+  // wildcard imports from __init__, so look up the name directly in __init__'s
+  // scope and prefer such a re-exported symbol over the submodule.
   // Note: the lookup results here are already resolved, so we only need to
   // check for FileModuleOp/PackageOp (unlike the wildcard path which also
   // sees UnresolvedImportOp entries from raw getDeclsInScope()).
@@ -863,10 +868,20 @@ LogicalResult DeclResolver::importDeclFromModule(
     if (failed(initOrFailure))
       return failure();
     if (ASTDecl *initDecl = *initOrFailure) {
-      reExported = lookupNonModuleDecls(*initDecl, sourceName, sourceNameLoc,
-                                        resolveTarget);
-      if (!reExported.empty())
-        results = ArrayRef(reExported);
+      // Skip the promotion lookup when __init__'s binding for this name is the
+      // very import we are currently resolving: a relative self-import such as
+      // `from . import foo` in __init__.mojo. Resolving it again here would
+      // re-enter that import and report a spurious recursive reference, and the
+      // submodule result is already what such a self-import wants.
+      bool selfReferential =
+          llvm::any_of(initDecl->lookupInCurrentScope(sourceName),
+                       [&](ASTDecl *d) { return isAlreadyProcessing(*d); });
+      if (!selfReferential) {
+        reExported = lookupNonModuleDecls(*initDecl, sourceName, sourceNameLoc,
+                                          resolveTarget);
+        if (!reExported.empty())
+          results.assign(reExported.begin(), reExported.end());
+      }
     }
   }
 
