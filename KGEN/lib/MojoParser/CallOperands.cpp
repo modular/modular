@@ -13,6 +13,8 @@
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ExprNode.h"
+#include "KGEN/MojoParser/MojoDiags.h"
+#include "MojoUtils.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Twine.h"
@@ -90,14 +92,21 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
   return os << '}';
 }
 
+/// Emit a comma separated list of names, each in '...'.
+static void emitNames(MojoInflightDiag &diag, ArrayRef<StringAttr> names) {
+  llvm::interleave(
+      names, [&](StringAttr str) { diag << str; }, [&]() { diag << ", "; });
+}
+
 /// Helper to diagnose common cases of candidate mismatch related to keyword
 /// operands (unexpected kw-operands, pos-only arg/param provided by kw-operand,
 /// missing kw-only arg/param). If the function accepts variadic keyword
 /// args/params, this function also collects them.
-std::pair<CallOperands::KwDiagResult, SmallVector<StringAttr>>
-CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
-                                      OperandValueList &variadicKwOperands,
-                                      bool allowMissingKwOnly) const {
+LogicalResult CallOperands::diagnoseKeywordOperands(
+    PogListAttr pogListAttr, OperandValueList &variadicKwOperands,
+    bool isParameterList,
+    llvm::function_ref<MojoInflightDiag &()> getDiag) const {
+
   // First, we collect any (named) pos-only args/params passed by keyword
   // operand, and missing kw-only args/params. We also collect all arg/param
   // names that might be specified by keyword.
@@ -124,7 +133,7 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
       continue; // Variadic/pack args cannot be specified by their keyword.
     if (passingKind == PassingKind::KwOnly && !pogListAttr.getDefault(argIdx) &&
         !findKwArg(name)) {
-      if (!allowMissingKwOnly)
+      if (!isParameterList) // KWOnly parameters may be inferred.
         missingKwOnly.push_back(name);
       continue;
     }
@@ -137,10 +146,22 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
     assert(addedNew && "duplicate argument/parameter name in signature");
   }
 
-  if (!allowMissingKwOnly && !missingKwOnly.empty())
-    return {KwDiagResult::kMissingKwOnly, std::move(missingKwOnly)};
-  if (!posOnlyPassedByKw.empty())
-    return {KwDiagResult::kPosOnlyPassedByKw, std::move(posOnlyPassedByKw)};
+  if (!isParameterList && !missingKwOnly.empty()) {
+    auto &diag = getDiag();
+    emitMissing(diag, missingKwOnly,
+                isParameterList ? "keyword-only parameter"
+                                : "keyword-only argument");
+    return failure();
+  }
+  if (!posOnlyPassedByKw.empty()) {
+    auto &diag = getDiag();
+    size_t numNames = posOnlyPassedByKw.size();
+    const char *argOrParam = isParameterList ? "parameter" : "argument";
+    diag << "positional-only " << argOrParam << plural(numNames)
+         << " passed as keyword operand" << plural(numNames) << ": ";
+    emitNames(diag, posOnlyPassedByKw);
+    return failure();
+  }
 
   // Collect all the keyword operands with unknown names.
   auto inferredNameIter = inferredNames.begin();
@@ -154,8 +175,11 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
     if (inferredNameIter != inferredNames.end())
       continue;
 
-    if (inferredNames.contains(operand.keyword))
-      return {KwDiagResult::kOutOfOrderInferredKw, {operand.keyword}};
+    if (inferredNames.contains(operand.keyword)) {
+      auto &diag = getDiag();
+      diag << "inferred parameter passed out of order: " << operand.keyword;
+      return failure();
+    }
 
     if (operand.keyword && !kwPassableNames.contains(operand.keyword))
       variadicKwOperands.push_back(operand);
@@ -166,18 +190,24 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
     SmallVector<StringAttr> unknownKwOperands;
     for (auto &operand : variadicKwOperands)
       unknownKwOperands.push_back(operand.keyword);
-    return {KwDiagResult::kUnknownKeywords, unknownKwOperands};
+
+    auto &diag = getDiag();
+    const char *argOrParam = isParameterList ? "parameter" : "argument";
+    diag << "unknown keyword " << argOrParam << plural(unknownKwOperands.size())
+         << ": ";
+    emitNames(diag, unknownKwOperands);
+    return failure();
   }
 
-  return {KwDiagResult::kValid, {}};
+  return success();
 }
 
 /// Helper to diagnose common cases of candidate mismatch related to positional
 /// arguments/parameter (too many positionals, missing positionals,
 /// argument/parameter specified both by positional and keyword operands).
-std::pair<CallOperands::PosDiagResult, SmallVector<StringAttr>>
-CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
-                                  bool allowCountMismatch) const {
+LogicalResult CallOperands::diagnosePosOperands(
+    PogListAttr pogListAttr, bool isParameterList,
+    llvm::function_ref<MojoInflightDiag &()> getDiag) const {
   SmallVector<StringAttr> missingPosNames;
   SmallVector<StringAttr> byPosAndKw;
 
@@ -214,7 +244,7 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
 
     // If we have a positional default, we're okay. We also don't need to check
     // for missing if the caller doesn't care about them.
-    if (allowCountMismatch || pogListAttr.getDefault(idx))
+    if (isParameterList || pogListAttr.getDefault(idx))
       continue;
 
     // If the arg/param was passed by keyword, we are okay.
@@ -233,17 +263,56 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
     missingPosNames.push_back(name);
   }
 
-  if (!byPosAndKw.empty())
-    return {PosDiagResult::kByPosAndKw, byPosAndKw};
-
-  if (!allowCountMismatch) {
-    // If there are no positional variadics, we can check for too many operands.
-    if (!hasVariadicOrPack && getNumPositional() > numPosMaximum)
-      return {PosDiagResult::kTooManyPos, {}};
-
-    if (!missingPosNames.empty())
-      return {PosDiagResult::kMissingPos, missingPosNames};
+  if (!byPosAndKw.empty()) {
+    const char *argOrParam = isParameterList ? "parameter" : "argument";
+    auto &diag = getDiag();
+    diag << argOrParam << plural(byPosAndKw.size())
+         << " passed both as positional and keyword operand: ";
+    emitNames(diag, byPosAndKw);
+    return failure();
   }
 
-  return {PosDiagResult::kValid, {}};
+  if (!isParameterList) { // Parameters can be inferred, don't error on missing.
+    // If any operand is a `*pack` splat and the count didn't match, attach
+    // a note explaining the gap and pointing at the working pattern.
+    // `CallNode::emitIR` eagerly expands splats whose `VariadicPack`
+    // element list is statically resolved; this note primarily helps the
+    // case where the element list is still symbolic (e.g. `Ts.values` in
+    // a generic body), but it's also useful when a resolved splat happens
+    // to have the wrong element count.
+    auto attachPackSplatNote = [&](MojoInflightDiag &diag) {
+      for (const OperandValue &op : values) {
+        if (op.unpackStyle != ArgUnpackStyle::kStar)
+          continue;
+        diag.attachNote(op.expr->getLoc())
+            << "'*' splat is only supported when the callee accepts a "
+               "variadic pack argument at this position; to forward a "
+               "runtime pack to a fixed-arity callee, route the call through "
+               "a dispatcher whose argument is itself a variadic pack (e.g. "
+               "`def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: "
+               "def(*args: *Ts) thin](...): callee(*pack)`)";
+        return;
+      }
+    };
+
+    // If there are no positional variadics, we can check for too many operands.
+    if (!hasVariadicOrPack && getNumPositional() > numPosMaximum) {
+      auto &diag = getDiag();
+      size_t numPosMaximum = countNumPositional(pogListAttr);
+      size_t numPosOperands = getNumPositional();
+      diag << "expected at most " << numPosMaximum << " positional argument"
+           << plural(numPosMaximum) << ", got " << numPosOperands;
+      attachPackSplatNote(diag);
+      return failure();
+    }
+
+    if (!missingPosNames.empty()) {
+      auto &diag = getDiag();
+      emitMissing(diag, missingPosNames, "positional argument");
+      attachPackSplatNote(diag);
+      return failure();
+    }
+  }
+
+  return success();
 }
