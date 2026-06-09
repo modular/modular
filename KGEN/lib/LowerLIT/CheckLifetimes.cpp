@@ -407,6 +407,17 @@ static SpecialMemberInfo getSpecialMemberForType(
   return SpecialMemberInfo::available(result);
 }
 
+/// Given a function context, return the constraints known from the context.
+static SmallVector<ConstraintAttr>
+getConstraintsFromContext(FuncTypeGeneratorType fnContext) {
+  SmallVector<ConstraintAttr> assumptions;
+  PogListAttr paramList = fnContext.getParamListAttrs();
+  llvm::append_range(assumptions, paramList.getBodyConstraints());
+  for (PogMetadataAttr pog : paramList.getPogs())
+    llvm::append_range(assumptions, pog.getConstraints());
+  return assumptions;
+}
+
 /// Refine a generic trait-bound type parameter using where-clause constraints
 /// from the enclosing function signature.
 static TraitType refineWithContextualWhereClauses(
@@ -422,11 +433,8 @@ static TraitType refineWithContextualWhereClauses(
     return curTrait;
 
   // Collect assumptions from signature metadata (see StructEmitter.cpp).
-  SmallVector<ConstraintAttr> assumptions;
-  PogListAttr paramList = fnContext.getParamListAttrs();
-  llvm::append_range(assumptions, paramList.getBodyConstraints());
-  for (PogMetadataAttr pog : paramList.getPogs())
-    llvm::append_range(assumptions, pog.getConstraints());
+  SmallVector<ConstraintAttr> assumptions =
+      getConstraintsFromContext(fnContext);
   if (assumptions.empty())
     return curTrait;
 
@@ -580,8 +588,17 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
     // conditionally) linear type.
     auto whereClause = conformance.getConstraint().getProposition();
     whereClause = evaluator.getReboundAttribute(whereClause);
-    auto whereCst = sugarDynCast<SIMDAttr>(whereClause);
-    if (!whereCst || !whereCst.getAsBool()) {
+    SmallVector<ConstraintAttr> assumptions =
+        getConstraintsFromContext(fnContext);
+    TypedAttr overallAssumption =
+        SIMDAttr::getScalarBool(whereClause.getContext(), true);
+    for (auto assumption : assumptions)
+      overallAssumption = ParamOperatorAttr::get(
+          POC::And, {overallAssumption, assumption.getProposition()});
+
+    bool isDisabled = inferConstraintRelation(overallAssumption, whereClause) !=
+                      ConstraintRelation::Implies;
+    if (isDisabled) {
       // If the type is linear, then ignore an explicitly declared
       // destructor for the purposes of destructor insertion.
       // FIXME: This is wrong, we should check the 'where' clause on the
