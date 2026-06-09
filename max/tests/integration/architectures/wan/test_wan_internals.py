@@ -25,11 +25,11 @@ from max.pipelines.architectures.wan.components import (
     vae_wrapper as wan_vae_wrapper,
 )
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
-from max.pipelines.core import PixelContext
+from max.pipelines.context import PixelContext, TokenBuffer
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pixel_tokenizer import PixelGenerationTokenizer
-from max.pipelines.modeling.types import RequestID, TokenBuffer
+from max.pipelines.modeling.types import RequestID
 from max.pipelines.request.provider_options import (
     ImageProviderOptions,
     VideoProviderOptions,

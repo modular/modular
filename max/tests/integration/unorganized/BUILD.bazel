@@ -17,9 +17,8 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/request",
         requirement("numpy"),
     ],
@@ -29,7 +28,7 @@ modular_py_test(
     name = "test_sampling_params",
     srcs = ["test_sampling_params.py"],
     deps = [
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/context",
     ],
 )
 
@@ -66,8 +65,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",
         "//max/python/max/pipelines/modeling",
@@ -108,6 +106,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",
         "//max/python/max/pipelines/modeling",
@@ -165,6 +164,7 @@ modular_py_test(
         "//max/python/max/entrypoints",
         "//max/python/max/graph",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/speculative",
@@ -208,7 +208,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/speculative",
@@ -250,7 +250,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -290,7 +290,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/context",
     ],
 )
 
@@ -332,8 +332,8 @@ modular_py_test(
         "requires-network",
     ],
     deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         requirement("llguidance"),
         requirement("transformers"),
@@ -360,8 +360,8 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
     ],
 )
@@ -464,9 +464,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/sampling",
         "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),

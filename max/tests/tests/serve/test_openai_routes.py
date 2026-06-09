@@ -29,20 +29,22 @@ from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi import FastAPI
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
-from max.pipelines.core import TextContext
-from max.pipelines.core.exceptions import InputError, PromptTooLongError
+from max.pipelines.context import (
+    BaseContext,
+    GenerationStatus,
+    TextContext,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import InputError, PromptTooLongError
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     PipelineConfig,
     PipelineRuntimeConfig,
 )
 from max.pipelines.modeling.types import (
-    BaseContext,
-    GenerationStatus,
     PipelineTask,
     RequestID,
     TextGenerationRequestTool,
-    TextGenerationResponseFormat,
 )
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings

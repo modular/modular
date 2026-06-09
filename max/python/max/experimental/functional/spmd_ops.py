@@ -906,6 +906,27 @@ Returns:
     element-wise.
 """
 
+ceil = functional(ops.ceil, rule=unary_rule)
+ceil.__doc__ = """Computes the ceil of a tensor element-wise.
+
+Rounds each element up toward positive infinity.
+
+.. code-block:: python
+
+    from max.experimental import Tensor
+    from max.experimental import functional as F
+
+    x = Tensor([1.5, 2.0, -1.5, -2.7])
+    result = F.ceil(x)
+    # result is [2.0, 2.0, -1.0, -2.0]
+
+Args:
+    x: The input tensor. Must have a floating-point dtype.
+
+Returns:
+    A tensor of the same shape and dtype with each element rounded up.
+"""
+
 floor = functional(ops.floor, rule=unary_rule)
 floor.__doc__ = """Computes the floor of a tensor element-wise.
 

@@ -27,20 +27,22 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    GenerationStatus,
+    TextContext,
+    TextGenerationOutput,
+)
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     IdentityPipelineTokenizer,
     PipelineConfig,
 )
 from max.pipelines.modeling.types import (
-    GenerationStatus,
     Pipeline,
     PipelinesFactory,
     PipelineTask,
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app

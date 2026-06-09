@@ -592,6 +592,12 @@ def _exp_taylor[
     ](x)
 
 
+comptime _ExpPluginHookFnType = def[dtype: DType, width: Int, //](
+    SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
+"""Plugin-hook signature for `PluginHooks.exp_fn`; keep in sync with `exp`."""
+
+
 @always_inline
 def exp[
     dtype: DType, width: SIMDSize, //
@@ -1096,6 +1102,12 @@ def erf[
 # ===----------------------------------------------------------------------=== #
 # tanh
 # ===----------------------------------------------------------------------=== #
+
+
+comptime _TanhPluginHookFnType = def[dtype: DType, width: Int, //](
+    SIMD[dtype, width]
+) thin -> SIMD[dtype, width]
+"""Plugin-hook signature for `PluginHooks.tanh_fn`; keep in sync with `tanh`."""
 
 
 @always_inline

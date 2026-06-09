@@ -22,8 +22,8 @@ from typing import Any
 
 import msgspec
 import numpy as np
-from max.pipelines.modeling.types.eos_tracking import EOSTracker
-from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.context.eos_tracking import EOSTracker
+from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.request.open_responses import (
     OpenResponsesRequest,
     OutputImageContent,

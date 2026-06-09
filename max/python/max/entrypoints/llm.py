@@ -25,13 +25,16 @@ from threading import Event, Thread
 from typing import TypeVar, cast
 
 import tqdm
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.context import (
+    SamplingParams,
+    SamplingParamsInput,
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationOutput,
+)
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.modeling.types import (
     RequestID,
-    SamplingParams,
-    SamplingParamsInput,
-    TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.serve.config import Settings

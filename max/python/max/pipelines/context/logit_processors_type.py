@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING, TypeAlias
 import max.driver as md
 
 if TYPE_CHECKING:
-    from .pipeline_variants.text_generation import TextGenerationContext
+    from .context import TextGenerationContext
 
 
 @dataclass

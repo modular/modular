@@ -35,9 +35,13 @@ from max.pipelines import (
     ModelOutputs,
     PipelineConfig,
     SupportedArchitecture,
-    TextContext,
     TextTokenizer,
     upper_bounded_default,
+)
+from max.pipelines.context import (
+    TextContext,
+    TextGenerationContext,
+    TokenBuffer,
 )
 from max.pipelines.lib import PipelineModelWithKVCache
 from max.pipelines.lib.interfaces import (
@@ -47,9 +51,7 @@ from max.pipelines.lib.interfaces import (
 from max.pipelines.modeling.types import (
     PipelineTask,
     PipelineTokenizer,
-    TextGenerationContext,
     TextGenerationRequest,
-    TokenBuffer,
 )
 from transformers import AutoConfig
 

@@ -34,7 +34,7 @@ from max.pipelines.architectures.llama3.model import (
     Llama3Inputs,
     LlamaModelBase,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     PipelineConfig,

@@ -83,6 +83,9 @@ def _test_atomic[dtype: DType]() raises:
     atom.min(scalar(0))
     assert_equal(atom.value, scalar(0))
 
+    atom.store(scalar(99))
+    assert_equal(atom.load(), scalar(99))
+
 
 def test_atomic() raises:
     _test_atomic[DType.int32]()
