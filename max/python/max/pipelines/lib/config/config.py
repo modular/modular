@@ -21,7 +21,7 @@ import logging
 import os
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from max.config import ConfigFileModel
 from max.driver import accelerator_api, load_devices
@@ -59,6 +59,7 @@ from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.weights.hf_utils import is_diffusion_pipeline
 from pydantic import (
+    BaseModel,
     ConfigDict,
     Field,
     ModelWrapValidatorHandler,
@@ -116,6 +117,20 @@ def _strip_default_model_kwargs(
                 pass
         non_default[k] = v
     return non_default
+
+
+def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
+    """Return the Pydantic model class for a field annotation, if any.
+
+    Unwraps ``Optional``/``Union`` annotations (e.g. ``KVCacheConfig | None``)
+    and returns the first :class:`~pydantic.BaseModel` subclass found. Returns
+    ``None`` for non-model annotations such as ``dict[str, Any]`` or ``str``,
+    so plain data dicts are never treated as nested config sub-models.
+    """
+    for candidate in get_args(annotation) or (annotation,):
+        if isinstance(candidate, type) and issubclass(candidate, BaseModel):
+            return candidate
+    return None
 
 
 # FIXME: This method seems like a major hack...
@@ -284,15 +299,52 @@ class PipelineConfig(ConfigFileModel):
         it produces nested dicts with dash-separated keys (e.g.
         ``{"main": {"model-path": "value"}}``).  Pydantic expects underscore-
         separated field names, so we normalise before validation.
+
+        Normalization recurses into nested config sub-models so fields like
+        ``--pipeline.models.main.kv-cache.kv-cache-format`` resolve to
+        ``{"main": {"kv_cache": {"kv_cache_format": ...}}}``. Recursion is
+        schema-aware: it only descends into keys whose field is a Pydantic
+        model, leaving plain data dicts (e.g. ``vision_config_overrides``)
+        untouched so legitimately-dashed data keys are preserved.
+
+        Raises:
+            ValueError: If two keys at the same level normalize to the same
+                field name (e.g. mixing ``kv-cache`` and ``kv_cache``), which
+                would otherwise silently drop one of the values.
         """
+
+        def normalize(
+            raw: dict[str, Any], model_cls: type[BaseModel]
+        ) -> dict[str, Any]:
+            fields = model_cls.model_fields
+            normalized: dict[str, Any] = {}
+            for key, value in raw.items():
+                norm_key = key.replace("-", "_")
+                if norm_key in normalized:
+                    raise ValueError(
+                        f"Conflicting CLI keys normalize to '{norm_key}' on "
+                        f"{model_cls.__name__}: '{key}' collides with an "
+                        "earlier key. Use one consistent spelling (e.g. "
+                        f"'--...{norm_key.replace('_', '-')}'), not a mix of "
+                        "dashes and underscores."
+                    )
+                field = fields.get(norm_key)
+                nested_cls = (
+                    _nested_model_class(field.annotation) if field else None
+                )
+                if nested_cls is not None and isinstance(value, dict):
+                    normalized[norm_key] = normalize(value, nested_cls)
+                else:
+                    normalized[norm_key] = value
+            return normalized
+
         result: dict[str, Any] = {}
         for role, value in data.items():
-            if isinstance(value, dict):
-                result[role] = {
-                    k.replace("-", "_"): v for k, v in value.items()
-                }
-            else:
-                result[role] = value
+            result[role] = (
+                normalize(value, MAXModelConfig)
+                if isinstance(value, dict)
+                else value
+            )
         return result
 
     @field_validator("models", mode="wrap")
