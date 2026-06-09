@@ -344,13 +344,12 @@ This version is still a work in progress.
   most for shorter sequences (measured ~1.05x–1.5x faster on B200, bf16,
   head_dim=128 across seq lengths 128–2048). On by default; disable with
   `-D MHA_PDL=false`.
-- Added an opt-in simdgroup-tiled matmul kernel for the Apple M5 GPU, bringing
-  neural-accelerator-backed matmul to the MAX framework. Set
-  `MODULAR_APPLE_M5_MATMUL=1` to route in-range fp16/bf16 MAX matmuls
-  (`m >= 64`, `n >= 64`, `k >= 16`; ragged K supported) to it; other shapes fall
-  through to the naive kernel. fp32 inputs stay on naive — the hardware would
-  truncate them to fp19 — unless `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL=1` is
-  also set.
+- Added a simdgroup-tiled matmul kernel for the Apple M5 GPU, bringing
+  neural-accelerator-backed matmul to the MAX framework. In-range MAX matmuls
+  (`m >= 64`, `n >= 64`, `k >= 16`; ragged K supported) now use it: fp16/bf16
+  always, and fp32 a/b by default (accepting the simdgroup MMA's fp19
+  truncation). Set `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL=0` for the precise
+  naive fp32 path.
 
 ## Breaking changes
 

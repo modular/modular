@@ -61,7 +61,6 @@ from ...utils_gpu import (
     MatmulConfig,
     MatmulKernels,
     _apple_m5_allow_lossy_f32_matmul,
-    _apple_m5_matmul_enabled,
     _bk_base,
     select_config,
     _vendor_blas_fallback_disabled,
@@ -557,7 +556,6 @@ def _matmul_gpu[
         comptime f32_in = a_type == DType.float32
         if (
             ctx.compute_capability() == 5
-            and _apple_m5_matmul_enabled()
             and (not f32_in or _apple_m5_allow_lossy_f32_matmul())
             and m >= 64
             and n >= 64
