@@ -10,6 +10,27 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Added an `@unavailable` decorator that marks a function or method as
+  intentionally unavailable. Unlike `@deprecated` (which emits a warning),
+  referencing an `@unavailable` declaration is an error. Like `@deprecated`,
+  it accepts either a reason message (positional or as `reason=`) or a
+  `use=symbol` replacement. When `use=symbol` is given, the error includes a
+  fix-it that renames the call to `symbol`.
+
+  ```mojo
+  struct Foo:
+      @unavailable("message here...")
+      def foo(self) -> Int:
+          ...
+
+  @unavailable(use=new_api)
+  def old_api():
+      ...
+
+  def new_api():
+      pass
+  ```
+
 - Types can parameterize the `out` argument modifier when they want to be
   bindable to alternate address spaces, e.g.:
 
