@@ -1659,13 +1659,16 @@ def block_scaled_matmul[
     comptime if ctx.default_device_info.compute == B200.compute:
         var m = Int(c.dim[0]())
         var n = Int(c.dim[1]())
-        var k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
+        var k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(
+            a.dim[1]()
+        )
 
         if m == 0 or n == 0:
             return
 
         logger.info(
-            "------ Dispatching to SM100 (B200+) Block Scaled matmul kernel ------"
+            "------ Dispatching to SM100 (B200+) Block Scaled matmul kernel"
+            " ------"
         )
         logger.info(
             "Input Data Types: ",
@@ -1684,7 +1687,8 @@ def block_scaled_matmul[
         )
 
         comptime assert (
-            elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
+            elementwise_lambda_fn is None
+            or elementwise_compute_lambda_fn is None
         ), "Either the epilogue lambda or the compute lambda can be used"
 
         # vendor block scaled matmul kernels don't support compute lambda, so we wrap it around an epilogue lambda instead.
@@ -1704,7 +1708,9 @@ def block_scaled_matmul[
                     coords, rebind[SIMD[c_type, _width]](output)
                 )
 
-        comptime elementwise_lambda_wrapper = Optional[elementwise_epilogue_type](
+        comptime elementwise_lambda_wrapper = Optional[
+            elementwise_epilogue_type
+        ](
             compute_lambda_wrapper
         ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
 
@@ -1750,7 +1756,6 @@ def block_scaled_matmul[
                 cta_group=CTA_GROUP,
                 AB_swapped=AB_SWAPPED,
                 k_group_size=K_GROUP_SIZE,
-
             )
 
             return blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -1853,7 +1858,7 @@ def block_scaled_matmul[
             elementwise_compute_lambda_fn is None
         ), "compute-lambda epilogue not supported on the sm_121 NVFP4 path"
         naive_block_scaled_matmul[
-            scaling_kind = UMMAKind.KIND_MXF4NVF4,
+            scaling_kind=UMMAKind.KIND_MXF4NVF4,
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
