@@ -288,7 +288,7 @@ def flash_attention_hw_supported[qkv_type: DType]() -> Bool:
 
 
 @always_inline
-def _attention_uses_tensor_cores(info: GPUInfo) -> Bool:
+def _attention_mma_path_supported(info: GPUInfo) -> Bool:
     """Returns whether the flash-attention tensor-core path is usable on `info`.
 
     Pre-Ampere NVIDIA GPUs (Volta sm_70, Turing sm_75) lack the bf16/tf32
@@ -449,7 +449,7 @@ def flash_attention[
         comptime depth = Int(q.layout.shape[q.rank-1])
         comptime gpu_info = ctx.default_device_info
         comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
-        comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel and _attention_uses_tensor_cores(gpu_info)
+        comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel and _attention_mma_path_supported(gpu_info)
         # fmt: on
         comptime kv_num_heads = cache_t.kv_params.num_heads
 
@@ -1577,7 +1577,7 @@ def flash_attention[
     comptime depth = Int(q.layout.shape[q.rank-1])
     comptime gpu_info = ctx.default_device_info
     comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
-    comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel and _attention_uses_tensor_cores(gpu_info)
+    comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel and _attention_mma_path_supported(gpu_info)
 
     comptime q_half_float = q.dtype in (DType.float16, DType.bfloat16)
     comptime kv_num_heads = Int(k.layout.shape[2])
@@ -1752,7 +1752,7 @@ def flash_attention_ragged[
     comptime depth = Int(q.layout.shape[q.rank - 1])
     comptime gpu_info = ctx.default_device_info
     comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
-    comptime flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel and _attention_uses_tensor_cores(gpu_info)
+    comptime flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel and _attention_mma_path_supported(gpu_info)
     comptime kv_num_heads = Int(k.layout.shape[1])
     # fmt: on
 
