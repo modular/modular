@@ -24,7 +24,6 @@ https://github.com/LMCache/LMCache/blob/dev/lmcache/v1/storage_backend/local_dis
 from __future__ import annotations
 
 import itertools
-import json
 import logging
 import mmap
 import os
@@ -42,7 +41,7 @@ from max.profiler import Tracer
 
 logger = logging.getLogger("max.pipelines")
 
-_SENTINEL = None  # poison pill for worker shutdown
+_SENTINEL = None
 
 # Internal type for items in the priority queue: (priority, count, fn, args, kwargs, future)
 _WorkItem = tuple[
@@ -133,7 +132,14 @@ class DiskTier:
     One file per block hash. All TP shards are concatenated into a single
     file. Writes are async, reads return a Future.
     LRU eviction keeps disk usage within a configurable budget.
-    Metadata is persisted for warm restarts across process lifetimes.
+    The cached set is the ``*.bin`` files themselves: a warm start rebuilds the
+    in-memory index from a directory scan, so no metadata is persisted and the
+    write path keeps no index in sync.
+
+    ``block_nbytes`` is assumed constant for a given ``cache_dir``. Reusing a
+    directory across a block-size change (page size, model, dtype, or TP degree)
+    is unsupported: the stale, wrong-sized blocks are not detected and may be
+    read as valid data. Point a changed configuration at a fresh ``cache_dir``.
 
     The `use_direct_io` flag controls whether the OS page cache is bypassed.
     This should be turned on for better performance if most local CPU memory is
@@ -207,11 +213,6 @@ class DiskTier:
         self._executor = PriorityExecutor(num_workers=num_workers)
         self._write_futures: list[Future[None]] = []
 
-        # Save metadata every N completed writes
-        self._writes_since_metadata_save: int = 0
-        self._metadata_save_interval: int = 32
-
-        # Rebuild from persisted metadata if available
         self._load_existing()
 
     @property
@@ -318,9 +319,8 @@ class DiskTier:
         self._write_futures.clear()
 
     def shutdown(self) -> None:
-        """Wait for pending writes, save metadata, and shut down executor."""
+        """Wait for pending writes and shut down the executor."""
         self.wait_for_writes()
-        self._save_metadata()
         self._executor.shutdown(wait=True)
 
     def reset(self) -> None:
@@ -330,10 +330,7 @@ class DiskTier:
             self._pending_hashes.clear()
         for path in self._cache_dir.glob("*.bin"):
             path.unlink(missing_ok=True)
-        meta_path = self._cache_dir / "_metadata.json"
-        meta_path.unlink(missing_ok=True)
-        for tmp in self._cache_dir.glob("_metadata.json.*.tmp"):
-            tmp.unlink(missing_ok=True)
+        (self._cache_dir / "_metadata.json").unlink(missing_ok=True)
 
     # -- sync I/O (runs on worker threads) --
 
@@ -380,17 +377,6 @@ class DiskTier:
         with self._lock:
             self._pending_hashes.discard(block_hash)
             self._saved_hashes[block_hash] = None
-            self._writes_since_metadata_save += 1
-            should_save = (
-                self._writes_since_metadata_save >= self._metadata_save_interval
-            )
-            if should_save:
-                self._writes_since_metadata_save = 0
-
-        # Periodically persist metadata so a crash loses at most
-        # ~64 blocks instead of everything (no clean shutdown required).
-        if should_save:
-            self._save_metadata()
 
     # -- O_DIRECT helpers --
 
@@ -485,61 +471,35 @@ class DiskTier:
 
     # -- persistence --
 
-    def _save_metadata(self) -> None:
-        """Persist hash index to disk for warm restarts.
-
-        Uses write-to-temp + atomic rename to avoid corrupt JSON if
-        the process crashes mid-write. Each caller uses a unique temp
-        file (incorporating PID and thread ID) to prevent races when
-        multiple processes or threads save metadata concurrently.
-        """
-        with self._lock:
-            meta = {
-                "block_nbytes": self._block_nbytes,
-                "hashes": list(self._saved_hashes.keys()),
-            }
-        pid = os.getpid()
-        tid = threading.get_ident()
-        tmp_path = self._cache_dir / f"_metadata.json.{pid}.{tid}.tmp"
-        final_path = self._cache_dir / "_metadata.json"
-        tmp_path.write_text(json.dumps(meta))
-        os.replace(tmp_path, final_path)
-
     def _load_existing(self) -> None:
-        """Rebuild index from persisted metadata if compatible."""
-        meta_path = self._cache_dir / "_metadata.json"
-        if not meta_path.exists():
-            logger.info("Disk cache cold start: no metadata at %s", meta_path)
-            return
-        try:
-            meta = json.loads(meta_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            logger.warning("Corrupt disk cache metadata, starting fresh")
-            self.reset()
-            return
+        """Rebuild the in-memory index from the on-disk ``*.bin`` files.
 
-        if meta.get("block_nbytes") != self._block_nbytes:
-            logger.info("Disk cache config mismatch, clearing stale cache")
-            self.reset()
-            return
+        The cached set is the block files themselves, so no metadata is
+        persisted or read. A leftover ``_metadata.json`` from an older build is
+        removed. ``block_nbytes`` is assumed unchanged for this ``cache_dir``
+        (see the class docstring); a block-size change is not detected here.
+        """
+        (self._cache_dir / "_metadata.json").unlink(missing_ok=True)
 
-        for h in meta.get("hashes", []):
-            path = self._hash_to_path(h)
-            if path.exists():
-                self._saved_hashes[h] = None
+        for entry in os.scandir(self._cache_dir):
+            name = entry.name
+            if not name.endswith(".bin"):
+                continue
+            try:
+                block_hash = int(name[:-4], 16)
+            except ValueError:
+                continue
+            self._saved_hashes[block_hash] = None
 
         if self._saved_hashes:
             logger.info(
-                "Disk cache warm start: loaded %d blocks (%.1f GB) from %s",
+                "Disk cache warm start: scanned %d blocks (%.1f GB) from %s",
                 len(self._saved_hashes),
                 len(self._saved_hashes) * self._block_nbytes / (1024**3),
                 self._cache_dir,
             )
         else:
-            logger.info(
-                "Disk cache cold start: metadata found but no valid block files in %s",
-                self._cache_dir,
-            )
+            logger.info("Disk cache cold start at %s", self._cache_dir)
 
     @property
     def inflight_disk_ops(self) -> int:

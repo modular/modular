@@ -971,6 +971,8 @@ async def _run_stream(
 
 async def _run_completion_stream(
     chunks: list[TokenGeneratorOutput],
+    *,
+    stream_options: ChatCompletionStreamOptionsParam | None = None,
 ) -> list[CompletionStreamResponse]:
     """Run legacy text-completion streaming generator and parse chunks."""
     mock_pipeline = Mock()
@@ -984,7 +986,9 @@ async def _run_completion_stream(
     mock_request = _make_mock_request()
     mock_request.request_path = "/v1/completions"
 
-    generator = OpenAICompletionResponseGenerator(mock_pipeline)
+    generator = OpenAICompletionResponseGenerator(
+        mock_pipeline, stream_options=stream_options
+    )
     return [
         CompletionStreamResponse.model_validate_json(p)
         async for p in generator.stream(mock_request)
@@ -1238,6 +1242,94 @@ async def test_openai_completion_non_stream_accounts_reasoning_tokens_for_metric
     assert args[1] == "/v1/completions"
     assert args[3] == 3  # 2 reasoning + 1 completion tokens
     assert args[4] == 4
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_non_stream_includes_usage(
+    patch_openai_metrics: None,
+) -> None:
+    """Legacy /completions non-streaming response populates the usage block."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=2,
+            decoded_tokens="par",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="tial",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+    ]
+
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+    mock_request = _make_mock_request()
+    mock_request.request_path = "/v1/completions"
+
+    generator = OpenAICompletionResponseGenerator(mock_pipeline)
+    response = await generator.complete([mock_request])
+
+    assert response.usage is not None
+    assert response.usage.prompt_tokens == 5
+    assert response.usage.completion_tokens == 4  # 2 reasoning + 2 completion
+    assert response.usage.total_tokens == 9
+    assert response.usage.prompt_tokens_details is not None
+    assert response.usage.prompt_tokens_details.cached_tokens == 3
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_stream_usage_includes_reasoning_tokens(
+    patch_openai_metrics: None,
+) -> None:
+    """Streaming /completions with include_usage emits a final usage chunk."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=2,
+            decoded_tokens="partial",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=" answer",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+    ]
+
+    responses = await _run_completion_stream(
+        chunks, stream_options={"include_usage": True}
+    )
+
+    # Final chunk carries usage with an empty choices list.
+    final = responses[-1]
+    assert final.choices == []
+    assert final.usage is not None
+    assert final.usage.prompt_tokens == 5
+    assert final.usage.completion_tokens == 4  # 2 reasoning + 2 completion
+    assert final.usage.total_tokens == 9
+    assert final.usage.prompt_tokens_details is not None
+    assert final.usage.prompt_tokens_details.cached_tokens == 3
+
+    # Without include_usage, no usage chunk is appended.
+    responses_no_usage = await _run_completion_stream(chunks)
+    assert all(r.usage is None for r in responses_no_usage)
 
 
 @pytest.mark.asyncio

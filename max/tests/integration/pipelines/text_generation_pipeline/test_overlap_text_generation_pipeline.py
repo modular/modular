@@ -13,6 +13,7 @@
 
 
 import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 import numpy as np
@@ -23,14 +24,20 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.context import FUTURE_TOKEN
+from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
+    _compute_seq_len,
+)
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     TextGenerationPipeline,
 )
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _CALLBACK_LAG_WARN_S,
+    _MAGIC_DRAFT_TOKEN_ID,
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
+    _OOB_IDX,
     AsyncBatch,
+    _host_mirror_realized_drafts,
 )
 from max.pipelines.lib.pipeline_variants.utils import (
     StructuredOutputHelper,
@@ -188,6 +195,7 @@ def test_warmup_graph_capture_batch_size(
     pipeline._kv_manager = MagicMock()
     mock_kv_params = MagicMock()
     mock_kv_params.page_size = 128
+    mock_kv_params.num_draft_tokens = 0
     pipeline._kv_manager.params = mock_kv_params
     pipeline._kv_manager.cache_params.return_value = mock_kv_params
     pipeline._kv_manager._total_num_pages = 100
@@ -219,6 +227,116 @@ def test_warmup_graph_capture_batch_size(
             pipeline._max_graph_capture_batch_size
             == expected_capture_batch_size
         )
+
+
+def _make_effective_cache_length_pipeline(
+    *,
+    max_seq_len: int,
+    num_draft_tokens: int,
+    num_draft_tokens_per_step: int,
+    total_num_pages: int,
+    page_size: int = 128,
+) -> OverlapTextGenerationPipeline[TextContext]:
+    pipeline = OverlapTextGenerationPipeline.__new__(
+        OverlapTextGenerationPipeline
+    )
+    mock_model = MagicMock()
+    mock_model.max_seq_len = max_seq_len
+    pipeline._pipeline_model = mock_model
+    pipeline._kv_manager = MagicMock()
+    mock_kv_params = MagicMock()
+    mock_kv_params.page_size = page_size
+    mock_kv_params.num_draft_tokens = num_draft_tokens
+    mock_kv_params.num_draft_tokens_per_step = num_draft_tokens_per_step
+    pipeline._kv_manager.params = mock_kv_params
+    pipeline._kv_manager._total_num_pages = total_num_pages
+    return pipeline
+
+
+@pytest.mark.parametrize(
+    ("num_draft_tokens", "num_draft_tokens_per_step", "expected_slack"),
+    [
+        (0, 1, 0),  # speculative decoding disabled: strict no-op
+        (3, 1, 10),  # eagle/mtp autoregressive drafts: 3*3 + 0 + 1
+        (4, 4, 14),  # dflash block drafts: 3*4 + 1 + 1
+    ],
+    ids=["disabled", "eagle", "dflash"],
+)
+def test_effective_max_cache_length_spec_slack(
+    num_draft_tokens: int,
+    num_draft_tokens_per_step: int,
+    expected_slack: int,
+) -> None:
+    """The capture bound folds in the worst-case speculative-decode slack."""
+    max_seq_len = 2048
+    pipeline = _make_effective_cache_length_pipeline(
+        max_seq_len=max_seq_len,
+        num_draft_tokens=num_draft_tokens,
+        num_draft_tokens_per_step=num_draft_tokens_per_step,
+        # Pool far larger than the bound so the capacity cap does not engage.
+        total_num_pages=10_000,
+    )
+    assert pipeline._effective_max_cache_length == max_seq_len + expected_slack
+
+
+@pytest.mark.parametrize(
+    ("num_draft_tokens", "num_draft_tokens_per_step"),
+    [
+        (3, 1),  # eagle/mtp
+        (4, 4),  # dflash
+    ],
+    ids=["eagle", "dflash"],
+)
+def test_effective_max_cache_length_covers_compute_seq_len(
+    num_draft_tokens: int,
+    num_draft_tokens_per_step: int,
+) -> None:
+    """The capture bound must cover the requirement ``runtime_inputs`` enforces.
+
+    ``PagedKVCacheManager.runtime_inputs`` rejects any batch whose
+    ``_compute_seq_len`` exceeds the captured ``max_cache_length``. Pin the
+    bound to ``_compute_seq_len`` directly so a future change to its
+    speculative-slack accounting is caught here rather than crashing
+    capture-replay at the context boundary (GEX-3748 / MAX-615).
+    """
+    max_seq_len = 2048
+    pipeline = _make_effective_cache_length_pipeline(
+        max_seq_len=max_seq_len,
+        num_draft_tokens=num_draft_tokens,
+        num_draft_tokens_per_step=num_draft_tokens_per_step,
+        total_num_pages=10_000,
+    )
+
+    # Worst-case boundary request: committed tokens fill the context window and
+    # carry the FUTURE_TOKEN placeholder, with the previous overlap batch's
+    # drafts all counted as accepted.
+    boundary_ctx = SimpleNamespace(
+        tokens=[0] * (max_seq_len + 1),
+        spec_decoding_state=SimpleNamespace(
+            maybe_accepted_draft_tokens=[0] * num_draft_tokens
+        ),
+    )
+    required = _compute_seq_len(
+        boundary_ctx,
+        num_steps=1,
+        num_draft_tokens=num_draft_tokens,
+        num_draft_tokens_per_step=num_draft_tokens_per_step,
+    )
+    assert pipeline._effective_max_cache_length >= required
+
+
+def test_effective_max_cache_length_capped_to_pool_capacity() -> None:
+    """The bound never exceeds the pages the pool actually allocated."""
+    pipeline = _make_effective_cache_length_pipeline(
+        max_seq_len=2048,
+        num_draft_tokens=3,
+        num_draft_tokens_per_step=1,
+        # One page of capacity: the bound clamps to page_size regardless of
+        # max_seq_len + slack.
+        total_num_pages=1,
+        page_size=128,
+    )
+    assert pipeline._effective_max_cache_length == 128
 
 
 def _make_pipeline_config_mock(
@@ -1297,7 +1415,7 @@ class TestAssignBitmaskInputs:
     reconciles per-row otherwise: continuing rows are gathered from the
     callback's pinned output by request_id (robust to reorder / completion /
     growth) and only rows with no FSM state to advance (fresh / reactivated)
-    are sync-filled via ``compute_speculative_bitmasks`` + ``prime``. These
+    are synchronous-filled via ``compute_speculative_bitmasks`` + ``prime``. These
     tests cover those branches by mocking the overlap state's
     ``get_input_views`` / ``prime`` / ``pinned_bitmask`` / flag.
     """
@@ -1316,7 +1434,7 @@ class TestAssignBitmaskInputs:
 
         ``is_initial_prompt=False`` marks a continuing decode row (its row is
         gathered from the callback); the default marks a fresh / reactivated
-        row (sync-filled)."""
+        row (synchronous-filled)."""
         ctx = TextContext(
             request_id=request_id,
             max_length=1000,
@@ -1356,7 +1474,7 @@ class TestAssignBitmaskInputs:
         )
         mock_structured_output = MagicMock()
         mock_structured_output.enabled = True
-        # The sync fill is called only for the rows the callback did not
+        # The synchronous fill is called only for the rows the callback did not
         # cover; return a bool array sized to whatever subset it receives.
         mock_structured_output.compute_speculative_bitmasks.side_effect = (
             lambda context_batch, draft_tokens, num_positions: np.ones(
@@ -1388,6 +1506,9 @@ class TestAssignBitmaskInputs:
         mock_spec_state.callback_request_ids = list(callback_request_ids)
         mock_spec_state.has_precomputed_bitmask = has_precomputed_bitmask
         mock_spec_state.overlap_state = mock_overlap_state
+        # Default: no realized drafts -> synchronous fills fall back to draft_tokens_np.
+        # The MAGIC-desync regression test overrides this with a real array.
+        mock_spec_state.realized_draft_tokens_host = None
 
         pipeline._spec_decode_state = mock_spec_state
         mock_device = MagicMock()
@@ -1600,13 +1721,13 @@ class TestAssignBitmaskInputs:
         overlap_state.prime.assert_called_once()
 
     def test_sync_prime_passes_only_new_rows_to_compute(self) -> None:
-        """Gather-by-rid only sync-fills rows the callback did not cover:
+        """Gather-by-rid only synchronous-fills rows the callback did not cover:
         a continuing row (``a``) is gathered from the callback's pinned
         output, while a freshly joined row (``b``) is the only row passed to
         ``compute_speculative_bitmasks``."""
         rid_a, rid_b = RequestID("a"), RequestID("b")
         ctx_a = self._make_constrained_ctx(rid_a, is_initial_prompt=False)
-        ctx_b = self._make_constrained_ctx(rid_b)  # fresh -> sync-filled
+        ctx_b = self._make_constrained_ctx(rid_b)  # fresh -> synchronous-filled
 
         pipeline, structured_output, _spec_state, _overlap_state, _ = (
             self._make_pipeline(
@@ -1808,7 +1929,7 @@ class TestAssignBitmaskInputs:
 
     def test_gather_bitmask_gathers_continuing_and_sync_fills_new(self) -> None:
         """A continuing row adopts its callback row by id; a freshly joined
-        row (not in the callback batch) is the only row sync-filled."""
+        row (not in the callback batch) is the only row synchronous-filled."""
         rid_a, rid_c = RequestID("a"), RequestID("c")
         ctx_a = self._make_constrained_ctx(rid_a, is_initial_prompt=False)
         ctx_c = self._make_constrained_ctx(rid_c)  # fresh (initial) -> sync
@@ -1829,7 +1950,7 @@ class TestAssignBitmaskInputs:
         )
 
         assert np.array_equal(assembled[0], pinned[0])  # a gathered
-        assert assembled[1].all()  # c sync-filled (compute -> all True)
+        assert assembled[1].all()  # c synchronous-filled (compute -> all True)
         call = structured_output.compute_speculative_bitmasks.call_args
         assert call.kwargs["context_batch"] == [ctx_c]
 
@@ -1859,3 +1980,188 @@ class TestAssignBitmaskInputs:
         structured_output.compute_speculative_bitmasks.assert_not_called()
         assert np.array_equal(assembled[0], pinned[1])  # b
         assert np.array_equal(assembled[1], pinned[0])  # a
+
+    def test_sync_fill_uses_realized_drafts_not_magic(self) -> None:
+        """Synchronous-fill must build the speculative bitmask from realized drafts.
+
+        On the whole-batch synchronous-fill path (cold start / prefill -> first
+        decode, ``has_precomputed_bitmask=False``) the speculative bitmask
+        must be built from the real EAGLE drafts that ``realize_future_tokens``
+        scattered onto the device buffer -- NOT from the
+        ``_MAGIC_DRAFT_TOKEN_ID`` placeholders left in ``draft_tokens_np``.
+
+        When the synchronous fill passes ``draft_tokens_np`` (all MAGIC) straight to
+        ``compute_speculative_bitmasks``, the speculative FSM walk breaks on
+        the grammar-illegal placeholder (``try_consume_tokens`` returns 0) and
+        the bonus / tail slots are left unconstrained, so a grammar-illegal
+        token can be sampled and committed.
+
+        The realized host drafts are gathered through the same prev->curr
+        scatter map ``realize_future_tokens`` uses (a pure row permutation of
+        ``prev_batch.next_draft_tokens_host``) and exposed on
+        ``spec_state.realized_draft_tokens_host``. The synchronous fill must feed
+        those to ``compute_speculative_bitmasks`` instead.
+
+        Contract asserted: the ``draft_tokens`` handed to
+        ``compute_speculative_bitmasks`` on the synchronous-fill path equal the
+        realized drafts, not the MAGIC placeholders.
+        """
+        rid_a = RequestID("a")
+        ctx_a = self._make_constrained_ctx(rid_a, is_initial_prompt=False)
+
+        pipeline, structured_output, spec_state, _overlap_state, _ = (
+            self._make_pipeline(
+                callback_request_ids=[],  # cold start: no callback rows
+                has_precomputed_bitmask=False,  # -> whole-batch synchronous fill
+            )
+        )
+
+        # ``draft_tokens_np`` holds only MAGIC placeholders -- exactly what
+        # ``_execute_spec_decode`` fills it with in overlap mode (the saved
+        # ``draft_tokens_to_verify`` was reset to [] at the end of the prior
+        # step, so the MAGIC fallback fires).
+        magic_drafts = np.full(
+            (1, self._K), _MAGIC_DRAFT_TOKEN_ID, dtype=np.int64
+        )
+        # The real drafts ``realize_future_tokens`` scattered onto the device
+        # buffer for this row, made host-visible through the shared map.
+        realized_drafts = np.array([[7, 9]], dtype=np.int64)
+        assert not np.array_equal(realized_drafts, magic_drafts)
+        spec_state.realized_draft_tokens_host = realized_drafts
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[ctx_a],
+            draft_tokens_np=magic_drafts,
+            num_draft_tokens_to_verify=self._K,
+        )
+
+        structured_output.compute_speculative_bitmasks.assert_called_once()
+        passed = (
+            structured_output.compute_speculative_bitmasks.call_args.kwargs[
+                "draft_tokens"
+            ]
+        )
+        assert np.array_equal(passed, realized_drafts), (
+            "synchronous-fill built the speculative bitmask from MAGIC placeholders "
+            f"({np.asarray(passed).tolist()}) instead of the realized device "
+            f"drafts ({realized_drafts.tolist()}); the speculative FSM walk "
+            "breaks on the placeholder and bonus/tail slots go unconstrained. "
+            "The synchronous fill must feed the realized host drafts."
+        )
+
+
+class TestHostMirrorRealizedDrafts:
+    """Tests for ``_host_mirror_realized_drafts``.
+
+    It reconstructs, on the host, the post-realize device draft buffer that the
+    GPU verifies: the pre-scatter ``draft_tokens_np`` copy, overwritten for rows
+    present in the previous batch by the realize scatter via ``prev_to_curr_map``
+    (``prev_to_curr_map[p]`` = the current row prev-row ``p`` maps to, or
+    ``_OOB_IDX``). These prove that mirror is exact -- mapped rows take prev's
+    next drafts, unmapped rows keep their own ``draft_tokens_np`` value.
+    """
+
+    _K = 3  # Number of speculative tokens.
+
+    def test_reorder_permutes_rows_by_map(self) -> None:
+        """Prev ``[A, B]`` reordered to curr ``[B, A]``: each curr row gets the
+        next drafts of the prev row that maps to it."""
+        draft_tokens_np = np.full((2, self._K), _MAGIC_DRAFT_TOKEN_ID, np.int64)
+        prev_next = np.array([[10, 11, 12], [20, 21, 22]], dtype=np.int64)
+        # prev A (row 0) -> curr row 1; prev B (row 1) -> curr row 0.
+        prev_to_curr_map = np.array([1, 0], dtype=np.int64)
+
+        out = _host_mirror_realized_drafts(
+            draft_tokens_np, prev_to_curr_map, prev_next
+        )
+
+        assert np.array_equal(out, np.array([[20, 21, 22], [10, 11, 12]]))
+
+    def test_unmapped_row_keeps_real_saved_drafts(self) -> None:
+        """A curr row absent from the prev batch (a
+        preempted/resumed request) keeps its own ``draft_tokens_np`` -- which
+        may hold real saved drafts -- instead of being clobbered."""
+        # Row 0 = continuing (mapped, MAGIC seed); row 1 = resumed with real
+        # saved drafts and NOT in the prev batch.
+        draft_tokens_np = np.array(
+            [[_MAGIC_DRAFT_TOKEN_ID] * self._K, [7, 8, 9]], dtype=np.int64
+        )
+        prev_next = np.array([[10, 11, 12]], dtype=np.int64)  # prev = [A]
+        prev_to_curr_map = np.array([0], dtype=np.int64)  # A -> curr row 0
+
+        out = _host_mirror_realized_drafts(
+            draft_tokens_np, prev_to_curr_map, prev_next
+        )
+
+        assert np.array_equal(out[0], [10, 11, 12])  # mapped -> prev next
+        assert np.array_equal(out[1], [7, 8, 9])  # unmapped -> kept its seed
+
+    def test_unmapped_row_keeps_magic(self) -> None:
+        """An unmapped curr row whose seed is MAGIC keeps MAGIC (it genuinely
+        has no real drafts to verify)."""
+        draft_tokens_np = np.array(
+            [[10, 11, 12], [_MAGIC_DRAFT_TOKEN_ID] * self._K], dtype=np.int64
+        )
+        prev_next = np.array([[10, 11, 12]], dtype=np.int64)
+        prev_to_curr_map = np.array([0], dtype=np.int64)
+
+        out = _host_mirror_realized_drafts(
+            draft_tokens_np, prev_to_curr_map, prev_next
+        )
+
+        assert np.array_equal(out[1], [_MAGIC_DRAFT_TOKEN_ID] * self._K)
+
+    def test_oob_prev_row_is_skipped(self) -> None:
+        """A prev row absent from the current batch (``_OOB_IDX``) writes
+        nothing -- its drafts must not leak into any current row."""
+        draft_tokens_np = np.full((1, self._K), _MAGIC_DRAFT_TOKEN_ID, np.int64)
+        # prev = [A, X]; A -> curr 0, X not in curr.
+        prev_next = np.array([[10, 11, 12], [99, 99, 99]], dtype=np.int64)
+        prev_to_curr_map = np.array([0, _OOB_IDX], dtype=np.int64)
+
+        out = _host_mirror_realized_drafts(
+            draft_tokens_np, prev_to_curr_map, prev_next
+        )
+
+        assert np.array_equal(out, np.array([[10, 11, 12]]))  # no 99s
+
+    def test_does_not_mutate_input(self) -> None:
+        """The seed array is copied, not mutated in place."""
+        draft_tokens_np = np.full((1, self._K), _MAGIC_DRAFT_TOKEN_ID, np.int64)
+        prev_next = np.array([[10, 11, 12]], dtype=np.int64)
+        prev_to_curr_map = np.array([0], dtype=np.int64)
+
+        out = _host_mirror_realized_drafts(
+            draft_tokens_np, prev_to_curr_map, prev_next
+        )
+
+        assert out is not draft_tokens_np
+        assert np.array_equal(
+            draft_tokens_np, np.full((1, self._K), _MAGIC_DRAFT_TOKEN_ID)
+        )
+
+    def test_matches_independent_device_scatter_reference(self) -> None:
+        """Equals an independent scatter reference: seed then, for each prev row
+        with an in-range target, overwrite that current row -- the same thing
+        the device graph does."""
+        rng_curr = np.array(
+            [[1, 2, 3], [4, 5, 6], [_MAGIC_DRAFT_TOKEN_ID] * self._K],
+            dtype=np.int64,
+        )
+        prev_next = np.array([[70, 71, 72], [80, 81, 82]], dtype=np.int64)
+        # prev row 0 -> curr 2, prev row 1 -> curr 0; curr 1 stays its seed.
+        prev_to_curr_map = np.array([2, 0], dtype=np.int64)
+
+        out = _host_mirror_realized_drafts(
+            rng_curr, prev_to_curr_map, prev_next
+        )
+
+        reference = rng_curr.copy()
+        for p_i, c_i in enumerate(prev_to_curr_map):
+            if 0 <= c_i < reference.shape[0]:
+                reference[c_i] = prev_next[p_i]
+        assert np.array_equal(out, reference)
+        assert np.array_equal(
+            out, np.array([[80, 81, 82], [4, 5, 6], [70, 71, 72]])
+        )

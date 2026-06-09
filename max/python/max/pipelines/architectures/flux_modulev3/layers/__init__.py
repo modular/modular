@@ -1,4 +1,4 @@
-##===----------------------------------------------------------------------===##
+# ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -9,10 +9,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-##===----------------------------------------------------------------------===##
-model:
-  model_path: meta-llama/Llama-3.1-8B-Instruct
-  kv_cache:
-    kv_connector: tiered
-    kv_connector_config:
-      use_debug_tiered_mode: true
+# ===----------------------------------------------------------------------=== #
+
+from .attention import VAEAttention
+from .downsampling import Downsample2D
+from .resnet import ResnetBlock2D
+from .upsampling import Upsample2D
+
+__all__ = ["Downsample2D", "ResnetBlock2D", "Upsample2D", "VAEAttention"]

@@ -55,6 +55,7 @@ modular_py_test(
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [

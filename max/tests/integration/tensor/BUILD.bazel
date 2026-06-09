@@ -55,6 +55,7 @@ modular_py_test(
         "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        requirement("ml-dtypes"),
         requirement("numpy"),
     ],
 )
