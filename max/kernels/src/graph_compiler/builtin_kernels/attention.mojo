@@ -76,7 +76,10 @@ from nn.attention.gpu.nvidia.sm100.mha_fp8_kv import (
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     compute_mla_dispatch_scalars,
 )
-from nn.attention.gpu.nvidia.sm100.mla_prefill import mla_sm100_prefill_sparse
+from nn.attention.gpu.nvidia.sm100.mla_prefill import (
+    mla_sm100_prefill_sparse,
+    mla_sm100_prefill_sparse_fp8,
+)
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import DynamicTensor, InputTensor, OutputTensor
 from extensibility import (
@@ -228,7 +231,7 @@ struct MLAIndexerRaggedFloat8Paged:
         )
 
 
-@compiler.register("masked_flash_attention_gpu")
+@compiler.register("mo.composite.masked_flash_attention_gpu")
 struct MaskedFlashAttentionGPU:
     @staticmethod
     def execute[
@@ -497,7 +500,7 @@ struct RaggedFlashAttentionGPU:
         ]()
 
 
-@compiler.register("no_mask_flash_attention_cpu")
+@compiler.register("mo.composite.no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
     @staticmethod
     def execute[
@@ -649,7 +652,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         return q.shape()
 
 
-@compiler.register("with_mask_flash_attention_cpu")
+@compiler.register("mo.composite.masked_flash_attention_cpu")
 struct WithMaskFlashAttentionCPU:
     @staticmethod
     def execute[
@@ -2044,6 +2047,8 @@ struct Struct_mla_decode_graph_paged_fp8:
         w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
         w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
         scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        num_partitions_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
+        effective_split_len_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -2063,6 +2068,11 @@ struct Struct_mla_decode_graph_paged_fp8:
             width: Int
         ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
+        var effective_split_len_proj = Int(
+            effective_split_len_scalar.unsafe_ptr()[0]
+        )
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.fp8",
@@ -2091,6 +2101,8 @@ struct Struct_mla_decode_graph_paged_fp8:
                 w_uv_scale.to_tile_tensor[DType.int64](),
                 scalar_args.to_tile_tensor[DType.int64](),
                 context,
+                num_partitions_in=num_partitions_proj,
+                effective_split_len_in=effective_split_len_proj,
             )
 
 
@@ -2135,6 +2147,8 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
         topk_lengths: InputTensor[dtype=DType.int32, rank=1, ...],
         attn_sink: InputTensor[dtype=DType.float32, rank=1, ...],
+        num_partitions_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
+        effective_split_len_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -2183,6 +2197,10 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
                 kv_blocks,
                 context,
             )
+            var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
+            var effective_split_len_proj = Int(
+                effective_split_len_scalar.unsafe_ptr()[0]
+            )
             mla_decode_branch_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -2213,6 +2231,11 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
                 indices_stride,
                 topk_lengths_ptr,
                 attn_sink_ptr,
+                # Sparse path: kernel caps effective_split_len via topk mask.
+                # Passing the Python-projected values would clobber that cap and
+                # inflate the split-K grid. Let the kernel compute its own values.
+                num_partitions_in=None,
+                effective_split_len_in=None,
             )
 
 
@@ -2319,6 +2342,8 @@ struct Struct_mla_decode_graph_bf16_paged:
         scale: Float32,
         epsilon: Float32,
         scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        num_partitions_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
+        effective_split_len_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -2338,6 +2363,11 @@ struct Struct_mla_decode_graph_bf16_paged:
             width: Int
         ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
+        var effective_split_len_proj = Int(
+            effective_split_len_scalar.unsafe_ptr()[0]
+        )
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged",
@@ -2361,6 +2391,8 @@ struct Struct_mla_decode_graph_bf16_paged:
                 w_uv.to_tile_tensor[DType.int64](),
                 scalar_args.to_tile_tensor[DType.int64](),
                 context,
+                num_partitions_in=num_partitions_proj,
+                effective_split_len_in=effective_split_len_proj,
             )
 
 
@@ -2406,6 +2438,8 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
         w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
         w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
         scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        num_partitions_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
+        effective_split_len_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -2425,6 +2459,11 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
             width: Int
         ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
+        var effective_split_len_proj = Int(
+            effective_split_len_scalar.unsafe_ptr()[0]
+        )
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.fp8",
@@ -2459,6 +2498,8 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
                 w_uv_scale.to_tile_tensor[DType.int64](),
                 scalar_args.to_tile_tensor[DType.int64](),
                 context,
+                num_partitions_in=num_partitions_proj,
+                effective_split_len_in=effective_split_len_proj,
             )
 
 
@@ -2508,6 +2549,8 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
         topk_lengths: InputTensor[dtype=DType.int32, rank=1, ...],
         attn_sink: InputTensor[dtype=DType.float32, rank=1, ...],
+        num_partitions_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
+        effective_split_len_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -2557,6 +2600,10 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 kv_blocks,
                 context,
             )
+            var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
+            var effective_split_len_proj = Int(
+                effective_split_len_scalar.unsafe_ptr()[0]
+            )
             mla_prefill_decode_graph_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -2593,6 +2640,9 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 indices_stride,
                 topk_lengths_ptr,
                 attn_sink_ptr,
+                # Sparse path: let kernel use its own mask-aware computation.
+                num_partitions_in=None,
+                effective_split_len_in=None,
             )
 
 
@@ -2708,6 +2758,111 @@ struct Struct_mla_prefill_sparse_paged:
             )
 
 
+@compiler.register("mo.mla.prefill.sparse.paged.fp8")
+struct Struct_mla_prefill_sparse_paged_fp8:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+        indices_stride: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=DType.float8_e4m3fn, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
+        topk_lengths: InputTensor[dtype=DType.int32, rank=1, ...],
+        attn_sink: InputTensor[dtype=DType.float32, rank=1, ...],
+        kv_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        scale: Float32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.prefill.sparse.paged.fp8 is only supported on GPU"
+
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime num_q_heads = Int(q.static_spec.shape_tuple[1])
+        comptime qk_depth = Int(q.static_spec.shape_tuple[2])
+        comptime v_depth = Int(output.static_spec.shape_tuple[2])
+        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+
+        var dev_ctx = context
+        var num_indices_sparse = sparse_indices.size()
+
+        var attn_sink_ptr = UnsafePointer[
+            Scalar[DType.float32], origin=ImmutAnyOrigin
+        ](attn_sink.to_layout_tensor().ptr)
+
+        var scales_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
+            kv_scales.to_layout_tensor().ptr
+        )
+
+        var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.prefill.sparse.paged.fp8",
+            task_id=get_safe_task_id(context),
+        ):
+            var scratch_sparse_indices = dev_ctx.enqueue_create_buffer[
+                DType.int32
+            ](num_indices_sparse)
+            paged_sparse_kv_index_remap[
+                target, mla_page_size, indices_stride, DType.float8_e4m3fn
+            ](
+                scratch_sparse_indices.unsafe_ptr(),
+                sparse_indices,
+                input_row_offsets,
+                kv_lookup_table,
+                kv_blocks,
+                context,
+            )
+
+            var indices_tt = TileTensor(
+                scratch_sparse_indices.unsafe_ptr().bitcast[
+                    Scalar[DType.uint32]
+                ](),
+                row_major(num_indices_sparse),
+            )
+            var topk_lengths_tt = TileTensor(
+                topk_lengths.to_layout_tensor().ptr.bitcast[
+                    Scalar[DType.uint32]
+                ](),
+                row_major(Int(topk_lengths.dim_size(0))),
+            )
+
+            mla_sm100_prefill_sparse_fp8[
+                num_q_heads=num_q_heads,
+                qk_depth=qk_depth,
+                v_depth=v_depth,
+                indices_stride=indices_stride,
+                scale_block_size=qk_depth,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_ptr,
+                scales_ptr,
+                scale,
+                context,
+            )
+
+
 @compiler.register("mo.mla.graph.prefill.decode.paged")
 struct Struct_mla_prefill_graph_decode_bf16_paged:
     @always_inline
@@ -2741,6 +2896,8 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         scale: Float32,
         epsilon: Float32,
         scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        num_partitions_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
+        effective_split_len_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -2760,6 +2917,11 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
             width: Int
         ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
+        var effective_split_len_proj = Int(
+            effective_split_len_scalar.unsafe_ptr()[0]
+        )
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged",
@@ -2788,6 +2950,8 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
                 w_uv.to_tile_tensor[DType.int64](),
                 scalar_args.to_tile_tensor[DType.int64](),
                 context,
+                num_partitions_in=num_partitions_proj,
+                effective_split_len_in=effective_split_len_proj,
             )
 
 
@@ -2826,6 +2990,8 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
         scale: Float32,
         epsilon: Float32,
         scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        num_partitions_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
+        effective_split_len_scalar: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContext,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -2846,6 +3012,11 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
             width: Int
         ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        var num_partitions_proj = Int(num_partitions_scalar.unsafe_ptr()[0])
+        var effective_split_len_proj = Int(
+            effective_split_len_scalar.unsafe_ptr()[0]
+        )
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.quantized",
@@ -2874,6 +3045,8 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
                 w_uv.to_tile_tensor[DType.int64](),
                 scalar_args.to_tile_tensor[DType.int64](),
                 context,
+                num_partitions_in=num_partitions_proj,
+                effective_split_len_in=effective_split_len_proj,
             )
 
 

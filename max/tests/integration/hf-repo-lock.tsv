@@ -85,6 +85,7 @@ google/gemma-3-27b-it	005ad3404e59d6023443cb575daa05336842228a
 google/gemma-3-4b-it	cf8f8525e9e9984d410dab2ea7f8a294ab58db8c
 google/gemma-4-26B-A4B-it	47b6801b24d15ff9bcd8c96dfaea0be9ed3a0301
 google/gemma-4-31B-it	419b2efe421994fdfd3394e621983d4cc511cd4f
+google/gemma-4-31B-it-assistant	03206cda0a11ee6fab1b4ad1ae2af48b950cc319
 hf-internal-testing/tiny-random-LlamaForCausalLM	f142fc3230c41b4e67f2826b879e289a4e08e679
 hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4	f184d2b18e2b7c257af79aa0bc53ef3ee505caa2
 kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit	0dbc9d99d9036c187562e72e9eeb8036da4e1105
@@ -117,6 +118,7 @@ nvidia/Gemma-4-26B-A4B-NVFP4	bbf84e07ec612504a2ad296b3c7ab2e1712f7ea2
 nvidia/Gemma-4-31B-IT-NVFP4	e5ef03afa233c35cb000323ff098d4291e1dd07c
 nvidia/Kimi-K2.5-NVFP4	e4e908c073784de20ad3af0be653421f1088922d
 nvidia/Kimi-K2.5-Thinking-Eagle3	0b0c6ac039089ad2c2418c91c039553381a302d9
+nvidia/Kimi-K2.6-Eagle3	60f9ba6e143963e7aaacb6d6f346594d65de3f72
 nvidia/Kimi-K2.6-NVFP4	2fd3a800dedd098b8327eb49e93ebc75f85da19f
 nvidia/Llama-3.1-405B-Instruct-NVFP4	8ddfc523e75da0cd52d8d486895aa984282f6db9
 nvidia/Llama-3.1-8B-Instruct-NVFP4	bdb54e24298451af785c0ac63c1b485e9b7400a2

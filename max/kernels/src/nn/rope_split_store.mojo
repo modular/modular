@@ -34,11 +34,14 @@ from layout import (
     RowMajorLayout,
     TensorLayout,
     TileTensor,
+    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.fused_qk_rope import rope_value
 from nn.rope import get_safetensors_idx
 from std.utils.index import IndexList
+
+from internal_utils.fp8_utils import guarded_inv_scale
 
 
 # ===-----------------------------------------------------------------------===#
@@ -134,10 +137,10 @@ def _rope_split_store_ragged_impl[
             input_row_offsets,
         )
         def rope_split_store_fn[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx_arg: IndexList[rank]):
-            comptime assert rank == 2
-            var idx = rebind[IndexList[2]](idx_arg)
+            simd_width: Int, alignment: Int = 1
+        ](idx_arg: Coord):
+            comptime assert idx_arg.rank == 2
+            var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
             var global_token_idx = idx[0]
             var col = idx[1]
 
@@ -282,7 +285,7 @@ def _rope_split_store_ragged_impl[
                     rebind[SIMD[kv_type, simd_width]](val),
                 )
 
-        var launch_shape = IndexList[2](total_seq_len, combined_dim)
+        var launch_shape = (total_seq_len, combined_dim)
         comptime compile_target = _current_target() if is_cpu[
             target
         ]() else get_gpu_target()
@@ -381,11 +384,9 @@ def _rope_split_store_ragged_impl[
             q_out_ptr,
             input_row_offsets,
         )
-        def rope_q_fn[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx_arg: IndexList[rank]):
-            comptime assert rank == 2
-            var idx = rebind[IndexList[2]](idx_arg)
+        def rope_q_fn[simd_width: Int, alignment: Int = 1](idx_arg: Coord):
+            comptime assert idx_arg.rank == 2
+            var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
             var global_token_idx = idx[0]
             var col = idx[1]
             comptime if simd_width >= 2:
@@ -431,7 +432,7 @@ def _rope_split_store_ragged_impl[
                     var res = rope_value(val, freq)
                     (q_out_ptr + q_base).store(res)
 
-        var q_launch_shape = IndexList[2](total_seq_len, q_dim)
+        var q_launch_shape = (total_seq_len, q_dim)
         var q_device_ctx = context.value() if context else DeviceContext(
             api="cpu"
         )
@@ -474,9 +475,9 @@ def _rope_split_store_ragged_impl[
             input_row_offsets,
         )
         def rope_split_store_fp8_fn[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx_arg: IndexList[rank]):
-            comptime assert rank == 2
+            simd_width: Int, alignment: Int = 1
+        ](idx_arg: Coord):
+            comptime assert idx_arg.rank == 2
             # `elementwise` may instantiate this function at smaller
             # widths (notably width=1) for the uneven-SIMD tail. The fp8
             # block-quantize body is only meaningful at the launch width
@@ -484,7 +485,7 @@ def _rope_split_store_ragged_impl[
             # type system doesn't have to handle width=1 cases that
             # would break rope_value's width/2 internals.
             comptime if simd_width == kv_simd_width:
-                var idx = rebind[IndexList[2]](idx_arg)
+                var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
                 var global_token_idx = idx[0]
                 # col here ranges over flattened [k_dim + v_dim] in element
                 # units (elementwise scaled by simd_width so col is the
@@ -550,10 +551,12 @@ def _rope_split_store_ragged_impl[
                     var roped_f32 = roped_bf16.cast[DType.float32]()
                     var max_abs = abs(roped_f32).reduce_max()
                     var scale: Float32 = max_abs / fp8_max_val
-                    var inv_scale: Float32 = (
-                        Float32(0.0) if scale
-                        == Float32(0.0) else Float32(1.0) / scale
-                    )
+                    # Unlike `fp8_quantize` (which #87813 made clamp), this
+                    # direct fp8 cast is UNSATURATED, so a non-finite
+                    # `roped_f32 * inv_scale` from a near-zero block's denormal
+                    # scale would write a bad byte into the KV cache. The shared
+                    # guard returns 0 for a zero/non-finite-reciprocal scale.
+                    var inv_scale = guarded_inv_scale(scale)
                     # 3) Quantize to fp8.
                     var fp8_val = (roped_f32 * inv_scale).cast[
                         DType.float8_e4m3fn
@@ -604,10 +607,9 @@ def _rope_split_store_ragged_impl[
                     var val_f32 = val_bf16.cast[DType.float32]()
                     var max_abs = abs(val_f32).reduce_max()
                     var scale: Float32 = max_abs / fp8_max_val
-                    var inv_scale: Float32 = (
-                        Float32(0.0) if scale
-                        == Float32(0.0) else Float32(1.0) / scale
-                    )
+                    # See the K path: a near-zero V block's denormal scale would
+                    # overflow `1/scale`; the shared guard returns 0 instead.
+                    var inv_scale = guarded_inv_scale(scale)
                     var fp8_val = (val_f32 * inv_scale).cast[
                         DType.float8_e4m3fn
                     ]()
@@ -628,9 +630,7 @@ def _rope_split_store_ragged_impl[
                     )
 
         # KV launch: one thread per block. Range scaled by simd_width.
-        var kv_launch_shape = IndexList[2](
-            total_seq_len, num_kv_blocks_per_token
-        )
+        var kv_launch_shape = (total_seq_len, num_kv_blocks_per_token)
         var device_ctx = context.value() if context else DeviceContext(
             api="cpu"
         )

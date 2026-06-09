@@ -32,7 +32,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     expect_bytes_pred,
 )
 from nn.attention.gpu.mha import q_num_matrix_view_rows
-from nn.attention.gpu.nvidia.sm90.attention import (
+from nn.attention.gpu.nvidia.common import (
     get_seq_info,
     KVTMATile,
     kv_coord,

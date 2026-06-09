@@ -29,7 +29,7 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -395,6 +395,18 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                             draft_attention_dispatch_metadata=kv_caches_per_dev[
                                 dev_idx
                             ].draft_attention_dispatch_metadata,
+                            mla_num_partitions=kv_caches_per_dev[
+                                dev_idx
+                            ].mla_num_partitions,
+                            mla_effective_split_len=kv_caches_per_dev[
+                                dev_idx
+                            ].mla_effective_split_len,
+                            draft_mla_num_partitions=kv_caches_per_dev[
+                                dev_idx
+                            ].draft_mla_num_partitions,
+                            draft_mla_effective_split_len=kv_caches_per_dev[
+                                dev_idx
+                            ].draft_mla_effective_split_len,
                         )
                     )
 
@@ -490,13 +502,6 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
             draft_kv_blocks=draft_kv_cache_buffers,
             seed=self._next_seed(),
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Eagle3DeepseekV3Inputs:
-        raise NotImplementedError("Eagle does not support Multistep execution")
 
     def _create_draft_config(
         self,

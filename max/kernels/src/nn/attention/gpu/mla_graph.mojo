@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections import OptionalReg
+from std.collections import Optional, OptionalReg
 from std.math import align_up, ceildiv
 
 from std.sys import simd_width_of, size_of
@@ -53,6 +53,7 @@ from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     batched_quantize_dynamic_scaled_fp8,
 )
+from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.fused_qk_rope import rope_k_cache, rope_q_proj, rope_value
 from nn.kv_cache import KVCollectionT, KVCacheT
@@ -60,16 +61,9 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_decode_kv_cache_ragged,
     generic_flare_mla_prefill_kv_cache_ragged,
 )
-from nn.attention.gpu.mla import _k_cache_to_buffer
+from nn.attention.gpu.mla import _k_cache_to_buffer, MLA_DECODE_MAX_SEQ_LEN
 from nn.normalization import _rms_norm_warp_tiling_subkernel
 
-
-# ===-----------------------------------------------------------------------===#
-# Maximum sequence length that routes through the decode branch instead of
-# prefill. This covers MTP verification and speculative decoding (1 actual +
-# up to 5 spec ahead = 6) where a small number of draft tokens (> 1) should
-# still use the decode kernel.
-comptime MLA_DECODE_MAX_SEQ_LEN = 6
 
 # Manually fused MLA RoPE and RMSNorm kernel
 # ===-----------------------------------------------------------------------===#
@@ -255,7 +249,7 @@ def fused_rope_rmsnorm_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         idx,
-                        norm_val.cast[k_dtype](),
+                        cast_saturating[k_dtype](norm_val),
                     )
 
 
@@ -402,7 +396,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         head_dim_idx + kv_norm_dim,
-                        roped_val.cast[cache_dtype](),
+                        cast_saturating[cache_dtype](roped_val),
                     )
 
             # The last block of this worker processes RMSNorm.
@@ -447,7 +441,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         idx,
-                        norm_val.cast[cache_dtype](),
+                        cast_saturating[cache_dtype](norm_val),
                     )
 
 
@@ -1064,6 +1058,9 @@ def mla_decode_branch_fp8[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1128,6 +1125,8 @@ def mla_decode_branch_fp8[
         extra_indices_stride: Stride for ``extra_d_indices``.
         extra_topk_lengths: Extra-stream per-batch lengths.
         extra_scales_ptr: Extra-stream scales.
+        num_partitions_in: Capturable-graph num_partitions override.
+        effective_split_len_in: Capturable-graph effective_split_len override.
     """
 
     comptime kv_params = collection_t.kv_params
@@ -1275,6 +1274,8 @@ def mla_decode_branch_fp8[
         extra_indices_stride=extra_indices_stride,
         extra_topk_lengths=extra_topk_lengths,
         extra_scales_ptr=extra_scales_ptr,
+        num_partitions_in=num_partitions_in,
+        effective_split_len_in=effective_split_len_in,
     )
 
     # Create a view of the output tensor with logical shape
@@ -1373,6 +1374,9 @@ def mla_prefill_decode_graph_fp8[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1419,6 +1423,8 @@ def mla_prefill_decode_graph_fp8[
             extra_indices_stride,
             extra_topk_lengths,
             extra_scales_ptr,
+            num_partitions_in,
+            effective_split_len_in,
         )
 
     else:
@@ -1478,7 +1484,9 @@ def convert_bf16_to_fp8_e4m3fn(
 
         output_buffer.store_linear(
             idx,
-            input_buffer.load_linear[width](idx).cast[DType.float8_e4m3fn](),
+            cast_saturating[DType.float8_e4m3fn](
+                input_buffer.load_linear[width](idx)
+            ),
         )
 
     comptime target_simd_width = simd_width_of[
@@ -1489,7 +1497,10 @@ def convert_bf16_to_fp8_e4m3fn(
         convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     comptime if input_buffer.rank == 2:
-        _elementwise_impl_gpu[simd_width=target_simd_width](
+        _elementwise_impl_gpu[
+            simd_width=target_simd_width,
+            trace_description="mla_bf16_to_fp8_convert",
+        ](
             convert_kernel_unified,
             shape=(
                 Int(input_buffer.dim[0]()),
@@ -1498,7 +1509,10 @@ def convert_bf16_to_fp8_e4m3fn(
             ctx=context,
         )
     else:
-        _elementwise_impl_gpu[simd_width=target_simd_width](
+        _elementwise_impl_gpu[
+            simd_width=target_simd_width,
+            trace_description="mla_bf16_to_fp8_convert",
+        ](
             convert_kernel_unified,
             shape=(
                 Int(input_buffer.dim[0]()),
@@ -1817,6 +1831,9 @@ def mla_decode_branch_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA decode path.
 
@@ -1947,6 +1964,8 @@ def mla_decode_branch_bf16[
         raw_output,
         scalar_args_buf,
         ctx,
+        num_partitions_in=num_partitions_in,
+        effective_split_len_in=effective_split_len_in,
     )
 
     # Create a view of the raw output tensor with logical shape
@@ -2017,6 +2036,9 @@ def mla_prefill_decode_graph_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    # Capturable-graph scalars forwarded from the MoGG op input list.
+    num_partitions_in: Optional[Int] = None,
+    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA prefill/decode graph.
 
@@ -2047,6 +2069,8 @@ def mla_prefill_decode_graph_bf16[
             w_uv,
             scalar_args_buf,
             ctx,
+            num_partitions_in=num_partitions_in,
+            effective_split_len_in=effective_split_len_in,
         )
     else:
         mla_prefill_branch_bf16[

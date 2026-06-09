@@ -31,7 +31,7 @@ from max.nn.comm.ep.ep_config import (
     estimate_ep_memory_usage,
 )
 from max.nn.kv_cache import KVCacheInputs
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -39,12 +39,12 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.pipelines.modeling.config_enums import (
     is_float4_encoding,
     supported_encoding_dtype,
 )
+from max.pipelines.weights.quant import parse_quant_config
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
@@ -835,30 +835,4 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             ),
             data_parallel_splits=data_parallel_splits,
             ep_inputs=ep_inputs,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> DeepseekV3Inputs:
-        assert isinstance(prev_model_inputs, DeepseekV3Inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._device_input_row_offsets_prealloc[
-            :row_offsets_size
-        ]
-        next_host_input_row_offsets = self._host_input_row_offsets_prealloc[
-            :row_offsets_size
-        ]
-
-        return DeepseekV3Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            host_input_row_offsets=next_host_input_row_offsets,
-            batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            data_parallel_splits=prev_model_inputs.data_parallel_splits,
-            ep_inputs=prev_model_inputs.ep_inputs,
         )

@@ -36,6 +36,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     row_major,
+    coord_to_index_list,
 )
 from std.memory import memcpy
 from std.memory.unsafe_pointer import unsafe_cast
@@ -299,7 +300,7 @@ def mgp_tensor_extract_buffer[
 ](buffer: DynamicTensor[dtype, buffer_rank]) -> MutByteBuffer:
     # Unwrap the tensor into a size-less buffer pointer.
     return MutByteBuffer(
-        buffer.unsafe_ptr[DType.int8](), IndexList[1](buffer.spec().bytecount())
+        buffer.unsafe_ptr[DType.int8](), IndexList[1](buffer.bytecount())
     )
 
 
@@ -1103,26 +1104,32 @@ def mogg_async_pack_borrow[
 @register_internal("mogg.tensor.__init__")
 @always_inline
 def mogg_tensor_init[
+    LayoutType: TensorLayout,
+    //,
     dtype: DType,
     rank: Int,
     mut: Bool,
     input: IO,
-    static_layout: TensorLayout,
     alignment: Int,
 ](
-    ptr: OpaquePointer[MutAnyOrigin], shape: IndexList[rank]
+    ptr: OpaquePointer[MutAnyOrigin],
+    layout: LayoutType,
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
     static_spec=StaticTensorSpec[
         dtype,
         rank,
-        static_layout=static_layout,
+        static_layout=LayoutType,
     ](alignment, AddressSpace.GENERIC),
 ]:
     """
-    Helper for constructing a ManagedTensorSlice.
+    Helper for constructing a ManagedTensorSlice from a layout.
     """
-    return {ptr.bitcast[Scalar[dtype]](), shape}
+    return {
+        ptr.bitcast[Scalar[dtype]](),
+        layout.shape_coord(),
+        layout.stride_coord(),
+    }
 
 
 @register_internal("mogg.async.ready")
@@ -1445,10 +1452,10 @@ def foreach[
     @always_inline
     def elementwise_fn_wrapper[
         width: Int,
-        rank: Int,
         alignment: Int = 1,
-    ](index: IndexList[rank]) capturing:
-        var val = func[width, alignment](rebind[IndexList[tensor.rank]](index))
+    ](index: Coord) capturing:
+        var idx = coord_to_index_list(index)
+        var val = func[width, alignment](rebind[IndexList[tensor.rank]](idx))
         tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
@@ -1456,7 +1463,7 @@ def foreach[
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape(), ctx)
+    ](tensor.shape_coord(), ctx)
 
 
 @register_internal("mogg.elemwise_for_each")
@@ -1505,17 +1512,17 @@ def foreach[
     # store can route through `_fused_store` when output-store fusion is
     # present.
     def wrapper[
-        width: Int, _rank: Int, alignment: Int = 1
-    ](index: IndexList[_rank]) {var func^, var tensor}:
-        var idx = rebind[IndexList[rank]](index)
+        width: Int, alignment: Int = 1
+    ](index: Coord) {var func^, var tensor}:
+        var idx = rebind[IndexList[rank]](coord_to_index_list(index))
         var val = func[width, alignment](idx)
-        tensor._fused_store[element_alignment=alignment](idx, val)
+        tensor._fused_store[element_alignment=alignment](index, val)
 
     std.algorithm.functional.elementwise[
         simd_width=simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](wrapper, tensor.shape(), ctx)
+    ](wrapper, tensor.shape_coord(), ctx)
 
 
 @register_internal("mogg.call.foreach")
@@ -1599,10 +1606,8 @@ def foreach_out_func[
 
     @parameter
     @always_inline
-    def out_func_shim[
-        _width: Int, _rank: Int, _alignment: Int = 1
-    ](index: IndexList[_rank]) capturing:
-        idx = rebind[IndexList[rank]](index)
+    def out_func_shim[_width: Int, _alignment: Int = 1](index: Coord) capturing:
+        idx = rebind[IndexList[rank]](coord_to_index_list(index))
         out_func[_width](idx)
 
     std.algorithm.functional.elementwise[
@@ -1610,7 +1615,7 @@ def foreach_out_func[
         simd_width,
         target=target,
         _trace_description=_trace_name,
-    ](tensor.shape(), ctx)
+    ](tensor.shape_coord(), ctx)
 
 
 # TensorCopy intrinsic used by view kernels.

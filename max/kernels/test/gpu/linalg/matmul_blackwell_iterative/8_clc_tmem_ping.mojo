@@ -338,10 +338,8 @@ def stsm_helper[
 
         comptime for k in range(stsmx4_lane_size // 2):
             var pair = SIMD[vec_dtype, 2](
-                rebind[Scalar[vec_dtype]](vec[i * stsmx4_lane_size + 2 * k]),
-                rebind[Scalar[vec_dtype]](
-                    vec[i * stsmx4_lane_size + 2 * k + 1]
-                ),
+                vec[i * stsmx4_lane_size + 2 * k],
+                vec[i * stsmx4_lane_size + 2 * k + 1],
             )
             var casted = pair.cast[dst.dtype]()
             v[2 * k] = casted[0]

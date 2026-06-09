@@ -234,7 +234,7 @@ def mock_huggingface_hub_repo_exists_with_retry(
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         with patch("huggingface_hub.revision_exists", return_value=True):
             with patch(
-                "max.pipelines.modeling.weights.hf_utils.generate_local_model_path",
+                "max.pipelines.weights.hf_utils.generate_local_model_path",
                 side_effect=fake_generate_local_model_path,
             ):
                 return func(*args, **kwargs)
@@ -273,7 +273,7 @@ def mock_generate_local_model_path(
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         with patch(
-            "max.pipelines.modeling.weights.hf_utils.generate_local_model_path",
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
             side_effect=fake_generate_local_model_path,
         ):
             return func(*args, **kwargs)

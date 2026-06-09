@@ -49,11 +49,9 @@ from max.pipelines.architectures.qwen3.text_encoder import (
 from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
 from max.pipelines.architectures.wan.wan_executor import WanExecutor
-from max.pipelines.core import PixelContext
-from max.pipelines.lib import (
-    PipelineRuntimeConfig,
-    PixelGenerationPipeline,
-)
+from max.pipelines.context import PixelContext
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.lib import PipelineRuntimeConfig, PixelGenerationPipeline
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
@@ -279,10 +277,10 @@ def _create_vision_max_pipeline(
     )
     if enable_chunked_prefill is not None:
         runtime = PipelineRuntimeConfig(
-            max_num_steps=1, enable_chunked_prefill=enable_chunked_prefill
+            enable_chunked_prefill=enable_chunked_prefill
         )
     else:
-        runtime = PipelineRuntimeConfig(max_num_steps=1)
+        runtime = PipelineRuntimeConfig()
     config = pipelines.PipelineConfig(
         models=ModelManifest({"main": model}),
         runtime=runtime,
@@ -685,7 +683,7 @@ class PixtralPipelineOracle(PipelineOracle):
                     )
                 }
             ),
-            runtime=PipelineRuntimeConfig(max_num_steps=1),
+            runtime=PipelineRuntimeConfig(),
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -755,7 +753,6 @@ class _KimiK2_5BaseOracle(PipelineOracle):
                 "model_path": self.model_path,
                 "huggingface_model_revision": revision,
                 "huggingface_weight_revision": revision,
-                "max_num_steps": 1,
                 "max_length": 4096,
                 "trust_remote_code": self.trust_remote_code,
                 "max_batch_input_tokens": 4096,
@@ -834,8 +831,6 @@ class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):
     # aborts during the second decode step.
     num_steps = 1
 
-    # TODO(MXSERV-7): replace ``austinpowers`` personal namespace with the
-    # official Modular HF org once the checkpoint is republished.
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
         return [
@@ -886,7 +881,6 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
                 "model_path": self.model_path,
                 "huggingface_model_revision": revision,
                 "huggingface_weight_revision": revision,
-                "max_num_steps": 1,
                 "max_length": 4096,
                 "trust_remote_code": self.trust_remote_code,
                 "max_batch_input_tokens": 4096,
@@ -918,11 +912,19 @@ class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
         device_specs: list[driver.DeviceSpec],
     ) -> VLLMPipeline:
         gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
+        # vLLM's kimi_k25 plugin exposes its multimodal input under the
+        # vision_chunk modality, so the image must be keyed and limited under
+        # vision_chunk to reach the model.
         return VLLMPipeline(
             model_path=self.model_path,
             trust_remote_code=self.trust_remote_code,
             encoding=encoding,
             tensor_parallel_size=max(1, gpu_count),
+            extra_kwargs={
+                "mm_encoder_tp_mode": "data",
+                "limit_mm_per_prompt": {"vision_chunk": 1},
+            },
+            mm_data_key="vision_chunk",
         )
 
 
@@ -958,7 +960,6 @@ class KimiK2_5DeepseekV3LocalPathPipelineOracle(
             ),
             runtime=PipelineRuntimeConfig(
                 defer_resolve=True,
-                max_num_steps=1,
                 max_batch_input_tokens=4096,
                 ep_size=8,
             ),
@@ -978,22 +979,26 @@ class GenericOracle(PipelineOracle):
         weight_path_map: dict[str, str] | None = None,
         config_params: dict[str, Any] = {},  # noqa: B006
         prompts: list[str] | None = None,
+        apply_chat_template: bool = False,
         use_cache: bool = True,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
         auto_processor_cls: Any = transformers.AutoTokenizer,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         batch_size: int | list[int] | None = None,
+        add_bos_token: bool | None = None,
     ) -> None:
         self.model_path = model_path
         self._device_encoding_map = device_encoding_map
         self._weight_path_map = weight_path_map
         self.config_params = config_params
         self._prompts = prompts
+        self._apply_chat_template = apply_chat_template
         self.auto_model_cls = auto_model_cls
         self.auto_processor_cls = auto_processor_cls
         self.task = task
         self._use_cache = use_cache
         self.default_batch_size = batch_size
+        self.add_bos_token = add_bos_token
         self.trust_remote_code = config_params.get("trust_remote_code", False)
 
     @property
@@ -1044,7 +1049,6 @@ class GenericOracle(PipelineOracle):
                 "huggingface_model_revision": model_revision,
                 "huggingface_weight_revision": model_revision,
                 "weight_path": [] if weight_path is None else [weight_filename],
-                "max_num_steps": 1,
                 **self.config_params,
             }
         )
@@ -1060,6 +1064,11 @@ class GenericOracle(PipelineOracle):
             pipelines.TextGenerationPipelineInterface
             | pipelines.EmbeddingsPipeline,
         )
+        if self.add_bos_token is not None and hasattr(tokenizer, "delegate"):
+            # transformers v5 stopped honoring add_bos_token from
+            # tokenizer_config.json for some tokenizers, so raw-prompt encoding
+            # drops the leading BOS the reference goldens were generated with.
+            tokenizer.delegate.add_bos_token = self.add_bos_token
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
     def create_torch_pipeline(
@@ -1126,14 +1135,22 @@ class GenericOracle(PipelineOracle):
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
-        return (
-            [
-                MockTextGenerationRequest.text_only(prompt=prompt)
-                for prompt in self._prompts
+        prompts = self._prompts if self._prompts else test_data.DEFAULT_PROMPTS
+        if self._apply_chat_template:
+            # Wrap each prompt in a chat message so the MAX tokenizer applies
+            # the model's chat template, matching a templated reference golden.
+            return [
+                MockTextGenerationRequest.with_messages(
+                    prompt=prompt,
+                    messages=[{"role": "user", "content": prompt}],
+                    is_multimodal=False,
+                )
+                for prompt in prompts
             ]
-            if self._prompts
-            else test_data.DEFAULT_TEXT_ONLY
-        )
+        return [
+            MockTextGenerationRequest.text_only(prompt=prompt)
+            for prompt in prompts
+        ]
 
     @property
     def use_cache(self) -> bool:
@@ -1275,7 +1292,6 @@ class LoRAOracle(PipelineOracle):
                 "quantization_encoding": encoding,
                 "model_path": self.model_path,
                 "huggingface_model_revision": revision,
-                "max_num_steps": 1,
                 "enable_lora": True,
                 "lora_paths": [lora_path],
                 "max_num_loras": 1,
@@ -1401,11 +1417,20 @@ class ImageGenerationOracle(PipelineOracle):
                 quantization_encoding=encoding,
             )
 
+        runtime_kwargs: dict[str, Any] = {
+            "prefer_module_v3": prefer_module_v3,
+        }
+
+        # Optional denoising-cache overrides (e.g. TaylorSeer / FBCache).
+        denoising_cache = self.config_params.get("denoising_cache")
+        if denoising_cache is not None:
+            runtime_kwargs["denoising_cache"] = DenoisingCacheConfig(
+                **denoising_cache
+            )
+
         config = pipelines.PipelineConfig(
             models=models,
-            runtime=PipelineRuntimeConfig(
-                prefer_module_v3=prefer_module_v3,
-            ),
+            runtime=PipelineRuntimeConfig(**runtime_kwargs),
         )
 
         pipeline_model_cls = (
@@ -1583,7 +1608,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={
             "max_vision_cache_entries": 256,
             "max_batch_size": 128,
-            "max_num_steps": 1,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
@@ -1592,7 +1616,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={
             "max_vision_cache_entries": 256,
             "max_batch_size": 128,
-            "max_num_steps": 1,
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
@@ -2064,6 +2087,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "use_subgraphs": False,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-R1": GenericOracle(
         model_path="deepseek-ai/DeepSeek-R1",
@@ -2075,6 +2099,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-V3.1-Terminus": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.1-Terminus",
@@ -2086,6 +2111,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "deepseek-ai/DeepSeek-V3.2-Exp": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.2-Exp",
@@ -2099,6 +2125,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "kv_cache_format": "float8_e4m3fn",
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        add_bos_token=True,
     ),
     "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
         model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
@@ -2110,13 +2137,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+        add_bos_token=True,
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
     "amd/Kimi-K2.5-MXFP4": AmdKimiK2_5MXFP4PipelineOracle(
         "amd/Kimi-K2.5-MXFP4"
-    ),
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3": KimiK2_5DeepseekV3PipelineOracle(
-        "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"
     ),
     # NVFP4 weights pre-staged on the dedicated prod-2 8xB200 runner. Loaded
     # as a vanilla DeepseekV3 checkpoint (same bytes as Kimi-K2.5-NVFP4 with
@@ -2151,13 +2176,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "amd/MiniMax-M2.7-MXFP4": GenericOracle(
         model_path="amd/MiniMax-M2.7-MXFP4",
         config_params={
-            "max_length": 516,
+            # Chat-templating adds the system prompt and role markers, so the
+            # longest prompt grows past the raw 516-token budget to ~530.
+            "max_length": 640,
             "trust_remote_code": True,
-            "max_batch_input_tokens": 512,
+            "max_batch_input_tokens": 640,
             "ep_size": 4,
             "data_parallel_degree": 4,
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+        # The reference golden is chat-templated, so template the MAX side too.
+        apply_chat_template=True,
     ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",

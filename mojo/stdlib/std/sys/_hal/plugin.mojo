@@ -48,14 +48,14 @@ from .device import DeviceSpec
 
 
 @fieldwise_init
-struct M_driver_slice(TrivialRegisterPassable):
-    var data: ImmutPointer[UInt8, StaticConstantOrigin]
+struct M_driver_slice[origin: ImmutOrigin](TrivialRegisterPassable):
+    var data: ImmutPointer[UInt8, Self.origin]
     var size: UInt64
 
 
 @fieldwise_init
-struct M_driver_static_bundle(TrivialRegisterPassable):
-    var mapped_data: M_driver_slice
+struct M_driver_static_bundle[origin: ImmutOrigin](TrivialRegisterPassable):
+    var mapped_data: M_driver_slice[Self.origin]
     var file_type: ImmutPointer[Int8, StaticConstantOrigin]
     var file_type_len: UInt64
 
@@ -167,7 +167,11 @@ comptime QueueHandle = Handle[M_driver_queue]
 comptime EventHandle = Handle[M_driver_event]
 comptime FunctionHandle = Handle[M_driver_function]
 comptime MemoryHandle = Handle[M_driver_memory]
-comptime StaticBundleHandle = Handle[M_driver_static_bundle]
+# Pick a sensible nominal origin for the plugin function pointer. `load_bundle` rebinds the
+# concrete bundle (whatever its asm origin) into this for the FFI call. See MOCO-3661.
+comptime StaticBundleHandle = Handle[
+    M_driver_static_bundle[StaticConstantOrigin]
+]
 comptime RuntimeBundleHandle = Handle[M_driver_runtime_bundle]
 comptime ExecuteConfigHandle = Handle[M_driver_queue_execute_config]
 comptime CompilationOptionsHandle = Handle[M_driver_bundle_compilation_options]
@@ -414,7 +418,9 @@ struct RawDriver(Movable):
         src: UnsafePointer[mut=False, UInt8, _],
         size: UInt64,
     ) raises HALError:
-        var status = self._raw.queue_copy_to_device.f(queue, dst, src, size)
+        var status = self._raw.queue_copy_to_device.f(
+            queue, dst, src.as_any_origin(), size
+        )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
             raise HALError(
@@ -429,7 +435,9 @@ struct RawDriver(Movable):
         src: MemoryHandle,
         size: UInt64,
     ) raises HALError:
-        var status = self._raw.queue_copy_from_device.f(queue, dst, src, size)
+        var status = self._raw.queue_copy_from_device.f(
+            queue, dst.as_any_origin(), src, size
+        )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
             raise HALError(
@@ -537,7 +545,7 @@ struct RawDriver(Movable):
         num_events: UInt32,
     ) raises HALError:
         var status = self._raw.queue_wait_for_events.f(
-            queue, handles, num_events
+            queue, handles.as_any_origin(), num_events
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -616,8 +624,8 @@ struct RawDriver(Movable):
             queue,
             func,
             rebind[ExecuteConfigHandle](UnsafePointer(to=config)),
-            args,
-            arg_sizes,
+            args.as_any_origin(),
+            arg_sizes.as_any_origin(),
             num_args,
         )
         if status != STATUS_SUCCESS:
@@ -637,9 +645,7 @@ struct RawDriver(Movable):
         var ret = self._raw.status_message.f(
             self._driver_handle,
             status,
-            MutPointer(
-                to=UnsafePointer[Int8, MutAnyOrigin](buf.unsafe_ptr())[]
-            ),
+            MutPointer(to=buf.unsafe_ptr().as_any_origin()[]),
             Int64(len(buf)),
         )
 
@@ -1007,11 +1013,7 @@ struct RawPlugin(Movable):
         )
 
         var status = self.create.f(
-            ImmutPointer(
-                to=UnsafePointer[DriverVersion, ImmutAnyOrigin](
-                    UnsafePointer(to=version)
-                )[]
-            ),
+            ImmutPointer(to=UnsafePointer(to=version).as_any_origin()[]),
             OutParam[DriverHandle](to=handle),
         )
         if status != STATUS_SUCCESS:

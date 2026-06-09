@@ -19,7 +19,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
@@ -51,9 +51,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
-    upper_bounded_default,
 )
-from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.pipelines.lib.vision_encoder_cache import (
     VisionEncoderCache,
@@ -64,6 +62,7 @@ from max.pipelines.modeling.config_enums import (
     supported_encoding_dtype,
 )
 from max.pipelines.request import RequestID
+from max.pipelines.weights.quant import parse_quant_config
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
@@ -73,7 +72,10 @@ from .context import KimiK2_5TextAndVisionContext
 from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .kimik2_5 import KimiK2_5
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig, VisionConfig
-from .weight_adapters import preshuffle_mxfp4_b_experts
+from .weight_adapters import (
+    preshuffle_mxfp4_b_experts,
+    preshuffle_mxfp4_b_scales,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -153,6 +155,8 @@ class KimiK2_5Model(
     PipelineModelWithKVCache[KimiK2_5TextAndVisionContext],
 ):
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
+
+    model_config_cls: ClassVar[type[Any]] = KimiK2_5Config
 
     _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 
@@ -238,23 +242,6 @@ class KimiK2_5Model(
             cache_dtype=cache_dtype,
         )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.text_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for DeepseekV2, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_seq_len "
-                f"({huggingface_config.text_config.max_position_embeddings})."
-            ) from e
-
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
     ) -> KimiK2_5TextConfig:
@@ -289,12 +276,15 @@ class KimiK2_5Model(
         quant_config = parse_quant_config(config, state_dict, dtype)
 
         # Kimi K2.5 expects expert B weights in the 5D layout that the AMD
-        # `mxfp4_grouped_matmul_amd_preb` kernel reads. The OG weight
-        # adapter only renames keys, so do the CPU preshuffle here and
-        # flip the QuantConfig flag so `MoEQuantized` dispatches to the
-        # preb path. Must stay in lockstep with the weight adapter.
+        # `mxfp4_grouped_matmul_amd_preb` kernel reads, and the per-expert
+        # B-scales in the 4D-cell layout the same kernel addresses via
+        # `Shuffler.scale_4d_byte_off`. The OG weight adapter only renames
+        # keys, so do both CPU preshuffles here and flip the QuantConfig
+        # flag so `MoEQuantized` dispatches to the preb path. Must stay in
+        # lockstep with the weight adapter.
         if quant_config is not None and quant_config.is_mxfp4:
             preshuffle_mxfp4_b_experts(state_dict)
+            preshuffle_mxfp4_b_scales(state_dict)
             quant_config = replace(quant_config, mxfp4_preshuffled_b=True)
         shared_experts_weight_dtype, dense_mlp_layers_without_quant = (
             infer_kimi_nvfp4_weight_flags(
@@ -1853,31 +1843,4 @@ class KimiK2_5Model(
             image_token_indices=image_token_indices,
             language_image_embeddings=precomputed_image_embeddings,
             language_image_token_indices=image_token_indices,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> KimiK2_5ModelInputs:
-        assert isinstance(prev_model_inputs, KimiK2_5ModelInputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._device_input_row_offsets_prealloc[
-            :row_offsets_size
-        ]
-        next_host_input_row_offsets = self._host_input_row_offsets_prealloc[
-            :row_offsets_size
-        ]
-        return KimiK2_5ModelInputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            host_input_row_offsets=next_host_input_row_offsets,
-            batch_context_lengths=self._batch_context_lengths_prealloc_cpu,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            data_parallel_splits=prev_model_inputs.data_parallel_splits,
-            ep_inputs=prev_model_inputs.ep_inputs,
-            language_image_embeddings=self._empty_image_embeddings,
-            language_image_token_indices=self._empty_image_image_token_indices,
         )

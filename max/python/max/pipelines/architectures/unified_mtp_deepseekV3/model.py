@@ -29,7 +29,7 @@ from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import CompilationTimer, ModelInputs, UnifiedEagleOutputs
 from typing_extensions import override
 
@@ -339,6 +339,18 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                             draft_attention_dispatch_metadata=kv_caches_per_dev[
                                 dev_idx
                             ].draft_attention_dispatch_metadata,
+                            mla_num_partitions=kv_caches_per_dev[
+                                dev_idx
+                            ].mla_num_partitions,
+                            mla_effective_split_len=kv_caches_per_dev[
+                                dev_idx
+                            ].mla_effective_split_len,
+                            draft_mla_num_partitions=kv_caches_per_dev[
+                                dev_idx
+                            ].draft_mla_num_partitions,
+                            draft_mla_effective_split_len=kv_caches_per_dev[
+                                dev_idx
+                            ].draft_mla_effective_split_len,
                         )
                     )
 
@@ -441,13 +453,6 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             draft_tokens=draft_tokens,
             draft_kv_blocks=draft_kv_cache_buffers,
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedMTPDeepseekV3Inputs:
-        raise NotImplementedError("MTP does not support Multistep execution")
 
     def _create_draft_config(
         self, draft_state_dict: dict[str, WeightData]

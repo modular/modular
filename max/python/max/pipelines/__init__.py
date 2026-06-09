@@ -13,10 +13,9 @@
 
 """Types to interface with ML pipelines such as text/token/pixel generation."""
 
-from max.pipelines.modeling.weights.hf_utils import download_weight_files
+from max.pipelines.weights.hf_utils import download_weight_files
 
 from .architectures import register_all_models
-from .core import PixelContext, TextAndVisionContext, TextContext
 from .diffusion.pipeline import PixelGenerationPipeline
 from .lib.config import (
     KVCacheConfig,
@@ -44,20 +43,20 @@ from .lib.interfaces import (
     ModelOutputs,
     PipelineModel,
 )
-from .lib.lora import ADAPTER_CONFIG_FILE
 from .lib.memory_estimation import MemoryEstimator
 from .lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
     TextGenerationPipelineInterface,
 )
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
-from .lib.sampling.sampling_config import SamplingConfig
 from .lib.tokenizer import (
     IdentityPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
 )
 from .lib.utils import upper_bounded_default
+from .lora import ADAPTER_CONFIG_FILE
+from .sampling.sampling_config import SamplingConfig
 
 # Hydrate the registry.
 register_all_models()
@@ -78,7 +77,6 @@ __all__ = [
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",
-    "PixelContext",
     "PixelGenerationPipeline",
     "ProfilingConfig",
     "PrometheusMetricsMode",
@@ -88,9 +86,7 @@ __all__ = [
     "SpeculativeConfig",
     "SupportedArchitecture",
     "SupportedEncoding",
-    "TextAndVisionContext",
     "TextAndVisionTokenizer",
-    "TextContext",
     "TextGenerationPipeline",
     "TextGenerationPipelineInterface",
     "TextTokenizer",

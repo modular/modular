@@ -29,13 +29,13 @@ from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
-    upper_bounded_default,
 )
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVAndVisionCache,
+    ArchConfigWithStoredKVParams,
 )
-from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import Self, override
 
@@ -158,25 +158,18 @@ class Gemma4TextConfig(Gemma3Config):
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
 
-    @staticmethod
+    @classmethod
     def calculate_max_seq_len(
+        cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
     ) -> int:
-        model_config = model_config or pipeline_config.model
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=model_config.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for Gemma4, the provided "
-                f"max_length ({model_config.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
+        # Gemma3Config (parent) is permissive; Gemma4 text uses upper-bounded
+        # max_length semantics instead.
+        return ArchConfigWithStoredKVParams.calculate_max_seq_len(
+            pipeline_config, huggingface_config, model_config
+        )
 
     @classmethod
     def initialize_from_config(
@@ -526,6 +519,11 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
                 quantization_granularity=64,
             )
 
+        num_spec_tokens = (
+            pipeline_config.speculative.num_speculative_tokens
+            if pipeline_config.speculative
+            else 0
+        )
         sliding_window_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.text_config.num_key_value_heads,
@@ -534,6 +532,12 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
+            speculative_method=(
+                pipeline_config.speculative.speculative_method
+                if pipeline_config.speculative
+                else None
+            ),
+            num_draft_tokens=num_spec_tokens,
         )
         global_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
@@ -543,6 +547,12 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
+            speculative_method=(
+                pipeline_config.speculative.speculative_method
+                if pipeline_config.speculative
+                else None
+            ),
+            num_draft_tokens=num_spec_tokens,
         )
         return MultiKVCacheParams.from_params(
             sliding_window_kv_params, global_kv_params

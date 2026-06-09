@@ -34,7 +34,6 @@ from max.experimental.sharding import (
     force_replicated_action_set,
 )
 from max.experimental.sharding.cost import (
-    memory_budget_bytes_per_rank,
     pair_transition_cost,
     tensor_byte_count,
     transition_cost,
@@ -107,7 +106,7 @@ class TestBuildActionSet:
         lay = layout(mesh, (4,), (Replicated(),))
         extras = (uniform_sentinel := object(),)
 
-        def finalize(action: Action, ctx: object) -> Action:
+        def finalize(action: Action) -> Action:
             return action
 
         s = build_action_set(
@@ -298,8 +297,3 @@ class TestTransitionCost:
         assert math.isclose(on_dp, 1024.0 * _ring_factor(2))
         assert math.isclose(on_tp, 1024.0 * _ring_factor(8))
         assert on_tp > on_dp
-
-
-class TestMemoryBudget:
-    def test_none_when_no_budget_set(self) -> None:
-        assert memory_budget_bytes_per_rank(mesh_1d(4)) is None

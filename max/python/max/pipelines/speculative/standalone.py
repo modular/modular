@@ -19,19 +19,19 @@ from typing import final
 import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.pipelines.lib.pipeline_variants.utils import build_response
-from max.pipelines.lib.sampling import SamplerInputs, apply_logits_processors
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
 )
+from max.pipelines.sampling import SamplerInputs, apply_logits_processors
 from max.profiler import traced
 
 from .base import _SpeculativeDecodingMetrics, _SpeculativeDecodingPipelineBase
 from .utils import (
+    _advance_draft_model_inputs,
     _compute_max_num_draft_steps,
     _ModelInputsWithTokensAndOffsets,
     _update_contexts_and_compute_metrics_standalone,
@@ -172,8 +172,8 @@ class _StandaloneSpeculativeDecodingPipeline(_SpeculativeDecodingPipelineBase):
             )
 
             # Prepare next token inputs.
-            curr_step_inputs = self._draft_model.prepare_next_token_inputs(
-                new_tokens, curr_step_inputs
+            curr_step_inputs = _advance_draft_model_inputs(
+                self._draft_model, new_tokens, curr_step_inputs
             )
 
         return (

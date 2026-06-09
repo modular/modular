@@ -19,12 +19,22 @@ from std.bit import prev_power_of_two
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
+from std.gpu.primitives.grid_controls import PDLLevel
 
 
 comptime EnableForcedOrdering = get_defined_bool[
     "FA4ForcedSoftmaxOrdering", False
 ]()
 comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
+
+# Programmatic Dependent Launch level for the SM100 MHA prefill kernel.  On by
+# default so back-to-back attention grids in a stream overlap launch/prologue
+# latency; disable with `-D MHA_PDL=false`.  When > OFF the kernel emits
+# `wait_on_dependent_grids()` / `launch_dependent_grids()` and the dispatch
+# attaches the PROGRAMMATIC_STREAM_SERIALIZATION launch attribute.
+comptime MHA_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
+    "MHA_PDL", True
+]() else PDLLevel.OFF
 
 # Bytes per CTA in shared memory that the CUDA runtime reserves for
 # its own use; subtracted from `B200.shared_memory_per_multiprocessor`
@@ -69,6 +79,8 @@ struct FA4Config[
     var use_fused_kv: Bool
     var pair_cta: Bool
     var num_qo: Int
+    var page_size: Int
+    var is_mla: Bool
 
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
     comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
@@ -179,6 +191,8 @@ struct FA4Config[
         self.qk_depth = qk_depth
         self.pair_cta = pair_cta
         self.num_qo = num_qo
+        self.page_size = page_size
+        self.is_mla = is_mla
         self.MMA_M = 256 if pair_cta else 128
         # num_qo=1 halves BM to MMA_M (=128) — each CTA now covers half as
         # many Q rows. supported() forbids num_qo=1 with pair_cta, so MMA_M
@@ -188,8 +202,11 @@ struct FA4Config[
         else:
             self.BM = 256
         self.fuse_gqa = group > 1 and (self.MMA_M % group == 0) and not is_mla
-        self.swizzle_mode = swizzle_mode
-        swizzle_elems = swizzle_mode.bytes() // Self.qkv_dtype_size
+        comptime if Self.qkv_dtype.is_float8():
+            self.swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
+        else:
+            self.swizzle_mode = swizzle_mode
+        swizzle_elems = self.swizzle_mode.bytes() // Self.qkv_dtype_size
         self.ov_depth = ov_depth
         self.padded_qk_depth = align_up(qk_depth, swizzle_elems)
         self.padded_ov_depth = align_up(ov_depth, swizzle_elems)
@@ -406,6 +423,20 @@ struct FA4Config[
         self.smem_used = smem_use
 
     def supported(self) -> Bool:
+        # Runtime-k partial-page contraction (mma_maybe_partial_k, used only
+        # by the non-MLA fa4_mma path) cuts the P@V contraction at the loaded
+        # V boundary to avoid reading uninitialized SMEM. That cut is only
+        # safe when the loaded region is MMA_K-aligned, i.e. page_size is a
+        # multiple of MMA_K. A sub-tile page (page_size < BN) that is not
+        # MMA_K-aligned is therefore unsupported here. MLA prefill has its own
+        # MMA warps (does not use fa4_mma) and is exempt.
+        if (
+            not self.is_mla
+            and self.page_size != 0
+            and self.page_size < self.BN
+            and self.page_size % Self.MMA_K != 0
+        ):
+            return False
         base = (
             self.BN >= 64
             and self.num_kv_stages >= 2

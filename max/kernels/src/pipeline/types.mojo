@@ -214,8 +214,11 @@ struct OpCost(ImplicitlyCopyable, Movable):
     """
 
     var resource: ResourceKind
+    """Hardware execution unit."""
     var latency: Int
+    """Latency in cycles."""
     var role: OpRole
+    """Pipeline data-flow role."""
     var vgpr_def: Int
     """VGPRs this op brings into scope (new live register values)."""
     var vgpr_kill: Int
@@ -265,9 +268,12 @@ struct TargetCostModel(ImplicitlyCopyable, Movable):
     in the cost model — they carry their own annotations.
 
     Usage:
-        var model = TargetCostModel()
-        model.set_cost(0, OpCost(ResourceKind.GLOBAL_MEM, 200, OpRole.GLOBAL_LOAD))
-        var annotated = annotate_ops(logical_ops, model)
+
+    ```mojo
+    var model = TargetCostModel()
+    model.set_cost(0, OpCost(ResourceKind.GLOBAL_MEM, 200, OpRole.GLOBAL_LOAD))
+    var annotated = annotate_ops(logical_ops, model)
+    ```
     """
 
     var _costs: InlineArray[OpCost, 128]
@@ -292,36 +298,31 @@ struct TargetCostModel(ImplicitlyCopyable, Movable):
 
 
 struct OpDesc(ImplicitlyCopyable, Movable):
-    """Describes a single operation in the pipeline schedule.
-
-    Fields:
-        tag: The type of operation (kernel-specific, used by _emit dispatch).
-        stage: Buffer stage index (0 or 1 for double-buffering).
-        subtile: Subtile index within the stage (0 or 1).
-        k_offset: How to compute the K dimension offset for loads.
-        vm_cost: Number of vmcnt (global load) ops this produces.
-        lgkm_cost: Number of lgkmcnt (LDS) ops this produces.
-        wait_value: For WAIT_VM/WAIT_LGKM ops, the count to wait for.
-        resource: Hardware execution unit (GLOBAL_MEM, LDS, MMA_UNIT, SCALAR).
-        latency: Estimated execution latency in cycles.
-        role: Pipeline data-flow role (GLOBAL_LOAD, FRAGMENT_LOAD, etc.).
-        channel: Data path identifier for edge derivation. Ops on the same
-            channel share a buffer (e.g., 0=A matrix, 1=B matrix). -1 = none.
-        vgpr_def: VGPRs this op brings into scope (new live register values).
-        vgpr_kill: VGPRs this op releases (last use of some register buffer).
-    """
+    """Describes a single operation in the pipeline schedule."""
 
     var tag: Int
+    """The type of operation (kernel-specific, used by _emit dispatch)."""
     var stage: Int
+    """Buffer stage index (0 or 1 for double-buffering)."""
     var subtile: Int
+    """Subtile index within the stage (0 or 1)."""
     var k_offset: KOffsetKind
+    """How to compute the K dimension offset for loads."""
     var vm_cost: Int
+    """Number of vmcnt (global load) ops this produces."""
     var lgkm_cost: Int
+    """Number of lgkmcnt (LDS) ops this produces."""
     var wait_value: Int
+    """For WAIT_VM/WAIT_LGKM ops, the count to wait for."""
     var resource: ResourceKind
+    """Hardware execution unit (GLOBAL_MEM, LDS, MMA_UNIT, SCALAR)."""
     var latency: Int
+    """Estimated execution latency in cycles."""
     var role: OpRole
+    """Pipeline data-flow role (GLOBAL_LOAD, FRAGMENT_LOAD, etc.)."""
     var channel: Int
+    """Data path identifier for edge derivation. Ops on the same channel
+    share a buffer (e.g., 0=A matrix, 1=B matrix). -1 = none."""
     var vgpr_def: Int
     """VGPRs this op brings into scope (new live register values)."""
     var vgpr_kill: Int
@@ -573,24 +574,26 @@ struct DepEdge(ImplicitlyCopyable, Movable):
       - d>=1: loop-carried dependency (consumer reads data from `d` iters ago)
 
     The C2 constraint with loop distance is:
-      τ(consumer) - τ(producer) >= latency(producer) - T * d
+
+    ```text
+    τ(consumer) - τ(producer) >= latency(producer) - T * d
+    ```
 
     For d=0 (same iteration), this simplifies to the existing check:
-      time_slot(consumer) > time_slot(producer)
 
-    Fields:
-        producer_idx: Index of the producing entry in its phase's entry list.
-        consumer_idx: Index of the consuming entry in its phase's entry list.
-        dep_kind: Type of dependency (FLOW, ANTI, OUTPUT).
-        loop_distance: Number of loop iterations between producer and consumer.
-            0 means same iteration, 1 means consumer uses data from previous
-            iteration (e.g., WAR anti-dependency on double-buffered storage).
+    ```text
+    time_slot(consumer) > time_slot(producer)
+    ```
     """
 
     var producer_idx: Int
+    """Index of the producing entry in its phase's entry list."""
     var consumer_idx: Int
+    """Index of the consuming entry in its phase's entry list."""
     var dep_kind: DepKind
+    """Type of dependency (`FLOW`, `ANTI`, or `OUTPUT`)."""
     var loop_distance: Int
+    """Loop iterations between producer and consumer (`0` = same iteration)."""
 
     @always_inline
     def __init__(
@@ -624,12 +627,12 @@ struct EdgeRule(ImplicitlyCopyable, Movable):
     """Declarative edge derivation rule.
 
     Each rule describes a class of dependency edges: for every (producer,
-    consumer) pair whose OpDesc fields satisfy the predicates, emit a DepEdge
-    with the given kind and loop distance.
+    consumer) pair whose `OpDesc` fields satisfy the predicates, emit a
+    `DepEdge` with the given kind and loop distance.
 
     The evaluator (`apply_edge_rules`) pre-classifies ops by role, then for
     each rule scans only relevant (producer_role, consumer_role) pairs and
-    checks the predicate fields.  This replaces the hand-coded 4-phase
+    checks the predicate fields. This replaces the hand-coded 4-phase
     double-buffer logic and 8-rule single-buffer logic in
     `derive_edges_from_ops` with inspectable data.
 
@@ -657,34 +660,59 @@ struct EdgeRule(ImplicitlyCopyable, Movable):
 
     # --- Core ---
     var producer_role: OpRole
+    """Producer op role for this rule."""
     var consumer_role: OpRole
+    """Consumer op role for this rule."""
     var dep_kind: DepKind
-    var loop_distance: Int  # 0, 1, or -1 (derived from k_offset)
+    """Dependency kind (`FLOW`, `ANTI`, or `OUTPUT`)."""
+    var loop_distance: Int
+    """Loop iterations between producer and consumer (`0`, `1`, or `-1`).
+    `-1` derives from `producer.k_offset`: `K_PREV` → `d=0`
+    (current-iteration load), otherwise `d=1` (prefetch)."""
 
     # --- Field matching predicates ---
-    var match_channel: Bool  # require same channel
-    var match_stage: Bool  # require same stage
-    var match_subtile: Bool  # require same subtile
-    var use_config_match: Bool  # use compute_match_key() (Phase 1)
+    var match_channel: Bool
+    """Require the producer and consumer to share the same channel."""
+    var match_stage: Bool
+    """Require the producer and consumer to share the same stage."""
+    var match_subtile: Bool
+    """Require the producer and consumer to share the same subtile."""
+    var use_config_match: Bool
+    """Use `PipelineConfig.compute_match_key()` (Phase 1 register-FLOW)."""
 
     # --- Positional predicates (double-buffer halves) ---
-    var same_half: Bool  # both ops in same half
-    var cross_half: Bool  # ops in different halves
-    var producer_half: Int  # -1=any, 0=first half, 1=second half
+    var same_half: Bool
+    """Require both ops to live in the same half."""
+    var cross_half: Bool
+    """Require the ops to live in different halves."""
+    var producer_half: Int
+    """Producer half filter (`-1` = any, `0` = first half, `1` = second half)."""
 
     # --- K-offset filter ---
-    var k_offset_filter: Int  # 0=any, 1=K_PREV only, 2=non-K_PREV only
+    var k_offset_filter: Int
+    """K-offset filter (`0` = any, `1` = `K_PREV` only, `2` = non-`K_PREV`
+    only). Applied to the consumer for LDS-ANTI rules and to the producer
+    for LDS-FLOW distance derivation."""
 
     # --- Loop-carried filter (single-buffer) ---
-    var lc_producer: Int  # -1=any, 0=non-lc, 1=lc
-    var lc_consumer: Int  # -1=any, 0=non-lc, 1=lc
+    var lc_producer: Int
+    """Loop-carried filter for the producer (`-1` = any, `0` = non-lc,
+    `1` = lc)."""
+    var lc_consumer: Int
+    """Loop-carried filter for the consumer (`-1` = any, `0` = non-lc,
+    `1` = lc)."""
 
     # --- Ordinal filter (single-buffer sync ordering) ---
-    var producer_ordinal: Int  # -1=any, N=Nth occurrence of producer_role
-    var consumer_ordinal: Int  # -1=any, N=Nth occurrence of consumer_role
+    var producer_ordinal: Int
+    """Producer ordinal filter (`-1` = any, `N` = Nth occurrence of
+    `producer_role`)."""
+    var consumer_ordinal: Int
+    """Consumer ordinal filter (`-1` = any, `N` = Nth occurrence of
+    `consumer_role`)."""
 
     # --- Matching behavior ---
-    var first_match_only: Bool  # break after first consumer match per producer
+    var first_match_only: Bool
+    """Break after the first consumer match per producer."""
 
 
 # =============================================================================

@@ -24,7 +24,12 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 import numpy as np
 import numpy.typing as npt
 from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
+from max.pipelines.context import (
+    PixelContext,
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationContext,
+)
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
     InputModality,
@@ -32,7 +37,6 @@ from max.pipelines.modeling.types import (
     PipelineTask,
     PipelineTokenizer,
     ReasoningParser,
-    TextGenerationContext,
     TextGenerationRequest,
 )
 from transformers import (
@@ -49,10 +53,10 @@ if TYPE_CHECKING:
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
-from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 from max.pipelines.speculative.standalone import (
     _StandaloneSpeculativeDecodingPipeline,
 )
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel

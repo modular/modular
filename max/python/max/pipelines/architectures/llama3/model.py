@@ -31,7 +31,7 @@ from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -47,7 +47,6 @@ from max.pipelines.lib.utils import (
 )
 from max.profiler import traced
 from max.support.algorithm import flatten2d
-from transformers import AutoConfig
 
 from .data_parallel_llama import create_graph as create_data_parallel_graph
 from .distributed_llama import DistributedLlama3
@@ -378,44 +377,6 @@ class LlamaModelBase(
             inputs.lora_grouped_offsets_kv = lora_grouped_offsets_kv
 
         return inputs
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Llama3Inputs:
-        """Prepare the inputs for the next token in multistep execution.
-        This should avoid any device synchronization or copy operations.
-        """
-        assert isinstance(prev_model_inputs, Llama3Inputs)
-        assert self._input_row_offsets_prealloc is not None
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        return Llama3Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
-            lora_ids=prev_model_inputs.lora_ids,
-            lora_ranks=prev_model_inputs.lora_ranks,
-            lora_grouped_offsets=prev_model_inputs.lora_grouped_offsets,
-            num_active_loras=prev_model_inputs.num_active_loras,
-            lora_end_idx=prev_model_inputs.lora_end_idx,
-            batch_seq_len=prev_model_inputs.batch_seq_len,
-            lora_ids_kv=prev_model_inputs.lora_ids_kv,
-            lora_grouped_offsets_kv=prev_model_inputs.lora_grouped_offsets_kv,
-            data_parallel_splits=prev_model_inputs.data_parallel_splits,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
-        )
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:

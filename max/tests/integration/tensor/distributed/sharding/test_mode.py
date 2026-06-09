@@ -20,10 +20,10 @@ from max.experimental.sharding import (
     NoReshard,
     ShardingError,
     Solver,
-    current_solver,
     isolated_solver,
     mode,
 )
+from max.experimental.sharding.mode import current_solver
 
 
 class TestShardingError:

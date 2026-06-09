@@ -38,7 +38,7 @@ modular_py_library(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
-        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/profiler",
@@ -78,7 +78,7 @@ exports_files([
 
 _HARNESS_TEST_DEPS = [
     ":testbed",
-    "//max/python/max/pipelines/modeling",
+    "//max/python/max/pipelines/context",
 ]
 
 _GPU_CONSTRAINTS = ["//:has_gpu"] + select({
@@ -140,7 +140,7 @@ modular_py_test(
     srcs = ["test_harness_rms_norm.py"],
     exec_properties = {"test.resources:gpu-memory": "10"},
     gpu_constraints = _GPU_CONSTRAINTS,
-    ignore_extra_deps = ["//max/python/max/pipelines/modeling"],
+    ignore_extra_deps = ["//max/python/max/pipelines/context"],
     imports = ["."],
     tags = ["gpu"],
     deps = _HARNESS_TEST_DEPS,
@@ -153,7 +153,7 @@ modular_py_test(
     # activations. Default (10GB) suffices for the small smoke config.
     exec_properties = {"test.resources:gpu-memory": "10"},
     gpu_constraints = _GPU_CONSTRAINTS,
-    ignore_extra_deps = ["//max/python/max/pipelines/modeling"],
+    ignore_extra_deps = ["//max/python/max/pipelines/context"],
     imports = ["."],
     tags = ["gpu"],
     deps = _HARNESS_TEST_DEPS + [":benchmark_utils"],
@@ -168,7 +168,7 @@ modular_py_test(
     # larger than the flash-attn threshold.
     exec_properties = {"test.resources:gpu-memory": "40"},
     gpu_constraints = _GPU_CONSTRAINTS,
-    ignore_extra_deps = ["//max/python/max/pipelines/modeling"],
+    ignore_extra_deps = ["//max/python/max/pipelines/context"],
     imports = ["."],
     tags = ["gpu"],
     deps = _HARNESS_TEST_DEPS + [":benchmark_utils"],
@@ -179,7 +179,7 @@ modular_py_test(
     srcs = ["test_testbed_validation.py"],
     exec_properties = {"test.resources:gpu-memory": "10"},
     gpu_constraints = _GPU_CONSTRAINTS,
-    ignore_extra_deps = ["//max/python/max/pipelines/modeling"],
+    ignore_extra_deps = ["//max/python/max/pipelines/context"],
     imports = ["."],
     tags = ["gpu"],
     deps = _HARNESS_TEST_DEPS + [

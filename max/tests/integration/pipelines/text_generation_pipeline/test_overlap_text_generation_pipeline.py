@@ -17,24 +17,104 @@ from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
-from max.pipelines.core import TextContext
-from max.pipelines.core.context import FUTURE_TOKEN
+from max.pipelines.context import (
+    StructuredOutputRegionDelimiters,
+    TextContext,
+    TokenBuffer,
+)
+from max.pipelines.context.context import FUTURE_TOKEN
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     TextGenerationPipeline,
 )
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
+    _CALLBACK_LAG_WARN_S,
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
     AsyncBatch,
 )
-from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
+from max.pipelines.lib.pipeline_variants.utils import (
+    StructuredOutputHelper,
+    _count_token_subsequence,
+)
 from max.pipelines.lib.registry import get_pipeline_for_task
 from max.pipelines.modeling.types import (
     PipelineTask,
     RequestID,
     TextGenerationInputs,
-    TokenBuffer,
 )
+
+
+@pytest.mark.parametrize(
+    "content,special_tags,expected",
+    [
+        ([5, 1, 2, 5, 3, 5], [5], 3),  # single-token marker (Kimi case)
+        ([1, 2, 3], [5], 0),
+        ([], [5], 0),
+        ([1, 2, 3], [], 0),  # empty tags never match
+        ([9, 8, 1, 9, 8], [9, 8], 2),  # multi-token marker
+        ([7, 7, 7, 7], [7, 7], 2),  # no double-counting overlaps
+    ],
+)
+def test_count_token_subsequence(
+    content: list[int], special_tags: list[int], expected: int
+) -> None:
+    assert _count_token_subsequence(content, special_tags) == expected
+
+
+class _FakeMatcher:
+    def __init__(self, accepting: bool, stopped: bool) -> None:
+        self._a, self._s = accepting, stopped
+
+    def is_accepting(self) -> bool:
+        return self._a
+
+    def is_stopped(self) -> bool:
+        return self._s
+
+
+def _fake_ctx(matcher: object, generated: list[int]) -> MagicMock:
+    ctx = MagicMock()
+    ctx.matcher = matcher
+    ctx.grammar_enforced = True
+    ctx.tools_forced = True
+    ctx.snapshot_grammar_state.return_value.in_thinking_region = False
+    ctx.tokens.generated = generated
+    return ctx
+
+
+def test_rejection_diagnostics_reports_mid_tool_call_state() -> None:
+    """Diagnostics surface open-section + non-accepting (mid-tool-call) state.
+
+    Logs raw token IDs only (no decoded text); the desyncing batch is
+    reconstructable offline from ``committed_token_ids``.
+    """
+    helper = StructuredOutputHelper(
+        enabled=True,
+        tool_call_region_delimiters=StructuredOutputRegionDelimiters(
+            start_token_ids=[256], end_token_ids=[257]
+        ),
+    )
+    # One section-begin (256), no section-end -> open_sections == 1.
+    ctx = _fake_ctx(_FakeMatcher(accepting=False, stopped=False), [256, 10, 11])
+    diag = helper._rejection_diagnostics(
+        ctx, committed_tokens=[1, 2, 27], committed_idx=2
+    )
+    assert "matcher_accepting=False" in diag
+    assert "open_sections=1" in diag
+    assert "reject_idx=2/3" in diag
+    assert "committed_token_ids=[1, 2, 27]" in diag
+
+
+def test_rejection_diagnostics_never_raises() -> None:
+    """A diagnostic failure degrades to a placeholder, never crashes."""
+    helper = StructuredOutputHelper(enabled=True)
+    bad_matcher = MagicMock()
+    bad_matcher.is_accepting.side_effect = RuntimeError("boom")
+    ctx = _fake_ctx(bad_matcher, [1, 2, 3])
+    diag = helper._rejection_diagnostics(
+        ctx, committed_tokens=[5], committed_idx=0
+    )
+    assert diag.startswith("<diagnostics unavailable")
 
 
 def test_throws_if_num_steps_gt_1() -> None:
@@ -55,7 +135,7 @@ def test_throws_if_num_steps_gt_1() -> None:
     )
     with pytest.raises(
         ValueError,
-        match=r"Max num steps > 1 is not supported with the Overlap scheduler\.",
+        match=r"num_steps > 1 is not supported by the overlap pipeline",
     ):
         pipeline.execute(inputs)
 
@@ -235,8 +315,7 @@ def test_async_batch_sync_with_single_step_tokens() -> None:
         contexts_arg = call_args[0][1]
         assert contexts_arg == contexts
 
-        # Check keyword args
-        assert call_args[1]["num_steps"] == 1
+        # Check keyword args (overlap path always uses single-step [batch, 1] tokens)
         assert call_args[1]["overwrite_future"] is True
 
 
@@ -1213,17 +1292,14 @@ class TestInitializeBitmaskWithGrammar:
 class TestAssignBitmaskInputs:
     """Tests for OverlapTextGenerationPipeline._assign_bitmask_inputs.
 
-    The PR replaced the prior per-row H2D remap (which physically reordered
-    callback-written rows into the next iter's row order on device) with an
-    in-graph wait + pinned-source design: the callback writes pinned rows in
-    iter-N's order, and ``_assign_bitmask_inputs`` either *adopts* those
-    writes when the row layout still matches, or *overwrites* them via
-    ``StructuredOutputOverlapState.prime`` when composition / order
-    changed. These tests cover the four branches of that decision (adopt,
-    reorder-overwrite, missing-matcher overwrite, cold-start overwrite) at
-    the abstraction the new code actually exposes -- mocking the overlap
-    state's ``get_input_views`` / ``prime`` / flag instead of the old
-    per-row inplace_copy_from chain.
+    ``_assign_bitmask_inputs`` either *adopts* the callback's pinned writes
+    in place when the row layout exactly matches (zero-copy fast path), or
+    reconciles per-row otherwise: continuing rows are gathered from the
+    callback's pinned output by request_id (robust to reorder / completion /
+    growth) and only rows with no FSM state to advance (fresh / reactivated)
+    are sync-filled via ``compute_speculative_bitmasks`` + ``prime``. These
+    tests cover those branches by mocking the overlap state's
+    ``get_input_views`` / ``prime`` / ``pinned_bitmask`` / flag.
     """
 
     _VOCAB = 64
@@ -1232,15 +1308,22 @@ class TestAssignBitmaskInputs:
     _NUM_POS = _K + 1
 
     @staticmethod
-    def _make_constrained_ctx(request_id: RequestID) -> TextContext:
+    def _make_constrained_ctx(
+        request_id: RequestID, is_initial_prompt: bool = True
+    ) -> TextContext:
         """Create a constrained context with ``ctx.matcher`` set, so the
-        adoption guard's ``ctx.matcher is None`` clause does not fire."""
+        adoption guard's ``ctx.matcher is None`` clause does not fire.
+
+        ``is_initial_prompt=False`` marks a continuing decode row (its row is
+        gathered from the callback); the default marks a fresh / reactivated
+        row (sync-filled)."""
         ctx = TextContext(
             request_id=request_id,
             max_length=1000,
             tokens=TokenBuffer(np.array([1, 2, 3])),
         )
         ctx._matcher = MagicMock()
+        ctx._is_initial_prompt = is_initial_prompt
         return ctx
 
     @classmethod
@@ -1273,12 +1356,12 @@ class TestAssignBitmaskInputs:
         )
         mock_structured_output = MagicMock()
         mock_structured_output.enabled = True
-        # ``compute_speculative_bitmasks`` is expected to be called only
-        # on the sync-prime branch; configure it to return a
-        # state.num_positions-shaped bool array so ``prime`` sees the
-        # right shape.
-        mock_structured_output.compute_speculative_bitmasks.return_value = (
-            np.ones((1, cls._NUM_POS, cls._VOCAB), dtype=np.bool_)
+        # The sync fill is called only for the rows the callback did not
+        # cover; return a bool array sized to whatever subset it receives.
+        mock_structured_output.compute_speculative_bitmasks.side_effect = (
+            lambda context_batch, draft_tokens, num_positions: np.ones(
+                (len(context_batch), num_positions, cls._VOCAB), dtype=np.bool_
+            )
         )
         pipeline._structured_output = mock_structured_output
 
@@ -1286,6 +1369,10 @@ class TestAssignBitmaskInputs:
         mock_overlap_state.num_positions = cls._NUM_POS
         mock_overlap_state.vocab_size = cls._VOCAB
         mock_overlap_state.max_batch_size = cls._MAX_BATCH
+        # Real array so gather can copy callback rows out of pinned.
+        mock_overlap_state.pinned_bitmask.to_numpy.return_value = np.zeros(
+            (cls._MAX_BATCH, cls._NUM_POS, cls._VOCAB), dtype=np.bool_
+        )
         # Sentinels so the assertion on ``model_inputs.*`` can compare
         # by identity.
         pinned_view = MagicMock(name="pinned_view")
@@ -1512,17 +1599,14 @@ class TestAssignBitmaskInputs:
         structured_output.compute_speculative_bitmasks.assert_called_once()
         overlap_state.prime.assert_called_once()
 
-    def test_sync_prime_passes_full_batch_to_compute(self) -> None:
-        """The replacement for the deleted per-row remap is a *full*
-        sync-prime: ``compute_speculative_bitmasks`` re-computes every
-        row in ``context_batch``, never just the subset of rows the
-        callback was missing. This is the contract the new code relies
-        on -- the in-graph H2D copies the entire leading rectangle
-        from pinned into scratch, so any unwritten row would alias
-        stale data."""
+    def test_sync_prime_passes_only_new_rows_to_compute(self) -> None:
+        """Gather-by-rid only sync-fills rows the callback did not cover:
+        a continuing row (``a``) is gathered from the callback's pinned
+        output, while a freshly joined row (``b``) is the only row passed to
+        ``compute_speculative_bitmasks``."""
         rid_a, rid_b = RequestID("a"), RequestID("b")
-        ctx_a = self._make_constrained_ctx(rid_a)
-        ctx_b = self._make_constrained_ctx(rid_b)
+        ctx_a = self._make_constrained_ctx(rid_a, is_initial_prompt=False)
+        ctx_b = self._make_constrained_ctx(rid_b)  # fresh -> sync-filled
 
         pipeline, structured_output, _spec_state, _overlap_state, _ = (
             self._make_pipeline(
@@ -1530,25 +1614,19 @@ class TestAssignBitmaskInputs:
                 has_precomputed_bitmask=True,
             )
         )
-        # Match the runtime batch shape (2 rows) so ``prime``'s shape
-        # check inside the mock would line up if we wired it through.
-        structured_output.compute_speculative_bitmasks.return_value = np.ones(
-            (2, self._NUM_POS, self._VOCAB), dtype=np.bool_
-        )
-        draft_tokens_np = np.zeros((2, self._K), dtype=np.int64)
 
         pipeline._assign_bitmask_inputs(
             model_inputs=MagicMock(),
             context_batch=[ctx_a, ctx_b],
-            draft_tokens_np=draft_tokens_np,
+            draft_tokens_np=np.zeros((2, self._K), dtype=np.int64),
             num_draft_tokens_to_verify=self._K,
         )
 
         call_kwargs = (
             structured_output.compute_speculative_bitmasks.call_args.kwargs
         )
-        # Full batch, not just the missing tail.
-        assert call_kwargs["context_batch"] == [ctx_a, ctx_b]
+        # Only the new row, not the gathered continuing row.
+        assert call_kwargs["context_batch"] == [ctx_b]
         # Bitmask shape is keyed on overlap_state.num_positions (the
         # captured-graph dim), not on num_draft_tokens_to_verify.
         assert call_kwargs["num_positions"] == self._NUM_POS
@@ -1589,7 +1667,7 @@ class TestAssignBitmaskInputs:
             num_draft_tokens_to_verify=self._K,
         )
 
-        mock_event.wait.assert_called_once_with(timeout=5.0)
+        mock_event.wait.assert_called_once_with(timeout=_CALLBACK_LAG_WARN_S)
         overlap_state.prime.assert_called_once()
         assert spec_state.last_callback_done_event is None
 
@@ -1625,10 +1703,10 @@ class TestAssignBitmaskInputs:
     def test_sync_prime_logs_and_proceeds_when_callback_event_times_out(
         self,
     ) -> None:
-        """A worker that died before reaching its ``finally`` never sets
-        the event. The bounded wait must time out, log an error, and
-        still proceed to ``prime`` (degrade to a noisy race, not a silent
-        hang) -- and the consumed event is still cleared."""
+        """A worker that never ran never sets the event. We keep waiting
+        through the 5s lag warning, then proceed at the 120s deadline with
+        an error log (degrade to a noisy race, not a silent hang) -- and the
+        consumed event is still cleared."""
         ctx_a = self._make_constrained_ctx(RequestID("a"))
         pipeline, _structured_output, spec_state, overlap_state, _ = (
             self._make_pipeline(
@@ -1639,7 +1717,7 @@ class TestAssignBitmaskInputs:
 
         mock_event = MagicMock(name="done_event")
         mock_event.is_set.return_value = False
-        mock_event.wait.return_value = False  # timed out
+        mock_event.wait.return_value = False  # never signaled
         spec_state.last_callback_done_event = mock_event
 
         with patch(
@@ -1652,7 +1730,11 @@ class TestAssignBitmaskInputs:
                 num_draft_tokens_to_verify=self._K,
             )
 
-        mock_event.wait.assert_called_once_with(timeout=5.0)
+        # Two-tier wait: warn at 5s, then wait out the rest of the 120s deadline.
+        assert mock_event.wait.call_count == 2
+        mock_event.wait.assert_any_call(timeout=5.0)
+        mock_event.wait.assert_any_call(timeout=115.0)
+        mock_logger.warning.assert_called_once()
         mock_logger.error.assert_called_once()
         overlap_state.prime.assert_called_once()
         assert spec_state.last_callback_done_event is None
@@ -1688,3 +1770,92 @@ class TestAssignBitmaskInputs:
         overlap_state.prime.assert_not_called()
         mock_event.wait.assert_not_called()
         assert spec_state.last_callback_done_event is mock_event
+
+    def test_reorder_gathers_continuing_rows_without_recompute(self) -> None:
+        """A pure reorder of continuing rows adopts each request's callback
+        row by id (gathered into its new position); the FSM is never
+        re-walked, so ``compute_speculative_bitmasks`` is not called."""
+        rid_a, rid_b = RequestID("a"), RequestID("b")
+        ctx_a = self._make_constrained_ctx(rid_a, is_initial_prompt=False)
+        ctx_b = self._make_constrained_ctx(rid_b, is_initial_prompt=False)
+
+        pipeline, structured_output, _spec_state, overlap_state, _ = (
+            self._make_pipeline(
+                callback_request_ids=[rid_a, rid_b],
+                has_precomputed_bitmask=True,
+            )
+        )
+        # Mark the callback's rows so the gather can be verified by value.
+        pinned = overlap_state.pinned_bitmask.to_numpy.return_value
+        pinned[0, :, 0] = True  # a's row
+        pinned[1, :, 1] = True  # b's row
+
+        pipeline._assign_bitmask_inputs(
+            model_inputs=MagicMock(),
+            context_batch=[ctx_b, ctx_a],  # reordered
+            draft_tokens_np=np.zeros((2, self._K), dtype=np.int64),
+            num_draft_tokens_to_verify=self._K,
+        )
+
+        structured_output.compute_speculative_bitmasks.assert_not_called()
+        overlap_state.prime.assert_called_once()
+        assembled = overlap_state.prime.call_args.args[0]
+        # Row 0 is b's callback row, row 1 is a's -- gathered into new order.
+        assert np.array_equal(assembled[0], pinned[1])
+        assert np.array_equal(assembled[1], pinned[0])
+
+    # ----- direct _gather_bitmask tests -------------------------------------
+
+    def test_gather_bitmask_gathers_continuing_and_sync_fills_new(self) -> None:
+        """A continuing row adopts its callback row by id; a freshly joined
+        row (not in the callback batch) is the only row sync-filled."""
+        rid_a, rid_c = RequestID("a"), RequestID("c")
+        ctx_a = self._make_constrained_ctx(rid_a, is_initial_prompt=False)
+        ctx_c = self._make_constrained_ctx(rid_c)  # fresh (initial) -> sync
+
+        pipeline, structured_output, _s, overlap_state, _d = (
+            self._make_pipeline(
+                callback_request_ids=[rid_a], has_precomputed_bitmask=True
+            )
+        )
+        pinned = overlap_state.pinned_bitmask.to_numpy.return_value
+        pinned[0, :, 0] = True  # a's distinctive callback row
+
+        assembled = pipeline._gather_bitmask(
+            [ctx_a, ctx_c],
+            [rid_a],
+            np.zeros((2, self._K), dtype=np.int64),
+            self._NUM_POS,
+        )
+
+        assert np.array_equal(assembled[0], pinned[0])  # a gathered
+        assert assembled[1].all()  # c sync-filled (compute -> all True)
+        call = structured_output.compute_speculative_bitmasks.call_args
+        assert call.kwargs["context_batch"] == [ctx_c]
+
+    def test_gather_bitmask_reorders_rows_by_request_id(self) -> None:
+        """Reordered continuing rows each adopt their own callback row."""
+        rid_a, rid_b = RequestID("a"), RequestID("b")
+        ctx_a = self._make_constrained_ctx(rid_a, is_initial_prompt=False)
+        ctx_b = self._make_constrained_ctx(rid_b, is_initial_prompt=False)
+
+        pipeline, structured_output, _s, overlap_state, _d = (
+            self._make_pipeline(
+                callback_request_ids=[rid_a, rid_b],
+                has_precomputed_bitmask=True,
+            )
+        )
+        pinned = overlap_state.pinned_bitmask.to_numpy.return_value
+        pinned[0, :, 0] = True  # a
+        pinned[1, :, 1] = True  # b
+
+        assembled = pipeline._gather_bitmask(
+            [ctx_b, ctx_a],  # reordered
+            [rid_a, rid_b],
+            np.zeros((2, self._K), dtype=np.int64),
+            self._NUM_POS,
+        )
+
+        structured_output.compute_speculative_bitmasks.assert_not_called()
+        assert np.array_equal(assembled[0], pinned[1])  # b
+        assert np.array_equal(assembled[1], pinned[0])  # a

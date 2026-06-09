@@ -32,6 +32,7 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     row_major,
+    coord_to_index_list,
 )
 from layout.tile_layout import TensorLayout
 from std.logger import Logger
@@ -687,14 +688,10 @@ def naive_block_scaled_matmul_kernel[
             ).cast[accum_type]()
 
             comptime for k_idx in range(K_STEPS):
-                var a_val = rebind[Scalar[accum_type]](a_val_fp16x2[k_idx])
-                var b_val = rebind[Scalar[accum_type]](b_val_fp16x2[k_idx])
-                var a_scale_val = abs(
-                    rebind[Scalar[accum_type]](a_scale.cast[accum_type]())
-                )
-                var b_scale_val = abs(
-                    rebind[Scalar[accum_type]](b_scale.cast[accum_type]())
-                )
+                var a_val = a_val_fp16x2[k_idx]
+                var b_val = b_val_fp16x2[k_idx]
+                var a_scale_val = abs(a_scale.cast[accum_type]())
+                var b_scale_val = abs(b_scale.cast[accum_type]())
                 accum += a_val * b_val * a_scale_val * b_scale_val
         else:
             # MXFP8: one float8 value per byte.
@@ -1561,14 +1558,11 @@ def block_scaled_matmul_with_epilogue[
             @parameter
             @__copy_capture(c, n)
             def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
-                var c_val = rebind[SIMD[c_type, simd_width]](
-                    c.raw_load[width=simd_width](idx[0] * n + idx[1])
-                )
+                simd_width: Int, alignment: Int = 1
+            ](idx: Coord):
+                var c_val = c.load[width=simd_width](idx)
                 epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
+                    Index(idx[0].value(), idx[1].value()), c_val
                 )
 
             matmul[scales_type=scales_dtype](
@@ -1582,9 +1576,7 @@ def block_scaled_matmul_with_epilogue[
                 transpose_b=True,
                 c_row_major=True,
             )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
+            elementwise[epilogue_wrapper, simd_size, target="gpu"]((m, n), ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2079,9 +2071,7 @@ def _quantize_mxfp4_amd_kernel[
             var scale_f32 = e8m0_scale.cast[DType.float32]()
 
             # 5. Pack 8 BF16 -> 8 FP4 nibbles using AMD hardware intrinsic.
-            var packed = cast_float_to_fp4e2m1_amd(
-                rebind[SIMD[DType.bfloat16, 8]](input_vector), scale_f32
-            )
+            var packed = cast_float_to_fp4e2m1_amd(input_vector, scale_f32)
 
             # 6. Store packed output.
             var packed_bytes = bitcast[DType.uint8, 4](packed)

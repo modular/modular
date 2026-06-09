@@ -140,8 +140,8 @@ modular_py_test(
     srcs = ["test_compute_multimodal_merge_indices.py"],
     deps = [
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/modeling",
         requirement("numpy"),
     ],
 )

@@ -36,9 +36,10 @@ from max.experimental.sharding import (
     Replicated,
     TensorLayout,
 )
+from max.experimental.sharding.per_shard_dim import global_dim
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, TensorValueLike, Type, ops
-from max.graph.dim import DimLike, StaticDim
+from max.graph.dim import Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndices
 
 from ..sharding import (
@@ -172,15 +173,15 @@ def map_tensors(
 def tensor_to_layout(t: Tensor) -> TensorLayout:
     """Converts a :class:`Tensor` to a :class:`TensorLayout` for sharding-rule evaluation.
 
-    Carries the per-rank-aware shape (``t.per_rank_shape``) so the rules
-    that fold per-rank cells (notably ``reshape_rule``) can do the
-    correct shape arithmetic. Non-distributed tensors fall back to a
-    plain :class:`Shape`.
+    ``t.shape`` already carries per-device cells on :class:`Sharded` axes
+    (via :class:`PerShardDim`), so the rules that fold per-rank cells
+    (notably ``reshape_rule``) can do the correct shape arithmetic
+    directly. Non-distributed tensors fall back to a plain :class:`Shape`.
     """
     if t.is_distributed:
         return TensorLayout(
             t.dtype,
-            t.per_rank_shape,
+            t.shape,
             PlacementMapping(t.mesh, t.placements),
         )
     return TensorLayout(
@@ -420,28 +421,16 @@ def _transfer_args(
     return tuple(result)
 
 
-def _align_ranks(*tensors: Tensor) -> tuple[Tensor, ...]:
-    """Prepends size-1 dims so every input shares the same rank.
-
-    Sharding rules always see equal-rank inputs; broadcasts become
-    explicit :func:`unsqueeze` nodes.
-    """
-    max_rank = builtins.max(builtins.len(t.shape) for t in tensors)
-    result: list[Tensor] = []
-    for t in tensors:
-        for _ in builtins.range(max_rank - builtins.len(t.shape)):
-            t = unsqueeze(t, 0)
-        result.append(t)
-    return tuple(result)
-
-
 def _binary_with_scalar_promotion(
     inner: Callable[..., object],
 ) -> Callable[..., Tensor]:
-    """Wraps a binary dispatch with scalar promotion plus unconditional rank alignment.
+    """Wraps a binary dispatch with scalar promotion.
 
     Scalar promotion is gated on ``any_distributed`` because the
-    single-device graph-op path handles scalar + tensor natively.
+    single-device graph-op path handles scalar + tensor natively. Rank
+    differences are not equalized here: broadcasting is handled by the
+    RMO dialect per shard, and the placement rules express trailing-axis
+    alignment directly.
     """
 
     def wrapper(lhs: Tensor | int | float, rhs: Tensor | int | float) -> Tensor:
@@ -450,8 +439,6 @@ def _binary_with_scalar_promotion(
                 lhs = full_like(rhs, lhs)
             elif isinstance(rhs, (int, float)) and isinstance(lhs, Tensor):
                 rhs = full_like(lhs, rhs)
-        if isinstance(lhs, Tensor) and isinstance(rhs, Tensor):
-            lhs, rhs = _align_ranks(lhs, rhs)
         result = inner(lhs, rhs)
         assert isinstance(result, Tensor)
         return result
@@ -919,6 +906,27 @@ Returns:
     element-wise.
 """
 
+ceil = functional(ops.ceil, rule=unary_rule)
+ceil.__doc__ = """Computes the ceil of a tensor element-wise.
+
+Rounds each element up toward positive infinity.
+
+.. code-block:: python
+
+    from max.experimental import Tensor
+    from max.experimental import functional as F
+
+    x = Tensor([1.5, 2.0, -1.5, -2.7])
+    result = F.ceil(x)
+    # result is [2.0, 2.0, -1.0, -2.0]
+
+Args:
+    x: The input tensor. Must have a floating-point dtype.
+
+Returns:
+    A tensor of the same shape and dtype with each element rounded up.
+"""
+
 floor = functional(ops.floor, rule=unary_rule)
 floor.__doc__ = """Computes the floor of a tensor element-wise.
 
@@ -1306,7 +1314,6 @@ def where(
         y = full_like(x, y)
     elif isinstance(y, (int, float)):
         y = full_like(cond, y)
-    cond, x, y = _align_ranks(cond, x, y)
     result = _where_inner(cond, x, y)
     assert isinstance(result, Tensor)
     return result
@@ -1963,13 +1970,17 @@ def split(
     last may be smaller); a sequence specifies per-chunk sizes.
     """
     if isinstance(split_size_or_sections, int):
-        dim = x.shape[axis]
+        # On a sharded axis ``x.shape[axis]`` is a PerShardDim carrying the
+        # global size; ``global_dim`` recovers that static global (and is a
+        # no-op on a plain dim).
+        dim = global_dim(Dim(x.shape[axis]))
         if not isinstance(dim, StaticDim):
             raise TypeError(
                 f"split(x, chunk_size={split_size_or_sections}, axis={axis}): "
-                f"non-static dim {dim!r}; pass an explicit split_sizes list."
+                f"non-static dim {x.shape[axis]!r}; pass an explicit "
+                "split_sizes list."
             )
-        dim_size = int(dim)
+        dim_size = dim.dim
         chunk_size = split_size_or_sections
         num_full, remainder = divmod(dim_size, chunk_size)
         split_sizes: list[DimLike] = [chunk_size] * num_full

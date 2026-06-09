@@ -29,20 +29,22 @@ from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi import FastAPI
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
-from max.pipelines.core import TextContext
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context import (
+    BaseContext,
+    GenerationStatus,
+    TextContext,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import InputError, PromptTooLongError
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     PipelineConfig,
     PipelineRuntimeConfig,
 )
 from max.pipelines.modeling.types import (
-    BaseContext,
-    GenerationStatus,
     PipelineTask,
     RequestID,
     TextGenerationRequestTool,
-    TextGenerationResponseFormat,
 )
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
@@ -236,6 +238,32 @@ async def test_openai_chat_completion_empty_model_name(app) -> None:  # noqa: AN
 
 
 @pytest.mark.asyncio
+async def test_openai_chat_completion_prompt_too_long_returns_400(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``PromptTooLongError`` from the tokenizer must surface as 400."""
+
+    async def _raise(self, request) -> None:  # noqa: ANN001
+        raise PromptTooLongError(num_tokens=4096, max_length=2048)
+
+    monkeypatch.setattr(EchoPipelineTokenizer, "new_context", _raise)
+
+    async with AsyncTestClient(app) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="anything"),
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["message"].startswith("Prompt is too long")
+    assert "4096 tokens" in body["error"]["message"]
+    assert "2048 tokens" in body["error"]["message"]
+    assert body["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
 async def test_openai_chat_completion_input_error_returns_400(app) -> None:  # noqa: ANN001
     async with AsyncTestClient(app) as client:
         app.state.pipeline.all_tokens = AsyncMock(
@@ -248,7 +276,63 @@ async def test_openai_chat_completion_input_error_returns_400(app) -> None:  # n
         )
 
         assert response_json.status_code == 400
-        assert response_json.json()["detail"] == "invalid image input"
+        assert response_json.json()["error"]["message"] == "invalid image input"
+        assert response_json.json()["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
+async def test_openai_error_envelope_shape(app) -> None:  # noqa: ANN001
+    """HTTP errors are returned in the OpenAI ``{"error": {...}}`` envelope."""
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline.all_tokens = AsyncMock(
+            side_effect=InputError("bad request")
+        )
+
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="test data"),
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"]["message"] == "bad request"
+        assert body["error"]["type"] == "invalid_request_error"
+        assert body["error"]["code"] == "400"
+        assert "detail" not in body
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_schema_validation_error_uses_openai_envelope(
+    app,  # noqa: ANN001
+) -> None:
+    """Pydantic ``ValidationError`` from the chat schema surfaces as the OpenAI envelope.
+
+    Regression that composes SERVSYS-1257 (strongly-typed ``messages`` field,
+    so unknown roles raise ``pydantic.ValidationError`` at
+    ``CreateChatCompletionRequest.model_validate_json`` time) with the
+    ``HTTPException`` handler from #87521. The chat route catches
+    ``ValidationError`` and re-raises as ``HTTPException(status_code=400)``,
+    which the registered ``_openai_http_exception_handler`` turns into the
+    ``{"error": {"message", "type", "code", "param"}}`` body that
+    OpenAI/OpenRouter clients expect - not the raw FastAPI ``{"detail": ...}``.
+    """
+    async with AsyncTestClient(app) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "echo",
+                "messages": [{"role": "wizard", "content": "abracadabra"}],
+            },
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert "detail" not in body
+        assert body["error"]["type"] == "invalid_request_error"
+        assert body["error"]["code"] == "400"
+        # ``str(ValidationError)`` includes the offending input, so the
+        # rejected role makes it into the user-facing message.
+        assert "wizard" in body["error"]["message"]
 
 
 def test_validate_decodable_images_rejects_bad_bytes() -> None:
@@ -1646,7 +1730,7 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_defau
         response = await client.post("/v1/chat/completions", json=body)
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["detail"].lower()
+    assert "overlap" in response.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -1687,7 +1771,7 @@ async def test_chat_completion_extra_field_rejected_by_default(
         response = await client.post("/v1/chat/completions", json=body)
 
     assert response.status_code == 400
-    assert "dynamic_temperature" in response.json()["detail"]
+    assert "dynamic_temperature" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -1727,7 +1811,7 @@ async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
         )
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["detail"].lower()
+    assert "overlap" in response.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -1775,7 +1859,7 @@ async def test_completion_extra_field_rejected_by_default(
         )
 
     assert response.status_code == 400
-    assert "dynamic_temperature" in response.json()["detail"]
+    assert "dynamic_temperature" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

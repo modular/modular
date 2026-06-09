@@ -23,14 +23,14 @@ from typing import TYPE_CHECKING, Any
 
 from .action import Action, ActionSet
 from .cost import (
-    admissible_rows_at_axis,
-    axis_actuals,
+    feasible_rows_at_axis,
+    input_placements_at_axis,
     rank_axis_assignments,
     tensor_byte_count,
 )
 from .mappings import DeviceMapping
 from .mesh import DeviceMesh
-from .placements import Partial, Placement, Replicated, Sharded, ShardingError
+from .placements import Placement, ShardingError
 
 if TYPE_CHECKING:
     from .picker import ReshardBehavior, Solver
@@ -43,14 +43,6 @@ _FRAMEWORK_PREFIXES = (
     "max.experimental.sharding.",
     "contextlib",
 )
-
-_TRANSITION_LABELS: dict[tuple[type, type], str] = {
-    (Replicated, Sharded): "local_split (free)",
-    (Sharded, Replicated): "allgather (1x ring bandwidth)",
-    (Sharded, Sharded): "all_to_all (1x ring bandwidth)",
-    (Partial, Replicated): "allreduce (2x ring bandwidth)",
-    (Partial, Sharded): "reduce_scatter (1x ring bandwidth)",
-}
 
 _MODE_LABELS: dict[ReshardBehavior, str] = {
     "silent": "silent insertion",
@@ -195,17 +187,15 @@ def _format_arg_block(i: int, lay: Any, sugg: DeviceMapping) -> str:
 
 
 def _classify_transition(actual: Placement, needed: Placement) -> str:
-    """Names the collective auto would insert for ``actual -> needed``."""
-    if actual == needed:
-        return "no-op"
-    label = _TRANSITION_LABELS.get((type(actual), type(needed)))
-    if label is not None:
-        return label
-    return (
-        "UNREACHABLE — no collective produces Partial"
-        if isinstance(needed, Partial)
-        else "?"
-    )
+    """Names the collective inserted to redistribute ``actual -> needed``.
+
+    Dispatches through :meth:`Placement.transition_to` and reports the
+    resulting :class:`Collective` by its ``.value`` -- the same value the
+    cost model scored. ``transition_to`` returns
+    :attr:`Collective.NOOP` when ``actual == needed``, so no equality
+    special-case is needed here.
+    """
+    return actual.transition_to(needed).value
 
 
 def _format_alternatives(menu: ActionSet, top_n: int = 3) -> str:
@@ -216,8 +206,8 @@ def _format_alternatives(menu: ActionSet, top_n: int = 3) -> str:
     per_input = [l.mapping.to_placements() for l in menu.layouts]
     for ax in range(mesh.ndim):
         gs = mesh.mesh_shape[ax]
-        actuals = axis_actuals(per_input, ax)
-        valid = admissible_rows_at_axis(menu, ax, per_input)
+        actuals = input_placements_at_axis(per_input, ax)
+        valid = feasible_rows_at_axis(menu, ax, per_input)
         ranked = [
             (r, c)
             for r, c in rank_axis_assignments(

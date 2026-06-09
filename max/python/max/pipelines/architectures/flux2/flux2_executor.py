@@ -26,7 +26,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.tensor import Tensor
 from max.graph import Module as GraphModule
-from max.pipelines.core import PixelContext
+from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.cache import DenoisingCacheConfig, TaylorSeerCache
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.compiled_component import CompiledComponent

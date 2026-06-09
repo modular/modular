@@ -97,6 +97,7 @@ from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from std.gpu.host.info import _is_sm10x_gpu
 from layout import (
+    Coord,
     Idx,
     IntTuple,
     Layout,
@@ -3950,20 +3951,20 @@ def _conv_miopen[
         @__copy_capture(filter_frsc_ptr, F_dim, C_dim, R_dim, S_dim)
         @always_inline
         def transpose_fcrs_to_frsc[
-            _width: Int, _rank: Int, alignment: Int = 1
-        ](coords: IndexList[_rank]):
-            var f = coords[0]
-            var r = coords[1]
-            var s = coords[2]
-            var c = coords[3]
-            var val = filter.load_linear[width=_width](Index(f, c, r, s))
+            _width: Int, alignment: Int = 1
+        ](coords: Coord):
+            var f = Int(coords[0].value())
+            var r = Int(coords[1].value())
+            var s = Int(coords[2].value())
+            var c = Int(coords[3].value())
+            var val = filter.load[width=_width]((f, c, r, s))
             var out_idx = (
                 f * R_dim * S_dim * C_dim + r * S_dim * C_dim + s * C_dim + c
             )
             filter_frsc_ptr.store(out_idx, val)
 
         elementwise[transpose_fcrs_to_frsc, 1, target="gpu"](
-            IndexList[4](F_dim, R_dim, S_dim, C_dim), ctx
+            (F_dim, R_dim, S_dim, C_dim), ctx
         )
         filter_shape[0] = UInt64(F_dim)
         filter_shape[1] = UInt64(C_dim)
@@ -3981,20 +3982,20 @@ def _conv_miopen[
         @__copy_capture(filter_frsc_ptr, R_dim, S_dim, C_dim, F_dim)
         @always_inline
         def transpose_rscf_to_frsc[
-            _width: Int, _rank: Int, alignment: Int = 1
-        ](coords: IndexList[_rank]):
-            var f = coords[0]
-            var r = coords[1]
-            var s = coords[2]
-            var c = coords[3]
-            var val = filter.load_linear[width=_width](Index(r, s, c, f))
+            _width: Int, alignment: Int = 1
+        ](coords: Coord):
+            var f = Int(coords[0].value())
+            var r = Int(coords[1].value())
+            var s = Int(coords[2].value())
+            var c = Int(coords[3].value())
+            var val = filter.load[width=_width]((r, s, c, f))
             var out_idx = (
                 f * R_dim * S_dim * C_dim + r * S_dim * C_dim + s * C_dim + c
             )
             filter_frsc_ptr.store(out_idx, val)
 
         elementwise[transpose_rscf_to_frsc, 1, target="gpu"](
-            IndexList[4](F_dim, R_dim, S_dim, C_dim), ctx
+            (F_dim, R_dim, S_dim, C_dim), ctx
         )
 
         filter_shape[0] = UInt64(F_dim)
@@ -4016,14 +4017,14 @@ def _conv_miopen[
         @__copy_capture(filter_frsc_ptr, Q_dim, R_dim, S_dim, C_dim, F_dim)
         @always_inline
         def transpose_qrscf_to_fqrsc[
-            _width: Int, _rank: Int, alignment: Int = 1
-        ](coords: IndexList[_rank]):
-            var f = coords[0]
-            var q = coords[1]
-            var r = coords[2]
-            var s = coords[3]
-            var c = coords[4]
-            var val = filter.load_linear[width=_width](Index(q, r, s, c, f))
+            _width: Int, alignment: Int = 1
+        ](coords: Coord):
+            var f = Int(coords[0].value())
+            var q = Int(coords[1].value())
+            var r = Int(coords[2].value())
+            var s = Int(coords[3].value())
+            var c = Int(coords[4].value())
+            var val = filter.load[width=_width]((q, r, s, c, f))
             var out_idx = (
                 f * Q_dim * R_dim * S_dim * C_dim
                 + q * R_dim * S_dim * C_dim
@@ -4034,7 +4035,7 @@ def _conv_miopen[
             filter_frsc_ptr.store(out_idx, val)
 
         elementwise[transpose_qrscf_to_fqrsc, 1, target="gpu"](
-            Index(F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
+            (F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
         )
 
         filter_shape[0] = UInt64(F_dim)
@@ -4282,17 +4283,18 @@ def _conv_miopen[
         @parameter
         @__copy_capture(output_tmp)
         @always_inline
-        def miopen_epilogue[
-            _width: Int, _rank: Int, alignment: Int = 1
-        ](coords: IndexList[_rank]):
-            epilogue(coords, output_tmp.load_linear[width=_width](coords))
+        def miopen_epilogue[_width: Int, alignment: Int = 1](coords: Coord):
+            epilogue(
+                coord_to_index_list(coords),
+                output_tmp.load[width=_width](coords),
+            )
 
         elementwise[
             miopen_epilogue,
             simd_width_of[output_type, target=get_gpu_target()](),
             target="gpu",
         ](
-            coord_to_index_list(output.layout.shape_coord()),
+            output.layout.shape_coord(),
             ctx,
         )
         _ = output_tmp_data^
@@ -4969,17 +4971,16 @@ def conv_gpu[
                 @__copy_capture(output_tmp_lt)
                 @always_inline
                 def epilogue_wrapper[
-                    _width: Int, _rank: Int, alignment: Int = 1
-                ](coords: IndexList[_rank]):
+                    _width: Int, alignment: Int = 1
+                ](coords: Coord):
                     comptime align = align_of[SIMD[output_type, _width]]()
-                    vec = output_tmp_lt.load[width=_width](
-                        rebind[IndexList[4]](coords)
-                    )
-                    epilogue(coords, vec)
+                    var idx = rebind[IndexList[4]](coord_to_index_list(coords))
+                    vec = output_tmp_lt.load[width=_width](idx)
+                    epilogue(idx, vec)
 
                 elementwise[
                     epilogue_wrapper, simd_width_of[output_type](), target="gpu"
-                ](output_lt.runtime_layout.shape.value.canonicalize(), ctx)
+                ](Coord(output_lt.runtime_layout.shape.value), ctx)
 
                 _ = output_tmp_data^
 
@@ -5027,9 +5028,9 @@ def conv_gpu[
     elif input_lt.rank == 5:
         comptime if filter_is_fcrs:
             conv3d_cudnn[input_type, filter_type, output_type](
-                input_lt,
-                filter_lt,
-                output_lt,
+                input,
+                filter,
+                output,
                 rebind[IndexList[3]](stride),
                 rebind[IndexList[3]](dilation),
                 rebind[IndexList[3]](symmetric_padding),
@@ -5353,9 +5354,9 @@ def _conv3d_cudnn_depth_tiled[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, ...],
-    filter: LayoutTensor[filter_type, ...],
-    output: LayoutTensor[output_type, ...],
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[output_type, ...],
     stride: IndexList[3],
     dilation: IndexList[3],
     padding: IndexList[3],
@@ -5371,17 +5372,20 @@ def _conv3d_cudnn_depth_tiled[
     comptime INT32_MAX_VAL = 2147483647
     comptime FIND_WS_CAP = 256 * 1024 * 1024
 
-    var N = input.dim[0]()
-    var D_in = input.dim[1]()
-    var H = input.dim[2]()
-    var W = input.dim[3]()
-    var C = input.dim[4]()
+    # TileTensor.dim[N]() returns Scalar[tensor.linear_idx_type]; wrap in Int()
+    # so the index arithmetic below unifies across input/filter/output (each
+    # carries a distinct linear_idx_type that does not auto-unify).
+    var N = Int(input.dim[0]())
+    var D_in = Int(input.dim[1]())
+    var H = Int(input.dim[2]())
+    var W = Int(input.dim[3]())
+    var C = Int(input.dim[4]())
 
-    var K_d = filter.dim[2]()  # kernel depth (Q in FCQRS)
-    var F_out = filter.dim[0]()  # output channels
-    var D_out = output.dim[1]()
-    var H_out = output.dim[2]()
-    var W_out = output.dim[3]()
+    var K_d = Int(filter.dim[2]())  # kernel depth (Q in FCQRS)
+    var F_out = Int(filter.dim[0]())  # output channels
+    var D_out = Int(output.dim[1]())
+    var H_out = Int(output.dim[2]())
+    var W_out = Int(output.dim[3]())
 
     var eff_k = (K_d - 1) * dilation[0] + 1  # effective kernel depth
 
@@ -5618,9 +5622,9 @@ def _conv3d_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, ...],
-    filter: LayoutTensor[filter_type, ...],
-    output: LayoutTensor[output_type, ...],
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[output_type, ...],
     stride: IndexList[3],
     dilation: IndexList[3],
     padding: IndexList[3],
@@ -6035,9 +6039,9 @@ def conv3d_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, ...],
-    filter: LayoutTensor[filter_type, ...],
-    output: LayoutTensor[output_type, ...],
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[output_type, ...],
     stride: IndexList[3],
     dilation: IndexList[3],
     padding: IndexList[3],

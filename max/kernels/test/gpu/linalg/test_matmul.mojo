@@ -24,12 +24,7 @@ from std.sys import (
 import linalg.matmul.vendor.blas as vendor_blas
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major, coord_to_index_list
 from layout._fillers import arange as arange, random
 from linalg.matmul.gpu import _matmul_gpu, multistage_gemm
 from linalg.utils_gpu import MatmulConfig
@@ -266,27 +261,24 @@ def test[
     @always_inline
     @__copy_capture(c_device_ref, m, n)
     @parameter
-    def func[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[2]](idx0)
-
-        var val = c_device_ref.load_linear[width=simd_width](idx)
+    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var val = c_device_ref.load[width=simd_width](idx0)
 
         var update_val = val
 
         comptime if lambda_fn:
             comptime element_lambda = lambda_fn.value()
-            update_val = element_lambda(idx, (m, n), val)
+            update_val = element_lambda(
+                rebind[IndexList[2]](coord_to_index_list(idx0)), (m, n), val
+            )
 
-        c_device_ref.store_linear[alignment=alignment * size_of[dtype]()](
-            idx,
-            update_val,
+        c_device_ref.store[alignment=alignment * size_of[dtype]()](
+            idx0, update_val
         )
 
     comptime if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
-            IndexList[2](m, n),
+            (m, n),
             ctx,
         )
     ctx.synchronize()

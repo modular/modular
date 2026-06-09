@@ -17,6 +17,7 @@ from std.collections import OptionalReg
 from std.sys import (
     CompilationTarget,
     align_of,
+    get_defined_bool,
     get_defined_int,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
@@ -43,10 +44,12 @@ from nn.attention.mha_mask import (
     MHAMask,
     NullMask,
     SlidingWindowCausalMask,
+    SlidingWindowNonCausalMask,
 )
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import min_or_neg_inf
+from std.gpu.primitives.grid_controls import PDLLevel
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -56,6 +59,16 @@ from std.utils.numerics import min_or_neg_inf
 comptime is_sm90 = "sm_90" in _accelerator_arch()
 comptime is_sm100 = "sm_100" in _accelerator_arch() or "sm_103" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
+
+# Programmatic Dependent Launch level for the split-K decode producer/consumer
+# (the split-K attention kernels and `mha_splitk_reduce`).  On by default so
+# back-to-back grids in the stream overlap launch/prologue latency; disable
+# with `-D MHA_PDL=false`.  When > OFF, those kernels emit
+# `wait_on_dependent_grids()` / `launch_dependent_grids()` and their dispatches
+# attach the PROGRAMMATIC_STREAM_SERIALIZATION launch attribute.
+comptime MHA_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
+    "MHA_PDL", True
+]() else PDLLevel.OFF
 
 
 @always_inline
@@ -104,7 +117,13 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
     def init(self, dtype: DType) -> Self:
         if self._value == -1:
             comptime if is_sm90or100:
-                return FlashAttentionAlgorithm(2 + Int(dtype.is_half_float()))
+                return FlashAttentionAlgorithm(
+                    2
+                    + Int(
+                        dtype.is_half_float()
+                        or (is_sm100 and dtype.is_float8())
+                    )
+                )
             else:
                 return FlashAttentionAlgorithm(2)
         else:
@@ -274,7 +293,10 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         # Currently, all are `OptionalReg` for consistency.
         if (
             is_sm90or100
-            and Self.dtype.is_half_float()
+            and (
+                Self.dtype.is_half_float()
+                or (is_sm100 and Self.dtype.is_float8())
+            )
             and self.algorithm == FlashAttentionAlgorithm(3)
         ):
             # BM
@@ -660,6 +682,11 @@ def dispatch_mask[
             local_window_size > 0
         ), "You must specify local_window_size for SlidingWindowCausalMask"
         return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
+    elif MaskName.SLIDING_WINDOW_NONCAUSAL == mask_type:
+        comptime assert (
+            local_window_size > 0
+        ), "You must specify local_window_size for SlidingWindowNonCausalMask"
+        return outer_wrapper(SlidingWindowNonCausalMask[local_window_size]())
     elif MaskName.CHUNKED_CAUSAL == mask_type:
         comptime assert (
             local_window_size > 0
