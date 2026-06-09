@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -verify-diagnostics %s -I=%S/inputs
 
 struct HasIntParam[x: Int]:
   def __init__(out self): pass

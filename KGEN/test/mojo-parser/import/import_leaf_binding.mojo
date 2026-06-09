@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S/inputs %s
 
 # Test that `import a.b` emits errors the leaf name `b` is used unqualified.
 # Also verify that `import a.b as b` and `from a import b` do NOT emit any

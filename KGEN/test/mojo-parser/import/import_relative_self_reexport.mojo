@@ -7,7 +7,7 @@
 # Test that a package's __init__.mojo can re-export its submodules using the
 # Python-style relative self-import `from . import foo`.
 
-# RUN: %parse-mojo-isolated -I=%S %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I=%S/inputs %s | FileCheck %s
 
 # Re-exported submodules are reachable through the package.
 from test_from_relative_self_import import foo
