@@ -216,7 +216,6 @@ _DISABLE_AUTO_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "Qwen2_5_VLForConditionalGeneration",
     "Qwen3VLForConditionalGeneration",
     "Qwen3VLMoeForConditionalGeneration",
-    "Qwen3_5ForConditionalGeneration",
     "Step3p5ForCausalLM",
     "UnifiedDflashKimiK25ForCausalLM",
     "UnifiedDflashLlama3ForCausalLM",
