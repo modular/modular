@@ -531,7 +531,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
             )
         return self.cache.text_ids[cache_key]
 
-    def prepare_inputs(self, context: PixelContext) -> QwenImageEditModelInputs:  # type: ignore[override]
+    def prepare_inputs(self, context: PixelContext) -> QwenImageEditModelInputs:
         """Convert a PixelContext into QwenImageEditModelInputs."""
         return QwenImageEditModelInputs.from_context(context)
 

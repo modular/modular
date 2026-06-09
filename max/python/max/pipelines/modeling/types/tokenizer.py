@@ -21,7 +21,7 @@ from typing import Protocol, TypeVar, runtime_checkable
 
 from max.pipelines.request import RequestType
 
-# TODO: Bound this to TextGenerationContext, after we've audited the class.
+# TODO: Bound this to TextContext, after we've audited the class.
 UnboundContextType = TypeVar("UnboundContextType", covariant=True)
 TokenizerEncoded = TypeVar("TokenizerEncoded")
 

@@ -270,7 +270,7 @@ class ZImagePipeline(DiffusionPipeline):
     @traced(message="ZImagePipeline.prepare_inputs")
     def prepare_inputs(
         self,
-        context: PixelContext,  # type: ignore[override]
+        context: PixelContext,
     ) -> ZImageModelInputs:
         """Convert a :class:`PixelGenerationContext` into model inputs with device tensors."""
         _validate_z_image_context(context)
