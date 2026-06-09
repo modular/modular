@@ -35,6 +35,21 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Chat completion responses now emit reasoning under both `reasoning` and
+  `reasoning_content`. Reasoning models previously exposed their
+  chain-of-thought only under `reasoning`; adding the `reasoning_content`
+  alias (the field used by vLLM, SGLang, and the DeepSeek API, in both
+  streaming deltas and the final message) lets a wider range of
+  OpenAI-compatible clients surface it. The two fields always hold the same
+  text.
+
+- `response_format` JSON schemas with a non-object root are now accepted when
+  the root `type` is missing (any) or a type union that includes `object`
+  (for example `{"type": ["object", "array", "string"]}`); these are valid
+  JSON Schema and compile to a constraining grammar. A root pinned to a single
+  non-object type (for example `{"type": "string"}`) is still rejected,
+  matching OpenAI's structured-outputs contract.
+
 - Added a `maxserve.startup_time` Prometheus histogram (seconds) that
   records model-worker startup time, previously only available in the
   server logs. It is split by a `component` tag (`build`, `compile`, `init`,

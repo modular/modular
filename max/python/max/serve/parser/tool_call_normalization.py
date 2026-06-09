@@ -75,29 +75,51 @@ def normalize_message_tool_calls(message: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_JSON_SCHEMA_TYPES = frozenset(
+    {"object", "array", "string", "number", "integer", "boolean", "null"}
+)
+
+
 def _validate_response_format_schema(
     schema: dict[str, Any] | None,
 ) -> None:
-    """Validates the root structure of a ``response_format.json_schema.schema``.
+    """Validates the root ``type`` of a ``response_format.json_schema.schema``.
 
-    OpenAI's structured-outputs guide requires the root schema to be of
-    ``type: "object"``. A non-object root is invalid and should be
-    rejected at the request boundary with a 400.
+    OpenAI's structured outputs require an object root, but JSON Schema (and
+    the grammar backend, llguidance) also accept a missing ``type`` ("any")
+    and a type *union* that includes ``object``
+    (``"type": ["object", "array", "string"]``); both compile to a
+    constraining grammar, so we accept them. A root pinned to a single
+    *non-object scalar* type (e.g. ``{"type": "string"}``) is still rejected:
+    callers expect a JSON object back, and this matches OpenAI's contract.
 
-    - ``None`` is acceptable (no schema supplied).
-    - Empty dict is acceptable (treated as no constraint by downstream).
-    - Otherwise the root must have ``type == "object"``.
+    - ``None`` / empty dict are acceptable (no constraint).
+    - Missing ``type`` is acceptable (means "any").
+    - ``type`` may be a non-empty list of recognized types (a union).
+    - A single ``type`` must be ``object``; any other single scalar is rejected.
 
     Raises:
-        ValueError: If the schema has a non-object root.
+        ValueError: If the root ``type`` is a single non-object type, a list
+            containing an unrecognized type, or otherwise not a JSON Schema
+            type.
     """
     if schema is None or schema == {}:
         return
     root_type = schema.get("type")
+    if root_type is None:
+        return
+    if isinstance(root_type, list):
+        invalid = [t for t in root_type if t not in _JSON_SCHEMA_TYPES]
+        if not root_type or invalid:
+            raise ValueError(
+                "response_format.json_schema.schema: root 'type' list must "
+                f"contain only JSON Schema types (got {root_type!r})"
+            )
+        return
     if root_type != "object":
         raise ValueError(
-            "response_format.json_schema.schema: root must have type "
-            f"'object' (got {root_type!r})"
+            "response_format.json_schema.schema: root 'type' must be "
+            f"'object' or a type union including it (got {root_type!r})"
         )
 
 

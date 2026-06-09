@@ -413,6 +413,7 @@ class OpenAIChatResponseGenerator(
                                 role="assistant",
                                 refusal=None,
                                 reasoning=chunk.decoded_reasoning_tokens,
+                                reasoning_content=chunk.decoded_reasoning_tokens,
                                 tool_calls=tool_call_chunks
                                 if tool_call_chunks
                                 else None,
@@ -658,6 +659,7 @@ class OpenAIChatResponseGenerator(
             if reasoning_message is not None:
                 for choice in response_choices:
                     choice.message.reasoning = reasoning_message
+                    choice.message.reasoning_content = reasoning_message
 
             usage = None
             if n_reasoning_tokens > 0 or n_tokens > 0:
