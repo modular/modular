@@ -25,6 +25,7 @@ modular_py_library(
         requirement("jinja2"),
         requirement("numpy"),
         requirement("openai"),
+        requirement("psutil"),
         requirement("pydantic"),
         requirement("pyyaml"),
         requirement("tiktoken"),
