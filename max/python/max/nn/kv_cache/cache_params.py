@@ -77,13 +77,8 @@ class KVConnectorType(str, Enum):
 class KVCacheBuffer:
     """This is a collection of the KVCache buffers.
 
-    There are three types of supported buffers: values, scales, and staging.
+    There are two types of supported buffers: values and scales.
     The scales are optional and used for FP8 quantization.
-    The staging buffer is optional and used for the fp8-KV dequant-staging
-    path (``mo.mha.ragged.paged.fp8_kv``): a pre-allocated bf16 scratch
-    buffer of shape ``[num_blocks, 2, 1, page_size, num_heads, head_dim]``
-    (one layer only) so that the MOGG op does not need to call
-    ``enqueue_create_buffer`` inside a CUDA graph capture region.
 
     The length of the list of buffers correspond to the tensor parallel degree
     where each buffer in the list corresponds to a single TP shard.
@@ -94,7 +89,6 @@ class KVCacheBuffer:
     total_num_pages: int
     values: list[Buffer]
     scales: list[Buffer] | None = None
-    staging: list[Buffer] | None = None
 
     def __post_init__(self) -> None:
         if self.total_num_pages <= 0:
@@ -119,29 +113,17 @@ class KVCacheBuffer:
                         "Corresponding values and scales must be either both pinned or both non-pinned"
                     )
 
-        if self.staging is not None:
-            if len(self.staging) != len(self.values):
-                raise ValueError("Staging must be the same length as values")
-
-            for value, stg in zip(self.values, self.staging, strict=True):
-                if value.device != stg.device:
-                    raise ValueError(
-                        "Corresponding values and staging must be on the same device"
-                    )
-
     @property
     def all_buffers(self) -> list[Buffer]:
-        """Returns all value, scale, and staging buffers in a single flat list.
+        """Returns all value and scale buffers in a single flat list.
 
         Returns:
             A list containing every value buffer followed by every scale
-            buffer (if scales are present) and every staging buffer (if
-            staging is present).
+            buffer (if scales are present).
         """
         return [
             *self.values,
             *(self.scales if self.scales is not None else []),
-            *(self.staging if self.staging is not None else []),
         ]
 
 

@@ -37,7 +37,13 @@ from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient, HTTPStatusError
 from jinja2.exceptions import UndefinedError
 from llguidance import LLMatcher
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context import (
+    GenerationStatus,
+    SamplingParams,
+    SamplingParamsInput,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
@@ -47,20 +53,16 @@ from max.pipelines.lib.tool_parsing import (
 )
 from max.pipelines.lora import LoRAOperation, LoRARequest, LoRAStatus
 from max.pipelines.modeling.types import (
-    GenerationStatus,
     ImageContentPart,
     MessageContent,
     ParsedToolResponse,
     PipelineTokenizer,
     RequestID,
-    SamplingParams,
-    SamplingParamsInput,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestFunction,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TextGenerationResponseFormat,
     VideoContentPart,
 )
 from max.profiler import Tracer, traced

@@ -32,10 +32,11 @@ from max.pipelines.architectures.kimik2_5.tool_parser import (
     TOOL_CALLS_SECTION_END,
     KimiToolParser,
 )
-from max.pipelines.core import (
+from max.pipelines.context import (
     GrammarEnforcementState,
     StructuredOutputRegionDelimiters,
     TextContext,
+    TokenBuffer,
 )
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _MAGIC_DRAFT_TOKEN_ID,
@@ -47,7 +48,6 @@ from max.pipelines.modeling.types import (
     ParsedToolCallDelta,
     ParsedToolResponse,
     PipelineTokenizer,
-    TokenBuffer,
 )
 
 

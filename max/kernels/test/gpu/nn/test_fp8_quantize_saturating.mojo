@@ -28,7 +28,7 @@ attention microbench cannot see."""
 from std.sys import has_nvidia_gpu_accelerator
 from std.gpu.host import DeviceContext
 from std.utils.numerics import isnan, max_finite, min_finite
-from comm.fp8_utils import fp8_quantize, cast_saturating
+from internal_utils.fp8_utils import fp8_quantize, cast_saturating
 
 
 def _check_kernel():

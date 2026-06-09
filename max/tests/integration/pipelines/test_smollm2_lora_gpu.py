@@ -14,10 +14,10 @@
 
 import pytest
 from max.pipelines import TextGenerationPipeline
-from max.pipelines.core.context import TextContext
+from max.pipelines.context import SamplingParams
+from max.pipelines.context.context import TextContext
 from max.pipelines.modeling.types import (
     RequestID,
-    SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
 )

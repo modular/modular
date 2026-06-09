@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import pytest
-from max.pipelines.modeling.types import TextGenerationContext
+from max.pipelines.context import TextGenerationContext
 from testbed.harnesses.qwen3_attention import (
     Qwen3AttentionHarness,
     Qwen3AttentionStaticParams,

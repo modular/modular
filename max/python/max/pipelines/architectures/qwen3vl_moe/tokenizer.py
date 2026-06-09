@@ -34,7 +34,11 @@ from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_rope_index,
     get_seqlens,
 )
-from max.pipelines.core.exceptions import PromptTooLongError
+from max.pipelines.context import (
+    ImageMetadata,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
     max_tokens_to_generate,
@@ -42,13 +46,11 @@ from max.pipelines.lib import (
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.modeling.types import (
     ImageContentPart,
-    ImageMetadata,
     MessageContent,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image

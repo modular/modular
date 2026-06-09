@@ -324,6 +324,10 @@ Parameters:
 """
 
 
+comptime _UnsafeDanglingPluginHookFnType = def[alignment: Int]() thin -> Int
+"""Plugin-hook signature for `PluginHooks.unsafe_dangling_fn`; keep in sync with `UnsafePointer.unsafe_dangling`."""
+
+
 struct UnsafePointer[
     mut: Bool,
     //,

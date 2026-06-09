@@ -27,19 +27,21 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.core import GrammarEnforcementState
-from max.pipelines.core.exceptions import PromptTooLongError
+from max.pipelines.context import (
+    GrammarEnforcementState,
+    ImageMetadata,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.tokenizer import (
     resolve_single_special_token,
     run_with_default_executor,
 )
 from max.pipelines.modeling.types import (
-    ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TokenBuffer,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from transformers import AutoTokenizer

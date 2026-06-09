@@ -13,7 +13,7 @@
 """Tests for SamplingParams validation (no GPU required)."""
 
 import pytest
-from max.pipelines.modeling.types import SamplingParams
+from max.pipelines.context import SamplingParams
 
 
 def test_sampling_top_k() -> None:

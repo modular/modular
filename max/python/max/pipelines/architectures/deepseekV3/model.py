@@ -31,7 +31,7 @@ from max.nn.comm.ep.ep_config import (
     estimate_ep_memory_usage,
 )
 from max.nn.kv_cache import KVCacheInputs
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,

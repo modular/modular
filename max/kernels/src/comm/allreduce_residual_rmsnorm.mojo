@@ -90,7 +90,7 @@ from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
 
-from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
+from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 from .rms_norm_fp8 import rms_norm_fused_fp8
 

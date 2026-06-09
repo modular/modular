@@ -12,8 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context import (
+    PixelContext,
+    TextAndVisionContext,
+    TextContext,
+)
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 

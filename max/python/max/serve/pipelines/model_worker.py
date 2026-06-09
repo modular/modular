@@ -31,10 +31,10 @@ from max.driver import Device, DevicePinnedBuffer
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.experimental.nn._compilation_timer import collect_compilation_stats
+from max.pipelines.context import BaseContextType
 from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.pipelines.modeling.types import (
-    BaseContextType,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,

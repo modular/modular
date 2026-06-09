@@ -18,7 +18,7 @@ Submodules
    :maxdepth: 1
 
    pipelines.architectures
-   pipelines.core
+   pipelines.context
    pipelines.diffusion
    pipelines.kv_cache
    pipelines.lib
@@ -75,18 +75,6 @@ Model interface
    ModelInputs
    ModelOutputs
    PipelineModel
-
-Context
--------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   PixelContext
-   TextAndVisionContext
-   TextContext
 
 Tokenizers
 ----------
