@@ -1144,20 +1144,11 @@ def tanh[
     comptime if CurrentPlugin.tanh_fn[dtype, width]:
         return comptime (CurrentPlugin.tanh_fn[dtype, width].value())(x)
 
-    comptime if is_nvidia_gpu():
-        comptime instruction = "tanh.approx.f32"
-
-        comptime if not _is_sm_8x_or_newer():
-            # Pre-Ampere (Volta sm_70, Turing sm_75): every `tanh.approx.*` PTX
-            # instruction (including the f32 form) requires PTX ISA 7.0+, which
-            # is not emitted for these targets. Compute tanh from `exp2`
-            # (`ex2.approx.ftz.f32`, valid on all NVIDIA targets) in float32:
-            #   tanh(x) = 1 - 2 / (exp2(2*log2(e) * x) + 1)
-            # The `1 - 2/(...)` form stays finite for large |x|. See issue #6653.
-            comptime two_log2e = 2.8853900817779269  # 2 * log2(e)
-            var e2x = exp2(x.cast[DType.float32]() * two_log2e)
-            return (1.0 - 2.0 / (e2x + 1.0)).cast[dtype]()
-
+    # Pre-Ampere NVIDIA (Volta sm_70, Turing sm_75) is intentionally excluded:
+    # `tanh.approx.*` requires a newer PTX ISA than is emitted for those targets,
+    # so they fall through to the generic polynomial approximation below
+    # (arithmetic only, valid on every target). See issue #6653.
+    comptime if is_nvidia_gpu() and _is_sm_8x_or_newer():
         comptime if dtype == DType.float16:
             return _call_ptx_intrinsic[
                 scalar_instruction="tanh.approx.f16",
