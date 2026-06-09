@@ -86,24 +86,9 @@ void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//
 
-/// Helper to emit an error message for unknown keyword operands.
-void emitUnknownKeywords(MojoInflightDiag &diag,
-                         ArrayRef<StringAttr> unknownKeywords,
-                         StringRef argOrParam);
-
-/// Helper to emit an error message for positional-only operands passed by
-/// keyword.
-void emitPosOnlyPassedByKw(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
-                           StringRef argOrParam);
-
 /// Helper to emit an error message for missing operands.
 void emitMissing(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                  const Twine &kindStr);
-
-/// Helper to emit an error message for arguments/parameters passed both
-/// positionally and by keyword.
-void emitByPosAndKw(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
-                    const Twine &kindStr);
 
 /// Check if a name is for an internal decl or not.
 bool isInternalName(StringRef name);

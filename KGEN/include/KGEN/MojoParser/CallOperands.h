@@ -180,33 +180,21 @@ public:
 
   void dump() const;
 
-  /// Designates the kind of keyword-operand errors.
-  enum class KwDiagResult {
-    kValid,
-    kMissingKwOnly,
-    kOutOfOrderInferredKw,
-    kPosOnlyPassedByKw,
-    kUnknownKeywords
-  };
-
   /// Helper to diagnose common cases of candidate mismatch related to keyword
   /// operands (unexpected kw-operands, pos-only arg/param provided by
-  /// kw-operand, missing kw-only arg/param). If the function accepts variadic
-  /// keyword args/params, this function also collects them.
-  std::pair<KwDiagResult, SmallVector<StringAttr>>
-  diagnoseKeywordOperands(PogListAttr pogListAttr,
-                          OperandValueList &variadicKwOperands,
-                          bool allowMissingKwOnly = false) const;
-
-  /// Designates the kind of positional operand errors.
-  enum class PosDiagResult { kValid, kMissingPos, kTooManyPos, kByPosAndKw };
+  /// kw-operand, missing kw-only arg/param). This function collects any
+  /// variadic keyword args/params if the function allows them.
+  LogicalResult diagnoseKeywordOperands(
+      PogListAttr pogListAttr, OperandValueList &variadicKwOperands,
+      bool isParameterList,
+      llvm::function_ref<MojoInflightDiag &()> getDiag) const;
 
   /// Helper to diagnose common cases of candidate mismatch related to
   /// positional arguments/parameter (too many positionals, missing positionals,
   /// argument/parameter specified both by positional and keyword operands).
-  std::pair<PosDiagResult, SmallVector<StringAttr>>
-  diagnosePosOperands(PogListAttr pogListAttr,
-                      bool allowCountMismatch = false) const;
+  LogicalResult
+  diagnosePosOperands(PogListAttr pogListAttr, bool isParameterList,
+                      llvm::function_ref<MojoInflightDiag &()> getDiag) const;
 };
 
 raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);

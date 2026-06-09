@@ -345,9 +345,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                                           const OverloadSet &callable,
                                           const CallOperands &operands,
                                           bool allowImplicitConversions) {
-  // We set up diagnostics.
-  size_t numPosOperands = operands.getNumPositional();
-
   SMLoc callLoc = callable.getExpr()->getLoc();
   SharedState &shared = callable.getShared();
 
@@ -373,75 +370,18 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
   PogListAttr argListAttr = signature.getArgListAttrs();
   OperandValueList variadicKwOperands;
-  auto [kwDiagRes, kwDiagNames] =
-      operands.diagnoseKeywordOperands(argListAttr, variadicKwOperands);
-  switch (kwDiagRes) {
-  case CallOperands::KwDiagResult::kMissingKwOnly: {
-    auto diag = shared.emitError(callLoc);
-    emitMissing(diag, kwDiagNames, "keyword-only argument");
-    return std::move(diag);
-  }
-  case CallOperands::KwDiagResult::kOutOfOrderInferredKw:
-    llvm_unreachable("no inferred arguments");
-  case CallOperands::KwDiagResult::kPosOnlyPassedByKw: {
-    auto diag = shared.emitError(callLoc);
-    emitPosOnlyPassedByKw(diag, kwDiagNames, "argument");
-    return std::move(diag);
-  }
-  case CallOperands::KwDiagResult::kUnknownKeywords: {
-    auto diag = shared.emitError(callLoc);
-    emitUnknownKeywords(diag, kwDiagNames, "argument");
-    return std::move(diag);
-  }
-  default:
-    break;
-  }
-
-  auto [posDiagRes, posDiagNames] = operands.diagnosePosOperands(argListAttr);
-  // If any operand is a `*pack` splat and the count didn't match, attach
-  // a note explaining the gap and pointing at the working pattern.
-  // `CallNode::emitIR` eagerly expands splats whose `VariadicPack`
-  // element list is statically resolved; this note primarily helps the
-  // case where the element list is still symbolic (e.g. `Ts.values` in
-  // a generic body), but it's also useful when a resolved splat happens
-  // to have the wrong element count.
-  auto attachPackSplatNote = [&](MojoInflightDiag &diag) {
-    for (const OperandValue &op : operands.values) {
-      if (op.unpackStyle != ArgUnpackStyle::kStar)
-        continue;
-      diag.attachNote(op.expr->getLoc())
-          << "'*' splat is only supported when the callee accepts a "
-             "variadic pack argument at this position; to forward a "
-             "runtime pack to a fixed-arity callee, route the call through "
-             "a dispatcher whose argument is itself a variadic pack (e.g. "
-             "`def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: "
-             "def(*args: *Ts) thin](...): callee(*pack)`)";
-      return;
-    }
+  std::optional<MojoInflightDiag> stagedDiag;
+  auto getStagedDiag = [&]() -> MojoInflightDiag & {
+    stagedDiag = shared.emitError(callLoc);
+    return *stagedDiag;
   };
-  switch (posDiagRes) {
-  case CallOperands::PosDiagResult::kMissingPos: {
-    auto diag = shared.emitError(callLoc);
-    emitMissing(diag, posDiagNames, "positional argument");
-    attachPackSplatNote(diag);
-    return std::move(diag);
-  }
-  case CallOperands::PosDiagResult::kTooManyPos: {
-    size_t numPosMaximum = countNumPositional(argListAttr);
-    auto diag = shared.emitError(callLoc);
-    diag << "expected at most " << numPosMaximum << " positional argument"
-         << plural(numPosMaximum) << ", got " << numPosOperands;
-    attachPackSplatNote(diag);
-    return std::move(diag);
-  }
-  case CallOperands::PosDiagResult::kByPosAndKw: {
-    auto diag = shared.emitError(callLoc);
-    emitByPosAndKw(diag, posDiagNames, "argument");
-    return std::move(diag);
-  }
-  default:
-    break;
-  }
+
+  if (failed(operands.diagnoseKeywordOperands(argListAttr, variadicKwOperands,
+                                              /*isParameterList=*/false,
+                                              getStagedDiag)) ||
+      failed(operands.diagnosePosOperands(
+          argListAttr, /*isParameterList=*/false, getStagedDiag)))
+    return std::move(*stagedDiag);
 
   // Check that the signature can be rebound with this set of bindings.
   OperandsNeedingOriginsList operandsNeedingOrigins;

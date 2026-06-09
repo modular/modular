@@ -636,51 +636,19 @@ LogicalResult ParamInf::inferFromParamList() {
   // use the original operands list.
   const CallOperands &givenBindings = this->getGivenBindings();
 
+  auto getStagedDiag = [&]() -> MojoInflightDiag & { return getMojoDiag({}); };
+
   // Do basic validation of the argument list using shared logic.
   // TODO: Integrate this into the logic below.
   // FIXME: why the verification here does not guarantee there is no parameter
   // number mismatch/missing kw error below?
   OperandValueList variadicKwOperands;
-  auto [kwDiagRes, kwDiagNames] = givenBindings.diagnoseKeywordOperands(
-      declaredParamPogs, variadicKwOperands, /*allowMissingKwOnly=*/true);
-  if (kwDiagRes != CallOperands::KwDiagResult::kValid) {
-    MojoInflightDiag &diag = getMojoDiag({});
-    switch (kwDiagRes) {
-    case CallOperands::KwDiagResult::kMissingKwOnly:
-      emitMissing(diag, kwDiagNames, "keyword-only parameter");
-      break;
-    case CallOperands::KwDiagResult::kOutOfOrderInferredKw: {
-      size_t numNames = kwDiagNames.size();
-      diag << "inferred parameter" << plural(numNames)
-           << " passed out of order: ";
-      llvm::interleave(
-          kwDiagNames, [&](StringAttr str) { diag << str; },
-          [&]() { diag << ", "; });
-      break;
-    }
-    case CallOperands::KwDiagResult::kPosOnlyPassedByKw:
-      emitPosOnlyPassedByKw(diag, kwDiagNames, "parameter");
-      break;
-    case CallOperands::KwDiagResult::kUnknownKeywords:
-      emitUnknownKeywords(diag, kwDiagNames, "parameter");
-      break;
-    default:
-      llvm_unreachable("unknown KwDiagResult");
-    }
+  if (failed(givenBindings.diagnoseKeywordOperands(
+          declaredParamPogs, variadicKwOperands, /*isParameterList=*/true,
+          getStagedDiag)) ||
+      failed(givenBindings.diagnosePosOperands(
+          declaredParamPogs, /*isParameterList=*/true, getStagedDiag)))
     return failure();
-  }
-
-  auto [posDiagRes, posDiagNames] = givenBindings.diagnosePosOperands(
-      declaredParamPogs, /*allowCountMismatch=*/true);
-  if (posDiagRes == CallOperands::PosDiagResult::kByPosAndKw) {
-    emitByPosAndKw(getMojoDiag({}), posDiagNames, "parameter");
-    return failure();
-  }
-
-  // Parameter inference and call emission rely on this function not failing
-  // early due to missing or too many positional parameters.
-  assert(posDiagRes == CallOperands::PosDiagResult::kValid &&
-         "positional parameter operand check failed unexpectedly");
 
   // We may have pre-checked and out-of-order inferred parameters.  Avoid
   // stomping on them.

@@ -146,36 +146,11 @@ static void emitNames(MojoInflightDiag &diag, ArrayRef<StringAttr> names) {
       names, [&](StringAttr str) { diag << str; }, [&]() { diag << ", "; });
 }
 
-void LIT::emitUnknownKeywords(MojoInflightDiag &diag,
-                              ArrayRef<StringAttr> unknownKeywords,
-                              StringRef argOrParam) {
-  diag << "unknown keyword " << argOrParam << plural(unknownKeywords.size())
-       << ": ";
-  emitNames(diag, unknownKeywords);
-}
-
-void LIT::emitPosOnlyPassedByKw(MojoInflightDiag &diag,
-                                ArrayRef<StringAttr> names,
-                                StringRef argOrParam) {
-  size_t numNames = names.size();
-  diag << "positional-only " << argOrParam << plural(numNames)
-       << " passed as keyword operand" << plural(numNames) << ": ";
-  emitNames(diag, names);
-}
-
 void LIT::emitMissing(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                       const Twine &kindStr) {
   size_t numNames = names.size();
   diag << "missing " << numNames << " required " << kindStr << plural(numNames)
        << ": ";
-  emitNames(diag, names);
-}
-
-void LIT::emitByPosAndKw(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
-                         const Twine &kindStr) {
-  size_t numNames = names.size();
-  diag << kindStr << plural(numNames)
-       << " passed both as positional and keyword operand: ";
   emitNames(diag, names);
 }
 
