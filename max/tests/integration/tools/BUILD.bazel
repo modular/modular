@@ -93,7 +93,10 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/flux2",
+        "//max/python/max/pipelines/architectures/internvl",
+        "//max/python/max/pipelines/architectures/qwen3",
+        "//max/python/max/pipelines/architectures/wan",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",

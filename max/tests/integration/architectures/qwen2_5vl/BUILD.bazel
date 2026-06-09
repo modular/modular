@@ -27,7 +27,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
         requirement("numpy"),
         requirement("pillow"),
         requirement("transformers"),
@@ -92,7 +92,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
         requirement("torch"),
         requirement("numpy"),
         requirement("transformers"),
@@ -128,7 +128,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
         "//max/python/max/pipelines/lib",
         requirement("transformers"),
     ],
@@ -139,7 +139,7 @@ modular_py_test(
     size = "large",
     srcs = ["test_compute_multimodal_merge_indices.py"],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),

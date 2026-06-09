@@ -14,7 +14,7 @@ modular_py_test(
         "test_tool_parser.py",
     ],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/minimax_m2",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         requirement("llguidance"),
@@ -26,7 +26,7 @@ modular_py_test(
     name = "test_reasoning",
     srcs = ["test_reasoning.py"],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/minimax_m2",
         requirement("numpy"),
         requirement("pytest-asyncio"),
     ],

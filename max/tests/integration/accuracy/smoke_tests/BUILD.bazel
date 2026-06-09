@@ -36,7 +36,6 @@ modular_py_binary(
     name = "smoke_test",
     testonly = True,
     srcs = ["smoke_test.py"],
-    data = ["//max/python/max/pipelines/architectures:recipe_configs"],
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [

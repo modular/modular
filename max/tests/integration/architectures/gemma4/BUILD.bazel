@@ -55,7 +55,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
         requirement("numpy"),
@@ -77,7 +77,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         requirement("numpy"),
         requirement("pillow"),
         requirement("transformers"),
@@ -88,7 +88,7 @@ modular_py_test(
     name = "test_tokenizer",
     srcs = ["test_tokenizer.py"],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -103,7 +103,7 @@ modular_py_test(
     name = "test_reasoning",
     srcs = ["test_reasoning.py"],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         requirement("numpy"),
         requirement("pytest-asyncio"),
     ],
@@ -113,7 +113,7 @@ modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/modeling",
         requirement("llguidance"),
     ],
@@ -127,7 +127,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         requirement("av"),
         requirement("numpy"),
     ],
@@ -147,7 +147,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         requirement("torch"),
     ],
 )
