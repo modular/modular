@@ -351,9 +351,7 @@ def ld_matrix[
         var regs = SIMD[DType.uint32, num_registers](0)
 
         comptime if not transpose:
-
-            @parameter
-            for mtx in range(num_registers):
+            comptime for mtx in range(num_registers):
                 var src = UInt32(mtx * 8 + lane // 4)
                 regs[mtx] = _ld_matrix_broadcast_row(row_words, src)[lane % 4]
         else:
@@ -364,16 +362,15 @@ def ld_matrix[
             var shift = UInt32((col % 2) * 16)
             var base_row = (lane % 4) * 2
 
-            @parameter
-            for mtx in range(num_registers):
+            comptime for mtx in range(num_registers):
                 var w0 = _ld_matrix_broadcast_row(
                     row_words, UInt32(mtx * 8 + base_row)
                 )[word_idx]
                 var w1 = _ld_matrix_broadcast_row(
                     row_words, UInt32(mtx * 8 + base_row + 1)
                 )[word_idx]
-                var e0 = (w0 >> shift) & 0xFFFF
-                var e1 = (w1 >> shift) & 0xFFFF
+                var e0 = (w0 >> shift) & UInt32(0xFFFF)
+                var e1 = (w1 >> shift) & UInt32(0xFFFF)
                 regs[mtx] = e0 | (e1 << 16)
 
         return bitcast[dtype, simd_width](regs)
