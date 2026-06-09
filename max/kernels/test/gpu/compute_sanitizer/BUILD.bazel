@@ -1,0 +1,31 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+exports_files([
+    "run_sanitizer.sh",
+    "stress_schedule.sh",
+])
+
+# Positive control for the compute-sanitizer lanes. This target intentionally
+# performs an out-of-bounds global write and therefore only "passes" when run
+# under `compute-sanitizer --tool memcheck --error-exitcode 1` (which turns the
+# finding into a non-zero exit). It is tagged `manual` so it is excluded from
+# `//...` and `//max/kernels/test/gpu/...` wildcard expansion -- it must never
+# run in the normal GPU suite or the nightly sanitizer lane. Invoke it
+# explicitly to validate that a sanitizer lane catches real bugs:
+#
+#   ./bazelw test --config=cs-memcheck \
+#     //max/kernels/test/gpu/compute_sanitizer:positive_control_memcheck_oob.mojo.test
+mojo_test(
+    name = "positive_control_memcheck_oob.mojo.test",
+    srcs = ["positive_control_memcheck_oob.mojo"],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "@mojo//:std",
+    ],
+)

@@ -147,6 +147,18 @@ def get_default_test_env(exec_properties):
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
         },
         "//conditions:default": {},
+    }) | select({
+        # Sanitizer mode (`--//:gpu_disable_memory_manager`): disable the caching
+        # allocator so each `enqueue_create_buffer` is a 1:1 device allocation
+        # and compute-sanitizer memcheck/initcheck see true per-buffer bounds.
+        # `memory_manager_size=0` + `memory_manager_only=false` routes allocation
+        # straight to the device driver (see MemoryManager.cpp onDevice/allocate).
+        # Right-biased `|` lets this override the pooled values set above.
+        "@@//:gpu_memory_manager_disabled": {
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "0",
+        },
+        "//conditions:default": {},
     })
 
 _TOOLS = {}
