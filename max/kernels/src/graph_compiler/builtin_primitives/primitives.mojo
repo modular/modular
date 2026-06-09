@@ -27,7 +27,7 @@ from extensibility import (
 )
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.device_context import _DeviceContextPtr
+from std.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
 from std.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from layout import (
     Coord,
@@ -143,6 +143,73 @@ def create_buffer_ref_async(
 ):
     external_call["MGP_RT_CreateAsyncDeviceBufferRef", NoneType](
         buffer.unsafe_ptr(), buffer.size(), async_ptr, call_ctx._handle
+    )
+
+
+struct OwnedByteBuffer(Movable):
+    """Owning composite produced by `mgp.buffer.alloc`.
+
+    Keeps the device memory alive via a live owning `DeviceBuffer` while exposing
+    a non-owning `MutByteBuffer` view (a precomputed pointer and shape, so the
+    pack site need not call the raising `unsafe_ptr()` again). It is confined to
+    the alloc op's own compiled region: at that region's pack site its owning
+    handle is transferred net-zero (no `addRef`) into a real `TensorBufferRef`
+    via `take_handle()`. Deliberately move-only: never copied, never
+    bitcast-unpacked, never passed whole into a kernel.
+    """
+
+    var dev_buffer: DeviceBuffer[DType.int8]
+    var view: MutByteBuffer
+
+    def __init__(
+        out self,
+        var dev_buffer: DeviceBuffer[DType.int8],
+        view: MutByteBuffer,
+    ):
+        """Builds the composite from a live owning buffer and its view.
+
+        Args:
+            dev_buffer: The live owning `DeviceBuffer` that keeps the memory
+                alive (taken by value; not copied).
+            view: A non-owning `MutByteBuffer` over the same memory.
+        """
+        self.dev_buffer = dev_buffer^
+        self.view = view
+
+    def unsafe_ptr(self) -> UnsafePointer[Scalar[DType.int8], MutAnyOrigin]:
+        """Returns the view's raw device data pointer.
+
+        Returns:
+            The non-owning device data pointer of the view.
+        """
+        return self.view.unsafe_ptr()
+
+    def size(self) -> Int:
+        """Returns the view's size in bytes.
+
+        Returns:
+            The byte size of the view.
+        """
+        return self.view.size()
+
+    def buffer(deinit self) -> DeviceBuffer[DType.int8]:
+        """Hands the live owning `DeviceBuffer` to the pack site, consuming self.
+
+        Returns:
+            The owning `DeviceBuffer` moved out of the composite.
+        """
+        return self.dev_buffer^
+
+
+@no_inline
+def create_buffer_ref_taking_handle_async(
+    handle: _DeviceBufferPtr[mut=True],
+    data: UnsafePointer[Scalar[DType.int8], MutAnyOrigin],
+    size: Int,
+    async_ptr: OpaquePointer[MutAnyOrigin],
+):
+    external_call["MGP_RT_CreateAsyncDeviceBufferRefByTakingHandle", NoneType](
+        handle, data, size, async_ptr
     )
 
 
@@ -357,14 +424,18 @@ def mgp_tensor_slice[
 @no_inline
 def mgp_buffer_alloc(
     byte_size: Int, dev_context: DeviceContext
-) raises -> MutByteBuffer:
+) raises -> OwnedByteBuffer:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
     var buf = dev_context.enqueue_create_buffer[DType.int8](byte_size)
-    return MutByteBuffer(buf^.take_ptr(), shape)
+    # Keep the live owning DeviceBuffer instead of severing it with take_ptr():
+    # build a non-owning view over the same memory and hand both to the pack
+    # site, which transfers the genuine handle (net-zero) into the runtime.
+    var view = MutByteBuffer(buf.unsafe_ptr(), shape)
+    return OwnedByteBuffer(buf^, view)
 
 
 @register_internal("mgp.buffer.constant")
@@ -1006,6 +1077,26 @@ struct MoggAsyncPackHelper:
         Calls create_buffer_ref_async to handle the packing.
         """
         create_buffer_ref_async(data, async_ptr, device_ctx_ptr)
+
+    def __init__(
+        out self,
+        var data: OwnedByteBuffer,
+        device_ctx_ptr: DeviceContext,
+        async_ptr: AnyAsyncValueRefPtr,
+    ):
+        """
+        Packs an OwnedByteBuffer by transferring its live DeviceBuffer handle
+        (net-zero, no addRef) into a real TensorBufferRef. device_ctx_ptr is
+        unused: the take-handle entrypoint adopts the existing owner, so it
+        needs no DeviceContext.
+        """
+        # Read the view metadata before consuming the composite.
+        var ptr = data.unsafe_ptr()
+        var n = data.size()
+        # Move the owning DeviceBuffer out, then move its handle out with no
+        # release; the runtime adopts that single reference net-zero.
+        var handle = data^.buffer().take_handle()
+        create_buffer_ref_taking_handle_async(handle, ptr, n, async_ptr)
 
     def __init__(
         out self,

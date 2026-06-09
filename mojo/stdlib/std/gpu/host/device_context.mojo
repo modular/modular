@@ -1753,6 +1753,24 @@ struct DeviceBuffer[dtype: DType](
         ](self._handle)
         return self._device_ptr
 
+    @doc_hidden
+    @always_inline
+    def take_handle(deinit self) -> _DeviceBufferPtr[mut=True]:
+        """Transfers the owning native handle out without releasing it.
+
+        Unlike `take_ptr()`, which is `var self` so the destructor still runs to
+        release the buffer, this is `deinit self`: the destructor does not run,
+        so there is no retain, release, or `release_ptr`. The single live
+        reference is moved to the caller, who must hand it to a runtime owner
+        that adopts it without an `addRef`. `DeviceBuffer`'s fields are trivial
+        pointers, so suppressing the destructor leaks nothing.
+
+        Returns:
+            The owning native handle (the underlying `Driver::DeviceBuffer`).
+        """
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        return self._handle
+
     @always_inline
     def unsafe_ptr(
         self,
