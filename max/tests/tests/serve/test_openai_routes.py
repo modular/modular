@@ -29,20 +29,22 @@ from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi import FastAPI
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
-from max.pipelines.core import TextContext
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context import (
+    BaseContext,
+    GenerationStatus,
+    TextContext,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import InputError, PromptTooLongError
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     PipelineConfig,
     PipelineRuntimeConfig,
 )
 from max.pipelines.modeling.types import (
-    BaseContext,
-    GenerationStatus,
     PipelineTask,
     RequestID,
     TextGenerationRequestTool,
-    TextGenerationResponseFormat,
 )
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
@@ -236,6 +238,32 @@ async def test_openai_chat_completion_empty_model_name(app) -> None:  # noqa: AN
 
 
 @pytest.mark.asyncio
+async def test_openai_chat_completion_prompt_too_long_returns_400(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``PromptTooLongError`` from the tokenizer must surface as 400."""
+
+    async def _raise(self, request) -> None:  # noqa: ANN001
+        raise PromptTooLongError(num_tokens=4096, max_length=2048)
+
+    monkeypatch.setattr(EchoPipelineTokenizer, "new_context", _raise)
+
+    async with AsyncTestClient(app) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="anything"),
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["message"].startswith("Prompt is too long")
+    assert "4096 tokens" in body["error"]["message"]
+    assert "2048 tokens" in body["error"]["message"]
+    assert body["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
 async def test_openai_chat_completion_input_error_returns_400(app) -> None:  # noqa: ANN001
     async with AsyncTestClient(app) as client:
         app.state.pipeline.all_tokens = AsyncMock(
@@ -271,6 +299,40 @@ async def test_openai_error_envelope_shape(app) -> None:  # noqa: ANN001
         assert body["error"]["type"] == "invalid_request_error"
         assert body["error"]["code"] == "400"
         assert "detail" not in body
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_schema_validation_error_uses_openai_envelope(
+    app,  # noqa: ANN001
+) -> None:
+    """Pydantic ``ValidationError`` from the chat schema surfaces as the OpenAI envelope.
+
+    Regression that composes SERVSYS-1257 (strongly-typed ``messages`` field,
+    so unknown roles raise ``pydantic.ValidationError`` at
+    ``CreateChatCompletionRequest.model_validate_json`` time) with the
+    ``HTTPException`` handler from #87521. The chat route catches
+    ``ValidationError`` and re-raises as ``HTTPException(status_code=400)``,
+    which the registered ``_openai_http_exception_handler`` turns into the
+    ``{"error": {"message", "type", "code", "param"}}`` body that
+    OpenAI/OpenRouter clients expect - not the raw FastAPI ``{"detail": ...}``.
+    """
+    async with AsyncTestClient(app) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "echo",
+                "messages": [{"role": "wizard", "content": "abracadabra"}],
+            },
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert "detail" not in body
+        assert body["error"]["type"] == "invalid_request_error"
+        assert body["error"]["code"] == "400"
+        # ``str(ValidationError)`` includes the offending input, so the
+        # rejected role makes it into the user-facing message.
+        assert "wizard" in body["error"]["message"]
 
 
 def test_validate_decodable_images_rejects_bad_bytes() -> None:
@@ -909,6 +971,8 @@ async def _run_stream(
 
 async def _run_completion_stream(
     chunks: list[TokenGeneratorOutput],
+    *,
+    stream_options: ChatCompletionStreamOptionsParam | None = None,
 ) -> list[CompletionStreamResponse]:
     """Run legacy text-completion streaming generator and parse chunks."""
     mock_pipeline = Mock()
@@ -922,7 +986,9 @@ async def _run_completion_stream(
     mock_request = _make_mock_request()
     mock_request.request_path = "/v1/completions"
 
-    generator = OpenAICompletionResponseGenerator(mock_pipeline)
+    generator = OpenAICompletionResponseGenerator(
+        mock_pipeline, stream_options=stream_options
+    )
     return [
         CompletionStreamResponse.model_validate_json(p)
         async for p in generator.stream(mock_request)
@@ -1176,6 +1242,94 @@ async def test_openai_completion_non_stream_accounts_reasoning_tokens_for_metric
     assert args[1] == "/v1/completions"
     assert args[3] == 3  # 2 reasoning + 1 completion tokens
     assert args[4] == 4
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_non_stream_includes_usage(
+    patch_openai_metrics: None,
+) -> None:
+    """Legacy /completions non-streaming response populates the usage block."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=2,
+            decoded_tokens="par",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="tial",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+    ]
+
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+    mock_request = _make_mock_request()
+    mock_request.request_path = "/v1/completions"
+
+    generator = OpenAICompletionResponseGenerator(mock_pipeline)
+    response = await generator.complete([mock_request])
+
+    assert response.usage is not None
+    assert response.usage.prompt_tokens == 5
+    assert response.usage.completion_tokens == 4  # 2 reasoning + 2 completion
+    assert response.usage.total_tokens == 9
+    assert response.usage.prompt_tokens_details is not None
+    assert response.usage.prompt_tokens_details.cached_tokens == 3
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_stream_usage_includes_reasoning_tokens(
+    patch_openai_metrics: None,
+) -> None:
+    """Streaming /completions with include_usage emits a final usage chunk."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=2,
+            decoded_tokens="partial",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=" answer",
+            token_count=1,
+            prompt_token_count=5,
+            cached_token_count=3,
+        ),
+    ]
+
+    responses = await _run_completion_stream(
+        chunks, stream_options={"include_usage": True}
+    )
+
+    # Final chunk carries usage with an empty choices list.
+    final = responses[-1]
+    assert final.choices == []
+    assert final.usage is not None
+    assert final.usage.prompt_tokens == 5
+    assert final.usage.completion_tokens == 4  # 2 reasoning + 2 completion
+    assert final.usage.total_tokens == 9
+    assert final.usage.prompt_tokens_details is not None
+    assert final.usage.prompt_tokens_details.cached_tokens == 3
+
+    # Without include_usage, no usage chunk is appended.
+    responses_no_usage = await _run_completion_stream(chunks)
+    assert all(r.usage is None for r in responses_no_usage)
 
 
 @pytest.mark.asyncio

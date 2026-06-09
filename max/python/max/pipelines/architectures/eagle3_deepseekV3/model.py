@@ -29,7 +29,7 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -398,15 +398,9 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                             mla_num_partitions=kv_caches_per_dev[
                                 dev_idx
                             ].mla_num_partitions,
-                            mla_effective_split_len=kv_caches_per_dev[
-                                dev_idx
-                            ].mla_effective_split_len,
                             draft_mla_num_partitions=kv_caches_per_dev[
                                 dev_idx
                             ].draft_mla_num_partitions,
-                            draft_mla_effective_split_len=kv_caches_per_dev[
-                                dev_idx
-                            ].draft_mla_effective_split_len,
                         )
                     )
 

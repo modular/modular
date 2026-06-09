@@ -39,9 +39,10 @@ from max.nn.kv_cache.utils import (
     AttentionDispatchResolver,
     build_max_lengths_tensor,
 )
+from max.pipelines.context import TextGenerationContext
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
-from max.pipelines.modeling.types import RequestID, TextGenerationContext
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
@@ -60,9 +61,6 @@ KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
 #: a multiple of 8 so the inner-dim stride stays 32-byte aligned for the
 #: ``ld.global.v{N}.u32`` vector loads.
 _LUT_TAIL_PAD = 16
-
-#: Sentinel pad value for lookup table.
-_LUT_FILL_PATTERN = 0xCCCCCCCC
 
 
 def _padded_lut_cols(cols: int) -> int:
@@ -213,11 +211,7 @@ class PagedKVCacheManager:
         enable_runtime_checks: bool = False,
         *,
         max_batch_size: int,
-        other_kv_managers_device_buffers_per_replica: list[list[Buffer]]
-        | None = None,
-        other_kv_managers_device_buffers_per_replica_not_replicated: list[
-            list[Buffer]
-        ]
+        other_kv_managers_kv_buffers_per_replica: list[list[KVCacheBuffer]]
         | None = None,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
@@ -231,15 +225,9 @@ class PagedKVCacheManager:
             max_batch_size: Maximum runtime batch size used to preallocate
                 per-replica runtime lookup-table/cache-length row capacity.
             enable_runtime_checks: Whether to enable runtime checks.
-            other_kv_managers_device_buffers_per_replica:
-                A list of lists of device buffers for other KV managers that should
-                be offloaded by this KV manager's KVConnectors. This is a massive
-                hack due to the lack of unified KVCache that handles multiple KVs.
-            other_kv_managers_device_buffers_per_replica_not_replicated:
-                A list of lists of device buffers for other KV managers that should
-                be offloaded by this KV manager's KVConnectors. This is a massive
-                hack due to the lack of unified KVCache that handles multiple KVs.
-                This is only present for mla target and mha draft.
+            other_kv_managers_kv_buffers_per_replica:
+                KVCacheBuffers from other KV managers to be co-offloaded by
+                this manager's KVConnector.
         """
         if max_batch_size < 1:
             raise ValueError("max_batch_size must be positive")
@@ -252,6 +240,11 @@ class PagedKVCacheManager:
             assert isinstance(params, KVCacheParams)
             self._cache_params = [params]
         self._num_caches = len(self._cache_params)
+        # TODO(SERVOPT-942): Generalize to support 3+ caches
+        if not 1 <= self._num_caches <= 2:
+            raise ValueError(
+                f"PagedKVCacheManager requires 1 or 2 caches, got {self._num_caches}."
+            )
 
         primary_params = self._cache_params[0]
         devices = [d.to_device() for d in primary_params.devices]
@@ -295,9 +288,14 @@ class PagedKVCacheManager:
             )
 
             draft_dispatch_resolver: AttentionDispatchResolver | None = None
-            if self._num_caches > 1:
+            # TODO(SERVOPT-942): Generalize to support 3+ caches
+            if self._has_secondary_cache:
                 draft_params = self._cache_params[1]
-                if draft_params.is_mla != primary_params.is_mla:
+                if (
+                    draft_params.is_mla != primary_params.is_mla
+                    or draft_params.n_kv_heads_per_device
+                    != primary_params.n_kv_heads_per_device
+                ):
                     draft_dispatch_resolver = AttentionDispatchResolver(
                         devices=[
                             DeviceRef.from_device(d) for d in replica_devices
@@ -311,30 +309,20 @@ class PagedKVCacheManager:
             replica_params = primary_params.copy_as_dp_1(
                 replica_idx=replica_idx
             )
-            device_buffers_to_offload: list[Buffer] = []
-            for cache_buffer in replica_device_buffers:
-                device_buffers_to_offload.extend(cache_buffer.all_buffers)
-            if other_kv_managers_device_buffers_per_replica is not None:
-                device_buffers_to_offload.extend(
-                    other_kv_managers_device_buffers_per_replica[replica_idx]
-                )
-            non_replicated_device_buffers_to_offload = []
-            if (
-                other_kv_managers_device_buffers_per_replica_not_replicated
-                is not None
-            ):
-                non_replicated_device_buffers_to_offload.extend(
-                    other_kv_managers_device_buffers_per_replica_not_replicated[
-                        replica_idx
-                    ]
+            kv_buffers_to_offload: list[KVCacheBuffer] = list(
+                replica_device_buffers
+            )
+            if other_kv_managers_kv_buffers_per_replica is not None:
+                kv_buffers_to_offload.extend(
+                    other_kv_managers_kv_buffers_per_replica[replica_idx]
                 )
             connector = create_connector(
-                params=replica_params,
+                kv_connector=replica_params.kv_connector,
+                kv_connector_config=replica_params.kv_connector_config,
                 devices=replica_devices,
-                device_buffers=device_buffers_to_offload,
+                kv_buffers=kv_buffers_to_offload,
                 total_num_host_blocks=total_num_host_pages,
                 total_num_blocks=total_num_pages,
-                non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
             )
 
             persistent_kv_device_input_buffers = (
@@ -370,6 +358,12 @@ class PagedKVCacheManager:
     def num_caches(self) -> int:
         """Number of KV caches managed (1 for single-cache, N for multi)."""
         return self._num_caches
+
+    @property
+    def _has_secondary_cache(self) -> bool:
+        """True when a second KV cache exists alongside the primary."""
+        # TODO(SERVOPT-942): Generalize to support 3+ caches
+        return self._num_caches == 2
 
     def cache_params(self, cache_idx: int = 0) -> KVCacheParams:
         """Returns the ``KVCacheParams`` for a specific cache."""
@@ -585,8 +579,15 @@ class PagedKVCacheManager:
         assert all(buffer.is_contiguous for buffer in lut_table_by_device)
 
         lut_table_np = lut_table_host.to_numpy()
-        assert _LUT_FILL_PATTERN > self._total_num_pages
-        lut_table_np.fill(_LUT_FILL_PATTERN)
+        # Fill value is load-bearing: must be exactly `total_num_pages` (the
+        # null-block index). The SIMD `populate` path in `PagedKVCache`
+        # (types.mojo) multiplies every LUT entry by `page_stride` with no
+        # sentinel check, including tail-padding columns it over-reads for
+        # SIMD alignment. `total_num_pages * page_stride` resolves to the
+        # null-block page, which is in-bounds because `allocate_buffers`
+        # allocates N+1 pages. Any other fill value (e.g. a magic constant)
+        # computes an out-of-bounds GPU address → CUDA_ERROR_ILLEGAL_ADDRESS.
+        lut_table_np.fill(self._total_num_pages)
 
         cache_lengths_np = cache_lengths_host.to_numpy()
         cache_lengths_np.fill(0)
@@ -659,26 +660,18 @@ class PagedKVCacheManager:
         (
             resolved_metadata,
             mla_num_partitions,
-            mla_effective_split_len,
         ) = replica.attention_dispatch_resolver.resolve_for_replica_with_scalars(
             batch_size,
             max_prompt_len,
             absolute_max_cached_len,
         )
 
-        # Wrap the MLA capturable scalars into 1-element host buffers
-        # exactly once per fetch, then share them across shards. None for
+        # Wrap the MLA capturable scalar into a 1-element host buffer
+        # exactly once per fetch, then share it across shards. None for
         # MHA / degenerate paths.
         mla_num_partitions_buf: Buffer | None = (
             Buffer.from_numpy(np.array([mla_num_partitions], dtype=np.int64))
             if mla_num_partitions is not None
-            else None
-        )
-        mla_effective_split_len_buf: Buffer | None = (
-            Buffer.from_numpy(
-                np.array([mla_effective_split_len], dtype=np.int64)
-            )
-            if mla_effective_split_len is not None
             else None
         )
 
@@ -690,7 +683,6 @@ class PagedKVCacheManager:
             (
                 draft_resolved_metadata_,
                 draft_mla_num_partitions,
-                draft_mla_effective_split_len,
             ) = draft_resolver.resolve_for_replica_with_scalars(
                 batch_size,
                 self.params.num_draft_tokens_per_step,
@@ -706,24 +698,38 @@ class PagedKVCacheManager:
                 if draft_mla_num_partitions is not None
                 else None
             )
-            draft_mla_effective_split_len_buf: Buffer | None = (
-                Buffer.from_numpy(
-                    np.array([draft_mla_effective_split_len], dtype=np.int64)
-                )
-                if draft_mla_effective_split_len is not None
-                else None
-            )
         else:
             draft_resolved_metadata = None
             draft_mla_num_partitions_buf = None
-            draft_mla_effective_split_len_buf = None
+
+        # TODO(SERVOPT-942): Generalize to support 3+ caches
+        secondary_resolved_metadata: list[Buffer]
+        if (
+            self._has_secondary_cache
+            and replica.draft_attention_dispatch_resolver is not None
+        ):
+            secondary_resolved_metadata = (
+                replica.draft_attention_dispatch_resolver.resolve_for_replica(
+                    batch_size,
+                    max_prompt_len,
+                    absolute_max_cached_len,
+                )
+            )
+        else:
+            secondary_resolved_metadata = resolved_metadata
 
         ret_list: list[KVCacheInputsPerDevice] = []
         for cache_idx in range(self._num_caches):
             device_buffer = replica.device_buffers[cache_idx]
+            # TODO(SERVOPT-942): Generalize to support 3+ caches
+            is_secondary_cache = cache_idx == 1
 
             for tp_shard in range(num_tp_shards):
-                metadata = resolved_metadata[tp_shard]
+                metadata = (
+                    secondary_resolved_metadata[tp_shard]
+                    if is_secondary_cache
+                    else resolved_metadata[tp_shard]
+                )
                 draft_metadata = (
                     draft_resolved_metadata[tp_shard]
                     if draft_resolved_metadata is not None
@@ -752,11 +758,7 @@ class PagedKVCacheManager:
                         attention_dispatch_metadata=metadata,
                         draft_attention_dispatch_metadata=draft_metadata,
                         mla_num_partitions=mla_num_partitions_buf,
-                        mla_effective_split_len=mla_effective_split_len_buf,
                         draft_mla_num_partitions=draft_mla_num_partitions_buf,
-                        draft_mla_effective_split_len=(
-                            draft_mla_effective_split_len_buf
-                        ),
                     )
                 )
 

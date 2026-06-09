@@ -21,11 +21,6 @@ from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.moe import MoE
-from max.experimental.nn.common_layers.multi_latent_attention import (
-    LatentAttentionWithRope,
-)
 from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.linear import Linear
 from max.experimental.nn.norm import RMSNorm
@@ -34,8 +29,13 @@ from max.experimental.tensor import Tensor
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
 
+from ..deepseekV2_modulev3.layers.rotary_embedding import (
+    DeepseekYarnRotaryEmbedding,
+)
 from .layers.moe_gate import DeepseekV3TopKRouter
-from .layers.rotary_embedding import DeepseekYarnRotaryEmbedding
+from .layers.quant_linear import QuantizedMLP
+from .layers.quant_mla import QuantizedLatentAttentionWithRope
+from .layers.quant_moe import QuantizedMoE
 from .layers.transformer_block import DeepseekV3TransformerBlock
 from .model_config import DeepseekV3Config
 
@@ -49,30 +49,32 @@ def _get_mlp(
         and layer_idx >= config.first_k_dense_replace
         and layer_idx % config.moe_layer_freq == 0
     )
+    gate_cls = functools.partial(
+        DeepseekV3TopKRouter,
+        routed_scaling_factor=config.routed_scaling_factor,
+        scoring_func=config.scoring_func,
+        topk_method=config.topk_method,
+        n_group=config.n_group,
+        topk_group=config.topk_group,
+        norm_topk_prob=config.norm_topk_prob,
+    )
     if use_moe:
-        return MoE(
+        return QuantizedMoE(
             hidden_dim=config.hidden_size,
             num_experts=config.n_routed_experts,
             num_experts_per_token=config.num_experts_per_tok,
             moe_dim=config.moe_intermediate_size,
-            gate_cls=functools.partial(
-                DeepseekV3TopKRouter,
-                routed_scaling_factor=config.routed_scaling_factor,
-                scoring_func=config.scoring_func,
-                topk_method=config.topk_method,
-                n_group=config.n_group,
-                topk_group=config.topk_group,
-                norm_topk_prob=config.norm_topk_prob,
-            ),
+            gate_cls=gate_cls,
             has_shared_experts=True,
             shared_experts_dim=config.n_shared_experts
             * config.moe_intermediate_size,
             apply_router_weight_first=False,
+            quant_config=config.quant_config,
         )
-    return MLP(
+    return QuantizedMLP(
         hidden_dim=config.hidden_size,
         feed_forward_length=config.intermediate_size,
-        bias=False,
+        quant_config=config.quant_config,
     )
 
 
@@ -127,23 +129,25 @@ class DeepseekV3TextModel(
 
         layers = []
         for i in range(config.num_hidden_layers):
+            attention = QuantizedLatentAttentionWithRope(
+                num_attention_heads=config.num_attention_heads,
+                num_key_value_heads=config.num_key_value_heads,
+                hidden_size=config.hidden_size,
+                kv_params=config.kv_params,
+                layer_idx=i,
+                scale=scale,
+                q_lora_rank=config.q_lora_rank,
+                kv_lora_rank=config.kv_lora_rank,
+                qk_nope_head_dim=config.qk_nope_head_dim,
+                qk_rope_head_dim=config.qk_rope_head_dim,
+                v_head_dim=config.v_head_dim,
+                graph_mode=config.graph_mode,
+                buffer_size=config.max_batch_context_length,
+                quant_config=config.quant_config,
+            )
             layers.append(
                 DeepseekV3TransformerBlock(
-                    attention=LatentAttentionWithRope(
-                        num_attention_heads=config.num_attention_heads,
-                        num_key_value_heads=config.num_key_value_heads,
-                        hidden_size=config.hidden_size,
-                        kv_params=config.kv_params,
-                        layer_idx=i,
-                        scale=scale,
-                        q_lora_rank=config.q_lora_rank,
-                        kv_lora_rank=config.kv_lora_rank,
-                        qk_nope_head_dim=config.qk_nope_head_dim,
-                        qk_rope_head_dim=config.qk_rope_head_dim,
-                        v_head_dim=config.v_head_dim,
-                        graph_mode=config.graph_mode,
-                        buffer_size=config.max_batch_context_length,
-                    ),
+                    attention=attention,
                     mlp=_get_mlp(config, i),
                     attention_norm=RMSNorm(
                         dim=config.hidden_size, eps=config.rms_norm_eps

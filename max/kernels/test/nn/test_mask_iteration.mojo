@@ -13,6 +13,7 @@
 from nn.attention.mha_mask import (
     CausalMask,
     SlidingWindowCausalMask,
+    SlidingWindowNonCausalMask,
     ChunkedCausalMask,
     MHAMask,
     TileMaskStatus,
@@ -162,6 +163,9 @@ def main() raises:
     comptime causal_mask = CausalMask()
     comptime sliding_mask16 = SlidingWindowCausalMask[16]()
     comptime sliding_mask1024 = SlidingWindowCausalMask[1024]()
+    comptime noncausal_mask16 = SlidingWindowNonCausalMask[16]()
+    comptime noncausal_mask1024 = SlidingWindowNonCausalMask[1024]()
+    comptime noncausal_mask4096 = SlidingWindowNonCausalMask[4096]()
     comptime chunked_causal_mask = ChunkedCausalMask[256]()
     for num_keys in range(1, 8193):
         for q_row in range(num_keys):
@@ -182,6 +186,24 @@ def main() raises:
             )
             test_mask[BM=BM, BN=BN, page_size=512](
                 sliding_mask1024, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=1](
+                noncausal_mask16, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                noncausal_mask16, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=1](
+                noncausal_mask1024, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                noncausal_mask1024, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=1](
+                noncausal_mask4096, UInt32(q_row), UInt32(num_keys)
+            )
+            test_mask[BM=BM, BN=BN, page_size=512](
+                noncausal_mask4096, UInt32(q_row), UInt32(num_keys)
             )
             count0 = compute_total_iters0[BM=BM, BN=BN](
                 chunked_causal_mask, UInt32(q_row), UInt32(num_keys)

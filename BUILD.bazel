@@ -140,14 +140,20 @@ alias(
 )
 
 alias(
-    name = "format-fast",
-    actual = "//bazel/lint:fix-fast",
+    name = "lint-all",
+    actual = "//bazel/lint:lint-all",
     tags = [TOP_LEVEL_TAG],
 )
 
 alias(
     name = "format",
-    actual = "//bazel/lint:fix",
+    actual = "//bazel/lint:format",
+    tags = [TOP_LEVEL_TAG],
+)
+
+alias(
+    name = "format-all",
+    actual = "//bazel/lint:format-all",
     tags = [TOP_LEVEL_TAG],
 )
 

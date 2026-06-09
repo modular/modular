@@ -16,7 +16,7 @@
 
 import numpy as np
 import pytest
-from max.pipelines.modeling.types.eos_tracking import EOSTracker
+from max.pipelines.context.eos_tracking import EOSTracker
 
 
 def test_is_eos_single_token() -> None:

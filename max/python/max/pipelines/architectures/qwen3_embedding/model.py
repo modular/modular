@@ -36,7 +36,7 @@ from max.nn.rotary_embedding import (
     Llama3RotaryEmbedding,
 )
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,

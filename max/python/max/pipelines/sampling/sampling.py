@@ -43,7 +43,7 @@ from max.nn.sampling import (
     stochastic_acceptance_sampler,
     synthetic_acceptance_sampler,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 
 from .sampling_config import SamplingConfig
 from .sampling_logits_processor import PenaltyInputs, SamplerInputs

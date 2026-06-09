@@ -35,6 +35,58 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Chat completion responses now emit reasoning under both `reasoning` and
+  `reasoning_content`. Reasoning models previously exposed their
+  chain-of-thought only under `reasoning`; adding the `reasoning_content`
+  alias (the field used by vLLM, SGLang, and the DeepSeek API, in both
+  streaming deltas and the final message) lets a wider range of
+  OpenAI-compatible clients surface it. The two fields always hold the same
+  text.
+
+- `response_format` JSON schemas with a non-object root are now accepted when
+  the root `type` is missing (any) or a type union that includes `object`
+  (for example `{"type": ["object", "array", "string"]}`); these are valid
+  JSON Schema and compile to a constraining grammar. A root pinned to a single
+  non-object type (for example `{"type": "string"}`) is still rejected,
+  matching OpenAI's structured-outputs contract.
+
+- Added a `maxserve.startup_time` Prometheus histogram (seconds) that
+  records model-worker startup time, previously only available in the
+  server logs. It is split by a `component` tag (`build`, `compile`, `init`,
+  `graph_capture`, `pinned_memory`, `spawn`, and `total`), so a single metric
+  can be plotted broken down by startup phase to track pod startup time in
+  production.
+
+- Added a `maxserve.time_per_output_token` Prometheus histogram (milliseconds).
+  Emitted once per request, it reports the mean decode-phase latency per
+  generated token (`decode_time / (num_generated_tokens - 1)`), excluding the
+  first token and prefill time. Because the denominator counts the tokens the
+  model actually produced, the metric accounts for speculative decoding.
+
+- MAX Serve now returns a clearer 400 Bad Request with the underlying
+  message when a prompt is too long for the model, instead of a generic
+  "Value error." response (or, for streaming completions, a 500 Internal
+  Server Error). All architectures now raise a structured
+  `PromptTooLongError` exposing `num_tokens` and `max_length` attributes
+  so callers can handle the failure programmatically. The user-facing
+  message identifies the relevant limit (LLM context window vs. diffusion
+  text encoder sequence length): for example, "Prompt is too long: N
+  tokens exceeds the configured maximum context length of M tokens.
+  Please shorten your prompt."
+
+- Fixed an FP8 dynamic-quantization bug that mis-quantized near-zero groups on
+  NVIDIA GPUs (writing NaN into FP8 activations and the FP8 KV cache, surfacing
+  downstream as non-finite logits). When a quantization group was near zero, its
+  dynamic scale `max_abs / fp8_max` underflowed to a tiny denormal whose
+  reciprocal overflowed to infinity; multiplying lanes by that infinity produced
+  `+inf` (and `0 * inf = NaN` on zero lanes) *before* the FP8 cast. This is
+  upstream of, and not addressed by, the saturating FP8 cast: clamping the
+  result would turn the near-zero group into `±max_finite` garbage rather than
+  the correct zero. The reciprocal is now guarded to be finite, so a near-zero
+  group quantizes to a clean FP8 zero. Fixes the shared dynamic-scale helper
+  (used by FP8 quantization, fused RMSNorm, and the residual-add AllReduce
+  RMSNorm) and the fused RoPE plus KV-store path.
+
 - Fixed a KV cache offloading correctness bug that corrupted output for
   multi-cache models (such as Gemma 4's interleaved sliding-window plus
   global attention) when the `local` or `tiered` KV connector was enabled.
@@ -51,6 +103,15 @@ This version is still a work in progress.
   `response_format=json_schema` request returned prose instead of
   schema-conformant JSON). The tokenizer now derives enforcement state from the
   response format, matching the text tokenizers.
+
+- Fixed an intermittent constrained-decoding correctness bug under EAGLE
+  speculative decoding. On the first decode step after a prefill (and after any
+  batch that did not verify draft tokens), the speculative token bitmask was
+  built from placeholder draft tokens instead of the real drafts being
+  verified, leaving the bonus and later speculative slots unconstrained. A
+  grammar-illegal token could then be sampled and committed, producing
+  occasional JSON `response_format` or tool-call grammar violations. The bitmask
+  is now built from the realized drafts.
 
 - MAX Serve now accepts `role: "developer"` on `/v1/chat/completions`,
   normalizing it to `system` at the OpenAI-compat route layer. The OpenAI
@@ -207,6 +268,10 @@ This version is still a work in progress.
   `max-batch-input-tokens=16384` needs 640 MiB in bf16). This adds ~512 MiB
   of per-GPU memory use for any multi-GPU model.
 
+- Added `max.experimental.functional.ceil`, an element-wise unary op that
+  rounds each element of a floating-point tensor up toward positive infinity.
+  Complements the existing `floor`, `round`, and `trunc` ops.
+
 - `max.experimental.functional.while_loop` now passes `Tensor` (not
   `TensorValue`) into its `predicate` and `body` callbacks. Callbacks can
   use ordinary `Tensor` operations directly, without wrapping arguments
@@ -294,6 +359,12 @@ This version is still a work in progress.
   most for shorter sequences (measured ~1.05x–1.5x faster on B200, bf16,
   head_dim=128 across seq lengths 128–2048). On by default; disable with
   `-D MHA_PDL=false`.
+- Added a simdgroup-tiled matmul kernel for the Apple M5 GPU, bringing
+  neural-accelerator-backed matmul to the MAX framework. In-range MAX matmuls
+  (`m >= 64`, `n >= 64`, `k >= 16`; ragged K supported) now use it: fp16/bf16
+  always, and fp32 a/b by default (accepting the simdgroup MMA's fp19
+  truncation). Set `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL=0` for the precise
+  naive fp32 path.
 
 ## Breaking changes
 

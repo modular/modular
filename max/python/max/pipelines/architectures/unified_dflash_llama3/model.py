@@ -27,7 +27,7 @@ from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -234,6 +234,7 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             # pin to the target's device(s) so the weights co-locate
             # whenever the target lives on a non-zero GPU.
             draft_config.devices = target_config.devices
+            draft_config.sliding_window = draft_model_config.sliding_window
             draft_config.kv_params = replace(
                 draft_config.kv_params, devices=target_config.devices
             )

@@ -18,11 +18,11 @@ from typing import Any, cast
 
 import numpy as np
 from max.driver import CPU, Buffer
-from max.pipelines import TextContext
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     BatchProcessorInputs,
     ProcessorInputs,
     SamplingParams,
+    TextContext,
     TokenBuffer,
 )
 from max.pipelines.sampling import SamplerInputs

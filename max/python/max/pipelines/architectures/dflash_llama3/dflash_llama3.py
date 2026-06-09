@@ -99,7 +99,12 @@ class DFlashLlama3(Module):
                 clip_qkv=config.clip_qkv,
                 use_qk_norm=True,
                 rms_norm_eps=rms_norm_eps,
-                mask_variant=MHAMaskVariant.NULL_MASK,
+                mask_variant=(
+                    MHAMaskVariant.SLIDING_WINDOW_NONCAUSAL_MASK
+                    if config.sliding_window is not None
+                    else MHAMaskVariant.NULL_MASK
+                ),
+                sliding_window=config.sliding_window,
             )
             mlp = MLP(
                 config.dtype,

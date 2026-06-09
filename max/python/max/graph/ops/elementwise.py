@@ -830,6 +830,26 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
+ceil = _elementwise_unary(rmo.MoCeilOp, "ceil")
+ceil.__doc__ = """Computes the ceil of a tensor element-wise.
+
+.. code-block:: python
+
+    x = ops.constant([1.5, -1.5, 2.7, -2.7], DType.float32, device=device)
+    result = ops.ceil(x)
+    # result: [2.0, -1.0, 3.0, -2.0]
+
+Args:
+    x: The input tensor. Must have a floating-point dtype.
+
+Returns:
+    A tensor value of the same shape and dtype rounded up toward positive
+    infinity.
+
+Raises:
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
+"""
+
 floor = _elementwise_unary(rmo.MoFloorOp, "floor")
 floor.__doc__ = """Computes the floor of a tensor element-wise.
 

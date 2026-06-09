@@ -209,11 +209,10 @@ def flare_mla_decoding[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
-    # Capturable-graph scalars from the Python resolver. When set, the
-    # SM100 dispatcher uses these instead of recomputing num_partitions /
-    # effective_split_len at grid time.
+    # Capturable-graph scalar from the Python resolver. When set, the
+    # SM100 dispatcher uses this instead of recomputing num_partitions
+    # at grid time.
     num_partitions_in: Optional[Int] = None,
-    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -328,7 +327,6 @@ def flare_mla_decoding[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
-                effective_split_len_in=effective_split_len_in,
             )
         else:
             # Build extra_k_operand when extra_k is provided.
@@ -368,7 +366,6 @@ def flare_mla_decoding[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
-                effective_split_len_in=effective_split_len_in,
             )
 
 
@@ -500,10 +497,9 @@ def flare_mla_decoding_dispatch[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
-    # Capturable-graph scalars: forwarded by the Python resolver so grid-time
+    # Capturable-graph scalar: forwarded by the Python resolver so grid-time
     # dispatch matches the kernel's device-side divmod.
     num_partitions_in: Optional[Int] = None,
-    effective_split_len_in: Optional[Int] = None,
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -600,7 +596,6 @@ def flare_mla_decoding_dispatch[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
-                effective_split_len_in=effective_split_len_in,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -765,7 +760,11 @@ def flare_mla_decoding_dispatch[
                 comptime if has_amd_gpu_accelerator():
                     # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
                     num_partitions_value = mha_decoding_num_partitions(
-                        batch_size, max_cache_valid_length, num_heads, ctx
+                        batch_size,
+                        max_cache_valid_length,
+                        num_heads,
+                        ctx,
+                        is_mla=True,
                     )
                 else:
                     num_partitions_value = 1
@@ -876,6 +875,15 @@ def flare_mla_decoding_dispatch[
                     comptime W_PARTS_128 = get_defined_int[
                         "MODULAR_MLA_REDUCE_WPARTS_128", 16
                     ]()
+                    # 256-partition reducer for launch-starved large-num_keys
+                    # bs=1 decode (nk>=64K): W_PARTS=16 => 1024 threads/CTA
+                    # (the block-dim ceiling), giving parts_per_warp=16 (2x
+                    # the 8 sweet spot, but the np=128->256 decode-parallelism
+                    # win dominates here — the decode grid was launch-starved
+                    # at ~128 blocks / 256 CUs).
+                    comptime W_PARTS_256 = get_defined_int[
+                        "MODULAR_MLA_REDUCE_WPARTS_256", 16
+                    ]()
                     # Two specializations: 64-kernel covers np <= 64
                     # (short context); 128-kernel covers np > 64 (long
                     # context). Picking per dispatch keeps O(MAX_PARTITIONS)
@@ -901,6 +909,16 @@ def flare_mla_decoding_dispatch[
                         MAX_PARTITIONS=128,
                         use_exp2=reduce_use_exp2,
                     ]
+                    comptime kernel_reduce_256 = mla_splitk_reduce[
+                        intermediate_dtype,
+                        output.dtype,
+                        depth=depth_v,
+                        num_heads=num_heads,
+                        D_TILES=D_TILES,
+                        W_PARTS=W_PARTS_256,
+                        MAX_PARTITIONS=256,
+                        use_exp2=reduce_use_exp2,
+                    ]
                     if num_partitions_value <= 64:
                         ctx.enqueue_function[kernel_reduce_64](
                             output_intermediate_data,
@@ -912,7 +930,7 @@ def flare_mla_decoding_dispatch[
                             grid_dim=(D_TILES, num_heads, batch_size),
                             block_dim=(W_PARTS_64 * WARP_SIZE, 1, 1),
                         )
-                    else:
+                    elif num_partitions_value <= 128:
                         ctx.enqueue_function[kernel_reduce_128](
                             output_intermediate_data,
                             output_device,
@@ -922,6 +940,17 @@ def flare_mla_decoding_dispatch[
                             num_partitions_value,
                             grid_dim=(D_TILES, num_heads, batch_size),
                             block_dim=(W_PARTS_128 * WARP_SIZE, 1, 1),
+                        )
+                    else:
+                        ctx.enqueue_function[kernel_reduce_256](
+                            output_intermediate_data,
+                            output_device,
+                            exp_sum_device,
+                            qk_max_device,
+                            batch_size,
+                            num_partitions_value,
+                            grid_dim=(D_TILES, num_heads, batch_size),
+                            block_dim=(W_PARTS_256 * WARP_SIZE, 1, 1),
                         )
                 else:
                     comptime kernel_reduce = mha_splitk_reduce[

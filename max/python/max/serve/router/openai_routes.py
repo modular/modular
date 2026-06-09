@@ -22,7 +22,7 @@ import queue
 import re
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -37,7 +37,13 @@ from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient, HTTPStatusError
 from jinja2.exceptions import UndefinedError
 from llguidance import LLMatcher
-from max.pipelines.core.exceptions import InputError
+from max.pipelines.context import (
+    GenerationStatus,
+    SamplingParams,
+    SamplingParamsInput,
+    TextGenerationResponseFormat,
+)
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
@@ -47,20 +53,16 @@ from max.pipelines.lib.tool_parsing import (
 )
 from max.pipelines.lora import LoRAOperation, LoRARequest, LoRAStatus
 from max.pipelines.modeling.types import (
-    GenerationStatus,
     ImageContentPart,
     MessageContent,
     ParsedToolResponse,
     PipelineTokenizer,
     RequestID,
-    SamplingParams,
-    SamplingParamsInput,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestFunction,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
-    TextGenerationResponseFormat,
     VideoContentPart,
 )
 from max.profiler import Tracer, traced
@@ -411,6 +413,7 @@ class OpenAIChatResponseGenerator(
                                 role="assistant",
                                 refusal=None,
                                 reasoning=chunk.decoded_reasoning_tokens,
+                                reasoning_content=chunk.decoded_reasoning_tokens,
                                 tool_calls=tool_call_chunks
                                 if tool_call_chunks
                                 else None,
@@ -474,6 +477,14 @@ class OpenAIChatResponseGenerator(
                 request,
                 n_reasoning_tokens + n_tokens,
             )
+
+            if request.response_format is not None:
+                logger.info(
+                    "Tool/constrained request %s succeeded (stream=true): type=%s, tool_calls_emitted=%s",
+                    request.request_id,
+                    request.response_format.type,
+                    has_emitted_tool_calls,
+                )
 
             # If `include_usage=True`, send a final chunk with usage statistics
             if self.stream_options and self.stream_options.get("include_usage"):
@@ -648,6 +659,7 @@ class OpenAIChatResponseGenerator(
             if reasoning_message is not None:
                 for choice in response_choices:
                     choice.message.reasoning = reasoning_message
+                    choice.message.reasoning_content = reasoning_message
 
             usage = None
             if n_reasoning_tokens > 0 or n_tokens > 0:
@@ -673,6 +685,15 @@ class OpenAIChatResponseGenerator(
                 service_tier=None,
                 usage=usage,
             )
+            if request.response_format is not None:
+                logger.info(
+                    "Tool/constrained request %s succeeded (stream=false): type=%s, tool_calls_emitted=%s",
+                    request.request_id,
+                    request.response_format.type,
+                    any(
+                        choice.message.tool_calls for choice in response_choices
+                    ),
+                )
             return response
         finally:
             record_request_end(
@@ -922,7 +943,7 @@ async def openai_parse_chat_completion_request(
             messages.append(
                 TextGenerationRequestMessage(
                     role=_normalize_openai_role(m["role"]),
-                    content=content if content else "",
+                    content=content or "",
                     tool_calls=tool_calls,
                     tool_call_id=tool_call_id,
                     reasoning_content=reasoning_content,
@@ -1430,7 +1451,7 @@ async def openai_create_chat_completion(
 
 
 def _convert_chat_completion_tools_to_token_generator_tools(
-    chat_tools: list[ChatCompletionFunctionToolParam] | None,
+    chat_tools: Iterable[ChatCompletionFunctionToolParam] | None,
 ) -> list[TextGenerationRequestTool] | None:
     """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:
@@ -1821,6 +1842,14 @@ def get_tool_parser(app: FastAPI) -> ToolParser | None:
 class OpenAICompletionResponseGenerator(
     OpenAIResponseGenerator[CreateCompletionResponse]
 ):
+    def __init__(
+        self,
+        pipeline: TokenGeneratorPipeline,
+        stream_options: ChatCompletionStreamOptionsParam | None = None,
+    ) -> None:
+        super().__init__(pipeline)
+        self.stream_options = stream_options
+
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
@@ -1830,6 +1859,7 @@ class OpenAICompletionResponseGenerator(
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
+        n_cached_prompt_tokens = 0
         status_code = 200
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
@@ -1846,6 +1876,8 @@ class OpenAICompletionResponseGenerator(
 
                 if chunk.prompt_token_count:
                     n_prompt_tokens = chunk.prompt_token_count
+                if chunk.cached_token_count is not None:
+                    n_cached_prompt_tokens = chunk.cached_token_count
                 n_reasoning_tokens += chunk.reasoning_token_count or 0
                 n_tokens += chunk.token_count
 
@@ -1902,6 +1934,30 @@ class OpenAICompletionResponseGenerator(
                 request,
                 n_reasoning_tokens + n_tokens,
             )
+
+            # If `include_usage=True`, send a final chunk with usage statistics.
+            # https://platform.openai.com/docs/api-reference/completions/create#completions_create-stream_options
+            if self.stream_options and self.stream_options.get("include_usage"):
+                final_usage = CompletionUsage(
+                    prompt_tokens=n_prompt_tokens,
+                    completion_tokens=n_reasoning_tokens + n_tokens,
+                    total_tokens=n_prompt_tokens
+                    + n_reasoning_tokens
+                    + n_tokens,
+                    prompt_tokens_details=PromptTokensDetails(
+                        cached_tokens=n_cached_prompt_tokens,
+                    ),
+                )
+                final_response = CompletionStreamResponse(
+                    id=request.request_id.value,
+                    choices=[],
+                    created=int(datetime.now().timestamp()),
+                    model=request.model_name,
+                    object="text_completion",
+                    usage=final_usage,
+                )
+                yield final_response.model_dump_json()
+
             yield "[DONE]"
         except queue.Full:
             logger.exception("Request queue full %s", request.request_id)
@@ -1945,6 +2001,7 @@ class OpenAICompletionResponseGenerator(
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
+        n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=requests[0].timestamp_ns)
         status_code = 200
 
@@ -1960,6 +2017,11 @@ class OpenAICompletionResponseGenerator(
                 n_tokens += sum(chunk.token_count for chunk in req_outputs)
                 if req_outputs and req_outputs[0].prompt_token_count:
                     n_prompt_tokens += req_outputs[0].prompt_token_count
+                if (
+                    req_outputs
+                    and req_outputs[0].cached_token_count is not None
+                ):
+                    n_cached_prompt_tokens += req_outputs[0].cached_token_count
 
                 log_probs = _process_log_probabilities(req_outputs)
                 response_message = "".join(
@@ -1978,6 +2040,14 @@ class OpenAICompletionResponseGenerator(
                         logprobs=log_probs,
                     )
                 )
+            usage = CompletionUsage(
+                prompt_tokens=n_prompt_tokens,
+                completion_tokens=n_reasoning_tokens + n_tokens,
+                total_tokens=n_prompt_tokens + n_reasoning_tokens + n_tokens,
+                prompt_tokens_details=PromptTokensDetails(
+                    cached_tokens=n_cached_prompt_tokens,
+                ),
+            )
             response = CreateCompletionResponse(
                 # CreateCompletionResponse.id refers to the http request, while
                 # request.request_id refers to the prompt. We don't have access to the
@@ -1988,6 +2058,7 @@ class OpenAICompletionResponseGenerator(
                 model=requests[0].model_name,
                 object="text_completion",
                 system_fingerprint=None,
+                usage=usage,
             )
             return response
         except:
@@ -2092,7 +2163,9 @@ async def openai_create_completion(
                     " field."
                 )
 
-        response_generator = OpenAICompletionResponseGenerator(pipeline)
+        response_generator = OpenAICompletionResponseGenerator(
+            pipeline, stream_options=completion_request.stream_options
+        )
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
         # Use request-level temperature/thinking_temperature if provided, else server defaults.

@@ -105,30 +105,38 @@ from max.graph.weights import (
     weights_format,
 )
 from max.nn import kernels
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    MultiKVCacheParams,
+    compute_num_device_blocks,
+    compute_num_host_blocks,
+)
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
-from max.pipelines.core.exceptions import (
+from max.pipelines.context import (
+    EOSTracker,
+    SpecDecodingState,
+    TextContext,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
+from max.pipelines.context.exceptions import (
     InputError,  # noqa: F401 (for docstring)
 )
+from max.pipelines.context.tokens import TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager, load_multi_kv_managers
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     _contiguous_prefix_2d,
 )
 from max.pipelines.modeling.types import (
     BatchType,
-    EOSTracker,
     PipelineOutputsDict,
     PipelineTokenizer,
     ReasoningPipelineTokenizer,
     RequestID,
-    SpecDecodingState,
-    TextGenerationContextType,
     TextGenerationInputs,
-    TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.pipelines.modeling.types.tokens import TokenBuffer
 from max.pipelines.speculative.base import _SpeculativeDecodingMetrics
 from max.pipelines.speculative.ragged_token_merger import (
     _shape_to_scalar,
@@ -172,11 +180,13 @@ _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 _OOB_IDX = np.iinfo(np.int32).min
 _MAGIC_DRAFT_TOKEN_ID = 42
 
-# Bound for ``sync_prime`` waiting on the prior iter's async bitmask
-# callback worker. A worker that died before its ``finally`` (dispatch
-# failure, AsyncRT shutdown) never sets the event; capping the wait
-# degrades that to a noisy bitmask race instead of a silent hang.
-_SYNC_PRIME_CALLBACK_TIMEOUT_S = 120.0
+
+# Log that the async bitmask callback is lagging, but keep waiting for it.
+_CALLBACK_LAG_WARN_S = 5.0
+# A live callback always signals via its ``finally``; exceeding this means the
+# worker never ran (dispatch failure, AsyncRT shutdown), so we log and proceed rather than
+# block the scheduler indefinitely.
+_CALLBACK_DEADLINE_S = 120.0
 
 
 @runtime_checkable
@@ -216,6 +226,46 @@ class _SpecDecodeSamplingBuffers:
     min_top_p: Buffer
     in_thinking_phase: Buffer
     seed: Buffer
+
+
+def _host_mirror_realized_drafts(
+    draft_tokens_np: npt.NDArray[np.int64],
+    prev_to_curr_map: npt.NDArray[np.int64],
+    prev_next_draft_tokens: npt.NDArray[np.int64],
+) -> npt.NDArray[np.int64]:
+    """Reconstruct the post-realize device draft buffer on the host.
+
+    The device draft buffer for an EAGLE verify step is built as the
+    H2D copy of ``draft_tokens_np`` (its pre-scatter state), then
+    overwritten for rows present in the previous batch by the realize scatter
+    (``RealizeFutureTokenProcessor``) using ``prev_to_curr_map``. This mirrors
+    that mapping exactly so the constrained-decoding synchronous-fill builds the bitmask from
+    the drafts the GPU actually verifies.
+    Note that:
+
+      1. An unmapped current row keeps its ``draft_tokens_np`` value -- the MAGIC
+        placeholder, or a preempted/resumed request's real saved drafts.
+      2. A mapped current row takes the previous batch's ``next_draft_tokens``.
+
+    Using ``prev_to_curr_map`` (the same scatter map the device graph uses)
+    keeps this a line-for-line mirror of the device scatter.
+
+    Args:
+        draft_tokens_np: ``[curr_batch, K]`` pre-scatter device state (the host
+            array copied to the device draft buffer before the realize scatter).
+        prev_to_curr_map: ``[prev_batch]`` mapping prev-batch row -> current
+            row, with ``_OOB_IDX`` for prev rows absent from the current batch.
+        prev_next_draft_tokens: ``[prev_batch, K]`` previous batch's next drafts.
+
+    Returns:
+        ``[curr_batch, K]`` host mirror of the device draft buffer.
+    """
+    realized = draft_tokens_np.copy()
+    curr_batch_size = realized.shape[0]
+    for prev_i, curr_i in enumerate(prev_to_curr_map):
+        if 0 <= curr_i < curr_batch_size:
+            realized[curr_i] = prev_next_draft_tokens[prev_i]
+    return realized
 
 
 def _get_draft_kv_blocks(
@@ -272,8 +322,9 @@ class SpecDecodeState:
     target_kv_manager: PagedKVCacheManager
     """The KVCache manager for the target model."""
 
-    draft_kv_blocks: list[Buffer]
-    """The KVCache blocks for the draft model."""
+    draft_kv_blocks: list[Buffer] | None
+    """The KVCache blocks for the draft model, or ``None`` when the draft
+    shares the target's KV cache (cross-attention draft, e.g. Gemma4 MTP)."""
 
     metrics: _SpeculativeDecodingMetrics
     """The metrics for speculative decoding."""
@@ -373,6 +424,19 @@ class SpecDecodeState:
     writes. Lives on the process-lifetime state because ``_prev_batch``
     is cleared between requests."""
 
+    realized_draft_tokens_host: npt.NDArray[np.int64] | None = None
+    """Host-realized EAGLE drafts for the current batch, row-permuted from the
+    prev batch's ``next_draft_tokens_host`` via the realize map (the same
+    permutation ``realize_future_tokens`` applies on device).
+
+    Set only when the current batch verifies drafts and the prev batch did not
+    (``prev.spec_decode.fsm_advanced_by_callback`` is False) -- i.e. exactly the
+    synchronous-fill case, where the early-sync guard has already made
+    ``next_draft_tokens_host`` host-complete (D2H copy finished). ``None``
+    otherwise. Consumed by ``_assign_bitmask_inputs`` on the synchronous-fill
+    path so the speculative bitmask is built from the real drafts the GPU
+    verifies, not MAGIC placeholders."""
+
     @classmethod
     def load(
         cls,
@@ -391,54 +455,127 @@ class SpecDecodeState:
             )
 
         target_kv_params = model.kv_params
-        assert isinstance(target_kv_params, KVCacheParams)
+        assert isinstance(target_kv_params, (KVCacheParams, MultiKVCacheParams))
         assert hasattr(model, "_draft_kv_params"), "Draft KV params not found"
         draft_kv_params = model._draft_kv_params
-        assert isinstance(draft_kv_params, KVCacheParams)
-
-        multi_kv_params = MultiKVCacheParams.from_params(
-            target_kv_params, draft_kv_params
-        )
-        target_kv_manager, draft_kv_manager = load_multi_kv_managers(
-            params=multi_kv_params,
-            max_batch_size=pipeline_config.runtime.max_batch_size,
-            max_seq_len=model.max_seq_len,
-            session=session,
-            available_cache_memory=pipeline_config.model.kv_cache._available_cache_memory,
+        assert draft_kv_params is None or isinstance(
+            draft_kv_params, KVCacheParams
         )
 
-        # Asymmetric attention (e.g. MLA target + MHA draft): each manager
-        # is single-cache from ``load_multi_kv_managers`` so the target
-        # manager's ``__init__`` skipped its draft-resolver branch
-        # (gated on ``num_caches > 1``). Inject the draft resolver here
-        # so ``runtime_inputs`` populates target_kv's
-        # ``draft_attention_dispatch_metadata`` slot with MHA geometry.
-        if target_kv_params.is_mla != draft_kv_params.is_mla:
-            from max.graph import DeviceRef
-            from max.nn.kv_cache import AttentionDispatchResolver
-            from max.nn.kv_cache.data_parallelism_utils import (
-                split_into_groups,
+        if draft_kv_params is None:
+            # Cross-attention / shared-KV draft (e.g. Gemma4 MTP): the draft
+            # reads the target's cache(s) and allocates nothing. A single
+            # manager covers the target's KV (single- or multi-cache), with no
+            # draft manager and no budget contribution. Decided by the draft's
+            # nature, independent of the target's topology.
+            target_kv_manager = load_kv_manager(
+                params=target_kv_params,
+                max_batch_size=pipeline_config.runtime.max_batch_size,
+                max_seq_len=model.max_seq_len,
+                session=session,
+                available_cache_memory=(
+                    pipeline_config.model.kv_cache._available_cache_memory
+                ),
             )
+            draft_kv_manager = None
+            data_parallel_degree = target_kv_params.data_parallel_degree
+        elif isinstance(target_kv_params, MultiKVCacheParams):
+            # Self-attention draft (owns its KV) + multi-cache target: add the
+            # draft's params to the page budget, then build one target manager
+            # (multi-cache native) plus a separate draft manager.
+            available_cache_memory = (
+                pipeline_config.model.kv_cache._available_cache_memory
+            )
+            max_batch_size = pipeline_config.runtime.max_batch_size
+            if available_cache_memory is None:
+                raise ValueError(
+                    "available_cache_memory should have been set during memory estimation"
+                )
+            if max_batch_size is None:
+                raise ValueError(
+                    "max_batch_size should have been set during memory estimation"
+                )
+            budget_params = MultiKVCacheParams.from_params(
+                *list(target_kv_params.params), draft_kv_params
+            )
+            total_num_pages = compute_num_device_blocks(
+                params=budget_params,
+                available_cache_memory=available_cache_memory,
+                max_batch_size=max_batch_size,
+                max_seq_len=model.max_seq_len,
+            )
+            total_num_host_pages = compute_num_host_blocks(budget_params)
+            target_kv_manager = PagedKVCacheManager(
+                params=target_kv_params,
+                total_num_pages=total_num_pages,
+                total_num_host_pages=total_num_host_pages,
+                session=session,
+                max_batch_size=max_batch_size,
+            )
+            draft_kv_manager = PagedKVCacheManager(
+                params=draft_kv_params,
+                total_num_pages=total_num_pages,
+                total_num_host_pages=total_num_host_pages,
+                session=session,
+                max_batch_size=max_batch_size,
+            )
+            data_parallel_degree = target_kv_params.data_parallel_degree
+        else:
+            assert isinstance(draft_kv_params, KVCacheParams)
+            multi_kv_params = MultiKVCacheParams.from_params(
+                target_kv_params, draft_kv_params
+            )
+            target_kv_manager, draft_kv_manager = load_multi_kv_managers(
+                params=multi_kv_params,
+                max_batch_size=pipeline_config.runtime.max_batch_size,
+                max_seq_len=model.max_seq_len,
+                session=session,
+                available_cache_memory=pipeline_config.model.kv_cache._available_cache_memory,
+            )
+            data_parallel_degree = multi_kv_params.data_parallel_degree
 
-            devices_per_replica = split_into_groups(
-                [d.to_device() for d in target_kv_params.devices],
-                groups=target_kv_params.data_parallel_degree,
-            )
-            for replica_idx, replica_devices in enumerate(devices_per_replica):
-                target_kv_manager._replica[
-                    replica_idx
-                ].draft_attention_dispatch_resolver = AttentionDispatchResolver(
-                    devices=[DeviceRef.from_device(d) for d in replica_devices],
-                    is_mla=draft_kv_params.is_mla,
-                    n_kv_heads_per_device=draft_kv_params.n_kv_heads_per_device,
-                    num_q_heads_per_device=draft_kv_params.num_q_heads_per_device,
-                    is_fp8_kv=draft_kv_params.is_fp8_kv_dtype,
+            # Asymmetric attention (e.g. MLA target + MHA draft): each
+            # manager is single-cache from ``load_multi_kv_managers`` so
+            # the target manager's ``__init__`` skipped its
+            # draft-resolver branch (gated on ``num_caches > 1``).
+            # Inject the draft resolver here so ``runtime_inputs``
+            # populates target_kv's
+            # ``draft_attention_dispatch_metadata`` slot with MHA
+            # geometry.
+            if target_kv_params.is_mla != draft_kv_params.is_mla:
+                from max.graph import DeviceRef
+                from max.nn.kv_cache import AttentionDispatchResolver
+                from max.nn.kv_cache.data_parallelism_utils import (
+                    split_into_groups,
                 )
 
-        draft_kv_blocks = _get_draft_kv_blocks(
-            draft_kv_manager, multi_kv_params.data_parallel_degree
-        )
-        assert len(draft_kv_blocks) == target_kv_params.n_devices
+                devices_per_replica = split_into_groups(
+                    [d.to_device() for d in target_kv_params.devices],
+                    groups=target_kv_params.data_parallel_degree,
+                )
+                for replica_idx, replica_devices in enumerate(
+                    devices_per_replica
+                ):
+                    target_kv_manager._replica[
+                        replica_idx
+                    ].draft_attention_dispatch_resolver = AttentionDispatchResolver(
+                        devices=[
+                            DeviceRef.from_device(d) for d in replica_devices
+                        ],
+                        is_mla=draft_kv_params.is_mla,
+                        n_kv_heads_per_device=draft_kv_params.n_kv_heads_per_device,
+                        num_q_heads_per_device=draft_kv_params.num_q_heads_per_device,
+                        is_fp8_kv=draft_kv_params.is_fp8_kv_dtype,
+                    )
+
+        draft_kv_blocks: list[Buffer] | None
+        if draft_kv_manager is None:
+            draft_kv_blocks = None
+        else:
+            draft_kv_blocks = _get_draft_kv_blocks(
+                draft_kv_manager, data_parallel_degree
+            )
+            assert len(draft_kv_blocks) == target_kv_params.n_devices
 
         num_speculative_tokens = (
             pipeline_config.speculative.num_speculative_tokens
@@ -1212,6 +1349,7 @@ class RealizeFutureTokenProcessor:
             self._graph = session.load(graph)
         self._enable_dp = enable_dp
         self._num_speculative_tokens = num_speculative_tokens
+        self._num_devices = len(devices)
 
     def _compute_mappings(
         self,
@@ -1282,18 +1420,24 @@ class RealizeFutureTokenProcessor:
         prev_batch: AsyncBatch[TextGenerationContextType],
         inputs: TextGenerationInputs[TextGenerationContextType],
         model_inputs: ModelInputs,
-    ) -> None:
+        draft_tokens_np: npt.NDArray[np.int64] | None = None,
+    ) -> npt.NDArray[np.int64] | None:
         """Scatters generated tokens from the previous batch into placeholder slots.
 
         Fills placeholder future tokens in the current batch on the GPU.
         Returns ragged_input_tokens unchanged if there is no overlap between
         the previous and current batch.
+
+        Returns:
+            Host mirror of the device draft scatter ``[curr_batch, K]`` for the
+            synchronous-fill bitmask, or ``None`` (see ``realized_draft_tokens_host``).
         """
         assert isinstance(model_inputs, _HasRaggedTokens)
+        realized_draft_tokens_host: npt.NDArray[np.int64] | None = None
         mappings = self._compute_mappings(prev_batch, inputs)
 
         if mappings is None:
-            return
+            return None
 
         assert self._graph is not None, (
             "RealizeFutureTokenProcessor is None but there are tokens to scatter."
@@ -1306,10 +1450,13 @@ class RealizeFutureTokenProcessor:
             assert prev_batch.spec_decode is not None
             assert model_inputs.kv_cache_inputs is not None
 
-            num_kv_cache_inputs = len(model_inputs.kv_cache_inputs.inputs)
+            # Take one cache_length per device from the first KV cache
+            # type.  Multi-KV targets (e.g. sliding + global) have
+            # num_cache_types * num_devices entries, but the realize
+            # graph expects only num_devices.
             cache_lengths = [
                 model_inputs.kv_cache_inputs.inputs[i].cache_lengths
-                for i in range(num_kv_cache_inputs)
+                for i in range(self._num_devices)
             ]
             assert model_inputs.draft_tokens is not None
             num_draft_tokens_to_verify = model_inputs.draft_tokens.shape[1]
@@ -1322,7 +1469,11 @@ class RealizeFutureTokenProcessor:
             prev_draft_tokens = (
                 prev_batch.spec_decode.draft_tokens_to_verify_device
             )
-            signal_buffers = getattr(model_inputs, "signal_buffers", None)
+            signal_buffers = (
+                getattr(model_inputs, "signal_buffers", None)
+                if self._num_devices > 1
+                else None
+            )
 
             if self._enable_dp:
                 data_parallel_splits = model_inputs.data_parallel_splits
@@ -1380,13 +1531,29 @@ class RealizeFutureTokenProcessor:
             # draft tokens buffer so that when we read from draft_tokens later on
             # we get the real values...
             model_inputs.draft_tokens.inplace_copy_from(draft_tokens)
-            assert len(model_inputs.kv_cache_inputs.inputs) == len(
-                cache_lengths
-            )
-            for i in range(len(model_inputs.kv_cache_inputs.inputs)):
+            # Replicate realized cache_lengths to all KV cache types.
+            # Multi-KV targets have num_types * num_devices entries;
+            # the graph only produces num_devices outputs.
+            num_kv_inputs = len(model_inputs.kv_cache_inputs.inputs)
+            for i in range(num_kv_inputs):
                 model_inputs.kv_cache_inputs.inputs[i] = dataclasses.replace(
                     model_inputs.kv_cache_inputs.inputs[i],
-                    cache_lengths=cache_lengths[i],
+                    cache_lengths=cache_lengths[i % len(cache_lengths)],
+                )
+            # Host mirror of the device draft buffer for the constrained-
+            # decoding synchronous-fill (see _host_mirror_realized_drafts). Only on the
+            # synchronous-fill case -- prev did not advance the FSM via callback -- where
+            # the early-sync guard has already made next_draft_tokens_host
+            # complete.
+            if (
+                num_draft_tokens_to_verify > 0
+                and not prev_batch.spec_decode.fsm_advanced_by_callback
+                and draft_tokens_np is not None
+            ):
+                realized_draft_tokens_host = _host_mirror_realized_drafts(
+                    draft_tokens_np,
+                    prev_to_curr_map.to_numpy(),
+                    prev_batch.spec_decode.next_draft_tokens_host.to_numpy(),
                 )
         else:
             (new_ragged_input_tokens,) = out
@@ -1394,7 +1561,7 @@ class RealizeFutureTokenProcessor:
 
         # Update the model inputs with the new ragged input tokens.
 
-        return
+        return realized_draft_tokens_host
 
 
 @dataclass
@@ -1698,11 +1865,30 @@ class OverlapTextGenerationPipeline(
 
     @property
     def _effective_max_cache_length(self) -> int:
-        """Max cache length capped to the KV pool capacity."""
+        """Capture-time upper bound on a request's runtime cache length.
+
+        ``PagedKVCacheManager.runtime_inputs`` rejects any batch whose
+        ``_compute_seq_len`` exceeds this bound, so it folds in the worst-case
+        speculative-decode slack a context-boundary request adds beyond
+        ``max_seq_len``. Capped to pool capacity, which already carries that
+        headroom, so capture never reserves more pages than were allocated.
+        """
+        params = self._kv_manager.params
+        spec_slack = 0
+        if params.num_draft_tokens > 0:
+            # Worst-case slack, matching `_compute_seq_len`: drafts verified
+            # and written next batch (2x), the prior overlap batch's drafts
+            # assumed accepted (1x), the DFlash block-draft slot, and the
+            # FUTURE_TOKEN placeholder.
+            block_draft_extra = (
+                1
+                if params.num_draft_tokens_per_step == params.num_draft_tokens
+                else 0
+            )
+            spec_slack = 3 * params.num_draft_tokens + block_draft_extra + 1
         return min(
-            self._pipeline_model.max_seq_len,
-            self._kv_manager._total_num_pages
-            * self._kv_manager.params.page_size,
+            self._pipeline_model.max_seq_len + spec_slack,
+            self._kv_manager._total_num_pages * params.page_size,
         )
 
     @property
@@ -1821,6 +2007,10 @@ class OverlapTextGenerationPipeline(
                 ]
             )
         with self._kv_manager.reserve(replica_batches, num_steps=1):
+            warmup_flat_batch = [
+                ctx for replica in replica_batches for ctx in replica
+            ]
+
             max_cache_length = self._effective_max_cache_length
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 replica_batches,
@@ -1865,9 +2055,6 @@ class OverlapTextGenerationPipeline(
                     self._spec_decode_state.draft_kv_blocks
                 )
 
-                warmup_flat_batch = [
-                    ctx for replica in replica_batches for ctx in replica
-                ]
                 sampling_buffers = self._build_spec_decode_sampling_buffers(
                     warmup_flat_batch
                 )
@@ -1919,7 +2106,21 @@ class OverlapTextGenerationPipeline(
                     model_inputs.wait_payload = overlap_state.wait_payload
                     model_inputs.device_bitmask_scratch = scratch_view
 
-            yield model_inputs
+            try:
+                yield model_inputs
+            finally:
+                # The KV cache is freed by the ``reserve`` context manager
+                # above, but architectures with additional per-request state
+                # (e.g. Qwen3.5 GatedDeltaNet slots, Mamba/LFM2 SSM slots,
+                # Gemma4 vision-encoder cache) manage it via
+                # ``PipelineModel.release``. Warmup builds throwaway contexts
+                # with fresh request IDs each iteration; without releasing
+                # them here their state leaks and exhausts the pool partway
+                # through capture. Mirror the serving release path's guarded
+                # check (see ``release`` below).
+                if hasattr(self._pipeline_model, "release"):
+                    for ctx in warmup_flat_batch:
+                        self._pipeline_model.release(ctx.request_id)
 
     def warmup_graph_capture(self) -> None:
         """Initializes and runs overlap device graph capture warmup."""
@@ -2216,17 +2417,26 @@ class OverlapTextGenerationPipeline(
             model_inputs.min_top_p = sampling_buffers.min_top_p
             model_inputs.seed = sampling_buffers.seed
             model_inputs.in_thinking_phase = sampling_buffers.in_thinking_phase
+        realized_draft_tokens_host: npt.NDArray[np.int64] | None = None
         if (
             self._prev_batch is not None
             and self._realize_future_token_processor is not None
         ):
-            self._realize_future_token_processor.realize_future_tokens(
-                prev_batch=self._prev_batch,
-                inputs=inputs,
-                model_inputs=model_inputs,
+            realized_draft_tokens_host = (
+                self._realize_future_token_processor.realize_future_tokens(
+                    prev_batch=self._prev_batch,
+                    inputs=inputs,
+                    model_inputs=model_inputs,
+                    draft_tokens_np=draft_tokens_np,
+                )
             )
             if debug_verify_model_inputs is not None:
                 debug_verify_model_inputs.tokens = model_inputs.tokens
+        # Save off realized draft tokens (None unless realize produced them for the synchronous-fill case).
+        if self._spec_decode_state is not None:
+            self._spec_decode_state.realized_draft_tokens_host = (
+                realized_draft_tokens_host
+            )
 
         # Compute speculative bitmasks here, as late as possible before graph
         # replay, so that all model-input preparation above can overlap with
@@ -2470,82 +2680,77 @@ class OverlapTextGenerationPipeline(
         # the boolean bitmask output).
         num_positions = overlap_state.num_positions
 
-        needs_sync_prime = True
-        if spec_state.has_precomputed_bitmask:
-            # Adopt the callback's bitmask if every constrained row
-            # (matcher already present) sits at the same index with the
-            # same rid as in the callback batch. Unconstrained padding
-            # rows are ``-1`` (all-ones) in both the callback's output
-            # and any sync-prime output, so swapping them by index is
-            # identity-safe.
-            callback_rids = spec_state.callback_request_ids
-            can_adopt = len(context_batch) <= len(callback_rids)
-            if can_adopt:
-                for idx, ctx in enumerate(context_batch):
-                    if ctx.matcher is None:
-                        # A constrained context whose matcher hasn't
-                        # been built yet (typically a freshly admitted
-                        # request) needs sync_prime to lazily construct
-                        # the matcher and fill this row from the right
-                        # initial state.
-                        if (
-                            ctx.grammar is not None
-                            or ctx.json_schema is not None
-                        ):
-                            can_adopt = False
-                            break
-                        continue
-                    if callback_rids[idx] != ctx.request_id:
-                        # A constrained row moved or didn't exist in
-                        # the callback batch; its precomputed row is
-                        # for a different request.
-                        can_adopt = False
-                        break
-            if can_adopt:
-                needs_sync_prime = False
-            # Clear the flag in either case: it's been consumed (either by
-            # being adopted as-is or by being overwritten via prime).
-            spec_state.has_precomputed_bitmask = False
+        callback_rids = spec_state.callback_request_ids
+        callback_available = spec_state.has_precomputed_bitmask
+        # Consumed this iteration regardless of how it is used below.
+        spec_state.has_precomputed_bitmask = False
 
-        if needs_sync_prime:
-            # Wait for the prior iter's async callback worker to finish
-            # writing pinned before ``prime()`` overwrites it; otherwise
-            # the worker can stomp ``prime()``'s rows after the in-graph
-            # wait passes, and the captured H2D DMAs stale rows into the
-            # sampler's device scratch. CPU<->CPU on a ``threading.Event``
-            # (not a CUDA event), so no ``device.synchronize()``.
+        # Synchronous fills build the bitmask from the real drafts realize_future_tokens
+        # scattered onto the device buffer (host mirror), not the MAGIC
+        # placeholders in draft_tokens_np. Non-None only on the synchronous-fill path
+        # (see realized_draft_tokens_host); falls back to draft_tokens_np otherwise.
+        drafts = (
+            spec_state.realized_draft_tokens_host
+            if spec_state.realized_draft_tokens_host is not None
+            else draft_tokens_np
+        )
+
+        if callback_available and self._callback_layout_matches(
+            context_batch, callback_rids
+        ):
+            # Fast path: the callback wrote pinned in this exact row order, so
+            # the in-graph wait gates the H2D directly -- zero-copy, no wait.
+            # The event is left for the next iter's enqueue to overwrite.
+            pass
+        else:
+            # Wait for the prior callback so its FSM advance and pinned write
+            # are done: synchronous fills below read a current FSM, and gather reads
+            # the callback's pinned rows. Keep waiting through normal lag (warn
+            # at 5s); only proceed at the 120s dead-worker deadline.
             prev_evt = spec_state.last_callback_done_event
             if prev_evt is not None and not prev_evt.is_set():
-                if not prev_evt.wait(timeout=_SYNC_PRIME_CALLBACK_TIMEOUT_S):
-                    batch_request_ids = [
-                        str(ctx.request_id) for ctx in context_batch
-                    ]
-                    callback_request_ids = [
-                        str(rid)
-                        for rid in (spec_state.callback_request_ids or [])
-                    ]
-                    logger.error(
-                        "Async bitmask callback's done_event was not set "
-                        "within %ss; proceeding with sync_prime — pinned "
-                        "bitmask may have been stomped by the worker. "
+                if not prev_evt.wait(timeout=_CALLBACK_LAG_WARN_S):
+                    logger.warning(
+                        "Async bitmask callback lagging >%.0fs; still waiting. "
                         "batch_request_ids=%s callback_request_ids=%s",
-                        _SYNC_PRIME_CALLBACK_TIMEOUT_S,
-                        batch_request_ids,
-                        callback_request_ids,
+                        _CALLBACK_LAG_WARN_S,
+                        [str(ctx.request_id) for ctx in context_batch],
+                        [str(r) for r in (callback_rids or [])],
                     )
-            # Cleared here so the next sync_prime doesn't re-wait on this
-            # already-consumed event after a callback-less iter (e.g.
-            # another CE prefill).
+                    remaining = _CALLBACK_DEADLINE_S - _CALLBACK_LAG_WARN_S
+                    if not prev_evt.wait(timeout=remaining):
+                        # Worker never signaled (likely a dead stream /
+                        # shutdown). Proceed rather than hang; a stale bitmask
+                        # self-heals via the matcher-rejection (unconstrained) path.
+                        logger.error(
+                            "Async bitmask callback did not complete within "
+                            "%.0fs; proceeding with a possibly-stale bitmask. "
+                            "batch_request_ids=%s callback_request_ids=%s",
+                            _CALLBACK_DEADLINE_S,
+                            [str(ctx.request_id) for ctx in context_batch],
+                            [str(r) for r in (callback_rids or [])],
+                        )
             spec_state.last_callback_done_event = None
-            bitmask_np = self._structured_output.compute_speculative_bitmasks(
-                context_batch=context_batch,
-                draft_tokens=draft_tokens_np,
-                num_positions=num_positions,
-            )
-            # ``prime`` writes the leading ``batch`` rows of pinned
-            # in place and release-stores ``1`` to the completion
-            # flag so the in-graph wait passes when the captured
-            # graph reaches it.
+
+            if callback_available:
+                # Adopt the callback's row for each continuing request (gather
+                # by request_id, robust to reorder / completion / growth);
+                # synchronous-fill only rows with no FSM state to advance.
+                bitmask_np = self._gather_bitmask(
+                    context_batch, callback_rids, drafts, num_positions
+                )
+            else:
+                # No callback output to adopt: every row is new or was advanced
+                # synchronously, so a full synchronous fill reads a current FSM.
+                bitmask_np = (
+                    self._structured_output.compute_speculative_bitmasks(
+                        context_batch=context_batch,
+                        draft_tokens=drafts,
+                        num_positions=num_positions,
+                    )
+                )
+            # ``prime`` writes the leading rows of pinned and signals the flag
+            # so the in-graph wait passes when the captured graph reaches it.
             overlap_state.prime(bitmask_np)
 
         # Wire the graph inputs via the cached-view helper. The
@@ -2566,6 +2771,70 @@ class OverlapTextGenerationPipeline(
         model_inputs.pinned_bitmask = pinned_view
         model_inputs.wait_payload = overlap_state.wait_payload
         model_inputs.device_bitmask_scratch = scratch_view
+
+    @staticmethod
+    def _callback_layout_matches(
+        context_batch: list[TextGenerationContextType],
+        callback_rids: list[RequestID],
+    ) -> bool:
+        """Whether the callback's rows match this batch's exact order."""
+        if len(context_batch) > len(callback_rids):
+            return False
+        for idx, ctx in enumerate(context_batch):
+            if ctx.matcher is None:
+                # New constrained row (matcher not built) needs a synchronous fill.
+                if ctx.grammar is not None or ctx.json_schema is not None:
+                    return False
+                continue
+            if callback_rids[idx] != ctx.request_id:
+                return False
+        return True
+
+    def _gather_bitmask(
+        self,
+        context_batch: list[TextGenerationContextType],
+        callback_rids: list[RequestID],
+        draft_tokens_np: npt.NDArray[np.int64],
+        num_positions: int,
+    ) -> npt.NDArray[np.bool_]:
+        """Gather continuing rows from the callback; synchronous-fill only new rows.
+
+        The callback advanced the FSM and wrote its rows before signaling
+        ``done_event`` (already waited on), so gathered rows are current and
+        the read comes before the sync path's write.
+        """
+        spec_state = self._spec_decode_state
+        assert spec_state is not None
+        overlap_state = spec_state.overlap_state
+        assert overlap_state is not None
+        callback_pinned = overlap_state.pinned_bitmask.to_numpy()
+        rid_to_row = {rid: j for j, rid in enumerate(callback_rids)}
+
+        assembled = np.empty(
+            (len(context_batch), num_positions, overlap_state.vocab_size),
+            dtype=np.bool_,
+        )
+        # Rows the callback didn't cover fall to the synchronous fill. ``src is
+        # None`` means the request wasn't in the prev (callback) batch -- a
+        # preempted-then-resumed decode -- so it has no prev-batch FSM state to
+        # gather and its bitmask is built from scratch.
+        sync_indices: list[int] = []
+        for i, ctx in enumerate(context_batch):
+            src = rid_to_row.get(ctx.request_id)
+            if src is not None and not ctx.is_initial_prompt:
+                assembled[i] = callback_pinned[src]
+            else:
+                sync_indices.append(i)
+
+        if sync_indices:
+            sync_bitmask = self._structured_output.compute_speculative_bitmasks(
+                context_batch=[context_batch[i] for i in sync_indices],
+                draft_tokens=draft_tokens_np[sync_indices],
+                num_positions=num_positions,
+            )
+            for k, i in enumerate(sync_indices):
+                assembled[i] = sync_bitmask[k]
+        return assembled
 
     def _capture_callback_inputs(
         self,

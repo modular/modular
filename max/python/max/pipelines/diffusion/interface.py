@@ -33,8 +33,8 @@ from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
+from max.pipelines.context import PixelGenerationContext
 from max.pipelines.modeling.base.component_model import ComponentModel
-from max.pipelines.modeling.types import PixelGenerationContext
 from tqdm import tqdm
 
 from .cache import DenoisingCacheConfig, DenoisingCacheState

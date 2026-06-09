@@ -1,0 +1,386 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Lazy-trace tests for QuantizedLatentAttentionWithRope."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from unittest.mock import MagicMock
+
+import pytest
+from max.driver import Device
+from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
+from max.experimental.sharding import DeviceMesh, PlacementMapping, Replicated
+from max.experimental.tensor import Tensor, default_dtype
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Shape,
+    SymbolicDim,
+    TensorValue,
+)
+from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
+from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_mla import (
+    QuantizedLatentAttentionWithRope,
+)
+from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
+    FP8BlockTensor,
+)
+
+# Block-aligned dimensions (multiples of 128 on the quantized axes) so the FP8
+# weight-scale grid divides evenly and the kv_b_proj scale reshapes are exact.
+_N_HEADS = 2
+_HIDDEN_SIZE = 256
+_Q_LORA_RANK = 128
+_KV_LORA_RANK = 128
+_QK_NOPE_HEAD_DIM = 128
+_QK_ROPE_HEAD_DIM = 64
+_V_HEAD_DIM = 128
+_QK_HEAD_DIM = _QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM  # 192
+_CACHE_HEAD_DIM = _KV_LORA_RANK + _QK_ROPE_HEAD_DIM  # 192
+_NUM_LAYERS = 2
+_PAGE_SIZE = 128
+
+
+def _make_kv_params(devices: Sequence[Device]) -> KVCacheParams:
+    return KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=1,
+        head_dim=_CACHE_HEAD_DIM,
+        num_layers=_NUM_LAYERS,
+        devices=[DeviceRef.from_device(device) for device in devices],
+        is_mla=True,
+        num_q_heads=_N_HEADS,
+        page_size=_PAGE_SIZE,
+    )
+
+
+def _make_layer(
+    kv_params: KVCacheParams,
+    *,
+    q_lora_rank: int | None,
+    quant_config: QuantConfig | None,
+) -> QuantizedLatentAttentionWithRope:
+    return QuantizedLatentAttentionWithRope(
+        num_attention_heads=_N_HEADS,
+        num_key_value_heads=1,
+        hidden_size=_HIDDEN_SIZE,
+        kv_params=kv_params,
+        layer_idx=0,
+        q_lora_rank=q_lora_rank,
+        kv_lora_rank=_KV_LORA_RANK,
+        qk_nope_head_dim=_QK_NOPE_HEAD_DIM,
+        qk_rope_head_dim=_QK_ROPE_HEAD_DIM,
+        v_head_dim=_V_HEAD_DIM,
+        graph_mode="prefill",
+        quant_config=quant_config,
+    )
+
+
+def _build_kv_collection(
+    kv_params: KVCacheParams,
+    batch_size: int | str,
+    n_pages: int,
+    devices: Sequence[Device],
+) -> PagedCacheValues:
+    kv_inputs = kv_params.get_symbolic_inputs()
+
+    sym_values = {
+        "total_num_pages": n_pages,
+        "batch_size": batch_size,
+        "max_num_pages": n_pages,
+        "steps_remaining": 2,
+    }
+
+    def resolve_shape(shape: Shape) -> list[int | str]:
+        result: list[int | str] = []
+        for dim in shape:
+            if isinstance(dim, SymbolicDim):
+                key = next(k for k in sym_values if dim.name.endswith(k))
+                result.append(sym_values[key])
+            else:
+                result.append(int(dim))
+        return result
+
+    graph_values: list[BufferValue | TensorValue] = []
+    for per_device_types in kv_inputs.inputs:
+        for field_type in per_device_types.flatten():
+            t = Tensor.zeros(
+                resolve_shape(field_type.shape),
+                dtype=field_type.dtype,
+                device=field_type.device.to_device(),
+            )
+            if isinstance(field_type, BufferType):
+                graph_values.append(BufferValue(t))
+            else:
+                graph_values.append(TensorValue(t))
+
+    kv_concrete = kv_inputs.unflatten(iter(graph_values))
+    mapping = PlacementMapping(
+        DeviceMesh(tuple(devices), (len(devices),), ("axis",)), (Replicated(),)
+    )
+    return PagedCacheValues.from_upstream(kv_concrete.inputs, mapping)
+
+
+def _expected_parameters(
+    *, q_lora_rank: int | None, quantized: bool
+) -> set[str]:
+    def proj(name: str) -> set[str]:
+        if quantized:
+            return {f"{name}.data", f"{name}.scale_inv"}
+        return {name}
+
+    names: set[str] = set()
+    if q_lora_rank is not None:
+        names |= proj("q_a_proj")
+        names.add("q_a_layernorm.weight")
+        names |= proj("q_b_proj")
+    else:
+        names |= proj("q_proj")
+    # The kv_a layernorm gamma is a plain (unquantized) tensor.
+    names.add("kv_a_proj_layernorm")
+    names |= proj("kv_a_proj_with_mqa")
+    names |= proj("kv_b_proj")
+    # o_proj is a QuantizedLinear (bias=False) -> nested under "o_proj".
+    names |= {f"o_proj.{p}" for p in proj("weight")}
+    return names
+
+
+# --------------------------------------------------------------------------- #
+# Construction / quantized flag
+# --------------------------------------------------------------------------- #
+
+
+def test_mla_bf16_not_quantized(mock_accelerator: MagicMock) -> None:
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(kv_params, q_lora_rank=None, quant_config=None).to(
+            device
+        )
+        assert layer.quantized is False
+        assert layer.weight_block_size is None
+
+
+def test_mla_fp8_quantized(
+    mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
+) -> None:
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(
+            kv_params, q_lora_rank=None, quant_config=fp8_quant_config
+        ).to(device)
+        assert layer.quantized is True
+        assert (
+            layer.weight_block_size == fp8_quant_config.weight_scale.block_size
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Parameters
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("q_lora_rank", [None, _Q_LORA_RANK])
+def test_mla_bf16_parameters(
+    mock_accelerator: MagicMock, q_lora_rank: int | None
+) -> None:
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(
+            kv_params, q_lora_rank=q_lora_rank, quant_config=None
+        ).to(device)
+        names = {name for name, _ in layer.parameters}
+        assert names == _expected_parameters(
+            q_lora_rank=q_lora_rank, quantized=False
+        )
+
+
+@pytest.mark.parametrize("q_lora_rank", [None, _Q_LORA_RANK])
+def test_mla_fp8_parameters(
+    mock_accelerator: MagicMock,
+    fp8_quant_config: QuantConfig,
+    q_lora_rank: int | None,
+) -> None:
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(
+            kv_params,
+            q_lora_rank=q_lora_rank,
+            quant_config=fp8_quant_config,
+        ).to(device)
+        names = {name for name, _ in layer.parameters}
+        assert names == _expected_parameters(
+            q_lora_rank=q_lora_rank, quantized=True
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Weight types / shapes
+# --------------------------------------------------------------------------- #
+
+
+def test_mla_bf16_weight_types(mock_accelerator: MagicMock) -> None:
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(kv_params, q_lora_rank=None, quant_config=None).to(
+            device
+        )
+        assert isinstance(layer.q_proj, Tensor)
+        assert list(layer.q_proj.shape) == [
+            _N_HEADS * _QK_HEAD_DIM,
+            _HIDDEN_SIZE,
+        ]
+        assert isinstance(layer.kv_b_proj, Tensor)
+
+
+def test_mla_fp8_weight_types(
+    mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
+) -> None:
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(
+            kv_params, q_lora_rank=None, quant_config=fp8_quant_config
+        ).to(device)
+        assert isinstance(layer.q_proj, FP8BlockTensor)
+        assert layer.q_proj.data.dtype == DType.float8_e4m3fn
+        assert layer.q_proj.scale_inv.dtype == DType.float32
+        assert list(layer.q_proj.data.shape) == [
+            _N_HEADS * _QK_HEAD_DIM,
+            _HIDDEN_SIZE,
+        ]
+        assert isinstance(layer.kv_b_proj, FP8BlockTensor)
+
+
+@pytest.mark.parametrize("q_lora_rank", [None, _Q_LORA_RANK])
+def test_mla_wqkv_bf16(
+    mock_accelerator: MagicMock, q_lora_rank: int | None
+) -> None:
+    """The fused q||kv_a weight concatenates on the output axis."""
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(
+            kv_params, q_lora_rank=q_lora_rank, quant_config=None
+        ).to(device)
+        q_rows = (
+            _Q_LORA_RANK if q_lora_rank is not None else _N_HEADS * _QK_HEAD_DIM
+        )
+        wqkv = layer.wqkv
+        assert isinstance(wqkv, Tensor)
+        assert list(wqkv.shape) == [q_rows + _CACHE_HEAD_DIM, _HIDDEN_SIZE]
+
+
+def test_mla_wqkv_fp8(
+    mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
+) -> None:
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(
+            kv_params, q_lora_rank=None, quant_config=fp8_quant_config
+        ).to(device)
+        wqkv = layer.wqkv
+        assert isinstance(wqkv, FP8BlockTensor)
+        assert list(wqkv.data.shape) == [
+            _N_HEADS * _QK_HEAD_DIM + _CACHE_HEAD_DIM,
+            _HIDDEN_SIZE,
+        ]
+
+
+# --------------------------------------------------------------------------- #
+# Forward
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("q_lora_rank", [None, _Q_LORA_RANK])
+def test_mla_bf16_forward(
+    mock_accelerator: MagicMock, q_lora_rank: int | None
+) -> None:
+    """bf16 prefill forward maps ``[S, hidden]`` -> ``[S, hidden]``."""
+    batch_size = 1
+    total_seq_len = 4
+    n_pages = 4
+
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy(), default_dtype(DType.bfloat16):
+        layer = _make_layer(
+            kv_params, q_lora_rank=q_lora_rank, quant_config=None
+        ).to(device)
+
+        x = Tensor.zeros(
+            [total_seq_len, _HIDDEN_SIZE], device=device, dtype=DType.bfloat16
+        )
+        freqs_cis = Tensor.zeros(
+            [total_seq_len, _QK_ROPE_HEAD_DIM],
+            device=device,
+            dtype=DType.bfloat16,
+        )
+        input_row_offsets = Tensor.zeros([batch_size + 1], dtype=DType.uint32)
+        kv_collection = _build_kv_collection(
+            kv_params, batch_size, n_pages, [device]
+        )
+
+        out = layer(x, kv_collection, freqs_cis, input_row_offsets)
+
+    assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
+    assert out.dtype == x.dtype
+    assert out.device == device
+
+
+@pytest.mark.parametrize("q_lora_rank", [None, _Q_LORA_RANK])
+def test_mla_fp8_forward(
+    mock_accelerator: MagicMock,
+    fp8_quant_config: QuantConfig,
+    q_lora_rank: int | None,
+) -> None:
+    """FP8 prefill forward maps ``[S, hidden]`` -> ``[S, hidden]`` (bf16 out)."""
+    batch_size = 1
+    total_seq_len = 4
+    n_pages = 4
+
+    device = mock_accelerator()
+    kv_params = _make_kv_params([device])
+    with F.lazy():
+        layer = _make_layer(
+            kv_params,
+            q_lora_rank=q_lora_rank,
+            quant_config=fp8_quant_config,
+        ).to(device)
+
+        x = Tensor.zeros(
+            [total_seq_len, _HIDDEN_SIZE], dtype=DType.bfloat16, device=device
+        )
+        freqs_cis = Tensor.zeros(
+            [total_seq_len, _QK_ROPE_HEAD_DIM], device=device
+        )
+        input_row_offsets = Tensor.zeros([batch_size + 1], dtype=DType.uint32)
+        kv_collection = _build_kv_collection(
+            kv_params, batch_size, n_pages, [device]
+        )
+
+        out = layer(x, kv_collection, freqs_cis, input_row_offsets)
+
+    assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
+    assert out.dtype == DType.bfloat16

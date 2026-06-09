@@ -32,8 +32,11 @@ from max.driver import (
     accelerator_count,
 )
 from max.dtype import DType
-from max.pipelines.core import TextContext
-from max.pipelines.modeling.types import SamplingParams, TokenBuffer
+from max.pipelines.context import (
+    SamplingParams,
+    TextContext,
+    TokenBuffer,
+)
 from max.pipelines.sampling.sampling_logits_processor import (
     FrequencyData,
     FusedSamplingProcessor,

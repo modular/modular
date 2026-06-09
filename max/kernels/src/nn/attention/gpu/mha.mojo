@@ -5161,14 +5161,13 @@ def mha_gpu_naive[
     @parameter
     @__copy_capture(p_buffer)
     def input_fn_device[
-        _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
-        var p_coord = Coord(coords)
-        comptime assert p_buffer.flat_rank >= p_coord.flat_rank
-        return p_buffer.load[width=_simd_width](p_coord)
+        _simd_width: Int
+    ](coords: Coord) -> SIMD[p_type, _simd_width]:
+        comptime assert p_buffer.flat_rank >= coords.flat_rank
+        return p_buffer.load[width=_simd_width](coords)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device, sink=sink](
-        Index(batch_size * num_heads, max_prompt_len, num_keys),
+        Coord(batch_size * num_heads, max_prompt_len, num_keys),
         p_buffer,
         2,
         ctx,
@@ -5729,7 +5728,10 @@ def mha_gpu_naive[
     var v_operand = KVCacheMHAOperand(v)
 
     mha_gpu_naive[
-        _use_valid_length=True, _is_cache_length_accurate=False, sink=sink
+        ragged=ragged,
+        _use_valid_length=True,
+        _is_cache_length_accurate=False,
+        sink=sink,
     ](
         q,
         k_operand,

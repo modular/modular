@@ -53,6 +53,7 @@ from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     batched_quantize_dynamic_scaled_fp8,
 )
+from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.fused_qk_rope import rope_k_cache, rope_q_proj, rope_value
 from nn.kv_cache import KVCollectionT, KVCacheT
@@ -248,7 +249,7 @@ def fused_rope_rmsnorm_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         idx,
-                        norm_val.cast[k_dtype](),
+                        cast_saturating[k_dtype](norm_val),
                     )
 
 
@@ -395,7 +396,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         head_dim_idx + kv_norm_dim,
-                        roped_val.cast[cache_dtype](),
+                        cast_saturating[cache_dtype](roped_val),
                     )
 
             # The last block of this worker processes RMSNorm.
@@ -440,7 +441,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                         0,  # num_k_heads is 1 for MLA
                         post_seq_idx,
                         idx,
-                        norm_val.cast[cache_dtype](),
+                        cast_saturating[cache_dtype](norm_val),
                     )
 
 
@@ -1057,9 +1058,8 @@ def mla_decode_branch_fp8[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
-    # Capturable-graph scalars forwarded from the MoGG op input list.
+    # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
-    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1125,7 +1125,6 @@ def mla_decode_branch_fp8[
         extra_topk_lengths: Extra-stream per-batch lengths.
         extra_scales_ptr: Extra-stream scales.
         num_partitions_in: Capturable-graph num_partitions override.
-        effective_split_len_in: Capturable-graph effective_split_len override.
     """
 
     comptime kv_params = collection_t.kv_params
@@ -1274,7 +1273,6 @@ def mla_decode_branch_fp8[
         extra_topk_lengths=extra_topk_lengths,
         extra_scales_ptr=extra_scales_ptr,
         num_partitions_in=num_partitions_in,
-        effective_split_len_in=effective_split_len_in,
     )
 
     # Create a view of the output tensor with logical shape
@@ -1373,9 +1371,8 @@ def mla_prefill_decode_graph_fp8[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
-    # Capturable-graph scalars forwarded from the MoGG op input list.
+    # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
-    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1423,7 +1420,6 @@ def mla_prefill_decode_graph_fp8[
             extra_topk_lengths,
             extra_scales_ptr,
             num_partitions_in,
-            effective_split_len_in,
         )
 
     else:
@@ -1483,7 +1479,9 @@ def convert_bf16_to_fp8_e4m3fn(
 
         output_buffer.store_linear(
             idx,
-            input_buffer.load_linear[width](idx).cast[DType.float8_e4m3fn](),
+            cast_saturating[DType.float8_e4m3fn](
+                input_buffer.load_linear[width](idx)
+            ),
         )
 
     comptime target_simd_width = simd_width_of[
@@ -1828,9 +1826,8 @@ def mla_decode_branch_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
-    # Capturable-graph scalars forwarded from the MoGG op input list.
+    # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
-    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA decode path.
 
@@ -1962,7 +1959,6 @@ def mla_decode_branch_bf16[
         scalar_args_buf,
         ctx,
         num_partitions_in=num_partitions_in,
-        effective_split_len_in=effective_split_len_in,
     )
 
     # Create a view of the raw output tensor with logical shape
@@ -2033,9 +2029,8 @@ def mla_prefill_decode_graph_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
-    # Capturable-graph scalars forwarded from the MoGG op input list.
+    # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
-    effective_split_len_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA prefill/decode graph.
 
@@ -2067,7 +2062,6 @@ def mla_prefill_decode_graph_bf16[
             scalar_args_buf,
             ctx,
             num_partitions_in=num_partitions_in,
-            effective_split_len_in=effective_split_len_in,
         )
     else:
         mla_prefill_branch_bf16[

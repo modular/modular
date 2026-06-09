@@ -300,7 +300,7 @@ def test_custom() raises:
 
     qb.run(
         vec_reduce[N, dtype],
-        x,
+        x.as_any_origin(),
         bench_id=BenchId("vec_reduce"),
         measures=[
             ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
@@ -309,8 +309,8 @@ def test_custom() raises:
 
     qb.run(
         vec_add[N, dtype],
-        x,
-        y,
+        x.as_any_origin(),
+        y.as_any_origin(),
         bench_id=BenchId("vec_add"),
         measures=[
             ThroughputMeasure(BenchMetric.flops, N)  # N additions per call

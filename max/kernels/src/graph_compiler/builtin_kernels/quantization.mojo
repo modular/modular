@@ -592,7 +592,7 @@ struct QMatmulGPURepackGGUF:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         gpu_qint4_repack_Q4_0[target](
-            b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx
+            b.to_tile_tensor(), b_packed.to_tile_tensor(), ctx
         )
 
     @staticmethod
@@ -618,7 +618,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         gpu_qint4_repack_GPTQ[128, target](
-            b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx=ctx
+            b.to_tile_tensor(), b_packed.to_tile_tensor(), ctx=ctx
         )
 
     @staticmethod
@@ -646,8 +646,8 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
 
         var perm_idx_lt = perm_idx.to_layout_tensor()
         gpu_qint4_repack_GPTQ[128, target](
-            b.to_layout_tensor(),
-            b_packed.to_layout_tensor(),
+            b.to_tile_tensor(),
+            b_packed.to_tile_tensor(),
             LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
                 perm_idx_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(

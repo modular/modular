@@ -160,17 +160,24 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         CompiledFunctionInfo[fn_type, func, Self.device_spec.target.value],
     ]:
         var compiled_info = self._compile_inner[fn_type, func]()
+        var bundle = self.load_bundle(compiled_info.asm)
+        return (bundle^, compiled_info)
 
-        # Build the M_driver_static_bundle from the compiled object code.
-        # Each plugin expects a specific file_type string.
+    def load_bundle[
+        asm_origin: ImmutOrigin
+    ](
+        self, asm: StringSlice[origin=asm_origin]
+    ) raises HALError -> RuntimeBundle:
+        """Loads a runtime bundle from pre-compiled binary bytes."""
+        # Each plugin expects a specific file_type string. PTX text is
+        # accepted by `cuModuleLoadDataEx` even when file_type="cubin".
         comptime target = Self.device_spec.target.value
         comptime file_type = _bundle_file_type[target]()
 
-        var asm_data = compiled_info.asm
         var static_bundle = M_driver_static_bundle(
             mapped_data=M_driver_slice(
-                data=Pointer(to=asm_data.unsafe_ptr()[]),
-                size=UInt64(asm_data.byte_length()),
+                data=Pointer(to=asm.unsafe_ptr()[]),
+                size=UInt64(asm.byte_length()),
             ),
             file_type=Pointer(to=file_type.unsafe_ptr()[]),
             file_type_len=UInt64(file_type.byte_length()),
@@ -199,13 +206,10 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
                 message=String(t"failed to load bundle: {err.message}"),
             )
 
-        return (
-            RuntimeBundle(
-                _handle=runtime_bundle.unsafe_assume_init_ref(),
-                _context_handle=self._handle,
-                _raw=self._raw,
-            ),
-            compiled_info,
+        return RuntimeBundle(
+            _handle=runtime_bundle.unsafe_assume_init_ref(),
+            _context_handle=self._handle,
+            _raw=self._raw,
         )
 
     # ===-------------------------------------------------------------------===#

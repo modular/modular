@@ -52,7 +52,7 @@ from typing import Any, cast
 from max.driver import DeviceSpec
 from max.examples.diffusion.profiler import profile_execute
 from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
-from max.pipelines.core import PixelContext
+from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.diffusion.interface import DiffusionPipeline
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline

@@ -13,8 +13,8 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.pixtral.tokenizer import PixtralTokenizer
-from max.pipelines.core import TextAndVisionContext
-from max.pipelines.core.context_validators import (
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.context.context_validators import (
     validate_only_one_image,
     validate_requires_vision_context,
 )

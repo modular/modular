@@ -32,6 +32,7 @@ from max.graph.weights import (
     weights_format,
 )
 from max.nn.kv_cache.cache_params import KVConnectorType
+from max.pipelines.context import SamplingParamsGenerationConfigDefaults
 from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.device_specs import (
@@ -52,7 +53,6 @@ from max.pipelines.modeling.config_enums import (
     supported_encoding_supported_devices,
     supported_encoding_supported_on,
 )
-from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
 from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
@@ -1582,6 +1582,7 @@ class MAXModelConfig(MAXModelConfigBase):
         logger.info("  %s KV Cache %s", sub_separator, sub_separator)
 
         entries: list[tuple[str, Any]] = [
+            ("cache_dtype", kv_config.cache_dtype),
             ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
             ("prefix_caching", kv_config.enable_prefix_caching),
             ("kv_connector", kv_config.kv_connector or "null"),

@@ -75,6 +75,9 @@ from nn.attention.gpu.nvidia.sm90.attention import (
     _apply_mask,
     _get_position,
     get_q_head_idx,
+    produce,
+)
+from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
     KVTMATile,
     MHAPosition,
@@ -82,7 +85,6 @@ from nn.attention.gpu.nvidia.sm90.attention import (
     NullPointer,
     OptionalPointer,
     Pack,
-    produce,
     q_tma,
     QTMATile,
 )

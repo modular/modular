@@ -4196,6 +4196,7 @@ class GraphOp(max._core.Operation):
         result_parameters: max._core.dialects.kgen.ParamDeclArrayAttr,
         counter: int,
         is_subgraph: max._core.dialects.builtin.UnitAttr,
+        is_device_graph: max._core.dialects.builtin.UnitAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -4245,6 +4246,12 @@ class GraphOp(max._core.Operation):
     def is_subgraph(self) -> bool: ...
     @is_subgraph.setter
     def is_subgraph(
+        self, arg: max._core.dialects.builtin.UnitAttr, /
+    ) -> None: ...
+    @property
+    def is_device_graph(self) -> bool: ...
+    @is_device_graph.setter
+    def is_device_graph(
         self, arg: max._core.dialects.builtin.UnitAttr, /
     ) -> None: ...
 
