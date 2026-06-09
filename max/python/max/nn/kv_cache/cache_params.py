@@ -73,6 +73,13 @@ class KVConnectorType(str, Enum):
     """
 
 
+def _validate_is_2d_uint8_buffer(buffer: Buffer) -> None:
+    if len(buffer.shape) != 2:
+        raise ValueError("KVCacheMemory buffer must have 2 dimensions")
+    if buffer.dtype != DType.uint8:
+        raise ValueError("KVCacheMemory buffer must have dtype uint8")
+
+
 @dataclass
 class KVCacheMemory:
     """A single KV cache shard as a 2-D ``uint8`` view.
@@ -84,6 +91,9 @@ class KVCacheMemory:
     """
 
     buffer: Buffer
+
+    def __post_init__(self) -> None:
+        _validate_is_2d_uint8_buffer(self.buffer)
 
 
 @dataclass
@@ -97,6 +107,18 @@ class ReplicatedKVCacheMemory(KVCacheMemory):
     """
 
     peers: list[Buffer] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        for peer in self.peers:
+            _validate_is_2d_uint8_buffer(peer)
+
+        bytes_per_buffer = set(
+            buffer.shape[1] for buffer in [self.buffer, *self.peers]
+        )
+        if len(bytes_per_buffer) > 1:
+            raise ValueError("All buffers must have the same bytes_per_page")
 
 
 @dataclass

@@ -178,18 +178,7 @@ class BlockOffloadEngine:
             u for u in self._units if isinstance(u, ReplicatedKVCacheMemory)
         ]
 
-        # Validate peer shapes and device topology across all replicated units.
-        unique_page_bytes: set[int] = {
-            peer.shape[1]
-            for unit in self._replicated_units
-            for peer in [unit.buffer, *unit.peers]
-        }
-        if len(unique_page_bytes) > 1:
-            raise ValueError(
-                "replicates_kv_across_tp requires identical "
-                "bytes_per_page across all TP shards within a group"
-            )
-
+        # Validate device topology across all replicated units.
         unique_topologies: set[tuple[int, ...]] = {
             tuple(
                 d.id
