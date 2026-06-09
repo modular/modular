@@ -1283,7 +1283,9 @@ struct DeviceFunction[
                     ]
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(device_type_encoder, first_word_addr)
-                dense_args_addrs[translated_arg_idx] = first_word_addr
+                dense_args_addrs[
+                    translated_arg_idx
+                ] = first_word_addr.as_any_origin()
                 dense_args_sizes[translated_arg_idx] = UInt64(
                     size_of[
                         actual_arg_type.device_type,
@@ -1298,7 +1300,7 @@ struct DeviceFunction[
                     i
                 ]
             var capture_args_start = dense_args_addrs + num_translated_args
-            populate(capture_args_start.bitcast[NoneType]())
+            populate(capture_args_start.bitcast[NoneType]().as_any_origin())
 
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
@@ -2344,7 +2346,11 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         Returns:
             The raw device pointer owned by this buffer.
         """
-        return self._inner[]._host_ptr.bitcast[Scalar[Self.dtype]]()
+        return (
+            self._inner[]
+            ._host_ptr.bitcast[Scalar[Self.dtype]]()
+            .as_any_origin()
+        )
 
     def __getitem__(self, idx: Int) -> Scalar[Self.dtype]:
         """Retrieves the element at the specified index from the host buffer.

@@ -23,9 +23,7 @@ from max.experimental import functional as F
 from max.experimental.sharding.rules import ternary_rule
 from max.graph import TensorValue, ops
 from max.nn.kernels import scatter_nd_skip_oob_indices
-from max.pipelines.modeling.types.pipeline_variants.text_generation import (
-    VLMTextGenerationContext,
-)
+from max.pipelines.context import VLMTextGenerationContext
 
 
 def merge_multimodal_embeddings(

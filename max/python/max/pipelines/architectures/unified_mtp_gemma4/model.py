@@ -29,7 +29,7 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -434,13 +434,6 @@ class UnifiedMTPGemma4Model(
             draft_tokens=draft_tokens,
             draft_kv_blocks=draft_kv_cache_buffers,
         )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedMTPGemma4Inputs:
-        raise NotImplementedError("MTP does not support Multistep execution")
 
     @classmethod
     def calculate_max_seq_len(

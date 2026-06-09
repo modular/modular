@@ -44,6 +44,29 @@ from .backend.cpu.reduction import _reduce_generator_cpu
 # Import GPU implementations.
 from .backend.gpu.reduction import _reduce_generator_gpu, reduce_launch
 
+
+comptime _ReduceGeneratorPluginHookFnType = (
+    def[
+        num_reductions: Int,
+        init_type: DType,
+        input_0_fn: def[dtype: DType, width: Int, rank: Int](
+            IndexList[rank]
+        ) capturing[_] -> SIMD[dtype, width],
+        output_0_fn: def[dtype: DType, width: Int, rank: Int](
+            IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+        ) capturing[_] -> None,
+        reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
+            SIMD[ty, width], SIMD[ty, width]
+        ) capturing[_] -> SIMD[ty, width],
+    ](
+        shape: IndexList[_, element_type=DType.int64],
+        init: StaticTuple[Scalar[init_type], num_reductions],
+        reduce_dim: Int,
+    ) thin
+)
+"""Plugin-hook signature for `PluginHooks.reduce_generator_fn`; keep in sync with `_reduce_generator`."""
+
+
 # ===-----------------------------------------------------------------------===#
 # ND indexing helper
 # ===-----------------------------------------------------------------------===#

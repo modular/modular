@@ -234,11 +234,11 @@ def cli_serve(
     from max.entrypoints.cli import serve_api_server_and_model_worker
     from max.entrypoints.workers import start_workers
     from max.pipelines import PipelineConfig
-    from max.pipelines.modeling.types import (
-        PipelineTask,
+    from max.pipelines.context import (
         SamplingParams,
         SamplingParamsInput,
     )
+    from max.pipelines.modeling.types import PipelineTask
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging
 
@@ -377,7 +377,10 @@ def cli_pipeline(
     """
     from max.entrypoints.cli import generate_text_for_pipeline
     from max.pipelines import PipelineConfig
-    from max.pipelines.modeling.types import SamplingParams, SamplingParamsInput
+    from max.pipelines.context import (
+        SamplingParams,
+        SamplingParamsInput,
+    )
     from max.profiler import maybe_reexec_under_nsys
 
     # When --profile is set and we have a usable nsys + NVIDIA GPU, re-exec

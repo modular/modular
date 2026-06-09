@@ -6,6 +6,7 @@ modular_py_library(
     name = "kv_cache",
     srcs = glob(["**/*.py"]),
     deps = [
+        "//max/python/max/pipelines/context",
         requirement("numpy"),
         requirement("msgspec"),
         requirement("pydantic"),

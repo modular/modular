@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, NonCallableMock
 import numpy as np
 import pytest
 from max.pipelines.architectures.internvl.tokenizer import InternVLTokenizer
-from max.pipelines.core.exceptions import PromptTooLongError
+from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.modeling.types import (
     ImageContentPart,

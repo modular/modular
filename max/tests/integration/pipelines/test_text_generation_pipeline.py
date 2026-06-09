@@ -19,13 +19,15 @@ from unittest.mock import MagicMock
 import hf_repo_lock
 import numpy as np
 from max.driver import DeviceSpec
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    ImageMetadata,
+    SamplingParams,
+    TextContext,
+)
 from max.pipelines.lib import generate_local_model_path
 from max.pipelines.lib.pipeline_variants import text_generation
 from max.pipelines.modeling.types import (
-    ImageMetadata,
     RequestID,
-    SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
 )

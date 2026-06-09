@@ -18,18 +18,21 @@ from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, cast
 
-from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import reasoning
-from max.pipelines.modeling.types import (
+from max.pipelines.context import (
     BaseContextType,
-    EmbeddingsGenerationOutput,
     GenerationStatus,
     LogProbabilities,
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationOutput,
+)
+from max.pipelines.lib import reasoning
+from max.pipelines.modeling.types import (
+    EmbeddingsGenerationOutput,
     PipelineOutputType,
     PipelineTokenizer,
     ReasoningParser,
     RequestType,
-    TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.profiler import Tracer
