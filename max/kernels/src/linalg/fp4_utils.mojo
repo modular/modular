@@ -317,7 +317,7 @@ def get_scale_factor[
     //,
     SF_VECTOR_SIZE: Int,
 ](
-    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    scales_tensor: LayoutTensor[scales_dtype, scales_layout, ImmutAnyOrigin],
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
