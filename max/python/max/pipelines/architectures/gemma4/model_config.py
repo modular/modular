@@ -31,7 +31,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.interfaces.arch_config import (
-    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
@@ -410,7 +410,7 @@ class Gemma4VisionConfig:
 
 
 @dataclass(kw_only=True)
-class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
+class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     """Base configuration for Gemma 4 multimodal models.
 
     This is the top-level config that composes text and vision sub-configs.
@@ -444,31 +444,6 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
     tie_word_embeddings: bool = False
     """Whether to tie weight embeddings. When true, the output linear layer
     uses the same weight as the embedding layer."""
-
-    @staticmethod
-    def estimate_vision_cache_entry_bytes(
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Estimate per-entry bytes for the vision encoder cache.
-
-        Worst-case tokens per image is
-        ``position_embedding_size / pooling_kernel_size²``, stored at the
-        text hidden size in bfloat16.
-        """
-        vision_config = getattr(huggingface_config, "vision_config", None)
-        if vision_config is None:
-            raise ValueError(
-                "Gemma4 requires a vision_config in the HuggingFace config"
-            )
-        text_config = getattr(huggingface_config, "text_config", None)
-        if text_config is None:
-            raise ValueError(
-                "Gemma4 requires a text_config in the HuggingFace config"
-            )
-        k = vision_config.pooling_kernel_size
-        max_tokens = vision_config.position_embedding_size // (k * k)
-        hidden = text_config.hidden_size
-        return max_tokens * hidden * 2  # bfloat16
 
     def get_kv_params(self) -> MultiKVCacheParams:
         """Returns the KV cache parameters."""

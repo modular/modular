@@ -13,6 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
@@ -43,4 +44,5 @@ qwen2_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Qwen2Config,
+    memory_planner=PagedMemoryPlanner,
 )

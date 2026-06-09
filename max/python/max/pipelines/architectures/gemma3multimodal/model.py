@@ -235,17 +235,6 @@ class Gemma3_MultiModalModel(
         self.vision_model, self.language_model = self.load_model(session)
 
     @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        del pipeline_config, huggingface_config  # Unused.
-
-        # FIXME: We arbitrarily set some memory for activation memory to leave headroom
-        # for vision processing. We should determine this in a more principled way.
-        # Update: Bumped to 15 GiB after #80736 removed MemoryManager fallthrough.
-        return 15 * 1024 * 1024 * 1024  # 15 GiB
-
-    @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         """Gets the number of hidden layers from the HuggingFace configuration."""
         return Gemma3ForConditionalGenerationConfig.get_num_layers(

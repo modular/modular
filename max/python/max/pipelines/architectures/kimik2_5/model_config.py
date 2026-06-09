@@ -23,7 +23,7 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
-    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
     ArchVLConfigWithTextSubconfig,
 )
@@ -322,9 +322,7 @@ class VisionConfig:
 
 
 @dataclass(kw_only=True)
-class KimiK2_5Config(
-    ArchVLConfigWithTextSubconfig, ArchConfigWithKVAndVisionCache
-):
+class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Configuration for Kimi-K2.5 models."""
 
     devices: list[DeviceRef]
@@ -367,48 +365,6 @@ class KimiK2_5Config(
     def get_kv_params(self) -> KVCacheParamInterface:
         """Returns the KV cache parameters from the embedded LLM config."""
         return self.llm_config.get_kv_params()
-
-    @staticmethod
-    def estimate_vision_cache_entry_bytes(
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Estimate per-entry bytes for the vision encoder cache.
-
-        Max tokens per image = pos_emb_height * pos_emb_width / merge_sq,
-        multiplied by the text hidden size and 2 bytes (bfloat16).
-        """
-        vision_config = getattr(huggingface_config, "vision_config", None)
-        if vision_config is None:
-            raise ValueError(
-                "KimiK2.5 requires a vision_config in the HuggingFace config"
-            )
-        text_config = getattr(huggingface_config, "text_config", None)
-        if text_config is None:
-            raise ValueError(
-                "KimiK2.5 requires a text_config in the HuggingFace config"
-            )
-        hidden = getattr(text_config, "hidden_size", 0)
-        if hidden <= 0:
-            raise ValueError(
-                "KimiK2.5 text_config.hidden_size must be positive"
-            )
-        merge_kernel_size = getattr(vision_config, "merge_kernel_size", [2, 2])
-        merge_sq = 1
-        for k in (
-            merge_kernel_size
-            if isinstance(merge_kernel_size, (list, tuple))
-            else [merge_kernel_size]
-        ):
-            merge_sq *= k
-        pos_h = getattr(vision_config, "init_pos_emb_height", 0)
-        pos_w = getattr(vision_config, "init_pos_emb_width", 0)
-        if pos_h <= 0 or pos_w <= 0:
-            raise ValueError(
-                "KimiK2.5 vision_config must provide "
-                "init_pos_emb_height and init_pos_emb_width"
-            )
-        max_tokens = (pos_h * pos_w) // merge_sq
-        return max_tokens * hidden * 2
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:

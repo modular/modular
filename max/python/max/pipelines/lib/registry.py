@@ -29,6 +29,7 @@ from max.pipelines.context import (
     TextAndVisionContext,
     TextContext,
 )
+from max.pipelines.kv_cache.memory_planner import MemoryPlanner
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
     InputModality,
@@ -310,6 +311,20 @@ class SupportedArchitecture:
 
     If None, no reasoning parser is enabled by default and the user must
     opt in by setting ``runtime.reasoning_parser`` explicitly.
+    """
+
+    memory_planner: type[MemoryPlanner] | None = None
+    """Optional :class:`~max.pipelines.kv_cache.MemoryPlanner` subclass for
+    this architecture.
+
+    When set, ``PipelineConfig`` uses the planner to estimate weight size,
+    activation memory, signal-buffer memory, and vision cache entry bytes.
+    Autoregressive text-generation models should set this to
+    :class:`~max.pipelines.kv_cache.PagedMemoryPlanner` (or a subclass with
+    architecture-specific overrides).
+
+    ``None`` means the architecture manages its own memory estimation (e.g.
+    diffusion pipelines that skip KV cache estimation entirely).
     """
 
     @property

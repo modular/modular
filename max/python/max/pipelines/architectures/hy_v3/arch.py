@@ -21,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .memory_planner import HyV3MemoryPlanner
 from .model import HYV3Model
 from .model_config import HYV3Config
 
@@ -42,4 +43,5 @@ hy_v3_arch = SupportedArchitecture(
     },
     config=HYV3Config,
     multi_gpu_supported=True,
+    memory_planner=HyV3MemoryPlanner,
 )

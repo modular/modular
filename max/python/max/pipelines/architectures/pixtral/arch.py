@@ -16,6 +16,7 @@ from max.pipelines.context import TextAndVisionContext
 from max.pipelines.context.context_validators import (
     validate_requires_vision_context,
 )
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
@@ -48,4 +49,5 @@ pixtral_arch = SupportedArchitecture(
         validate_requires_vision_context,
     ],
     config=PixtralConfig,
+    memory_planner=PagedMemoryPlanner,
 )

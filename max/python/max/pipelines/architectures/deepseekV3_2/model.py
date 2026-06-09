@@ -42,7 +42,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
     model_config_cls: ClassVar[type[Any]] = DeepseekV3_2Config
 
     @classmethod
-    @override
     def _ep_max_rank_send_tokens_for_pipeline(
         cls, pipeline_config: PipelineConfig
     ) -> int:

@@ -460,9 +460,7 @@ class PipelineConfig(ConfigFileModel):
           ``replicate_kv_across_tp`` path is active (MLA model with DP=1 and
           multi-device TP). See ``block_copy_engine.py`` / ``transfer_engine.py``.
 
-        Returns 0 for single-device pipelines. Architecture-specific outliers
-        (e.g. always-allreduce mixins, Flux2, multimodal encoders) should
-        override :meth:`~max.pipelines.lib.interfaces.PipelineModel.estimate_signal_buffer_memory`.
+        Returns 0 for single-device pipelines.
 
         Args:
             arch_config: Optional architecture config. When provided and it
@@ -1699,19 +1697,32 @@ class PipelineConfig(ConfigFileModel):
 
         if not issubclass(arch.pipeline_model, PipelineModel):
             # Non-PipelineModel architectures (e.g. PipelineExecutor) skip
-            # memory estimation — they don't expose these classmethods.
+            # memory estimation.
             return
 
         devices = load_devices(model_config.device_specs)
         arch_config = arch.config.initialize(self, model_config=model_config)
 
-        weights_size = arch.pipeline_model.estimate_weights_size(self)
-        activation_size = arch.pipeline_model.estimate_activation_memory(
-            self, model_config.huggingface_config
-        )
-        signal_buffer_size = arch.pipeline_model.estimate_signal_buffer_memory(
-            self, arch_config
-        )
+        if arch.memory_planner is not None:
+            planner = arch.memory_planner(arch_config)
+            weights_size = planner.estimate_weights_size(self)
+            activation_size = planner.estimate_activation_memory(
+                self, model_config.huggingface_config
+            )
+            signal_buffer_size = planner.estimate_signal_buffer_memory(
+                self, arch_config
+            )
+        else:
+            # ``memory_planner=None`` is the intentional state for architectures
+            # that manage memory outside the planner path (e.g. diffusion models,
+            # which exit early via ``is_diffusion_pipeline()`` before reaching
+            # this point).  It is also the fallback for any architecture not yet
+            # wired to a MemoryPlanner — if you are adding a new architecture
+            # that uses a KV cache, set ``memory_planner=PagedMemoryPlanner``
+            # on your ``SupportedArchitecture`` to get correct memory estimation.
+            weights_size = model_config.weights_size()
+            activation_size = 0
+            signal_buffer_size = self.estimate_signal_buffer_memory(arch_config)
 
         MemoryEstimator.estimate_memory_footprint(
             self,
@@ -1721,6 +1732,7 @@ class PipelineConfig(ConfigFileModel):
             weights_size,
             activation_size,
             signal_buffer_size,
+            arch=arch,
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(

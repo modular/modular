@@ -32,6 +32,9 @@ import pytest
 from max.driver import DeviceSpec
 from max.graph import DeviceRef
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.kv_cache.memory_planner import (
+    PagedMemoryPlanner,
+)
 from max.pipelines.lib import MAXModelConfig, MemoryEstimator
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
@@ -41,7 +44,6 @@ from test_common.pipeline_model_dummy import (
     DUMMY_LLAMA_ARCH,
     DummyLlamaArchConfig,
     DummyLlamaPipelineModel,
-    DummyPipelineModel,
     DummyTextTokenizer,
 )
 from test_common.registry import prepare_registry
@@ -175,7 +177,7 @@ def _pipeline_resolve_mocks(
     - validate_hf_repo_access — avoid network
     - MemoryEstimator — avoid real memory estimation
     - accelerator_api — avoid CUDA probes
-    - estimate_weights_size / estimate_activation_memory — avoid graph ops
+    - PagedMemoryPlanner — avoid activation memory estimation
     """
     mock_devices = [DeviceRef.GPU()] * num_devices
 
@@ -206,22 +208,7 @@ def _pipeline_resolve_mocks(
             return_value="cpu",
         ),
         patch.object(
-            DummyLlamaPipelineModel,
-            "estimate_weights_size",
-            return_value=0,
-        ),
-        patch.object(
-            DummyLlamaPipelineModel,
-            "estimate_activation_memory",
-            return_value=0,
-        ),
-        patch.object(
-            DummyPipelineModel,
-            "estimate_weights_size",
-            return_value=0,
-        ),
-        patch.object(
-            DummyPipelineModel,
+            PagedMemoryPlanner,
             "estimate_activation_memory",
             return_value=0,
         ),
