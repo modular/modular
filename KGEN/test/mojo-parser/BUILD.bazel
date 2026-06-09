@@ -9,6 +9,7 @@ _DATA = [
     "**/imported_module.mojo",
     "**/test_package.foo",
     "**/test_package/**",
+    "**/test_from_relative_self_import/**/*.mojo",
     "**/test_package_user/**/*.mojo",
     "**/test_reexport_name_collision/**/*.mojo",
     "**/test_std_mock/**",
