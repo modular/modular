@@ -21,6 +21,10 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_sparse_indexer_prefill.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
@@ -296,6 +300,7 @@ _EXTRA_CONSTRAINTS = {
 
 _EXTRA_DEPS = {
     "test_sparse_indexer_decode.mojo": ["//Kernels/lib/msa:msa"],
+    "test_sparse_indexer_prefill.mojo": ["//Kernels/lib/msa:msa"],
 }
 
 _FILECHECK_TESTS = [
