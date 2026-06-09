@@ -401,6 +401,16 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed structured output (`response_format: json_schema` and grammar-guided
+  tool calling) intermittently emitting raw control characters inside JSON
+  string values on models that use a byte-level BPE (TikToken) tokenizer,
+  producing invalid JSON. The constrained-decoding adapter fed llguidance the
+  tokens' byte->unicode *surface* bytes (e.g. a raw newline rendered as `Ċ`)
+  instead of their true bytes, so the grammar mask admitted control-char
+  tokens as legal string content. Token bytes are now recovered via the
+  tokenizer's `byte_decoder`, so raw control characters are correctly
+  excluded. Fast-tokenizer checkpoints were unaffected.
+
 - Fixed an expert-parallelism dispatch assertion (`Cannot dispatch EP
   kernel with N input tokens when the maximum tokens per rank is N-1`)
   that fired whenever `--max-batch-input-tokens` was not evenly
