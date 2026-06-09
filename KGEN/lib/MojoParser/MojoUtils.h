@@ -86,12 +86,6 @@ void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//
 
-/// Helper to produce a consistent error message for incorrect argument and
-/// parameter counts.
-void emitWrongArgOrParamCount(MojoInflightDiag &diag, size_t minRequired,
-                              size_t maxAllowed, size_t numActual,
-                              const Twine &argOrParam);
-
 /// Helper to emit an error message for unknown keyword operands.
 void emitUnknownKeywords(MojoInflightDiag &diag,
                          ArrayRef<StringAttr> unknownKeywords,

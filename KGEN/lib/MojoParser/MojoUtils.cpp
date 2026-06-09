@@ -140,26 +140,6 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//
 
-void LIT::emitWrongArgOrParamCount(MojoInflightDiag &diag, size_t minRequired,
-                                   size_t maxAllowed, size_t numActual,
-                                   const Twine &argOrParam) {
-  diag << " expects ";
-
-  // Tailor the diagnostic if the exact number of expected args is known.
-  if (minRequired == maxAllowed && numActual != minRequired) {
-    diag << minRequired << " " << argOrParam << plural(minRequired);
-  } else if (numActual < minRequired) {
-    diag << "at least " << minRequired << " " << argOrParam
-         << plural(minRequired);
-  } else {
-    assert(numActual > maxAllowed);
-    diag << "at most " << maxAllowed << " " << argOrParam << plural(maxAllowed);
-  }
-
-  diag << ", but " << numActual << plural(numActual, " was", " were")
-       << " specified";
-}
-
 /// Emit a comma separated list of names, each in '...'.
 static void emitNames(MojoInflightDiag &diag, ArrayRef<StringAttr> names) {
   llvm::interleave(
