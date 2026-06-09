@@ -15,7 +15,9 @@
 
 import concurrent.futures
 import json
+import logging
 import os
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -49,6 +51,7 @@ from max.benchmark.benchmark_shared.request import (
     async_request_lora_load,
     async_request_lora_unload,
     get_request_driver_class,
+    mark_cancelled_if_past_deadline,
 )
 from pytest_mock import MockerFixture
 from tqdm.asyncio import tqdm
@@ -1204,3 +1207,45 @@ class TestValidateTaskAndEndpoint:
 
     def test_image_to_image_responses_ok(self) -> None:
         validate_task_and_endpoint("image-to-image", "/v1/responses")
+
+
+class TestMarkCancelledIfPastDeadline:
+    """Tests for ``mark_cancelled_if_past_deadline``.
+
+    A request cut off by benchmark end (its non-success result surfaces after
+    the deadline) should be reclassified as cancelled rather than failed.
+    """
+
+    def test_failed_past_deadline_becomes_cancelled(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        past = time.perf_counter_ns() - int(1e9)
+        out = RequestFuncOutput(success=False, error="swallowed timeout")
+        with caplog.at_level(
+            logging.INFO, logger="max.benchmark.benchmark_shared.request"
+        ):
+            result = mark_cancelled_if_past_deadline(out, past)
+        assert result is out
+        assert out.cancelled is True
+        # The reclassification is logged so the user is aware the request was
+        # cut off by benchmark end rather than silently dropped.
+        assert any(
+            "cut off by benchmark end" in rec.message for rec in caplog.records
+        )
+
+    def test_failed_before_deadline_stays_failed(self) -> None:
+        future = time.perf_counter_ns() + int(60 * 1e9)
+        out = RequestFuncOutput(success=False, error="real failure")
+        mark_cancelled_if_past_deadline(out, future)
+        assert out.cancelled is False
+
+    def test_failed_unbounded_deadline_stays_failed(self) -> None:
+        out = RequestFuncOutput(success=False, error="real failure")
+        mark_cancelled_if_past_deadline(out, None)
+        assert out.cancelled is False
+
+    def test_success_past_deadline_untouched(self) -> None:
+        past = time.perf_counter_ns() - int(1e9)
+        out = RequestFuncOutput(success=True)
+        mark_cancelled_if_past_deadline(out, past)
+        assert out.cancelled is False
