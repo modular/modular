@@ -35,8 +35,9 @@ def loadTile(
     maxRow: Int,
     maxCol: Int,
     T_s: UnsafePointer[
+        mut=True,
         Scalar[DType.float32],
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
     ],
     ldas: Int,
@@ -71,8 +72,8 @@ def loadTile(
 
 
 def mm_tiled_kernel(
-    A: UnsafePointer[Float32, MutAnyOrigin],
-    B: UnsafePointer[Float32, MutAnyOrigin],
+    A: UnsafePointer[Float32, ImmutAnyOrigin],
+    B: UnsafePointer[Float32, ImmutAnyOrigin],
     C: UnsafePointer[Float32, MutAnyOrigin],
     M: UInt32,
     N: UInt32,
@@ -156,7 +157,7 @@ def mm_tiled_kernel(
 def cpu_mm(
     A: UnsafePointer[Float32, _],
     B: UnsafePointer[Float32, _],
-    C: UnsafePointer[Float32, MutAnyOrigin],
+    C: UnsafePointer[mut=True, Float32, _],
     M: Int,
     N: Int,
     K: Int,

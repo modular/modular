@@ -23,7 +23,7 @@ comptime NUM_BINS = 256
 
 # ========================== KERNEL CODE ==========================
 def histogram_kernel(
-    image: UnsafePointer[UInt8, MutAnyOrigin],
+    image: UnsafePointer[UInt8, ImmutAnyOrigin],
     bins: UnsafePointer[UInt32, MutAnyOrigin],
     bins_pool: UnsafePointer[UInt32, MutAnyOrigin],
     width: UInt32,
@@ -58,8 +58,8 @@ def histogram_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_histogram(
-    image: UnsafePointer[UInt8, MutAnyOrigin],
-    bins: UnsafePointer[UInt32, MutAnyOrigin],
+    image: UnsafePointer[mut=False, UInt8, _],
+    bins: UnsafePointer[mut=True, UInt32, _],
     width: UInt32,
     height: UInt32,
 ):

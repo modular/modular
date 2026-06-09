@@ -172,9 +172,9 @@ def merge_sequential_circular(
 
 
 def merge_circular_buffer_kernel(
-    A: UnsafePointer[Int32, MutAnyOrigin],
+    A: UnsafePointer[Int32, ImmutAnyOrigin],
     m: Int,
-    B: UnsafePointer[Int32, MutAnyOrigin],
+    B: UnsafePointer[Int32, ImmutAnyOrigin],
     n: Int,
     C: UnsafePointer[Int32, MutAnyOrigin],
     tile_size: Int,
@@ -338,7 +338,7 @@ def cpu_merge(
     m: Int,
     B: UnsafePointer[Int32, _],
     n: Int,
-    C: UnsafePointer[Int32, MutAnyOrigin],
+    C: UnsafePointer[mut=True, Int32, _],
 ):
     """CPU reference implementation of merge.
 

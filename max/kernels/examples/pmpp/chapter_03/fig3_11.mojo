@@ -50,9 +50,9 @@ def matrix_mul_kernel(
 
 
 def matmul_cpu(
-    A_host: UnsafePointer[Float32, _],
-    B_host: UnsafePointer[Float32, _],
-    C_ref: UnsafePointer[Float32, MutAnyOrigin],
+    A_host: UnsafePointer[mut=False, Float32, _],
+    B_host: UnsafePointer[mut=False, Float32, _],
+    C_ref: UnsafePointer[mut=True, Float32, _],
     Width: Int,
 ):
     """CPU reference implementation for matrix multiplication.
@@ -139,7 +139,7 @@ def main() raises:
         ctx.synchronize()
 
     # Run CPU matrix multiplication
-    matmul_cpu(A_h, B_h, C_ref, Width)
+    matmul_cpu(A_h, B_h, C_ref.as_any_origin(), Width)
 
     # Compare results (allow small floating point error)
     var errors = 0
