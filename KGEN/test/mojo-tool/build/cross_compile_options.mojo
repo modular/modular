@@ -69,7 +69,7 @@ from std.sys.info import CompilationTarget
 
 
 @export
-def has_avx512f() -> Bool:
+def has_avx512f() abi("C") -> Bool:
     return CompilationTarget.has_avx512f()
 
 

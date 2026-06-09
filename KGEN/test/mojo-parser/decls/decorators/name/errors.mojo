@@ -22,14 +22,14 @@ def name_two_args():
 # expected-error @+1 {{function has conflicting linkage name from a previous @__name or @export decorator}}
 @__name("first_name")
 @export("different_name")
-def name_export_conflict():
+def name_export_conflict() abi("C"):
     ...
 
 
 # expected-error @+1 {{function has conflicting linkage name from a previous @__name or @export decorator}}
 @export("first_name")
 @__name("different_name")
-def export_name_conflict():
+def export_name_conflict() abi("C"):
     ...
 
 

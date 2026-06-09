@@ -8,7 +8,7 @@
 
 
 @export
-def use_mlir_attr_warning_subscript(a: Int, b: Int) -> Bool:
+def use_mlir_attr_warning_subscript(a: Int, b: Int) abi("Mojo") -> Bool:
     # expected-warning @+2 {{trivially constructable attribute. Use `__mlir_attr` instead.}}
     var res = __mlir_op.`index.cmp`[
         pred=__mlir_deferred_attr[`#index<cmp_predicate sle>`]
@@ -17,7 +17,7 @@ def use_mlir_attr_warning_subscript(a: Int, b: Int) -> Bool:
 
 
 @export
-def use_mlir_attr_warning_backticks(a: Int, b: Int) -> Bool:
+def use_mlir_attr_warning_backticks(a: Int, b: Int) abi("Mojo") -> Bool:
     # expected-warning @+2 {{trivially constructable attribute. Use `__mlir_attr` instead}}
     var res = __mlir_op.`index.cmp`[
         pred=__mlir_deferred_attr.`#index<cmp_predicate sle>`

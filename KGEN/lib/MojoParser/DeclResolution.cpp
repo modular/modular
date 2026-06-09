@@ -646,9 +646,6 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
       decl.setErroneous();
       return failure();
     }
-    // TODO: require explicit abi() effect on all @export functions.
-    // TODO: bool isCExport = tcSignature.argList.effects.isCABI();
-    // TODO: if (!tcSignature.argList.hasExplicitABI) { error }
     IREmitter emitter(sigDecl, EC_Decorator);
     applyExportLike(decorator->getLoc(), /*isExport=*/true, callNode, emitter);
   } else if (spelling == "__name") {
@@ -1022,6 +1019,9 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
       emitError(loc, *simpleLinkageName) << " is not a valid C identifier";
       return;
     }
+  } else if (!tcSignature.argList.hasExplicitABI) {
+    emitWarning(loc, spelling)
+        << " requires an explicit 'abi()' effect on the function";
   }
 
   // FIXME: This is an incomplete check as doesn't handle complex
