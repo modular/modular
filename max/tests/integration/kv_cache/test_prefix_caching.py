@@ -29,9 +29,6 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
-from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
-    _LUT_FILL_PATTERN,
-)
 from max.pipelines.modeling.types import RequestID
 from max.support.image import hash_image
 from test_common.context_utils import create_text_context
@@ -50,9 +47,11 @@ def get_blocks_from_kv_tuple(
 
 # Runtime lookup tables are padded with sentinel `total_num_pages` in any
 # unused columns, so tests should compare only assigned block ids.
-def assigned_blocks(kv_tuple: KVCacheInputs[Buffer, Buffer]) -> list[list[int]]:
+def assigned_blocks(
+    kv_tuple: KVCacheInputs[Buffer, Buffer], total_num_pages: int
+) -> list[list[int]]:
     return [
-        [block for block in row if block != _LUT_FILL_PATTERN]
+        [block for block in row if block != total_num_pages]
         for row in get_blocks_from_kv_tuple(kv_tuple)
     ]
 
@@ -119,7 +118,7 @@ async def test_prefix_caching_basic() -> None:
     kv_manager.step([batch])
 
     # Check that we got new blocks
-    assert assigned_blocks(kv_inputs)[0] == [
+    assert assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0] == [
         0,
         1,
         2,
@@ -155,7 +154,7 @@ async def test_prefix_caching_basic() -> None:
     kv_manager.step([batch])
 
     # Check that we got cached blocks, except for last token in prompt
-    assigned = assigned_blocks(kv_inputs)[0]
+    assigned = assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0]
     assert assigned[:3] == [0, 1, 2]
     assert assigned[3] != 3
 
@@ -167,7 +166,7 @@ async def test_prefix_caching_basic() -> None:
             1,
             len(initial_prompt_2) + i + 1,
         ]
-        assigned = assigned_blocks(kv_inputs)[0]
+        assigned = assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0]
         assert assigned[:4] == [0, 1, 2, 3]
         batch[0].update(toks[i + 1])
         kv_manager.step([batch])
@@ -401,7 +400,11 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0, num_steps=5)
     kv_inputs = kv_manager.runtime_inputs([batch])
-    assert assigned_blocks(kv_inputs)[0] == [0, 1, 2]
+    assert assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0] == [
+        0,
+        1,
+        2,
+    ]
     assert get_uncommitted_and_committed_block_counts(kv_inputs) == [
         [5, 5],
     ]
@@ -411,7 +414,11 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
 
     # Seq 1: Token gen 15
     kv_inputs = kv_manager.runtime_inputs([batch])
-    assert assigned_blocks(kv_inputs)[0] == [0, 1, 2]
+    assert assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0] == [
+        0,
+        1,
+        2,
+    ]
     assert get_uncommitted_and_committed_block_counts(kv_inputs) == [
         [1, 6],
     ]
@@ -421,7 +428,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
 
     # Seq 1: Token gen 16
     kv_inputs = kv_manager.runtime_inputs([batch])
-    assert assigned_blocks(kv_inputs)[0] == [
+    assert assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0] == [
         0,
         1,
         2,
@@ -446,7 +453,7 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0, num_steps=5)
     kv_inputs = kv_manager.runtime_inputs([batch], num_steps=3)
-    assert assigned_blocks(kv_inputs)[0] == [
+    assert assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0] == [
         0,
         1,
         2,
@@ -466,7 +473,7 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
     for ctx in batch:
         kv_manager.alloc(ctx, replica_idx=0, num_steps=2)
     kv_inputs = kv_manager.runtime_inputs([batch], num_steps=2)
-    assert assigned_blocks(kv_inputs)[0] == [
+    assert assigned_blocks(kv_inputs, kv_manager._total_num_pages)[0] == [
         0,
         1,
         2,

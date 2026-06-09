@@ -98,15 +98,27 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 
 class ChatCompletionResponseMessage(_OpenAIChatCompletionMessage):
-    """OpenAI assistant message extended with MAX ``reasoning`` text."""
+    """OpenAI assistant message extended with MAX reasoning text.
+
+    Reasoning is emitted under both ``reasoning`` (OpenAI Responses API
+    naming) and ``reasoning_content`` (the naming used by vLLM, SGLang, and
+    the DeepSeek API). Carrying both lets either family of clients surface a
+    thinking model's chain-of-thought; the two always hold the same text.
+    """
 
     reasoning: str | None = None
+    reasoning_content: str | None = None
 
 
 class ChatCompletionStreamResponseDelta(_OpenAIChoiceDelta):
-    """OpenAI stream delta extended with MAX ``reasoning`` text."""
+    """OpenAI stream delta extended with MAX reasoning text.
+
+    Mirrors :class:`ChatCompletionResponseMessage`: each delta carries the
+    reasoning fragment under both ``reasoning`` and ``reasoning_content``.
+    """
 
     reasoning: str | None = None
+    reasoning_content: str | None = None
 
 
 class ChatCompletionResponseChoice(_OpenAIChatCompletionChoice):

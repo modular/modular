@@ -68,20 +68,23 @@ def create_tiered_connector(
         devices=[DeviceRef.GPU()],
     )
 
-    device_buffers = [
+    device_values = [
         Buffer(
             shape=[num_device_blocks, *kv_params.shape_per_block],
             dtype=kv_params.dtype,
             device=device,
         )
     ]
+    kv_buffer = KVCacheBuffer(
+        total_num_pages=num_device_blocks,
+        values=device_values,
+        page_size=page_size,
+        replicates_kv_across_tp=False,
+    )
 
     return TieredConnector(
-        params=kv_params,
         devices=[device],
-        device_buffers=KVCacheBuffer(
-            total_num_pages=num_device_blocks, values=device_buffers
-        ).all_buffers,
+        kv_memory=kv_buffer.to_memory(),
         total_num_host_blocks=num_host_blocks,
         disk_cache_dir=disk_cache_dir,
         max_disk_size_gb=max_disk_size_gb,
@@ -629,20 +632,23 @@ def _make_connector_and_buffers(
                 device=device,
             )
         ]
-    device_buffers = KVCacheBuffer(
-        total_num_pages=num_device_blocks, values=values, scales=scales
-    ).all_buffers
+    kv_buffer = KVCacheBuffer(
+        total_num_pages=num_device_blocks,
+        values=values,
+        scales=scales,
+        page_size=page_size,
+        replicates_kv_across_tp=False,
+    )
 
     connector = TieredConnector(
-        params=kv_params,
         devices=[device],
-        device_buffers=device_buffers,
+        kv_memory=kv_buffer.to_memory(),
         total_num_host_blocks=num_host_blocks,
         disk_cache_dir=disk_cache_dir,
         max_disk_size_gb=1.0,
         synchronous_d2h_copy_mode=True,
     )
-    return connector, device_buffers
+    return connector, kv_buffer.all_buffers
 
 
 def _evict_cpu_prefix(
@@ -874,7 +880,6 @@ def _build_multi_cache_manager(
         disk_offload_dir=disk_dir,
         disk_offload_max_gb=1.0,
         disk_offload_direct_io=False,
-        use_debug_tiered_mode=False,
         host_kvcache_swap_space_gb=999.0,
     )
     sliding = _fp8_cache_params(cfg, n_kv_heads=4, head_dim=256)  # idx0

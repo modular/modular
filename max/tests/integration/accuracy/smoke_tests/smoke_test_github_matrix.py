@@ -54,6 +54,9 @@ INTERNAL_ONLY = set(RUNNERS) - {"8xB200_internal"}
 #   - use NON_XL       to skip on everything except 8xB200 and 4xMI355
 #   - use DISABLE      to skip on all runners (temporarily disable a model)
 #
+# Custom recipe variants (CUSTOM_MODELS, any key with "__") are MAX only and are
+# auto-excluded from vllm and sglang by excluded(); no per-entry tag needed.
+#
 # If you want to add a model to the smoke test:
 #   1. Trigger the smoke test job with the model name you want to add:
 #   https://github.com/modularml/modular/actions/workflows/pipelineVerification.yaml
@@ -121,8 +124,8 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": NON_XL | {"4xMI355"},
     # TODO(SERVOPT-1168): Support multi-GPU eagle llama
-    "meta-llama/Llama-3.1-8B-Instruct__eagle": MULTI | {"vllm", "sglang"},
-    "meta-llama/Llama-3.1-8B-Instruct__dflash": MULTI | {"vllm", "sglang"},
+    "meta-llama/Llama-3.1-8B-Instruct__eagle": MULTI,
+    "meta-llama/Llama-3.1-8B-Instruct__dflash": MULTI,
     "nvidia/Kimi-K2.5-NVFP4__dflash_tp": DISABLE,  # MXSERV-84
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": DISABLE,  # MXSERV-84
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"4xMI355"},
@@ -139,15 +142,13 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/Gemma-4-26B-A4B-NVFP4__tieredkv": MULTI | {"MI355"},
     "nvidia/Gemma-4-31B-IT-NVFP4__localkv": MULTI | {"MI355"},
     "nvidia/Gemma-4-31B-IT-NVFP4__tieredkv": MULTI | {"MI355"},
-    "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
-    "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
-    "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
-    "meta-llama/Llama-3.1-8B-Instruct__debug_tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
+    "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": MULTI | {"MI355"},
+    "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"MI355"},
+    "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"MI355"},
     "nvidia/Kimi-K2.5-NVFP4__tpep": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.5-NVFP4__local_kvconnector": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__debug_tiered_kvconnector": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep": NON_XL | {"4xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": NON_XL | {"4xMI355"},
     "nvidia/Kimi-K2.6-NVFP4__eagle_tiered_kvconnector": NON_XL | {"4xMI355"},
 }
@@ -172,6 +173,9 @@ if (
 def excluded(framework: str, gpu: str, model: str) -> bool:
     """Check if a model is excluded from a given framework and/or GPU."""
     if gpu in HW_EX.get(framework, set()):
+        return True
+    # Custom MAX recipe variants are MAX only; no vLLM/SGLang equivalent.
+    if model in CUSTOM_MODELS and framework in {"vllm", "sglang"}:
         return True
     tags = MODELS.get(model, set())
     return framework in tags or gpu in tags or f"{framework}@{gpu}" in tags

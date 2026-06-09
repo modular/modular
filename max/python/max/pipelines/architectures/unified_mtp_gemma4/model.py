@@ -435,13 +435,6 @@ class UnifiedMTPGemma4Model(
             draft_kv_blocks=draft_kv_cache_buffers,
         )
 
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedMTPGemma4Inputs:
-        raise NotImplementedError("MTP does not support Multistep execution")
-
     @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
