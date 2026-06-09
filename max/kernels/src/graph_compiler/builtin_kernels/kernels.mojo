@@ -200,7 +200,7 @@ def _unsafe_str_to_coord[
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
 @export
-def export():
+def export() abi("Mojo"):
     comptime _simd_load_from_managed_tensor_slice = simd_load_from_managed_tensor_slice
     comptime _simd_store_into_managed_tensor_slice = simd_store_into_managed_tensor_slice
 

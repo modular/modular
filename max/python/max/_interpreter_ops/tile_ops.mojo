@@ -39,7 +39,7 @@ from op_utils import (
 
 
 @export
-def PyInit_tile_ops() -> PythonObject:
+def PyInit_tile_ops() abi("C") -> PythonObject:
     """Create a Python module with tile kernel function bindings."""
     try:
         var b = PythonModuleBuilder("tile_ops")

@@ -43,7 +43,7 @@ from op_utils import (
 
 
 @export
-def PyInit_bottomk_ops() -> PythonObject:
+def PyInit_bottomk_ops() abi("C") -> PythonObject:
     """Create a Python module with bottom_k kernel function bindings."""
     try:
         var b = PythonModuleBuilder("bottomk_ops")

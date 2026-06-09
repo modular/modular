@@ -20,7 +20,7 @@ from std.python._cpython import PyObjectPtr
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     """Create a Python module with function bindings for `mojo_block_hasher`."""
     try:
         var b = PythonModuleBuilder("mojo_module")
@@ -101,7 +101,6 @@ def _mojo_block_hasher[
     return PythonObject(from_owned=result_py_list)
 
 
-@export
 def mojo_block_hasher(
     py_array_object: PythonObject,
     block_size_obj: PythonObject,

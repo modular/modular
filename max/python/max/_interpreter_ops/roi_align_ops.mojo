@@ -41,7 +41,7 @@ from op_utils import (
 
 
 @export
-def PyInit_roi_align_ops() -> PythonObject:
+def PyInit_roi_align_ops() abi("C") -> PythonObject:
     """Create a Python module with ROI Align kernel function bindings."""
     try:
         var b = PythonModuleBuilder("roi_align_ops")

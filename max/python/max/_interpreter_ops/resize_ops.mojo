@@ -79,7 +79,7 @@ def _dispatch_float_dtype[T: Dispatchable](body: T, dtype: DType) raises:
 
 
 @export
-def PyInit_resize_ops() -> PythonObject:
+def PyInit_resize_ops() abi("C") -> PythonObject:
     """Create a Python module with resize kernel function bindings."""
     try:
         var b = PythonModuleBuilder("resize_ops")

@@ -33,7 +33,7 @@ from op_utils import _get_dtype, _get_ctx, _make_ptr
 
 
 @export
-def PyInit_conv_ops() -> PythonObject:
+def PyInit_conv_ops() abi("C") -> PythonObject:
     """Create a Python module with convolution kernel function bindings."""
     try:
         var b = PythonModuleBuilder("conv_ops")

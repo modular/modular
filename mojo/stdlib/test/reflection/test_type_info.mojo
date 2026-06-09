@@ -62,7 +62,7 @@ def test_get_linkage_name_on_itself() raises:
 
 
 @export("export_as_other_name")
-def export_func():
+def export_func() abi("Mojo"):
     pass
 
 

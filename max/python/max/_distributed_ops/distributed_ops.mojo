@@ -27,7 +27,7 @@ from layout import Idx, TileTensor, row_major
 
 
 @export
-def PyInit_distributed_ops() -> PythonObject:
+def PyInit_distributed_ops() abi("C") -> PythonObject:
     """Creates a Python module with distributed-ops bindings."""
     try:
         var b = PythonModuleBuilder("distributed_ops")
@@ -37,7 +37,6 @@ def PyInit_distributed_ops() -> PythonObject:
         abort(t"failed to create distributed_ops bindings module: {e}")
 
 
-@export
 def broadcast_kernel(
     input_data_ptr: PythonObject,
     output_buffers: PythonObject,

@@ -102,6 +102,11 @@ This version is still a work in progress.
   def new() abi("C"): pass
   ```
 
+- Functions marked `@export` must now be given an explicit `abi` effect, rather
+  than relying implicitly on the default (equivalent to `abi("Mojo")`). The
+  compiler will produce a warning on missing `abi` effects, which will become
+  an error in a future release.
+
 ## Library changes
 
 - The `axis` of the `nn.split` kernel is now a keyword-only compile-time

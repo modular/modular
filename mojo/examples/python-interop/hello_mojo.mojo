@@ -20,7 +20,7 @@ from std.python.bindings import PythonModuleBuilder
 
 # An interface for this Mojo module must be exported to Python.
 @export
-def PyInit_hello_mojo() -> PythonObject:
+def PyInit_hello_mojo() abi("C") -> PythonObject:
     try:
         # A Python module is constructed, matching the name of this Mojo module.
         var module = PythonModuleBuilder("hello_mojo")

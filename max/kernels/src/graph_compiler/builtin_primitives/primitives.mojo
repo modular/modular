@@ -121,7 +121,9 @@ def create_index_async(value: Int, async_ptr: OpaquePointer[MutAnyOrigin]):
 
 @no_inline
 @export
-def create_si64_async(value: Int64, async_ptr: OpaquePointer[MutAnyOrigin]):
+def create_si64_async(
+    value: Int64, async_ptr: OpaquePointer[MutAnyOrigin]
+) abi("Mojo"):
     external_call["MGP_RT_CreateAsync_int64t", NoneType](value, async_ptr)
 
 
@@ -162,7 +164,7 @@ def create_tensor_spec_async[
 
 
 @export
-def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
+def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]) abi("Mojo"):
     pass
 
 
@@ -370,7 +372,7 @@ def mgp_buffer_alloc(
 def mgp_buffer_constant(
     resource_ptr: OpaquePointer[MutAnyOrigin],
     resource_bytecount: Int,
-) -> MutByteBuffer:
+) abi("Mojo") -> MutByteBuffer:
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
     return MutByteBuffer(
@@ -713,7 +715,7 @@ def mgp_tensor_spec_get_dim[
 
 
 @export
-def mgp_device_context_destroy(dev_ctx: DeviceContext):
+def mgp_device_context_destroy(dev_ctx: DeviceContext) abi("Mojo"):
     # DeviceContext is refcounted, we don't need to explicitly destroy it
     pass
 

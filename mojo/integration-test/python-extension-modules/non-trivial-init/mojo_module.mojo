@@ -17,7 +17,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     """Create a Python module with MojoPair type that supports non-trivial initialization.
     """
     try:

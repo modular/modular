@@ -40,7 +40,7 @@ from op_utils import (
 
 
 @export
-def PyInit_split_ops() -> PythonObject:
+def PyInit_split_ops() abi("C") -> PythonObject:
     """Create a Python module with split kernel function bindings."""
     try:
         var b = PythonModuleBuilder("split_ops")

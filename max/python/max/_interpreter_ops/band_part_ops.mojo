@@ -44,7 +44,7 @@ from op_utils import (
 
 
 @export
-def PyInit_band_part_ops() -> PythonObject:
+def PyInit_band_part_ops() abi("C") -> PythonObject:
     """Create a Python module with band_part kernel function bindings."""
     try:
         var b = PythonModuleBuilder("band_part_ops")
