@@ -1175,6 +1175,7 @@ struct Softmax:
     def execute[
         target: StaticString,
         axis: Int,
+        has_prologue_fusion: Bool,
     ](
         output: OutputTensor[...],
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
@@ -1196,6 +1197,7 @@ struct Softmax:
             output.rank,
             input_fn,
             target,
+            has_prologue_fusion=has_prologue_fusion,
         ](
             Coord(output.shape()),
             output.to_tile_tensor[DType.int64](),
@@ -1210,6 +1212,7 @@ struct LogSoftmax:
     def execute[
         target: StaticString,
         axis: Int,
+        has_prologue_fusion: Bool,
     ](
         output: OutputTensor[...],
         input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
@@ -1227,6 +1230,7 @@ struct LogSoftmax:
             output.rank,
             input_fn,
             target,
+            has_prologue_fusion=has_prologue_fusion,
         ](
             Coord(output.shape()),
             output.to_tile_tensor[DType.int64](),

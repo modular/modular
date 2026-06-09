@@ -549,6 +549,7 @@ def logsoftmax[
         dtype, _simd_width
     ],
     target: StaticString = "cpu",
+    has_prologue_fusion: Bool = True,
 ](
     shape: Coord,
     output: TileTensor[mut=True, dtype, ...],
@@ -562,6 +563,7 @@ def logsoftmax[
         input_fn,
         target,
         logsoftmax=True,
+        has_prologue_fusion=has_prologue_fusion,
     ](shape, output, axis, context)
 
 
@@ -828,9 +830,10 @@ def softmax_kernel[
 comptime _SinkWeightsTTLayout = LTToTTLayout[Layout.row_major(UNKNOWN_VALUE)]
 
 
-@__name(t"softmax_warp_{dtype}_{WARP_ROWS}")
+@__name(t"softmax_warp_{dtype}_{WARP_ROWS}_fused_{has_prologue_fusion}")
 def _softmax_warp_kernel[
     WARP_ROWS: Int,
+    has_prologue_fusion: Bool,
     input_fn: def[_dtype: DType, _simd_width: Int, _rank: Int](
         IndexList[_rank]
     ) capturing[_] -> SIMD[_dtype, _simd_width],
@@ -861,6 +864,8 @@ def _softmax_warp_kernel[
         for row_idx in range(
             block_idx.x * WARP_ROWS + warp_idx, num_rows, row_stride
         ):
+            # Flat coords for the (always contiguous) store, and for the load
+            # when there is no real input fusion.
             var coords = IndexList[rank](0)
             comptime if rank >= 2:
                 coords[axis - 1] = row_idx
@@ -868,26 +873,22 @@ def _softmax_warp_kernel[
             var val = min_or_neg_inf[accum_type]()
             var has_data = lane < row_size
             if has_data:
-                # Decompose row_idx into the TRUE n-D coordinate and let
-                # `input_fn` apply its own strides. This is correct for any
-                # input -- a plain contiguous tensor OR a fused producer (an
-                # elementwise op or a coordinate-remapping view such as a
-                # slice/transpose), which a flat `row*row_size + lane` load
-                # would read wrong. For a static graph shape `output.dim[d]()`
-                # are compile-time constants, so the per-row divmod folds to
-                # shifts. (A contiguity-gated flat fast path is a follow-up.)
-                var load_coords = IndexList[rank](0)
-                var rem = row_idx
+                comptime if has_prologue_fusion:
+                    var load_coords = IndexList[rank](0)
+                    var rem = row_idx
 
-                comptime for di in range(axis):
-                    comptime d = axis - 1 - di
-                    var dim_d = Int(output.dim[d]())
-                    load_coords[d] = umod(rem, dim_d)
-                    rem = ufloordiv(rem, dim_d)
-                load_coords[axis] = lane
-                val = input_fn[dtype, 1, rank](load_coords).cast[accum_type]()[
-                    0
-                ]
+                    comptime for di in range(axis):
+                        comptime d = axis - 1 - di
+                        var dim_d = Int(output.dim[d]())
+                        load_coords[d] = umod(rem, dim_d)
+                        rem = ufloordiv(rem, dim_d)
+                    load_coords[axis] = lane
+                    val = input_fn[dtype, 1, rank](load_coords).cast[
+                        accum_type
+                    ]()[0]
+                else:
+                    coords[axis] = lane
+                    val = input_fn[dtype, 1, rank](coords).cast[accum_type]()[0]
 
             var row_max = warp.max(SIMD[accum_type, 1](val))[0]
 
@@ -915,6 +916,7 @@ def _softmax_gpu[
     sink: Bool = False,
     sink_type: DType = dtype,
     logsoftmax: Bool = False,
+    has_prologue_fusion: Bool = True,
 ](
     shape: Coord,
     output: TileTensor[mut=True, dtype, ...],
@@ -959,6 +961,7 @@ def _softmax_gpu[
                 )
                 comptime warp_kernel = _softmax_warp_kernel[
                     WARP_ROWS,
+                    has_prologue_fusion,
                     input_fn_wrapper,
                     dtype,
                     rank,
@@ -1052,6 +1055,7 @@ def softmax[
     ],
     target: StaticString = "cpu",
     logsoftmax: Bool = False,
+    has_prologue_fusion: Bool = True,
 ](
     shape: Coord,
     output: TileTensor[mut=True, dtype, ...],
@@ -1087,6 +1091,7 @@ def softmax[
                 rank,
                 input_fn,
                 logsoftmax=logsoftmax,
+                has_prologue_fusion=has_prologue_fusion,
             ](
                 shape,
                 output,

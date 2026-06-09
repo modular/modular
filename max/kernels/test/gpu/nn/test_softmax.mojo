@@ -230,20 +230,19 @@ def test_gpu_softmax_warp_short_axis[
     //,
     test_type: DType,
     shape: IndexList[rank],
+    has_prologue_fusion: Bool = False,
 ](ctx: DeviceContext) raises:
     """Regression for `_softmax_gpu` over the inner axis of a rank-`rank`
     tensor of static `shape`.
 
     Inner axis `shape[rank-1] <= WARP_SIZE` takes the warp-per-row fast path;
-    a larger inner axis takes the block-per-row path. Compares the GPU result
-    against the fp32 CPU reference elementwise and checks unit row sums.
-    `shape[rank-1] == 24` is the customer inner dim. The load decomposes the
-    row index into true coordinates, so it is correct for any input layout.
     """
     print(
         "== test_gpu_softmax_warp_short_axis",
         test_type,
         shape,
+        "has_prologue_fusion=",
+        has_prologue_fusion,
     )
     seed(42)
 
@@ -299,6 +298,7 @@ def test_gpu_softmax_warp_short_axis[
         1,
         rank,
         input_fn_device,
+        has_prologue_fusion=has_prologue_fusion,
     ](
         Coord(shape),
         TileTensor(out_device_test_ptr, row_major(Coord(shape))),
@@ -345,8 +345,10 @@ def test_gpu_softmax_verify_shapes[test_type: DType](ctx: DeviceContext) raises:
     including the customer inner dim 24 and the boundary at WARP_SIZE.
     """
     print("== test_gpu_softmax_verify_shapes", test_type)
-    # Warp-per-row path (inner axis <= WARP_SIZE), including the customer inner
-    # dim 24 and the boundary at WARP_SIZE.
+    # Warp-per-row path (inner axis <= WARP_SIZE), exercising both the flat fast
+    # path (has_prologue_fusion=False) and the true-coordinate fusion-safe path
+    # (has_prologue_fusion=True). Both must match the reference. Includes the
+    # customer inner dim 24 and the boundary at WARP_SIZE.
     test_gpu_softmax_warp_short_axis[test_type, IndexList[4](1, 1, 1, 1)](ctx)
     test_gpu_softmax_warp_short_axis[test_type, IndexList[4](2, 3, 5, 7)](ctx)
     test_gpu_softmax_warp_short_axis[test_type, IndexList[4](16, 16, 16, 16)](
@@ -354,9 +356,15 @@ def test_gpu_softmax_verify_shapes[test_type: DType](ctx: DeviceContext) raises:
     )
     # Customer inner dim.
     test_gpu_softmax_warp_short_axis[test_type, IndexList[4](8, 16, 8, 24)](ctx)
+    test_gpu_softmax_warp_short_axis[
+        test_type, IndexList[4](8, 16, 8, 24), has_prologue_fusion=True
+    ](ctx)
     # == WARP_SIZE boundary.
     test_gpu_softmax_warp_short_axis[test_type, IndexList[4](4, 8, 16, 32)](ctx)
-    # Block-per-row path (inner axis > WARP_SIZE).
+    test_gpu_softmax_warp_short_axis[
+        test_type, IndexList[4](4, 8, 16, 32), has_prologue_fusion=True
+    ](ctx)
+    # Block-per-row path (inner axis > WARP_SIZE; has_prologue_fusion unused there).
     test_gpu_softmax_warp_short_axis[test_type, IndexList[4](4, 8, 16, 33)](ctx)
     test_gpu_softmax_warp_short_axis[test_type, IndexList[4](4, 8, 16, 64)](ctx)
     test_gpu_softmax_warp_short_axis[test_type, IndexList[4](2, 4, 8, 128)](ctx)
