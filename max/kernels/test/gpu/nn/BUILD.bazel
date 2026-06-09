@@ -10,6 +10,13 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # No SM100/B200-specific code; runs on any GPU. Apple is excluded because
+    # `_block_reduce_topk` uses MAX_BLOCK_SIZE == WARP_SIZE there, which the
+    # 128-thread block in the test would exceed.
+    "test_sparse_indexer_common.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
