@@ -21,7 +21,9 @@ params:
   shape: 32x128256
 - dtype: bfloat16
   shape: 128x128256
-
+- dtype: bfloat16
+  shape: 8x4096x1024x24
+  
 # Attention softmax shapes (seq_len dimension)
 - dtype: bfloat16
   shape: 32x512
