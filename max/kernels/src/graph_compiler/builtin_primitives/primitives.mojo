@@ -21,6 +21,7 @@ import std.algorithm
 from extensibility import StaticTensorSpec
 from extensibility import (
     ComputeOutputFusion,
+    ComputeOutputFusionTile,
     ElementwiseFusion,
     InputFusion,
     OutputFusion,
@@ -1618,6 +1619,61 @@ def foreach[
     ](wrapper, tensor.shape_coord(), ctx)
 
 
+@fieldwise_init
+struct _ElementwiseFusionAdapter[
+    dtype: DType,
+    rank: Int,
+    InFusion: InputFusion,
+    OutFusion: OutputFusion,
+    ComputeFusion: ComputeOutputFusion,
+    ComputeFusionTile: ComputeOutputFusionTile,
+    io_spec: IOSpec[True, _],
+    static_spec: StaticTensorSpec[
+        dtype, rank, _, InFusion, OutFusion, ComputeFusion, ComputeFusionTile
+    ],
+    //,
+    E: ElementwiseFusion,
+](
+    ImplicitlyCopyable,
+    RegisterPassable,
+    def[width: Int, alignment: Int = 1](Coord) -> None,
+):
+    """Per-element body for `foreach_fusion`, holding the fusion struct and
+    output tensor by value.
+
+    Named adapter twin of a `{var elem, var tensor}` closure: a closure over
+    the generic `E` synthesizes a parametric-witness `lit.closure.init` the
+    MOGG package loader can't resolve, so the body is a concrete
+    register-passable struct instead. Passing the instance by value to
+    `elementwise` carries `elem` (and the tensor's ptr/shape/strides) through
+    `crossDeviceCaptures` by value.
+
+    Parameters:
+        dtype: The data type of the tensor elements.
+        rank: The rank of the tensor.
+        InFusion: The tensor's input-fusion type.
+        OutFusion: The tensor's output-fusion type.
+        ComputeFusion: The tensor's compute-output-fusion type.
+        ComputeFusionTile: The tensor's compute-output-fusion-tile type.
+        io_spec: The tensor's IO spec.
+        static_spec: The tensor's static spec.
+        E: The elementwise fusion struct type.
+    """
+
+    var elem: Self.E
+    var tensor: ManagedTensorSlice[
+        io_spec=Self.io_spec, static_spec=Self.static_spec
+    ]
+
+    @always_inline
+    def __call__[width: Int, alignment: Int = 1](self, index: Coord):
+        var idx = rebind[IndexList[Self.rank]](coord_to_index_list(index))
+        var val = self.elem.compute[Self.dtype, Self.rank, width, alignment](
+            idx
+        )
+        self.tensor._fused_store[element_alignment=alignment](idx, val)
+
+
 @register_internal("mogg.call.foreach")
 @no_inline
 def foreach_fusion[
@@ -1631,7 +1687,7 @@ def foreach_fusion[
     _trace_name: StaticString = "mogg.for_each",
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    elem: E,
+    var elem: E,
     ctx: DeviceContext,
 ) raises:
     """Apply a pure elementwise fusion to each element of the tensor slice.
@@ -1650,19 +1706,21 @@ def foreach_fusion[
         ctx: The call context (forward this from the custom operation).
     """
 
-    @parameter
-    @always_inline
-    def wrapper[
-        width: Int, element_alignment: Int
-    ](index: IndexList[rank]) capturing -> SIMD[dtype, width]:
-        return elem.compute[dtype, rank, width, element_alignment](index)
+    # Capture `elem` by value through a named adapter struct rather than a
+    # closure. A `{var elem}` closure over the generic `E` synthesizes a
+    # `lit.closure.init` with parametric witnesses the package loader can't
+    # resolve (see functional.mojo `_IndexListToCoordAdapter`); the adapter is
+    # a concrete register-passable type, so passing it by value to
+    # `elementwise` sends `elem`'s decomposed ptr/shape/strides through
+    # `crossDeviceCaptures` by value — which the host-stack `@parameter
+    # capturing` form did not.
+    var adapter = _ElementwiseFusionAdapter[E](elem, tensor)
 
-    foreach[
-        func=wrapper,
-        target=target,
+    std.algorithm.functional.elementwise[
         simd_width=simd_width,
-        _trace_name=_trace_name,
-    ](tensor, ctx)
+        target=target,
+        _trace_description=_trace_name,
+    ](adapter, Coord(tensor.shape()), ctx)
 
 
 @register_internal("mogg.for_each.out_func")
