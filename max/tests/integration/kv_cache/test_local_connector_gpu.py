@@ -58,9 +58,7 @@ def create_local_connector(
         )
     ]
     kv_buffer = KVCacheBuffer(
-        total_num_pages=num_device_blocks,
         values=device_values,
-        page_size=page_size,
         replicates_kv_across_tp=False,
     )
 

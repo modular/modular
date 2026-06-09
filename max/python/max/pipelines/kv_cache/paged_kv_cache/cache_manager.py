@@ -322,7 +322,6 @@ class PagedKVCacheManager:
                 devices=replica_devices,
                 kv_buffers=kv_buffers_to_offload,
                 total_num_host_blocks=total_num_host_pages,
-                total_num_blocks=total_num_pages,
             )
 
             persistent_kv_device_input_buffers = (

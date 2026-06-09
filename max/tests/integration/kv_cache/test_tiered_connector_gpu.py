@@ -76,9 +76,7 @@ def create_tiered_connector(
         )
     ]
     kv_buffer = KVCacheBuffer(
-        total_num_pages=num_device_blocks,
         values=device_values,
-        page_size=page_size,
         replicates_kv_across_tp=False,
     )
 
@@ -633,10 +631,8 @@ def _make_connector_and_buffers(
             )
         ]
     kv_buffer = KVCacheBuffer(
-        total_num_pages=num_device_blocks,
         values=values,
         scales=scales,
-        page_size=page_size,
         replicates_kv_across_tp=False,
     )
 

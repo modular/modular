@@ -17,7 +17,7 @@ import logging
 import math
 import os
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from functools import reduce
 from operator import mul
@@ -95,6 +95,11 @@ class KVCacheMemory:
     def __post_init__(self) -> None:
         _validate_is_2d_uint8_buffer(self.buffer)
 
+    @property
+    def total_num_pages(self) -> int:
+        """Returns the total number of pages."""
+        return self.buffer.shape[0]
+
 
 @dataclass
 class ReplicatedKVCacheMemory(KVCacheMemory):
@@ -106,19 +111,24 @@ class ReplicatedKVCacheMemory(KVCacheMemory):
     with dtype ``uint8``.
     """
 
-    peers: list[Buffer] = field(default_factory=list)
+    peers: list[Buffer]
 
     def __post_init__(self) -> None:
         super().__post_init__()
 
+        if len(self.peers) == 0:
+            raise ValueError(
+                "ReplicatedKVCacheMemory must have at least one peer"
+            )
+
         for peer in self.peers:
             _validate_is_2d_uint8_buffer(peer)
 
-        bytes_per_buffer = set(
-            buffer.shape[1] for buffer in [self.buffer, *self.peers]
+        unique_shapes = set(
+            buffer.shape for buffer in [self.buffer, *self.peers]
         )
-        if len(bytes_per_buffer) > 1:
-            raise ValueError("All buffers must have the same bytes_per_page")
+        if len(unique_shapes) > 1:
+            raise ValueError("All buffers must have the same shape")
 
 
 @dataclass
@@ -136,34 +146,69 @@ class KVCacheBuffer:
     when it is sharded (MHA).
     """
 
-    total_num_pages: int
-    values: list[Buffer]
-    page_size: int
     replicates_kv_across_tp: bool
+    values: list[Buffer]
     scales: list[Buffer] | None = None
 
     def __post_init__(self) -> None:
-        if self.total_num_pages <= 0:
-            raise ValueError("Total number of pages must be strictly positive")
+        all_buffers = self.all_buffers
 
         if len(self.values) == 0:
             raise ValueError("List of values must be non-empty")
 
-        if self.scales is not None:
-            if len(self.scales) != len(self.values):
-                raise ValueError("Scales must be the same length as values")
+        if self.replicates_kv_across_tp and len(self.values) <= 1:
+            raise ValueError(
+                "replicates_kv_across_tp=True requires at least 2 TP shards "
+                "(len(values) > 1)"
+            )
 
-            for value, scale in zip(self.values, self.scales, strict=True):
-                if value.device != scale.device:
-                    raise ValueError(
-                        "Corresponding values and scales must be on the same device"
-                    )
-                if isinstance(value, DevicePinnedBuffer) != isinstance(
-                    scale, DevicePinnedBuffer
-                ):
-                    raise ValueError(
-                        "Corresponding values and scales must be either both pinned or both non-pinned"
-                    )
+        unique_dtype = set(b.dtype for b in self.values)
+        if len(unique_dtype) > 1:
+            raise ValueError("All values must have the same dtype")
+
+        unique_shapes = set(b.shape for b in self.values)
+        if len(unique_shapes) > 1:
+            raise ValueError("All values must have the same shape")
+
+        unique_is_pinned = set(
+            isinstance(b, DevicePinnedBuffer) for b in all_buffers
+        )
+        if len(unique_is_pinned) > 1:
+            raise ValueError(
+                "All values (and scales if present) must be either all pinned "
+                "or all non-pinned"
+            )
+
+        if self.scales is None:
+            return
+
+        if len(self.scales) != len(self.values):
+            raise ValueError("Scales must be the same length as values")
+
+        unique_dtype = set(b.dtype for b in self.scales)
+        if len(unique_dtype) > 1:
+            raise ValueError("All scales must have the same dtype")
+
+        unique_shapes = set(b.shape for b in self.scales)
+        if len(unique_shapes) > 1:
+            raise ValueError("All scales must have the same shape")
+
+        unique_num_pages = set(b.shape[0] for b in all_buffers)
+        if len(unique_num_pages) > 1:
+            raise ValueError(
+                "Values and scales must have the same number of pages"
+            )
+
+        for value, scale in zip(self.values, self.scales, strict=True):
+            if value.device != scale.device:
+                raise ValueError(
+                    "Corresponding values and scales must be on the same device"
+                )
+
+    @property
+    def total_num_pages(self) -> int:
+        """Returns the total number of pages across all values and scales."""
+        return self.values[0].shape[0]
 
     @property
     def all_buffers(self) -> list[Buffer]:
@@ -776,8 +821,6 @@ class KVCacheParams(KVCacheParamInterface):
             kv_cache_buffer = KVCacheBuffer(
                 values=values,
                 scales=scales,
-                total_num_pages=total_num_pages,
-                page_size=self.page_size,
                 replicates_kv_across_tp=self.replicates_kv_across_tp,
             )
             kv_cache_buffers.append(kv_cache_buffer)
