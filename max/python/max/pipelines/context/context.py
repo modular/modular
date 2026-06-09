@@ -32,6 +32,7 @@ from .sampling_params import SamplingParams
 from .status import GenerationStatus
 from .tokens import ImageMetadata, TokenBuffer
 
+_CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
 
 _logger = logging.getLogger("max.pipelines")

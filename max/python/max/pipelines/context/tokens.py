@@ -78,13 +78,20 @@ class Range:
         self.start = start
         self.end = end
 
+    def __post_init__(self) -> None:
+        """Validate that start <= end."""
+        if self.start > self.end:
+            raise ValueError(
+                f"start ({self.start}) must be <= end ({self.end})"
+            )
+
     def __len__(self) -> int:
         """Returns the number of elements in the range (``end - start``).
 
         Returns:
             The length of the range, which is always >= 0.
         """
-        return self.end - self.start
+        return max(0, self.end - self.start)
 
     def bump_start(self, amount: int) -> None:
         """Bump the start index by the given amount.
@@ -302,6 +309,20 @@ class TokenBuffer:
 
         self._actively_chunked = False
 
+    def __post_init__(self) -> None:
+        # This is called in post_init to ensure that the token array is always
+        # writable even if this token buffer was created via deserialization.
+        self._ensure_writeable()
+
+    def _ensure_writeable(self) -> None:
+        """Ensure that the underlying token array is writeable.
+
+        This makes a private copy of the array if the current array is not writeable,
+        allowing in-place manipulation of tokens for prompt or generation operations.
+        """
+        if not self.array.flags.writeable:
+            self.array = self.array.copy()
+
     # ============================================================================
     # Token Access Properties
     # ============================================================================
@@ -321,16 +342,17 @@ class TokenBuffer:
         """
         # If the index is an integer, handle single token lookup.
         if isinstance(index, int):
+            key = index  # Use 'key' to follow original code logic.
             # Handle negative index by converting to positive (Python-style negative indexing)
-            if index < 0:
-                index = self._current_length + index
+            if key < 0:
+                key = self._current_length + key
             # Check bounds - only allow access within current valid length
-            if index < 0 or index >= self._current_length:
+            if key < 0 or key >= self._current_length:
                 raise IndexError(
-                    f"Index {index} is out of bounds for array of length {self._current_length}"
+                    f"Index {key} is out of bounds for array of length {self._current_length}"
                 )
             # Return the token at the specified position
-            return self.array[index]
+            return self.array[key]
         # If the index is a slice, allow for convenient sub-sequence extraction.
         elif isinstance(index, slice):
             # Apply slice to the valid portion of the buffer
