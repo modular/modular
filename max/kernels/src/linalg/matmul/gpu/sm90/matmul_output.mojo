@@ -17,7 +17,7 @@ from std.sys import simd_width_of, size_of
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.sync import named_barrier
-from layout import Layout, LayoutTensor
+from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tma_async import TMATensorTile
 
@@ -26,7 +26,6 @@ from std.utils.index import IndexList
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from std.collections import OptionalReg
 from ....structuring import (
-    SMemTile,
     RegTile,
 )
 from .tile_writer import (
@@ -41,14 +40,10 @@ import std.itertools
 
 struct MatmulTileWriter[
     dtype: DType,
-    layout: Layout,
-    address_space: AddressSpace,
-    element_layout: Layout,
-    layout_int_type: DType,
+    tensor_layout: TensorLayout,
     linear_idx_type: DType,
-    masked: Bool,
-    alignment: Int,
-    smem_tile_layout: Layout,
+    tensor_element_size: Int,
+    smem_tile_layout: TensorLayout,
     //,
     /,
     *,
@@ -64,7 +59,7 @@ struct MatmulTileWriter[
     ] = None,
     swapAB: Bool = False,
 ](TrivialRegisterPassable):
-    comptime N = Self.layout.shape[1].value()
+    comptime N = Self.tensor_layout.static_shape[1]
     comptime frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
         1
     ] // WARPGROUP_SIZE
@@ -74,19 +69,17 @@ struct MatmulTileWriter[
     comptime simd_size = simd_width_of[Self.dtype]()
 
     # Layout dimensions
-    comptime WG_BM = Self.smem_tile_layout.shape[0].value()
-    comptime WG_BN = Self.smem_tile_layout.shape[1].value()
+    comptime WG_BM = Self.smem_tile_layout.static_shape[0]
+    comptime WG_BN = Self.smem_tile_layout.static_shape[1]
 
-    comptime CTensorType = LayoutTensor[
-        Self.dtype,
-        Self.layout,
-        MutAnyOrigin,
-        address_space=Self.address_space,
-        element_layout=Self.element_layout,
-        layout_int_type=Self.layout_int_type,
+    comptime CTensorType = TileTensor[
+        mut=True,
+        dtype=Self.dtype,
+        LayoutType=Self.tensor_layout,
+        origin=MutAnyOrigin,
+        address_space=AddressSpace.GENERIC,
         linear_idx_type=Self.linear_idx_type,
-        masked=Self.masked,
-        alignment=Self.alignment,
+        element_size=Self.tensor_element_size,
     ]
     comptime lambda_type = def[
         dtype: DType, width: SIMDSize, *, alignment: Int = 1
@@ -94,7 +87,13 @@ struct MatmulTileWriter[
 
     # Instance fields
     var tensor: Self.CTensorType
-    var smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128]
+    var smem_tile: TileTensor[
+        mut=True,
+        dtype=Self.dtype,
+        LayoutType=Self.smem_tile_layout,
+        origin=MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
     var warp_group_thread_idx: Int
     var local_warp_group_idx: Int
     var local_thread_idx: Int
@@ -105,7 +104,13 @@ struct MatmulTileWriter[
     def __init__(
         out self,
         tensor: Self.CTensorType,
-        smem_tile: SMemTile[Self.dtype, Self.smem_tile_layout, alignment=128],
+        smem_tile: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            LayoutType=Self.smem_tile_layout,
+            origin=MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ],
         warp_group_thread_idx: Int,
         local_warp_group_idx: Int,
         local_thread_idx: Int,
@@ -143,7 +148,7 @@ struct MatmulTileWriter[
         epilogue_fn: Self.lambda_type
     ](
         self,
-        output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, ...],
+        output_tile: TileTensor[mut=True, Self.dtype, ...],
         tile_row_offset: Int,
         tile_col_offset: Int,
         max_row: UInt32,
@@ -153,10 +158,10 @@ struct MatmulTileWriter[
         """
         comptime epilogue = epilogue_fn
         comptime smem_swizzle = make_ldmatrix_swizzle[Self.dtype, Self.WG_BN]()
-        comptime thread_layout = Layout.row_major(
+        comptime thread_layout = row_major[
             Self.num_consumer_threads // (Self.WG_BN // Self.simd_size),
             Self.WG_BN // Self.simd_size,
-        )
+        ]()
 
         var output_fragment, fragment_offsets, _ = output_tile.vectorize[
             1, Self.simd_size
@@ -170,20 +175,22 @@ struct MatmulTileWriter[
             self.local_thread_idx
         )
 
-        comptime num_elements_per_thread = output_fragment.layout.size()
+        comptime num_elements_per_thread = (
+            type_of(output_fragment).LayoutType.static_product
+        )
 
         comptime for i in range(num_elements_per_thread):
-            comptime smem_idx = shared_fragment.layout(i)
-            comptime output_idx = output_fragment.layout(i)
-            comptime row_offset, col_offset = divmod(output_idx, Self.N)
+            var output_idx = Int(
+                type_of(output_fragment).LayoutType()(Coord(Idx[i], Idx[0]))
+            )
+            var row_offset, col_offset = divmod(output_idx, Self.N)
             var row = UInt32(row_coord + row_offset)
             var col = UInt32(col_coord + col_offset)
 
             if row < max_row and col < max_col:
-                epilogue(
-                    IndexList[2](Int(row), Int(col)),
-                    shared_fragment[i, 0],
-                )
+                var shared_value = shared_fragment.load(Coord(Idx[i], Idx[0]))
+                epilogue(IndexList[2](Int(row), Int(col)), shared_value)
+                shared_fragment.store(Coord(Idx[i], Idx[0]), shared_value)
 
     @always_inline
     def _write_tile_to_gmem[
@@ -202,7 +209,7 @@ struct MatmulTileWriter[
 
         var output_tile, tile_origin, _ = self.tensor.tile_with_offset[
             out_tile_size_m, out_tile_size_n
-        ](m_block, n_block)
+        ](Coord(m_block, n_block))
 
         # For normal: M is divided by num_consumer, N stays full
         # For swapAB: M stays full (BN), N is divided by num_consumer
@@ -219,7 +226,7 @@ struct MatmulTileWriter[
 
         var consumer_tile, consumer_coords, _ = output_tile.tile_with_offset[
             tile_slice_m, tile_slice_n
-        ](coord_m, coord_n)
+        ](Coord(coord_m, coord_n))
 
         var tile_coords: OptionalReg[TileCoordinates] = None
         var max_row: OptionalReg[UInt32] = None
@@ -272,8 +279,8 @@ struct MatmulTileWriter[
             Self.dtype, tma_rank, tma_tile_shape, tma_desc_shape
         ],
         reg_tile: RegTile[accum_type, reg_tile_layout],
-        output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, ...],
-        tile_origin: Self.CTensorType.CornerCoordsType,
+        output_tile: TileTensor[mut=True, Self.dtype, ...],
+        tile_origin: IndexList[2],
     ):
         """Use st.matrix instructions for optimized bf16 output."""
         var max_row, max_col = self._calculate_output_bounds()
@@ -348,12 +355,9 @@ struct MatmulTileWriter[
 
             var workgroup_tile, tile_coords, _ = output_tile.tile_with_offset[
                 tile_rows, tile_cols
-            ](pos_row, pos_col)
+            ](Coord(pos_row, pos_col))
 
-            var global_coords = (
-                rebind[Self.CTensorType.CornerCoordsType](tile_coords)
-                + tile_origin
-            )
+            var global_coords = rebind[IndexList[2]](tile_coords) + tile_origin
 
             @parameter
             def apply_epilogue[lambda_fn: Self.lambda_type]():
@@ -399,12 +403,16 @@ struct MatmulTileWriter[
                         var smem_offset = self.smem_tile.ptr + (
                             Self.WG_BM * TMA_BN * self.local_thread_idx
                         )
-                        comptime tma_smem_layout = Layout.row_major(
+                        comptime tma_smem_layout = row_major[
                             tma_tile_shape[0], tma_tile_shape[1]
-                        )
-                        var tma_tile = SMemTile[
-                            Self.dtype, tma_smem_layout, alignment=128
-                        ](smem_offset)
+                        ]()
+                        var tma_tile = TileTensor[
+                            mut=True,
+                            dtype=Self.dtype,
+                            LayoutType=type_of(tma_smem_layout),
+                            origin=MutAnyOrigin,
+                            address_space=AddressSpace.SHARED,
+                        ](smem_offset, tma_smem_layout)
 
                         var tma_coords = (
                             self.block_x * Self.BN
@@ -415,18 +423,23 @@ struct MatmulTileWriter[
 
                         tma_writer.write_tile(tma_tile, tma_coords)
                 else:
-                    comptime thread_layout = Layout.row_major(
+                    comptime thread_layout = row_major[
                         Self.num_consumer_threads
                         // (Self.WG_BN // Self.simd_size),
                         Self.WG_BN // Self.simd_size,
-                    )
+                    ]()
 
                     var threadwise_writer = TileWriterThreadwise[
                         thread_layout=thread_layout,
                         simd_size=Self.simd_size,
                         half_tile=is_partial_tile,
                         swapAB=Self.swapAB,
-                    ](workgroup_tile, self.local_thread_idx)
+                    ](
+                        workgroup_tile.address_space_cast[
+                            AddressSpace.GENERIC
+                        ](),
+                        self.local_thread_idx,
+                    )
 
                     threadwise_writer.write_tile(self.smem_tile, (0, 0))
 
@@ -462,9 +475,7 @@ struct MatmulTileWriter[
 
         var output_tile, tile_origin, _ = self.tensor.tile_with_offset[
             tile_m, tile_n
-        ](block_row, block_col)
-
-        comptime output_tile_shape = String(output_tile.layout.shape)
+        ](Coord(block_row, block_col))
 
         comptime TMA_BN = tma_tile_shape[
             1

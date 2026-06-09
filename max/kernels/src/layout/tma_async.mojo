@@ -3112,6 +3112,52 @@ struct TMATensorTile[
         )
 
     @always_inline
+    def async_multicast_load_partitioned[
+        tma_rows: Int,
+        tma_load_size: Int,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        cta_rank: Int,
+        coords: Tuple[Int, Int],
+        multicast_mask: UInt16,
+    ):
+        """Perform a partitioned multicast load into a TileTensor.
+
+        Each CTA rank loads a distinct contiguous slice of the source tensor.
+        The source coordinate in the second dimension is offset by
+        `cta_rank * tma_rows`, and the destination pointer is offset by
+        `cta_rank * tma_load_size` elements.
+
+        Parameters:
+            tma_rows: Number of source rows loaded by each CTA rank.
+            tma_load_size: Number of elements in each destination slice.
+
+        Args:
+            dst: Destination shared-memory TileTensor for the multicast load.
+            mem_barrier: Shared-memory barrier that tracks transfer completion.
+            cta_rank: CTA rank that selects the source and destination slice.
+            coords: Base 2D coordinates in the source tensor.
+            multicast_mask: Bit mask specifying CTAs that receive the data.
+        """
+        var dst_slice = type_of(dst)(
+            dst.ptr + cta_rank * tma_load_size, dst.layout
+        )
+
+        self.async_multicast_load(
+            dst_slice,
+            mem_barrier,
+            (coords[0], coords[1] + cta_rank * tma_rows),
+            multicast_mask,
+        )
+
+    @always_inline
     def async_store(
         self,
         src: LayoutTensor[

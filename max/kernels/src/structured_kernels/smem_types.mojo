@@ -31,7 +31,7 @@ Types:
 from std.sys import align_of, size_of
 
 from std.gpu.memory import AddressSpace
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, lt_to_tt
 from layout.int_tuple import _get_index_type, _get_layout_type
 from layout.layout_tensor import LayoutTensorIter
 from layout.tma_async import SharedMemBarrier
@@ -83,6 +83,20 @@ comptime RegTile[
     alignment=alignment,
 ]
 """Type alias for register (local memory) tile tensors."""
+
+
+@always_inline
+def reg_tile_to_tile_tensor[
+    dtype: DType,
+    layout: Layout,
+](tile: RegTile[dtype, layout, ...]) -> type_of(lt_to_tt(tile)):
+    """Return a TileTensor view of a register tile.
+
+    Kept here so kernels that have moved to TileTensor do not need to
+    reference the legacy LayoutTensor conversion helper directly.
+    """
+    return lt_to_tt(tile)
+
 
 comptime SMemBarrier = UnsafePointer[
     SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
