@@ -71,11 +71,13 @@ def ASTDeclInterface : OpInterface<"ASTDeclInterface"> {
 def StabilityDecoratorInterface : OpInterface<"StabilityDecoratorInterface",
                                               [ASTDeclInterface]> {
   let description = [{
-    This interface represents an operation that can have @stable and @deprecated
-    decorators. The @stable decorator indicates that the API is considered stable
-    and will not change in backward-incompatible ways except in major releases.
-    The @deprecated decorator indicates that the API should no longer be used.
-    These decorators are mutually exclusive.
+    This interface represents an operation that can have @stable, @deprecated,
+    and @unavailable decorators. The @stable decorator indicates that the API
+    is considered stable and will not change in backward-incompatible ways
+    except in major releases. The @deprecated decorator indicates that the API
+    should no longer be used (warning at use sites). The @unavailable decorator
+    indicates that the API is intentionally not provided and any reference is
+    an error. These decorators are mutually exclusive.
 
     This interface inherits from ASTDeclInterface since all declarations that
     support stability decorators also have names accessible via getDeclName().
@@ -101,6 +103,15 @@ def StabilityDecoratorInterface : OpInterface<"StabilityDecoratorInterface",
     }], "void", "setDeprecationInfoAttr", (ins "DeprecationInfoAttr":$deprecation)>,
 
     InterfaceMethod<[{
+      Return the unavailable info attribute if this decl has an @unavailable
+      decorator, or nullptr if not unavailable.
+    }], "UnavailableInfoAttr", "getUnavailableInfoAttr", (ins)>,
+
+    InterfaceMethod<[{
+      Set the unavailable info attribute for this decl.
+    }], "void", "setUnavailableInfoAttr", (ins "UnavailableInfoAttr":$unavailable)>,
+
+    InterfaceMethod<[{
       Return the 'since' version string attribute if this decl has an
       @stable(since="version") decorator, or nullptr if not specified.
     }], "StringAttr", "getStableSinceVersionAttr", (ins)>,
@@ -117,6 +128,9 @@ def StabilityDecoratorInterface : OpInterface<"StabilityDecoratorInterface",
     /// Returns true if the declaration is marked deprecated.
     bool isDeprecated() { return $_op.getDeprecationInfoAttr() != nullptr; }
 
+    /// Returns true if the declaration is marked unavailable.
+    bool isUnavailable() { return $_op.getUnavailableInfoAttr() != nullptr; }
+
     /// Returns the deprecation warning message, or nullptr if not deprecated.
     StringAttr getDeprecationWarningAttr() {
       if (auto info = $_op.getDeprecationInfoAttr())
@@ -127,6 +141,20 @@ def StabilityDecoratorInterface : OpInterface<"StabilityDecoratorInterface",
     /// Returns the deprecation replacement identifier, or nullptr if not specified.
     StringAttr getDeprecationReplacementAttr() {
       if (auto info = $_op.getDeprecationInfoAttr())
+        return info.getReplacement();
+      return nullptr;
+    }
+
+    /// Returns the unavailable reason message, or nullptr if not unavailable.
+    StringAttr getUnavailableReasonAttr() {
+      if (auto info = $_op.getUnavailableInfoAttr())
+        return info.getReason();
+      return nullptr;
+    }
+
+    /// Returns the unavailable replacement identifier, or nullptr if not specified.
+    StringAttr getUnavailableReplacementAttr() {
+      if (auto info = $_op.getUnavailableInfoAttr())
         return info.getReplacement();
       return nullptr;
     }

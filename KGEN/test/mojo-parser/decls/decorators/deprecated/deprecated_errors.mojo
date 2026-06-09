@@ -192,7 +192,7 @@ def test_deprecated_function_overload():
 # ===----------------------------------------------------------------------=== #
 
 
-# expected-error @below {{@deprecated requires a warning message}}
+# expected-error @below {{@deprecated requires a reason message}}
 @deprecated
 def no_message():
     pass

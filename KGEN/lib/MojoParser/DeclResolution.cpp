@@ -116,6 +116,9 @@ public:
   /// Handle the `@deprecated` decorator for all decls.
   LogicalResult handleDeprecated(ExprNode *expr, ASTDecl &decl);
 
+  /// Handle the `@unavailable` decorator for all decls.
+  LogicalResult handleUnavailable(ExprNode *expr, ASTDecl &decl);
+
   /// Handle the `@stable` decorator for decls that implement
   /// StabilityDecoratorInterface.
   LogicalResult handleStable(ExprNode *expr, ASTDecl &decl);
@@ -144,6 +147,22 @@ private:
   /// Validate compiler decorators that are allowed to propagate.
   LogicalResult validateCompilerDecorator(TypedAttr attr);
 
+  /// Parse a message-or-use decorator and forward the resulting (reason,
+  /// optional replacement) pair to `setter`. Centralizes the duplicated
+  /// logic shared by `handleDeprecated` and `handleUnavailable`.
+  ///
+  /// `validateDecl` is an optional extra check applied after the
+  /// `StabilityDecoratorInterface` check. It should emit its own error and
+  /// return `failure()` if the decl kind is not allowed for this decorator;
+  /// returning `success()` lets parsing continue. When unset, any decl that
+  /// implements `StabilityDecoratorInterface` is accepted.
+  LogicalResult handleMessageDecorator(
+      ExprNode *expr, ASTDecl &decl, StringRef name,
+      function_ref<void(StabilityDecoratorInterface itf, StringAttr reason,
+                        StringAttr replacement)>
+          setter,
+      function_ref<LogicalResult(Operation *op)> validateDecl = {});
+
   /// The declaration this class is applying decorators to.
   ASTDecl &decl;
   /// Whether only signature decorators are allowed.
@@ -151,16 +170,24 @@ private:
 };
 } // namespace
 
-LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
-  // Detect expression `deprecated` and complain that a warning message should
-  // be explicitly specified.
+LogicalResult Decorators::handleMessageDecorator(
+    ExprNode *expr, ASTDecl &decl, StringRef name,
+    function_ref<void(StabilityDecoratorInterface itf, StringAttr reason,
+                      StringAttr replacement)>
+        setter,
+    function_ref<LogicalResult(Operation *op)> validateDecl) {
+  // Detect bare `@<name>` and complain that a message must be explicitly
+  // specified.
   if (auto declRef = dyn_cast<DeclRefNode>(expr);
-      declRef && declRef->spelling == "deprecated") {
-    shared.emitError(expr->getLoc(), "@deprecated requires a warning message "
-                                     "or a replacement symbol (with 'use')")
-        << FixIt::insertAfterToken(expr->getRange().getEnd(),
-                                   "(\"insert deprecation message here\")",
-                                   shared.diags);
+      declRef && declRef->spelling == name) {
+    std::string message = llvm::formatv(
+        "@{0} requires a reason message or a replacement symbol (with "
+        "'use')",
+        name);
+    std::string placeholder =
+        llvm::formatv("(\"insert {0} message here\")", name);
+    shared.emitError(expr->getLoc(), message) << FixIt::insertAfterToken(
+        expr->getRange().getEnd(), placeholder, shared.diags);
     return success();
   }
 
@@ -168,31 +195,38 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
   if (!callNode)
     return failure();
   auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
-  if (!declRef || declRef->spelling != "deprecated")
+  if (!declRef || declRef->spelling != name)
     return failure();
 
-  // From here on, we've matched @deprecated - all paths must return success().
+  // From here on, we've matched @<name> - all paths must return success().
 
   // Check that the decl's operation implements StabilityDecoratorInterface.
   Operation *op = decl.getIfOperation();
   auto stabilityInterface =
       op ? dyn_cast<StabilityDecoratorInterface>(op) : nullptr;
   if (!stabilityInterface) {
-    shared.emitError(
-        expr->getLoc(),
-        "@deprecated decorator is not supported on this declaration");
+    shared.emitError(expr->getLoc())
+        << "@" << name << " decorator is not supported on this declaration";
     return success();
   }
 
+  // Apply the decorator-specific decl-kind restriction (if any). The
+  // validator is expected to emit its own diagnostic on rejection.
+  if (validateDecl && failed(validateDecl(op)))
+    return success();
+
   if (callNode->operands.size() != 1) {
-    shared.emitError(expr->getLoc(),
-                     "@deprecated accepts either a warning message or a "
-                     "replacement symbol (with 'use')");
+    shared.emitError(
+        expr->getLoc(),
+        llvm::formatv(
+            "@{0} accepts either a reason message or a replacement symbol "
+            "(with 'use')",
+            name));
     return success();
   }
 
   auto &arg = callNode->operands.front();
-  // Handle a positional string, or a keyword argument reason=
+  // Handle a positional string, or a `reason=` keyword argument.
   if (arg.isPositional() || (arg.isKeyword() && arg.name == "reason")) {
     auto strExpr = dyn_cast<StringLiteralNode>(arg.expr);
     if (!strExpr) {
@@ -200,22 +234,22 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
                        "'reason' argument must be a string literal");
       return success();
     }
-
-    stabilityInterface.setDeprecationInfoAttr(DeprecationInfoAttr::get(
-        StringAttr::get(getContext(), strExpr->getValue())));
-
+    setter(stabilityInterface,
+           StringAttr::get(getContext(), strExpr->getValue()),
+           /*replacement=*/{});
     return success();
   }
-  // Handle a use= argument
-  else if (arg.isKeyword() && arg.name == "use") {
+
+  // Handle a `use=symbol` keyword argument.
+  if (arg.isKeyword() && arg.name == "use") {
     auto target = dyn_cast<DeclRefNode>(arg.expr);
     if (!target) {
       shared.emitError(arg.expr->getLoc(), "'use' must reference a symbol");
       return success();
     }
 
-    // If the deprecated decl is a method, we try to find a sibling member in
-    // the same struct/trait/extension. For non-methods (top-level functions,
+    // If the decorated decl is a method, look for a sibling member in the
+    // same struct/trait/extension. For non-methods (top-level functions,
     // structs, aliases), use the standard lookup with searchParentScopes=true.
     ASTDecl *methodParent = decl.tryGetMethodParentDecl();
     ASTDecl *scope = methodParent ? methodParent : decl.getParentDecl();
@@ -226,40 +260,69 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
     if (lookup.isErroneous())
       return success();
 
-    ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
-    if (decls.empty()) {
+    if (lookup.getIfSuccess().empty()) {
       shared.emitError(target->getLoc(), "cannot reference unknown value '")
           << target->spelling << "'";
       return success();
     }
 
     std::string sourceName;
-    if (auto sym = dyn_cast<mlir::SymbolOpInterface>(decl.getIfOperation())) {
+    if (auto sym = dyn_cast<mlir::SymbolOpInterface>(op)) {
       sourceName = sym.getName();
-    } else if (auto fn = dyn_cast<FnOp>(decl.getIfOperation())) {
+    } else if (auto fn = dyn_cast<FnOp>(op)) {
       sourceName = fn.getSourceName() ? fn.getSourceName()->str()
                                       : "<anonymous function>";
-    } else if (auto alias = dyn_cast<AliasDeclOp>(decl.getIfOperation())) {
+    } else if (auto alias = dyn_cast<AliasDeclOp>(op)) {
       sourceName = demangleParameterName(alias.getParamDecl().getName());
     } else {
       assert(false && "unhandled case");
       sourceName = "<unhandled case>";
     }
 
-    stabilityInterface.setDeprecationInfoAttr(DeprecationInfoAttr::get(
-        StringAttr::get(getContext(),
-                        llvm::formatv("'{0}' is deprecated, use '{1}' instead",
-                                      sourceName, target->spelling)),
-        StringAttr::get(getContext(), target->spelling)));
-
+    auto reason = StringAttr::get(
+        getContext(), llvm::formatv("'{0}' is {1}, use '{2}' instead",
+                                    sourceName, name, target->spelling));
+    auto replacement = StringAttr::get(getContext(), target->spelling);
+    setter(stabilityInterface, reason, replacement);
     return success();
-  } else {
-    shared.emitError(expr->getLoc(),
-                     "deprecated must specify either a message or a "
-                     "symbol (with the 'use' argument)");
   }
 
+  shared.emitError(
+      expr->getLoc(),
+      llvm::formatv("{0} must specify either a message or a symbol (with the "
+                    "'use' argument)",
+                    name));
   return success();
+}
+
+LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
+  return handleMessageDecorator(
+      expr, decl, "deprecated",
+      [](StabilityDecoratorInterface itf, StringAttr reason,
+         StringAttr replacement) {
+        itf.setDeprecationInfoAttr(
+            DeprecationInfoAttr::get(reason, replacement));
+      });
+}
+
+LogicalResult Decorators::handleUnavailable(ExprNode *expr, ASTDecl &decl) {
+  return handleMessageDecorator(
+      expr, decl, "unavailable",
+      [](StabilityDecoratorInterface itf, StringAttr reason,
+         StringAttr replacement) {
+        itf.setUnavailableInfoAttr(
+            UnavailableInfoAttr::get(reason, replacement));
+      },
+      // @unavailable is only allowed on functions and methods. Structs,
+      // traits, comptime aliases, etc. are rejected.
+      [&](Operation *op) -> LogicalResult {
+        if (isa<FnOp>(op))
+          return success();
+        shared.emitError(
+            expr->getLoc(),
+            "@unavailable can only be applied to functions and methods");
+        return failure();
+      });
 }
 
 LogicalResult Decorators::handleStable(ExprNode *expr, ASTDecl &decl) {
@@ -393,6 +456,7 @@ void Decorators::applySignatureDecorators(
   SmallVector<ExprNode *> bodyDecorators;
   for (auto &[decorator, _] : decoratorExprs) {
     if (succeeded(handleDeprecated(decorator, decl)) ||
+        succeeded(handleUnavailable(decorator, decl)) ||
         succeeded(handleStable(decorator, decl)) ||
         succeeded(handleDocHidden(decorator, decl)) ||
         succeeded(process(decorator)))
@@ -409,19 +473,24 @@ void Decorators::applySignatureDecorators(
     return;
   }
 
-  // Check for mutual exclusivity: @deprecated and @stable cannot be used
-  // together on the same declaration.
+  // Check for mutual exclusivity between @deprecated, @stable, and
+  // @unavailable. At most one of these may appear on a single declaration.
   if (auto stabilityInterface =
           dyn_cast_if_present<StabilityDecoratorInterface>(
-              decl.getIfOperation());
-      stabilityInterface && stabilityInterface.isStable() &&
-      stabilityInterface.isDeprecated()) {
+              decl.getIfOperation())) {
     // Use the first decorator's location for the error message.
     SMLoc errorLoc = decoratorExprs.empty()
                          ? decl.getLoc()
                          : decoratorExprs.front().first->getLoc();
-    shared.emitError(errorLoc,
-                     "@deprecated and @stable cannot be used together");
+    if (stabilityInterface.isStable() && stabilityInterface.isDeprecated())
+      shared.emitError(errorLoc,
+                       "@deprecated and @stable cannot be used together");
+    if (stabilityInterface.isUnavailable() && stabilityInterface.isDeprecated())
+      shared.emitError(errorLoc,
+                       "@unavailable and @deprecated cannot be used together");
+    if (stabilityInterface.isUnavailable() && stabilityInterface.isStable())
+      shared.emitError(errorLoc,
+                       "@unavailable and @stable cannot be used together");
   }
 
   // Defer the rest of the decorators through the shared state.
@@ -1985,11 +2054,12 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   // About to parse the body.
   endFn.setUnresolved(false);
 
-  // If this an extern function, we only allow a "..." as the body. If it's a
-  // trait method this must mean it's not defaulted so we can early exit the
-  // function here as well.
+  // If this is an extern function or marked @unavailable, we only allow a
+  // "..." as the body. If it's a trait method this must mean it's not
+  // defaulted so we can early exit the function here as well.
+  bool isUnavailableFn = funcOp.isUnavailable();
   if (isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation()) ||
-      funcOp.isExternal()) {
+      funcOp.isExternal() || isUnavailableFn) {
     // Skip any docstring's that might be present.
     ParserBase p(shared, lexer);
     p.parseDocString(decl);
@@ -2000,7 +2070,27 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       body.front().erase(); // Remove the lit.endfn op to replace it.
       auto builder = OpBuilder::atBlockEnd(&body);
       UnreachableOp::create(builder, funcOp.getLoc());
+      // Body decorators (e.g. @doc_hidden) are deferred from signature
+      // resolution and are normally applied after the body is parsed (see the
+      // call near the end of this function). Functions with a "..." body
+      // (@unavailable, and required trait methods) return early here
+      // and would otherwise skip that step, silently dropping their body
+      // decorators -- which makes a @doc_hidden @unavailable function appear
+      // to require a doc string. Apply them here as well.
+      Decorators(decl).applyBodyDecorators(
+          [&](ExprNode *decorator) { return failure(); });
       return success();
+    }
+
+    // @unavailable functions must have exactly "..." as their body.
+    if (isUnavailableFn) {
+      InflightDiag diag = shared.emitError(
+          p.getToken().getLoc(),
+          "unexpected function body in @unavailable function declaration, "
+          "use '...'");
+      diag.attachNote(funcOp.getLoc())
+          << "in '" << funcOp.getDeclName().getValue() << "', declared here";
+      return failure();
     }
 
     // Otherwise, must be a trait method with default implementation.

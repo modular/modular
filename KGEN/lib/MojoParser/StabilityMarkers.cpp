@@ -145,6 +145,41 @@ void M::KGEN::LIT::checkDeprecationAndWarn(ASTDecl &decl, SMLoc useLoc,
   diag.attachNote(decl.getLoc()) << "'" << declName << "' declared here";
 }
 
+void M::KGEN::LIT::checkUnavailableAndError(ASTDecl &decl, SMLoc useLoc,
+                                            SharedState &shared,
+                                            SourceRange range,
+                                            CallSyntax syntax, SMLoc fixitLoc) {
+  // Check if the declaration has an @unavailable decorator.
+  auto stabilityItf =
+      dyn_cast_if_present<StabilityDecoratorInterface>(decl.getIfOperation());
+  if (!stabilityItf || !stabilityItf.isUnavailable())
+    return;
+
+  StringAttr reason = stabilityItf.getUnavailableReasonAttr();
+  auto diag = shared.emitError(useLoc, reason.getValue());
+  if (range.isValid())
+    diag << range;
+
+  // Add fixit for direct and method calls (not operator/subscript syntax,
+  // where replacing the magic method name wouldn't make syntactic sense).
+  //
+  // The fixit is a purely syntactic rename of the callee token (e.g.
+  // `old()` -> `new()`), so `use=` is intended for drop-in replacements that
+  // share the same call signature. Replacements that take different arguments
+  // should use a `reason` message instead of `use=`, to avoid suggesting a
+  // fixit that produces code that does not compile. (Mirrors @deprecated.)
+  if (syntax == CallSyntax::kDirectCall || syntax == CallSyntax::kMethodCall) {
+    if (StringAttr replacement = stabilityItf.getUnavailableReplacementAttr()) {
+      // Use fixitLoc if provided, otherwise fall back to useLoc.
+      SMLoc loc = fixitLoc.isValid() ? fixitLoc : useLoc;
+      diag << FixIt::replaceToken(loc, replacement.getValue());
+    }
+  }
+
+  StringRef declName = getDeclName(decl);
+  diag.attachNote(decl.getLoc()) << "'" << declName << "' declared here";
+}
+
 /// Returns the ASTDecl whose name should be checked against the use-site's
 /// recursively-stable-name set:
 /// - A direct struct/trait reference → &decl
@@ -178,6 +213,9 @@ void M::KGEN::LIT::checkDeclUsageWarnings(ASTDecl &decl, SMLoc useLoc,
                                           SharedState &shared,
                                           SourceRange range, CallSyntax syntax,
                                           SMLoc fixitLoc) {
+  // Unavailability errors fire at every use site and are never suppressed.
+  checkUnavailableAndError(decl, useLoc, shared, range, syntax, fixitLoc);
+
   // Deprecation warnings are never suppressed by @stable(recursive=True).
   checkDeprecationAndWarn(decl, useLoc, shared, range, syntax, fixitLoc);
 
