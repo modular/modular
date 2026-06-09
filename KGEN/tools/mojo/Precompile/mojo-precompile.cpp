@@ -19,7 +19,6 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "MLRT/AsyncRT/Runtime/CPUDevice.h"
-#include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Config.h"
@@ -369,14 +368,15 @@ internalizeBitcodeLibs(LLVMBitcodeLibArrayAttr bitcodeLibsAttr,
 static ErrorOr<OwningOpRef<ModuleOp>>
 buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, MLRT::CPUDevice &cpuDevice) {
-  // Add the dependencies of the package to the package itself, and strip out
-  // any post parser metadata for other package.
+  // Add the dependencies of the package to the package itself. Every top-level
+  // package other than the one being compiled is an imported precompiled
+  // dependency (in the precompile flow, dependencies are always provided as
+  // `.mojoc` files), so record each as a link dependency.
   SmallVector<FlatSymbolRefAttr> dependencies;
   for (LIT::PackageOp package : theModule.getOps<LIT::PackageOp>()) {
-    if (package == parsedPackageOp || !package.getPostParseModuleAttr())
+    if (package == parsedPackageOp)
       continue;
     dependencies.push_back(FlatSymbolRefAttr::get(package.getSymNameAttr()));
-    package.removePostParseModuleAttr();
   }
   if (!dependencies.empty()) {
     parsedPackageOp.setDependenciesAttr(
@@ -385,14 +385,6 @@ buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
 
   auto [packageModule, thePackage] =
       buildPackageModule(theModule, parsedPackageOp);
-
-  // Attach the post-parse module to the package.
-  auto postParseModuleAttr = writeModuleToBytecodeAttr(theModule);
-  if (!postParseModuleAttr) {
-    return Error(
-        "compilation failed: unable to write bytecode for package module");
-  }
-  thePackage.setPostParseModuleAttr(postParseModuleAttr);
 
   // Process bitcode libraries if any were specified
   if (!precompileArgs.compileOptions.bitcodeLibs.empty()) {

@@ -319,7 +319,6 @@ def LIT_PackageOp : LITOp<"package", [
     `lit.file_module` and `lit.package` operations.
 
     If the package was precompiled it may also contain:
-    - The full post-parser IR module, `postParseModule`.
     - The set of link dependencies for this package, `dependencies`.
 
     Example:
@@ -335,9 +334,6 @@ def LIT_PackageOp : LITOp<"package", [
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     OptionalAttr<LIT_DocStringAttr>:$docString,
-    // The module containing the post-parser IR of this package when it was
-    // compiled.
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule,
     // References to the dependencies of this package.
     OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies,
     OptionalAttr<LIT_DenseResourceElementsArrayAttr>:$externLLVMBitcodeModules
@@ -353,7 +349,6 @@ def LIT_PackageOp : LITOp<"package", [
     OpBuilder<(ins "StringAttr":$name)>
   ];
   let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
-  let skipDefaultBuilders = 1;
   let hasVerifier = 1;
 }
 

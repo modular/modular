@@ -24,11 +24,6 @@ struct StripParserMetadataPass
       // Strip doc strings from ASTDecl operations.
       if (auto astDecl = dyn_cast<LIT::ASTDeclInterface>(op))
         astDecl.removeDocStringAttr();
-
-      if (auto package = dyn_cast<LIT::PackageOp>(op)) {
-        // Strip precompiled packages.
-        package.removePostParseModuleAttr();
-      }
     });
   }
 };

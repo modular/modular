@@ -63,10 +63,6 @@ T readAttrFromBytecodeFile(llvm::MemoryBufferRef buffer, MLIRContext *ctx) {
   return dyn_cast_if_present<T>(readAttrFromBytecodeFile(buffer, ctx));
 }
 
-/// Write the given module to a bytecode blob stored in a dense resource
-/// attribute. Returns nullptr in the case of failure.
-DenseResourceElementsAttr writeModuleToBytecodeAttr(ModuleOp module);
-
 /// Recursively and lazily read dependencies from the module contained by
 /// `bytecodeSymTab` into `symTab`, rooted at `op`.
 LogicalResult loadSymbolsFromBytecode(Operation *op,
