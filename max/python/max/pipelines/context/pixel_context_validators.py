@@ -15,8 +15,12 @@
 
 from __future__ import annotations
 
+from typing import TypeAlias
+
 from .context import PixelContext, TextAndVisionContext, TextContext
 from .exceptions import InputError
+
+_AnyContext: TypeAlias = TextContext | TextAndVisionContext | PixelContext
 
 # Matches `Flux2Pipeline.max_area = 1024 * 1024` in upstream diffusers, and
 # mirrors `_max_pixel_size` already used by the FLUX2 input-image scale-down
@@ -31,7 +35,7 @@ _WAN_MAX_PIXEL_AREA: int = 2048 * 2048
 
 
 def _check_pixel_area(
-    context: TextContext | TextAndVisionContext | PixelContext,
+    context: _AnyContext,
     *,
     arch_name: str,
     max_pixel_area: int,
@@ -48,7 +52,7 @@ def _check_pixel_area(
 
 
 def validate_flux2_max_pixel_area(
-    context: TextContext | TextAndVisionContext | PixelContext,
+    context: _AnyContext,
 ) -> None:
     """Rejects FLUX2 requests whose ``width * height`` exceeds the per-arch cap."""
     _check_pixel_area(
@@ -57,7 +61,7 @@ def validate_flux2_max_pixel_area(
 
 
 def validate_wan_max_pixel_area(
-    context: TextContext | TextAndVisionContext | PixelContext,
+    context: _AnyContext,
 ) -> None:
     """Rejects WAN requests whose ``width * height`` exceeds the per-arch cap."""
     _check_pixel_area(
