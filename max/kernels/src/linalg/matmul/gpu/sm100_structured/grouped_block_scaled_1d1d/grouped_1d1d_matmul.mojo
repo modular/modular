@@ -83,8 +83,8 @@ def grouped_matmul_block_scaled[
     #   2) pass a `RealSwiGLUOutput[...]` instance via `swiglu_out`.
     # When False, swiglu_out=NullSwiGLUOutput() is used and the kernel
     # is bit-identical to the original BF16-output path.
-    fuse_swiglu_nvfp4: Bool = False,
-    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput,
+    fuse_swiglu: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput[],
     swiglu_match_bf16: Bool = True,
     swiglu_disable_compute: Bool = False,
     swiglu_enable_trace: Bool = False,
@@ -102,7 +102,7 @@ def grouped_matmul_block_scaled[
     expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
-    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput(),
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput[](),
     trace_buf: TraceBufT = NullTrace(),
 ) raises:
     """Launch grouped 1D-1D block-scaled matmul kernel.
@@ -122,7 +122,7 @@ def grouped_matmul_block_scaled[
         expert_scales: Per-expert output scaling (num_experts).
         num_active_experts: Number of active experts.
         ctx: Device context.
-        swiglu_out: Sink carrier when `fuse_swiglu_nvfp4=True` (packed
+        swiglu_out: Sink carrier when `fuse_swiglu=True` (packed
             NVFP4 + E4M3 SF tile). `NullSwiGLUOutput()` otherwise.
         trace_buf: Per-CTA timestamp buffer when `swiglu_enable_trace=True`.
             `NullTrace()` otherwise.
@@ -226,7 +226,7 @@ def grouped_matmul_block_scaled[
             Int32(config.cluster_shape[2]),
         ),
         pdl_level=pdl_level,
-        fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+        fuse_swiglu=fuse_swiglu,
         SwiGLUOutputT=SwiGLUOutputT,
         swiglu_match_bf16=swiglu_match_bf16,
         swiglu_disable_compute=swiglu_disable_compute,

@@ -520,7 +520,7 @@ def main() raises:
                     if trace:
                         grouped_matmul_nvfp4_dispatch[
                             transpose_b=True,
-                            fuse_swiglu_nvfp4=True,
+                            fuse_swiglu=True,
                             SwiGLUOutputT=type_of(swiglu_out),
                             swiglu_match_bf16=True,
                             swiglu_disable_compute=swiglu_disable_compute,
@@ -546,7 +546,7 @@ def main() raises:
                     else:
                         grouped_matmul_nvfp4_dispatch[
                             transpose_b=True,
-                            fuse_swiglu_nvfp4=True,
+                            fuse_swiglu=True,
                             SwiGLUOutputT=type_of(swiglu_out),
                             swiglu_match_bf16=True,
                             swiglu_disable_compute=swiglu_disable_compute,
@@ -570,7 +570,7 @@ def main() raises:
                     if trace:
                         grouped_matmul_nvfp4_dispatch[
                             transpose_b=True,
-                            fuse_swiglu_nvfp4=True,
+                            fuse_swiglu=True,
                             SwiGLUOutputT=type_of(swiglu_out),
                             swiglu_match_bf16=False,
                             swiglu_disable_compute=swiglu_disable_compute,
@@ -596,7 +596,7 @@ def main() raises:
                     else:
                         grouped_matmul_nvfp4_dispatch[
                             transpose_b=True,
-                            fuse_swiglu_nvfp4=True,
+                            fuse_swiglu=True,
                             SwiGLUOutputT=type_of(swiglu_out),
                             swiglu_match_bf16=False,
                             swiglu_disable_compute=swiglu_disable_compute,
