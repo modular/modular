@@ -47,6 +47,8 @@ _CONSTRAINTS = {
     "test_top_k.mojo": ["@platforms//os:linux"],  # TODO: Fix on macOS
 }
 
+_EXTRA_DEPS = {}
+
 [
     mojo_filecheck_test(
         name = src + ".test",
@@ -72,7 +74,7 @@ _CONSTRAINTS = {
             "//max:nn",
             "//max:testdata",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["**/*.mojo"],
