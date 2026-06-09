@@ -23,6 +23,7 @@ from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
+from std.utils.coord import Coord
 
 from std.algorithm.functional import elementwise, IndexList
 from std.reflection import reflect
@@ -256,8 +257,8 @@ def unary_mixed_op[
     @always_inline
     @parameter
     @__copy_capture(out_ptr, in_ptr)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
 
         var res = op.elementwise[dtype, out_dtype, width](
             in_ptr.load[width=width](i)
@@ -265,18 +266,14 @@ def unary_mixed_op[
         out_ptr.store[width=width](i, res)
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=simd_width_of[dtype]()](
-            IndexList[1](size), ctx
-        )
+        elementwise[func, simd_width=simd_width_of[dtype]()](Coord(size), ctx)
     else:
         # GPU execution - check GPU availability and op/dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_mixed_unary_op[
                 op
             ]() and dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](size), ctx
-                )
+                elementwise[func, simd_width=1, target="gpu"](Coord(size), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for this mixed-type unary"

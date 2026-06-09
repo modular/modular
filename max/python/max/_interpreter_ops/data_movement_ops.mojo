@@ -24,6 +24,7 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
 
 from std.algorithm.functional import elementwise, IndexList
+from std.utils.coord import Coord
 
 from extensibility import ManagedTensorSlice
 from extensibility import Input, MutableInput, Output
@@ -482,21 +483,17 @@ def memcpy_op[
     @always_inline
     @parameter
     @__copy_capture(d, s)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
+    def func[width: Int, alignment: Int = 1](idx: Coord):
+        var i = Int(idx[0].value())
         d.store[width=width](i, s.load[width=width](i))
 
     if ctx.api() == "cpu":
-        elementwise[func, simd_width=simd_width_of[dtype]()](
-            IndexList[1](count), ctx
-        )
+        elementwise[func, simd_width=simd_width_of[dtype]()](Coord(count), ctx)
     else:
         # GPU execution
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](count), ctx
-                )
+                elementwise[func, simd_width=1, target="gpu"](Coord(count), ctx)
             else:
                 raise Error(
                     "GPU execution not supported for memcpy with dtype float64"

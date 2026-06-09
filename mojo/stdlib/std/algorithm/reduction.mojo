@@ -32,7 +32,8 @@ from std.gpu.host.info import is_cpu, is_valid_target
 
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
-from std.utils.index import Index, IndexList, StaticTuple
+from std.utils.index import IndexList, StaticTuple
+from std.utils.coord import Coord, CoordLike, DynamicCoord, coord_to_index_list
 from std.sys.info import has_apple_gpu_accelerator
 
 from std._plugin import CurrentPlugin
@@ -43,15 +44,44 @@ from .backend.cpu.reduction import _reduce_generator_cpu
 # Import GPU implementations.
 from .backend.gpu.reduction import _reduce_generator_gpu, reduce_launch
 
+
+comptime _ReduceGeneratorPluginHookFnType = (
+    def[
+        num_reductions: Int,
+        init_type: DType,
+        input_0_fn: def[dtype: DType, width: Int, rank: Int](
+            IndexList[rank]
+        ) capturing[_] -> SIMD[dtype, width],
+        output_0_fn: def[dtype: DType, width: Int, rank: Int](
+            IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+        ) capturing[_] -> None,
+        reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
+            SIMD[ty, width], SIMD[ty, width]
+        ) capturing[_] -> SIMD[ty, width],
+    ](
+        shape: IndexList[_, element_type=DType.int64],
+        init: StaticTuple[Scalar[init_type], num_reductions],
+        reduce_dim: Int,
+    ) thin
+)
+"""Plugin-hook signature for `PluginHooks.reduce_generator_fn`; keep in sync with `_reduce_generator`."""
+
+
 # ===-----------------------------------------------------------------------===#
 # ND indexing helper
 # ===-----------------------------------------------------------------------===#
 
 
 @always_inline
-def _get_nd_indices_from_flat_index(
-    flat_index: Int, shape: IndexList, skip_dim: Int, out res: type_of(shape)
-):
+def _get_nd_indices_from_flat_index[
+    element_types: TypeList[Trait=CoordLike, ...],
+    //,
+    out_dtype: DType = Coord[*element_types].DTYPE,
+](
+    flat_index: Int,
+    shape: Coord[*element_types],
+    skip_dim: Int,
+) -> DynamicCoord[out_dtype, Coord[*element_types].rank]:
     """Converts a flat index into ND indices but skip over one of the dimensions.
 
     The ND indices will iterate from right to left. I.E
@@ -65,6 +95,70 @@ def _get_nd_indices_from_flat_index(
     We ignore the Nth dimension to allow that to be traversed in the elementwise
     function.
 
+    Parameters:
+        element_types: The element types of the shape `Coord`.
+        out_dtype: The dtype of the returned coordinate values.
+
+    Args:
+        flat_index: The flat index to convert.
+        shape: The shape of the ND space we are converting into.
+        skip_dim: The dimension to skip over. This represents the dimension
+                  which is being iterated across.
+
+    Constraints:
+        The shape `Coord` must be flat (no nested `Coord` elements).
+
+    Returns:
+        Constructed ND-index.
+    """
+    comptime assert Coord[
+        *element_types
+    ].is_flat, "`_get_nd_indices_from_flat_index` requires a flat `Coord` shape"
+
+    comptime rank = Coord[*element_types].rank
+    comptime Result = DynamicCoord[out_dtype, rank]
+    var res = Result()
+
+    # The inner dimensions ([outer, outer, inner]) are not traversed if
+    # drop last is set.
+    comptime if rank == 2:
+        if skip_dim == 1:
+            res[0] = rebind[Result.element_types[0]](
+                Scalar[out_dtype](flat_index)
+            )
+            res[1] = rebind[Result.element_types[1]](Scalar[out_dtype](0))
+        else:
+            res[0] = rebind[Result.element_types[0]](Scalar[out_dtype](0))
+            res[1] = rebind[Result.element_types[1]](
+                Scalar[out_dtype](flat_index)
+            )
+        return res
+
+    var curr_index = Scalar[out_dtype](flat_index)
+
+    comptime for i in reversed(range(rank)):
+        # There is one dimension we skip, this represents the inner loop that
+        # is being traversed.
+        if i == skip_dim:
+            res[i] = rebind[Result.element_types[i]](Scalar[out_dtype](0))
+        else:
+            var quotient, remainder = divmod(
+                curr_index, Scalar[out_dtype](shape[i].value())
+            )
+            curr_index = quotient
+            res[i] = rebind[Result.element_types[i]](remainder)
+
+    return res
+
+
+@always_inline
+def _get_nd_indices_from_flat_index(
+    flat_index: Int, shape: IndexList, skip_dim: Int, out res: type_of(shape)
+):
+    """Converts a flat index into ND indices but skip over one of the dimensions.
+
+    This overload forwards to the `Coord` implementation. See it for details.
+
     Args:
         flat_index: The flat index to convert.
         shape: The shape of the ND space we are converting into.
@@ -73,29 +167,14 @@ def _get_nd_indices_from_flat_index(
     Returns:
         Constructed ND-index.
     """
-
-    # The inner dimensions ([outer, outer, inner]) are not traversed if
-    # drop last is set.
-    comptime if shape.size == 2:
-        if skip_dim == 1:
-            return {flat_index, 0}
-        else:
-            return {0, flat_index}
-
-    comptime IntType = type_of(shape)._int_type
+    comptime dtype = type_of(shape).element_type
+    var coords = _get_nd_indices_from_flat_index[out_dtype=dtype](
+        flat_index, Coord(shape), skip_dim
+    )
 
     res = {}
-    var curr_index = IntType(flat_index)
-
-    comptime for i in reversed(range(shape.size)):
-        # There is one dimension we skip, this represents the inner loop that
-        # is being traversed.
-        if i == skip_dim:
-            res[i] = 0
-        else:
-            curr_index, res.data[i] = divmod(
-                curr_index, IntType(shape.get[i]())
-            )
+    comptime for i in range(type_of(shape).size):
+        res.data[i] = rebind[type_of(shape)._int_type](coords[i].value())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -120,10 +199,11 @@ def _reduce_generator[
     ) capturing[_] -> SIMD[ty, width],
     /,
     target: StaticString = "cpu",
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init: StaticTuple[Scalar[init_type], num_reductions],
+    *,
     reduce_dim: Int,
+](
+    shape: Coord,
+    init: StaticTuple[Scalar[init_type], num_reductions],
     context: Optional[DeviceContext] = None,
 ) raises:
     """Reduce the given tensor using the given reduction function. The
@@ -138,17 +218,22 @@ def _reduce_generator[
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
         target: The target to run on.
+        reduce_dim: The dimension we are reducing.
 
     Args:
         shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
     comptime assert is_valid_target[target](), "unsupported target"
 
-    for i in range(len(shape)):
-        if shape[i] == 0:
+    # The plugin hook only accepts an `IndexList`, and the empty-dimension
+    # check below needs runtime indexing that a `Coord` does not support, so
+    # materialize an `IndexList` view of the shape once.
+    var shape_index_list = coord_to_index_list(shape)
+
+    for i in range(len(shape_index_list)):
+        if shape_index_list[i] == 0:
             return
 
     comptime if is_cpu[target]():
@@ -158,15 +243,18 @@ def _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](shape, init, reduce_dim)
+            reduce_dim=reduce_dim,
+        ](shape, init)
     elif CurrentPlugin.reduce_generator_fn[target]:
+        # The plugin hook takes `reduce_dim` as a runtime argument; feed it the
+        # compile-time value.
         return comptime (CurrentPlugin.reduce_generator_fn[target].value())[
             num_reductions,
             init_type,
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](shape, init, reduce_dim)
+        ](shape_index_list, init, reduce_dim)
     else:
         _reduce_generator_gpu[
             num_reductions,
@@ -174,7 +262,8 @@ def _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-        ](shape, init, reduce_dim, context.value())
+            reduce_dim=reduce_dim,
+        ](shape, init, context.value())
 
 
 @always_inline
@@ -191,12 +280,9 @@ def _reduce_generator_wrapper[
     ) capturing[_] -> SIMD[dtype, width],
     /,
     target: StaticString = "cpu",
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init: Scalar,
+    *,
     reduce_dim: Int,
-    context: Optional[DeviceContext] = None,
-) raises:
+](shape: Coord, init: Scalar, context: Optional[DeviceContext] = None,) raises:
     @always_inline
     @parameter
     def input_fn_wrapper[
@@ -228,7 +314,8 @@ def _reduce_generator_wrapper[
         output_fn_wrapper,
         reduce_fn,
         target=target,
-    ](shape, init, reduce_dim, context)
+        reduce_dim=reduce_dim,
+    ](shape, init, context)
 
 
 @always_inline
@@ -244,12 +331,9 @@ def _reduce_generator[
     ) capturing[_] -> SIMD[ty, width],
     /,
     target: StaticString = "cpu",
-](
-    shape: IndexList[_, element_type=DType.int64],
-    init: Scalar,
+    *,
     reduce_dim: Int,
-    context: Optional[DeviceContext] = None,
-) raises:
+](shape: Coord, init: Scalar, context: Optional[DeviceContext] = None,) raises:
     """Reduce the given tensor using the given reduction function.
 
     Constraints:
@@ -260,11 +344,11 @@ def _reduce_generator[
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
         target: The target to run on.
+        reduce_dim: The dimension we are reducing.
 
     Args:
         shape: The shape of the tensor we are reducing.
         init: The value to start the reduction from.
-        reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
 
@@ -298,7 +382,8 @@ def _reduce_generator[
         output_fn_wrapper,
         reduce_fn_wrapper,
         target,
-    ](shape, init_wrapped, reduce_dim, context)
+        reduce_dim=reduce_dim,
+    ](shape, init_wrapped, context)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -317,11 +402,9 @@ def max[
     ) capturing[_] -> None,
     /,
     target: StaticString = "cpu",
-](
-    input_shape: IndexList[_, element_type=DType.int64],
+    *,
     reduce_dim: Int,
-    context: Optional[DeviceContext] = None,
-) raises:
+](input_shape: Coord, context: Optional[DeviceContext] = None,) raises:
     """Computes the max across the input and output shape.
 
     This performs the max computation on the domain specified by `input_shape`,
@@ -333,10 +416,10 @@ def max[
         input_fn: The function to load the input.
         output_fn: The function to store the output.
         target: The target to run on.
+        reduce_dim: The axis to perform the max on.
 
     Args:
         input_shape: The input shape.
-        reduce_dim: The axis to perform the max on.
         context: The pointer to DeviceContext.
 
     Raises:
@@ -369,7 +452,8 @@ def max[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-    ](input_shape, Scalar[dtype].MIN, reduce_dim, context=context)
+        reduce_dim=reduce_dim,
+    ](input_shape, Scalar[dtype].MIN, context=context)
 
 
 @always_inline
@@ -383,11 +467,9 @@ def min[
     ) capturing[_] -> None,
     /,
     target: StaticString = "cpu",
-](
-    input_shape: IndexList[_, element_type=DType.int64],
+    *,
     reduce_dim: Int,
-    context: Optional[DeviceContext] = None,
-) raises:
+](input_shape: Coord, context: Optional[DeviceContext] = None,) raises:
     """Computes the min across the input and output shape.
 
     This performs the min computation on the domain specified by `input_shape`,
@@ -399,10 +481,10 @@ def min[
         input_fn: The function to load the input.
         output_fn: The function to store the output.
         target: The target to run on.
+        reduce_dim: The axis to perform the min on.
 
     Args:
         input_shape: The input shape.
-        reduce_dim: The axis to perform the min on.
         context: The pointer to DeviceContext.
 
     Raises:
@@ -435,7 +517,8 @@ def min[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-    ](input_shape, Scalar[dtype].MAX, reduce_dim, context=context)
+        reduce_dim=reduce_dim,
+    ](input_shape, Scalar[dtype].MAX, context=context)
 
 
 @always_inline
@@ -449,11 +532,9 @@ def sum[
     ) capturing[_] -> None,
     /,
     target: StaticString = "cpu",
-](
-    input_shape: IndexList[_, element_type=DType.int64],
+    *,
     reduce_dim: Int,
-    context: Optional[DeviceContext] = None,
-) raises:
+](input_shape: Coord, context: Optional[DeviceContext] = None,) raises:
     """Computes the sum across the input and output shape.
 
     This performs the sum computation on the domain specified by `input_shape`,
@@ -465,10 +546,10 @@ def sum[
         input_fn: The function to load the input.
         output_fn: The function to store the output.
         target: The target to run on.
+        reduce_dim: The axis to perform the sum on.
 
     Args:
         input_shape: The input shape.
-        reduce_dim: The axis to perform the sum on.
         context: The pointer to DeviceContext.
 
     Raises:
@@ -501,7 +582,8 @@ def sum[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-    ](input_shape, Scalar[dtype](0), reduce_dim, context=context)
+        reduce_dim=reduce_dim,
+    ](input_shape, Scalar[dtype](0), context=context)
 
 
 @always_inline
@@ -515,11 +597,9 @@ def product[
     ) capturing[_] -> None,
     /,
     target: StaticString = "cpu",
-](
-    input_shape: IndexList[_, element_type=DType.int64],
+    *,
     reduce_dim: Int,
-    context: Optional[DeviceContext] = None,
-) raises:
+](input_shape: Coord, context: Optional[DeviceContext] = None,) raises:
     """Computes the product across the input and output shape.
     This performs the product computation on the domain specified by `input_shape`,
     loading the inputs using the `input_fn`. The results are stored using
@@ -530,10 +610,10 @@ def product[
         input_fn: The function to load the input.
         output_fn: The function to store the output.
         target: The target to run on.
+        reduce_dim: The axis to perform the product on.
 
     Args:
         input_shape: The input shape.
-        reduce_dim: The axis to perform the product on.
         context: The pointer to DeviceContext.
 
     Raises:
@@ -566,7 +646,8 @@ def product[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-    ](input_shape, Scalar[dtype](1), reduce_dim, context=context)
+        reduce_dim=reduce_dim,
+    ](input_shape, Scalar[dtype](1), context=context)
 
 
 @always_inline
@@ -580,9 +661,10 @@ def mean[
     ) capturing[_] -> None,
     /,
     target: StaticString = "cpu",
-](
-    input_shape: IndexList[_, element_type=DType.int64],
+    *,
     reduce_dim: Int,
+](
+    input_shape: Coord,
     output_shape: type_of(input_shape),
     context: Optional[DeviceContext] = None,
 ) raises:
@@ -597,10 +679,10 @@ def mean[
         input_fn: The function to load the input.
         output_fn: The function to store the output.
         target: The target to run on.
+        reduce_dim: The axis to perform the mean on.
 
     Args:
         input_shape: The input shape.
-        reduce_dim: The axis to perform the mean on.
         output_shape: The output shape.
         context: The pointer to DeviceContext.
 
@@ -608,14 +690,21 @@ def mean[
         If the operation fails.
     """
 
+    # `trace_arg` and the runtime `input_shape[reduce_dim]` lookup below both
+    # require an `IndexList`, which a `Coord` does not provide, so materialize
+    # an `IndexList` view of the input shape once.
+    var input_shape_index_list = coord_to_index_list(input_shape)
+
     @always_inline
     @parameter
     def description_fn() -> String:
         return ";".join(
             Span(
                 [
-                    trace_arg("input", input_shape, dtype),
-                    trace_arg("output", output_shape, dtype),
+                    trace_arg("input", input_shape_index_list, dtype),
+                    trace_arg(
+                        "output", coord_to_index_list(output_shape), dtype
+                    ),
                 ]
             )
         )
@@ -645,7 +734,7 @@ def mean[
             # Apply mean division before storing to the output lambda.
             comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
             var reciprocal = Scalar[float_type](1.0) / Scalar[float_type](
-                input_shape[reduce_dim]
+                input_shape_index_list[reduce_dim]
             )
 
             @always_inline
@@ -664,16 +753,16 @@ def mean[
                 wrapped_output_mul,
                 reduce_impl,
                 target=target,
+                reduce_dim=reduce_dim,
             ](
                 input_shape,
                 init=Scalar[dtype](0),
-                reduce_dim=reduce_dim,
                 context=context,
             )
 
         else:
             # For ints just a normal divide.
-            var dim_size = input_shape[reduce_dim]
+            var dim_size = input_shape_index_list[reduce_dim]
 
             @always_inline
             @__copy_capture(dim_size)
@@ -691,10 +780,10 @@ def mean[
                 wrapped_output_div,
                 reduce_impl,
                 target=target,
+                reduce_dim=reduce_dim,
             ](
                 input_shape,
                 init=Scalar[dtype](0),
-                reduce_dim=reduce_dim,
                 context=context,
             )
 
@@ -895,13 +984,14 @@ def reduce[
     ]:
         return reduce_fn(acc, val)
 
-    var shape = Index(len(src))
+    var shape = Coord((len(src),))
 
     _reduce_generator[
         input_fn,
         output_fn,
         reduce_fn_wrapper,
-    ](shape, init=init, reduce_dim=0)
+        reduce_dim=0,
+    ](shape, init=init)
 
     return out
 
@@ -1159,16 +1249,16 @@ def sum[
     ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return acc + val
 
-    var shape = IndexList[1](length)
+    var shape = Coord((length,))
 
     _reduce_generator[
         input_fn_nd,
         output_fn,
         reduce_fn_wrapper,
+        reduce_dim=0,
     ](
         shape,
         init=Scalar[dtype](0),
-        reduce_dim=0,
     )
 
     return out
@@ -1394,16 +1484,16 @@ def variance[
     ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return acc + val
 
-    var shape = IndexList[1](length)
+    var shape = Coord((length,))
 
     _reduce_generator[
         input_fn_nd,
         output_fn,
         reduce_fn_wrapper,
+        reduce_dim=0,
     ](
         shape,
         init=Scalar[mean_value.dtype](0),
-        reduce_dim=0,
     )
 
     return out / Scalar[dtype](length - correction)

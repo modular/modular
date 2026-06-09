@@ -14,7 +14,7 @@
 from std.collections import InlineArray, OptionalReg
 from std.math import align_up, ceildiv, recip
 from std.math.uutils import umod, ufloordiv, udivmod
-from nn.attention.mha_utils import DynamicInt
+from nn.attention.mha_utils import DynamicInt, MHA_PDL_LEVEL
 from std.math.constants import log2e
 from std.sys import (
     align_of,
@@ -28,11 +28,15 @@ from std.sys import (
     CompilationTarget,
 )
 
-from nn.attention.gpu.mha import mha_splitk_reduce, q_num_matrix_view_rows
+from nn.attention.gpu.mha import (
+    mha_splitk_reduce,
+    q_num_matrix_view_rows,
+)
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 import std.gpu.primitives.warp as warp
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.algorithm.functional import (
     _elementwise_impl_gpu,
     tile_and_unswitch,
@@ -134,6 +138,12 @@ from .nvidia.sm100.mla_prefill_per_token_scale import (
 # ===-----------------------------------------------------------------------===#
 
 
+# Max query tokens per sequence the decode branch handles. Only NVIDIA's
+# decode kernel takes more than one (MTP / speculative decode); AMD's is
+# token-generation only.
+comptime MLA_DECODE_MAX_SEQ_LEN = 8 if has_nvidia_gpu_accelerator() else 1
+
+
 # entrypoint for MLA decoding kernels
 @always_inline
 def flare_mla_decoding[
@@ -199,6 +209,10 @@ def flare_mla_decoding[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalar from the Python resolver. When set, the
+    # SM100 dispatcher uses this instead of recomputing num_partitions
+    # at grid time.
+    num_partitions_in: Optional[Int] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -312,6 +326,7 @@ def flare_mla_decoding[
                 extra_indices_stride=extra_indices_stride,
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
+                num_partitions_in=num_partitions_in,
             )
         else:
             # Build extra_k_operand when extra_k is provided.
@@ -350,6 +365,7 @@ def flare_mla_decoding[
                 extra_indices_stride=extra_indices_stride,
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
+                num_partitions_in=num_partitions_in,
             )
 
 
@@ -481,6 +497,9 @@ def flare_mla_decoding_dispatch[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    # Capturable-graph scalar: forwarded by the Python resolver so grid-time
+    # dispatch matches the kernel's device-side divmod.
+    num_partitions_in: Optional[Int] = None,
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -514,6 +533,17 @@ def flare_mla_decoding_dispatch[
     comptime assert (
         q.dtype.is_half_float() or q.dtype == DType.float8_e4m3fn
     ), "Only support half precision or float8_e4m3fn Q."
+
+    # AMD's decode kernel handles only one query token per sequence; assert it
+    # here at the dispatch chokepoint so every decode caller is covered.
+    comptime if has_amd_gpu_accelerator():
+        debug_assert(
+            max_prompt_len <= 1,
+            (
+                "AMD MLA decode kernel handles exactly one query token per"
+                " sequence; route multi-token sequences to the prefill kernel."
+            ),
+        )
 
     # TileTensor always has static shapes for the last two dims.
 
@@ -565,6 +595,7 @@ def flare_mla_decoding_dispatch[
                 extra_indices_stride=extra_indices_stride,
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
+                num_partitions_in=num_partitions_in,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -729,7 +760,11 @@ def flare_mla_decoding_dispatch[
                 comptime if has_amd_gpu_accelerator():
                     # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
                     num_partitions_value = mha_decoding_num_partitions(
-                        batch_size, max_cache_valid_length, num_heads, ctx
+                        batch_size,
+                        max_cache_valid_length,
+                        num_heads,
+                        ctx,
+                        is_mla=True,
                     )
                 else:
                     num_partitions_value = 1
@@ -840,6 +875,15 @@ def flare_mla_decoding_dispatch[
                     comptime W_PARTS_128 = get_defined_int[
                         "MODULAR_MLA_REDUCE_WPARTS_128", 16
                     ]()
+                    # 256-partition reducer for launch-starved large-num_keys
+                    # bs=1 decode (nk>=64K): W_PARTS=16 => 1024 threads/CTA
+                    # (the block-dim ceiling), giving parts_per_warp=16 (2x
+                    # the 8 sweet spot, but the np=128->256 decode-parallelism
+                    # win dominates here — the decode grid was launch-starved
+                    # at ~128 blocks / 256 CUs).
+                    comptime W_PARTS_256 = get_defined_int[
+                        "MODULAR_MLA_REDUCE_WPARTS_256", 16
+                    ]()
                     # Two specializations: 64-kernel covers np <= 64
                     # (short context); 128-kernel covers np > 64 (long
                     # context). Picking per dispatch keeps O(MAX_PARTITIONS)
@@ -865,6 +909,16 @@ def flare_mla_decoding_dispatch[
                         MAX_PARTITIONS=128,
                         use_exp2=reduce_use_exp2,
                     ]
+                    comptime kernel_reduce_256 = mla_splitk_reduce[
+                        intermediate_dtype,
+                        output.dtype,
+                        depth=depth_v,
+                        num_heads=num_heads,
+                        D_TILES=D_TILES,
+                        W_PARTS=W_PARTS_256,
+                        MAX_PARTITIONS=256,
+                        use_exp2=reduce_use_exp2,
+                    ]
                     if num_partitions_value <= 64:
                         ctx.enqueue_function[kernel_reduce_64](
                             output_intermediate_data,
@@ -876,7 +930,7 @@ def flare_mla_decoding_dispatch[
                             grid_dim=(D_TILES, num_heads, batch_size),
                             block_dim=(W_PARTS_64 * WARP_SIZE, 1, 1),
                         )
-                    else:
+                    elif num_partitions_value <= 128:
                         ctx.enqueue_function[kernel_reduce_128](
                             output_intermediate_data,
                             output_device,
@@ -886,6 +940,17 @@ def flare_mla_decoding_dispatch[
                             num_partitions_value,
                             grid_dim=(D_TILES, num_heads, batch_size),
                             block_dim=(W_PARTS_128 * WARP_SIZE, 1, 1),
+                        )
+                    else:
+                        ctx.enqueue_function[kernel_reduce_256](
+                            output_intermediate_data,
+                            output_device,
+                            exp_sum_device,
+                            qk_max_device,
+                            batch_size,
+                            num_partitions_value,
+                            grid_dim=(D_TILES, num_heads, batch_size),
+                            block_dim=(W_PARTS_256 * WARP_SIZE, 1, 1),
                         )
                 else:
                     comptime kernel_reduce = mha_splitk_reduce[
@@ -905,6 +970,7 @@ def flare_mla_decoding_dispatch[
                         num_partitions_value,
                         grid_dim=(1, num_heads, batch_size),
                         block_dim=(WARP_SIZE, 1, 1),
+                        attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                     )
                 _ = exp_sum_qk_max_data^
                 _ = output_intermediate_data^
@@ -4049,6 +4115,7 @@ def _k_cache_to_buffer[
     def copy_fn_unified[width: Int, alignment: Int = 1](idx: Coord):
         copy_fn[width, idx.rank, alignment](coord_to_index_list(idx))
 
-    _elementwise_impl_gpu[simd_width=target_simd_width](
-        copy_fn_unified, shape=launch_shape, ctx=context
-    )
+    _elementwise_impl_gpu[
+        simd_width=target_simd_width,
+        trace_description="mla_k_cache_copy",
+    ](copy_fn_unified, shape=launch_shape, ctx=context)

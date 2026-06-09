@@ -341,7 +341,6 @@ struct ScatterNDAdd:
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -389,7 +388,6 @@ struct ScatterNDMul:
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -437,7 +435,6 @@ struct ScatterNDMin:
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -485,7 +482,6 @@ struct ScatterNDMax:
         ctx: DeviceContext,
     ) raises:
         @always_inline
-        @parameter
         def reduce_fn[
             dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -1221,17 +1217,20 @@ struct Slice:
             ].static_value < 0:
                 return 1
 
-            # The offset for dimension `i` is `start[i] * strides[i]`
-            comptime if not start_types[i].is_static_value or not stride_types[
-                i
-            ].is_static_value:
+            # The offset for dimension `i` is `start[i] * strides[i]`. If the
+            # start is not statically known the offset is unknown.
+            comptime if not start_types[i].is_static_value:
                 return 1
-            alignment = gcd(
-                alignment,
-                start_types[i].static_value
-                * stride_types[i].static_value
-                * align_of[dtype](),
-            )
+
+            comptime if start_types[i].static_value != 0:
+                comptime if not stride_types[i].is_static_value:
+                    return 1
+                alignment = gcd(
+                    alignment,
+                    start_types[i].static_value
+                    * stride_types[i].static_value
+                    * align_of[dtype](),
+                )
 
         return alignment
 
@@ -1633,7 +1632,7 @@ struct Concat:
         return concat_shape_impl(axis, inputs)
 
 
-@compiler.register("mo.fused_concat_slice")
+@compiler.register("mo.composite.concat_slice")
 struct FusedConcatSlice:
     @staticmethod
     def execute[
@@ -1935,11 +1934,11 @@ struct Split:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        axis: Int,
     ](
         output: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         split_sizes: InputTensor[rank=1, ...],
-        axis: Scalar,
         ctx: DeviceContext,
     ) raises:
         comptime shape_types = DynamicCoord[DType.int64, rank].element_types
@@ -1947,7 +1946,9 @@ struct Split:
         # runtime strides.
         comptime stride_types = DynamicCoord[DType.int64, rank].element_types
 
-        check_axis_in_range[output.rank](Int(axis))
+        check_axis_in_range[output.rank](axis)
+
+        comptime normalized_axis = axis + rank if axis < 0 else axis
 
         var output_bufs = StaticTuple[
             TileTensor[
@@ -1968,9 +1969,13 @@ struct Split:
                 ),
             )
 
-        split[dtype, target=target, trace_description=_trace_name](
+        split[
+            dtype,
+            target=target,
+            trace_description=_trace_name,
+            axis=normalized_axis,
+        ](
             input.to_tile_tensor[DType.int64](),
-            normalize_neg_index(Int(axis), rank),
             output_bufs,
             ctx,
         )
@@ -2251,8 +2256,8 @@ struct AdvancedIndexingSetItem:
             static_spec=output_tensor.static_spec,
         ](
             output_tensor._ptr,
-            output_tensor._spec,
-            output_tensor._runtime_strides,
+            output_tensor.shape(),
+            output_tensor.strides(),
         )
         AdvancedIndexingSetItemInplace.execute[
             target=target,

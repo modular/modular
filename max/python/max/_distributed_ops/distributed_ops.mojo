@@ -40,9 +40,8 @@ def PyInit_distributed_ops() -> PythonObject:
 @export
 def broadcast_kernel(
     input_data_ptr: PythonObject,
-    output_data_ptrs: PythonObject,
+    output_buffers: PythonObject,
     signal_data_ptrs: PythonObject,
-    device_context_ptrs: PythonObject,
     num_bytes: PythonObject,
     ngpus: PythonObject,
     root: PythonObject,
@@ -60,9 +59,8 @@ def broadcast_kernel(
         if ngpus_v == n:
             _do_broadcast[n](
                 input_data_ptr,
-                output_data_ptrs,
+                output_buffers,
                 signal_data_ptrs,
-                device_context_ptrs,
                 num_bytes,
                 root,
             )
@@ -78,9 +76,8 @@ def _do_broadcast[
     ngpus: Int
 ](
     input_data_ptr: PythonObject,
-    output_data_ptrs: PythonObject,
+    output_buffers: PythonObject,
     signal_data_ptrs: PythonObject,
-    device_context_ptrs: PythonObject,
     num_bytes: PythonObject,
     root: PythonObject,
 ) raises:
@@ -102,19 +99,23 @@ def _do_broadcast[
     )
     var in_tile = TileTensor(in_ptr, row_major(n)).as_immut()
 
-    # Resolve Python pointers up front; the worker threads run pure Mojo.
     var out_ptrs = InlineArray[
         UnsafePointer[Scalar[DType.uint8], MutAnyOrigin], ngpus
     ](uninitialized=True)
     var ctx_array = InlineArray[DeviceContext, ngpus](uninitialized=True)
     for i in range(ngpus):
-        var out_addr = Int(py=output_data_ptrs[i])
-        var ctx_addr = Int(py=device_context_ptrs[i])
+        var buf = output_buffers[i]
+        var out_addr = Int(py=buf._data_ptr())
+        var ctx_addr = Int(py=buf.device._device_context_ptr())
         out_ptrs[i] = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
             unsafe_from_address=out_addr
         )
-        ctx_array[i] = DeviceContext(
-            OpaquePointer[MutExternalOrigin](unsafe_from_address=ctx_addr)
+        # init_pointee_move prevents DeviceContext.__del__ from droping a
+        # refcount, so assigning into the uninitialized slot would destroy it
+        (ctx_array.unsafe_ptr() + i).init_pointee_move(
+            DeviceContext(
+                OpaquePointer[MutExternalOrigin](unsafe_from_address=ctx_addr)
+            )
         )
     var dev_ctxs = DeviceContextList[ngpus](ctx_array^)
 

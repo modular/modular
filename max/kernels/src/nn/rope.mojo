@@ -26,6 +26,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     coord,
+    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -153,10 +154,8 @@ def rope_ragged[
     @always_inline
     @parameter
     @__copy_capture(x, input_row_offsets, start_pos, freqs_cis)
-    def rope_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
-        comptime assert rank == 3, "Invalid rank passed to rope kernel"
+    def rope_fn[width: Int, alignment: Int = 1](idx_arg: Coord):
+        comptime assert idx_arg.rank == 3, "Invalid rank passed to rope kernel"
         comptime assert freqs_cis.flat_rank >= 2
 
         comptime if width == 1:
@@ -168,7 +167,7 @@ def rope_ragged[
             )
             return
         else:
-            var idx = rebind[IndexList[3]](idx_arg)
+            var idx = rebind[IndexList[3]](coord_to_index_list(idx_arg))
 
             var global_token_idx = idx[0]
 
@@ -230,11 +229,6 @@ def rope_ragged[
                 output_fn=output_fn,
             ](x, idx, f_c_temp)
 
-    var launch_shape_index_list = IndexList[x.rank]()
-
-    comptime for i in range(x.rank):
-        launch_shape_index_list[i] = Int(x.dim(i))
-
     comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
@@ -257,7 +251,7 @@ def rope_ragged[
 
     comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape_index_list, context
+            x.layout.shape_coord(), context
         )
     else:
         elementwise[
@@ -265,4 +259,4 @@ def rope_ragged[
             simd_width=kernel_simd_width,
             target=target,
             _trace_description="rope",
-        ](launch_shape_index_list, context)
+        ](x.layout.shape_coord(), context)

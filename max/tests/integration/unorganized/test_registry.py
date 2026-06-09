@@ -17,7 +17,8 @@ from typing import Any
 
 import pytest
 from max.graph.weights import WeightsFormat
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.context import TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig

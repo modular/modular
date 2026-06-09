@@ -816,15 +816,15 @@ struct EpilogueApplier[
                     elem01 = compute_lambda_fn[epilogue_dtype, 2, alignment=2](
                         IndexList[2](Int(top_row), Int(top_col)),
                         SIMD[epilogue_dtype, 2](
-                            rebind[Scalar[epilogue_dtype]](elem0),
-                            rebind[Scalar[epilogue_dtype]](elem1),
+                            elem0,
+                            elem1,
                         ),
                     )
                     elem23 = compute_lambda_fn[epilogue_dtype, 2, alignment=2](
                         IndexList[2](Int(bot_row), Int(bot_col)),
                         SIMD[epilogue_dtype, 2](
-                            rebind[Scalar[epilogue_dtype]](elem2),
-                            rebind[Scalar[epilogue_dtype]](elem3),
+                            elem2,
+                            elem3,
                         ),
                     )
                     frag[offset] = elem01[0]
@@ -844,8 +844,8 @@ struct EpilogueApplier[
                         ](
                             IndexList[2](Int(top_row), Int(top_col)),
                             SIMD[epilogue_dtype, 2](
-                                rebind[Scalar[epilogue_dtype]](elem0),
-                                rebind[Scalar[epilogue_dtype]](elem1),
+                                elem0,
+                                elem1,
                             ),
                         )
                         frag[offset] = elem01[0]
@@ -857,8 +857,8 @@ struct EpilogueApplier[
                         ](
                             IndexList[2](Int(bot_row), Int(bot_col)),
                             SIMD[epilogue_dtype, 2](
-                                rebind[Scalar[epilogue_dtype]](elem2),
-                                rebind[Scalar[epilogue_dtype]](elem3),
+                                elem2,
+                                elem3,
                             ),
                         )
                         frag[offset + 2] = elem23[0]
@@ -970,8 +970,8 @@ struct EpilogueApplier[
                     elementwise_lambda_fn[epilogue_dtype, 2](
                         IndexList[2](Int(top_row), Int(top_col)),
                         SIMD[epilogue_dtype, 2](
-                            rebind[Scalar[epilogue_dtype]](elems[0]),
-                            rebind[Scalar[epilogue_dtype]](elems[1]),
+                            elems[0],
+                            elems[1],
                         ),
                     )
 
@@ -979,8 +979,8 @@ struct EpilogueApplier[
                     elementwise_lambda_fn[epilogue_dtype, 2](
                         IndexList[2](Int(bot_row), Int(bot_col)),
                         SIMD[epilogue_dtype, 2](
-                            rebind[Scalar[epilogue_dtype]](elems[2]),
-                            rebind[Scalar[epilogue_dtype]](elems[3]),
+                            elems[2],
+                            elems[3],
                         ),
                     )
 

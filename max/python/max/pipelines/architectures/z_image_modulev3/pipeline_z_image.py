@@ -31,10 +31,9 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.pipelines.core import PixelContext
+from max.pipelines.context import PixelContext, TokenBuffer
 from max.pipelines.diffusion.cache import DenoisingCacheState
 from max.pipelines.diffusion.interface import DiffusionPipeline, max_compile
-from max.pipelines.modeling.types import TokenBuffer
 from max.profiler import Tracer, traced
 
 from ..autoencoders import AutoencoderKLModel

@@ -38,6 +38,11 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     kv_scales: _Buffer | None = None  # KV scales for FP8 quantization
     attention_dispatch_metadata: _Tensor | None = None
     draft_attention_dispatch_metadata: _Tensor | None = None
+    # Capturable-graph scalar: when present, the SM100 MLA dispatcher uses
+    # this to align grid-time partition decisions with the kernel's divmod
+    # on scalar_args[2]. Only populated for MLA paths; None otherwise.
+    mla_num_partitions: _Tensor | None = None
+    draft_mla_num_partitions: _Tensor | None = None
 
     def __post_init__(self) -> None:
         tensor = self.attention_dispatch_metadata
@@ -52,8 +57,28 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
                     "expected attention_dispatch_metadata rank 1, got "
                     f"{tensor.rank}"
                 )
+        for name in (
+            "mla_num_partitions",
+            "draft_mla_num_partitions",
+        ):
+            t = getattr(self, name)
+            if t is None:
+                continue
+            if t.dtype != DType.int64:
+                raise ValueError(f"expected {name} dtype int64, got {t.dtype}")
+            if t.rank != 1:
+                raise ValueError(f"expected {name} rank 1, got {t.rank}")
 
     def flatten(self) -> list[_Tensor | _Buffer]:
+        """Serialize fields into a flat list for graph input binding.
+
+        Ordering: [kv_blocks, cache_lengths, lookup_table, max_lengths,
+        kv_scales?, attention_dispatch_metadata?,
+        draft_attention_dispatch_metadata?, mla_num_partitions?,
+        draft_mla_num_partitions?].  Fields marked ``?`` emit zero elements
+        when ``None``; ``unflatten`` must consume ``next(it)`` in this exact
+        order.
+        """
         return [
             self.kv_blocks,
             self.cache_lengths,
@@ -68,6 +93,12 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             *(
                 (self.draft_attention_dispatch_metadata,)
                 if self.draft_attention_dispatch_metadata
+                else ()
+            ),
+            *((self.mla_num_partitions,) if self.mla_num_partitions else ()),
+            *(
+                (self.draft_mla_num_partitions,)
+                if self.draft_mla_num_partitions
                 else ()
             ),
         ]
@@ -87,6 +118,11 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     def unflatten(
         self, it: Iterator[Any]
     ) -> KVCacheInputsPerDevice[TensorValue, BufferValue]:
+        """Reconstruct from a flat iterator produced by ``flatten``.
+
+        Consumes ``next(it)`` in the same order ``flatten`` emits elements;
+        the two methods must stay in lock-step.
+        """
         return KVCacheInputsPerDevice(
             kv_blocks=next(it),
             cache_lengths=next(it),
@@ -98,6 +134,10 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             else None,
             draft_attention_dispatch_metadata=next(it)
             if self.draft_attention_dispatch_metadata
+            else None,
+            mla_num_partitions=next(it) if self.mla_num_partitions else None,
+            draft_mla_num_partitions=next(it)
+            if self.draft_mla_num_partitions
             else None,
         )
 

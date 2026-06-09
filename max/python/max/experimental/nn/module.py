@@ -323,7 +323,9 @@ class Module(Generic[_P, _R]):
             NotImplementedError: If the subclass does not override this method.
         """
         raise NotImplementedError(
-            f"{type(self).__name__} must implement forward()"
+            f"{type(self).__name__} must implement forward() "
+            "(or, for Modules with multiple entry points, expose "
+            "explicit methods called from a parent Module's forward())."
         )
 
     def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:

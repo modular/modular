@@ -25,11 +25,13 @@ class TokenGenerationSchedulerConfig:
     max_batch_size: int
     """The maximum number of requests that can be in the token generation batch."""
 
-    max_forward_steps_tg: int
     """The number of tokens to generate for each request in the token generation iteration."""
 
     target_tokens_per_batch_ce: int
     """The target total number of tokens to encode in the context encoding batch."""
+
+    max_forward_steps_tg: int = 1
+    """The maximum number of steps to generate for each request in the token generation iteration."""
 
     max_seq_len: int | None = None
     """The maximum sequence length of the model."""
@@ -112,9 +114,7 @@ class TokenGenerationSchedulerConfig:
 
         return cls(
             max_batch_size=pipeline_config.runtime.max_batch_size,
-            max_forward_steps_tg=pipeline_config.runtime.max_num_steps
-            if pipeline_config.runtime.max_num_steps != -1
-            else 1,
+            max_forward_steps_tg=pipeline_config.runtime.max_num_steps,
             target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
             max_seq_len=pipeline_config.model.max_length,
             max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,

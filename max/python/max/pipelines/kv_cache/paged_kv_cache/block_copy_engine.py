@@ -31,6 +31,7 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.allreduce import Signals
+from max.nn.kv_cache.cache_params import KVCacheMemory, ReplicatedKVCacheMemory
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
 from tqdm import tqdm
@@ -57,51 +58,6 @@ class DeviceEventBundle:
         """Synchronize all events."""
         for event in self.events:
             event.synchronize()
-
-
-def _bytes_per_page(buffer: Buffer) -> int:
-    num_pages = buffer.shape[0]
-    return buffer.num_elements * buffer.dtype.size_in_bytes // num_pages
-
-
-def _group_by_device(buffers: list[Buffer]) -> list[list[Buffer]]:
-    """Reshape a flat per-rank buffer list into per-group buffer lists.
-
-    Buckets ``buffers`` by device in first-seen order, then transposes so
-    each returned group is one buffer per device in canonical order. Every
-    device must contribute the same number of buffers.
-    """
-    by_device: dict[int, list[Buffer]] = {}
-    device_order: list[int] = []
-    for buf in buffers:
-        if buf.device.id not in by_device:
-            by_device[buf.device.id] = []
-            device_order.append(buf.device.id)
-        by_device[buf.device.id].append(buf)
-
-    counts = {len(b) for b in by_device.values()}
-    if len(counts) != 1:
-        raise ValueError(
-            f"every device must contribute the same number of buffers; got "
-            f"per-device counts {counts}"
-        )
-
-    num_groups = counts.pop()
-    return [
-        [by_device[dev_id][g] for dev_id in device_order]
-        for g in range(num_groups)
-    ]
-
-
-def _2d_view(buffer: Buffer, num_pages: int) -> Buffer:
-    if buffer.shape[0] != num_pages:
-        raise ValueError(
-            f"Expected first dimension of buffer to be {num_pages}, got {buffer.shape[0]}"
-        )
-    return buffer.view(
-        dtype=DType.uint8,
-        shape=[num_pages, _bytes_per_page(buffer)],
-    )
 
 
 _GIB = 1024**3
@@ -200,77 +156,57 @@ class BlockOffloadEngine:
     stream. However, it still issues the h2d transfers on the same stream as
     kernel execution which is a major limitation (SERVOPT-1036).
 
-    With ``replicate_kv_across_tp=True``, the host buffer holds a single
-    replica per logical group. ``self.device_buffers`` is the rank-0 buffer of
-    each group (the H2D/D2H endpoints) and ``self.replicated_buffers[g]`` is
-    the list of peer-rank buffers for group ``g``. H2D copies host → rank 0,
-    then fans each group out to its peers via a broadcast.
+    For replicated KV caches (MLA), the host buffer holds a single replica per
+    logical group. D2H copies from rank 0, then H2D fans back out to all peers
+    via a broadcast. For sharded caches (MHA), every shard is its own unit.
     """
 
     def __init__(
         self,
         total_num_host_blocks: int,
-        device_buffers: list[Buffer],
-        *,
-        replicate_kv_across_tp: bool = False,
-        non_replicated_device_buffers_to_offload: list[Buffer] | None = None,
+        kv_memory: list[KVCacheMemory],
     ) -> None:
-        num_device_pages = device_buffers[0].shape[0]
-        viewed = [
-            _2d_view(buffer, num_device_pages) for buffer in device_buffers
-        ]
-        gpu0 = device_buffers[0].device
+        gpu0 = kv_memory[0].buffer.device
         if gpu0.is_host:
             raise ValueError(
-                "KVCacheBuffer is on the CPU. Unable to allocate host"
+                "KVCacheMemory is on the CPU. Unable to allocate host"
                 " offload buffer for already-on-CPU buffers."
             )
 
-        if (
-            non_replicated_device_buffers_to_offload
-            and not replicate_kv_across_tp
-        ):
+        self._units = kv_memory
+        self._replicated_units: list[ReplicatedKVCacheMemory] = [
+            u for u in self._units if isinstance(u, ReplicatedKVCacheMemory)
+        ]
+
+        # Validate device topology across all replicated units.
+        unique_topologies: set[tuple[int, ...]] = {
+            tuple(
+                d.id
+                for d in [unit.buffer.device, *(p.device for p in unit.peers)]
+            )
+            for unit in self._replicated_units
+        }
+        if len(unique_topologies) > 1:
             raise ValueError(
-                "non_replicated_device_buffers_to_offload is only supported when replicate_kv_across_tp is True"
+                "all replicated KVCacheMemory units must share the same "
+                "TP device topology; mixed topologies are not supported"
             )
 
-        # Sharded layout: every buffer is its own group of one. Replicated
-        # layout: bucket by device so each logical group's peers ride
-        # alongside its rank-0 buffer.
-        self.device_buffers: list[Buffer]
-        self.replicated_buffers: list[list[Buffer]]
-        if replicate_kv_across_tp:
-            groups = _group_by_device(viewed)
-            if len(groups[0]) > 1:
-                self.device_buffers = [g[0] for g in groups]
-                self.replicated_buffers = [g[1:] for g in groups]
-            else:
-                self.device_buffers = viewed
-                self.replicated_buffers = []
-        else:
-            self.device_buffers = viewed
-            self.replicated_buffers = []
-
-        # Special case for mla target + mha draft
-        if non_replicated_device_buffers_to_offload is not None:
-            non_replicated_viewed = [
-                _2d_view(b, num_device_pages)
-                for b in non_replicated_device_buffers_to_offload
+        # Broadcast devices: rank-0 + peers from the first replicated unit
+        # (topology uniformity was validated above).
+        self._broadcast_devices: list[Device] = (
+            [
+                self._replicated_units[0].buffer.device,
+                *(p.device for p in self._replicated_units[0].peers),
             ]
-            self.device_buffers.extend(non_replicated_viewed)
+            if self._replicated_units
+            else []
+        )
 
-        for root, peers in zip(
-            self.device_buffers, self.replicated_buffers, strict=False
-        ):
-            page_bytes = _bytes_per_page(root)
-            for peer in peers:
-                if _bytes_per_page(peer) != page_bytes:
-                    raise ValueError(
-                        "replicate_kv_across_tp requires identical "
-                        "bytes_per_page across replicas within a group"
-                    )
+        # The D2H/H2D endpoints — one per unit (rank-0 for replicated units).
+        self.device_buffers: list[Buffer] = [u.buffer for u in self._units]
 
-        bytes_per_page = sum(_bytes_per_page(b) for b in self.device_buffers)
+        bytes_per_page = sum(b.shape[1] for b in self.device_buffers)
         self.host_buffer = PinnedHostKVCacheBuffer(
             total_num_blocks=total_num_host_blocks,
             bytes_per_block=bytes_per_page,
@@ -291,13 +227,7 @@ class BlockOffloadEngine:
 
         self._signals: Signals | None = None
         self._signal_buffers: list[Buffer] = []
-        self._broadcast_devices: list[Device] = []
-        if self.replicated_buffers:
-            # Every group shares the same TP devices in the same order.
-            self._broadcast_devices = [
-                self.device_buffers[0].device,
-                *(p.device for p in self.replicated_buffers[0]),
-            ]
+        if self._replicated_units:
             self._signals = Signals(
                 devices=[
                     DeviceRef.GPU(id=d.id) for d in self._broadcast_devices
@@ -317,7 +247,7 @@ class BlockOffloadEngine:
             )
             offset += page_bytes
 
-        if not self.replicated_buffers:
+        if not self._replicated_units:
             return
 
         # main stream waits for completion of d2h on auxiliary stream.
@@ -329,16 +259,15 @@ class BlockOffloadEngine:
             main_stream.wait_for(d2h_auxiliary_stream)
 
         # Broadcast the block to the other devices on main stream.
-        num_replicated_buffers = len(self.replicated_buffers)
-        for root, peers in zip(
-            self.device_buffers[:num_replicated_buffers],
-            self.replicated_buffers,
-            strict=True,
-        ):
+        for unit in self._replicated_units:
+            root = unit.buffer
             with Tracer("distributed_broadcast"):
                 distributed_broadcast(
                     input_buffer=root[dst, :],
-                    output_buffers=[root[dst, :], *(p[dst, :] for p in peers)],
+                    output_buffers=[
+                        root[dst, :],
+                        *(p[dst, :] for p in unit.peers),
+                    ],
                     signal_buffers=self._signal_buffers,
                     devices=self._broadcast_devices,
                     root=0,

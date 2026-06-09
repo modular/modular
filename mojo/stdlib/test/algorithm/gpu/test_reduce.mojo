@@ -26,6 +26,8 @@ def fused_reduce_inner_test[
     ) capturing[_] -> SIMD[ty, width],
     rank: Int,
     dtype: DType,
+    *,
+    axis: Int = rank - 1,
 ](
     shape: IndexList[rank],
     init: StaticTuple[Scalar[dtype], num_reductions],
@@ -33,7 +35,6 @@ def fused_reduce_inner_test[
     expected_vals1: List[Float32],
     ctx: DeviceContext,
     offset: Int = 1,
-    axis: Int = rank - 1,
 ) raises:
     var out_shape = shape
     out_shape[axis] = 1
@@ -109,9 +110,15 @@ def fused_reduce_inner_test[
             linear_idx, rebind[SIMD[dtype, width]](val[1])
         )
 
-    reduce_launch[num_reductions, input_fn, output_fn, reduce_fn, rank, dtype](
-        shape, axis, init, ctx
-    )
+    reduce_launch[
+        num_reductions,
+        input_fn,
+        output_fn,
+        reduce_fn,
+        rank,
+        dtype,
+        reduce_dim=axis,
+    ](shape, init, ctx)
 
     with res_device0.map_to_host() as res_host0:
         for i in range(out_shape.flattened_length()):
@@ -139,13 +146,14 @@ def reduce_inner_test[
     rank: Int,
     dtype: DType,
     expected_vals_type: DType,
+    *,
+    axis: Int = rank - 1,
 ](
     shape: IndexList[rank],
     init: Scalar[dtype],
     expected_vals: List[Scalar[expected_vals_type]],
     ctx: DeviceContext,
     offset: Int = 1,
-    axis: Int = rank - 1,
 ) raises:
     comptime num_reductions = 1
 
@@ -219,8 +227,14 @@ def reduce_inner_test[
         )
 
     reduce_launch[
-        num_reductions, input_fn, output_fn, reduce_wrapper, rank, dtype
-    ](shape, axis, StaticTuple[_, num_reductions](init), ctx)
+        num_reductions,
+        input_fn,
+        output_fn,
+        reduce_wrapper,
+        rank,
+        dtype,
+        reduce_dim=axis,
+    ](shape, StaticTuple[_, num_reductions](init), ctx)
 
     with res_device.map_to_host() as res_host:
         for i in range(out_shape.flattened_length()):
@@ -287,7 +301,7 @@ def test_reduce() raises:
             ctx,
         )
 
-        reduce_inner_test[reduce_add](
+        reduce_inner_test[reduce_add, axis=0](
             IndexList[3](5, 3, 2),
             Float32(0),
             [
@@ -299,10 +313,9 @@ def test_reduce() raises:
                 20.0,
             ],
             ctx,
-            axis=0,
         )
 
-        reduce_inner_test[reduce_add](
+        reduce_inner_test[reduce_add, axis=1](
             IndexList[3](5, 3, 2),
             Float32(0),
             [
@@ -318,7 +331,6 @@ def test_reduce() raises:
                 29.0,
             ],
             ctx,
-            axis=1,
         )
 
         reduce_inner_test[reduce_max](
@@ -440,23 +452,21 @@ def test_multiblock_reduce() raises:
     with DeviceContext() as ctx:
         # Large 1D reduction: single row, exercises multiblock path.
         # Shape [8192], reduce axis 0. Each element = 1, so sum = 8192.
-        reduce_inner_test[reduce_add](
+        reduce_inner_test[reduce_add, axis=0](
             IndexList[1](8192),
             Float32(0),
             [Float32(8192.0)],
             ctx,
             offset=1,
-            axis=0,
         )
 
         # Larger 1D reduction to stress the two-phase coordination.
-        reduce_inner_test[reduce_add](
+        reduce_inner_test[reduce_add, axis=0](
             IndexList[1](131072),
             Float32(0),
             [Float32(131072.0)],
             ctx,
             offset=1,
-            axis=0,
         )
 
         # Low-row 2D reduction: few rows with large reduction axis.
@@ -471,14 +481,59 @@ def test_multiblock_reduce() raises:
 
         # Max reduction on large 1D tensor.
         # Elements are i // shape[axis] + offset = 0 + 1 = 1 for all i.
-        reduce_inner_test[reduce_max](
+        reduce_inner_test[reduce_max, axis=0](
             IndexList[1](8192),
             Float32.MIN,
             [Float32(1.0)],
             ctx,
             offset=1,
-            axis=0,
         )
+
+
+def test_thread_saturated_contiguous_reduce() raises:
+    """Regression test for a contiguous last-axis reduction that saturates the
+    device.
+
+    An N-D last-axis reduction is normalized to a rank-3 (outer, reduce, 1)
+    shape with reduce_dim=1, so the reduce dim is still physically contiguous
+    even though it is not the final index. `reduce_launch` previously decided
+    contiguity with `reduce_dim == rank - 1`, so the trailing unit dim made it
+    treat the reduction as non-contiguous and, once `num_rows` reached
+    `256 * sm_count`, dispatch to `saturated_reduce_kernel`. That kernel packs
+    adjacent rows into SIMD lanes, which is only valid when a real inner dim
+    supplies those rows; with inner == 1 it summed the wrong elements and
+    produced wrong results. Concretely, `Tensor.mean(-1)` on a (37888, 64)
+    tensor was wrong on a 148-SM B200, since 37888 == 256 * 148. This pins the
+    fix: the reduction must stay correct at and beyond the saturation
+    boundary.
+    """
+
+    @parameter
+    def reduce_add[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return x + y
+
+    with DeviceContext() as ctx:
+        var sm_count = ctx.default_device_info.sm_count
+        comptime reduce_size = 64
+
+        # Exactly hit (and clear) the `num_rows >= 256 * sm_count`
+        # thread-saturation boundary that selects `saturated_reduce_kernel`.
+        for outer in [256 * sm_count, 256 * sm_count + 1]:
+            var expected = List[Float32](capacity=outer)
+            for o in range(outer):
+                # Each element of row `o` is `o + 1`, so the row sums to
+                # reduce_size * (o + 1).
+                expected.append(Float32(reduce_size * (o + 1)))
+
+            reduce_inner_test[reduce_add, axis=1](
+                IndexList[3](outer, reduce_size, 1),
+                Float32(0),
+                expected,
+                ctx,
+            )
 
 
 def main() raises:

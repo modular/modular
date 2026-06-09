@@ -324,6 +324,10 @@ Parameters:
 """
 
 
+comptime _UnsafeDanglingPluginHookFnType = def[alignment: Int]() thin -> Int
+"""Plugin-hook signature for `PluginHooks.unsafe_dangling_fn`; keep in sync with `UnsafePointer.unsafe_dangling`."""
+
+
 struct UnsafePointer[
     mut: Bool,
     //,
@@ -565,9 +569,7 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     @implicit
-    def __init__[
-        disambig2: Int = 0
-    ](
+    def __init__(
         other: UnsafePointer,
         out self: UnsafePointer[
             other.type,
@@ -579,9 +581,6 @@ struct UnsafePointer[
 
         Args:
             other: The mutable pointer to cast from.
-
-        Parameters:
-            disambig2: Ignored. Works around name mangling conflict.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type=type_of(self)._mlir_type
@@ -613,7 +612,9 @@ struct UnsafePointer[
 
     @always_inline("builtin")
     @implicit
-    def __init__(
+    def __init__[
+        disambig2: Int = 0  # FIXME: Work around name mangling conflict.
+    ](
         other: UnsafePointer[...],
         out self: UnsafePointer[
             other.type,
@@ -625,6 +626,9 @@ struct UnsafePointer[
 
         Args:
             other: The pointer to cast from.
+
+        Parameters:
+            disambig2: Ignored. Works around name mangling conflict.
         """
         self.address = __mlir_op.`pop.pointer.bitcast`[
             _type=type_of(self)._mlir_type

@@ -40,9 +40,10 @@ def split[
     target: StaticString,
     trace_description: StaticString,
     output_origin: MutOrigin,
+    *,
+    axis: Int,
 ](
     input: TileTensor[dtype, ...],
-    axis: Int,
     outputs: StaticTuple[
         TileTensor[dtype, OutputLayoutType, output_origin],
         num_outputs,
@@ -70,16 +71,17 @@ def split[
     @__copy_capture(output_sizes)
     @parameter
     def elementwise_fn_wrapper[
-        width: Int, rank: Int, alignment: Int = 1
-    ](input_coords: IndexList[rank]) capturing:
+        width: Int, alignment: Int = 1
+    ](input_coords: Coord) capturing:
         # The associated index in the output tensor
-        var output_coords = IndexList[rank]()
+        var output_coords = IndexList[input_coords.rank]()
+        var input_idx = coord_to_index_list(input_coords)
 
         # Which output index to write to
         var output_idx = 0
 
         # The current shape
-        var axis_output_dim = input_coords[axis]
+        var axis_output_dim = input_idx[axis]
 
         # First determine which output we should write to
         comptime for i in range(num_outputs):
@@ -89,13 +91,13 @@ def split[
             output_idx += 1
 
         # Then derive the output coordinate
-        comptime for i in range(rank):
+        comptime for i in range(input_coords.rank):
             if i == axis:
                 output_coords[i] = axis_output_dim
             else:
-                output_coords[i] = input_coords[i]
+                output_coords[i] = input_idx[i]
 
-        var idx = input.layout(Coord(input_coords))
+        var idx = input.layout(input_coords)
 
         var value = input.raw_load[width=width](idx)
 
@@ -117,11 +119,11 @@ def split[
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(input.layout.shape_coord()), ctx)
+        ](input.layout.shape_coord(), ctx)
     else:
         elementwise[
             elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(input.layout.shape_coord()), ctx)
+        ](input.layout.shape_coord(), ctx)

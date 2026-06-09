@@ -47,6 +47,38 @@ This version is still a work in progress.
       var data: Self.T
   ```
 
+- Trailing `where` clauses are now supported on struct declarations. Constraints
+  are part of the type and checked at every binding site:
+
+  ```mojo
+  struct SIMD[dtype: DType, size: Int]
+      where dtype != DType.invalid
+      where size.is_power_of_two():
+    ...
+  ```
+
+- Trailing `where` clauses are now supported on `comptime` alias declarations:
+
+  ```mojo
+  comptime PositiveOnly[N: Int]: AnyType where N > 0 = ...
+  ```
+
+- Trailing `where` clauses can now _discharge_ constraints from constrained
+  types appearing anywhere in a signature. A single trailing `where` will
+  simultaneously constrain the declaration and satisfy the requirements of types
+  used within the same signature:
+
+  ```mojo
+  struct Matrix[m: Int, n: Int] where m > 0 where n > 0: ...
+
+  def solve_linear_system[n: Int, a: Matrix[n, n], b: Vector[n]]() -> Vector[n]
+      where n > 0:
+    ...
+  ```
+
+  If no trailing `where` discharges a constraint, the compiler reports an error
+  and suggests the missing clause.
+
 ## Language changes
 
 - Support for "set-only" accessors has been removed. You need to define a
@@ -71,6 +103,28 @@ This version is still a work in progress.
   ```
 
 ## Library changes
+
+- The `axis` of the `nn.split` kernel is now a keyword-only compile-time
+  parameter instead of a runtime argument. Pass it in the parameter list,
+  e.g. `split[..., axis=axis](input, outputs, ctx)`.
+
+- `UnsafePointer` implicit constructor has been fixed. When a function took
+  an `UnsafePointer[mut=False, ...]`, and was passed a mutable pointer, the
+  incorrect constructor was chosen from overload resolution resulting in the
+  new origin being `ImmutableAnyOrigin`. This is an issue as it occasionally
+  hid mutability aliasing between pointers and hid some unused variables.
+  The constructor now correctly casts to `ImmutOrigin(Self.origin)`.
+
+- The reduction axis of the `std.algorithm` reductions (`sum`, `product`,
+  `mean`, `max`, `min`, and the underlying `_reduce_generator` plus the CPU
+  and GPU backends) is now a keyword-only compile-time parameter named
+  `reduce_dim` instead of a runtime argument. This covers the
+  `mo.reduce.{mean,add,mul,max,min,reduce_min_and_max}` ops. Pass it in the
+  parameter list, e.g. `sum[..., reduce_dim=axis](shape, ctx)`.
+
+- The `axis` of the `nn.cumsum` kernel is now a keyword-only compile-time
+  parameter instead of a runtime argument. Pass it in the parameter list,
+  e.g. `cumsum[dtype, exclusive, reverse, axis=axis](output, input)`.
 
 - The `ImplicitlyCopyable`, `Intable`, and `Equatable` traits no longer
   inherit from `ImplicitlyDestructible`. Generic code that relied on
@@ -313,6 +367,17 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- Importing a Mojo module from Python no longer fails when the module lives in a
+  read-only directory (for example, a Mojo extension installed into a read-only
+  `site-packages`). Previously the importer always tried to write its compiled
+  artifacts to a `__mojocache__` directory next to the source, which raised an
+  `OSError` on a read-only file system. The importer now keeps that in-tree
+  behavior when the source directory is writable, and otherwise redirects the
+  cache to the Modular cache folder. That location honors the standard Modular
+  configuration: the `cache_dir` key in `modular.cfg`, the `MODULAR_CACHE_DIR`
+  and `MODULAR_HOME` environment variables, and the XDG base directory
+  specification.
+
 - The `mojo` compiler will now print the filename and line number in diagnostics
   that point to inaccessible source locations (e.g., from precompiled libraries)
   instead of a location at the top of the main file:
@@ -399,6 +464,10 @@ This version is still a work in progress.
   to understand failures in calls with many arguments spread over multiple
   lines.
 
+- `mojo format` now accepts the bare move-capture form `{name^}` in closure
+  capture lists. Previously only the equivalent `{var name^}` form
+  round-tripped through the formatter.
+
 ## GPU programming
 
 - Added `DeviceContextList[size]` in `std.gpu.host`: a fixed-size,
@@ -451,7 +520,7 @@ This version is still a work in progress.
   from `std.runtime.asyncrt`. Custom-op `execute` methods now take
   `DeviceContext` directly (or `Optional[DeviceContext]` where the context is
   genuinely optional), and multi-device ops take `DeviceContextList[N]` (see
-  the new entry under *Library changes*). The helpers `get_device_context()`
+  the new entry under _Library changes_). The helpers `get_device_context()`
   and `get_optional_device_context()` are no longer needed — pass the
   `DeviceContext` through directly. The `CpuDeviceContext` runtime always
   supplies a real context for the CPU path, so the nullable wrapper is no
@@ -534,6 +603,17 @@ This version is still a work in progress.
   `String("👨‍🚀🧑‍🌾क्षि")[grapheme=1]` returns `"🧑‍🌾"`.
 
 ## Fixed
+
+- Fixed a GPU reduction correctness bug that produced wrong results for a
+  contiguous last-axis reduction (for example `mean` over the last axis) once
+  the number of rows reached `256 * sm_count` (37888 rows on a 148-SM GPU).
+  An N-D reduction is normalized to a rank-3 `(outer, reduce, inner)` shape, so
+  a last-axis reduction has a trailing `inner == 1` dimension; the kernel
+  launcher treated that as a non-contiguous reduction and, once the device was
+  thread-saturated, dispatched a kernel whose cross-row SIMD packing is only
+  valid when a real inner dimension supplies the adjacent rows. Contiguity is
+  now derived from the layout (the reduce dimension is innermost whenever every
+  dimension after it is unit-sized).
 
 - Reduced the virtual address space reserved by every `mojo` invocation by
   ~1 GiB. The JIT memory mapper's reservation granularity was 1 GiB, so each

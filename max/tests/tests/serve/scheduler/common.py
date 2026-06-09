@@ -22,16 +22,18 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, KVConnectorType
-from max.pipelines.core import TextContext
+from max.pipelines.context import (
+    GenerationStatus,
+    TextContext,
+    TextGenerationOutput,
+    TokenBuffer,
+)
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
     BatchType,
-    GenerationStatus,
     Pipeline,
     RequestID,
     TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
 )
 from max.serve.queue import MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
@@ -143,7 +145,6 @@ def create_paged_scheduler(
     num_blocks: int = 9999,
     max_batch_size: int = 512,
     page_size: int = 128,
-    max_forward_steps_tg: int = 10,
     target_tokens_per_batch_ce: int = 8192,
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
@@ -174,7 +175,6 @@ def create_paged_scheduler(
     # Create a scheduler with a paged manager
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=max_batch_size,
-        max_forward_steps_tg=max_forward_steps_tg,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         max_seq_len=max_seq_len,
         enable_chunked_prefill=enable_chunked_prefill,

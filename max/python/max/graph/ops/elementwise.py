@@ -15,7 +15,7 @@
 from collections.abc import Callable
 
 from max._core import Operation
-from max._core.dialects import kgen, rmo
+from max._core.dialects import builtin, kgen, rmo
 from max.dtype import DType
 
 from .. import dtype_promotion
@@ -23,7 +23,6 @@ from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .cast import cast
-from .constant import constant
 from .custom import custom
 from .validation import assert_same_device
 
@@ -678,7 +677,7 @@ def _softmax_like(op_type: type[Operation], name: str):  # noqa: ANN202
             op_type,
             result=value.type,
             input=value,
-            axis=constant(axis, DType.int64, DeviceRef.CPU()),
+            axis=builtin.IntegerAttr(builtin.IndexType(), axis),
             output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
@@ -826,6 +825,26 @@ Args:
 
 Returns:
     A tensor value of the same shape and dtype with the cosine of each element.
+
+Raises:
+    Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
+"""
+
+ceil = _elementwise_unary(rmo.MoCeilOp, "ceil")
+ceil.__doc__ = """Computes the ceil of a tensor element-wise.
+
+.. code-block:: python
+
+    x = ops.constant([1.5, -1.5, 2.7, -2.7], DType.float32, device=device)
+    result = ops.ceil(x)
+    # result: [2.0, -1.0, 3.0, -2.0]
+
+Args:
+    x: The input tensor. Must have a floating-point dtype.
+
+Returns:
+    A tensor value of the same shape and dtype rounded up toward positive
+    infinity.
 
 Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.

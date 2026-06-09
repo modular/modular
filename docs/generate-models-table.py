@@ -499,9 +499,9 @@ def main() -> None:
 
     already_current = check_table(table)
 
-    if args.check:
+    # Manually re-implementing is_check() from lint_helpers since it's the only use here
+    if args.check or os.getenv("CHECK", "").lower() in ("1", "true"):
         if already_current:
-            print("✅ models.mdx is up-to-date.")
             sys.exit(0)
         else:
             print(
@@ -512,9 +512,7 @@ def main() -> None:
             )
             sys.exit(1)
 
-    if already_current:
-        print("✅ models.mdx is already up-to-date.")
-    else:
+    if not already_current:
         write_table(table)
         print(
             "✅ models.mdx updated.\n"

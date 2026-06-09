@@ -34,9 +34,9 @@ from max.experimental.sharding import (
     ShardingError,
     TensorLayout,
     build_action_set,
-    enumerate_feasible_actions,
 )
 from max.experimental.sharding._diagnostics import report_reshard
+from max.experimental.sharding.picker import enumerate_feasible_actions
 from max.experimental.sharding.placements import Placement
 
 

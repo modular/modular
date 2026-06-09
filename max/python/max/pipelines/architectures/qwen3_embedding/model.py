@@ -36,7 +36,7 @@ from max.nn.rotary_embedding import (
     Llama3RotaryEmbedding,
 )
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -384,24 +384,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             tokens=tokens_buffer.to(device),
             input_row_offsets=row_offsets_buffer,
             return_n_logits=return_n_logits_buffer,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Qwen3EmbeddingInputs:
-        """Prepare next token inputs (not supported for embedding models).
-
-        Args:
-            next_tokens: Next tokens
-            prev_model_inputs: Previous inputs
-
-        Raises:
-            NotImplementedError: Embedding models don't support autoregressive generation
-        """
-        raise NotImplementedError(
-            "Qwen3 embedding model does not support autoregressive generation"
         )
 
     @classmethod

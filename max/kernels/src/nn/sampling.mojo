@@ -23,6 +23,7 @@ from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from std.utils import IndexList
+from std.utils.coord import Coord, coord_to_index_list
 
 
 def apply_penalties_to_logits[
@@ -66,12 +67,12 @@ def apply_penalties_to_logits[
 
     @always_inline
     @parameter
-    def apply_penalties_fn[
-        width: Int, rank_: Int, alignment: Int = 1
-    ](idx: IndexList[rank_]):
-        comptime assert rank_ == 1, "apply_penalties_fn: rank must be 1"
+    def apply_penalties_fn[width: Int, alignment: Int = 1](idx: Coord):
+        comptime assert idx.rank == 1, "apply_penalties_fn: rank must be 1"
 
-        var batch_id = get_batch_from_row_offsets(frequency_offsets, idx[0])
+        var batch_id = get_batch_from_row_offsets(
+            frequency_offsets, Int(idx[0].value())
+        )
         var token = Int(compressed_frequency_data[idx[0], 0])
 
         var repetition_penalty_val = repetition_penalty[batch_id][0]
@@ -97,7 +98,7 @@ def apply_penalties_to_logits[
 
             logits[batch_id, token] = logit
 
-    var dispatch_shape = IndexList[1](Int(compressed_frequency_data.dim[0]()))
+    var dispatch_shape = Coord(Int(compressed_frequency_data.dim[0]()))
     elementwise[
         func=apply_penalties_fn,
         simd_width=1,
@@ -242,14 +243,14 @@ def update_frequency_data[
         @always_inline
         @parameter
         def update_frequency_data_fn[
-            width: Int, rank_: Int, alignment: Int = 1
-        ](idx: IndexList[rank_]):
+            width: Int, alignment: Int = 1
+        ](idx: Coord):
             comptime assert (
-                rank_ == 1
+                idx.rank == 1
             ), "update_frequency_data_fn: rank must be 1"
 
-            var tok_start = frequency_offsets[idx[0]]
-            var tok_end = frequency_offsets[idx[0] + 1]
+            var tok_start = frequency_offsets[idx]
+            var tok_end = frequency_offsets[idx[0].value() + 1]
 
             var new_token = new_tokens[idx[0]][0].cast[DType.int32]()
 
@@ -265,7 +266,7 @@ def update_frequency_data[
                     compressed_frequency_data[tok_id, 1] = 1
                     break
 
-        var dispatch_shape = IndexList[1](new_tokens.num_elements())
+        var dispatch_shape = Coord(new_tokens.num_elements())
         elementwise[
             func=update_frequency_data_fn,
             simd_width=1,

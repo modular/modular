@@ -88,18 +88,21 @@ class AttentionDispatchResolver:
 
         if self._is_mla:
             assert self._num_q_heads is not None
+            # mla_dispatch_args_scalar returns 3 ints:
+            # (batch_size, q_max_seq_len, num_partitions).
+            # The size-3 GPU buffer uses all three; num_partitions is also
+            # surfaced via resolve_for_replica_with_scalars for the capturable
+            # graph dispatcher.
+            mla_scalars = mla_dispatch_args_scalar(
+                batch_size,
+                max_cache_valid_length,
+                max_prompt_length,
+                self._num_q_heads,
+                self._is_fp8_kv,
+                self._device,
+            )
             metadata = Buffer.from_numpy(
-                np.array(
-                    mla_dispatch_args_scalar(
-                        batch_size,
-                        max_cache_valid_length,
-                        max_prompt_length,
-                        self._num_q_heads,
-                        self._is_fp8_kv,
-                        self._device,
-                    ),
-                    dtype=np.int64,
-                )
+                np.array(mla_scalars[:3], dtype=np.int64)
             )
             if not self.host_only and self._device is not None:
                 return metadata.to(self._device)
@@ -144,6 +147,79 @@ class AttentionDispatchResolver:
             else metadata.to(device)
             for device in self._output_devices
         ]
+
+    def resolve_for_replica_with_scalars(
+        self,
+        batch_size: int,
+        max_prompt_length: int,
+        max_cache_valid_length: int,
+    ) -> tuple[list[Buffer], int | None]:
+        """Like :meth:`resolve_for_replica`, plus the capturable-graph scalar.
+
+        Returns ``(buffers, num_partitions)`` for MLA;
+        ``(buffers, None)`` for MHA or empty-batch degenerate paths.
+
+        ``num_partitions`` flows into the SM100 dispatcher as a scalar input
+        tensor so grid-time partition decisions match the kernel's device-side
+        divmod.  It is always CPU-resident and is returned even when
+        ``host_only=True`` (graph-capture replay path) so that the
+        ``mla_num_partitions`` graph input is populated and
+        ``model_inputs.buffers`` has the same length as the captured inputs.
+        The metadata buffer device is still controlled by
+        ``resolve_for_replica`` (which respects ``host_only``).
+
+        For MLA, a sentinel scalar value (num_partitions=1) is returned even
+        for empty replicas (batch_size=0) so that all DP replicas emit the
+        same number of graph inputs regardless of whether they hold active
+        requests.
+        """
+        if not self._is_mla:
+            return (
+                self.resolve_for_replica(
+                    batch_size, max_prompt_length, max_cache_valid_length
+                ),
+                None,
+            )
+
+        # MLA degenerate path: no device or empty batch. Return sentinel
+        # scalar (1) so empty DP replicas still emit mla_num_partitions in
+        # flatten(), matching the compiled graph's input schema for all
+        # replicas.
+        if batch_size <= 0 or self._device is None:
+            return (
+                self.resolve_for_replica(
+                    batch_size, max_prompt_length, max_cache_valid_length
+                ),
+                1,  # sentinel: num_partitions
+            )
+
+        assert self._num_q_heads is not None
+        mla_scalars = mla_dispatch_args_scalar(
+            batch_size,
+            max_cache_valid_length,
+            max_prompt_length,
+            self._num_q_heads,
+            self._is_fp8_kv,
+            self._device,
+        )
+        # When host_only=True (graph-capture replay), keep the metadata buffer
+        # on CPU via resolve_for_replica which already handles host_only.
+        # Either way, always return the int scalar.
+        if self.host_only:
+            buffers = self.resolve_for_replica(
+                batch_size, max_prompt_length, max_cache_valid_length
+            )
+        else:
+            metadata = Buffer.from_numpy(
+                np.array(mla_scalars[:3], dtype=np.int64)
+            ).to(self._device)
+            buffers = [
+                metadata
+                if device is None or metadata.device == device
+                else metadata.to(device)
+                for device in self._output_devices
+            ]
+        return buffers, int(mla_scalars[2])
 
 
 def build_max_lengths_tensor(

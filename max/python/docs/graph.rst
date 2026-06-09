@@ -31,6 +31,7 @@ Graph construction
 
    Graph
    KernelLibrary
+   Module
 
 Graph values
 ------------

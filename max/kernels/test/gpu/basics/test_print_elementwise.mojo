@@ -18,6 +18,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
@@ -34,15 +35,13 @@ def test_elementwise_print[
     @always_inline
     @__copy_capture(c01, N)
     @parameter
-    def binary[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](idx0: IndexList[rank]):
-        var m: Int = idx0[0]
-        var n: Int = idx0[1]
+    def binary[simd_width: Int, alignment: Int = 1](idx0: Coord):
+        var m: Int = Int(idx0[0].value())
+        var n: Int = Int(idx0[1].value())
         print("print thousands of messages: m=", m, " n=", n, sep="")
 
     print("about to call elementwise, M=", M, "N=", N)
-    elementwise[binary, simd_width, target="gpu"](IndexList[2](M, N), ctx)
+    elementwise[binary, simd_width, target="gpu"]((M, N), ctx)
     print("called elementwise")
     # Avoid exiting in the middle of the call to the kernel that is printing the test messages.
     ctx.synchronize()

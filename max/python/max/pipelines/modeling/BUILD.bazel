@@ -24,6 +24,7 @@ modular_py_library(
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/request",
         "//max/python/max/profiler",
         requirement("huggingface-hub"),

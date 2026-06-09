@@ -412,16 +412,17 @@ def apple_matmul[
         @always_inline
         @parameter
         def epilogue_on_col_chunk[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = IndexList[2](idx[0], idx[1])
-            var c_val = c.load[width=simd_width](Coord(idx[0], idx[1]))
-            epilogue[c.dtype, simd_width](c_coord, c_val)
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord):
+            var c_val = c.load[width=simd_width](idx)
+            epilogue[c.dtype, simd_width](
+                Index(idx[0].value(), idx[1].value()), c_val
+            )
 
         # TODO: thread a DeviceContext through the matmul stack so we can
         # drop this local construction.
         elementwise[epilogue_on_col_chunk, simd_size](
-            IndexList[2](m, n), DeviceContext(api="cpu")
+            (m, n), DeviceContext(api="cpu")
         )
 
 

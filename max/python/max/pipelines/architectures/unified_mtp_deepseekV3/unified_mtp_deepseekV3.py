@@ -411,6 +411,7 @@ class UnifiedMTPDeepseekV3(Module):
                 kv,
                 max_lengths=max_lengths,
                 attention_dispatch_metadata=kv.draft_attention_dispatch_metadata,
+                mla_num_partitions=kv.draft_mla_num_partitions,
             )
             for kv, max_lengths in zip(
                 draft_kv_collections, new_max_lengths, strict=True

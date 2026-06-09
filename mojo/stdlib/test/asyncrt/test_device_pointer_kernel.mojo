@@ -70,6 +70,7 @@ def test_kernel_with_device_pointers() raises:
         grid_dim=(_LENGTH // _BLOCK_DIM),
         block_dim=_BLOCK_DIM,
     )
+    ctx.synchronize()
 
     with out.map_to_host() as out_host:
         for i in range(_LENGTH):
@@ -103,6 +104,7 @@ def test_kernel_mixed_buffer_and_device_pointer() raises:
         grid_dim=(_LENGTH // _BLOCK_DIM),
         block_dim=_BLOCK_DIM,
     )
+    ctx.synchronize()
 
     with out.map_to_host() as out_host:
         for i in range(_LENGTH):

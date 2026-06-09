@@ -37,7 +37,7 @@ from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TextAndVisionContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -45,7 +45,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from max.pipelines.modeling.weights.weight_loading import (
+from max.pipelines.weights.weight_loading import (
     auto_cast_weights_from_env,
 )
 from transformers.models.auto.configuration_auto import AutoConfig
@@ -139,6 +139,21 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
 
     model_config_cls: ClassVar[type[Any]] = Idefics3Config
 
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Uses ``max_length`` when set, else ``text_config.max_position_embeddings`` (config bounds)."""
+        max_seq_len = pipeline_config.model.max_length
+        if max_seq_len:
+            return max_seq_len
+        text_config = getattr(
+            huggingface_config, "text_config", huggingface_config
+        )
+        return getattr(text_config, "max_position_embeddings", 4096)
+
     vision_model: Callable[..., Any]
     """The compiled vision model."""
 
@@ -170,18 +185,6 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
         self.vision_model, self.language_model = self.load_model()
         self.image_token_id = self.huggingface_config.image_token_id
         self._stacker = _VisionStacker()
-
-    @staticmethod
-    def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return getattr(text_config, "max_position_embeddings", 4096)
 
     def load_model(self) -> tuple[Callable[..., Any], Callable[..., Any]]:
         """Compile vision and language models using the V3 API.
@@ -458,22 +461,4 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
             pixel_values=pixel_values,
             kv_cache_inputs=kv_cache_inputs,
             image_token_indices=image_token_indices,
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> Idefics3Inputs:
-        prev_model_inputs = cast(Idefics3Inputs, prev_model_inputs)
-        old_row_offsets = prev_model_inputs.input_row_offsets
-        row_offsets_size = old_row_offsets.shape[0]
-        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-
-        # In multi-step execution, don't re-pass vision inputs.
-        return Idefics3Inputs(
-            tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-            return_n_logits=prev_model_inputs.return_n_logits,
         )

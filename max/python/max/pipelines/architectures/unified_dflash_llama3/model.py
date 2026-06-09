@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device, DevicePinnedBuffer
@@ -26,7 +27,7 @@ from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.core import TextContext
+from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
@@ -134,6 +135,8 @@ class PersistentInputBuffers:
 class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
     """Unified DFlash Llama3: target + draft in one compiled graph."""
 
+    model_config_cls: ClassVar[type[Any]] = Llama3Config
+
     model: Model
 
     def __init__(
@@ -231,6 +234,7 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             # pin to the target's device(s) so the weights co-locate
             # whenever the target lives on a non-zero GPU.
             draft_config.devices = target_config.devices
+            draft_config.sliding_window = draft_model_config.sliding_window
             draft_config.kv_params = replace(
                 draft_config.kv_params, devices=target_config.devices
             )
@@ -356,25 +360,4 @@ class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
             seed=self._next_seed(),
-        )
-
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> UnifiedDflashLlama3Inputs:
-        raise NotImplementedError(
-            "Multistep execution is not supported for"
-            " UnifiedDflashLlama3Model. The unified pipeline handles"
-            " iteration internally."
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: PretrainedConfig,
-    ) -> int:
-        return Llama3Config.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )

@@ -31,6 +31,7 @@ from nn.attention.mha_operand import MHAOperand
 from std.utils.numerics import get_accum_type
 
 from .attention import Attention
+from .iglp import _iglp_opt, AMDIGLPStrategy
 from .kv_buffer import KVBuffer
 from .mha_prefill import barrier, block_sync_lds_direct_load
 from .mma import TiledMmaOp
@@ -269,6 +270,10 @@ __extension Attention:
             else:
                 block_sync_lds_direct_load[vmcnt=0]()
             barrier()
+
+            # IGroupLP: co-issue the softmax exp with the next tile's QK MMA to
+            # hide the online-softmax latency on this overlap-bound kernel.
+            _iglp_opt[AMDIGLPStrategy.MFMA_EXP_INTERLEAVE]()
 
             # Skip fully masked tiles for non-causal masks.
             comptime if has_interior_full_mask:

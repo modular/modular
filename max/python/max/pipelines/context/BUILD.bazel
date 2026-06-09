@@ -1,0 +1,16 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "context",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/request",
+        requirement("llguidance"),
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("pydantic"),
+    ],
+)

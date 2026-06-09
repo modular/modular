@@ -92,6 +92,59 @@ def _apply_causal_mask_fast[
 
 
 @always_inline
+def _apply_kbound_mask_fast[
+    layout: TensorLayout,
+    //,
+    KV_BLOCK_SIZE: Int,
+](
+    mut dst: RegTile[DType.float32, layout, MutExternalOrigin],
+    k_tile_idx: Int32,
+    num_keys: Int32,
+    lane: Int32,
+):
+    """Key-bound mask fast path: excludes columns with `k_pos >= num_keys`.
+
+    Used by `NullMask` to exclude a partial last K tile's OOB columns
+    AND the phantom even-parity padding tile (see the `HKMhaPrefill`
+    main loop's `max_num_tiles_local` even round-up). Both carry score
+    `Q@0 = 0` from the SRD-clamp-zeroed K — competitive for normalized
+    inputs — and would steal softmax denominator mass with a zero
+    numerator. This sends them to `-inf` so the subsequent `exp2` zeros
+    them.
+
+    Structural analog of `_apply_causal_mask_fast` (one `v_cmp` + one
+    `v_cndmask` per stripe), but the bound depends only on `k_pos`, not
+    the q position:
+        `k_pos >= num_keys`
+        <=> `ROW_OFFSETS[p] >= num_keys - (k_base + i*32 + row_extra)`."""
+    comptime dst_height = layout.static_shape[0]
+    comptime dst_width = layout.static_shape[1]
+    comptime base_tile_elts = layout.static_shape[2]
+
+    comptime assert base_tile_elts == 16, (
+        "_apply_kbound_mask_fast: requires base_tile_elts == 16 (col_l"
+        " rt_32x32 fragment)"
+    )
+
+    comptime _NEG_INF_VEC = SIMD[DType.float32, 16](Float32(-3.4028235e38))
+    comptime _ROW_OFFSETS = ACC_ROW_OFFSETS_32x32
+
+    var row_extra = (lane >> Int32(5)) << Int32(2)
+    var k_base = k_tile_idx * Int32(KV_BLOCK_SIZE)
+
+    var dst_vec = dst.vectorize[1, 1, 16]()
+    comptime assert dst_vec.flat_rank == 3
+
+    comptime for i in range(dst_height):
+        # `bound <= _ROW_OFFSETS[p]` is the per-element form of
+        # `k_pos >= num_keys` once the per-element row offset is folded in.
+        var bound = num_keys - (k_base + Int32(i * 32) + row_extra)
+        var mask = SIMD[DType.int32, 16](bound).le(_ROW_OFFSETS)
+        comptime for j in range(dst_width):
+            dst_vec[i, j, 0] = mask.select(_NEG_INF_VEC, dst_vec[i, j, 0])
+
+
+@always_inline
 def _fill_dst_neg_inf[
     layout: TensorLayout,
     //,
