@@ -743,7 +743,12 @@ def softmax_kernel[
 
             comptime if sink:
                 sink_val = sink_weights.load_linear[width=1](
-                    IndexList[1](umod(row_idx // ufloordiv(num_rows, shape[0]), Int(sink_weights.dim[0]())))
+                    IndexList[1](
+                        umod(
+                            row_idx // ufloordiv(num_rows, shape[0]),
+                            Int(sink_weights.dim[0]()),
+                        )
+                    )
                 ).cast[accum_type]()
 
             # Step 1: compute max in row
