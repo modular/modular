@@ -68,7 +68,7 @@ def dont_inline_me():
 
 
 @export
-def exported_func():
+def exported_func() abi("C"):
     pass
 
 

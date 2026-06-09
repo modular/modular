@@ -22,5 +22,5 @@
 
 
 @export
-def foo():
+def foo() abi("C"):
     pass
