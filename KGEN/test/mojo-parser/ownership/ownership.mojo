@@ -1543,6 +1543,28 @@ struct TestSynthesizedConditionalDtor[T: Movable](
 
 # CHECK: lit.fn @"__del__{{.*}}TestSynthesizedConditionalDtor{{.*}}conforms_to(:!Movable T, {{.*}}ImplicitlyDestructible{{.*}}synthetic
 
+# MOCO-4059: Conditionally linear type with concrete struct.
+# CHECK-LABEL: lit.struct.decl @AConditionallyLinearType
+@explicit_destroy("I am conditionally linear!")
+@fieldwise_init
+struct AConditionallyLinearType[T: AnyType](
+    Copyable,
+    ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible),
+):
+
+    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDestructible):
+      pass
+
+    # CHECK-LABEL: lit.fn @"example_method
+    def example_method(self) where conforms_to(Self.T, ImplicitlyDestructible):
+        var _copy = self.copy()
+        # CHECK-NEXT: %_copy = lit.var.decl
+        # CHECK-NEXT: lit.var.lifetime.start %_copy
+        # CHECK-NEXT: lit.call {{.*}}@"copy
+        # CHECK-NEXT: lit.call {{.*}}@AConditionallyLinearType::@"__del__
+        # CHECK-NEXT: lit.var.lifetime.end %_copy
+
+
 
 # MOCO-3880: The destructor for one value can extend the lifetime of another value.
 @fieldwise_init
