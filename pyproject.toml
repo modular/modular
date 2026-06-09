@@ -29,6 +29,9 @@ force-exclude = '''
 
 [tool.ruff]
 line-length = 80  # Must match above
+# Honor extend-exclude even for explicitly-passed files (presubmit fast-mode
+# lints changed files by path); matches [tool.black] force-exclude above.
+force-exclude = true
 src = ["something-that-doesnt-exist"] # Stop ruff from assuming any root directory is a python module
 extend-exclude = [
   "**/lit.cfg.py", # Globals that aren't imported
