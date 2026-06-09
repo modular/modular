@@ -26,7 +26,7 @@ def compute_unusedPre(unused: Bool, depth: UInt8) -> UInt8:
 
 
 @export
-def use_it():
+def use_it() abi("Mojo"):
     var a = FactorialComputer().compute_method(2)
     print(a)
     var b = compute_unusedPost(2, False)

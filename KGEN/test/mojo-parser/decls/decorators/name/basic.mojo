@@ -47,7 +47,7 @@ def mangle_true():
 # CHECK-SAME: linkageName = #kgen.linkage_name<"my_export" : !kgen.string, true>
 @__name("my_export")
 @export
-def name_then_export():
+def name_then_export() abi("Mojo"):
     pass
 
 
@@ -66,7 +66,7 @@ def name_then_c_export():
 # CHECK-SAME: linkageName = #kgen.linkage_name<"my_export2" : !kgen.string, true>
 @export
 @__name("my_export2")
-def export_then_name():
+def export_then_name() abi("Mojo"):
     pass
 
 

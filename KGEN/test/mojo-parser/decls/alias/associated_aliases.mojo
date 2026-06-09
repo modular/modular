@@ -73,7 +73,7 @@ def getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> ZInt:
 # TraitWithAlias, and it contains an entry for `N` of the right type.`
 # CHECK-LABEL: lit.fn export @"testTraitWithAliasAndStructWithMatchingAlias
 @export
-def testTraitWithAliasAndStructWithMatchingAlias():
+def testTraitWithAliasAndStructWithMatchingAlias() abi("Mojo"):
     # CHECK: {{.*}} = lit.call @associated_aliases::@"getNFromTraitWithAlias{{.*}}<:!TraitWithAlias !StructWithMatchingAlias>(%1)
     _ = getNFromTraitWithAlias(StructWithMatchingAlias())
 

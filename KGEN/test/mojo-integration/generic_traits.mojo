@@ -55,7 +55,7 @@ def generic_arg[T: SimpleTrait](x: T) -> Index:
 
 
 @export
-def top(a: MemType, b: RegType, c: RegTypeTrivial):
+def top(a: MemType, b: RegType, c: RegTypeTrivial) abi("Mojo"):
     _ = generic_arg(a)
     _ = generic_arg(b)
     _ = generic_arg(c)
@@ -95,7 +95,7 @@ def take_father[T: Father](value: T):
 
 # CHECK: kgen.func export @like_father_like
 @export
-def like_father_like(value: Son):
+def like_father_like(value: Son) abi("Mojo"):
     # CHECK: kgen.call tail [[TAKE_FATHER]]
     take_father(value)
 
@@ -113,5 +113,5 @@ def drop_copy[T: ImplicitlyCopyable & ImplicitlyDestructible](value: T):
 
 
 @export
-def copy_destroy(x: SomeType):
+def copy_destroy(x: SomeType) abi("Mojo"):
     drop_copy(x)

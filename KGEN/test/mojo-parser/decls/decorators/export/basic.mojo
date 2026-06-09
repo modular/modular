@@ -17,12 +17,12 @@ def export_me() raises -> None:
 
 @export
 # CHECK: lit.fn export @"not_c_exported()"
-def not_c_exported():
+def not_c_exported() abi("Mojo"):
     pass
 
 
 struct Thing:
     # CHECK: lit.fn export @"member
     @export
-    def member(self):
+    def member(self) abi("Mojo"):
         pass

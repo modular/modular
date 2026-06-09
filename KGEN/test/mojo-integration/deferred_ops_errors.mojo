@@ -9,7 +9,7 @@
 
 # expected-error @+2{{function instantiation failed}}
 @export
-def wrong_attribute_name(a: Int, b: Int) raises -> Bool:
+def wrong_attribute_name(a: Int, b: Int) abi("Mojo") raises -> Bool:
     comptime pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
 
     # expected-note @below {{MLIR verification error: 'index.cmp' op requires attribute 'pred'}}
@@ -19,7 +19,7 @@ def wrong_attribute_name(a: Int, b: Int) raises -> Bool:
 
 # expected-error @+2{{function instantiation failed}}
 @export
-def extra_attribute(a: Int, b: Int) raises -> Bool:
+def extra_attribute(a: Int, b: Int) abi("Mojo") raises -> Bool:
     comptime pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
 
     # expected-note @below {{unexpected attribute 'foobar' on operation}}
@@ -29,7 +29,7 @@ def extra_attribute(a: Int, b: Int) raises -> Bool:
 
 # expected-error @+2{{function instantiation failed}}
 @export
-def invalid_predicate_passed(x: Int, y: Int) -> Bool:
+def invalid_predicate_passed(x: Int, y: Int) abi("Mojo") -> Bool:
     def pred() -> __mlir_type.`!kgen.string`:
         return __mlir_attr[`"xyz" : !kgen.string`]
 

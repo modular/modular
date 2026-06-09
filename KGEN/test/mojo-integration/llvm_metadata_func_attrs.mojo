@@ -18,7 +18,7 @@
 # CHECK-SAME: #[[AI:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.always_inline`)
-def fn_always_inline():
+def fn_always_inline() abi("Mojo"):
     pass
 
 
@@ -26,7 +26,7 @@ def fn_always_inline():
 # CHECK-SAME: #[[NI:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.no_inline`)
-def fn_no_inline():
+def fn_no_inline() abi("Mojo"):
     pass
 
 
@@ -36,7 +36,7 @@ def fn_no_inline():
 @export
 @__llvm_metadata(`llvm.optimize_none`)
 @__llvm_metadata(`llvm.no_inline`)
-def fn_optimize_none():
+def fn_optimize_none() abi("Mojo"):
     pass
 
 
@@ -44,7 +44,7 @@ def fn_optimize_none():
 # CHECK-SAME: #[[NU:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.no_unwind`)
-def fn_no_unwind():
+def fn_no_unwind() abi("Mojo"):
     pass
 
 
@@ -52,7 +52,7 @@ def fn_no_unwind():
 # CHECK-SAME: #[[WR:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.will_return`)
-def fn_will_return():
+def fn_will_return() abi("Mojo"):
     pass
 
 
@@ -60,7 +60,7 @@ def fn_will_return():
 # CHECK-SAME: #[[CV:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.convergent`)
-def fn_convergent():
+def fn_convergent() abi("Mojo"):
     pass
 
 
@@ -68,7 +68,7 @@ def fn_convergent():
 # CHECK-SAME: #[[CO:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.cold`)
-def fn_cold():
+def fn_cold() abi("Mojo"):
     pass
 
 
@@ -76,7 +76,7 @@ def fn_cold():
 # CHECK-SAME: #[[HT:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.hot`)
-def fn_hot():
+def fn_hot() abi("Mojo"):
     pass
 
 
@@ -84,7 +84,7 @@ def fn_hot():
 # CHECK-SAME: #[[IH:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.inline_hint`)
-def fn_inline_hint():
+def fn_inline_hint() abi("Mojo"):
     pass
 
 
@@ -94,7 +94,7 @@ def fn_inline_hint():
 # CHECK-SAME: #[[OS:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.optsize`)
-def fn_optsize():
+def fn_optsize() abi("Mojo"):
     pass
 
 
@@ -102,7 +102,7 @@ def fn_optsize():
 # CHECK-SAME: #[[MS:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.minsize`)
-def fn_minsize():
+def fn_minsize() abi("Mojo"):
     pass
 
 
@@ -110,7 +110,7 @@ def fn_minsize():
 # CHECK-SAME: #[[SRP:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.save_reg_params`)
-def fn_save_reg_params():
+def fn_save_reg_params() abi("Mojo"):
     pass
 
 
@@ -136,7 +136,7 @@ def fn_denorm_fp():
 # CHECK-SAME: #[[DFP32:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.denormal_fp_math_f32`=__mlir_attr.`"ieee,ieee"`)
-def fn_denorm_fp32():
+def fn_denorm_fp32() abi("Mojo"):
     pass
 
 
@@ -144,7 +144,7 @@ def fn_denorm_fp32():
 # CHECK-SAME: #[[FPC:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.fp_contract`=__mlir_attr.`"fast"`)
-def fn_fp_contract():
+def fn_fp_contract() abi("Mojo"):
     pass
 
 
@@ -153,7 +153,7 @@ def fn_fp_contract():
 # CHECK-SAME: #[[PS:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.probe_stack`=__mlir_attr.`"__chkstk"`)
-def fn_probe_stack():
+def fn_probe_stack() abi("Mojo"):
     pass
 
 
@@ -161,7 +161,7 @@ def fn_probe_stack():
 # CHECK-SAME: #[[NILT:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.no_inline_line_tables`=__mlir_attr.true)
-def fn_no_inline_line_tables():
+def fn_no_inline_line_tables() abi("Mojo"):
     pass
 
 
@@ -169,7 +169,7 @@ def fn_no_inline_line_tables():
 # CHECK-SAME: #[[SPS:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.stack_probe_size`=Int(4096))
-def fn_stack_probe_size():
+def fn_stack_probe_size() abi("Mojo"):
     pass
 
 
@@ -177,7 +177,7 @@ def fn_stack_probe_size():
 # CHECK-SAME: #[[WSS:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.warn_stack_size`=Int(1024))
-def fn_warn_stack_size():
+def fn_warn_stack_size() abi("Mojo"):
     pass
 
 
@@ -191,7 +191,7 @@ def fn_warn_stack_size():
 # CHECK-SAME: align 32
 @export
 @__llvm_metadata(`llvm.alignment`=Int(32))
-def fn_alignment():
+def fn_alignment() abi("Mojo"):
     pass
 
 
@@ -200,7 +200,7 @@ def fn_alignment():
 # CHECK-SAME: !prof
 @export
 @__llvm_metadata(`llvm.function_entry_count`=Int(1234))
-def fn_entry_count():
+def fn_entry_count() abi("Mojo"):
     pass
 
 
@@ -217,7 +217,7 @@ def fn_entry_count():
 @__llvm_metadata(`llvm.no_nans_fp_math`=__mlir_attr.true)
 @__llvm_metadata(`llvm.approx_func_fp_math`=__mlir_attr.true)
 @__llvm_metadata(`llvm.no_signed_zeros_fp_math`=__mlir_attr.true)
-def fn_fast_math():
+def fn_fast_math() abi("Mojo"):
     pass
 
 
@@ -230,7 +230,7 @@ def fn_fast_math():
 # CHECK-SAME: #[[FP:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.frame_pointer`=__mlir_attr.`"all"`)
-def fn_frame_pointer():
+def fn_frame_pointer() abi("Mojo"):
     pass
 
 
@@ -253,13 +253,13 @@ def fn_vscale_range():
 # CHECK-SAME: #[[PT:[0-9]+]]
 @export
 @__llvm_metadata(`llvm.noredzone`)
-def fn_passthrough():
+def fn_passthrough() abi("Mojo"):
     pass
 
 
 # Keep every function above live.
 @export
-def use_all():
+def use_all() abi("Mojo"):
     fn_always_inline()
     fn_no_inline()
     fn_optimize_none()

@@ -14,7 +14,7 @@ from std.sys import get_defined_bool
 
 # expected-error @+2{{function instantiation failed}}
 @export
-def entry_method():
+def entry_method() abi("Mojo"):
     foo()  # expected-note {{call expansion failed}}
 
 
@@ -38,7 +38,7 @@ def baz():
 
 # expected-error @+2{{function instantiation failed}}
 @export
-def test_no_params():
+def test_no_params() abi("Mojo"):
     no_parameters()  # expected-note {{call expansion failed}}
 
 
@@ -66,7 +66,7 @@ def constrained[cond: Bool, msg: StaticString]():
 
 # expected-error @+2{{function instantiation failed}}
 @export
-def test_comptime_assert():
+def test_comptime_assert() abi("Mojo"):
     parametric_assert[1]()  # expected-note {{call expansion failed}}
 
 
