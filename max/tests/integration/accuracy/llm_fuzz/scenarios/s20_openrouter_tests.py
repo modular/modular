@@ -941,7 +941,13 @@ class ProviderBaseline(BaseScenario):
             else:
                 v, d = Verdict.FAIL, "Invalid JSON"
         elif resp.status == 400:
-            v, d = Verdict.INTERESTING, "Server rejects logprobs (400)"
+            # MAX's overlap pipeline does not currently support logprobs, so a
+            # clean 400 rejection is the expected, correct behavior here rather
+            # than a divergence to investigate.
+            v, d = (
+                Verdict.PASS,
+                "Server correctly rejects unsupported logprobs (400)",
+            )
         else:
             v = Verdict.FAIL if resp.status >= 500 else Verdict.INTERESTING
             d = f"Status {resp.status}"

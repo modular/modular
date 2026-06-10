@@ -74,7 +74,10 @@ from openai.types.completion_choice import (
 from openai.types.completion_create_params import (
     CompletionCreateParamsBase as _OpenAITextCompletionParams,
 )
-from openai.types.completion_usage import PromptTokensDetails
+from openai.types.completion_usage import (
+    CompletionTokensDetails,
+    PromptTokensDetails,
+)
 from openai.types.embedding_create_params import (
     EmbeddingCreateParams as _OpenAIEmbeddingParams,
 )
