@@ -82,14 +82,6 @@ CValue materializeAsyncCallAsCoroutine(IREmitter &emitter, AsyncCallOp call,
 /// determined to be dead code.
 void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 
-//===----------------------------------------------------------------------===//
-// Diagnostic utilities
-//===----------------------------------------------------------------------===//
-
-/// Helper to emit an error message for missing operands.
-void emitMissing(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
-                 const Twine &kindStr);
-
 /// Check if a name is for an internal decl or not.
 bool isInternalName(StringRef name);
 

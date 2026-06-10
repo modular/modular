@@ -92,12 +92,6 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
   return os << '}';
 }
 
-/// Emit a comma separated list of names, each in '...'.
-static void emitNames(MojoInflightDiag &diag, ArrayRef<StringAttr> names) {
-  llvm::interleave(
-      names, [&](StringAttr str) { diag << str; }, [&]() { diag << ", "; });
-}
-
 /// Helper to diagnose common cases of candidate mismatch related to keyword
 /// operands (unexpected kw-operands, pos-only arg/param provided by kw-operand,
 /// missing kw-only arg/param). If the function accepts variadic keyword
@@ -112,8 +106,6 @@ LogicalResult CallOperands::diagnoseKeywordOperands(
   // names that might be specified by keyword.
   llvm::SetVector<StringAttr> inferredNames;
   SmallPtrSet<StringAttr, 4> kwPassableNames;
-  SmallVector<StringAttr> posOnlyPassedByKw;
-  SmallVector<StringAttr> missingKwOnly;
 
   for (auto [argIdx, pogAttr] : llvm::enumerate(pogListAttr.getPogs())) {
     StringAttr name = pogAttr.getName();
@@ -133,34 +125,26 @@ LogicalResult CallOperands::diagnoseKeywordOperands(
       continue; // Variadic/pack args cannot be specified by their keyword.
     if (passingKind == PassingKind::KwOnly && !pogListAttr.getDefault(argIdx) &&
         !findKwArg(name)) {
-      if (!isParameterList) // KWOnly parameters may be inferred.
-        missingKwOnly.push_back(name);
+      if (!isParameterList) { // KWOnly parameters may be inferred.
+        auto &diag = getDiag();
+        const char *kindStr = isParameterList ? "parameter" : "argument";
+        diag << "missing required keyword-only " << kindStr << ": " << name;
+        return failure();
+      }
       continue;
     }
     if (passingKind == PassingKind::PosOnly) {
-      if (!name.empty() && findKwArg(name))
-        posOnlyPassedByKw.push_back(name);
+      if (!name.empty() && findKwArg(name)) {
+        auto &diag = getDiag();
+        const char *argOrParam = isParameterList ? "parameter" : "argument";
+        diag << "positional-only " << argOrParam
+             << " passed as keyword operand: " << name;
+        return failure();
+      }
       continue;
     }
     [[maybe_unused]] auto [_, addedNew] = kwPassableNames.insert(name);
     assert(addedNew && "duplicate argument/parameter name in signature");
-  }
-
-  if (!isParameterList && !missingKwOnly.empty()) {
-    auto &diag = getDiag();
-    emitMissing(diag, missingKwOnly,
-                isParameterList ? "keyword-only parameter"
-                                : "keyword-only argument");
-    return failure();
-  }
-  if (!posOnlyPassedByKw.empty()) {
-    auto &diag = getDiag();
-    size_t numNames = posOnlyPassedByKw.size();
-    const char *argOrParam = isParameterList ? "parameter" : "argument";
-    diag << "positional-only " << argOrParam << plural(numNames)
-         << " passed as keyword operand" << plural(numNames) << ": ";
-    emitNames(diag, posOnlyPassedByKw);
-    return failure();
   }
 
   // Collect all the keyword operands with unknown names.
@@ -181,22 +165,18 @@ LogicalResult CallOperands::diagnoseKeywordOperands(
       return failure();
     }
 
-    if (operand.keyword && !kwPassableNames.contains(operand.keyword))
+    if (operand.keyword && !kwPassableNames.contains(operand.keyword)) {
+      // If the function doesn't accept variadic kwargs, this is an error.
+      if (!pogListAttr.hasKwVarArg()) {
+        auto &diag = getDiag();
+        const char *argOrParam = isParameterList ? "parameter" : "argument";
+        diag << "unknown keyword " << argOrParam << ": " << operand.keyword;
+        return failure();
+      }
+
+      // Otherwise remember it.
       variadicKwOperands.push_back(operand);
-  }
-
-  // If the function doesn't accept variadic kwargs, this is an error.
-  if (!pogListAttr.hasKwVarArg() && !variadicKwOperands.empty()) {
-    SmallVector<StringAttr> unknownKwOperands;
-    for (auto &operand : variadicKwOperands)
-      unknownKwOperands.push_back(operand.keyword);
-
-    auto &diag = getDiag();
-    const char *argOrParam = isParameterList ? "parameter" : "argument";
-    diag << "unknown keyword " << argOrParam << plural(unknownKwOperands.size())
-         << ": ";
-    emitNames(diag, unknownKwOperands);
-    return failure();
+    }
   }
 
   return success();
@@ -208,8 +188,28 @@ LogicalResult CallOperands::diagnoseKeywordOperands(
 LogicalResult CallOperands::diagnosePosOperands(
     PogListAttr pogListAttr, bool isParameterList,
     llvm::function_ref<MojoInflightDiag &()> getDiag) const {
-  SmallVector<StringAttr> missingPosNames;
-  SmallVector<StringAttr> byPosAndKw;
+
+  // If any operand is a `*pack` splat and something didn't match, attach
+  // a note explaining the gap and pointing at the working pattern.
+  // `CallNode::emitIR` eagerly expands splats whose `VariadicPack`
+  // element list is statically resolved; this note primarily helps the
+  // case where the element list is still symbolic (e.g. `Ts.values` in
+  // a generic body), but it's also useful when a resolved splat happens
+  // to have the wrong element count.
+  auto attachPackSplatNote = [&](MojoInflightDiag &diag) {
+    for (const OperandValue &op : values) {
+      if (op.unpackStyle != ArgUnpackStyle::kStar)
+        continue;
+      diag.attachNote(op.expr->getLoc())
+          << "'*' splat is only supported when the callee accepts a "
+             "variadic pack argument at this position; to forward a "
+             "runtime pack to a fixed-arity callee, route the call through "
+             "a dispatcher whose argument is itself a variadic pack (e.g. "
+             "`def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: "
+             "def(*args: *Ts) thin](...): callee(*pack)`)";
+      return;
+    }
+  };
 
   size_t numOperands = values.size();
   size_t numPosMinimum = countNumInferredKinds(pogListAttr);
@@ -236,8 +236,13 @@ LogicalResult CallOperands::diagnosePosOperands(
     // keyword.
     if (nextPosOperand < numOperands) {
       StringAttr name = pogListAttr.getName(idx);
-      if (findKwArg(name))
-        byPosAndKw.push_back(name);
+      if (findKwArg(name)) {
+        const char *argOrParam = isParameterList ? "parameter" : "argument";
+        auto &diag = getDiag();
+        diag << argOrParam
+             << " passed both as positional and keyword operand: " << name;
+        return failure();
+      }
       ++nextPosOperand;
       continue;
     }
@@ -260,41 +265,14 @@ LogicalResult CallOperands::diagnosePosOperands(
           "(" + ("positional-only " + Twine("arg") + " #" + Twine(idx)).str() +
               ")");
     }
-    missingPosNames.push_back(name);
-  }
 
-  if (!byPosAndKw.empty()) {
-    const char *argOrParam = isParameterList ? "parameter" : "argument";
     auto &diag = getDiag();
-    diag << argOrParam << plural(byPosAndKw.size())
-         << " passed both as positional and keyword operand: ";
-    emitNames(diag, byPosAndKw);
+    diag << "missing required positional argument: " << name;
+    attachPackSplatNote(diag);
     return failure();
   }
 
   if (!isParameterList) { // Parameters can be inferred, don't error on missing.
-    // If any operand is a `*pack` splat and the count didn't match, attach
-    // a note explaining the gap and pointing at the working pattern.
-    // `CallNode::emitIR` eagerly expands splats whose `VariadicPack`
-    // element list is statically resolved; this note primarily helps the
-    // case where the element list is still symbolic (e.g. `Ts.values` in
-    // a generic body), but it's also useful when a resolved splat happens
-    // to have the wrong element count.
-    auto attachPackSplatNote = [&](MojoInflightDiag &diag) {
-      for (const OperandValue &op : values) {
-        if (op.unpackStyle != ArgUnpackStyle::kStar)
-          continue;
-        diag.attachNote(op.expr->getLoc())
-            << "'*' splat is only supported when the callee accepts a "
-               "variadic pack argument at this position; to forward a "
-               "runtime pack to a fixed-arity callee, route the call through "
-               "a dispatcher whose argument is itself a variadic pack (e.g. "
-               "`def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: "
-               "def(*args: *Ts) thin](...): callee(*pack)`)";
-        return;
-      }
-    };
-
     // If there are no positional variadics, we can check for too many operands.
     if (!hasVariadicOrPack && getNumPositional() > numPosMaximum) {
       auto &diag = getDiag();
@@ -302,13 +280,6 @@ LogicalResult CallOperands::diagnosePosOperands(
       size_t numPosOperands = getNumPositional();
       diag << "expected at most " << numPosMaximum << " positional argument"
            << plural(numPosMaximum) << ", got " << numPosOperands;
-      attachPackSplatNote(diag);
-      return failure();
-    }
-
-    if (!missingPosNames.empty()) {
-      auto &diag = getDiag();
-      emitMissing(diag, missingPosNames, "positional argument");
       attachPackSplatNote(diag);
       return failure();
     }

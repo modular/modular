@@ -503,17 +503,17 @@ def overloadIntFloat32(a: Int): pass
 def overloadIntFloat32(a: FloatDyn): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
+# expected-note @below {{candidate not viable: missing required positional argument: 'b'}}
 # expected-note-re @below {{candidate not viable: value passed to 'b' cannot be converted from 'FloatDyn' to 'Int'}}
 def overloadIntFloat32(a: Int, b: Int): pass
 
 # expected-note @below {{candidate declared here}}
-# expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
+# expected-note @below {{candidate not viable: missing required positional argument: 'b'}}
 # expected-note @below {{value passed to mutable argument 'b' must be mutable}}
 def overloadIntFloat32(a: Int, mut b: FloatDyn): pass
 
-# expected-note @below {{candidate not viable: missing 2 required positional arguments: 'b', 'c'}}
-# expected-note @below {{candidate not viable: missing 1 required positional argument: 'c'}}
+# expected-note @below {{candidate not viable: missing required positional argument: 'b'}}
+# expected-note @below {{candidate not viable: missing required positional argument: 'c'}}
 # expected-note @below {{candidate declared here}}
 def overloadIntFloat32(a: Int, mut b: FloatDyn, c: Int, *args: Int): pass
 
@@ -555,14 +555,14 @@ struct StructWithStaticMethod:
 
 def test_static_overload():
     var a = StructWithStaticMethod()
-    # expected-error @below {{invalid call to 'bar': missing 1 required positional argument: 'f'}}
+    # expected-error @below {{invalid call to 'bar': missing required positional argument: 'f'}}
     a.bar()
 
 
 # expected-note @+1 {{function declared here}}
 def takesAtLeastOneInt(x: Int, *y: Int): pass
 def badTakesAtLeastOneInt():
-  # expected-error @+1 {{invalid call to 'takesAtLeastOneInt': missing 1 required positional argument: 'x'}}
+  # expected-error @+1 {{invalid call to 'takesAtLeastOneInt': missing required positional argument: 'x'}}
   takesAtLeastOneInt()
 
 
@@ -571,7 +571,7 @@ def badTakesAtLeastOneInt():
 def too_few_pos_only(a: Int, b: Int, /, msg: Int = 2): pass
 
 def test_too_few_pos_only(a: Int, msg: Int = 3):
-  # expected-error @+1 {{invalid call to 'too_few_pos_only': missing 1 required positional argument: 'b'}}
+  # expected-error @+1 {{invalid call to 'too_few_pos_only': missing required positional argument: 'b'}}
   too_few_pos_only(a, msg=msg)
 
 
@@ -580,7 +580,7 @@ def test_too_few_pos_only(a: Int, msg: Int = 3):
 def missing_args(a: Int, b: Int, c: Int = 2, d: Int = 2): pass
 
 def test_missing_args():
-  # expected-error @+1 {{invalid call to 'missing_args': missing 2 required positional arguments: 'a', 'b'}}
+  # expected-error @+1 {{invalid call to 'missing_args': missing required positional argument: 'a'}}
   _ = missing_args(c=1, d=1)
 
 
@@ -621,13 +621,13 @@ def takes_same_arg_types[x: Int](a: Parametric[x], b: Parametric[x]): pass
 def test_param_deduction_failure[
     func: def[y: Int] (c: Parametric[y], d: Parametric[y]) thin -> None,
 ](u: Int, v: Int):
-    # expected-error @+1 {{missing 1 required positional argument: 'b'}}
+    # expected-error @+1 {{invalid call to 'takes_same_arg_types': missing required positional argument: 'b'}}
     takes_same_arg_types[_](u)
 
     # expected-error @below {{invalid call to 'takes_same_arg_types': value passed to 'a' cannot be converted from 'Int' to 'Parametric[x]', it depends on an unresolved parameter 'x'}}
     takes_same_arg_types[_](u, v)
 
-    # expected-error @+1 {{missing 1 required positional argument: 'd'}}
+    # expected-error @+1 {{invalid indirect call: missing required positional argument: 'd'}}
     func[_](u)
 
     # TODO: This is because we're not inferring signatures correctly
