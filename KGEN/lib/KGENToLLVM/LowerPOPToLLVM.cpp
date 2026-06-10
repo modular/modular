@@ -2526,6 +2526,12 @@ struct ConvertSymbolOpToAIR : public ConvertSymbolOpToLLVM<OpT> {
       return "i" + llvm::utostr(intTy.getWidth());
     } else if (isa<BFloat16Type>(type)) {
       return "bf16";
+    } else if (isa<Float8E5M2Type>(type)) {
+      return "f8e5m2";
+    } else if (isa<Float8E4M3FNType>(type)) {
+      return "f8e4m3fn";
+    } else if (isa<Float8E4M3Type>(type)) {
+      return "f8e4m3";
     } else if (auto fltTy = dyn_cast<FloatType>(type)) {
       return "f" + llvm::utostr(fltTy.getWidth());
     } else if (auto vecTy = dyn_cast<VectorType>(type)) {
