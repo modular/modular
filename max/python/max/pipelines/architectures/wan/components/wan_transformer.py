@@ -40,6 +40,7 @@ from ..wan_transformer import (
     WanTransformerPostProcess,
     WanTransformerPreProcess,
 )
+from ..weight_adapters import adapt_wan_fp8_weights
 
 logger = logging.getLogger("max.pipelines")
 
@@ -98,10 +99,16 @@ class WanTransformer(CompiledComponent):
         self._post_graph: Graph | None = None
         self._cfg_unpack_model: Any = None
 
-        # Load and remap weights.
+        # Load and remap weights. FP8 (Comfy-Org ``fp8_scaled``) checkpoints
+        # use native Wan-AI naming with per-tensor weight/input scales and a
+        # dedicated adapter; the bfloat16 path uses the diffusers remap.
+        self._fp8 = self.config.quant_config is not None
         paths = config_entry.resolved_weight_paths()
         weights = load_weights(paths)
-        state_dict = _remap_state_dict(weights, target_dtype=DType.bfloat16)
+        if self._fp8:
+            state_dict = adapt_wan_fp8_weights(weights)
+        else:
+            state_dict = _remap_state_dict(weights, target_dtype=DType.bfloat16)
 
         # MoE: load secondary transformer weights.
         state_dict_2 = self._load_moe_weights(manifest)
@@ -129,7 +136,12 @@ class WanTransformer(CompiledComponent):
         config_entry_2 = manifest["transformer_2"]
         paths_2 = config_entry_2.resolved_weight_paths()
         weights_2 = load_weights(paths_2)
-        state_dict_2 = _remap_state_dict(weights_2, target_dtype=DType.bfloat16)
+        if self._fp8:
+            state_dict_2 = adapt_wan_fp8_weights(weights_2)
+        else:
+            state_dict_2 = _remap_state_dict(
+                weights_2, target_dtype=DType.bfloat16
+            )
 
         return state_dict_2
 
@@ -188,6 +200,7 @@ class WanTransformer(CompiledComponent):
                         added_kv_proj_dim=self.config.added_kv_proj_dim,
                         dtype=dtype,
                         device=dev_ref,
+                        quant_config=self.config.quant_config,
                     )
                     for _ in range(self.config.num_layers)
                 ]

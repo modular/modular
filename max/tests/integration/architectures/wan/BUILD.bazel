@@ -12,6 +12,7 @@ modular_py_test(
     srcs = ["test_wan_internals.py"],
     deps = [
         "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/wan",
         "//max/python/max/pipelines/context",
