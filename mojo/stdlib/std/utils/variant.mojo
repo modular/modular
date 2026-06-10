@@ -208,11 +208,11 @@ struct _NichedOptionalStorage[
             self = Self()
 
     @always_inline
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         comptime assert conforms_to(Self.T, Movable)
-        if take.isa[Self.T]():
+        if move.isa[Self.T]():
             self = Self(
-                take.unsafe_ptr[downcast[Self.T, Movable]]().take_pointee()
+                move.unsafe_ptr[downcast[Self.T, Movable]]().take_pointee()
             )
         else:
             self = Self()
@@ -304,9 +304,9 @@ struct _DefaultVariantStorage[*Ts: AnyType](
                 return
 
     @always_inline
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         self = Self(unsafe_uninitialized=())
-        self.get_discriminant() = take.get_discriminant()
+        self.get_discriminant() = move.get_discriminant()
 
         comptime for i in range(Self.Ts.size):
             comptime TUnknown = Self.Ts[i]
@@ -315,7 +315,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 
             if self.get_discriminant() == UInt8(i):
                 self.unsafe_ptr[T]().init_pointee_move_from(
-                    take.unsafe_ptr[T]()
+                    move.unsafe_ptr[T]()
                 )
                 return
 
@@ -576,16 +576,16 @@ struct Variant[*Ts: Movable](
         ], "Cannot copy Variant with non-copyable types"
         self._storage = Self._Storage(copy=copy._storage)
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Move-initialize this variant from another variant of the same type.
 
         Args:
-            take: The variant to move from.
+            move: The variant to move from.
         """
         comptime assert _all_movable[
             *Self.Ts
         ](), "Cannot move Variant with non-movable types"
-        self._storage = Self._Storage(take=take._storage^)
+        self._storage = Self._Storage(move=move._storage^)
 
     def __del__(deinit self):
         """Destroy the variant, running the destructor of the currently held value.

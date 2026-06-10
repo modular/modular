@@ -122,7 +122,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         )
         self._array = copy._array
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         """Moves the raw bits from another `UnsafeMaybeUninit` instance.
 
         This performs a bitwise move of the underlying memory without invoking
@@ -130,13 +130,13 @@ struct UnsafeMaybeUninit[T: AnyType](
         the held value `T` must be trivially movable.
 
         Args:
-            take: The value to move from.
+            move: The value to move from.
         """
         comptime assert (
             conforms_to(Self.T, Movable)
             and is_trivially_movable[downcast[Self.T, Movable]]()
         )
-        self._array = take._array
+        self._array = move._array
 
     @always_inline
     def init_from[

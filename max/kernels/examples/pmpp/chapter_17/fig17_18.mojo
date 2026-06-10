@@ -32,10 +32,10 @@ struct Element(Comparable, ImplicitlyCopyable):
     def __eq__(self, other: Self) -> Bool:
         return self.c == other.c and self.r == other.r
 
-    def __init__(out self, *, deinit take: Self):
-        self.r = take.r
-        self.c = take.c
-        self.v = take.v
+    def __init__(out self, *, deinit move: Self):
+        self.r = move.r
+        self.c = move.c
+        self.v = move.v
 
     def __init__(out self, *, copy: Self):
         self.r = copy.r

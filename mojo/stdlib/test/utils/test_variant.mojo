@@ -64,7 +64,7 @@ struct Poison(ImplicitlyCopyable):
     def __init__(out self, *, copy: Self):
         _poison_ptr().init_pointee_move(True)
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         _poison_ptr().init_pointee_move(True)
 
     def __del__(deinit self):
