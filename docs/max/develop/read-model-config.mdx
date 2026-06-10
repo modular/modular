@@ -6,16 +6,12 @@ description: Translate Hugging Face config.json fields into MAX architecture dec
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import MDXListing from '@site/src/components/Listing/MDXListing';
 
-When importing a model into MAX as a custom architecture, you are responsible
-for building the graph that the model's `config.json` describes. This makes
-reading and interpreting the config your job. It is the entry point of your
-[model bring-up workflow](/max/develop/model-bringup-workflow/) and the file
-you consult most frequently.
-
-Every architectural difference between your model and an existing MAX
-architecture shows up in the config before you ever open the modeling code.
+When importing a Hugging Face model into MAX as a custom architecture, you're
+responsible for building the graph that the model's `config.json` describes.
+This makes reading and interpreting the config your job. It's the entry point
+of your [model bring-up workflow](/max/develop/model-bringup-workflow/) and
+the file you consult most frequently.
 
 ## What is a model config?
 
@@ -23,32 +19,32 @@ A Hugging Face `config.json` is the serialized record of how a model was built.
 It represents the
 [`PretrainedConfig`](https://huggingface.co/docs/transformers/main/en/main_classes/configuration)
 class generated during training or weight serialization, carrying only the
-model's architectural hyperparameters—the dimensions and structural flags that
+model's architectural hyperparameters: the dimensions and structural flags that
 define the graph's shape (rather than training settings like learning rate). It
 contains neither the execution graph nor the tensor weights.
 
-Under standard workflows, developers rarely inspect this file directly. When
-loading a model with Hugging Face's
-[`transformers`](https://huggingface.co/docs/transformers/index) library, the
-library reads the configuration automatically and instantiates the architecture.
+When you run inference with Hugging Face's
+[`transformers`](https://huggingface.co/docs/transformers/index) library, you
+rarely inspect this file directly: the library reads the configuration
+automatically and instantiates the architecture for you. When you port a model
+to MAX, that instantiation step is yours to write.
 
-Reviewing the configuration fields identifies which values map directly to the
-MAX configuration schema, which flags require custom graph layers, and which
-entries might contain incorrect defaults that require verification against the
-weight dimensions.
-
-Configuration mapping sits early in the porting sequence. Use the sections below
-to interpret each field and translate it into a concrete architecture plan.
+By reviewing the configuration fields, you can identify which values map
+directly to the MAX configuration schema, which flags require custom graph
+layers, and which entries might contain incorrect defaults that you need to
+verify against the weight dimensions. Use the sections below to interpret each
+field and translate it into a concrete architecture plan.
 
 ## Read the config
 
-Map the model's dimensions directly to your MAX configuration, and use
-non-default flags to locate where its execution flow diverges from a standard
-transformer. Before writing code, load and inspect the complete configuration to
-trace the model's architectural characteristics.
+Before you write any architecture code, load and inspect the complete
+configuration to trace the model's architectural characteristics. The
+dimensions map directly to your MAX configuration, while non-default flags
+locate where the model's execution flow diverges from a standard transformer:
+a decoder-only stack of uniform attention and MLP blocks, like Llama.
 
 You can read a model's configuration on Hugging Face by navigating to the
-"Files and versions" tab of its model repository and viewing the `config.json`
+**Files and versions** tab of its model repository and viewing the `config.json`
 file, or you can load the config locally and print each field. Start by looking
 at the complete picture rather than the handful of fields a model card mentions.
 To view the configuration without downloading the model's tensor weights,
@@ -66,7 +62,7 @@ print(config)
 
 The `trust_remote_code=True` argument is required for checkpoints using custom
 configuration classes. Without it, the configuration parser defaults to generic
-models and omits custom fields—which are often the fields that define the
+models and omits custom fields, which are often the fields that define the
 model's architectural differences.
 
 :::
@@ -113,11 +109,10 @@ LlamaConfig {
 
 - `architectures`: Lists the architecture classes. The first entry
   (`architectures[0]`) is the exact string identifier you must register in
-  `arch.py` (or your target model's registration file).
+  your architecture's `arch.py` file.
 - `torch_dtype` (or `dtype`): Defines the precision dtype in which the weights
   are serialized, establishing the default encoding declared in the pipeline.
-  (Note that `torch_dtype` is deprecated in newer models; `dtype` is the
-  configuration parameter used).
+  (`torch_dtype` is deprecated and replaced by `dtype`.)
 - `model_type`: Identifies the model family (such as `llama` or `qwen3`),
   pointing to the closest baseline MAX architecture and indicating the expected
   weight serialization layout.
@@ -128,11 +123,11 @@ design choices established by the model authors during the training phase.
 
 Because instruct, base, and chat variants often differ in parameters like
 `max_position_embeddings`, `rope_scaling`, or `tie_word_embeddings`, always load
-the config for the exact checkpoint you are porting. Copying values from a
+the config for the exact checkpoint you're porting. Copying values from a
 sibling variant can result in a model that loads without errors but fails at
 long sequence lengths or on the final logits projection.
 
-### Read across architectures
+### Explore other model configs
 
 TinyLlama is a model checkpoint using the standard Llama architecture
 (`LlamaForCausalLM`), where almost every field maps directly, and the only
@@ -213,12 +208,22 @@ architectural scope. This split establishes your development roadmap.
 
 When mapping fields from `config.json`, start by identifying static dimensions
 and hyperparameters. These fields parameterize existing math (such as sizing
-matrices or defining scalar constants) but do not alter the sequence of
-operations. You will define these fields in your architecture's
-`model_config.py` file, translating them into a typed configuration dataclass.
+matrices or defining scalar constants) but don't alter the sequence of
+operations. You'll define these fields in your architecture's
+`model_config.py` file, translating them into a typed configuration dataclass,
+in which each field is a class attribute. For example:
+
+```python
+@dataclass(kw_only=True)
+class MyModelConfig(ArchConfigWithKVCache):
+    hidden_size: int
+    num_hidden_layers: int
+    num_attention_heads: int
+    # ... one attribute per config field you map ...
+```
 
 The following list shows common dimensional parameters that mean the same thing
-across nearly all transformer architectures. While this list is not exhaustive,
+across nearly all transformer architectures. While this list isn't exhaustive,
 these are the most common fields that pass directly into standard layers without
 requiring graph changes:
 
@@ -369,7 +374,7 @@ Structural fields signal that the model departs from a standard transformer
 architecture and requires custom layer logic. When you identify these fields,
 prepare to declare or extend custom layers in the model's graph implementation
 file (such as `llama3.py` or `deepseekV3.py`) using
-[MAX Graph Modules](/max/develop/modules/):
+[MAX modules](/max/develop/modules/):
 
 - **Grouped-query or multi-query attention** (`num_key_value_heads` below
   `num_attention_heads`, or `multi_query`) shares keys and values across query
@@ -507,12 +512,10 @@ end-to-end view of this sequence.
 
 These pages go deeper on the steps that follow:
 
-export const docs = [
-  'serve-custom-model-architectures.mdx',
-  '../graph/quantize.mdx',
-];
-
-<MDXListing mdxList={docs} />
+- [Serve custom model architectures](/max/develop/serve-custom-model-architectures/):
+  Register your architecture package and serve it with `max serve`.
+- [Quantization](/max/graph/quantize/): Work with quantized weight encodings
+  when a checkpoint's `quantization_config` calls for them.
 
 {/* TODO(docs): link these once the pages exist: choose an implementation
 strategy, map checkpoint weights, read the modeling code, configure attention
