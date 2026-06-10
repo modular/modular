@@ -39,10 +39,56 @@ from max._core.dialects import builtin, kgen, mo, mosh
 from max.driver import Buffer
 from max.graph import Graph
 
-from ._interpreter_ops import handlers as _handlers_module
+try:
+    from ._interpreter_ops import handlers as _handlers_module
 
-# Import handlers to register them (side effect import)
-from ._interpreter_ops import lookup_handler
+    # Import handlers to register them (side effect import)
+    from ._interpreter_ops import lookup_handler
+except Exception as _e:
+    import os as _os
+    import subprocess as _sp
+    import sys as _sys
+    import traceback as _tb
+
+    _pkg = _os.path.dirname(_os.path.abspath(__file__))
+    _ops_dir = _os.path.join(_pkg, "_interpreter_ops")
+    try:
+        _ops_files = sorted(
+            f"{e.name} ({e.stat().st_size}B)" for e in _os.scandir(_ops_dir)
+        )
+    except OSError:
+        _ops_files = ["(unable to list)"]
+    _ldd_lines = []
+    for _so in _os.scandir(_ops_dir) if _os.path.isdir(_ops_dir) else []:
+        if not _so.name.endswith(".so"):
+            continue
+        try:
+            _r = _sp.run(
+                ["ldd", _so.path], capture_output=True, text=True, timeout=5
+            )
+            _missing = [
+                l.strip() for l in _r.stdout.splitlines() if "not found" in l
+            ]
+            if _missing:
+                _ldd_lines.append(f"    {_so.name}: {_missing}")
+        except Exception:
+            pass
+    _ldd_out = (
+        "\n  ldd missing deps:\n" + "\n".join(_ldd_lines) if _ldd_lines else ""
+    )
+    print(
+        f"max._interpreter: failed to import _interpreter_ops:"
+        f" {type(_e).__name__}: {_e}\n"
+        f"  agent: {_os.environ.get('BUILDKITE_AGENT_NAME', '(not set)')}\n"
+        f"  build: {_os.environ.get('BUILDKITE_BUILD_ID', '(not set)')}"
+        f" job: {_os.environ.get('BUILDKITE_JOB_ID', '(not set)')}\n"
+        f"  package dir: {_pkg}\n"
+        f"  _interpreter_ops contents: {_ops_files}"
+        f"{_ldd_out}\n"
+        f"{_tb.format_exc()}",
+        file=_sys.stderr,
+    )
+    raise
 
 # Type alias for interpreter slots
 InterpreterSlots = dict[Any, Buffer | None]
