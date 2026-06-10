@@ -38,8 +38,7 @@ from layout.tma_async import RaggedTMA3DTile
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
-    SM100TensorAccumulatorSS,
-    SM100TensorAccumulatorTS,
+    SM100TensorAccumulator,
     elect,
     kv_sub_tile_rows,
 )
@@ -118,12 +117,13 @@ struct SM100MHA2Q[
 
     # First MMA is Q@K' (can be staged by num_qk_stages)
     # (BM x depth) @ (BN x depth)' -> (BM x BN)
-    comptime UMMA0Type = SM100TensorAccumulatorSS[
+    comptime UMMA0Type = SM100TensorAccumulator[
         Self.qkv_type,
         Self.accum_type,
         MMA_M=Self.MMA_M,  # 128 single-CTA, 256 pair-CTA
         MMA_N=Self.BN,
         BK=align_up(Self.depth, Self.config.MMA_K),  # BK in memory depth
+        a_tmem=False,
         swizzle_a=Self.config.swizzle_mode,
         swizzle_b=Self.config.swizzle_mode,
         transpose_b=True,
@@ -132,12 +132,13 @@ struct SM100MHA2Q[
     ]
     # Second MMA is P@V (V not staged, but P writing can be staged)
     # (BM x BN) @ (BN x depth) -> (BM x depth)
-    comptime UMMA1Type = SM100TensorAccumulatorTS[
+    comptime UMMA1Type = SM100TensorAccumulator[
         Self.qkv_type,
         Self.accum_type,
         MMA_M=Self.MMA_M,
         MMA_N=Self.config.padded_ov_depth,
         BK=Self.BN,
+        a_tmem=True,
         swizzle_b=Self.config.swizzle_mode,
         transpose_b=False,
         num_stages=Self.num_pv_stages,

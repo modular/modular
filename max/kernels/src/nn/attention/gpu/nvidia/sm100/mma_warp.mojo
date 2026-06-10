@@ -25,8 +25,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     elect,
     elect_mma_arrive,
-    SM100TensorAccumulatorSS,
-    SM100TensorAccumulatorTS,
+    SM100TensorAccumulator,
     KConsumerPipeline,
     VConsumerPipeline,
     StagedPipeline,
@@ -67,12 +66,13 @@ def fa4_mma[
     )
 
     # MMA types
-    comptime UMMA0Type = SM100TensorAccumulatorSS[
+    comptime UMMA0Type = SM100TensorAccumulator[
         config.qkv_dtype,
         accum_type,
         MMA_M=config.MMA_M,
         MMA_N=BN,
         BK=align_up(config.qk_depth, config.MMA_K),
+        a_tmem=False,
         swizzle_a=config.swizzle_mode,
         swizzle_b=config.swizzle_mode,
         transpose_b=True,
@@ -80,12 +80,13 @@ def fa4_mma[
         num_stages=num_qk_stages,
         mma_kind=mma_kind,
     ]
-    comptime UMMA1Type = SM100TensorAccumulatorTS[
+    comptime UMMA1Type = SM100TensorAccumulator[
         config.qkv_dtype,
         accum_type,
         MMA_M=config.MMA_M,
         MMA_N=config.padded_ov_depth,
         BK=BN,
+        a_tmem=True,
         swizzle_b=config.swizzle_mode,
         transpose_b=False,
         cta_group=cta_group,

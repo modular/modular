@@ -46,7 +46,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import (
 from linalg.arch.sm100.mma import smem_descriptor
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SM100TensorAccumulatorSS,
+    SM100TensorAccumulator,
     StagedPipeline,
     elect,
 )
@@ -96,12 +96,13 @@ def depth512_mma[
     )
 
     # Q@K' → S: SS MMA, cta_group=2
-    comptime UMMA_QK = SM100TensorAccumulatorSS[
+    comptime UMMA_QK = SM100TensorAccumulator[
         qkv_dtype,
         accum_type,
         MMA_M=MMA_M,
         MMA_N=BN,
         BK=BK0,
+        a_tmem=False,
         swizzle_a=config.swizzle_mode,
         swizzle_b=config.swizzle_mode,
         transpose_b=True,
@@ -229,24 +230,26 @@ def depth512_mma[
         """
         comptime if config.split_o:
             # P@V_lo/hi MMA types: MMA_N=ov_depth/2
-            comptime UMMA_PV_lo = SM100TensorAccumulatorSS[
+            comptime UMMA_PV_lo = SM100TensorAccumulator[
                 qkv_dtype,
                 accum_type,
                 MMA_M=MMA_M,
                 MMA_N=ov_half,
                 BK=BK1,
+                a_tmem=False,
                 swizzle_a=config.swizzle_mode,
                 swizzle_b=config.swizzle_mode,
                 transpose_b=False,
                 cta_group=cta_group,
                 mma_kind=mma_kind,
             ]
-            comptime UMMA_PV_hi = SM100TensorAccumulatorSS[
+            comptime UMMA_PV_hi = SM100TensorAccumulator[
                 qkv_dtype,
                 accum_type,
                 MMA_M=MMA_M,
                 MMA_N=ov_half,
                 BK=BK1,
+                a_tmem=False,
                 swizzle_a=config.swizzle_mode,
                 swizzle_b=config.swizzle_mode,
                 transpose_b=False,
@@ -303,12 +306,13 @@ def depth512_mma[
             pipeline_o_hi.step()
         else:
             # Single P@V MMA type: MMA_N=ov_depth
-            comptime UMMA_PV = SM100TensorAccumulatorSS[
+            comptime UMMA_PV = SM100TensorAccumulator[
                 qkv_dtype,
                 accum_type,
                 MMA_M=MMA_M,
                 MMA_N=ov_depth,
                 BK=BK1,
+                a_tmem=False,
                 swizzle_a=config.swizzle_mode,
                 swizzle_b=config.swizzle_mode,
                 transpose_b=False,

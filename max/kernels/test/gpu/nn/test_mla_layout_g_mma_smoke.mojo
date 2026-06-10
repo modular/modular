@@ -16,7 +16,7 @@
 Purpose
 =======
 Phase A9.1 of the MLA decode Layout G design (BM=32, BN=64) requires the
-custom raw-PTX `bulk_mma_ws` wrapper (mla_decode_utils.mojo:1828) to accept
+custom raw-PTX `bulk_mma_ws` wrapper (attention_utils.mojo) to accept
 M=32 even though the Mojo stdlib `_get_f8f6f4_mma_shape`
 (mma_nvidia_sm100.mojo:345) only allows M in {64, 128}.  The custom wrapper
 in MLA decode bypasses the stdlib shape table by feeding the descriptor M
@@ -100,8 +100,7 @@ from layout.tma_async import (
 )
 from linalg.arch.sm100.mma import smem_descriptor
 from linalg.matmul.gpu import matmul_kernel_naive
-from nn.attention.gpu.nvidia.sm100.attention_utils import elect
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import bulk_mma_ws
+from nn.attention.gpu.nvidia.sm100.attention_utils import bulk_mma_ws, elect
 from std.testing import assert_true
 from std.utils.index import Index, IndexList
 

@@ -84,8 +84,7 @@ from layout.tma_async import (
 )
 from linalg.arch.sm100.mma import smem_descriptor
 from linalg.matmul.gpu import matmul_kernel_naive
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import bulk_mma_ws_ts
-from nn.attention.gpu.nvidia.sm100.attention_utils import elect
+from nn.attention.gpu.nvidia.sm100.attention_utils import bulk_mma_ws_ts, elect
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 

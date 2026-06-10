@@ -71,8 +71,7 @@ from nn.attention.gpu.nvidia.sm100.correction_warp import fa4_correction
 from nn.attention.gpu.mha import q_num_matrix_view_rows
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SM100TensorAccumulatorSS,
-    SM100TensorAccumulatorTS,
+    SM100TensorAccumulator,
     add_ftz,
     sub_ftz,
     mul_ftz,
@@ -299,12 +298,13 @@ struct MLASparseSharedMemoryFP8[config: MLASparseConfig, scale_block_size: Int]:
 
 
 struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
-    comptime SSMMAType = SM100TensorAccumulatorSS[
+    comptime SSMMAType = SM100TensorAccumulator[
         Self.dtype,
         Self.accum_dtype,
         MMA_M=Self.config.num_q_heads,
         MMA_N=Self.config.B_TOPK,
         BK=Self.config.q_smem_depth,
+        a_tmem=False,
         mma_kind=UMMAKind.KIND_F16,
         cta_group=Self.config.cta_group,
     ]
@@ -313,12 +313,13 @@ struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     # k-mmas each keeps every issued instruction inside the limit. Each
     # `.mma[stage_idx=i]` call issues its share; stages 1+ always
     # accumulate (c_scale forced to 1 internally).
-    comptime TSMMAType = SM100TensorAccumulatorTS[
+    comptime TSMMAType = SM100TensorAccumulator[
         Self.dtype,
         Self.accum_dtype,
         MMA_M=Self.config.num_q_heads,
         MMA_N=Self.config.B_TOPK,
         BK=Self.config.q_tmem_depth,
+        a_tmem=True,
         mma_kind=UMMAKind.KIND_F16,
         cta_group=Self.config.cta_group,
         num_stages=3,
@@ -393,24 +394,26 @@ struct SVMMAType[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     # gather4 with SWIZZLE_128B, producing col-group-blocked smem the
     # SW128 MMA descriptor reads correctly (same pattern as
     # `DecodeSM100PVSS.descriptor_v_block`).
-    comptime SS_P0MMAType = SM100TensorAccumulatorSS[
+    comptime SS_P0MMAType = SM100TensorAccumulator[
         Self.dtype,
         Self.accum_dtype,
         MMA_M=Self.config.num_q_heads,
         MMA_N=Self.config.v_depth // Self.config.cta_group,
         BK=Self.config.B_TOPK // 2,
+        a_tmem=False,
         mma_kind=UMMAKind.KIND_F16,
         swizzle_a=TensorMapSwizzle.SWIZZLE_NONE,
         swizzle_b=TensorMapSwizzle.SWIZZLE_128B,
         transpose_b=False,
         cta_group=Self.config.cta_group,
     ]
-    comptime SS_P1MMAType = SM100TensorAccumulatorSS[
+    comptime SS_P1MMAType = SM100TensorAccumulator[
         Self.dtype,
         Self.accum_dtype,
         MMA_M=Self.config.num_q_heads,
         MMA_N=Self.config.v_depth // Self.config.cta_group,
         BK=Self.config.B_TOPK // 2,
+        a_tmem=False,
         mma_kind=UMMAKind.KIND_F16,
         swizzle_a=TensorMapSwizzle.SWIZZLE_NONE,
         swizzle_b=TensorMapSwizzle.SWIZZLE_128B,
