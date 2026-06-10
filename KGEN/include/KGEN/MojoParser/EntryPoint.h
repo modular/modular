@@ -73,9 +73,6 @@ struct ParserConfig {
   /// SourceMgr to get ranges and fixit hints.
   bool useMLIRDiagnostics = false;
 
-  /// If true, output a kgen module. This flag is used in decl resolution.
-  bool exportKgenModule = false;
-
   /// If true, this will diagnose missing pieces of documentation strings.
   bool diagnoseMissingDocStrings = false;
 

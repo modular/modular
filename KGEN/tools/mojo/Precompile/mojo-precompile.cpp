@@ -183,9 +183,6 @@ struct PrecompileArgs {
   /// The path to the Mojo package source directory to parse and output as a
   /// package.
   std::string inputPath;
-  /// The output should be a serialized kgen module run until before
-  /// elaboration.
-  bool exportKgenModule;
   /// The path to which to output a `.mojoc` file.
   std::string outputPath;
   /// Compilation options common to all Mojo builds.
@@ -232,8 +229,7 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
     return Error("'" + pkgArgs.inputPath +
                  "' does not correspond to a Mojo package");
   }
-  pkgArgs.exportKgenModule = args.hasArg(options::OPT_kgenModule);
-  std::string extension = pkgArgs.exportKgenModule ? ".mlirbc" : ".mojoc";
+  std::string extension = ".mojoc";
   // Use the output path the user specified, or if none was specified, output
   // "input-directory-name.mojoc".
   std::string inputDirName =
@@ -259,14 +255,12 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
         pkgArgs.outputPath = outputPath;
       }
 
-      if (!pkgArgs.exportKgenModule && outputPath.extension() != ".mojoc") {
+      if (outputPath.extension() != ".mojoc") {
         if (outputPath.extension() != ".mojopkg")
           return Error("output path must have a '.mojoc' extension");
         llvm::errs() << "warning: creating '.mojopkg' file extensions is "
                         "deprecated; switch to '.mojoc'\n";
       }
-      if (pkgArgs.exportKgenModule && outputPath.extension() != ".mlirbc")
-        return Error("output path must have a '.mlirbc' extension.");
 
       pkgArgs.name = outputPath.stem().string();
     }
@@ -329,32 +323,6 @@ writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, StringRef bitcodeFile) {
   // Create the resource attribute
   return createResourceAttr(ctx, ArrayRef<char>(data.data(), data.size()),
                             resourceName);
-}
-
-static ErrorOrSuccess
-internalizeBitcodeLibs(LLVMBitcodeLibArrayAttr bitcodeLibsAttr,
-                       ModuleOp module) {
-  SmallVector<LLVMBitcodeLibAttr> bitcodeAttrs;
-
-  for (const LLVMBitcodeLibAttr &bitcodeLibAttr : bitcodeLibsAttr.getValue()) {
-    if (auto stringAttr = dyn_cast<StringAttr>(bitcodeLibAttr.getLibrary())) {
-      DenseResourceElementsAttr bitcodeAttr = writeLLVMBitcodeToDenseAttr(
-          module.getContext(), stringAttr.getValue());
-      if (!bitcodeAttr)
-        return Error("failed to load bitcode library: " +
-                     stringAttr.getValue());
-      // An internalized bitcode library is always used.
-      bitcodeAttrs.push_back(LLVMBitcodeLibAttr::get(true, bitcodeAttr));
-    } else {
-      bitcodeAttrs.push_back(bitcodeLibAttr);
-    }
-  }
-
-  // Set the bitcode libraries on the module.
-  module->setAttr(
-      LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName(),
-      LLVMBitcodeLibArrayAttr::get(module->getContext(), bitcodeAttrs));
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -483,13 +451,6 @@ static int precompile(const State &subcommandState) {
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &precompileArgs.ctx);
-  bool isKgenModule = args.hasArg(options::OPT_kgenModule);
-  // TODO: fix debug info for kgen modules.
-  if (isKgenModule) {
-    precompileArgs.compileOptions.debugLevel = CompilationOptions::kNoDebug;
-    precompileArgs.compileOptions.optimizationLevel = 3;
-  }
-
   if (args.hasArg(options::OPT_bitcode_libs)) {
     precompileArgs.compileOptions.bitcodeLibs = llvm::to_vector_of<std::string>(
         args.getAllArgValues(options::OPT_bitcode_libs));
@@ -507,7 +468,6 @@ static int precompile(const State &subcommandState) {
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
       options::OPT_fixit, options::OPT_export_fixit,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
-        parserConfig.exportKgenModule = isKgenModule;
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
             ctx, precompileArgs.inputPath, precompileArgs.name, sourceMgr,
@@ -523,32 +483,6 @@ static int precompile(const State &subcommandState) {
     // YAML.
     assert(args.hasArg(options::OPT_fixit));
     return EXIT_SUCCESS;
-  }
-
-  if (precompileArgs.exportKgenModule) {
-    KGENCompiler compiler(*module->get()->getContext(),
-                          precompileArgs.compileOptions);
-    if (failed(compiler.runGenerateLibraryPipeline(**module)))
-      return state.reportError("compilation failed");
-
-    if (auto bitcodeLibArrayAttr =
-            (*module)->getOperation()->getAttrOfType<LLVMBitcodeLibArrayAttr>(
-                LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName())) {
-      ErrorOrSuccess res =
-          internalizeBitcodeLibs(bitcodeLibArrayAttr, **module);
-      if (failed(res))
-        return state.reportError(res.getError());
-    }
-
-    if (failed(writePrecompiledFile(**module, out->os())))
-      return state.reportError("serialization failed");
-    out->keep();
-
-    // Assert that we've parsed all command line arguments.
-    state.assertNoUnusedArguments(args);
-
-    // Check if any warnings were promoted to errors via -Werror.
-    return warningHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
   }
 
   // Build a new package op based off of the parsed package op. This new op is

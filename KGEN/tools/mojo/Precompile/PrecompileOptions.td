@@ -21,10 +21,6 @@ def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<1>,
   HelpText<"Appends the given path to the list of directories to search for "
            "imported Mojo files.">;
 
-def kgenModule : Flag<["-"], "kgenModule">, Group<CompilationOptionGroup>,
-  Index<2>,
-  HelpText<"Export as a KGEN module.">;
-
 defm bitcode_libs : CommandOptionHidden<["--", "-"], "bitcode-libs",
   CompilationOptionGroup, Index<3>, MetaVarName<"LIBS">,
   HelpText<
