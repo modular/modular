@@ -657,6 +657,7 @@ def smoke_test(
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
+                model_alias=model if hf_model_path != model else None,
             )
 
             if print_responses:

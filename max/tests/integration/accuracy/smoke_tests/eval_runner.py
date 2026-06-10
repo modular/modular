@@ -163,10 +163,14 @@ def call_eval(
     num_questions: int,
     disable_timeouts: bool,
     metrics_url: str | None = None,
+    model_alias: str | None = None,
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
+    # model_alias carries the original recipe key (e.g. "nvidia/Kimi-K2.5-NVFP4__internal")
+    # when model is a local path that doesn't contain the model name keywords.
+    check_name = (model_alias or model).casefold()
     is_reasoning_model = any(
-        kw in model.casefold()
+        kw in check_name
         for kw in (
             "academic-ds",
             "deepseek-r1",
