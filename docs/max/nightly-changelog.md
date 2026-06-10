@@ -41,13 +41,13 @@ This version is still a work in progress.
 
 ### Inference server
 
-- Chat completion responses now emit reasoning under both `reasoning` and
-  `reasoning_content`. Reasoning models previously exposed their
-  chain-of-thought only under `reasoning`; adding the `reasoning_content`
-  alias (the field used by vLLM, SGLang, and the DeepSeek API, in both
-  streaming deltas and the final message) lets a wider range of
-  OpenAI-compatible clients surface it. The two fields always hold the same
-  text.
+- Chat completion responses now emit reasoning only under `reasoning`,
+  aligning with OpenAI's Responses API naming. The `reasoning_content` alias
+  (previously emitted alongside `reasoning` for compatibility with vLLM,
+  SGLang, and the DeepSeek API) is no longer included in responses. vLLM has
+  deprecated `reasoning_content` in favor of `reasoning`; see
+  <https://github.com/vllm-project/vllm/pull/33402>. Clients should read
+  chain-of-thought tokens from the `reasoning` field.
 
 - `response_format` JSON schemas with a non-object root are now accepted when
   the root `type` is missing (any) or a type union that includes `object`
