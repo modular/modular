@@ -167,6 +167,51 @@ struct SM100MHA2Q[
 
     comptime SmemType = SM100AttentionSMem[Self.config]
 
+    # TMA-op types as seen by `kernel`/`_kernel_impl`. Defined once so the 2Q
+    # signatures and the 1Q-variant rebinds (see `kernel`) share a single
+    # definition.
+    comptime QTMAOpType = QTMATile[
+        Self.KVLUTType.dtype,
+        Self.config.swizzle_mode,
+        BM=Self.config.BM // Self.config.num_qo,
+        depth=Self.config.qk_depth,
+        group=Self.config.group,
+        decoding=False,
+        fuse_gqa=Self.fuse_gqa,
+        num_qk_stages=Self.config.num_qk_stages,
+    ]
+    comptime KTMAOpType = KVTMATile[
+        Self.KVLUTType.dtype,
+        Self.config.swizzle_mode,
+        BN=kv_sub_tile_rows(Self.config.k_rows_per_cta(), Self.page_size),
+        BK=Self.config.BK0,
+    ]
+    comptime VTMAOpType = KVTMATile[
+        Self.KVLUTType.dtype,
+        Self.config.swizzle_mode,
+        BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
+        BK=Self.config.v_cols_per_cta(),
+    ]
+    comptime OTMAStoreType = RaggedTMA3DTile[
+        Self.output_type,
+        Self.config.swizzle_mode,
+        # 2Q: BM=128 (each WG writes one of two Q halves).
+        # 1Q: BM=128 (both WGs cover the full BM=128 Q rows and write
+        # disjoint depth-column ranges).
+        BM=Self.config.BM // Self.config.num_qo,
+        BN=Self.config.ov_depth,
+        group=Self.config.group if Self.fuse_gqa else 1,
+    ]
+    comptime PackType = Pack[
+        Self.MaskType,
+        Self.SchedulerType,
+        Self.ValidLengthType,
+        Self.SinkType,
+        Self.KVRowOffsetsType,
+        Self.MaxSeqLenType,
+        Self.PartitionType,
+    ]
+
     @staticmethod
     @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
@@ -185,51 +230,98 @@ struct SM100MHA2Q[
         t"sm100_mha_{Self.config.num_qo}q_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
     def kernel(
-        q_tma_op: QTMATile[
-            Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
-            BM=Self.config.BM // Self.config.num_qo,
-            depth=Self.config.qk_depth,
-            group=Self.config.group,
-            decoding=False,
-            fuse_gqa=Self.fuse_gqa,
-            num_qk_stages=Self.config.num_qk_stages,
-        ],
-        k_tma_op: KVTMATile[
-            Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
-            BN=kv_sub_tile_rows(Self.config.k_rows_per_cta(), Self.page_size),
-            BK=Self.config.BK0,
-        ],
-        v_tma_op: KVTMATile[
-            Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
-            BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
-            BK=Self.config.v_cols_per_cta(),
-        ],
-        ragged_tma_store: RaggedTMA3DTile[
-            Self.output_type,
-            Self.config.swizzle_mode,
-            # 2Q: BM=128 (each WG writes one of two Q halves).
-            # 1Q: BM=128 (both WGs cover the full BM=128 Q rows and write
-            # disjoint depth-column ranges).
-            BM=Self.config.BM // Self.config.num_qo,
-            BN=Self.config.ov_depth,
-            group=Self.config.group if Self.fuse_gqa else 1,
-        ],
+        q_tma_op: Self.QTMAOpType,
+        k_tma_op: Self.KTMAOpType,
+        v_tma_op: Self.VTMAOpType,
+        ragged_tma_store: Self.OTMAStoreType,
         kv_lut: Self.KVLUTType,
         scale: Float32,
         batch_size: UInt32,
         num_keys_arg: UInt32,
-        pack: Pack[
-            Self.MaskType,
-            Self.SchedulerType,
-            Self.ValidLengthType,
-            Self.SinkType,
-            Self.KVRowOffsetsType,
-            Self.MaxSeqLenType,
-            Self.PartitionType,
-        ],
+        pack: Self.PackType,
+    ):
+        # Thin entrypoint. Compute this tile's `SeqInfo` once and forward it to
+        # `_kernel_impl` (all warp groups share it — it is derived from
+        # blockIdx, not threadIdx, so it is identical on every lane/warp).
+        #
+        # When this 2Q config admits a type-compatible 1Q variant
+        # (`can_switch_to_1q`), route short sequences through the cheaper 1Q
+        # body. The 1Q body covers `Kernel1Q.BM_eff` *sequence positions* per
+        # tile at `blockIdx.x == 0` (BM // group when fusing GQA, else BM), so
+        # the switch is only correct when the whole prompt fits in that one
+        # tile: `seq_len <= Kernel1Q.BM_eff`. Then the prompt is a single tile
+        # at `prompt_offset == 0` in BOTH the 1Q and 2Q tilings, where their
+        # `SeqInfo` coincide, so passing the 2Q `seq_info` into the 1Q body is
+        # correct. `broadcast` (lane-0 shuffle) makes the branch warp-uniform;
+        # the decision is the same on all 16 warps because `seq_len` is, so no
+        # cross-warp sync is needed. The grid is unchanged (still 2Q-tiled) —
+        # a prompt this short occupies only `blockIdx.x == 0`, which the 2Q
+        # grid always covers.
+        var seq_info: SeqInfo = get_seq_info[
+            Self.BM_mask,
+            Self.config.num_kv_heads if Self.fuse_gqa else Self.num_q_heads,
+            Self.MaskType.get_type_name() == "CausalMask",
+            pair_cta=Self.pair_cta,
+        ](batch_size, pack.max_seq_len, pack.valid_length, pack.partition)
+
+        comptime if Self.config.can_switch_to_1q():
+            comptime Kernel1Q = SM100MHA2Q[
+                Self.KVLUTType,
+                Self.output_type,
+                Self.MaskType,
+                Self.SchedulerType,
+                Self.config.switch_1q_config(),
+                Self.ValidLengthType,
+                Self.SinkType,
+                Self.KVRowOffsetsType,
+                Self._is_cache_length_accurate,
+                Self.MaxSeqLenType,
+                Self.PartitionType,
+            ]
+            if broadcast(seq_info.seq_len - seq_info.prompt_offset) <= UInt32(
+                Kernel1Q.BM_eff
+            ):
+                # The TMA ops are typed from the 2Q `Self.config`; the 1Q types
+                # fold to identical values (`can_switch_to_1q()` guarantees
+                # matching `num_qk_stages` ⇒ matching `BK0`; per-half BM=128,
+                # BN/depth/group/swizzle already match), but the parser sees
+                # distinct parameter expressions, so `rebind`.
+                Kernel1Q._kernel_impl(
+                    rebind[Kernel1Q.QTMAOpType](q_tma_op),
+                    rebind[Kernel1Q.KTMAOpType](k_tma_op),
+                    rebind[Kernel1Q.VTMAOpType](v_tma_op),
+                    rebind[Kernel1Q.OTMAStoreType](ragged_tma_store),
+                    kv_lut,
+                    scale,
+                    num_keys_arg,
+                    pack,
+                    seq_info,
+                )
+                return
+        Self._kernel_impl(
+            q_tma_op,
+            k_tma_op,
+            v_tma_op,
+            ragged_tma_store,
+            kv_lut,
+            scale,
+            num_keys_arg,
+            pack,
+            seq_info,
+        )
+
+    @staticmethod
+    @always_inline
+    def _kernel_impl(
+        q_tma_op: Self.QTMAOpType,
+        k_tma_op: Self.KTMAOpType,
+        v_tma_op: Self.VTMAOpType,
+        ragged_tma_store: Self.OTMAStoreType,
+        kv_lut: Self.KVLUTType,
+        scale: Float32,
+        num_keys_arg: UInt32,
+        pack: Self.PackType,
+        seq_info: SeqInfo,
     ):
         comptime assert (
             Self.MMA_M == 64 or Self.MMA_M == 128 or Self.MMA_M == 256
@@ -252,12 +344,9 @@ struct SM100MHA2Q[
         ), "Persistent kernels not yet supported with FA4"
 
         mask = pack.mask
-        scheduler = pack.scheduler
-        valid_length = pack.valid_length
         sink_weights = pack.sink_weights
         kv_input_row_offsets = pack.kv_input_row_offsets
         max_seq_len = pack.max_seq_len
-        partition = pack.partition
 
         comptime num_qo = Self.config.num_qo
         # TODO: We may want to support num_qo>2 for depth=64?
@@ -332,13 +421,6 @@ struct SM100MHA2Q[
         if warp_idx < 8:
             # softmax $warp_group_idx
             warpgroup_reg_alloc[num_reg_softmax]()
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM_mask,
-                Self.num_q_heads
-                // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-                pair_cta=Self.pair_cta,
-            ](batch_size, max_seq_len, valid_length, partition)
 
             comptime if not Self.pair_cta:
                 if not seq_info.is_valid():
@@ -363,6 +445,11 @@ struct SM100MHA2Q[
                     Self.SinkType,
                     Self._is_cache_length_accurate,
                     Self.MaxSeqLenType,
+                    # `kernel` routes tiles with
+                    # `seq_len - prompt_offset <= Kernel1Q.BM_eff` to the
+                    # 1Q body when the switch is compiled in, so the 2Q
+                    # body's output halves are always non-empty.
+                    output_nonempty=Self.config.can_switch_to_1q(),
                 ](
                     smem,
                     pos.score_row,
@@ -378,14 +465,6 @@ struct SM100MHA2Q[
         elif warp_idx < 12:
             # correction
             warpgroup_reg_dealloc[num_reg_correction]()
-
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM_mask,
-                Self.num_q_heads
-                // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-                pair_cta=Self.pair_cta,
-            ](batch_size, max_seq_len, valid_length, partition)
 
             comptime if not Self.pair_cta:
                 if not seq_info.is_valid():
@@ -415,13 +494,6 @@ struct SM100MHA2Q[
         else:
             if warp_idx == 13:  # produce
                 warpgroup_reg_dealloc[num_reg_other]()
-                var seq_info: SeqInfo = get_seq_info[
-                    Self.BM_mask,
-                    Self.num_q_heads
-                    // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                    Self.MaskType.get_type_name() == "CausalMask",
-                    pair_cta=Self.pair_cta,
-                ](batch_size, max_seq_len, valid_length, partition)
 
                 comptime if not Self.pair_cta:
                     if not seq_info.is_valid():
@@ -497,13 +569,6 @@ struct SM100MHA2Q[
 
             elif warp_idx == 12:  # Q @ K', P @ V
                 warpgroup_reg_dealloc[num_reg_other]()
-                var seq_info: SeqInfo = get_seq_info[
-                    Self.BM_mask,
-                    Self.num_q_heads
-                    // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                    Self.MaskType.get_type_name() == "CausalMask",
-                    pair_cta=Self.pair_cta,
-                ](batch_size, max_seq_len, valid_length, partition)
 
                 comptime if not Self.pair_cta:
                     if not seq_info.is_valid():

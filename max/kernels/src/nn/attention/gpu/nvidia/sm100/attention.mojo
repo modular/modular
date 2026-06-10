@@ -184,7 +184,15 @@ struct FA4Config[
         is_mla: Bool,
         pair_cta: Bool = False,
         num_qo: Int = 2,
+        num_qk_stages: Int = 0,
     ):
+        # num_qk_stages == 0 (default) derives the optimal Q@K' staging.
+        # A nonzero value pins it (used by the in-kernel 1Q/2Q switch, which
+        # requires the 1Q variant's staging to match the 2Q config's — see
+        # `switch_1q_config`). The caller must pass a value that is valid for
+        # this shape, i.e. one the constructor could itself derive for the
+        # same `padded_qk_depth`/`swizzle_mode`. If the pinned staging's extra
+        # barriers do not fit in smem, the constructor falls back to 1 stage.
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
         self.group = group
@@ -275,6 +283,8 @@ struct FA4Config[
         #
         if is_mla:
             self.num_qk_stages = 1
+        elif num_qk_stages != 0:
+            self.num_qk_stages = num_qk_stages
         else:
             # Q@K' staging is enabled: MMA processes K in num_qk_stages chunks,
             # allowing register pressure reduction and potential overlap.
@@ -376,6 +386,11 @@ struct FA4Config[
         #   +  (fused_pipeline_stages/2) * bytes_per_k
         #   = fused_pipeline_stages * (bytes_per_kv + bytes_per_k/2)
         fused_stages = remaining // (bytes_per_kv + bytes_per_k // 2)
+        # A pinned num_qk_stages > 1 requires the split-KV pipeline (fused
+        # mode never stages K), so round an odd stage count down to even to
+        # force the split path below.
+        if num_qk_stages > 1 and fused_stages % 2 == 1:
+            fused_stages -= 1
         bytes_used = (
             fused_stages * bytes_per_kv + ceildiv(fused_stages, 2) * bytes_per_k
         )
@@ -398,10 +413,13 @@ struct FA4Config[
                 self.num_qk_stages = 1
             else:
                 # we try to split num_qk_stages
-                self.num_qk_stages = gcd(
-                    self.padded_qk_depth // swizzle_elems,
-                    self.padded_qk_depth // Self.MMA_K,
-                )
+                if num_qk_stages != 0:
+                    self.num_qk_stages = num_qk_stages
+                else:
+                    self.num_qk_stages = gcd(
+                        self.padded_qk_depth // swizzle_elems,
+                        self.padded_qk_depth // Self.MMA_K,
+                    )
                 # we need an extra bytes
                 barrier_bytes_per_stage = (
                     self.num_kv_stages * 2 * Self.mbar_size
@@ -459,6 +477,79 @@ struct FA4Config[
             # Pair-CTA: depth > 64 (depth=64 needs 32B swizzles) and <= 128.
             return base and self.qk_depth > 64 and self.qk_depth <= 128
         return base and self.qk_depth >= 64
+
+    @always_inline
+    def with_num_qo(self, num_qo: Int, *, num_qk_stages: Int = 0) -> Self:
+        """Reconstruct this config with a different `num_qo` (single-CTA).
+
+        `num_qk_stages == 0` (default) lets the constructor derive the
+        optimal staging for the new shape — appropriate for the dispatch-time
+        1Q/2Q selection, where each launch config is free-standing. A nonzero
+        value pins the staging (see `switch_1q_config`).
+
+        `pair_cta` is forced False because `num_qo == 1` is single-CTA only
+        (see `supported()`). Re-passing the stored `swizzle_mode` is faithful:
+        the constructor re-derives it (FP8 re-forces 64B), and it is already
+        the post-override value here.
+        """
+        return Self(
+            num_q_heads=self.num_q_heads,
+            group=self.group,
+            qk_depth=self.qk_depth,
+            ov_depth=self.ov_depth,
+            swizzle_mode=self.swizzle_mode,
+            page_size=self.page_size,
+            is_mla=self.is_mla,
+            pair_cta=False,
+            num_qo=num_qo,
+            num_qk_stages=num_qk_stages,
+        )
+
+    @always_inline
+    def switch_1q_config(self) -> Self:
+        """The 1Q variant used by the in-kernel per-sequence 1Q/2Q switch.
+
+        Unlike the dispatch-time conversion (`with_num_qo(1)`), which is free
+        to pick the optimal staging, this pins `num_qk_stages` to this (2Q)
+        config's value: the switch feeds the 2Q-built TMA ops to the 1Q body,
+        so the per-stage K split (`QTMATile`'s smem-tile last dim and
+        `k_tma`'s `BK = padded_qk_depth // num_qk_stages`) must match. The
+        pinned value is always arithmetically valid here because
+        `padded_qk_depth` and `swizzle_mode` are identical across the two
+        configs; if its extra barriers do not fit in 1Q smem, the constructor
+        falls back to 1 stage and `can_switch_to_1q()` rejects the switch.
+        """
+        return self.with_num_qo(1, num_qk_stages=self.num_qk_stages)
+
+    @always_inline
+    def can_switch_to_1q(self) -> Bool:
+        """Whether a 2Q-launched kernel may dispatch to the 1Q body at runtime.
+
+        True only when this is a 2Q single-CTA config AND a valid 1Q variant
+        exists whose TMA-op types match the 2Q ones. `switch_1q_config()`
+        pins `num_qk_stages` (the one TMA-op parameter that could otherwise
+        diverge — `BN`, the per-half Q `BM` (128), `v_tma_op`, and
+        `ragged_tma_store` already match), so the equality check below only
+        fails when the pinned staging could not be honored (smem fallback to
+        1 stage). When this returns False the kernel runs pure 2Q.
+        """
+        if self.num_qo != 2 or self.pair_cta:
+            return False
+        var cfg1 = self.switch_1q_config()
+        return cfg1.supported() and cfg1.num_qk_stages == self.num_qk_stages
+
+    @always_inline
+    def launch_smem_used(self) -> Int:
+        """Dynamic smem to reserve when launching this config's kernel.
+
+        When the launched kernel may dispatch to the 1Q body at runtime
+        (`can_switch_to_1q()`), it constructs the 1Q `SM100AttentionSMem` over
+        the same dynamic smem region, so the launch must reserve the max of
+        both footprints. Otherwise this is just `smem_used`.
+        """
+        if self.can_switch_to_1q():
+            return max(self.smem_used, self.switch_1q_config().smem_used)
+        return self.smem_used
 
     def description(self) -> String:
         return String(
