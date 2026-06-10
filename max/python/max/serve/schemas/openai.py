@@ -154,9 +154,15 @@ class CreateChatCompletionStreamResponse(_OpenAIChatCompletionChunk):
 # ---------------------------------------------------------------------------
 
 
+class MaxModel(Model):
+    """OpenAI model card extended with MAX-specific fields."""
+
+    max_model_len: int | None = None
+
+
 class ListModelsResponse(BaseModel):
     object: Literal["list"]
-    data: list[Model]
+    data: list[MaxModel]
 
 
 class Error(BaseModel):

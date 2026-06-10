@@ -106,6 +106,7 @@ from max.serve.schemas.openai import (
     ErrorResponse,
     ListModelsResponse,
     LoadLoraRequest,
+    MaxModel,
     Model,
     PromptTokensDetails,
     TopLogprob,
@@ -2291,19 +2292,49 @@ async def health() -> Response:
     return Response(status_code=200)
 
 
+def _resolve_max_model_len(request: Request) -> int | None:
+    """Resolve the served model's max context length.
+
+    Returns the smallest length the tokenizer and model can handle, so clients
+    can avoid overflowing the model's context.
+    """
+    max_model_len = get_app_pipeline_config(request.app).model.max_length
+    if max_model_len is None:
+        return None
+
+    tokenizer_max = getattr(
+        request.app.state.pipeline.tokenizer, "max_length", None
+    )
+    if isinstance(tokenizer_max, int):
+        max_model_len = min(max_model_len, tokenizer_max)
+
+    return max_model_len
+
+
 @router.get("/models", response_model=None)
 async def openai_get_models(request: Request) -> ListModelsResponse:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     created = int(datetime.now().timestamp())
+    max_model_len = _resolve_max_model_len(request)
     model_list = [
-        Model(
-            id=pipeline.model_name, object="model", created=created, owned_by=""
+        MaxModel(
+            id=pipeline.model_name,
+            object="model",
+            created=created,
+            owned_by="",
+            max_model_len=max_model_len,
         )
     ]
 
     if lora_queue := request.app.state.pipeline.lora_queue:
         model_list += [
-            Model(id=lora, object="model", created=created, owned_by="")
+            MaxModel(
+                id=lora,
+                object="model",
+                created=created,
+                owned_by="",
+                max_model_len=max_model_len,
+            )
             for lora in lora_queue.list_loras()
         ]
 
@@ -2313,11 +2344,12 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
 @router.get("/models/{model_id}", response_model=None)
 async def openai_get_model(model_id: str, request: Request) -> Model:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
-    pipeline_model = Model(
+    pipeline_model = MaxModel(
         id=pipeline.model_name,
         object="model",
         created=int(datetime.now().timestamp()),
         owned_by="",
+        max_model_len=_resolve_max_model_len(request),
     )
 
     if model_id == pipeline.model_name:
