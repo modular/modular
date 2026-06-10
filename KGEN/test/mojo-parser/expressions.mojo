@@ -528,7 +528,7 @@ def andOr2(b: Boolish, d: MemBoolish):
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   [[TMPMEM:%.*]] = lit.var.decl
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}(%b, [[TMPMEM]])
-  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}"{{.*}}([[TMPMEM]], [[ANON]]){{.*}}*, "take"
+  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}"{{.*}}([[TMPMEM]], [[ANON]]){{.*}}*, "move"
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
   _ = d or b

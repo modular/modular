@@ -21,7 +21,7 @@ def moveMeUser(byCopy:String, prefix:String, var byMove: MoveMe):
     # CHECK: [[V0:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: lit.call {{.*}}::@String::@"__init__{{.*}}(%byCopy, [[V0]]){{.*}}(*, "copy":
     # CHECK: [[V1:%.*]] = lit.var.decl "anonymous*"
-    # CHECK-NEXT: lit.call {{.*}}::@MoveMe::@"__init__{{.*}}(%byMove, [[V1]]){{.*}}(*, "take":
+    # CHECK-NEXT: lit.call {{.*}}::@MoveMe::@"__init__{{.*}}(%byMove, [[V1]]){{.*}}(*, "move":
     # CHECK: [[V0]][@{{.*}}::@String::@"__init__(copy:::String)
     def myclosure(prefix: String) {var byCopy, var byMove^} -> String:
         use(byCopy, byMove)
@@ -145,8 +145,8 @@ def toy(A: String, B: String, mut C: String, mut D: String):
 
     takeIt(copyAll)
 
-    # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "take"
-    # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "take"
+    # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "move"
+    # CHECK: @String::@"__init__{{.*}}"{{.*}}*, "move"
     # CHECK: lit.closure.init
     def moveAll() {var^} -> String:
         use(C, D)

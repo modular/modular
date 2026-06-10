@@ -22,8 +22,8 @@ struct MemExample(ImplicitlyCopyable):
     def noop(self):
         pass
 
-    def __init__(out self, *, deinit take: Self):
-        self.x = take.x
+    def __init__(out self, *, deinit move: Self):
+        self.x = move.x
 
     def __init__(out self, *, copy: Self):
         self.x = copy.x
@@ -61,18 +61,18 @@ struct MemoryUniqueMovable(Movable):
     def __init__(out self):
         self.state = MemExample()
 
-    # CHECK: lit.fn @"__init__{{.*}}(*, %take:
-    def __init__(out self, *, deinit take: Self):
-        # Mercilessly steal 'take's state which could be interesting.
+    # CHECK: lit.fn @"__init__{{.*}}(*, %move:
+    def __init__(out self, *, deinit move: Self):
+        # Mercilessly steal 'move's state which could be interesting.
 
         # CHECK-NEXT: %0 = lit.ref.struct.ger %self[state]
-        # CHECK-NEXT: %1 = lit.ref.struct.ger %take[state]
+        # CHECK-NEXT: %1 = lit.ref.struct.ger %move[state]
         # CHECK-NEXT: lit.ownership.use %1
-        # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}*, "take":
-        self.state = take.state^
+        # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}*, "move":
+        self.state = move.state^
 
         # CHECK-NEXT: kgen.param.constant: none
-        # CHECK-NEXT: lit.ownership.mark_destroyed %take
+        # CHECK-NEXT: lit.ownership.mark_destroyed %move
         # CHECK-NEXT: kgen.return
 
 
@@ -84,9 +84,9 @@ struct MemoryMovableCopyable(ImplicitlyCopyable):
     def __init__(out self):
         self.state = MemExample()
 
-    def __init__(out self, *, deinit take: Self):
-        # Mercilessly steal 'take's state which could be interesting.
-        self.state = take.state^
+    def __init__(out self, *, deinit move: Self):
+        # Mercilessly steal 'move's state which could be interesting.
+        self.state = move.state^
 
     def __init__(out self, *, copy: Self):
         self.state = copy.state
@@ -98,7 +98,7 @@ struct MemoryMovableCopyable(ImplicitlyCopyable):
 # CHECK-LABEL: lit.fn @"result_mem1
 def result_mem1(var a: MemoryUniqueMovable) -> MemoryUniqueMovable:
     # CHECK-NEXT: lit.ownership.use %a
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}move"
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
     return a^
@@ -107,7 +107,7 @@ def result_mem1(var a: MemoryUniqueMovable) -> MemoryUniqueMovable:
 # CHECK-LABEL: lit.fn @"result_mem3
 def result_mem3(var a: MemoryMovableCopyable) -> MemoryMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"{{.*}} deinit_mem{{.*}}byref_result
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}move"{{.*}} deinit_mem{{.*}}byref_result
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
     return a^
@@ -117,8 +117,8 @@ def result_mem3(var a: MemoryMovableCopyable) -> MemoryMovableCopyable:
 def self_copy(mut x: MemoryMovableCopyable):
     # Mojo introduces a temporary to avoid exclusivity error.
     # CHECK: %__call_result_tmp__ = lit.var.decl
-    # CHECK: lit.call {{.*}}__init__{{.*}}take"
-    # CHECK: lit.call {{.*}}__init__{{.*}}take"
+    # CHECK: lit.call {{.*}}__init__{{.*}}move"
+    # CHECK: lit.call {{.*}}__init__{{.*}}move"
     x = x
 
 
@@ -360,7 +360,7 @@ def optimize_copies() -> MemExample:
     # CHECK: kgen.param.declare *"z`3":
     # CHECK-NOT: lit.var.decl
     var z = y
-    # CHECK: lit.call {{.*}}__init__{{.*}}take"
+    # CHECK: lit.call {{.*}}__init__{{.*}}move"
     return z
 
 
@@ -374,9 +374,9 @@ def optimize_transfers() -> MemExample:
     # CHECK: lit.call {{.*}}__init__{{.*}}(%x
     var x = MemExample()
 
-    # CHECK: lit.call {{.*}}__init__{{.*}}take"
+    # CHECK: lit.call {{.*}}__init__{{.*}}move"
     var y = x^
-    # CHECK: lit.call {{.*}}__init__{{.*}}take"
+    # CHECK: lit.call {{.*}}__init__{{.*}}move"
     var z = y^
-    # CHECK: lit.call {{.*}}__init__{{.*}}take"
+    # CHECK: lit.call {{.*}}__init__{{.*}}move"
     return z^

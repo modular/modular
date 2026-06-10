@@ -18,7 +18,7 @@ def use_any[*Ts: AnyType](*args: *Ts): pass
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample(ImplicitlyCopyable):
   def __init__(out self): pass
-  def __init__(out self, *, deinit take: Self): pass
+  def __init__(out self, *, deinit move: Self): pass
   def __init__(out self, *, copy: Self): pass
   def __del__(deinit self): pass
   def noop(self): pass
@@ -130,7 +130,7 @@ def testDefConditional(cond: __mlir_type.`!kgen.scalar<bool>`):
   # CHECK-NEXT: [[MREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[CP]])
   # CHECK-NEXT: lit.ref.immut
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[MREF]])
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}move"
   # CHECK-NEXT: lifetime.end %shouldBeMovedFrom
 
   # The mutation above could either of A or B, so we needed to extend both of
@@ -434,14 +434,14 @@ def test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) ra
   # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}({{.*}}, [[TEMP]])
   a = HasRaisingInit()
   # EH logic.
-  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}take"
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}move"
 
   # CHECK: [[FIELDREF:%.*]] = lit.ref.struct.ger %b[field]
   # CHECK: [[TEMP:%.*]] = lit.var.decl
   # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}({{.*}}, [[TEMP]])
   b.field = HasRaisingInit()
   # EH logic.
-  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}(*, "take":
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}(*, "move":
 
 # CHECK-LABEL: lit.fn @"test_parameter_closure_captures
 def test_parameter_closure_captures(var x: MemExample, var y: MemExample):

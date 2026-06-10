@@ -346,7 +346,7 @@ struct Struct1:
     def __init__(out self):
         pass
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         pass
 
 
@@ -376,17 +376,17 @@ def test_byref_slot_with_references():
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}pack_it{{.*}}({{.*}},  [[RESULTTMP]])
     f = pack_it(f)
-    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}([[RESULTTMP]], %f){{.*}}*, "take"
+    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}([[RESULTTMP]], %f){{.*}}*, "move"
 
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}also_broken{{.*}}({{.*}},  [[RESULTTMP]])
     f = also_broken(Pointer(to=f))
-    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}([[RESULTTMP]], %f){{.*}}*, "take"
+    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}([[RESULTTMP]], %f){{.*}}*, "move"
 
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}also_broken{{.*}}({{.*}},  [[RESULTTMP]])
     f = also_broken(Pointer(to=f))
-    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}([[RESULTTMP]], %f){{.*}}*, "take"
+    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}([[RESULTTMP]], %f){{.*}}*, "move"
 
 
 # CHECK-LABEL: lit.fn @"test_byref_slot_closure_capture
@@ -399,7 +399,7 @@ def test_byref_slot_closure_capture(var x: String):
     # CHECK: %__call_result_tmp__
     # CHECK-NEXT: lit.call[{{.*}}: *"capture{{.*}}(%__call_result_tmp__)
     x = capture()
-    # CHECK-NEXT: lit.call {{.*}}@String::@"__init__{{.*}}"{{.*}}(%__call_result_tmp__, %x){{.*}}*, "take"
+    # CHECK-NEXT: lit.call {{.*}}@String::@"__init__{{.*}}"{{.*}}(%__call_result_tmp__, %x){{.*}}*, "move"
 
 
 def test_int_ref(ref x: Int) -> ref [x] Int:
@@ -568,7 +568,7 @@ def subscript_assignment_inplace(mut list: MyMutGetItemCollection[MyMutGetItemCo
     # CHECK: lit.call {{.*}}Value::@"__init__
     # CHECK: [[T1:%.*]] = lit.call {{.*}}MyMutGetItemCollection::@"__getitem__
     # CHECK-NEXT: [[T2:%.*]] = lit.ref.struct.ger [[T1]][state]
-    # CHECK-NEXT: lit.call {{.*}}Value::@"__init__{{.*}}"{{.*}}([[VALUETMP]], [[T2]]){{.*}}*, "take"
+    # CHECK-NEXT: lit.call {{.*}}Value::@"__init__{{.*}}"{{.*}}([[VALUETMP]], [[T2]]){{.*}}*, "move"
     list[0].state = Value(1)
 
 # getitem on mutable list returns a immutable ref so setitem is needed.

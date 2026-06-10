@@ -136,8 +136,8 @@ def test_function_type_conversion():
 #     def __init__(out self, value: Self.T):
 #         self.value = value
 #
-#     def __moveinit__(out self, deinit take: Self):
-#         self.value = take.value
+#     def __moveinit__(out self, deinit move: Self):
+#         self.value = move.value
 #
 #     def __copyinit__(out self, copy: Self, /):
 #         self.value = copy.value

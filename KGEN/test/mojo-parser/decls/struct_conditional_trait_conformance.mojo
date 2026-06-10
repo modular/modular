@@ -44,8 +44,8 @@ struct ConditionalCopyable[T: Movable](
     def __init__(out self, var value: Self.T):
         self.value = value^
 
-    def __init__(out self, *, deinit take: Self):
-        self.value = take.value^
+    def __init__(out self, *, deinit move: Self):
+        self.value = move.value^
 
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         self.value = rebind_var[Self.T](trait_downcast[Copyable](copy.value).copy())
@@ -70,8 +70,8 @@ struct MultipleConditionalConformances[T: Movable](
     def __init__(out self, var inner: Self.T):
         self.inner = inner^
 
-    def __init__(out self, *, deinit take: Self):
-        self.inner = take.inner^
+    def __init__(out self, *, deinit move: Self):
+        self.inner = move.inner^
 
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         self.inner = rebind_var[Self.T](trait_downcast[Copyable](copy.inner).copy())

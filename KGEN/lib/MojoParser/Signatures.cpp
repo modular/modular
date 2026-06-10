@@ -2410,7 +2410,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     if (fnInfo.kind == SpecialFunctionKind::kInit &&
         argList.parsedArgs.size() == 1 &&
         argList.parsedArgs[0].kwArgHandling == KWArgHandling::kKeywordOnly) {
-      if (argList.parsedArgs[0].name.strref() == "take")
+      if (argList.parsedArgs[0].name.strref() == "move")
         fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kMoveCtor);
       else if (argList.parsedArgs[0].name.strref() == "copy")
         fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kCopyCtor);

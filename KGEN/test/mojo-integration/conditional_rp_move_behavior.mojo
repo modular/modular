@@ -20,9 +20,9 @@ struct CondRPMove[T: Movable & ImplicitlyDestructible](
 ):
     var value: Self.T
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         print("custom move called")
-        self.value = take.value^
+        self.value = move.value^
 
 
 # RP case: arg/return have no memoryOnly, body is a register copy.
@@ -40,7 +40,7 @@ def do_move(var x: CondRPMove[Int]) -> CondRPMove[Int]:
 # Memory-only case: arg has memoryOnly, body calls the custom move init.
 # CHECK-IR:      kgen.func @"{{.*}}do_move{{.*}}String{{.*}}"(
 # CHECK-IR-SAME: memoryOnly
-# CHECK-IR:      kgen.call {{.*}}@"{{.*}}CondRPMove::__init__{{.*}}take:{{.*}}"
+# CHECK-IR:      kgen.call {{.*}}@"{{.*}}CondRPMove::__init__{{.*}}move:{{.*}}"
 @no_inline
 def do_move(var x: CondRPMove[String]) -> CondRPMove[String]:
     return x^

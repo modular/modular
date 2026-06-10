@@ -16,7 +16,7 @@
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "copy($0)"
 
 # We also have Moveinit in Movable and __del__ in ImplicitlyDestructible.
-# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(take:$0$)"
+# CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(move:$0$)"
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__del__($0$)"
 
 # CHECK-NOT: #debuginfo.subprogram

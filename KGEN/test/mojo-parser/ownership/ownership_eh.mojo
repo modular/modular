@@ -60,8 +60,8 @@ struct MemExample(ImplicitlyCopyable):
     def noop(self):
         pass
 
-    def __init__(out self, *, deinit take: Self):
-        self.x = take.x
+    def __init__(out self, *, deinit move: Self):
+        self.x = move.x
 
     def __init__(out self, *, copy: Self):
         self.x = copy.x
@@ -137,7 +137,7 @@ def finally_may_raise() raises:
         # CHECK-NEXT: lit.try.raise
         raise Error()
         # CHECK-NEXT: } except {
-        # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__try_error__, %__error__){{.*}}*, "take"
+        # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__try_error__, %__error__){{.*}}*, "move"
         # CHECK-NEXT: lit.var.lifetime.end %__try_error__
         # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
         # CHECK-NEXT: %__finally_error__ = lit.var.decl
@@ -150,7 +150,7 @@ def finally_may_raise() raises:
         # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%__error__)
         # CHECK-NEXT:     mark_consumed [[RESULT]]
         # CHECK:      } except {
-        # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "take"
+        # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "move"
         # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
         # CHECK:      else
         # CHECK-NEXT:   lit.try.yield
@@ -177,7 +177,7 @@ struct ThrowingExit:
 
 # CHECK-LABEL: lit.fn @"context_mgr_exit_raises
 def context_mgr_exit_raises() raises:
-    # CHECK: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "take"
+    # CHECK: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "move"
     # CHECK-NEXT: lit.var.lifetime.end %__with_error__
     # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
     # CHECK-NEXT: %__finally_error__ = lit.var.decl
@@ -204,7 +204,7 @@ def context_mgr_exit_raises() raises:
     # CHECK:        else
     # CHECK-NEXT:     call {{.*}}__del__{{.*}}(%$CONTEXTMGR)
     # CHECK:      } except {
-    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "take"
+    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "move"
     # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
     # CHECK:      else
     # CHECK-NEXT:   lit.try.yield

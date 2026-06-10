@@ -353,7 +353,7 @@ def test_result_optimization():
   # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%example)
   # CHECK-NEXT: lit.var.lifetime.end %example
   # CHECK-NEXT: lit.var.lifetime.start %example
-  # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}take"
+  # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}move"
   # CHECK-NEXT: lit.var.lifetime.end %__call_result_tmp__
   example = use_and_return(example)
 
@@ -367,7 +367,7 @@ def test_result_optimization():
   example.f1 = use_and_return2(example)
   # CHECK-NEXT: [[F1_2:%.*]] = lit.ref.struct.ger %example[f1]
   # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[F1_2]])
-  # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}take"
+  # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}move"
   # CHECK-NEXT: lifetime.end %__call_result_tmp___0
 
   # Mutating self through a reference forces a temporary.
@@ -381,7 +381,7 @@ def test_result_optimization():
   # copy into it.
   # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}([[RETREF]])
 
-  # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}take"
+  # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}move"
   # CHECK-NEXT: lifetime.end [[TMPVAR]]
   return_ref(example) = use_and_return(example)
 
@@ -461,7 +461,7 @@ def test_result_consume_mem(cond: __mlir_type.`!kgen.scalar<bool>`) -> MemExampl
   var example2 = MemExample()
 
   # CHECK-NEXT: lit.ownership.use %example2
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}move"
   # CHECK-NEXT: lifetime.end %example2
   # CHECK-NEXT: kgen.param.constant: none
   return example2^
@@ -909,7 +909,7 @@ struct HasMemExample:
       # CHECK-NEXT: }
 
       # On success we move the result value into the destination.
-      # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"
+      # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}move"
       # CHECK-NEXT: lifetime.end %__call_result_tmp__
       # CHECK-NEXT: lit.try.yield
     except:
@@ -1018,7 +1018,7 @@ struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & ImplicitlyDestructible]
         # CHECK-NEXT: lit.ownership.use [[BREF]]
 
         # Rvalue can be moved into the result slot.
-        # CHECK-NEXT: lit.call{{.*}}*, "take"{{.*}}__init__
+        # CHECK-NEXT: lit.call{{.*}}*, "move"{{.*}}__init__
         result = self.b^
 
         # Full object bit is explicitly destroyed.
@@ -1256,7 +1256,7 @@ def testConds2(cond: __mlir_type.`!kgen.scalar<bool>`, a: MemExample, b: MemExam
   # CHECK-NEXT:   lit.var.lifetime.start [[TMP]]
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[TMP]])
   # CHECK-NEXT:   lit.var.lifetime.start [[IF]]
-  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}take"
+  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}move"
 
   # CHECK-NEXT:   lit.var.lifetime.end [[TMP]]
   # CHECK-NEXT:   hlcf.yield
@@ -1293,13 +1293,13 @@ def testConds3(cond: __mlir_type.`!kgen.scalar<bool>`, var a: MemExample, var b:
   # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
   # CHECK-NEXT:    lit.ownership.use %a
   # CHECK-NEXT:    lit.var.lifetime.start %t1
-  # CHECK-NEXT:    lit.call {{.*}}__init__{{.*}}take"
+  # CHECK-NEXT:    lit.call {{.*}}__init__{{.*}}move"
   # CHECK-NEXT:    hlcf.yield
   # CHECK-NEXT: } else {
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
   # CHECK-NEXT:    lit.ownership.use %b
   # CHECK-NEXT:    lit.var.lifetime.start %t1
-  # CHECK-NEXT:    lit.call {{.*}}__init__{{.*}}"{{.*}}(%b, %t1){{.*}}*, "take"
+  # CHECK-NEXT:    lit.call {{.*}}__init__{{.*}}"{{.*}}(%b, %t1){{.*}}*, "move"
   # CHECK-NEXT:    hlcf.yield
   # CHECK-NEXT: }
   var t1 = a^ if cond else b^

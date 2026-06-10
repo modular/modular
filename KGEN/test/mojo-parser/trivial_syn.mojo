@@ -50,7 +50,7 @@ struct C[X: ImplicitlyCopyable, Y: ImplicitlyCopyable](ImplicitlyCopyable):
     # CHECK: kgen.witness "__del__is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::Movable" {
-    # CHECK-NEXT:    kgen.witness "__init__{{.*}}(*, "take":{{.*}}"
+    # CHECK-NEXT:    kgen.witness "__init__{{.*}}(*, "move":{{.*}}"
     # CHECK: kgen.witness "__move_ctor_is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 
 
@@ -70,7 +70,7 @@ struct NotTrivial(Copyable):
     def __init__(out self, *, copy: Self):
         pass
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         pass
 
     def __del__(deinit self):

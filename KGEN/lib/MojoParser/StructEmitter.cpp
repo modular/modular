@@ -728,7 +728,7 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
   ASTType selfType = structDecl.getTypeDeclSelf();
   MLIRContext *ctx = shared.getContext();
   Builder b(ctx);
-  StringAttr srcName = b.getStringAttr(isMove ? "take" : "copy");
+  StringAttr srcName = b.getStringAttr(isMove ? "move" : "copy");
 
   // If the type is register passable trivial, the 'src' value will be
   // passed as a register, otherwise a reference.

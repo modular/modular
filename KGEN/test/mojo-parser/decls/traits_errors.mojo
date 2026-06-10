@@ -10,7 +10,7 @@
 # expected-note @below {{trait 'MyMovable' declared here}}
 trait MyMovable:
     # expected-note @below {{required function '__init__' is not implemented}}
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         ...
 
 

@@ -620,7 +620,7 @@ def test_typed_raises_fn4() raises Float32:
 
     # Make sure to emit ExprDest outside the try block.
     # CHECK: %str = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}(%anonymous2A, %str){{.*}}*, "take"
+    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}(%anonymous2A, %str){{.*}}*, "move"
     var str = test_typed_raises_fn2()
     _ = str.__len__()
 
