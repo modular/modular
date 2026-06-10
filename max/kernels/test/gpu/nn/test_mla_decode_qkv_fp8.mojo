@@ -965,6 +965,44 @@ def main() raises:
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 32768)
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 65536)
 
+            # Two-wave split-K coverage (num_heads=16 latency-bound heuristic):
+            # bs=4 now dispatches np=128 and bs=8 np=64 across this band. Verify
+            # split-K correctness at the elevated partition counts the
+            # two-wave heuristic selects (the bs=1 cases above only exercise
+            # the unchanged bs=1 path). num_heads=16 only — that is the path
+            # the two-wave heuristic touches.
+            print("=== Two-wave split-K coverage (bs=4/8, num_heads=16) ===")
+            test[
+                MLAMaskType.NO_MASK,
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                576,
+                16,
+                group=16,
+                batch_size=4,
+            ](1, 40960, ctx)
+            test[
+                MLAMaskType.CAUSAL,
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                576,
+                16,
+                group=16,
+                batch_size=4,
+            ](1, 73728, ctx)
+            test[
+                MLAMaskType.NO_MASK,
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                576,
+                16,
+                group=16,
+                batch_size=8,
+            ](1, 32768, ctx)
+
             # fold-path configs.  num_q_heads * q_len <= BM(64) and
             # q_len > 1 triggers fold_q=True in the dispatcher.  BM=64 packs
             # q_len_fold * num_q_heads M-rows into a single tile, so grid.y=1.
