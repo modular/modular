@@ -512,12 +512,46 @@ version of its constructor (`__init__()`) that supports
 from a `StringLiteral` value. Thus, you can also pass a `StringLiteral` to a
 function that expects a `String`.
 
-When resolving an overloaded function call, the Mojo compiler tries each
-candidate function and uses the one that works (if only one version works), or
-it picks the closest match (if it can determine a close match), or it reports
-that the call is ambiguous (if it can't figure out which one to pick). For
-details on how Mojo picks the best candidate, see
-[Overload resolution](#overload-resolution).
+When resolving an overloaded function call, the Mojo compiler picks the
+candidate that best fits the call according to the rules in
+[Overload resolution](#overload-resolution), or reports the call as
+ambiguous if no single candidate is best.
+
+:::note Overload Sets
+An "overload set" is a collection of function overloads that share
+the same name but different signatures.
+
+- Overload sets can't be extended by imports, aliases, or parameters.
+- To avoid issues with local functions using the same name as an imported
+  one, use an aliased import.
+  `from package import foo as imported_foo` won't conflict with a local
+  function named `foo`.
+:::
+
+### Overload resolution
+
+When resolving an overloaded function, Mojo looks at:
+
+- The number, position, and keyword of each argument.
+- The type of each argument and each compile-time parameter.
+- The argument conventions on each argument.
+- Whether the candidate is an instance method or `@staticmethod`.
+- Whether a constructor is `@implicit`.
+
+Mojo does **not** look at the return type, the `raises` effect, or any
+context surrounding the call. Two functions that differ only in return
+type or in whether they `raises` are duplicate definitions—the compiler
+rejects the second declaration.
+
+The overload resolution logic filters for candidates according to the following
+rules, in order of precedence:
+
+1. Candidates requiring the smallest number of implicit conversions (in both
+   arguments and parameters).
+2. Candidates without variadic arguments.
+3. Candidates without variadic parameters.
+4. Candidates with the shortest parameter signature.
+5. Non-`@staticmethod` candidates (over `@staticmethod` ones, if available).
 
 If the compiler can't figure out which function to use, you can resolve the
 ambiguity by explicitly casting your value to a supported argument type. For
@@ -550,94 +584,8 @@ def call_foo():
     foo(MyString("Hello"))
 ```
 
-:::note Overload Sets
-An "overload set" is a collection of function overloads that share
-the same name but different signatures.
-
-- Overload sets can't be extended by imports, aliases, or parameters.
-- If you define a function in a Mojo module, it hides any
-  overload sets you imported earlier.
-:::
-
-### Overload resolution
-
-When resolving an overloaded function, Mojo does not consider the return type
-or other contextual information at the call site—it considers only parameter and
-argument types and whether the functions are instance methods or static methods.
-
-The overload resolution logic filters for candidates according to the following
-rules, in order of precedence:
-
-1. Candidates requiring the smallest number of implicit conversions (in both
-   arguments and parameters).
-2. Candidates without variadic arguments.
-3. Candidates without variadic parameters.
-4. Candidates with the shortest parameter signature.
-5. Non-`@staticmethod` candidates (over `@staticmethod` ones, if available).
-
-If there is more than one candidate after applying these rules, the overload
-resolution fails. For example:
-
-```mojo
-struct MyInt(TrivialRegisterPassable):
-    """A type that is implicitly convertible to `Int`."""
-    var value: Int
-
-    @implicit
-    def __init__(out self, _a: Int):
-        self.value = _a
-
-def foo[x: MyInt, a: Int]():
-    print("foo[x: MyInt, a: Int]()")
-
-def foo[x: MyInt, y: MyInt]():
-    print("foo[x: MyInt, y: MyInt]()")
-
-def bar[a: Int](b: Int):
-    print("bar[a: Int](b: Int)")
-
-def bar[a: Int](*b: Int):
-    print("bar[a: Int](*b: Int)")
-
-def bar[*a: Int](b: Int):
-    print("bar[*a: Int](b: Int)")
-
-def parameter_overloads[a: Int, b: Int, x: MyInt]():
-    # `foo[x: MyInt, a: Int]()` is called because it requires no implicit
-    # conversions, whereas `foo[x: MyInt, y: MyInt]()` requires one.
-    foo[x, a]()
-
-    # `bar[a: Int](b: Int)` is called because it does not have variadic
-    # arguments or parameters.
-    bar[a](b)
-
-    # `bar[*a: Int](b: Int)` is called because it has variadic parameters.
-    bar[a, a, a](b)
-
-parameter_overloads[1, 2, MyInt(3)]()
-
-struct MyStruct:
-    def __init__(out self):
-        pass
-
-    def foo(mut self):
-        print("calling instance method")
-
-    @staticmethod
-    def foo():
-        print("calling static method")
-
-def test_static_overload():
-    var a = MyStruct()
-    # `foo(mut self)` takes precedence over a static method.
-    a.foo()
-```
-
-```output
-foo[x: MyInt, a: Int]()
-bar[a: Int](b: Int)
-bar[*a: Int](b: Int)
-```
+For the full overload-resolution rules and edge cases, see the
+[function declarations reference](/docs/reference/function-declarations/#function-overloads).
 
 ## Return values
 
