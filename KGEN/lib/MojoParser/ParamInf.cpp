@@ -643,11 +643,9 @@ LogicalResult ParamInf::inferFromParamList() {
   // FIXME: why the verification here does not guarantee there is no parameter
   // number mismatch/missing kw error below?
   OperandValueList variadicKwOperands;
-  if (failed(givenBindings.diagnoseKeywordOperands(
+  if (failed(givenBindings.diagnoseOperands(
           declaredParamPogs, variadicKwOperands, /*isParameterList=*/true,
-          getStagedDiag)) ||
-      failed(givenBindings.diagnosePosOperands(
-          declaredParamPogs, /*isParameterList=*/true, getStagedDiag)))
+          getStagedDiag)))
     return failure();
 
   // We may have pre-checked and out-of-order inferred parameters.  Avoid

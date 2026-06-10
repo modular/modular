@@ -180,21 +180,14 @@ public:
 
   void dump() const;
 
-  /// Helper to diagnose common cases of candidate mismatch related to keyword
-  /// operands (unexpected kw-operands, pos-only arg/param provided by
-  /// kw-operand, missing kw-only arg/param). This function collects any
-  /// variadic keyword args/params if the function allows them.
-  LogicalResult diagnoseKeywordOperands(
-      PogListAttr pogListAttr, OperandValueList &variadicKwOperands,
-      bool isParameterList,
-      llvm::function_ref<MojoInflightDiag &()> getDiag) const;
-
-  /// Helper to diagnose common cases of candidate mismatch related to
-  /// positional arguments/parameter (too many positionals, missing positionals,
-  /// argument/parameter specified both by positional and keyword operands).
+  /// Validation the operand list against the signature indicated by
+  /// pogListAttr, emitting an error with "getDiag" if invalid.
+  ///
+  /// This collects variadic keyword args/params if the function allows them.
   LogicalResult
-  diagnosePosOperands(PogListAttr pogListAttr, bool isParameterList,
-                      llvm::function_ref<MojoInflightDiag &()> getDiag) const;
+  diagnoseOperands(PogListAttr pogListAttr,
+                   OperandValueList &variadicKwOperands, bool isParameterList,
+                   llvm::function_ref<MojoInflightDiag &()> getDiag) const;
 };
 
 raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);

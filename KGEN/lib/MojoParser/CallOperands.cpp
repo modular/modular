@@ -92,11 +92,11 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
   return os << '}';
 }
 
-/// Helper to diagnose common cases of candidate mismatch related to keyword
-/// operands (unexpected kw-operands, pos-only arg/param provided by kw-operand,
-/// missing kw-only arg/param). If the function accepts variadic keyword
-/// args/params, this function also collects them.
-LogicalResult CallOperands::diagnoseKeywordOperands(
+/// Validation the operand list against the signature indicated by
+/// pogListAttr, emitting an error with "getDiag" if invalid.
+///
+/// This collects variadic keyword args/params if the function allows them.
+LogicalResult CallOperands::diagnoseOperands(
     PogListAttr pogListAttr, OperandValueList &variadicKwOperands,
     bool isParameterList,
     llvm::function_ref<MojoInflightDiag &()> getDiag) const {
@@ -178,16 +178,6 @@ LogicalResult CallOperands::diagnoseKeywordOperands(
       variadicKwOperands.push_back(operand);
     }
   }
-
-  return success();
-}
-
-/// Helper to diagnose common cases of candidate mismatch related to positional
-/// arguments/parameter (too many positionals, missing positionals,
-/// argument/parameter specified both by positional and keyword operands).
-LogicalResult CallOperands::diagnosePosOperands(
-    PogListAttr pogListAttr, bool isParameterList,
-    llvm::function_ref<MojoInflightDiag &()> getDiag) const {
 
   // If any operand is a `*pack` splat and something didn't match, attach
   // a note explaining the gap and pointing at the working pattern.

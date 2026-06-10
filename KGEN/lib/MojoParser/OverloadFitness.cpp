@@ -376,11 +376,9 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     return *stagedDiag;
   };
 
-  if (failed(operands.diagnoseKeywordOperands(argListAttr, variadicKwOperands,
-                                              /*isParameterList=*/false,
-                                              getStagedDiag)) ||
-      failed(operands.diagnosePosOperands(
-          argListAttr, /*isParameterList=*/false, getStagedDiag)))
+  if (failed(operands.diagnoseOperands(argListAttr, variadicKwOperands,
+                                       /*isParameterList=*/false,
+                                       getStagedDiag)))
     return std::move(*stagedDiag);
 
   // Check that the signature can be rebound with this set of bindings.
