@@ -306,9 +306,14 @@ def rocshmem_init_thread_tcp(
 
     var attr = ROCSHMEMInitAttr()
     rocshmem_set_attr_uniqueid_args(
-        c_int(global_rank), c_int(total_gpus), uid, UnsafePointer(to=attr)
+        c_int(global_rank),
+        c_int(total_gpus),
+        uid,
+        UnsafePointer(to=attr).as_any_origin(),
     )
-    rocshmem_init_attr(ROCSHMEM_INIT_WITH_UNIQUEID, UnsafePointer(to=attr))
+    rocshmem_init_attr(
+        ROCSHMEM_INIT_WITH_UNIQUEID, UnsafePointer(to=attr).as_any_origin()
+    )
 
 
 def rocshmem_create_uniqueid(

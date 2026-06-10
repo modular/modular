@@ -118,7 +118,9 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
     def _tensor(
         self, ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) -> Self.tensor_type:
-        return Self.tensor_type(ptr, self._runtime_layout())
+        return Self.tensor_type(
+            ptr.as_immutable().as_any_origin(), self._runtime_layout()
+        )
 
 
 struct CacheLengthsTable(Copyable):

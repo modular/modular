@@ -237,7 +237,6 @@ def execute_ragged_flash_attention() raises:
         LayoutTensor[
             kv_block_paged.dtype,
             Layout.row_major[6](),
-            MutAnyOrigin,
         ](
             kv_block_paged.ptr,
             RuntimeLayout[Layout.row_major[6]()](
@@ -246,7 +245,7 @@ def execute_ragged_flash_attention() raises:
             ),
         ),
         LayoutTensor[
-            true_ce_cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False, true_ce_cache_lengths.dtype, Layout(UNKNOWN_VALUE)
         ](
             true_ce_cache_lengths.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
@@ -254,7 +253,7 @@ def execute_ragged_flash_attention() raises:
                 true_ce_cache_lengths.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[paged_lut.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+        LayoutTensor[mut=False, paged_lut.dtype, Layout.row_major[2]()](
             paged_lut.ptr,
             RuntimeLayout[Layout.row_major[2]()](
                 paged_lut.runtime_layout.shape.value,
@@ -269,7 +268,6 @@ def execute_ragged_flash_attention() raises:
         LayoutTensor[
             kv_block_paged.dtype,
             Layout.row_major[6](),
-            MutAnyOrigin,
         ](
             kv_block_paged.ptr,
             RuntimeLayout[Layout.row_major[6]()](
@@ -278,7 +276,7 @@ def execute_ragged_flash_attention() raises:
             ),
         ),
         LayoutTensor[
-            mixed_ce_cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False, mixed_ce_cache_lengths.dtype, Layout(UNKNOWN_VALUE)
         ](
             mixed_ce_cache_lengths.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
@@ -286,7 +284,7 @@ def execute_ragged_flash_attention() raises:
                 mixed_ce_cache_lengths.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[paged_lut.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+        LayoutTensor[mut=False, paged_lut.dtype, Layout.row_major[2]()](
             paged_lut.ptr,
             RuntimeLayout[Layout.row_major[2]()](
                 paged_lut.runtime_layout.shape.value,

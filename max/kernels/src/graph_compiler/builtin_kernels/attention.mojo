@@ -1565,9 +1565,7 @@ struct Struct_mla_decode_ragged_paged_scaled:
         )
 
         # Get the q_scales raw pointer for per-token Q scaling.
-        var q_scale_ptr = UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
-        ](q_scales.to_layout_tensor().ptr)
+        var q_scale_ptr = q_scales.to_layout_tensor().ptr
 
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -2015,12 +2013,8 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         var dev_ctx = context
         var num_indices_sparse = sparse_indices.size()
 
-        var topk_lengths_ptr = UnsafePointer[Int32, MutAnyOrigin](
-            topk_lengths.to_layout_tensor().ptr
-        )
-        var attn_sink_ptr = UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
-        ](attn_sink.to_layout_tensor().ptr)
+        var topk_lengths_ptr = topk_lengths.to_layout_tensor().ptr
+        var attn_sink_ptr = attn_sink.to_layout_tensor().ptr
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.fp8.sparse",
@@ -2403,12 +2397,8 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         var dev_ctx = context
         var num_indices_sparse = sparse_indices.size()
 
-        var topk_lengths_ptr = UnsafePointer[Int32, MutAnyOrigin](
-            topk_lengths.to_layout_tensor().ptr
-        )
-        var attn_sink_ptr = UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
-        ](attn_sink.to_layout_tensor().ptr)
+        var topk_lengths_ptr = topk_lengths.to_layout_tensor().ptr
+        var attn_sink_ptr = attn_sink.to_layout_tensor().ptr
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.fp8.sparse",

@@ -92,9 +92,9 @@ def MPI_Init(
     var result = _get_mpi_function[
         "MPI_Init",
         def(
-            UnsafePointer[Int, MutAnyOrigin],
+            UnsafePointer[Int, origin_of(argc)],
             UnsafePointer[
-                Span[StaticString, StaticConstantOrigin], MutAnyOrigin
+                Span[StaticString, StaticConstantOrigin], origin_of(argv)
             ],
         ) thin -> c_int,
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv))
@@ -112,9 +112,9 @@ def MPI_Init_thread(
     var result = _get_mpi_function[
         "MPI_Init_thread",
         def(
-            UnsafePointer[Int, MutAnyOrigin],
+            UnsafePointer[Int, origin_of(argc)],
             UnsafePointer[
-                Span[StaticString, StaticConstantOrigin], MutAnyOrigin
+                Span[StaticString, StaticConstantOrigin], origin_of(argv)
             ],
             c_int,
             UnsafePointer[c_int, MutAnyOrigin],
@@ -205,4 +205,4 @@ def get_mpi_comm_world() raises -> MPIComm:
     )
     if not comm_world_ptr:
         raise Error("symbol ompi_mpi_comm_world not found in MPI library")
-    return comm_world_ptr.value()
+    return comm_world_ptr.value().as_any_origin()

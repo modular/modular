@@ -325,7 +325,7 @@ def shmem_init_thread_tcp(
         var uid = shmem_create_uniqueid(server_ip, c_int(server_port))
         rocshmem_init_thread_tcp(
             ctx,
-            UnsafePointer(to=uid),
+            UnsafePointer(to=uid).as_any_origin(),
             node_id=node_id,
             total_nodes=total_nodes,
             gpus_per_node=gpus_per_node,
@@ -915,7 +915,7 @@ def shmem_signal_wait_until(
     """
 
     comptime if is_nvidia_gpu():
-        nvshmem_signal_wait_until(sig_addr, cmp, cmp_value)
+        nvshmem_signal_wait_until(sig_addr.as_any_origin(), cmp, cmp_value)
     elif is_amd_gpu():
         rocshmem_signal_wait_until(sig_addr, cmp, cmp_value)
     else:
@@ -979,7 +979,7 @@ def shmem_signal_op(
     """
 
     comptime if is_nvidia_gpu():
-        nvshmemx_signal_op(sig_addr, signal, sig_op, pe)
+        nvshmemx_signal_op(sig_addr.as_any_origin(), signal, sig_op, pe)
     elif is_amd_gpu():
         rocshmemx_signal_op(sig_addr, signal, sig_op, pe)
     else:

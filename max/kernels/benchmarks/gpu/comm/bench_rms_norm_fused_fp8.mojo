@@ -114,12 +114,8 @@ def bench_rms_norm_fused_fp8[
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # Construct buffers with offsets
-            var data_ptr_offset = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
-                cb_data.offset_ptr(iteration)
-            )
-            var rms_output_ptr_offset = UnsafePointer[
-                Scalar[in_dtype], MutAnyOrigin
-            ](cb_rms_output.offset_ptr(iteration))
+            var data_ptr_offset = cb_data.offset_ptr(iteration)
+            var rms_output_ptr_offset = cb_rms_output.offset_ptr(iteration)
             var data_buf_offset = TileTensor(
                 data_ptr_offset, row_major(Coord(shape))
             )
@@ -179,9 +175,7 @@ def bench_rms_norm_fused_fp8[
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # Input function for FP8 quant (reads from RMS norm output)
-            var rms_ptr_offset = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
-                cb_rms_output.offset_ptr(iteration)
-            )
+            var rms_ptr_offset = cb_rms_output.offset_ptr(iteration)
 
             @__copy_capture(rms_ptr_offset)
             @always_inline
@@ -193,15 +187,11 @@ def bench_rms_norm_fused_fp8[
                 return rms_ptr_offset.load[width=width](idx)
 
             var fp8_output_tt = TileTensor(
-                UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
-                    cb_fp8_output.offset_ptr(iteration)
-                ),
+                cb_fp8_output.offset_ptr(iteration),
                 row_major(Coord(rows, cols)),
             )
             var scales_tt = TileTensor(
-                UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
-                    scales_base_ptr
-                ),
+                scales_base_ptr,
                 row_major(Coord(Idx[1], rows)),
             )
 
@@ -239,9 +229,7 @@ def bench_rms_norm_fused_fp8[
         @always_inline
         def kernel_launch(ctx_: DeviceContext, iteration: Int) raises:
             # Input function with offset
-            var data_ptr_offset = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
-                cb_data.offset_ptr(iteration)
-            )
+            var data_ptr_offset = cb_data.offset_ptr(iteration)
 
             @__copy_capture(data_ptr_offset)
             @always_inline
@@ -258,17 +246,13 @@ def bench_rms_norm_fused_fp8[
                 )
 
             var fused_output_tt = TileTensor(
-                UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
-                    cb_fused_output.offset_ptr(iteration)
-                ),
+                cb_fused_output.offset_ptr(iteration),
                 row_major(Coord(shape)),
             )
             var fused_scale_shape = shape
             fused_scale_shape[rank - 1] = 1
             var fused_scales_tt = TileTensor(
-                UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
-                    scales_base_ptr_fused
-                ),
+                scales_base_ptr_fused,
                 row_major(Coord(fused_scale_shape)),
             )
 
@@ -315,12 +299,8 @@ def bench_rms_norm_fused_fp8[
     var rms_verify_base_ptr = rms_verify_d.unsafe_ptr()
 
     # Run separate operations with zero offset
-    var data_ptr_verify = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
-        cb_data.unsafe_ptr()
-    )
-    var rms_output_ptr_verify = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
-        rms_verify_base_ptr
-    )
+    var data_ptr_verify = cb_data.unsafe_ptr()
+    var rms_output_ptr_verify = rms_verify_base_ptr
     var data_buf_verify = TileTensor(data_ptr_verify, row_major(Coord(shape)))
     var rms_output_buf_verify = TileTensor(
         rms_output_ptr_verify, row_major(Coord(shape))
@@ -360,18 +340,16 @@ def bench_rms_norm_fused_fp8[
     def fp8_input_fn_verify[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[in_dtype, width]:
-        var rms_ptr = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
-            rms_verify_base_ptr
-        )
+        var rms_ptr = rms_verify_base_ptr
         var idx = row * cols + col
         return rms_ptr.load[width=width](idx)
 
     var fp8_output_tt_verify = TileTensor(
-        UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fp8_verify_base_ptr),
+        fp8_verify_base_ptr,
         row_major(Coord(rows, cols)),
     )
     var scales_tt_verify = TileTensor(
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin](scales_base_ptr),
+        scales_base_ptr,
         row_major(Coord(Idx[1], rows)),
     )
 
@@ -390,23 +368,19 @@ def bench_rms_norm_fused_fp8[
     def input_fn_fused_verify[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
-        var data_ptr = UnsafePointer[Scalar[in_dtype], MutAnyOrigin](
-            data_base_ptr_verify
-        )
+        var data_ptr = data_base_ptr_verify
         var data_buf = TileTensor(data_ptr, row_major(Coord(shape)))
         var idx = data_buf.layout(Coord(coords))
         return data_buf.raw_load[width=width](idx)
 
     var fused_output_tt_verify = TileTensor(
-        UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fused_verify_base_ptr),
+        fused_verify_base_ptr,
         row_major(Coord(shape)),
     )
     var verify_scale_shape = shape
     verify_scale_shape[rank - 1] = 1
     var fused_scales_tt_verify = TileTensor(
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
-            scales_base_ptr_fused
-        ),
+        scales_base_ptr_fused,
         row_major(Coord(verify_scale_shape)),
     )
 

@@ -304,19 +304,19 @@ def nvshmemx_init() raises:
     var rank = c_int(0)
     var mpi_comm = get_mpi_comm_world()
 
-    _ = MPI_Comm_rank(mpi_comm, UnsafePointer(to=rank))
+    _ = MPI_Comm_rank(mpi_comm, UnsafePointer(to=rank).as_any_origin())
     # Set CUDA device early - needed for CUDA-related NVSHMEM initialization
     var ctx = DeviceContext(device_id=Int(rank))
     ctx.set_as_current()
 
     # Initialize NVSHMEM with MPI
-    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
+    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm).as_any_origin())
     # For single process per GPU, fallback to one device per process per node.
     attr.args.uid_args.myrank = 0
     attr.args.uid_args.nranks = 1
 
     _ = nvshmemx_hostlib_init_attr(
-        NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
+        NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr).as_any_origin()
     )
 
     # Check initialization status
@@ -333,12 +333,12 @@ def nvshmemx_init_thread(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
 
     # Initialize NVSHMEM with MPI
     var mpi_comm = get_mpi_comm_world()
-    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
+    var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm).as_any_origin())
     attr.args.uid_args.myrank = Int32(ctx.id())
     attr.args.uid_args.nranks = c_int(nranks)
 
     var status = nvshmemx_hostlib_init_attr(
-        NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)
+        NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr).as_any_origin()
     )
     if status:
         raise Error("failed to initialize NVSHMEM with status:", status)
