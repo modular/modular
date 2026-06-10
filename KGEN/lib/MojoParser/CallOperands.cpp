@@ -97,8 +97,7 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
 ///
 /// This collects variadic keyword args/params if the function allows them.
 LogicalResult CallOperands::diagnoseOperands(
-    PogListAttr pogListAttr, OperandValueList &variadicKwOperands,
-    bool isParameterList,
+    PogListAttr pogListAttr, bool isParameterList, PogAssignment &pogAssignment,
     llvm::function_ref<MojoInflightDiag &()> getDiag) const {
 
   // First, we collect any (named) pos-only args/params passed by keyword
@@ -149,7 +148,7 @@ LogicalResult CallOperands::diagnoseOperands(
 
   // Collect all the keyword operands with unknown names.
   auto inferredNameIter = inferredNames.begin();
-  for (auto &operand : values) {
+  for (auto [operandIdx, operand] : llvm::enumerate(values)) {
     // Scan through inferred names. These must be specified in order.
     while (inferredNameIter != inferredNames.end() &&
            *inferredNameIter != operand.keyword)
@@ -175,7 +174,7 @@ LogicalResult CallOperands::diagnoseOperands(
       }
 
       // Otherwise remember it.
-      variadicKwOperands.push_back(operand);
+      pogAssignment.kwVariadicIdxs.push_back(operandIdx);
     }
   }
 

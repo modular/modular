@@ -158,7 +158,7 @@ public:
                bool allowImplicitConversions, ASTDecl *declIfDirect,
                bool discardError, FnTypeGeneratorType calleeSignature,
                const CallOperands &callOperands,
-               const OperandValueList &variadicKwOperands,
+               const CallOperands::PogAssignment &pogAssignment,
                OperandsNeedingOriginsList &operandsNeedingOrigins);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
@@ -178,7 +178,7 @@ public:
 private:
   FnTypeGeneratorType calleeSignature;
   const CallOperands &callOperands;
-  const OperandValueList &variadicKwOperands;
+  const CallOperands::PogAssignment &pogAssignment;
   OperandsNeedingOriginsList &operandsNeedingOrigins;
 
   /// Given an incomplete parameter binding set, try to infer parameters on

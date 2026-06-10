@@ -180,13 +180,21 @@ public:
 
   void dump() const;
 
-  /// Validation the operand list against the signature indicated by
-  /// pogListAttr, emitting an error with "getDiag" if invalid.
+  struct PogAssignment {
+    /// This is a list of operand indexes that are assigned to a KWArg POG. This
+    /// is only non-empty in the presence of a variadic keyword argument, but
+    /// may be empty in the case that no keyword arguments are passed.
+    SmallVector<ssize_t> kwVariadicIdxs;
+  };
+
+  /// Validate the operand list against the signature indicated by pogListAttr,
+  /// emitting an error with "getDiag" if invalid.
   ///
-  /// This collects variadic keyword args/params if the function allows them.
+  /// This populates "pogAssignment" with information about the mapping of
+  /// operands to POG entries.
   LogicalResult
-  diagnoseOperands(PogListAttr pogListAttr,
-                   OperandValueList &variadicKwOperands, bool isParameterList,
+  diagnoseOperands(PogListAttr pogListAttr, bool isParameterList,
+                   PogAssignment &pogAssignment,
                    llvm::function_ref<MojoInflightDiag &()> getDiag) const;
 };
 

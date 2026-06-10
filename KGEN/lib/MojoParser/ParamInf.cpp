@@ -642,10 +642,10 @@ LogicalResult ParamInf::inferFromParamList() {
   // TODO: Integrate this into the logic below.
   // FIXME: why the verification here does not guarantee there is no parameter
   // number mismatch/missing kw error below?
-  OperandValueList variadicKwOperands;
-  if (failed(givenBindings.diagnoseOperands(
-          declaredParamPogs, variadicKwOperands, /*isParameterList=*/true,
-          getStagedDiag)))
+  CallOperands::PogAssignment pogAssignment;
+  if (failed(givenBindings.diagnoseOperands(declaredParamPogs,
+                                            /*isParameterList=*/true,
+                                            pogAssignment, getStagedDiag)))
     return failure();
 
   // We may have pre-checked and out-of-order inferred parameters.  Avoid
@@ -1222,12 +1222,12 @@ CallParamInf::CallParamInf(const ParamBindings &paramBinding,
                            bool discardError,
                            FnTypeGeneratorType calleeSignature,
                            const CallOperands &callOperands,
-                           const OperandValueList &variadicKwOperands,
+                           const CallOperands::PogAssignment &pogAssignment,
                            OperandsNeedingOriginsList &operandsNeedingOrigins)
     : ParamInf(paramBinding, declaredParamTypes, declaredParamPogs,
                allowImplicitConversions, declIfDirect, discardError),
       calleeSignature(calleeSignature), callOperands(callOperands),
-      variadicKwOperands(variadicKwOperands),
+      pogAssignment(pogAssignment),
       operandsNeedingOrigins(operandsNeedingOrigins) {}
 
 /// Check the expected type against the provided operand. This identifies any
@@ -1429,10 +1429,8 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // record it so call emission can reinfer and reemit this candidate if
   // selected from the overload set, but with the argument in a temporary
   // vardecl.
-  if (needsArgInMemory) {
-    assert(operandIdx != ~0ULL && "FIXME: KWVarArgs not passing correctly");
+  if (needsArgInMemory)
     operandsNeedingOrigins.push_back({operandIdx, argIdx, expectedRVType});
-  }
 
   // If a register-passable type is being passed in-memory, remember this.
   if (expectedConvention != ArgConvention::ReadReg &&
@@ -1694,14 +1692,10 @@ VerifiedParamBindings CallParamInf::inferForCall() {
     if (calleeSignature.isKwVarArg(expectedArgIdx)) {
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
-      for (auto operand : variadicKwOperands) {
-        // TODO: Passing OwnedMem is a hack that is needed because the value
-        // type is not a reference type (and doesn't have a origin), but we
-        // still want to type check it. So, passing it as if it was reg-passable
-        // happens to just work, until we rectify this. Right now the reason the
-        // value type cannot be a reference type is because `Pointer` does not
-        // (and in fact cannot) conform to `Copyable & Movable`.
-        if (failed(inferOneOperand(operand, /*operandIdx unknown*/ ~0ULL,
+      for (auto operandIdx : pogAssignment.kwVariadicIdxs) {
+        // KWVarArg values are passed to OwnedKwargsDict::_insert, which takes
+        // the argument as an owned value (they are transfered into the dict).
+        if (failed(inferOneOperand(callOperands[operandIdx], operandIdx,
                                    expectedArgIdx, refValType,
                                    ArgConvention::OwnedMem)))
           return {};

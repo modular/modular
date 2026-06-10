@@ -369,16 +369,15 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
   PogListAttr argListAttr = signature.getArgListAttrs();
-  OperandValueList variadicKwOperands;
+  CallOperands::PogAssignment pogAssignment;
   std::optional<MojoInflightDiag> stagedDiag;
   auto getStagedDiag = [&]() -> MojoInflightDiag & {
     stagedDiag = shared.emitError(callLoc);
     return *stagedDiag;
   };
 
-  if (failed(operands.diagnoseOperands(argListAttr, variadicKwOperands,
-                                       /*isParameterList=*/false,
-                                       getStagedDiag)))
+  if (failed(operands.diagnoseOperands(argListAttr, /*isParameterList=*/false,
+                                       pogAssignment, getStagedDiag)))
     return std::move(*stagedDiag);
 
   // Check that the signature can be rebound with this set of bindings.
@@ -387,7 +386,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                          signature.getParamListAttrs(),
                          allowImplicitConversions, funcIfDirect,
                          /*discardError=*/false, signature, operands,
-                         variadicKwOperands, operandsNeedingOrigins);
+                         pogAssignment, operandsNeedingOrigins);
   // Check if we're calling a closure's __call__ method and need to set
   // captured closure parameters. Only applies to method call syntax on a
   // __call__ method — not direct calls that happen to pass a closure as an
