@@ -135,8 +135,6 @@ public:
   DeclResolver &getDeclResolver() const { return *declResolver; }
   ClosureEmitter &getClosureEmitter() const { return *closureEmitter; }
 
-  bool shouldExportKgenModule() const;
-
   /// Returns if we should diagnose missing doc strings.
   bool shouldDiagnoseMissingDocStrings() const;
 
@@ -597,10 +595,6 @@ private:
 
   /// If true, auto-import the builtin package.
   bool useBuiltinModule = true;
-
-  /// If true, resolve all dependencies because the output is a self contained
-  /// module.
-  bool exportKgenModule = false;
 
   /// Base library path prefix for generated documentation links.
   std::string docsBasePath;
