@@ -33,7 +33,7 @@ comptime AnyOrigin[*, mut: Bool] = Origin[
 comptime ImmutAnyOrigin = AnyOrigin[mut=False]
 comptime MutAnyOrigin = AnyOrigin[mut=True]
 
-comptime ExternalOrigin[*, mut: Bool] = Origin[
+comptime UntrackedOrigin[*, mut: Bool] = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         mut._mlir_value,
@@ -1219,8 +1219,8 @@ struct VariadicList[
     is_owned: Bool,
 ](RegisterPassable):
     comptime _EltPointerType = Pointer[Self.element_type, Self.origin]
-    # FIXME: This should be the origin of the container, not ExternalOrigin.
-    var value: Span[Self._EltPointerType, ExternalOrigin[mut=False]]
+    # FIXME: This should be the origin of the container, not UntrackedOrigin.
+    var value: Span[Self._EltPointerType, UntrackedOrigin[mut=False]]
 
     # TODO: the origin of the vardecl is captured in the Self.origin set
     # by the compiler to make sure the container outlives all its elements.
@@ -1237,7 +1237,7 @@ struct VariadicList[
         # Convert the !lit.ref to an UnsafePointer, then cast to a pointer to
         # the first element.
         var array_up = UnsafePointer(to=Pointer(value)[])
-        var elt_ptr = UnsafePointer[_, ExternalOrigin[mut=False]](
+        var elt_ptr = UnsafePointer[_, UntrackedOrigin[mut=False]](
             __mlir_op.`pop.array.gep`(
                 array_up.address,
                 Int(0)._mlir_value,

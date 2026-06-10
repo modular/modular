@@ -613,9 +613,9 @@ struct TestAutoParamsAndSugar[f1: HasSize]:
         # expected-error @+1 {{cannot be converted from 'HasSize[42]' to 'HasSize[4]'}}
         takes4(HasSize[StructWithAlias.size_lit]())
 
-def test_differ_origins(a: Optional[UnsafePointer[Int, ExternalOrigin[mut=True]]]):
+def test_differ_origins(a: Optional[UnsafePointer[Int, UntrackedOrigin[mut=True]]]):
     # expected-error @below {{cannot implicitly convert}}
-    # expected-note @below {{.T.origin of the first value is 'MutExternalOrigin' but the second value is 'MutAnyOrigin'}}
+    # expected-note @below {{.T.origin of the first value is 'MutUntrackedOrigin' but the second value is 'MutAnyOrigin'}}
     var b : Optional[UnsafePointer[Int, MutAnyOrigin]] = a
 
 

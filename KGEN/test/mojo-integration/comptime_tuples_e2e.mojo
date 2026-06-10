@@ -21,14 +21,14 @@ from std.memory import alloc
 # and Copyable checks in method bodies resolve after the struct is defined.
 struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
     comptime Element = Variant[Self.T, Self]
-    var _data: UnsafePointer[Self.Element, MutExternalOrigin]
+    var _data: UnsafePointer[Self.Element, MutUntrackedOrigin]
     var _len: Int
     var _cap: Int
 
     @always_inline
     def __init__(out self):
         self._data = UnsafePointer[
-            Self.Element, MutExternalOrigin
+            Self.Element, MutUntrackedOrigin
         ].unsafe_dangling()
         self._len = 0
         self._cap = 0
@@ -46,7 +46,7 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
         self._len = take._len
         self._cap = take._cap
         take._data = UnsafePointer[
-            Self.Element, MutExternalOrigin
+            Self.Element, MutUntrackedOrigin
         ].unsafe_dangling()
         take._len = 0
         take._cap = 0
@@ -61,7 +61,7 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
                 (self._data + i).init_pointee_copy(copy._data[i])
         else:
             self._data = UnsafePointer[
-                Self.Element, MutExternalOrigin
+                Self.Element, MutUntrackedOrigin
             ].unsafe_dangling()
 
     def __del__(deinit self):

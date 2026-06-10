@@ -7,7 +7,7 @@
 
 @fieldwise_init
 struct A(ImplicitlyCopyable):
-    var x: UnsafePointer[Scalar[DType.invalid], MutExternalOrigin]
+    var x: UnsafePointer[Scalar[DType.invalid], MutUntrackedOrigin]
 
     def __init__(out self):
         var y = alloc[Int8](1)

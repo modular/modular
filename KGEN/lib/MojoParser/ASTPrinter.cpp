@@ -1343,11 +1343,11 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       if (auto unionAttr = dyn_cast<OriginUnionAttr>(origin)) {
         if (unionAttr.getNumOperands() == 0) {
           if (unionAttr.getType().isMutableKnown(true))
-            os << "MutExternalOrigin";
+            os << "MutUntrackedOrigin";
           else if (unionAttr.getType().isMutableKnown(false))
-            os << "ImmutExternalOrigin";
+            os << "ImmutUntrackedOrigin";
           else {
-            os << "ExternalOrigin[";
+            os << "UntrackedOrigin[";
             printParam(os, unionAttr.getType().getIsMutable(), ctx);
             os << "]";
           }
