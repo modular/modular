@@ -220,6 +220,14 @@ This version is still a work in progress.
 
 ### `max` CLI
 
+- The serving benchmark now reports a per-turn KV cache retention percentile
+  metric for multi-turn workloads. For each turn after the first, it compares
+  the server-reported cached prefix against the block-aligned prefix carried
+  over from the previous turn, surfacing when cached tokens are dropped between
+  turns (distinct from the existing cached-token-rate metrics, whose denominator
+  includes new and uncacheable tokens). The KV cache block size used to align
+  the expected prefix is configurable via `--kv-block-size` (default `128`);
+  match it to the server's `--kv-cache-page-size`.
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
 - Removed the `default` value for `--devices`; omit `--devices` to use the model
   or config default.

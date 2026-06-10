@@ -807,6 +807,7 @@ async def benchmark(
             collect_gpu_stats=args.collect_gpu_stats,
             metrics_by_endpoint=endpoint_metrics,
             spec_decode_stats=spec_decode_stats,
+            kv_block_size=args.kv_block_size,
         )
         if outputs_by_session is not None:
             text_result.session_server_stats = {

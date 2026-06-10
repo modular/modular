@@ -405,6 +405,14 @@ def print_benchmark_summary(
                 )
             )
 
+        if t.per_turn_cache_retention is not None:
+            print_section(title="Per-Turn KV Cache Retention")
+            print(
+                t.per_turn_cache_retention.format_with_prefix(
+                    prefix="Per-Turn Cache Retention", unit="%"
+                )
+            )
+
     print_section(title="Per-Request E2E Latency")
     print(
         agg.latency_ms.format_with_prefix(prefix="Request Latency", unit="ms")

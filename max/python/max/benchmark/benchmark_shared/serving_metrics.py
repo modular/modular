@@ -19,6 +19,7 @@ import logging
 import statistics
 import warnings
 from collections.abc import Mapping, Sequence
+from itertools import pairwise
 from typing import TYPE_CHECKING, TypeGuard
 
 from max.benchmark.benchmark_shared.metrics import (
@@ -140,6 +141,44 @@ def _aggregate_gpu_stats(
     return peak_gpu_memory_mib, available_gpu_memory_mib, gpu_utilization
 
 
+def _per_turn_cache_retentions(
+    measured_outputs: list[RequestFuncOutput], block_size: int
+) -> list[float]:
+    """Per-turn KV cache retention across multi-turn sessions.
+
+    For each session (grouped by ``session_id``, ordered by ``turn_index``) and
+    each turn ``N >= 2``, the previous turn's full context (prompt + completion)
+    is an exact prefix of turn ``N``'s prompt and should be served from the
+    prefix cache. We compare the server-reported ``cached_tokens`` of turn ``N``
+    against the block-aligned ceiling of that prior context — full
+    ``block_size`` blocks minus the in-progress block the engine never reuses —
+    so a clean hit reads ~1.0 and a real drop (eviction, or a turn routed to a
+    cold replica) reads low. Single-turn requests contribute nothing.
+
+    Returns the list of per-turn retention fractions (one per checked turn).
+    """
+    by_session: dict[str, list[RequestFuncOutput]] = {}
+    for o in measured_outputs:
+        if o.session_id is None or o.turn_index is None:
+            continue
+        by_session.setdefault(o.session_id, []).append(o)
+
+    retentions: list[float] = []
+    for turns in by_session.values():
+        turns.sort(key=lambda o: o.turn_index or 0)
+        for prev, cur in pairwise(turns):
+            prev_prompt = prev.server_token_stats.prompt_tokens or 0
+            prev_completion = prev.server_token_stats.completion_tokens or 0
+            expected_prefix = prev_prompt + prev_completion
+            expected_blocks = max(0, expected_prefix // block_size - 1)
+            expected_cacheable = expected_blocks * block_size
+            if expected_cacheable <= 0:
+                continue
+            cached = cur.server_token_stats.cached_tokens
+            retentions.append(min(1.0, cached / expected_cacheable))
+    return retentions
+
+
 def calculate_metrics(
     outputs: Sequence[RequestFuncOutput],
     dur_s: float,
@@ -151,6 +190,7 @@ def calculate_metrics(
     max_concurrency: int | None,
     max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
+    kv_block_size: int,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
 ) -> BenchmarkResult:
     actual_output_lens: list[int] = []
@@ -332,6 +372,18 @@ def calculate_metrics(
         else None
     )
 
+    # Turn-by-turn KV cache retention: how much of the previous turn's context
+    # is still cached on the next turn (catches cached-token drop). Only
+    # meaningful for multi-turn sessions; empty for single-turn workloads.
+    per_turn_cache_retentions = _per_turn_cache_retentions(
+        [o for o, _ in measured], kv_block_size
+    )
+    per_turn_cache_retention: RatePercentileMetrics | None = (
+        RatePercentileMetrics(per_turn_cache_retentions, as_percent=True)
+        if len(per_turn_cache_retentions) > 0
+        else None
+    )
+
     text_data = TextGenAggregates(
         duration=measured_duration,
         completed=measured_count,
@@ -373,12 +425,14 @@ def calculate_metrics(
         max_total=max_total,
         global_cached_token_rate=global_cached_token_rate,
         per_turn_cached_token_rate=per_turn_cached_token_rate,
+        per_turn_cache_retention=per_turn_cache_retention,
         skip_first_n_requests=skip_first_n_requests,
         skip_last_n_requests=skip_last_n_requests,
         input_lens=[o.prompt_len for o in outputs],
         output_lens=actual_output_lens,
         ttfts=[o.ttft for o in outputs],
         per_turn_cached_token_rates=per_turn_cached_token_rates,
+        per_turn_cache_retentions=per_turn_cache_retentions,
     )
 
     return BenchmarkResult(
@@ -525,6 +579,7 @@ def build_text_generation_result(
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
     spec_decode_stats: SpecDecodeStats | None = None,
+    kv_block_size: int = 128,
 ) -> BenchmarkResult:
     """Compute metrics and build the result dict for text-generation tasks."""
     if not _is_text_generation_outputs(outputs):
@@ -544,6 +599,7 @@ def build_text_generation_result(
         max_concurrent_conversations=max_concurrent_conversations,
         collect_gpu_stats=collect_gpu_stats,
         metrics_by_endpoint=metrics_by_endpoint,
+        kv_block_size=kv_block_size,
     )
 
     for warn in text_metrics.confidence_warnings():
@@ -558,6 +614,7 @@ def build_text_generation_result(
         max_concurrent_conversations=max_concurrent_conversations,
         collect_gpu_stats=collect_gpu_stats,
         metrics_by_endpoint=metrics_by_endpoint,
+        kv_block_size=kv_block_size,
     )
 
     return text_metrics.model_copy(
@@ -579,6 +636,7 @@ def _compute_steady_state_result(
     max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None,
+    kv_block_size: int = 128,
 ) -> SteadyStateResult:
     """Detect steady-state window and return a SteadyStateResult."""
     steady = detect_steady_state(outputs, max_concurrency=max_concurrency)
@@ -623,6 +681,7 @@ def _compute_steady_state_result(
                 max_concurrent_conversations=max_concurrent_conversations,
                 collect_gpu_stats=collect_gpu_stats,
                 metrics_by_endpoint=metrics_by_endpoint,
+                kv_block_size=kv_block_size,
             ).text_data
             assert ss_metrics is not None  # text-gen path always populates
 
