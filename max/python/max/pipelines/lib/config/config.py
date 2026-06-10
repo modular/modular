@@ -409,6 +409,16 @@ class PipelineConfig(ConfigFileModel):
     )
     """The model-agnostic runtime settings for pipeline execution."""
 
+    pipeline_task: PipelineTask = Field(
+        default=PipelineTask.UNDEFINED,
+        description=(
+            "The pipeline task to run (e.g. ``text_generation``, "
+            "``embeddings_generation``). Used to disambiguate architectures "
+            "registered under the same name for multiple tasks."
+        ),
+    )
+    """The pipeline task, used for arch disambiguation during config resolution."""
+
     @property
     def needs_bitmask_constraints(self) -> bool:
         """Whether constrained decoding can fire and requires the bitmask path.
@@ -1314,9 +1324,15 @@ class PipelineConfig(ConfigFileModel):
     def _validate_and_resolve_overlap_scheduler(self) -> None:
         arch: SupportedArchitecture | None = None
         if not self.runtime.force:
+            task = (
+                self.pipeline_task
+                if self.pipeline_task != PipelineTask.UNDEFINED
+                else None
+            )
             arch = PIPELINE_REGISTRY.retrieve_architecture(
                 architecture_name=self.models.main_architecture_name,
                 prefer_module_v3=self.runtime.prefer_module_v3,
+                task=task,
             )
             max_batch_size = self.runtime.max_batch_size
             if (

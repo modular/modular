@@ -257,6 +257,7 @@ def cli_serve(
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
+    config_kwargs["pipeline_task"] = PipelineTask(task)
     pipeline_config = PipelineConfig(**config_kwargs)
 
     # Log Pipeline and Sampling Configuration
