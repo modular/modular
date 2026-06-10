@@ -419,16 +419,16 @@ def produce[
         BK=padded_depth,
     ],
     q_smem: UnsafePointer[
-        Scalar[qkv_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[qkv_type], _, address_space=AddressSpace.SHARED
     ],
     kv_smem: UnsafePointer[
-        Scalar[qkv_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[qkv_type], _, address_space=AddressSpace.SHARED
     ],
     produced_mbar_kv: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     consumed_mbar_kv: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
     ],
     produced_mbar_q: Optional[
         UnsafePointer[

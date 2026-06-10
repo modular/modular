@@ -269,7 +269,7 @@ def mha_sm100_dispatch[
                 # --- ragged dispatch ---
                 comptime if ragged:
                     with_valid_length[NonNullPointer[DType.uint32]](
-                        {valid_length}
+                        {valid_length.as_immutable().as_any_origin()}
                     )
                 else:
                     with_valid_length[NullPointer[DType.uint32]]({})

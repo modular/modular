@@ -1415,7 +1415,9 @@ def conv_transposed_cpu[
     ):
         comptime packed_filter_rank = filter.rank if filter_packed else filter.rank + 1
 
-        var packed_filter_ptr = filter.ptr.as_any_origin()
+        var packed_filter_ptr = filter.ptr.unsafe_origin_cast[
+            MutExternalOrigin
+        ]()
         var packed_filter_shape: IndexList[packed_filter_rank]
 
         # If filter is not packed, we have to pack it before the kernel.

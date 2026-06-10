@@ -1339,7 +1339,7 @@ def flash_attention_dispatch[
                                     kv_input_row_offsets,
                                     batch_size,
                                     SplitKPartition(
-                                        exp_sum_qk_max_data.unsafe_ptr(),
+                                        exp_sum_qk_max_data.unsafe_ptr().as_any_origin(),
                                         UInt32(num_partitions_value),
                                     ),
                                     ctx,
@@ -1366,7 +1366,7 @@ def flash_attention_dispatch[
                                     _optional_lt_to_tt(kv_input_row_offsets),
                                     batch_size,
                                     SplitKPartition(
-                                        exp_sum_qk_max_data.unsafe_ptr(),
+                                        exp_sum_qk_max_data.unsafe_ptr().as_any_origin(),
                                         UInt32(num_partitions_value),
                                     ),
                                     ctx,
@@ -4551,7 +4551,7 @@ def mha_decoding_single_batch_pipelined[
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
-        k_smem, IteratorTypeK.layout_uint_type(k_smem_size)
+        k_smem.as_any_origin(), IteratorTypeK.layout_uint_type(k_smem_size)
     )
 
     var kv_head_idx = block_idx.y
@@ -4632,7 +4632,7 @@ def mha_decoding_single_batch_pipelined[
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
-        v_smem, IteratorTypeV.layout_uint_type(v_smem_size)
+        v_smem.as_any_origin(), IteratorTypeV.layout_uint_type(v_smem_size)
     )
 
     # Shared memory for P = Q * K^t
@@ -4656,7 +4656,7 @@ def mha_decoding_single_batch_pipelined[
         Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]().as_any_origin())
 
     var q_offset = depth * kv_head_idx * group
 

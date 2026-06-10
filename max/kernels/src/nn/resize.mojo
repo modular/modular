@@ -345,12 +345,12 @@ def _resize[
     # ping pong between using tmp_buffer1 and tmp_buffer2 to store outputs
     # of 1d interpolation pass across one of the dimensions
     if len(resize_dims) == 1:  # avoid allocating tmp_buffer
-        out_ptr = output.ptr.unsafe_origin_cast[MutExternalOrigin]()
+        out_ptr = output.ptr.unsafe_origin_cast[MutAnyOrigin]()
     if len(resize_dims) > 1:  # avoid allocating second tmp_buffer
         tmp_buffer1 = List[Scalar[dtype]](
             unsafe_uninit_length=tmp_dims.flattened_length()
         )
-        out_ptr = tmp_buffer1.unsafe_ptr()
+        out_ptr = tmp_buffer1.unsafe_ptr().as_any_origin()
         using_tmp1 = True
     if len(resize_dims) > 2:  # need a second tmp_buffer
         # TODO: if you are upsampling all dims, you can use the output in place of tmp_buffer2
@@ -365,7 +365,7 @@ def _resize[
     # interpolated dimension
     for dim_idx in range(len(resize_dims)):
         if dim_idx == len(resize_dims) - 1:
-            out_ptr = output.ptr.unsafe_origin_cast[MutExternalOrigin]()
+            out_ptr = output.ptr.unsafe_origin_cast[MutAnyOrigin]()
         var resize_dim = resize_dims[dim_idx]
         out_shape[resize_dim] = Int(output.dim(resize_dim))
 
@@ -397,7 +397,7 @@ def _resize[
 
         out_ptr = (
             tmp_buffer2.unsafe_ptr() if using_tmp1 else tmp_buffer1.unsafe_ptr()
-        )
+        ).as_any_origin()
         using_tmp1 = not using_tmp1
 
     _ = tmp_buffer1^

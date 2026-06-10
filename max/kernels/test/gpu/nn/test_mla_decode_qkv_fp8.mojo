@@ -356,7 +356,7 @@ def test[
     # Create BF16 K operand for reference
     var k_bf16_operand = LayoutTensorMHAOperand(
         LayoutTensor[output_type, k_layout, MutAnyOrigin](
-            k_bf16_device.ptr,
+            k_bf16_device.ptr.as_any_origin(),
             RuntimeLayout[k_layout].row_major(
                 k_bf16_device.runtime_layout.shape.value.canonicalize()
             ),
@@ -834,7 +834,7 @@ def test_sw[
 
     var k_bf16_operand = LayoutTensorMHAOperand(
         LayoutTensor[output_type, k_layout, MutAnyOrigin](
-            k_bf16_device.ptr,
+            k_bf16_device.ptr.as_any_origin(),
             RuntimeLayout[k_layout].row_major(
                 k_bf16_device.runtime_layout.shape.value.canonicalize()
             ),

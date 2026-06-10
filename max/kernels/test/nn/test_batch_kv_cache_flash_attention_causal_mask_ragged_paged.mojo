@@ -171,18 +171,14 @@ def execute_ragged_flash_attention[
     kv_collection_continuous = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
     ](
-        LayoutTensor[
-            kv_block_continuous.dtype, Layout.row_major[6](), MutAnyOrigin
-        ](
+        LayoutTensor[kv_block_continuous.dtype, Layout.row_major[6]()](
             kv_block_continuous.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 kv_block_continuous.runtime_layout.shape.value,
                 kv_block_continuous.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[
-            cache_lengths_nd.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
+        LayoutTensor[mut=False, cache_lengths_nd.dtype, Layout(UNKNOWN_VALUE)](
             cache_lengths_nd.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths_nd.runtime_layout.shape.value,
@@ -190,7 +186,7 @@ def execute_ragged_flash_attention[
             ),
         ),
         LayoutTensor[
-            lookup_table_continuous.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+            mut=False, lookup_table_continuous.dtype, Layout(UNKNOWN_VALUE)
         ](
             lookup_table_continuous.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
@@ -282,23 +278,21 @@ def execute_ragged_flash_attention[
                 )
 
     kv_collection_paged = PagedKVCacheCollection[dtype, kv_params, page_size](
-        LayoutTensor[kv_block_paged.dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[kv_block_paged.dtype, Layout.row_major[6]()](
             kv_block_paged.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 kv_block_paged.runtime_layout.shape.value,
                 kv_block_paged.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[
-            cache_lengths_nd.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
+        LayoutTensor[mut=False, cache_lengths_nd.dtype, Layout(UNKNOWN_VALUE)](
             cache_lengths_nd.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths_nd.runtime_layout.shape.value,
                 cache_lengths_nd.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[paged_lut.dtype, Layout.row_major[2](), ImmutAnyOrigin](
+        LayoutTensor[mut=False, paged_lut.dtype, Layout.row_major[2]()](
             paged_lut.ptr,
             RuntimeLayout[Layout.row_major[2]()](
                 paged_lut.runtime_layout.shape.value,

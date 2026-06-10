@@ -2862,7 +2862,7 @@ def st_shared_v4_b32_at_fp8_elem_off[
 @always_inline
 def ld_shared_v4_u32(
     src_u8: UnsafePointer[
-        Scalar[DType.uint8], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[DType.uint8], _, address_space=AddressSpace.SHARED
     ],
     byte_off: Int,
 ) -> SIMD[DType.uint32, 4]:
@@ -2894,7 +2894,7 @@ def st_shared_v4_b32_at_bf16_elem_off[
     out_dtype: DType
 ](
     dst_bf16: UnsafePointer[
-        Scalar[out_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[out_dtype], _, address_space=AddressSpace.SHARED
     ],
     elem_off: Int,  # bf16 element offset
     packed: SIMD[DType.uint32, 4],
@@ -3110,7 +3110,6 @@ struct MLA_SM100_Decode_Common[
         var smem_tensor = TileTensor[
             Self.kv_type,
             type_of(kv_tt_layout),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](smem, kv_tt_layout)
         tma.async_copy_3d(smem_tensor, mbar[], (col_start, 0, row_start))
@@ -3134,7 +3133,6 @@ struct MLA_SM100_Decode_Common[
         var smem_tensor = TileTensor[
             Self.q_type,
             type_of(q_tt_layout),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](smem, q_tt_layout)
 
@@ -3363,7 +3361,6 @@ struct MLA_SM100_Decode_Common[
         var li_Smem_Tensor = TileTensor[
             Self.AccumType,
             type_of(smem_1d_layout),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](li_smem, smem_1d_layout)
 
@@ -3606,7 +3603,6 @@ struct MLA_SM100_Decode_Common[
             var max_buf = TileTensor[
                 Self.AccumType,
                 type_of(smem_1d_layout),
-                MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
             ](max_smem + buf_offset, smem_1d_layout)
             max_buf[lane_id] = current_max
@@ -4200,7 +4196,6 @@ struct MLA_SM100_Decode_Common[
                             var smem_tensor = TileTensor[
                                 Self.output_dtype,
                                 type_of(o_tt_layout),
-                                MutAnyOrigin,
                                 address_space=AddressSpace.SHARED,
                             ](q_stage_ptr, o_tt_layout)
                             if is_leader:
@@ -4218,7 +4213,6 @@ struct MLA_SM100_Decode_Common[
                         var smem_tensor = TileTensor[
                             Self.output_dtype,
                             type_of(o_tt_layout),
-                            MutAnyOrigin,
                             address_space=AddressSpace.SHARED,
                         ](stage_ptr, o_tt_layout)
                         if is_leader:

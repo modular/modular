@@ -209,14 +209,12 @@ def qk_smoke_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_M, QK_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem_ptr)
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_smem_ptr)
@@ -379,7 +377,6 @@ def pv_smoke_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(PV_M, PV_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](a_smem_ptr)
@@ -388,7 +385,6 @@ def pv_smoke_kernel[
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(PV_N, PV_K),
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ](b_smem_ptr)
@@ -538,8 +534,8 @@ def fill_random_fp8[
 def dequant_fp8_to_bf16[
     src_dtype: DType, dst_dtype: DType
 ](
-    src: UnsafePointer[Scalar[src_dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dst_dtype], MutAnyOrigin],
+    src: UnsafePointer[mut=False, Scalar[src_dtype], _],
+    dst: UnsafePointer[mut=True, Scalar[dst_dtype], _],
     n: Int,
 ):
     for i in range(n):

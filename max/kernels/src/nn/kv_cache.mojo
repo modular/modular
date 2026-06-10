@@ -408,7 +408,7 @@ def _matmul_common[
 
     comptime if is_cpu[target]():
         var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
-        var c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
+        var c_nd = LayoutTensor[dtype, c_layout](
             c_ptr,
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
@@ -427,7 +427,7 @@ def _matmul_common[
         var c_device_buffer = context.value().enqueue_create_buffer[dtype](
             BS * SEQ_LEN * N
         )
-        var c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
+        var c_nd = LayoutTensor[dtype, c_layout](
             c_device_buffer.unsafe_ptr(),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
@@ -1340,7 +1340,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
     dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
     var blocks_host = type_of(kv_collection.blocks)(
-        ptr=blocks_ptr, layout=kv_collection.blocks.layout
+        ptr=blocks_ptr.as_any_origin(), layout=kv_collection.blocks.layout
     )
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
@@ -1349,7 +1349,8 @@ def print_kv_cache_cont_batch_generic_gpu[
         cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
     )
     var cache_lengths_host = type_of(kv_collection.cache_lengths)(
-        ptr=cache_lengths_ptr, layout=kv_collection.cache_lengths.layout
+        ptr=cache_lengths_ptr.as_immutable().as_any_origin(),
+        layout=kv_collection.cache_lengths.layout,
     )
 
     var n_lookup_table = kv_collection.lookup_table.num_elements()
@@ -1358,7 +1359,8 @@ def print_kv_cache_cont_batch_generic_gpu[
         lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
     )
     var lookup_table_host = type_of(kv_collection.lookup_table)(
-        ptr=lookup_table_ptr, layout=kv_collection.lookup_table.layout
+        ptr=lookup_table_ptr.as_immutable().as_any_origin(),
+        layout=kv_collection.lookup_table.layout,
     )
 
     var host_kv_collection = type_of(kv_collection)(
@@ -1433,7 +1435,7 @@ def print_kv_cache_paged_generic_gpu[
     var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
     dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
     var blocks_host = type_of(kv_collection.blocks)(
-        ptr=blocks_ptr, layout=kv_collection.blocks.layout
+        ptr=blocks_ptr.as_any_origin(), layout=kv_collection.blocks.layout
     )
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
@@ -1442,7 +1444,8 @@ def print_kv_cache_paged_generic_gpu[
         cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
     )
     var cache_lengths_host = type_of(kv_collection.cache_lengths)(
-        ptr=cache_lengths_ptr, layout=kv_collection.cache_lengths.layout
+        ptr=cache_lengths_ptr.as_immutable().as_any_origin(),
+        layout=kv_collection.cache_lengths.layout,
     )
 
     var n_lookup_table = kv_collection.lookup_table.num_elements()
@@ -1451,7 +1454,8 @@ def print_kv_cache_paged_generic_gpu[
         lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
     )
     var lookup_table_host = type_of(kv_collection.lookup_table)(
-        ptr=lookup_table_ptr, layout=kv_collection.lookup_table.layout
+        ptr=lookup_table_ptr.as_immutable().as_any_origin(),
+        layout=kv_collection.lookup_table.layout,
     )
 
     var host_kv_collection = type_of(kv_collection)(
