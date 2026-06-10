@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Random-input regression gate for the HK MHA partial-K softmax dilution.
+"""Random-input regression gate for the MHA partial-K softmax dilution.
 
-`test_hk_mha_i2i_repro.mojo` uses UNIFORM inputs (`Q = K = 1`), which
+`test_mha_i2i_repro.mojo` uses UNIFORM inputs (`Q = K = 1`), which
 masks the real FLUX i2i bug: with uniform K the valid scores (`~D*scale`)
 dominate the SRD-clamp-zeroed OOB columns (score `Q@0 = 0`), so the OOB
 dilution is negligible and the test passes even when the kernel is wrong.
@@ -27,7 +27,7 @@ reading the same rounded bf16 values, at partial-K / partial-Q / both /
 aligned shapes, and asserts the per-row max error stays at the bf16 noise
 floor. Before the `_apply_kbound_mask_fast` fix, the partial-K cases miss
 by ~0.04-0.055 (orders of magnitude over the floor); after, they match the
-aligned control. Calls `hk_mha_prefill` DIRECTLY (bypasses the dispatcher
+aligned control. Calls `mha_prefill_v2` DIRECTLY (bypasses the dispatcher
 NullMask+partial-K gate) so it gates the kernel, not the dispatcher.
 """
 
@@ -40,9 +40,9 @@ from layout.coord import Coord, Idx
 from layout.runtime_layout import RuntimeLayout
 from layout.tile_layout import row_major
 
-from nn.attention.gpu.amd_structured.hk_mha_prefill import (
-    HKMhaConfig,
-    hk_mha_prefill,
+from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
+    MhaConfigV2,
+    mha_prefill_v2,
 )
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
@@ -75,7 +75,7 @@ def run_case[depth: Int, seq_q: Int, num_keys: Int](ctx: DeviceContext) raises:
     comptime SIZE_OUT = seq_q * depth
     var scale = Float32(1.0) / (Float32(depth) ** 0.5)
 
-    comptime CONFIG = HKMhaConfig(
+    comptime CONFIG = MhaConfigV2(
         q_block_size=Q_BLOCK_SIZE,
         kv_block=KV_BLOCK,
         depth=depth,
@@ -185,7 +185,7 @@ def run_case[depth: Int, seq_q: Int, num_keys: Int](ctx: DeviceContext) raises:
         )
     )
 
-    hk_mha_prefill[CONFIG](
+    mha_prefill_v2[CONFIG](
         q_tt, k_op, v_op, o_tt, NullMask(), scale, num_keys, 0, ctx
     )
 
@@ -200,13 +200,13 @@ def run_case[depth: Int, seq_q: Int, num_keys: Int](ctx: DeviceContext) raises:
                     argq = q
 
     print("  max row-err=", max_err, " at q=", argq, " (tol=", TOL, ")")
-    assert_true(max_err < TOL, "HK output diverged from reference")
+    assert_true(max_err < TOL, "kernel output diverged from reference")
     print("  PASSED")
 
 
 def main() raises:
     print("=" * 64)
-    print("HK MHA i2i random-input vs reference regression")
+    print("MHA i2i random-input vs reference regression")
     print("=" * 64)
     with DeviceContext() as ctx:
         # Aligned, even tile count (N=8) — the t2i-like path.
@@ -234,5 +234,5 @@ def main() raises:
         run_case[64, 256, 320](ctx)  # aligned odd — swizzle + parity
         run_case[64, 256, 300](ctx)  # partial-K odd — swizzle + parity + OOB
     print("=" * 64)
-    print("ALL HK MHA i2i RANDOM-REF TESTS PASSED!")
+    print("ALL MHA i2i RANDOM-REF TESTS PASSED!")
     print("=" * 64)

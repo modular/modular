@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""TFLOPS bench for `HKMhaPrefill` against a `PagedKVCache` K/V operand.
+"""TFLOPS bench for `MhaPrefillV2` against a `PagedKVCache` K/V operand.
 
-Companion to `bench_hk_mha_prefill` (contiguous K/V). The kernel
-under test is the same — `hk_mha_prefill[config]` — but K and V are
+Companion to `bench_mha_prefill_v2` (contiguous K/V). The kernel
+under test is the same — `mha_prefill_v2[config]` — but K and V are
 wrapped in `KVCacheMHAOperand` over a `PagedKVCacheCollection` instead
 of the contiguous `LayoutTensorMHAOperand`. This isolates the cost of
 the page-LUT indirection inside `block_paged_tile[KV_BLOCK=64]`.
@@ -23,22 +23,22 @@ Methodology
 
 - Q, O: oversized via `CacheBustingBuffer` (512 MiB stride), so
   each iteration sees a cold L2 on the Q side. Matches the contiguous
-  HK bench.
+  `bench_mha_prefill_v2` bench.
 - K, V: single fresh-prefill paged allocation (cache_lengths=0,
   random unique pages, fixed LUT across iterations). Matches the
   existing paged ragged-attention bench convention. K/V is therefore
-  hot-L2 — the headline comparison number is the contiguous HK bench
-  re-run with `cache_busting=False`. The delta between the two reads
-  as page-LUT overhead.
+  hot-L2 — the headline comparison number is the contiguous
+  `bench_mha_prefill_v2` bench re-run with `cache_busting=False`. The
+  delta between the two reads as page-LUT overhead.
 - mask: `CausalMask`. start_pos=0. num_keys=seq_len (fresh prefill).
 - page_size: 128 (production-realistic for Llama-style serving; sits
-  comfortably above HK's `KV_BLOCK=64` requirement).
+  comfortably above the kernel's `KV_BLOCK=64` requirement).
 
 Run
 ---
 
 ```bash
-./bazelw run //max/kernels/benchmarks:gpu/nn/bench_hk_mha_prefill_paged \
+./bazelw run //max/kernels/benchmarks:gpu/nn/bench_mha_prefill_v2_paged \
     -- seq_len=8192 batch_size=1
 ```
 
@@ -81,18 +81,18 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import KVCacheMHAOperand
 
-from nn.attention.gpu.amd_structured.hk_mha_prefill import (
-    HKMhaConfig,
-    hk_mha_prefill,
+from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
+    MhaConfigV2,
+    mha_prefill_v2,
 )
 
 
 comptime _Q_BLOCK_SIZE = 32
 comptime _NUM_WARPS = 8
 comptime _BM = _NUM_WARPS * _Q_BLOCK_SIZE  # 256
-comptime _KV_BLOCK = 64  # matches HKMhaPrefill `KV_BLOCK`
+comptime _KV_BLOCK = 64  # matches MhaPrefillV2 `KV_BLOCK`
 
-# Matches the per-kernel tuning in `bench_hk_mha_prefill` — IGLP exact
+# Matches the per-kernel tuning in `bench_mha_prefill_v2` — IGLP exact
 # solver enabled with branch cap + node-order priority. See that file
 # for the rationale on each flag.
 comptime _PREFILL_IGLP_OPTS: StaticString = (
@@ -102,7 +102,7 @@ comptime _PREFILL_IGLP_OPTS: StaticString = (
 )
 
 
-def run_hk_mha_prefill_paged[
+def run_mha_prefill_v2_paged[
     qkv_type: DType,
     depth: Int,
     num_heads: Int,
@@ -115,19 +115,19 @@ def run_hk_mha_prefill_paged[
     bench: Bool,
     ctx: DeviceContext,
 ) raises:
-    comptime scale = Float32(0.125)  # ~rsqrt(64); HK is depth-agnostic for the
-    # scale param — caller supplies. Matches contiguous bench.
+    comptime scale = Float32(0.125)  # ~rsqrt(64); the kernel is depth-agnostic
+    # for the scale param — caller supplies. Matches contiguous bench.
     comptime kv_num_heads = num_heads // group
     comptime num_layers = 1
     comptime layer_idx = 0
 
-    comptime assert qkv_type == DType.bfloat16, "HKMhaPrefill is BF16-only"
+    comptime assert qkv_type == DType.bfloat16, "MhaPrefillV2 is BF16-only"
     comptime assert (
         page_size >= _KV_BLOCK
-    ), "page_size must be >= HK KV_BLOCK (64)"
+    ), "page_size must be >= the kernel's KV_BLOCK (64)"
     comptime assert (
         page_size % _KV_BLOCK == 0
-    ), "page_size must be a multiple of HK KV_BLOCK (64)"
+    ), "page_size must be a multiple of the kernel's KV_BLOCK (64)"
 
     var num_keys = seq_len  # fresh prefill
     # Random unique pages per (batch, block); allocate slack to
@@ -249,7 +249,7 @@ def run_hk_mha_prefill_paged[
     var k_operand = KVCacheMHAOperand(k_cache)
     var v_operand = KVCacheMHAOperand(v_cache)
 
-    comptime _config = HKMhaConfig(
+    comptime _config = MhaConfigV2(
         q_block_size=_Q_BLOCK_SIZE,
         kv_block=_KV_BLOCK,
         depth=depth,
@@ -292,7 +292,7 @@ def run_hk_mha_prefill_paged[
                         )
                     ),
                 )
-                hk_mha_prefill[_config, compile_options=_PREFILL_IGLP_OPTS](
+                mha_prefill_v2[_config, compile_options=_PREFILL_IGLP_OPTS](
                     q_tt,
                     k_operand,
                     v_operand,
@@ -307,13 +307,13 @@ def run_hk_mha_prefill_paged[
             b.iter_custom[_kernel_launch](ctx)
 
         def compute_flops() {read} -> Int:
-            # Causal: half the tiles. Matches `bench_hk_mha_prefill`'s
+            # Causal: half the tiles. Matches `bench_mha_prefill_v2`'s
             # formula (`2 * B * H * N * NK * D`).
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
         m.bench_function[bench_func](
             BenchId(
-                "hk_mha_prefill_paged",
+                "mha_prefill_v2_paged",
                 # fmt: off
                 input_id=String(
                     "qkv_type=", qkv_type,
@@ -352,7 +352,7 @@ def main() raises:
     var batch_size = Int(arg_parse("batch_size", 1))
     var bench = arg_parse("benchmark", True)
 
-    print("Running HKMhaPrefill (paged K/V) benchmark with config:")
+    print("Running MhaPrefillV2 (paged K/V) benchmark with config:")
     print("  qkv_type :", qkv_type)
     print("  depth    :", depth)
     print("  num_heads:", num_heads, " group:", group)
@@ -362,7 +362,7 @@ def main() raises:
 
     var m = Bench()
     with DeviceContext() as ctx:
-        run_hk_mha_prefill_paged[
+        run_mha_prefill_v2_paged[
             qkv_type,
             depth,
             num_heads,

@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""HKMhaPrefill with `KVCacheMHAOperand` (paged K/V) correctness test.
+"""MhaPrefillV2 with `KVCacheMHAOperand` (paged K/V) correctness test.
 
-Same analytical setup as `test_hk_mha_prefill_causal.mojo`:
+Same analytical setup as `test_mha_prefill_v2_causal.mojo`:
 
   K = Q = 1
   V[k, m] = (k + 1) / 512
@@ -44,9 +44,9 @@ from layout import (
 from layout.coord import Coord, Idx
 from layout.tile_layout import row_major
 
-from nn.attention.gpu.amd_structured.hk_mha_prefill import (
-    HKMhaConfig,
-    hk_mha_prefill,
+from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
+    MhaConfigV2,
+    mha_prefill_v2,
 )
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import KVCacheMHAOperand
@@ -81,7 +81,7 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
         NUM_PAGES * 2 * NUM_LAYERS * PAGE_SIZE * NUM_KV_HEADS * depth
     )
 
-    comptime CONFIG = HKMhaConfig(
+    comptime CONFIG = MhaConfigV2(
         q_block_size=Q_BLOCK_SIZE,
         kv_block=KV_BLOCK,
         depth=depth,
@@ -91,7 +91,7 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
     )
 
     print(
-        "--- HKMhaPrefill CAUSAL paged (BM=",
+        "--- MhaPrefillV2 CAUSAL paged (BM=",
         BM,
         " KV=",
         KV_BLOCK,
@@ -232,7 +232,7 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
     var k_operand = KVCacheMHAOperand(kv_collection.get_key_cache(LAYER_IDX))
     var v_operand = KVCacheMHAOperand(kv_collection.get_value_cache(LAYER_IDX))
 
-    hk_mha_prefill[CONFIG](
+    mha_prefill_v2[CONFIG](
         q_tt,
         k_operand,
         v_operand,
@@ -275,7 +275,7 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
 
 def main() raises:
     print("=" * 60)
-    print("HKMhaPrefill CAUSAL paged-K/V GPU test")
+    print("MhaPrefillV2 CAUSAL paged-K/V GPU test")
     print("=" * 60)
 
     with DeviceContext() as ctx:

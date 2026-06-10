@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Regression gate for the HK MHA partial-K-tile SRD over-read.
+"""Regression gate for the MHA partial-K-tile SRD over-read.
 
 When `num_keys % KV_BLOCK != 0`, the last K/V tile is partially valid.
 Before the Tier-2 SRD fix, `_dma_k` / `_dma_v` sized the per-tile
@@ -20,7 +20,7 @@ causal cap masks those OOB columns to `-inf` before softmax, hiding
 the leak; with `NullMask` (FLUX.2-dev i2i: `seq_len=8623 = 64*134 + 47`)
 the OOB K/V leak into the output and corrupt it.
 
-This test calls `hk_mha_prefill` DIRECTLY (bypassing the dispatcher's
+This test calls `mha_prefill_v2` DIRECTLY (bypassing the dispatcher's
 NullMask+partial-K gate) so it is a real regression gate for the kernel
 fix, independent of whether the dispatcher gate is present.
 
@@ -58,9 +58,9 @@ from layout.coord import Coord, Idx
 from layout.runtime_layout import RuntimeLayout
 from layout.tile_layout import row_major
 
-from nn.attention.gpu.amd_structured.hk_mha_prefill import (
-    HKMhaConfig,
-    hk_mha_prefill,
+from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
+    MhaConfigV2,
+    mha_prefill_v2,
 )
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
@@ -69,7 +69,7 @@ from nn.attention.mha_operand import LayoutTensorMHAOperand
 comptime Q_BLOCK_SIZE = 32  # per warp
 comptime NUM_WARPS = 8
 comptime BM = NUM_WARPS * Q_BLOCK_SIZE  # 256 Q rows per block
-comptime KV_BLOCK = 64  # HK d=128 shape
+comptime KV_BLOCK = 64  # MHA d=128 shape
 
 
 def _ceil_to_block(n: Int, block: Int) -> Int:
@@ -104,7 +104,7 @@ def run_partial_k_case[
     var kv_size = n_alloc * NUM_KV_HEADS * depth
     var o_size = q_size
 
-    comptime CONFIG = HKMhaConfig(
+    comptime CONFIG = MhaConfigV2(
         q_block_size=Q_BLOCK_SIZE,
         kv_block=KV_BLOCK,
         depth=depth,
@@ -182,7 +182,7 @@ def run_partial_k_case[
         )
     )
 
-    hk_mha_prefill[CONFIG](
+    mha_prefill_v2[CONFIG](
         q_tt,
         k_op,
         v_op,
@@ -243,7 +243,7 @@ def run_partial_k_case[
 
 def main() raises:
     print("=" * 64)
-    print("HKMhaPrefill partial-K-tile SRD regression (NullMask)")
+    print("MhaPrefillV2 partial-K-tile SRD regression (NullMask)")
     print("=" * 64)
 
     with DeviceContext() as ctx:
@@ -258,7 +258,7 @@ def main() raises:
         run_partial_k_case[num_heads=2, depth=128](
             "partial-K K-leak", num_keys=4143, k_oob=8.0, v_oob=7.0, ctx=ctx
         )
-        # depth=64 partial-K (the other supported HK depth).
+        # depth=64 partial-K (the other supported MHA depth).
         run_partial_k_case[num_heads=2, depth=64](
             "partial-K d=64", num_keys=4143, k_oob=1.0, v_oob=1000.0, ctx=ctx
         )
@@ -275,8 +275,7 @@ def main() raises:
         # NOT imply E2E parity. The same bounded OOB denominator mass
         # compounds over FLUX's ~50 denoise steps to SSIM ~0.879 (< 0.99),
         # so the dispatcher still routes NullMask + partial-K to FA2. This
-        # case guards the memory-safety/leak fix, not softmax fidelity; see
-        # HK_NULLMASK_PARTIAL_K_BUG.md "Tier-2 progress".
+        # case guards the memory-safety/leak fix, not softmax fidelity.
         run_partial_k_case[num_heads=2, depth=128](
             "partial-K dilution (k_valid<0)",
             num_keys=4143,
@@ -294,5 +293,5 @@ def main() raises:
         )
 
     print("=" * 64)
-    print("ALL HK partial-K regression cases PASSED!")
+    print("ALL partial-K regression cases PASSED!")
     print("=" * 64)

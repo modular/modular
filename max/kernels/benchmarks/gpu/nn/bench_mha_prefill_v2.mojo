@@ -10,15 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""TFLOPS bench for `HKMhaPrefill` against contiguous (LayoutTensor) K/V.
+"""TFLOPS bench for `MhaPrefillV2` against contiguous (LayoutTensor) K/V.
 
-Measures `hk_mha_prefill` at canonical BF16 causal shapes. Q/K/V/O are
+Measures `mha_prefill_v2` at canonical BF16 causal shapes. Q/K/V/O are
 oversized via `CacheBustingBuffer` and offset per iteration to defeat
 L2 reuse. FLOP count uses the causal half-tile budget
 (`2 * B * H * N * NK * D`).
 
 Run:
-  ./bazelw run //max/kernels/benchmarks:gpu/nn/bench_hk_mha_prefill \
+  ./bazelw run //max/kernels/benchmarks:gpu/nn/bench_mha_prefill_v2 \
       -- --seq_len=8192 --num_keys=8192 --batch_size=1 --verify=False
 """
 
@@ -47,9 +47,9 @@ from layout.runtime_layout import RuntimeLayout
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
 
-from nn.attention.gpu.amd_structured.hk_mha_prefill import (
-    HKMhaConfig,
-    hk_mha_prefill,
+from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
+    MhaConfigV2,
+    mha_prefill_v2,
 )
 
 
@@ -58,7 +58,7 @@ comptime _NUM_WARPS = 8
 comptime _BM = _NUM_WARPS * _Q_BLOCK_SIZE  # 256
 
 
-def run_hk_mha_prefill[
+def run_mha_prefill_v2[
     qkv_type: DType,
     mask_type: DType,
     depth: Int,
@@ -96,7 +96,7 @@ def run_hk_mha_prefill[
     var cb_v = CacheBustingBuffer[qkv_type](
         v_size, simd_size, ctx, cache_busting
     )
-    # Output is FP32 per HKMhaPrefill.attend_ker signature.
+    # Output is FP32 per MhaPrefillV2.attend_ker signature.
     var cb_o = CacheBustingBuffer[DType.float32](
         o_size, simd_size, ctx, cache_busting
     )
@@ -113,9 +113,9 @@ def run_hk_mha_prefill[
     cb_k.init_on_device(random_distribution, ctx)
     cb_v.init_on_device(random_distribution, ctx)
 
-    comptime assert qkv_type == DType.bfloat16, "HKMhaPrefill is BF16-only"
+    comptime assert qkv_type == DType.bfloat16, "MhaPrefillV2 is BF16-only"
 
-    comptime _config = HKMhaConfig(
+    comptime _config = MhaConfigV2(
         q_block_size=_Q_BLOCK_SIZE,
         kv_block=kv_block,
         depth=depth,
@@ -223,7 +223,7 @@ def run_hk_mha_prefill[
                     var sw_ptr: UnsafePointer[
                         Scalar[DType.bfloat16], ImmutAnyOrigin
                     ] = sw_buf.unsafe_ptr().bitcast[Scalar[DType.bfloat16]]()
-                    hk_mha_prefill[
+                    mha_prefill_v2[
                         _config,
                         sink=True,
                         compile_options=_PREFILL_IGLP_OPTS,
@@ -240,7 +240,7 @@ def run_hk_mha_prefill[
                         sw_ptr,
                     )
                 else:
-                    hk_mha_prefill[_config, compile_options=_PREFILL_IGLP_OPTS](
+                    mha_prefill_v2[_config, compile_options=_PREFILL_IGLP_OPTS](
                         q_tt,
                         k_op,
                         v_op,
@@ -261,7 +261,7 @@ def run_hk_mha_prefill[
 
         m.bench_function[bench_func](
             BenchId(
-                "hk_mha_prefill",
+                "mha_prefill_v2",
                 # fmt: off
                 input_id=String(
                     "qkv_type=", qkv_type,
@@ -282,7 +282,7 @@ def run_hk_mha_prefill[
     # Verification: compare a single launch (zero offset) against
     # NOTE: the previous `verify` path compared against `flash_attention_hk_exact`
     # (v1) but that dependency is intentionally out of scope here. For
-    # correctness use `test_hk_mha_prefill*` in tests/gpu/structured_kernels.
+    # correctness use `test_mha_prefill_v2*` in tests/gpu/structured_kernels.
     _ = verify
 
     _ = cb_q
@@ -292,7 +292,7 @@ def run_hk_mha_prefill[
 
 
 @fieldwise_init
-struct HKMhaPrefill_cfg(ImplicitlyCopyable, Writable):
+struct MhaPrefillV2Cfg(ImplicitlyCopyable, Writable):
     var qkv_type: DType
     var mask_type: DType
     var depth: Int
@@ -321,7 +321,7 @@ def main() raises:
     var bench = arg_parse("benchmark", True)
     var verify = arg_parse("verify", False)
 
-    comptime cfg = HKMhaPrefill_cfg(
+    comptime cfg = MhaPrefillV2Cfg(
         qkv_type=qkv_type,
         mask_type=mask_type,
         depth=depth,
@@ -331,7 +331,7 @@ def main() raises:
         cache_busting=cache_busting,
     )
 
-    print("Running HKMhaPrefill benchmark with config:")
+    print("Running MhaPrefillV2 benchmark with config:")
     print("  qkv_type:", cfg.qkv_type)
     print("  depth:", cfg.depth)
     print("  num_heads:", cfg.num_heads)
@@ -343,7 +343,7 @@ def main() raises:
 
     var m = Bench()
     with DeviceContext() as ctx:
-        run_hk_mha_prefill[
+        run_mha_prefill_v2[
             cfg.qkv_type,
             cfg.mask_type,
             cfg.depth,

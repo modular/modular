@@ -94,11 +94,11 @@ from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
 from .amd_rdna.mha_prefill import AttentionRDNA
 from .amd_structured.attention import Attention
-from .amd_structured.hk_mha_prefill import (
-    HKMhaConfig,
-    HKMhaPrefill,
-    hk_mha_prefill,
-    hk_mha_prefill_ragged,
+from .amd_structured.mha_prefill_v2 import (
+    MhaConfigV2,
+    MhaPrefillV2,
+    mha_prefill_v2,
+    mha_prefill_v2_ragged,
 )
 from .amd_structured.mha_decode import Attention
 from .amd_structured.mha_decode_streaming import Attention
@@ -735,12 +735,12 @@ def flash_attention_dispatch[
             else:
                 # Long-context AMD CDNA prefill gate. Routes BF16
                 # prefill to the 8-warp structured kernel in
-                # `amd_structured/hk_mha_prefill.mojo`; otherwise falls
+                # `amd_structured/mha_prefill_v2.mojo`; otherwise falls
                 # through to the FA2 launch below. Gate (all comptime
                 # except the seq-length / page-size run-time checks):
                 # - BF16 throughout;
                 # - depth in (64, 128) (MFMA shape `32x32x16_bf16`);
-                # - any `MHAMask` (HK handles Causal natively + the
+                # - any `MHAMask` (`MhaPrefillV2` handles Causal natively + the
                 #   generic `_maybe_apply_mask` path covers
                 #   SlidingWindow / Chunked / Null / etc.);
                 # - no attention sink;
@@ -752,7 +752,7 @@ def flash_attention_dispatch[
                 # `_pv_strip_with_partial_softmax`'s else-branch ensures
                 # non-causal masks don't blow up `norm_vec` in the
                 # epilogue (see comment there).
-                comptime _hk_eligible = (
+                comptime _v2_eligible = (
                     config.dtype == DType.bfloat16
                     and output.dtype == DType.bfloat16
                     and (config.depth == 64 or config.depth == 128)
@@ -761,10 +761,10 @@ def flash_attention_dispatch[
                     and (k_t.page_size == 0 or k_t.page_size >= 64)
                 )
 
-                comptime if _hk_eligible:
-                    # Long-context perf threshold. Below this HK doesn't
-                    # fill the GPU at BM=256 and FA2 (BM=128) wins.
-                    # Partial-Q-tile masking inside HK now handles
+                comptime if _v2_eligible:
+                    # Long-context perf threshold. Below this the kernel
+                    # doesn't fill the GPU at BM=256 and FA2 (BM=128) wins.
+                    # Partial-Q-tile masking inside the kernel now handles
                     # `seq_len % 256 != 0` correctly for the Q-side
                     # writeback skip, so the alignment guard is gone;
                     # per-block early-return + writeback skip together
@@ -778,9 +778,10 @@ def flash_attention_dispatch[
                     # softmax, and the even-tile-count round-up fixes the
                     # odd-`N` main-loop/epilogue double-count that was the
                     # real i2i corruption. FLUX i2i is SSIM 0.994 through
-                    # HK (was 0.50), so the prior carve-out to FA2 is gone.
+                    # the kernel (was 0.50), so the prior carve-out to FA2
+                    # is gone.
                     if max_prompt_len >= 4096:
-                        comptime hk_config = HKMhaConfig(
+                        comptime v2_config = MhaConfigV2(
                             q_block_size=32,
                             kv_block=64,
                             depth=config.depth,
@@ -791,14 +792,14 @@ def flash_attention_dispatch[
                         )
                         comptime if ragged:
                             # Ragged batch: per-sequence setup happens
-                            # inside the dedicated ragged-HK kernel so
-                            # HK keeps its tuned single-kernel
+                            # inside the dedicated ragged `MhaPrefillV2`
+                            # kernel so it keeps its tuned single-kernel
                             # register-allocation context. Avoids the
-                            # ~14% perf hit observed when HK is inlined
-                            # into the FA2 host `def mha[]`.
+                            # ~14% perf hit observed when the kernel is
+                            # inlined into the FA2 host `def mha[]`.
                             #
                             # Handles any `batch_size`: the `ragged:
-                            # Bool` flag inside `HKMhaPrefill.run` forces
+                            # Bool` flag inside `MhaPrefillV2.run` forces
                             # the Q/O batch coord to 0 so each block
                             # reads from the per-sequence pre-offset
                             # pointer regardless of `block_idx.z` (the
@@ -831,8 +832,8 @@ def flash_attention_dispatch[
                                     sink_weights.value().as_any_origin().ptr
                                 )
                                 if kv_input_row_offsets:
-                                    hk_mha_prefill_ragged[
-                                        config=hk_config,
+                                    mha_prefill_v2_ragged[
+                                        config=v2_config,
                                         cross_attention=True,
                                         sink=True,
                                     ](
@@ -852,8 +853,8 @@ def flash_attention_dispatch[
                                         sw_ptr,
                                     )
                                 else:
-                                    hk_mha_prefill_ragged[
-                                        config=hk_config, sink=True
+                                    mha_prefill_v2_ragged[
+                                        config=v2_config, sink=True
                                     ](
                                         q.as_any_origin().ptr,
                                         k,
@@ -870,8 +871,8 @@ def flash_attention_dispatch[
                                     )
                             else:
                                 if kv_input_row_offsets:
-                                    hk_mha_prefill_ragged[
-                                        config=hk_config, cross_attention=True
+                                    mha_prefill_v2_ragged[
+                                        config=v2_config, cross_attention=True
                                     ](
                                         q.as_any_origin().ptr,
                                         k,
@@ -888,7 +889,7 @@ def flash_attention_dispatch[
                                         ctx,
                                     )
                                 else:
-                                    hk_mha_prefill_ragged[config=hk_config](
+                                    mha_prefill_v2_ragged[config=v2_config](
                                         q.as_any_origin().ptr,
                                         k,
                                         v,
@@ -915,7 +916,7 @@ def flash_attention_dispatch[
                             # — zero for fresh prefill, positive for cache
                             # reuse.
                             comptime if sink:
-                                hk_mha_prefill[hk_config, sink=True](
+                                mha_prefill_v2[v2_config, sink=True](
                                     q_tt,
                                     k,
                                     v,
@@ -928,7 +929,7 @@ def flash_attention_dispatch[
                                     sink_weights.value().as_any_origin().ptr,
                                 )
                             else:
-                                hk_mha_prefill[hk_config](
+                                mha_prefill_v2[v2_config](
                                     q_tt,
                                     k,
                                     v,
@@ -2023,11 +2024,12 @@ def mha[
             )
             attention.mha_prefill()
         else:
-            # AMD CDNA prefill via FA2. The long-context HK path is dispatched
-            # host-side from `flash_attention_dispatch` so HK keeps its tuned
-            # single-kernel register-allocation context (`def mha[]`'s body
-            # holding the FA2 fallback inflates spills when HK is inlined
-            # here — measured ~14% loss vs HK as a top-level kernel).
+            # AMD CDNA prefill via FA2. The long-context `MhaPrefillV2` path
+            # is dispatched host-side from `flash_attention_dispatch` so the
+            # kernel keeps its tuned single-kernel register-allocation context
+            # (`def mha[]`'s body holding the FA2 fallback inflates spills when
+            # the kernel is inlined here — measured ~14% loss vs `MhaPrefillV2`
+            # as a top-level kernel).
             var attention = Attention[config, group, sink](
                 output_ptr + q_batch_offset,
                 q_ptr + q_batch_offset,

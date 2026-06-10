@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""HKMhaPrefill correctness test that ACTUALLY exercises rescaling.
+"""MhaPrefillV2 correctness test that ACTUALLY exercises rescaling.
 
 The first v2 test used Q=K=1 and a softly-varying V — uniform att,
 running max never grows, so the rescale path through `mul_col` /
@@ -27,14 +27,14 @@ This test makes the per-tile max GROW so the rescaling path fires:
     -> tile 1 scores = 2 * DEPTH = 256
 
 After the eager-rescale fix in `_pv_strip_with_partial_softmax`,
-HKMhaPrefill matches the strict online-softmax ground truth:
+MhaPrefillV2 matches the strict online-softmax ground truth:
 exp2(scale*(max_prev - max_new)) zeroes out tile 0's contribution, and
 tiles 1..N-1 all carry the same max (=256), so each contributes
 weight 1/((N-1)*KV) to the normalized output. The expected per-lane
 value is mean(V[KV..N*KV-1, m]).
 
 Prior to the fix (PR #86745 widened the gate to expose this for FLUX),
-HK's C2/C6 cluster interleaved PV strip 0 with the lazy rescale of
+the kernel's C2/C6 cluster interleaved PV strip 0 with the lazy rescale of
 o_reg, then ran strips 1..3 AFTER the rescale while att_bf16 was
 still at the OLD max scale — leaving tile 0's strips 1..3 surviving
 the rescale at their old scale and contributing a bounded artifact
@@ -50,9 +50,9 @@ from layout.coord import Coord, Idx
 from layout.runtime_layout import RuntimeLayout
 from layout.tile_layout import row_major
 
-from nn.attention.gpu.amd_structured.hk_mha_prefill import (
-    HKMhaConfig,
-    hk_mha_prefill,
+from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
+    MhaConfigV2,
+    mha_prefill_v2,
 )
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
@@ -64,7 +64,7 @@ comptime BM = NUM_WARPS * Q_BLOCK_SIZE
 comptime KV_BLOCK = 64
 comptime NUM_HEADS = 1
 comptime NUM_KV_HEADS = 1
-comptime NUM_TILES = 8  # HK kernel.cpp prologue requires >= 4
+comptime NUM_TILES = 8  # reference kernel.cpp prologue requires >= 4
 comptime SEQ_LEN = BM
 comptime NUM_KEYS = NUM_TILES * KV_BLOCK
 comptime BATCH = 1
@@ -75,7 +75,7 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
     comptime SIZE_KV = NUM_TILES * KV_BLOCK * depth
     comptime SIZE_OUT = BM * depth
 
-    comptime CONFIG = HKMhaConfig(
+    comptime CONFIG = MhaConfigV2(
         q_block_size=Q_BLOCK_SIZE,
         kv_block=KV_BLOCK,
         depth=depth,
@@ -85,7 +85,7 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
     )
 
     print(
-        "--- HKMhaPrefill rescale path (tile-1 max > tile-0 max, D=",
+        "--- MhaPrefillV2 rescale path (tile-1 max > tile-0 max, D=",
         depth,
         ") ---",
     )
@@ -174,7 +174,7 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
         )
     )
 
-    hk_mha_prefill[CONFIG](
+    mha_prefill_v2[CONFIG](
         q_tt,
         k_op,
         v_op,
@@ -242,7 +242,7 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
 
 def main() raises:
     print("=" * 60)
-    print("HKMhaPrefill rescale-path GPU test")
+    print("MhaPrefillV2 rescale-path GPU test")
     print("=" * 60)
 
     with DeviceContext() as ctx:
@@ -250,5 +250,5 @@ def main() raises:
         test_v2_rescale[64](ctx)
 
     print("=" * 60)
-    print("ALL HKMhaPrefill RESCALE TESTS PASSED!")
+    print("ALL MhaPrefillV2 RESCALE TESTS PASSED!")
     print("=" * 60)

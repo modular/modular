@@ -11,27 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""HK MHA prefill ragged gate-firing test.
+"""MHA prefill ragged gate-firing test.
 
 Exercises the long-context CDNA ragged prefill gate that routes eligible
-BF16 long-sequence blocks through `HKMhaPrefill.run` (via
-`hk_mha_prefill_ragged`) instead of FA2. The gate is mask-agnostic: any
+BF16 long-sequence blocks through `MhaPrefillV2.run` (via
+`mha_prefill_v2_ragged`) instead of FA2. The gate is mask-agnostic: any
 `MHAMask` whose `status` + `mask` interface matches the generic mask
-path in HK's `_maybe_apply_mask` works.
+path in `MhaPrefillV2`'s `_maybe_apply_mask` works.
 
 Eligibility (must all hold):
   comptime: BF16 + AMD CDNA + depth in {64,128} + not sink + page_size
             in {0, >=64}
   runtime:  max_prompt_len >= 4096 (perf gate, not correctness)
 
-Per KB `patterns/amd-paged-vs-continuous-kv-test-not-independent` the
-paged-vs-continuous comparison is NOT an independent correctness
-reference; both routes hit the same HK kernel. The signal this test
-provides:
+The paged-vs-continuous comparison is NOT an independent correctness
+reference; both routes hit the same `MhaPrefillV2` kernel. The signal
+this test provides:
   - gate compiles and dispatches without crashing through ragged
   - per-sequence rank-3 -> rank-4 BSHD Q-view construction is well-formed
   - output is finite (no NaN/Inf) at the gate-firing length
-  - paged and continuous agree on the same HK kernel
+  - paged and continuous agree on the same `MhaPrefillV2` kernel
 An independent gpu_naive-based correctness check is a follow-up.
 """
 
@@ -77,10 +76,10 @@ def _run_ragged_at[
     mask: mask_t,
     ctx: DeviceContext,
 ) raises:
-    """Run the ragged HK gate at the given shape.
+    """Run the ragged MHA prefill gate at the given shape.
 
     `pass_kv_input_row_offsets=True` forces the dispatcher's
-    cross-attention branch (`hk_mha_prefill_ragged[cross_attention=True]`).
+    cross-attention branch (`mha_prefill_v2_ragged[cross_attention=True]`).
     The kv-side offsets are set equal to the Q-side `input_row_offsets`,
     so this is a self-consistency check — `num_keys` derives to the
     same value as in the self-attention branch, and the two paths
@@ -89,7 +88,7 @@ def _run_ragged_at[
     encoder/decoder fixture.
 
     `pass_sink=True` forces the Phase-5b sink branch
-    (`hk_mha_prefill_ragged[sink=True]`). Allocates a per-q-head
+    (`mha_prefill_v2_ragged[sink=True]`). Allocates a per-q-head
     `sink_weights` tensor with small random values and passes it
     through. Self-consistency check between paged and continuous
     paths catches regressions in the seeded `(max_vec, norm_vec)`
@@ -355,7 +354,7 @@ def _run_ragged_at[
 
     # Continuous-KV ragged path. On AMD CDNA + BF16 + depth in {64,128}
     # + any MHAMask + not-sink + seq_len>=4096 this routes through the
-    # HK ragged gate in `flash_attention_dispatch`
+    # ragged prefill gate in `flash_attention_dispatch`
     # (k_t.page_size == 0 branch).
     #
     # `pass_kv_input_row_offsets=True` routes through the Phase-10
@@ -496,8 +495,8 @@ def _run_ragged_at[
                         # BF16 accumulation-order differences over the
                         # longer multi-seq shapes (seq_len up to ~5K vs
                         # the upstream test's ~1K). Both paths exercise
-                        # HK; this is a self-consistency check, not an
-                        # independent correctness reference.
+                        # the same kernel; this is a self-consistency
+                        # check, not an independent correctness reference.
                         assert_almost_equal(
                             ref_out[ragged_offset + s, h, hd],
                             test_out[ragged_offset + s, h, hd],
@@ -520,10 +519,10 @@ def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         # Case 1: single sequence, seq_len = 4096 (BM-aligned). Smoke
-        # baseline — HK gate fires, block 15 is the last and fully
+        # baseline — the gate fires, block 15 is the last and fully
         # valid. Llama-3.1 8B GQA shape (32 Q heads / 8 KV heads, d=128).
         print(
-            "[1/9] HK ragged Causal seq_len=4096 (aligned, full last tile):",
+            "[1/9] ragged Causal seq_len=4096 (aligned, full last tile):",
         )
         _run_ragged_at[
             32,
@@ -538,16 +537,13 @@ def main() raises:
             ctx,
         )
 
-        # Case 2: single sequence, seq_len = 4097 (NOT BM-aligned). HK
+        # Case 2: single sequence, seq_len = 4097 (NOT BM-aligned). The
         # gate fires (seq_len >= 4096); the last tile has 1 valid Q row
         # and 255 OOB rows. Exercises the partial-Q-tile writeback skip
         # in `_store_o_to_gmem`: OOB rows would otherwise corrupt the
         # output buffer (or get garbage from buffer_load returning 0).
         print(
-            (
-                "[2/9] HK ragged Causal seq_len=4097 (unaligned, partial last"
-                " tile):"
-            ),
+            "[2/9] ragged Causal seq_len=4097 (unaligned, partial last tile):",
         )
         _run_ragged_at[
             32,
@@ -564,10 +560,10 @@ def main() raises:
 
         # Case 3: multi-sequence ragged with ALIGNED lengths.
         # Exercises the multi-seq dispatch (block_idx.z varies) with
-        # `ragged=True` forcing HK's Q/O batch coord to 0 so the
+        # `ragged=True` forcing the kernel's Q/O batch coord to 0 so the
         # per-sequence pre-offset pointer is selected.
         print(
-            "[3/9] HK ragged Causal multi-seq, ALIGNED lengths:",
+            "[3/9] ragged Causal multi-seq, ALIGNED lengths:",
         )
         _run_ragged_at[
             32,
@@ -586,7 +582,7 @@ def main() raises:
         # none aligned to BM=256. Combines multi-seq dispatch + per-
         # sequence partial-Q writeback skip.
         print(
-            "[4/9] HK ragged Causal multi-seq, mixed unaligned lengths:",
+            "[4/9] ragged Causal multi-seq, mixed unaligned lengths:",
         )
         _run_ragged_at[
             32,
@@ -601,11 +597,11 @@ def main() raises:
             ctx,
         )
 
-        # Case 5: NullMask through HK at seq_len=8192. HK's generic
-        # mask path comptime-elides for NullMask (status is always
-        # NO_MASK), so this is effectively a "no mask" HK run.
+        # Case 5: NullMask through the kernel at seq_len=8192. The
+        # generic mask path comptime-elides for NullMask (status is
+        # always NO_MASK), so this is effectively a "no mask" run.
         print(
-            "[5/9] HK ragged NullMask seq_len=8192:",
+            "[5/9] ragged NullMask seq_len=8192:",
         )
         _run_ragged_at[
             32,
@@ -620,7 +616,7 @@ def main() raises:
             ctx,
         )
 
-        # Case 6: SlidingWindowCausalMask[4096] through HK at
+        # Case 6: SlidingWindowCausalMask[4096] through the kernel at
         # seq_len=8192. Previously produced Inf — root-caused to a
         # stale `scale_vec` from the lazy rescale getting re-applied
         # in `_tail_softmax_unconditional` during the epilogue. Fixed
@@ -628,7 +624,7 @@ def main() raises:
         # else-branch (no-rescale path), so the epilogue's
         # unconditional multiply is identity when no rescale fired.
         print(
-            "[6/9] HK ragged SlidingWindowCausalMask[4096] seq_len=8192:",
+            "[6/9] ragged SlidingWindowCausalMask[4096] seq_len=8192:",
         )
         _run_ragged_at[
             32,
@@ -643,11 +639,11 @@ def main() raises:
             ctx,
         )
 
-        # Case 7: ChunkedCausalMask[2048] through HK at seq_len=8192.
-        # Chunked == causal within chunks; same generic-mask path
-        # through HK as SlidingWindow.
+        # Case 7: ChunkedCausalMask[2048] through the kernel at
+        # seq_len=8192. Chunked == causal within chunks; same
+        # generic-mask path through the kernel as SlidingWindow.
         print(
-            "[7/9] HK ragged ChunkedCausalMask[2048] seq_len=8192:",
+            "[7/9] ragged ChunkedCausalMask[2048] seq_len=8192:",
         )
         _run_ragged_at[
             32,
@@ -666,14 +662,14 @@ def main() raises:
         # `flash_attention[ragged=True]` with `kv_input_row_offsets`
         # set equal to `input_row_offsets`, exercising the
         # dispatcher's `if kv_input_row_offsets:` branch and the
-        # `hk_mha_prefill_ragged[cross_attention=True]` launcher.
+        # `mha_prefill_v2_ragged[cross_attention=True]` launcher.
         # Because the kv-side offsets match the Q-side, `num_keys`
         # derives identically to the self-attention path and the
         # output must match the paged-vs-continuous reference at
         # the same tolerance (2e-2) used by the other cases.
         print(
             (
-                "[8/9] HK ragged Causal seq_len=4096 + Phase-10"
+                "[8/9] ragged Causal seq_len=4096 + Phase-10"
                 " kv_input_row_offsets (self-consistency):"
             ),
         )
@@ -696,17 +692,15 @@ def main() raises:
         # `flash_attention[ragged=True, sink=True]` with per-q-head
         # `sink_weights`. Exercises the dispatcher's
         # `comptime if sink:` branch and the
-        # `hk_mha_prefill_ragged[sink=True]` launcher. The kernel's
+        # `mha_prefill_v2_ragged[sink=True]` launcher. The kernel's
         # `comptime if sink:` init seeds `max_vec / max_vec_prev` to
         # `log2e * sink_weight[head_idx]` and `norm_vec = 1` —
         # equivalent to a virtual sink token contributing to the
-        # softmax denominator (per
-        # `patterns/amd-attention-sink-as-init-state`). Paged-vs-
-        # continuous self-consistency catches regressions in the
-        # seeded init.
+        # softmax denominator. Paged-vs-continuous self-consistency
+        # catches regressions in the seeded init.
         print(
             (
-                "[9/9] HK ragged Causal seq_len=4096 + Phase-5b"
+                "[9/9] ragged Causal seq_len=4096 + Phase-5b"
                 " sink_weights (self-consistency):"
             ),
         )

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""HKMhaPrefill GQA correctness test.
+"""MhaPrefillV2 GQA correctness test.
 
 Exercises the per-(batch, head) view + head_idx interleave + kv_head_idx
 mapping at production GQA ratios:
@@ -41,9 +41,9 @@ from layout.coord import Coord, Idx
 from layout.runtime_layout import RuntimeLayout
 from layout.tile_layout import row_major
 
-from nn.attention.gpu.amd_structured.hk_mha_prefill import (
-    HKMhaConfig,
-    hk_mha_prefill,
+from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
+    MhaConfigV2,
+    mha_prefill_v2,
 )
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
@@ -69,7 +69,7 @@ def test_gqa[
     comptime SIZE_KV = BATCH * NUM_KEYS * num_kv_heads * depth
     comptime SIZE_OUT = SIZE_Q
 
-    comptime CONFIG = HKMhaConfig(
+    comptime CONFIG = MhaConfigV2(
         q_block_size=Q_BLOCK_SIZE,
         kv_block=KV_BLOCK,
         depth=depth,
@@ -79,7 +79,7 @@ def test_gqa[
     )
 
     print(
-        "--- HKMhaPrefill GQA (H=",
+        "--- MhaPrefillV2 GQA (H=",
         num_heads,
         " Hkv=",
         num_kv_heads,
@@ -182,7 +182,7 @@ def test_gqa[
         )
     )
 
-    hk_mha_prefill[CONFIG](
+    mha_prefill_v2[CONFIG](
         q_tt,
         k_op,
         v_op,
@@ -250,15 +250,15 @@ def test_gqa[
 
 def main() raises:
     print("=" * 60)
-    print("HKMhaPrefill GQA GPU test")
+    print("MhaPrefillV2 GQA GPU test")
     print("=" * 60)
 
     with DeviceContext() as ctx:
         # Llama3.1 8B / Mistral 7B shape: H=32, Hkv=8, GROUP=4
         test_gqa[128, 32, 8](ctx)
 
-        # Llama3.1 70B shape: H=64, Hkv=8, GROUP=8 (square — HK's
-        # default config; the formula was already correct for this
+        # Llama3.1 70B shape: H=64, Hkv=8, GROUP=8 (square — the
+        # reference's default config; the formula was already correct for this
         # case, included for regression coverage).
         test_gqa[128, 64, 8](ctx)
 
@@ -267,5 +267,5 @@ def main() raises:
         test_gqa[128, 8, 4](ctx)
 
     print("=" * 60)
-    print("ALL HKMhaPrefill GQA TESTS PASSED!")
+    print("ALL MhaPrefillV2 GQA TESTS PASSED!")
     print("=" * 60)
