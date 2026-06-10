@@ -1781,10 +1781,10 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     } else if (auto anyTrait = sugarDynCast<AnyTraitType>(diagType)) {
       diagType = anyTrait.getTraitType();
     } else if (auto generator = sugarDynCast<GeneratorType>(diagType)) {
-      // To be qualified as a type expression, the body of the generator must be
-      // some kinds of meta type.
-      diagType = ASTType(cast<MetaType>(generator.getBody()).getType())
-                     .getWithUnknownParametersReplaced(emitter.shared);
+      if (auto mt = dyn_cast<MetaType>(generator.getBody())) {
+        diagType = ASTType(mt.getType())
+                       .getWithUnknownParametersReplaced(emitter.shared);
+      }
     }
 
     auto diag = emitter.emitError(node->getLoc())
