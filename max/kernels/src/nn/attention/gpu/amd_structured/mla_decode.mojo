@@ -141,7 +141,8 @@ __extension Attention:
             self.batch_idx,
             self.kv_head_idx(),
             KBufT.SmemParentType(
-                self.k_smem_ptr.as_any_origin(), KBufT._SmemParentLayout()
+                self.k_smem_ptr.as_unsafe_any_origin(),
+                KBufT._SmemParentLayout(),
             ),
             end,
             warp_id,
@@ -190,7 +191,7 @@ __extension Attention:
             self.batch_idx,
             self.kv_head_idx(),
             VBufT.SmemParentType(
-                (self.v_smem_ptr + v_warp_smem_offset).as_any_origin(),
+                (self.v_smem_ptr + v_warp_smem_offset).as_unsafe_any_origin(),
                 VBufT._SmemParentLayout(),
             ),
             end,

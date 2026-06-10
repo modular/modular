@@ -209,7 +209,7 @@ def test[
             config=MHAConfig[q_type](num_heads, depth),
             decoding_warp_split_k=decoding_warp_split_k,
         ](
-            out_tt.as_any_origin(),
+            out_tt.as_unsafe_any_origin(),
             q_tt,
             k_tt,
             CausalMask(),

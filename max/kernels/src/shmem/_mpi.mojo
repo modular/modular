@@ -207,4 +207,4 @@ def get_mpi_comm_world() raises -> MPIComm:
     )
     if not comm_world_ptr:
         raise Error("symbol ompi_mpi_comm_world not found in MPI library")
-    return comm_world_ptr.value().as_any_origin()
+    return comm_world_ptr.value().as_unsafe_any_origin()

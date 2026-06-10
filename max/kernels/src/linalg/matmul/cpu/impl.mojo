@@ -530,7 +530,7 @@ def _matmul_cpu_impl[
                     alg,
                     c,
                     TileTensor(
-                        a.ptr.unsafe_mut_cast[True]().as_any_origin(),
+                        a.ptr.unsafe_mut_cast[True]().as_unsafe_any_origin(),
                         a.layout,
                     ),
                     b,

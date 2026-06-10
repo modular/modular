@@ -389,7 +389,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         var mbar_base: MBarType = (
             (li_smem + WARPGROUP_SIZE)
             .bitcast[SharedMemBarrier]()
-            .as_any_origin()
+            .as_unsafe_any_origin()
         )
 
         var mbar_q: MBarType = mbar_base  # q uses 0
@@ -504,10 +504,10 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                kv_smem.bitcast[Scalar[Self.q_type]]().as_any_origin(),
-                max_smem.as_any_origin(),
-                li_smem.as_any_origin(),
-                out_smem.as_any_origin(),
+                kv_smem.bitcast[Scalar[Self.q_type]]().as_unsafe_any_origin(),
+                max_smem.as_unsafe_any_origin(),
+                li_smem.as_unsafe_any_origin(),
+                out_smem.as_unsafe_any_origin(),
                 c_bars,
                 corr_done_bars,
                 out_pipeline,
@@ -535,8 +535,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                     q_tma,
                     k_tma,
                     kv_lut,
-                    q_smem.as_any_origin(),
-                    kv_smem.as_any_origin(),
+                    q_smem.as_unsafe_any_origin(),
+                    kv_smem.as_unsafe_any_origin(),
                     mbar_q,
                     kv_pipeline,
                     offset_position,
@@ -550,8 +550,10 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             elif warp_idx == 9:
                 Self.mmaQK(
                     ptr_tmem_addr[0],
-                    q_smem.as_any_origin(),
-                    (kv_smem).bitcast[Scalar[Self.q_type]]().as_any_origin(),
+                    q_smem.as_unsafe_any_origin(),
+                    (kv_smem)
+                    .bitcast[Scalar[Self.q_type]]()
+                    .as_unsafe_any_origin(),
                     mbar_q,
                     s_bars,
                     kv_pipeline,
@@ -560,7 +562,9 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             elif warp_idx == 10:
                 Self.mmaPV(
                     ptr_tmem_addr[0],
-                    (kv_smem).bitcast[Scalar[Self.q_type]]().as_any_origin(),
+                    (kv_smem)
+                    .bitcast[Scalar[Self.q_type]]()
+                    .as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
                     kv_pipeline,
@@ -592,7 +596,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                 )
                 Self.Common_MLA_Op.store(
                     out_pipeline,
-                    out_smem.as_any_origin(),
+                    out_smem.as_unsafe_any_origin(),
                     o_tma,
                     offset_position,
                 )

@@ -1340,7 +1340,8 @@ def print_kv_cache_cont_batch_generic_gpu[
     var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
     dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
     var blocks_host = type_of(kv_collection.blocks)(
-        ptr=blocks_ptr.as_any_origin(), layout=kv_collection.blocks.layout
+        ptr=blocks_ptr.as_unsafe_any_origin(),
+        layout=kv_collection.blocks.layout,
     )
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
@@ -1349,7 +1350,7 @@ def print_kv_cache_cont_batch_generic_gpu[
         cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
     )
     var cache_lengths_host = type_of(kv_collection.cache_lengths)(
-        ptr=cache_lengths_ptr.as_immutable().as_any_origin(),
+        ptr=cache_lengths_ptr.as_immutable().as_unsafe_any_origin(),
         layout=kv_collection.cache_lengths.layout,
     )
 
@@ -1359,7 +1360,7 @@ def print_kv_cache_cont_batch_generic_gpu[
         lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
     )
     var lookup_table_host = type_of(kv_collection.lookup_table)(
-        ptr=lookup_table_ptr.as_immutable().as_any_origin(),
+        ptr=lookup_table_ptr.as_immutable().as_unsafe_any_origin(),
         layout=kv_collection.lookup_table.layout,
     )
 
@@ -1435,7 +1436,8 @@ def print_kv_cache_paged_generic_gpu[
     var blocks_ptr = alloc[Scalar[dtype]](n_blocks)
     dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
     var blocks_host = type_of(kv_collection.blocks)(
-        ptr=blocks_ptr.as_any_origin(), layout=kv_collection.blocks.layout
+        ptr=blocks_ptr.as_unsafe_any_origin(),
+        layout=kv_collection.blocks.layout,
     )
 
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
@@ -1444,7 +1446,7 @@ def print_kv_cache_paged_generic_gpu[
         cache_lengths_ptr, kv_collection.cache_lengths.ptr, n_cache_lengths
     )
     var cache_lengths_host = type_of(kv_collection.cache_lengths)(
-        ptr=cache_lengths_ptr.as_immutable().as_any_origin(),
+        ptr=cache_lengths_ptr.as_immutable().as_unsafe_any_origin(),
         layout=kv_collection.cache_lengths.layout,
     )
 
@@ -1454,7 +1456,7 @@ def print_kv_cache_paged_generic_gpu[
         lookup_table_ptr, kv_collection.lookup_table.ptr, n_lookup_table
     )
     var lookup_table_host = type_of(kv_collection.lookup_table)(
-        ptr=lookup_table_ptr.as_immutable().as_any_origin(),
+        ptr=lookup_table_ptr.as_immutable().as_unsafe_any_origin(),
         layout=kv_collection.lookup_table.layout,
     )
 
@@ -1525,9 +1527,9 @@ def _continuous_batch_kv_cache_collection[
     # Marshal LayoutTensor into arguments expected by the
     # ContinuousKVCacheCollection constructor.
     return {
-        blocks = blocks.as_any_origin(),
-        cache_lengths = cache_lengths.get_immutable().as_any_origin(),
-        lookup_table = lookup_table.get_immutable().as_any_origin(),
+        blocks = blocks.as_unsafe_any_origin(),
+        cache_lengths = cache_lengths.get_immutable().as_unsafe_any_origin(),
+        lookup_table = lookup_table.get_immutable().as_unsafe_any_origin(),
         max_seq_length = max_lengths[0, 0][0],
         max_cache_length = max_lengths[0, 1][0],
     }
@@ -1610,9 +1612,9 @@ def generic_get_paged_cache[
     out result: PagedKVCacheCollection[dtype, kv_params, page_size],
 ):
     return {
-        blocks = blocks.as_any_origin(),
-        cache_lengths = cache_lengths.get_immutable().as_any_origin(),
-        lookup_table = lookup_table.get_immutable().as_any_origin(),
+        blocks = blocks.as_unsafe_any_origin(),
+        cache_lengths = cache_lengths.get_immutable().as_unsafe_any_origin(),
+        lookup_table = lookup_table.get_immutable().as_unsafe_any_origin(),
         max_seq_length = max_lengths[0, 0][0],
         max_cache_length = max_lengths[0, 1][0],
     }
@@ -1644,12 +1646,12 @@ def generic_get_paged_cache_with_scales[
         scales: Scales tensor [num_blocks, kv_dim, num_layers, page_size, num_heads, head_dim_granularity].
     """
     return {
-        blocks = blocks.as_any_origin(),
-        cache_lengths = cache_lengths.get_immutable().as_any_origin(),
-        lookup_table = lookup_table.get_immutable().as_any_origin(),
+        blocks = blocks.as_unsafe_any_origin(),
+        cache_lengths = cache_lengths.get_immutable().as_unsafe_any_origin(),
+        lookup_table = lookup_table.get_immutable().as_unsafe_any_origin(),
         max_seq_length = max_lengths[0, 0][0],
         max_cache_length = max_lengths[0, 1][0],
-        scales = scales.as_any_origin(),
+        scales = scales.as_unsafe_any_origin(),
     }
 
 

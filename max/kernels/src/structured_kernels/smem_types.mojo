@@ -195,7 +195,9 @@ struct SMemTileArray[
             Tile at index.
         """
         return Self.Tile(
-            (self.ptr + eval[Self.layout.size()] * Int(index)).as_any_origin()
+            (
+                self.ptr + eval[Self.layout.size()] * Int(index)
+            ).as_unsafe_any_origin()
         )
 
     def slice[

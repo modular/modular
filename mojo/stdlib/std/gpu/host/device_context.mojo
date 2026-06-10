@@ -912,7 +912,9 @@ struct DevicePointer[dtype: DType](
         if size == 0:
             raise Error("DevicePointer: size of DeviceBuffer must not be 0")
         self._buffer = (
-            UnsafePointer(to=buffer).unsafe_mut_cast[True]().as_any_origin()
+            UnsafePointer(to=buffer)
+            .unsafe_mut_cast[True]()
+            .as_unsafe_any_origin()
         )
         self._offset = 0
         self._size = size
@@ -941,7 +943,9 @@ struct DevicePointer[dtype: DType](
                 t" size '{size}'"
             )
         self._buffer = (
-            UnsafePointer(to=buffer).unsafe_mut_cast[True]().as_any_origin()
+            UnsafePointer(to=buffer)
+            .unsafe_mut_cast[True]()
+            .as_unsafe_any_origin()
         )
         self._offset = offset
         self._size = size
@@ -984,7 +988,9 @@ struct DevicePointer[dtype: DType](
         """
         # TODO: GEX-3693: Assert/raise when target doesn't support raw device
         # pointer access
-        return (self._buffer[].unsafe_ptr() + self._offset).as_any_origin()
+        return (
+            self._buffer[].unsafe_ptr() + self._offset
+        ).as_unsafe_any_origin()
 
     # ===------------------------------------------------------------------=== #
     # Pointer arithmetic
@@ -2983,7 +2989,7 @@ struct DeviceFunction[
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
                 .unsafe_mut_cast[True]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
             )
 
         @parameter
@@ -3015,7 +3021,9 @@ struct DeviceFunction[
             # to store the captured values in dense_args_addrs, they need to
             # not go out of the scope before dense_args_addr is being use.
             var capture_args_start = dense_args_addrs + num_args
-            populate(capture_args_start.bitcast[NoneType]().as_any_origin())
+            populate(
+                capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
+            )
 
         if self._context.api() == "metal":
             call_with_pack_metal[
@@ -3047,7 +3055,7 @@ struct DeviceFunction[
                     shared_mem_bytes.or_else(0),
                     attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
                     len(attributes),
-                    dense_args_addrs.as_any_origin(),
+                    dense_args_addrs.as_unsafe_any_origin(),
                     UInt32(num_args + num_captures),
                     dense_args_sizes,
                 ),
@@ -3246,7 +3254,9 @@ struct DeviceFunction[
             # to call `populate` here even though `ctx.enqueue` below is
             # nested inside the per-backend branch.
             var capture_args_start = dense_args_addrs + num_translated_args
-            populate(capture_args_start.bitcast[NoneType]().as_any_origin())
+            populate(
+                capture_args_start.bitcast[NoneType]().as_unsafe_any_origin()
+            )
 
         if self._context.api() == "metal":
             call_with_pack_checked_metal[
@@ -3304,7 +3314,7 @@ struct DeviceFunction[
 
                     dense_args_addrs[
                         translated_arg_idx
-                    ] = first_word_addr.as_any_origin()
+                    ] = first_word_addr.as_unsafe_any_origin()
                     translated_arg_idx += 1
 
             _checked_call[Self.func](
@@ -3313,9 +3323,9 @@ struct DeviceFunction[
                     grid_dim,
                     block_dim,
                     shared_mem_bytes.or_else(0),
-                    attributes.unsafe_ptr().as_any_origin(),
+                    attributes.unsafe_ptr().as_unsafe_any_origin(),
                     len(attributes),
-                    dense_args_addrs.as_any_origin(),
+                    dense_args_addrs.as_unsafe_any_origin(),
                     UInt32(num_translated_args + num_captures),
                     Optional[UnsafePointer[UInt64, MutUntrackedOrigin]](),
                 ),
@@ -3583,7 +3593,7 @@ struct DeviceExternalFunction:
                 self._handle,
                 mapping.name.as_c_string_slice(),
                 c_size_t(mapping.name.byte_length()),
-                mapping.ptr.as_any_origin(),
+                mapping.ptr.as_unsafe_any_origin(),
                 c_size_t(mapping.byte_count),
             )
         )
@@ -3635,7 +3645,7 @@ struct DeviceExternalFunction:
                 UnsafePointer(to=args[i])
                 .bitcast[NoneType]()
                 .unsafe_mut_cast[True]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
             )
 
         if cluster_dim:
@@ -3680,9 +3690,9 @@ struct DeviceExternalFunction:
                 c_uint(block_dim.y()),
                 c_uint(block_dim.z()),
                 c_uint(shared_mem_bytes.or_else(0)),
-                attributes.unsafe_ptr().as_any_origin(),
+                attributes.unsafe_ptr().as_unsafe_any_origin(),
                 c_uint(len(attributes)),
-                dense_args_addrs.unsafe_ptr().as_any_origin(),
+                dense_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
                 c_uint(num_args),
                 None,
             )
@@ -4357,7 +4367,7 @@ struct DeviceGraphBuilder(Movable):
                 dst._handle,
                 value,
                 c_size_t(size_of[dtype]()),
-                dep_args.ids.as_any_origin(),
+                dep_args.ids.as_unsafe_any_origin(),
                 dep_args.count,
             )
         )
@@ -4400,7 +4410,7 @@ struct DeviceGraphBuilder(Movable):
                 _DeviceGraphBuilderPtr[mut=True],
                 UnsafePointer[Int32, ImmutAnyOrigin],
                 Int64,
-            ](self._handle, dep_args.ids.as_any_origin(), dep_args.count)
+            ](self._handle, dep_args.ids.as_unsafe_any_origin(), dep_args.count)
         )
         return self._last_node().value()
 
@@ -4758,7 +4768,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 Int32,
             ](
                 UnsafePointer(to=result),
-                api.as_c_string_slice().unsafe_ptr().as_any_origin(),
+                api.as_c_string_slice().unsafe_ptr().as_unsafe_any_origin(),
                 Int32(device_id),
             )
         )

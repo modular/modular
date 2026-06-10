@@ -419,7 +419,7 @@ struct RawDriver(Movable):
         size: UInt64,
     ) raises HALError:
         var status = self._raw.queue_copy_to_device.f(
-            queue, dst, src.as_any_origin(), size
+            queue, dst, src.as_unsafe_any_origin(), size
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -436,7 +436,7 @@ struct RawDriver(Movable):
         size: UInt64,
     ) raises HALError:
         var status = self._raw.queue_copy_from_device.f(
-            queue, dst.as_any_origin(), src, size
+            queue, dst.as_unsafe_any_origin(), src, size
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -545,7 +545,7 @@ struct RawDriver(Movable):
         num_events: UInt32,
     ) raises HALError:
         var status = self._raw.queue_wait_for_events.f(
-            queue, handles.as_any_origin(), num_events
+            queue, handles.as_unsafe_any_origin(), num_events
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -624,8 +624,8 @@ struct RawDriver(Movable):
             queue,
             func,
             rebind[ExecuteConfigHandle](UnsafePointer(to=config)),
-            args.as_any_origin(),
-            arg_sizes.as_any_origin(),
+            args.as_unsafe_any_origin(),
+            arg_sizes.as_unsafe_any_origin(),
             num_args,
         )
         if status != STATUS_SUCCESS:
@@ -645,7 +645,7 @@ struct RawDriver(Movable):
         var ret = self._raw.status_message.f(
             self._driver_handle,
             status,
-            MutPointer(to=buf.unsafe_ptr().as_any_origin()[]),
+            MutPointer(to=buf.unsafe_ptr().as_unsafe_any_origin()[]),
             Int64(len(buf)),
         )
 
@@ -1015,7 +1015,7 @@ struct RawPlugin(Movable):
         )
 
         var status = self.create.f(
-            ImmutPointer(to=UnsafePointer(to=version).as_any_origin()[]),
+            ImmutPointer(to=UnsafePointer(to=version).as_unsafe_any_origin()[]),
             OutParam[DriverHandle](to=handle),
         )
         if status != STATUS_SUCCESS:

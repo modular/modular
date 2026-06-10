@@ -1604,6 +1604,6 @@ def fused_concat[
             return _fused_concat_gpu[rank, dtype, input_fn, output_0_fn](
                 axis,
                 input_shapes,
-                output.as_any_origin(),
+                output.as_unsafe_any_origin(),
                 ctx,
             )

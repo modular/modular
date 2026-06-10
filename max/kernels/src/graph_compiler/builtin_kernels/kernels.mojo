@@ -1360,7 +1360,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
             start_tensor,
             freqs_cis_tensor,
             ctx,
-            position_ids=position_ids_tensor.as_any_origin().as_immut(),
+            position_ids=position_ids_tensor.as_unsafe_any_origin().as_immut(),
         )
 
 
@@ -1859,15 +1859,17 @@ struct Struct_fused_token_sampling:
                 Int(max_k),
                 input.to_tile_tensor[DType.int64](),
                 out_idxs.to_tile_tensor[DType.int64](),
-                k=K.to_tile_tensor[DType.int64]().as_any_origin().as_immut(),
+                k=K.to_tile_tensor[DType.int64]()
+                .as_unsafe_any_origin()
+                .as_immut(),
                 temperature=temperature.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 top_p=top_p.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 seed=seed.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
             )
         else:
@@ -1878,18 +1880,20 @@ struct Struct_fused_token_sampling:
                 min_top_p,
                 input.to_tile_tensor[DType.int64](),
                 out_idxs.to_tile_tensor[DType.int64](),
-                k=K.to_tile_tensor[DType.int64]().as_any_origin().as_immut(),
+                k=K.to_tile_tensor[DType.int64]()
+                .as_unsafe_any_origin()
+                .as_immut(),
                 temperature=temperature.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 top_p=top_p.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 min_p=min_p.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
                 seed=seed.to_tile_tensor[DType.int64]()
-                .as_any_origin()
+                .as_unsafe_any_origin()
                 .as_immut(),
             )
 

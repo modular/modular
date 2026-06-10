@@ -472,7 +472,7 @@ def _test_swiglu_mxfp8_dispatch[
 
     var a_scales_tt = TileTensor(
         a_scales_device, a_scales_shape
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
     var b_scales_perm_shape = row_major(
         Coord(
             Idx[num_experts],
@@ -485,10 +485,10 @@ def _test_swiglu_mxfp8_dispatch[
     )
     var b_scales_perm_tt = TileTensor(
         shared.b_scales_perm, b_scales_perm_shape
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
         shared.expert_scales, row_major(Coord(Int64(num_experts)))
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
 
     # ---- Path REF: non-fused matmul -> BF16 -> standalone SwiGLU. ----
     grouped_matmul_mxfp8_dispatch[transpose_b=transpose_b](

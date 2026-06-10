@@ -1698,11 +1698,11 @@ def block_scaled_matmul[
         SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
     ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
 
-    var c = c_device.as_any_origin()
-    var a = a_device.as_any_origin()
-    var b = b_device.as_any_origin()
-    var a_scales = a_scales_device.as_any_origin()
-    var b_scales = b_scales_device.as_any_origin()
+    var c = c_device.as_unsafe_any_origin()
+    var a = a_device.as_unsafe_any_origin()
+    var b = b_device.as_unsafe_any_origin()
+    var a_scales = a_scales_device.as_unsafe_any_origin()
+    var b_scales = b_scales_device.as_unsafe_any_origin()
 
     comptime assert (
         a_scales.static_shape[1] == b_scales.static_shape[1]
@@ -1956,9 +1956,9 @@ def quantize_dynamic_block_scaled[
         " MXFP8_SF_VECTOR_SIZE (32 for MXFP8)"
     )
 
-    var input_tensor = input_device.as_any_origin()
-    var output_tensor = output_device.as_any_origin()
-    var scales_tensor = scales_device.as_any_origin()
+    var input_tensor = input_device.as_unsafe_any_origin()
+    var output_tensor = output_device.as_unsafe_any_origin()
+    var scales_tensor = scales_device.as_unsafe_any_origin()
 
     var num_rows = input_tensor.dim(0)
     var num_cols = input_tensor.dim(1)
@@ -2057,8 +2057,8 @@ def block_scales_interleave[
         MXFP4_SF_DTYPE,
     ), "scales dtype should be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)."
 
-    var output = output_scales_device.as_any_origin()
-    var input = input_scales_device.as_any_origin()
+    var output = output_scales_device.as_unsafe_any_origin()
+    var input = input_scales_device.as_unsafe_any_origin()
 
     block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](
         ctx, input, output

@@ -152,7 +152,7 @@ struct _Accumulator[
                     n,
                     (row_ptr + n * Self.simd_width)
                     .unsafe_mut_cast[True]()
-                    .as_any_origin(),
+                    .as_unsafe_any_origin(),
                 )
             row_ptr += stride
 
@@ -228,7 +228,9 @@ struct _Accumulator[
             ](uninitialized=True)
 
             comptime for row in range(Self.num_rows):
-                row_ptrs[row] = (c_ptr_loc + row * c_stride).as_any_origin()
+                row_ptrs[row] = (
+                    c_ptr_loc + row * c_stride
+                ).as_unsafe_any_origin()
 
             self._transfer_loop[0, is_load](
                 transfer_count, row_ptrs.unsafe_ptr(), c_stride

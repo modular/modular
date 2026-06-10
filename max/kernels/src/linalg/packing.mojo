@@ -1014,7 +1014,7 @@ struct BTileGenerator[
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
             )
-            return packed_b.as_immut().as_any_origin()
+            return packed_b.as_immut().as_unsafe_any_origin()
         elif (not Self.transpose_b) and (not Self.b_packed):
             PackMatrixCols[
                 Self.b_type,
@@ -1073,9 +1073,9 @@ struct BTileGenerator[
                     )
                 ),
             )
-            return b_tile_view.as_any_origin()
+            return b_tile_view.as_unsafe_any_origin()
 
         else:
             assert False, "unreachable, b_packed not supported with transpose_b"
 
-        return packed_b.as_immut().as_any_origin()
+        return packed_b.as_immut().as_unsafe_any_origin()

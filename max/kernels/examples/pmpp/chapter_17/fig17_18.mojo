@@ -150,9 +150,9 @@ def main() raises:
         rows,
         cols,
         numNonzeros,
-        d_colPtrs_buf.unsafe_ptr().as_any_origin(),
-        d_rowIdxs_buf.unsafe_ptr().as_any_origin(),
-        d_values_buf.unsafe_ptr().as_any_origin(),
+        d_colPtrs_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_rowIdxs_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_values_buf.unsafe_ptr().as_unsafe_any_origin(),
     )
 
     var blockSize = 256

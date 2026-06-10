@@ -176,7 +176,7 @@ def fp8_index_kernel[
     var logits = LogitsType.stack_allocation()
     var q_s_reg_tile = QSRegTileType.stack_allocation()
     var logits_sum = LogitsSumType.stack_allocation()
-    var scratch = ScratchType(scratch_smem.unsafe_ptr().as_any_origin())
+    var scratch = ScratchType(scratch_smem.unsafe_ptr().as_unsafe_any_origin())
 
     var q_s_frag = q_s_tile.tile[1, num_heads // thread_dim_y](
         ufloordiv(thread_idx.x, thread_dim_x), thread_idx.y

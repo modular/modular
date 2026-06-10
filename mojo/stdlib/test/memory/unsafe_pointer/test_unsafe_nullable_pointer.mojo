@@ -373,8 +373,8 @@ def test_merge() raises:
 
 def test_swap_pointees_trivial_move() raises:
     var a = 42
-    UnsafeNullablePointer(to=a).as_any_origin().swap_pointees(
-        UnsafeNullablePointer(to=a).as_any_origin()
+    UnsafeNullablePointer(to=a).as_unsafe_any_origin().swap_pointees(
+        UnsafeNullablePointer(to=a).as_unsafe_any_origin()
     )
     assert_equal(a, 42)
 
@@ -387,8 +387,8 @@ def test_swap_pointees_trivial_move() raises:
 
 def test_swap_pointees_non_trivial_move() raises:
     var counter = MoveCounter[Int](42)
-    UnsafeNullablePointer(to=counter).as_any_origin().swap_pointees(
-        UnsafeNullablePointer(to=counter).as_any_origin()
+    UnsafeNullablePointer(to=counter).as_unsafe_any_origin().swap_pointees(
+        UnsafeNullablePointer(to=counter).as_unsafe_any_origin()
     )
     # Pointers point to the same object, so no move should be performed
     assert_equal(counter.value, 42)

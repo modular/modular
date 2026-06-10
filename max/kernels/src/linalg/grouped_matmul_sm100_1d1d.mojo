@@ -1290,7 +1290,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         b_type,
         flat_b_layout,
         address_space=AddressSpace.GENERIC,
-    ](b_device.ptr.as_any_origin())
+    ](b_device.ptr.as_unsafe_any_origin())
 
     comptime assert (
         sfb_layout.shape[0].value() == num_experts

@@ -2151,7 +2151,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
             comptime if warp_n > 0:
                 # we want `output_reg_tile[0,:,:]` to be the real output reg tile.
                 out_reg_tile.copy_from(
-                    reg_tile.as_any_origin()
+                    reg_tile.as_unsafe_any_origin()
                 )  # hack aliasing.
         else:
             # copy output reg tile to smem

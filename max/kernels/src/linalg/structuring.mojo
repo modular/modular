@@ -228,7 +228,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         var result = T(
             (self.base_ptr + self.offset)
             .bitcast[Scalar[dtype]]()
-            .as_any_origin(),
+            .as_unsafe_any_origin(),
         )
         self.offset += T.storage_size
         return result

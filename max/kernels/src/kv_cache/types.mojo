@@ -2714,7 +2714,7 @@ struct PagedKVCacheCollection[
         if scales is not None:
             self.scales = lt_to_tt[ResultLayout=Self.scales_tt_layout](
                 scales.value()
-            ).as_any_origin()
+            ).as_unsafe_any_origin()
             self.kv_cache_scales_dynamic_shape, self.kv_cache_scales_dynamic_strides = _compute_kv_cache_dynamic_shape_strides[
                 4, (1, 2)
             ](

@@ -1381,7 +1381,7 @@ def _matmul_Q6_K_columns[
     @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
     def process_rows[tile_m: Int](m: Int):
-        var b_q_bits_ptr = b_q_bits.as_any_origin()
+        var b_q_bits_ptr = b_q_bits.as_unsafe_any_origin()
 
         @parameter
         def matmul_group_unpacked(

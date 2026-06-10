@@ -314,7 +314,7 @@ def mha_sm90_dispatch[
         schedule.enqueue_fill(UInt32(H100.sm_count))
         ctx.synchronize()
         var scheduler: SchedulerType = SchedulerType(
-            schedule.unsafe_ptr().as_any_origin()
+            schedule.unsafe_ptr().as_unsafe_any_origin()
         )
         _mha_sm90_sink_dispatch[
             SchedulerType=SchedulerType,
@@ -1164,7 +1164,7 @@ def _mha_sm90[
         max_seq_len.as_uint32(),
     )
     var state: MHATileState = scheduler.initial_state(
-        block_idx_ptr.as_any_origin(), tile_summary
+        block_idx_ptr.as_unsafe_any_origin(), tile_summary
     )
 
     # returns `true` if we are done
@@ -1229,7 +1229,7 @@ def _mha_sm90[
         ],
     ):
         comptime sz = BN * config.padded_depth
-        k_smem = {(kv_smem + UInt32(sz) * idx).as_any_origin()}
+        k_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
     @parameter
     @always_inline
@@ -1246,7 +1246,7 @@ def _mha_sm90[
         ],
     ):
         comptime sz = BN * config.padded_depth
-        v_smem = {(kv_smem + UInt32(sz) * idx).as_any_origin()}
+        v_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
     @parameter
     @always_inline
@@ -1291,10 +1291,10 @@ def _mha_sm90[
                 q_tma_op,
                 k_tma_op,
                 v_tma_op,
-                q_smem.as_any_origin(),
-                kv_smem.as_any_origin(),
-                produced_mbar_kv.as_any_origin(),
-                consumed_mbar_kv.as_any_origin(),
+                q_smem.as_unsafe_any_origin(),
+                kv_smem.as_unsafe_any_origin(),
+                produced_mbar_kv.as_unsafe_any_origin(),
+                consumed_mbar_kv.as_unsafe_any_origin(),
                 produced_mbar_q,
                 consumed_mbar_q,
                 kv_lut,
@@ -1332,7 +1332,7 @@ def _mha_sm90[
             address_space=AddressSpace.SHARED,
             alignment=128,
         ]:
-            return {(q_smem + UInt32(q_size) * q_idx).as_any_origin()}
+            return {(q_smem + UInt32(q_size) * q_idx).as_unsafe_any_origin()}
 
         # layout is
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
@@ -1566,7 +1566,7 @@ def _mha_sm90[
                 tid,
                 local_warp_group_idx,
                 warp_y,
-                (q_smem + q_idx * q_tile_size).as_any_origin(),
+                (q_smem + q_idx * q_tile_size).as_unsafe_any_origin(),
                 output_reg_tile,
             )
             # Guard writing to shared memory.

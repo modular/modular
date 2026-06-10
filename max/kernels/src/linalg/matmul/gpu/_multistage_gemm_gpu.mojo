@@ -128,7 +128,7 @@ def warp_split_k_reduction[
             (
                 smem.bitcast[Scalar[c_type]]()
                 + ((warp_k_part_id % i_red) * BM * BN)
-            ).as_any_origin()
+            ).as_unsafe_any_origin()
         ).vectorize[
             1, c_frag_size
         ]()
@@ -818,7 +818,7 @@ def multistage_gemm_kernel[
         (
             b_smem
             + IteratorTypeB.linear_uint_type(warp_k_part_id * b_smem_size)
-        ).as_any_origin(),
+        ).as_unsafe_any_origin(),
         IteratorTypeB.linear_uint_type(b_smem_size),
     )
 
@@ -971,7 +971,7 @@ def multistage_gemm_kernel[
         ](
             (
                 a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN
-            ).as_any_origin()
+            ).as_unsafe_any_origin()
         )
 
         copy_local_to_shared[

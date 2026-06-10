@@ -634,7 +634,7 @@ def mgp_buffer_concat[
     )
     var input_tensors = StaticTuple[_, inputs.size](
         TileTensor(inputs[0].unsafe_ptr(), row_major(Coord(inputs[0].size())))
-        .as_any_origin()
+        .as_unsafe_any_origin()
         .as_immut()
     )
     for i in range(1, len(inputs)):
@@ -642,7 +642,7 @@ def mgp_buffer_concat[
             TileTensor(
                 inputs[i].unsafe_ptr(), row_major(Coord(inputs[i].size()))
             )
-            .as_any_origin()
+            .as_unsafe_any_origin()
             .as_immut()
         )
     concat[DType.int8, bDevice, None](

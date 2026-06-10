@@ -897,7 +897,7 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
             sink_weights.dtype,
             Layout.row_major(UNKNOWN_VALUE),
         ](
-            sink_weights.ptr.as_immutable().as_any_origin(),
+            sink_weights.ptr.as_immutable().as_unsafe_any_origin(),
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                 sink_weights.runtime_layout.shape.value
             ),

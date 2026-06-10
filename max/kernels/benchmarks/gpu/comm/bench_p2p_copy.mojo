@@ -178,25 +178,25 @@ def bench_p2p[
             comptime if is_bidir:
                 comptime if is_push:
                     if ctx_idx == 0:
-                        dst = buf1_write.unsafe_ptr().as_any_origin()
-                        src = buf0_read.unsafe_ptr().as_any_origin()
+                        dst = buf1_write.unsafe_ptr().as_unsafe_any_origin()
+                        src = buf0_read.unsafe_ptr().as_unsafe_any_origin()
                     else:
-                        dst = buf0_write.unsafe_ptr().as_any_origin()
-                        src = buf1_read.unsafe_ptr().as_any_origin()
+                        dst = buf0_write.unsafe_ptr().as_unsafe_any_origin()
+                        src = buf1_read.unsafe_ptr().as_unsafe_any_origin()
                 else:
                     if ctx_idx == 0:
-                        dst = buf0_write.unsafe_ptr().as_any_origin()
-                        src = buf1_read.unsafe_ptr().as_any_origin()
+                        dst = buf0_write.unsafe_ptr().as_unsafe_any_origin()
+                        src = buf1_read.unsafe_ptr().as_unsafe_any_origin()
                     else:
-                        dst = buf1_write.unsafe_ptr().as_any_origin()
-                        src = buf0_read.unsafe_ptr().as_any_origin()
+                        dst = buf1_write.unsafe_ptr().as_unsafe_any_origin()
+                        src = buf0_read.unsafe_ptr().as_unsafe_any_origin()
             else:
                 comptime if is_push:
-                    dst = buf1_write.unsafe_ptr().as_any_origin()
-                    src = buf0_write.unsafe_ptr().as_any_origin()
+                    dst = buf1_write.unsafe_ptr().as_unsafe_any_origin()
+                    src = buf0_write.unsafe_ptr().as_unsafe_any_origin()
                 else:
-                    dst = buf0_write.unsafe_ptr().as_any_origin()
-                    src = buf1_write.unsafe_ptr().as_any_origin()
+                    dst = buf0_write.unsafe_ptr().as_unsafe_any_origin()
+                    src = buf1_write.unsafe_ptr().as_unsafe_any_origin()
 
             ctx_inner.enqueue_function[copy_kernel](
                 dst,

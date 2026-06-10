@@ -137,6 +137,9 @@ from std.builtin.type_aliases import (
     UntrackedOrigin,
     ImmutUntrackedOrigin,
     MutUntrackedOrigin,
+    UnsafeAnyOrigin,
+    MutUnsafeAnyOrigin,
+    ImmutUnsafeAnyOrigin,
 )
 from std.builtin.value import (
     Copyable,

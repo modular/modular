@@ -2638,7 +2638,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                 kv_collection,
                 freqs_cis,
                 TileTensor(
-                    position_ids.ptr.mut_cast[True]().as_any_origin(),
+                    position_ids.ptr.mut_cast[True]().as_unsafe_any_origin(),
                     position_ids.layout,
                 ).as_immut(),
                 layer_idx,
@@ -3321,7 +3321,7 @@ def _flare_mla_prefill_kv_cache_ragged[
                 Layout.row_major(UNKNOWN_VALUE),
                 MutAnyOrigin,
             ](
-                cache_offsets.ptr.as_any_origin(),
+                cache_offsets.ptr.as_unsafe_any_origin(),
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     coord_to_index_list(
                         cache_offsets.layout.shape_coord()
@@ -3526,7 +3526,7 @@ def _cross_attention_dispatch[
                     Layout.row_major(UNKNOWN_VALUE),
                     ImmutAnyOrigin,
                 ](
-                    kv_input_row_offsets.ptr.as_immutable().as_any_origin(),
+                    kv_input_row_offsets.ptr.as_immutable().as_unsafe_any_origin(),
                     RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                         kv_input_row_offsets.runtime_layout.shape.value.canonicalize()
                     ),

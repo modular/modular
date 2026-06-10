@@ -764,7 +764,7 @@ def execute_test_with_position_ids[
     )
 
     var pos_ids_immut = TileTensor(
-        pos_ids_tile.ptr.mut_cast[True]().as_any_origin(),
+        pos_ids_tile.ptr.mut_cast[True]().as_unsafe_any_origin(),
         pos_ids_tile.layout,
     ).as_immut()
     fused_qk_rope_ragged[

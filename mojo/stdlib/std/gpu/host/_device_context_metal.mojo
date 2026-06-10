@@ -350,7 +350,7 @@ def call_with_pack_checked_metal[
 
     var metal_args_addrs = stack_allocation[1, OpaquePointer[MutAnyOrigin]]()
     metal_args_addrs[0] = (
-        UnsafePointer(to=metal_args).bitcast[NoneType]().as_any_origin()
+        UnsafePointer(to=metal_args).bitcast[NoneType]().as_unsafe_any_origin()
     )
 
     _checked_call[func](

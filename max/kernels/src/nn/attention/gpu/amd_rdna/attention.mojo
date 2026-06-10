@@ -581,14 +581,18 @@ struct AttentionRDNA[
                 Self.q_type,
                 address_space=AddressSpace.SHARED,
             ]()
-            self.p_reg_buffer = Self.PRegisterBufferType(p_ptr.as_any_origin())
+            self.p_reg_buffer = Self.PRegisterBufferType(
+                p_ptr.as_unsafe_any_origin()
+            )
         else:
             var p_ptr = stack_allocation[
                 Self._p_smem_size,
                 Self.q_type,
                 address_space=AddressSpace.SHARED,
             ]()
-            self.p_reg_buffer = Self.PRegisterBufferType(p_ptr.as_any_origin())
+            self.p_reg_buffer = Self.PRegisterBufferType(
+                p_ptr.as_unsafe_any_origin()
+            )
 
         # Q tile: pre-offset and wrapped as TileTensor with Scalar rows.
         var valid_rows: UInt32 = UInt32(Self.group) if Self.token_gen else min(

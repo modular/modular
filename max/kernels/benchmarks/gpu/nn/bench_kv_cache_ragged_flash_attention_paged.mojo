@@ -396,7 +396,7 @@ def execute_kv_cache_ragged_flash_attention[
                 # `if kv_input_row_offsets:` branch.
                 comptime if sink and cross_attention:
                     flash_attention[ragged=True, sink=True](
-                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
@@ -404,12 +404,12 @@ def execute_kv_cache_ragged_flash_attention[
                         input_row_offsets_tensor.to_layout_tensor(),
                         rsqrt(Float32(head_dim)),
                         ctx,
-                        kv_input_row_offsets=kv_input_row_offsets_view.as_any_origin(),
+                        kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
                         sink_weights=sink_weights_view,
                     )
                 elif sink:
                     flash_attention[ragged=True, sink=True](
-                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
@@ -421,7 +421,7 @@ def execute_kv_cache_ragged_flash_attention[
                     )
                 elif cross_attention:
                     flash_attention[ragged=True](
-                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
@@ -429,11 +429,11 @@ def execute_kv_cache_ragged_flash_attention[
                         input_row_offsets_tensor.to_layout_tensor(),
                         rsqrt(Float32(head_dim)),
                         ctx,
-                        kv_input_row_offsets=kv_input_row_offsets_view.as_any_origin(),
+                        kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
                     )
                 else:
                     flash_attention[ragged=True](
-                        output_device_tensor.to_layout_tensor().as_any_origin(),
+                        output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                         q_device_tensor.to_layout_tensor(),
                         k_cache_device,
                         v_cache_device,
@@ -477,7 +477,7 @@ def execute_kv_cache_ragged_flash_attention[
         # take a very long time and bloats the prof full of extra runs that
         # we don't look at.
         flash_attention[ragged=True](
-            output_device_tensor.to_layout_tensor().as_any_origin(),
+            output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
             q_device_tensor.to_layout_tensor(),
             k_cache_device,
             v_cache_device,

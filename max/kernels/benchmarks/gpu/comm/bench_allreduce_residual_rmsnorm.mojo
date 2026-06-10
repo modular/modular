@@ -113,7 +113,7 @@ def _verify_results[
         out_tensors[_i] = TileTensor(
             ar_out_dev[_i],
             row_major(Coord(Index(num_rows, num_cols))),
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 

@@ -309,10 +309,11 @@ def rocshmem_init_thread_tcp(
         c_int(global_rank),
         c_int(total_gpus),
         uid,
-        UnsafePointer(to=attr).as_any_origin(),
+        UnsafePointer(to=attr).as_unsafe_any_origin(),
     )
     rocshmem_init_attr(
-        ROCSHMEM_INIT_WITH_UNIQUEID, UnsafePointer(to=attr).as_any_origin()
+        ROCSHMEM_INIT_WITH_UNIQUEID,
+        UnsafePointer(to=attr).as_unsafe_any_origin(),
     )
 
 

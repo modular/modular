@@ -398,7 +398,7 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
     #        assert_equal(host_b[i], UInt32(0xBBBBBBBB))
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=host_a1).as_any_origin()[]
+    _ = UnsafePointer(to=host_a1).as_unsafe_any_origin()[]
 
 
 def test_collect_dependencies(ctx: DeviceContext) raises:

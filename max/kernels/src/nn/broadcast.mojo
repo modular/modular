@@ -171,7 +171,7 @@ def broadcast_impl[
             # AnyOrigin needed for exclusivity check
             (
                 output_tile_start + output_axis_stride
-            ).as_any_origin(),  # 1st tile is already there
+            ).as_unsafe_any_origin(),  # 1st tile is already there
             output_tile_start,
             output_axis_stride,  # elems_to_copy
             Int(output.dim(axis)) - 1,  # 1st tile is already there

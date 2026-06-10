@@ -592,7 +592,7 @@ struct MLA_SM100_Decode_Sparse[
                 + Self.config.scale_smem_per_stage * Self.config.num_kv_stages
             )
             .bitcast[SharedMemBarrier]()
-            .as_any_origin()
+            .as_unsafe_any_origin()
         )
 
         var mbar_q: MBarType = mbar_base  # q uses 0
@@ -749,10 +749,10 @@ struct MLA_SM100_Decode_Sparse[
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                kv_smem_bf16.as_any_origin(),
-                max_smem.as_any_origin(),
-                li_smem.as_any_origin(),
-                out_smem.as_any_origin(),
+                kv_smem_bf16.as_unsafe_any_origin(),
+                max_smem.as_unsafe_any_origin(),
+                li_smem.as_unsafe_any_origin(),
+                out_smem.as_unsafe_any_origin(),
                 c_bars,
                 corr_done_bars,
                 out_pipeline,
@@ -780,11 +780,11 @@ struct MLA_SM100_Decode_Sparse[
                     q_tma,
                     k_nope_tma,
                     k_rope_tma,
-                    q_smem.as_any_origin(),
-                    kv_nope_smem_fp8.as_any_origin(),
+                    q_smem.as_unsafe_any_origin(),
+                    kv_nope_smem_fp8.as_unsafe_any_origin(),
                     kv_rope_smem_bf16_base.bitcast[
                         Scalar[Self.bf16_type]
-                    ]().as_any_origin(),
+                    ]().as_unsafe_any_origin(),
                     mbar_q,
                     kv_load2cvt_pipe,
                     offset_position,
@@ -799,8 +799,8 @@ struct MLA_SM100_Decode_Sparse[
             elif warp_idx == 9:
                 Self.mmaQK(
                     ptr_tmem_addr[0],
-                    q_smem.as_any_origin(),
-                    kv_smem_bf16.as_any_origin(),
+                    q_smem.as_unsafe_any_origin(),
+                    kv_smem_bf16.as_unsafe_any_origin(),
                     mbar_q,
                     s_bars,
                     kv_cvt2mma_pipe,
@@ -810,7 +810,7 @@ struct MLA_SM100_Decode_Sparse[
             elif warp_idx == 10:
                 Self.mmaPV(
                     ptr_tmem_addr[0],
-                    kv_smem_bf16.as_any_origin(),
+                    kv_smem_bf16.as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
                     kv_cvt2mma_pipe,
@@ -841,7 +841,7 @@ struct MLA_SM100_Decode_Sparse[
                     batch_d_indices_w11,
                     topk,
                     scales_ptr,
-                    scale_smem_base.as_any_origin(),
+                    scale_smem_base.as_unsafe_any_origin(),
                     offset_position,
                     num_orig_blocks,
                     extra_kv_lut,
@@ -852,7 +852,7 @@ struct MLA_SM100_Decode_Sparse[
                 # --- Output store epilogue ---
                 Self.Common_MLA_Op.store(
                     out_pipeline,
-                    out_smem.as_any_origin(),
+                    out_smem.as_unsafe_any_origin(),
                     o_tma,
                     offset_position,
                 )
@@ -863,12 +863,12 @@ struct MLA_SM100_Decode_Sparse[
                 offset_position.num_keys_this_split, Self.config.BN_QK
             )
             Self.convertFP8ToBF16(
-                kv_nope_smem_fp8.as_any_origin(),
-                kv_smem_bf16.as_any_origin(),
+                kv_nope_smem_fp8.as_unsafe_any_origin(),
+                kv_smem_bf16.as_unsafe_any_origin(),
                 kv_load2cvt_pipe,
                 kv_cvt2mma_pipe,
                 num_k_tiles,
-                scale_smem_base.as_any_origin(),
+                scale_smem_base.as_unsafe_any_origin(),
             )
         barrier()
 

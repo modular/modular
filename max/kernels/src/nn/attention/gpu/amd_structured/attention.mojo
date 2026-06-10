@@ -688,7 +688,8 @@ struct Attention[
     def warp_scratch_tile(self) -> Self._WarpScratchTileType:
         """Warp-reduction scratch tile (decode only)."""
         return Self._WarpScratchTileType(
-            self.warp_scratch_ptr.as_any_origin(), Self._warp_scratch_layout
+            self.warp_scratch_ptr.as_unsafe_any_origin(),
+            Self._warp_scratch_layout,
         )
 
     @always_inline

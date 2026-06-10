@@ -101,11 +101,11 @@ def test_vendor[
 
     # Create host TileTensors for offsets and expert_ids
     var a_offsets_host = TileTensor(
-        a_offsets_host_ptr.as_any_origin(),
+        a_offsets_host_ptr.as_unsafe_any_origin(),
         row_major(Coord(num_active_experts + 1)),
     )
     var expert_ids_host = TileTensor(
-        expert_ids_host_ptr.as_any_origin(),
+        expert_ids_host_ptr.as_unsafe_any_origin(),
         row_major(Coord(num_active_experts)),
     )
 
@@ -290,11 +290,11 @@ def test_negative_lora_id_vendor[
 
     # Create host TileTensors for offsets and expert_ids
     var a_offsets_host = TileTensor(
-        a_offsets_host_ptr.as_any_origin(),
+        a_offsets_host_ptr.as_unsafe_any_origin(),
         row_major(Coord(num_active_experts + 1)),
     )
     var expert_ids_host = TileTensor(
-        expert_ids_host_ptr.as_any_origin(),
+        expert_ids_host_ptr.as_unsafe_any_origin(),
         row_major(Coord(num_active_experts)),
     )
 

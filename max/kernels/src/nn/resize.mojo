@@ -350,7 +350,7 @@ def _resize[
         tmp_buffer1 = List[Scalar[dtype]](
             unsafe_uninit_length=tmp_dims.flattened_length()
         )
-        out_ptr = tmp_buffer1.unsafe_ptr().as_any_origin()
+        out_ptr = tmp_buffer1.unsafe_ptr().as_unsafe_any_origin()
         using_tmp1 = True
     if len(resize_dims) > 2:  # need a second tmp_buffer
         # TODO: if you are upsampling all dims, you can use the output in place of tmp_buffer2
@@ -397,7 +397,7 @@ def _resize[
 
         out_ptr = (
             tmp_buffer2.unsafe_ptr() if using_tmp1 else tmp_buffer1.unsafe_ptr()
-        ).as_any_origin()
+        ).as_unsafe_any_origin()
         using_tmp1 = not using_tmp1
 
     _ = tmp_buffer1^

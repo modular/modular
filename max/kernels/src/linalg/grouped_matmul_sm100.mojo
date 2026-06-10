@@ -1360,11 +1360,11 @@ def grouped_matmul_sm100_persistent[
         b_swizzle=b_swizzle,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](
-        c.ptr.as_any_origin(),
-        b.ptr.as_any_origin(),  # weights (a after swapAB)
-        expert_ids.ptr.as_any_origin(),
-        a.ptr.as_any_origin(),  # activations (b after swapAB)
-        a_offsets.ptr.as_any_origin(),
+        c.ptr.as_unsafe_any_origin(),
+        b.ptr.as_unsafe_any_origin(),  # weights (a after swapAB)
+        expert_ids.ptr.as_unsafe_any_origin(),
+        a.ptr.as_unsafe_any_origin(),  # activations (b after swapAB)
+        a_offsets.ptr.as_unsafe_any_origin(),
         num_active_experts,
         Int(c.dim[0]()),
         ctx,

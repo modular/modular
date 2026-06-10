@@ -1751,7 +1751,7 @@ struct BlackwellMatmulSM100Kernel[
                                         smem.c_tiles(),
                                         output_stage,
                                         epilogue_load_pipeline,
-                                        smem.epilogue_load_tiles().ptr.as_any_origin(),
+                                        smem.epilogue_load_tiles().ptr.as_unsafe_any_origin(),
                                         Self.SmemType.EpilogueLoadTileArray.tile_size,
                                         (current.m, current.n, current.k_start),
                                         (mnk[0], mnk[1]),
@@ -2143,10 +2143,10 @@ struct BlackwellMatmulSM100FallbackKernel[
         var b_smem = (a_smem + Self.a_size).bitcast[Scalar[Self.b_type]]()
 
         var a_smem_tile = Self.ATile(
-            a_smem.as_any_origin(), Self.a_smem_layout_typed
+            a_smem.as_unsafe_any_origin(), Self.a_smem_layout_typed
         )
         var b_smem_tile = Self.BTile(
-            b_smem.as_any_origin(), Self.b_smem_layout_typed
+            b_smem.as_unsafe_any_origin(), Self.b_smem_layout_typed
         )
 
         # Shared memory pointer to hold tensor memory address

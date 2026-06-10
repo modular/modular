@@ -136,7 +136,7 @@ def bench_bmm[
     var a_device = TileTensor(
         a_device_buffer,
         row_major(Coord(b, m, k)),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
 
     var b_device = TileTensor(
         b_device_buffer,
@@ -147,11 +147,11 @@ def bench_bmm[
                 Idx[KType.static_value if transpose_b else NType.static_value],
             )
         ),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
     var c_device = TileTensor(
         c_device_buffer,
         row_major(Coord(b, m, n)),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
 
     # Initialize data on the device
     init_vector_launch[a_type](a_device_buffer, a_size, init_type, ctx)

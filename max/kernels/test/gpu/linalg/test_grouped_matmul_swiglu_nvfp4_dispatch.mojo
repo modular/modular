@@ -559,7 +559,7 @@ def _test_swiglu_dispatch[
                 Idx[SF_ATOM_K],
             )
         ),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
     comptime n_groups_b = ceildiv(N, SF_MN_GROUP_SIZE)
     var b_scales_perm_tt = TileTensor(
         shared.b_scales_perm,
@@ -573,11 +573,11 @@ def _test_swiglu_dispatch[
                 Idx[SF_ATOM_K],
             )
         ),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
         shared.expert_scales,
         row_major(Coord(Int64(num_experts))),
-    ).as_any_origin()
+    ).as_unsafe_any_origin()
 
     # ============================================================
     # REF: manual chain (matmul -> fused_silu_nvfp4_interleaved).

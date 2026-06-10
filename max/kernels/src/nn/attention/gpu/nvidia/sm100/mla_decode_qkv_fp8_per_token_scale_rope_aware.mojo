@@ -480,7 +480,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var mbar_base: MBarType = (
             (scale_smem_base + per_token_scales_total_elems)
             .bitcast[SharedMemBarrier]()
-            .as_any_origin()
+            .as_unsafe_any_origin()
         )
 
         var mbar_q: MBarType = mbar_base
@@ -573,10 +573,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 p_bars,
                 p_smem.bitcast[
                     Scalar[Self.Common_MLA_Op.q_type]
-                ]().as_any_origin(),
-                max_smem.as_any_origin(),
-                li_smem.as_any_origin(),
-                out_smem.as_any_origin(),
+                ]().as_unsafe_any_origin(),
+                max_smem.as_unsafe_any_origin(),
+                li_smem.as_unsafe_any_origin(),
+                out_smem.as_unsafe_any_origin(),
                 c_bars,
                 corr_done_bars,
                 out_pipeline,
@@ -608,22 +608,22 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     k_rope_tma,
                     scale_tma,
                     kv_lut,
-                    q_nope_smem.as_any_origin(),
-                    q_rope_smem.as_any_origin(),
-                    kv_content_smem.as_any_origin(),
-                    kv_rope_smem.as_any_origin(),
+                    q_nope_smem.as_unsafe_any_origin(),
+                    q_rope_smem.as_unsafe_any_origin(),
+                    kv_content_smem.as_unsafe_any_origin(),
+                    kv_rope_smem.as_unsafe_any_origin(),
                     mbar_q,
                     kv_pipeline,
                     offset_position,
-                    scale_smem_base.as_any_origin(),
+                    scale_smem_base.as_unsafe_any_origin(),
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
                     ptr_tmem_addr[0],
-                    q_nope_smem.as_any_origin(),
-                    q_rope_smem.as_any_origin(),
-                    kv_content_smem.as_any_origin(),
-                    kv_rope_smem.as_any_origin(),
+                    q_nope_smem.as_unsafe_any_origin(),
+                    q_rope_smem.as_unsafe_any_origin(),
+                    kv_content_smem.as_unsafe_any_origin(),
+                    kv_rope_smem.as_unsafe_any_origin(),
                     mbar_q,
                     s_bars,
                     kv_pipeline,
@@ -632,8 +632,8 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             elif warp_idx == 10:
                 Self.mmaPV(
                     ptr_tmem_addr[0],
-                    kv_content_smem.as_any_origin(),
-                    p_smem.as_any_origin(),
+                    kv_content_smem.as_unsafe_any_origin(),
+                    p_smem.as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
                     kv_pipeline,
@@ -642,7 +642,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             elif warp_idx == 11:
                 Self.Common_MLA_Op.store(
                     out_pipeline,
-                    out_smem.as_any_origin(),
+                    out_smem.as_unsafe_any_origin(),
                     o_tma,
                     offset_position,
                 )

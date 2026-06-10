@@ -5183,7 +5183,7 @@ struct TMATensorTileArray[
                     Self.dtype, Self.rank, Self.cta_tile_shape, Self.desc_shape
                 ]
             ]()
-            .as_any_origin()
+            .as_unsafe_any_origin()
         )
 
 

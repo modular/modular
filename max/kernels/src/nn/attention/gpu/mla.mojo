@@ -2583,7 +2583,7 @@ def flare_mla_prefill[
                 ),
             ),
             LayoutTensor[k_scales_lt.dtype, k_scales_lt.layout, ImmutAnyOrigin](
-                k_scales_lt.ptr.as_immutable().as_any_origin(),
+                k_scales_lt.ptr.as_immutable().as_unsafe_any_origin(),
                 RuntimeLayout[k_scales_lt.layout].row_major(
                     k_scales_lt.runtime_layout.shape.value.canonicalize()
                 ),
@@ -2755,7 +2755,7 @@ def flare_mla_prefill[
                 ),
             ),
             LayoutTensor[k_scales_lt.dtype, k_scales_lt.layout, ImmutAnyOrigin](
-                k_scales_lt.ptr.as_immutable().as_any_origin(),
+                k_scales_lt.ptr.as_immutable().as_unsafe_any_origin(),
                 RuntimeLayout[k_scales_lt.layout].row_major(
                     k_scales_lt.runtime_layout.shape.value.canonicalize()
                 ),

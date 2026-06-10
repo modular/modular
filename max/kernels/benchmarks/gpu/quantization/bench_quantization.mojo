@@ -134,16 +134,16 @@ def bench_1d1d_quantization[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE
                 ](
                     ctx,
-                    lt_to_tt(output_tensor).as_any_origin(),
-                    lt_to_tt(scales_tensor).as_any_origin(),
-                    lt_to_tt(input_tensor).as_any_origin(),
+                    lt_to_tt(output_tensor).as_unsafe_any_origin(),
+                    lt_to_tt(scales_tensor).as_unsafe_any_origin(),
+                    lt_to_tt(input_tensor).as_unsafe_any_origin(),
                 )
             else:
                 quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     ctx,
-                    lt_to_tt(output_tensor).as_any_origin(),
-                    lt_to_tt(scales_tensor).as_any_origin(),
-                    lt_to_tt(input_tensor).as_any_origin(),
+                    lt_to_tt(output_tensor).as_unsafe_any_origin(),
+                    lt_to_tt(scales_tensor).as_unsafe_any_origin(),
+                    lt_to_tt(input_tensor).as_unsafe_any_origin(),
                     num_cols=cols,
                     num_cols_padded=cols,
                 )

@@ -201,8 +201,8 @@ def test_pack_k_byte_index(ctx: DeviceContext) raises:
         type_of(bcast_tt).LayoutType,
     ]
     ctx.enqueue_function[kernel](
-        packed_tt.as_any_origin(),
-        bcast_tt.as_any_origin(),
+        packed_tt.as_unsafe_any_origin(),
+        bcast_tt.as_unsafe_any_origin(),
         grid_dim=1,
         block_dim=WARP_SIZE,
     )

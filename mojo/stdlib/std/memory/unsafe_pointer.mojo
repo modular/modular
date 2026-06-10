@@ -1834,8 +1834,8 @@ struct UnsafePointer[
             A pointer with the same type, mutability and address space as the
             original pointer, but with the newly specified origin.
 
-        If you are unconditionally casting the origin to an `AnyOrigin`, use
-        `as_any_origin` instead.
+        If you are unconditionally casting the origin to an `UnsafeAnyOrigin`,
+        use `as_unsafe_any_origin` instead.
 
         Safety:
             Casting the origin of a pointer is inherently very unsafe.
@@ -1862,22 +1862,24 @@ struct UnsafePointer[
         return self.unsafe_mut_cast[False]()
 
     @always_inline("builtin")
-    def as_any_origin(
+    def as_unsafe_any_origin(
         self,
     ) -> UnsafePointer[
         Self.type,
-        AnyOrigin[mut=Self.mut],
+        UnsafeAnyOrigin[mut=Self.mut],
         address_space=Self.address_space,
     ]:
-        """Casts the origin of a pointer to `AnyOrigin`.
+        """Casts the origin of a pointer to `UnsafeAnyOrigin`.
 
         Returns:
-            A pointer with the origin set to `AnyOrigin`.
+            A pointer with the origin set to `UnsafeAnyOrigin`.
 
-        It is usually preferred to maintain concrete origin values instead of
-        using `AnyOrigin`. However, if it is needed, keep in mind that
-        `AnyOrigin` can alias any memory value, so Mojo's ASAP
-        destruction will not apply during the lifetime of the pointer.
+        Safety:
+
+        It is **always** preferred to maintain a concrete origin values instead of
+        using `UnsafeAnyOrigin`. Casting to `UnsafeAnyOrigin` is an inherently unsafe
+        operation that will silently extend unrelated lifetimes and turn off
+        exclusivity checking.
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type=UnsafePointer[
@@ -1886,6 +1888,18 @@ struct UnsafePointer[
                 address_space=Self.address_space,
             ]._mlir_type,
         ](self.address)
+
+    @doc_hidden
+    @always_inline("builtin")
+    @deprecated(use=as_unsafe_any_origin)
+    def as_any_origin(
+        self,
+    ) -> UnsafePointer[
+        Self.type,
+        AnyOrigin[mut=Self.mut],
+        address_space=Self.address_space,
+    ]:
+        return self.as_unsafe_any_origin()
 
     @always_inline("builtin")
     def address_space_cast[

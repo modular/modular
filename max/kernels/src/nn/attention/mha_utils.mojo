@@ -80,7 +80,7 @@ def as_dynamic_row_major_1d[
     ],
 ) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
     return {
-        tensor.ptr.as_immutable().as_any_origin(),
+        tensor.ptr.as_immutable().as_unsafe_any_origin(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             tensor.get_shape()
         ),

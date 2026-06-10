@@ -91,8 +91,8 @@ def test_concat_inner_all_outer_dims_singleton() raises:
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=2
     )
-    input_vec.append(x1_dyn.as_any_origin().as_immut())
-    input_vec.append(x2_dyn.as_any_origin().as_immut())
+    input_vec.append(x1_dyn.as_unsafe_any_origin().as_immut())
+    input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
 
     _concat_inner[dtype, None](output.make_dynamic[DType.int64](), input_vec)
 
@@ -150,9 +150,9 @@ def test_concat_serial_general_case() raises:
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=3
     )
-    input_vec.append(x1_dyn.as_any_origin().as_immut())
-    input_vec.append(x2_dyn.as_any_origin().as_immut())
-    input_vec.append(x3_dyn.as_any_origin().as_immut())
+    input_vec.append(x1_dyn.as_unsafe_any_origin().as_immut())
+    input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
+    input_vec.append(x3_dyn.as_unsafe_any_origin().as_immut())
 
     _concat_serial[dtype, None](
         output.make_dynamic[DType.int64](), axis, input_vec
@@ -214,8 +214,8 @@ def test_concat_parallel_large() raises:
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=2
     )
-    input_vec.append(x1_dyn.as_any_origin().as_immut())
-    input_vec.append(x2_dyn.as_any_origin().as_immut())
+    input_vec.append(x1_dyn.as_unsafe_any_origin().as_immut())
+    input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
 
     _concat_parallel[dtype, None](
         output.make_dynamic[DType.int64](), axis, input_vec
@@ -338,8 +338,8 @@ def test_concat_shape() raises:
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=2
     )
-    input_vec.append(x1_dyn.as_any_origin().as_immut())
-    input_vec.append(x2_dyn.as_any_origin().as_immut())
+    input_vec.append(x1_dyn.as_unsafe_any_origin().as_immut())
+    input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
 
     var output_shape = concat_shape[dtype](input_vec, axis)
 
@@ -384,8 +384,8 @@ def test_concat_with_epilogue() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         2,
     ](
-        x1_dyn.as_any_origin().as_immut(),
-        x2_dyn.as_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_immut(),
+        x2_dyn.as_unsafe_any_origin().as_immut(),
     )
 
     @parameter
@@ -459,11 +459,11 @@ def test_concat_many_inputs() raises:
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         5,
     ](
-        x1_dyn.as_any_origin().as_immut(),
-        x2.make_dynamic[DType.int64]().as_any_origin().as_immut(),
-        x3.make_dynamic[DType.int64]().as_any_origin().as_immut(),
-        x4.make_dynamic[DType.int64]().as_any_origin().as_immut(),
-        x5.make_dynamic[DType.int64]().as_any_origin().as_immut(),
+        x1_dyn.as_unsafe_any_origin().as_immut(),
+        x2.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
+        x3.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
+        x4.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
+        x5.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
     )
 
     concat[dtype](

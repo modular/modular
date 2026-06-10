@@ -175,7 +175,7 @@ def grouped_matmul_sm90[
         c_tma_op,
         a_offsets,
         expert_ids,
-        c.as_any_origin(),
+        c.as_unsafe_any_origin(),
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),

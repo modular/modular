@@ -118,14 +118,14 @@ def test_case_sampling[
 
     var temperature_buf = Optional(
         TileTensor(temperature_ptr, row_major(Int64(batch_size)))
-        .as_any_origin()
+        .as_unsafe_any_origin()
         .as_immut()
     )
 
     var seed_ptr = List(length=batch_size, fill=UInt64(12))
     var seed_buf = Optional(
         TileTensor(seed_ptr, row_major(Int64(batch_size)))
-        .as_any_origin()
+        .as_unsafe_any_origin()
         .as_immut()
     )
 

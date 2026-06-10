@@ -119,7 +119,7 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
         self, ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) -> Self.tensor_type:
         return Self.tensor_type(
-            ptr.as_immutable().as_any_origin(), self._runtime_layout()
+            ptr.as_immutable().as_unsafe_any_origin(), self._runtime_layout()
         )
 
 

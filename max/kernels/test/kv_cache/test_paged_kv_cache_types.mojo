@@ -101,7 +101,7 @@ def do_test[
             ),
         ),
         LayoutTensor[mut=False, cache_lengths.dtype, Layout(UNKNOWN_VALUE)](
-            cache_lengths.ptr.as_immutable().as_any_origin(),
+            cache_lengths.ptr.as_immutable().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths.runtime_layout.shape.value,
                 cache_lengths.runtime_layout.stride.value,

@@ -740,7 +740,7 @@ def mla_prefill_branch_fp8[
 
     mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
         q_rope_mut,
-        q_rope.as_any_origin(),  # hack aliasing.
+        q_rope.as_unsafe_any_origin(),  # hack aliasing.
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -1619,7 +1619,7 @@ def mla_prefill_branch_bf16[
 
     mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
         q_rope_mut,
-        q_rope.as_any_origin(),  # hack aliasing.
+        q_rope.as_unsafe_any_origin(),  # hack aliasing.
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,

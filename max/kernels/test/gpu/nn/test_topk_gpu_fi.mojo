@@ -364,7 +364,7 @@ def test_topk_topp_sampling[
         with seed_buf.map_to_host() as seed_host:
             seed_host[0] = trial_seed
         var seed_tt = (
-            TileTensor(seed_buf, seed_layout).as_any_origin().as_immut()
+            TileTensor(seed_buf, seed_layout).as_unsafe_any_origin().as_immut()
         )
 
         topk_topp_sampling_from_prob[dtype, out_idx_type, block_size](
@@ -1079,7 +1079,7 @@ def test_topk_topp_sampling_fi[
             for i in range(batch_size):
                 seed_host[i] = UInt64(42 + trial * batch_size + i)
         var seed_tt = (
-            TileTensor(seed_buf, batch_layout).as_any_origin().as_immut()
+            TileTensor(seed_buf, batch_layout).as_unsafe_any_origin().as_immut()
         )
 
         _topk_topp_sampling_fi(
@@ -1088,9 +1088,9 @@ def test_topk_topp_sampling_fi[
             p,
             logits_tt,
             out_tt,
-            k=k_tt.as_any_origin().as_immut(),
-            temperature=temp_tt.as_any_origin().as_immut(),
-            top_p=p_tt.as_any_origin().as_immut(),
+            k=k_tt.as_unsafe_any_origin().as_immut(),
+            temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+            top_p=p_tt.as_unsafe_any_origin().as_immut(),
             rng_seed=seed_tt,
         )
 

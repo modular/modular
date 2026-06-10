@@ -1547,7 +1547,7 @@ def check_and_get_or_convert_arg[
         )
         # Return a pointer to stack data. Only valid because this function is
         # @always_inline.
-        return converted_arg_ptr.as_any_origin()
+        return converted_arg_ptr.as_unsafe_any_origin()
 
 
 def _get_type_name(obj: PythonObject) raises -> String:

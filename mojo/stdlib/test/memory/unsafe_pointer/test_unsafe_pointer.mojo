@@ -84,7 +84,7 @@ def test_immutable_conversions() raises:
 
 def test_mutable_any_conversions() raises:
     var x = 42
-    var p = UnsafePointer(to=x).as_any_origin()
+    var p = UnsafePointer(to=x).as_unsafe_any_origin()
     _mutable_pointer(p)
     _immutable_pointer(p)
     _mutable_any_pointer(p)
@@ -94,7 +94,7 @@ def test_mutable_any_conversions() raises:
 
 def test_immutable_any_conversions() raises:
     var x = 42
-    var p = UnsafePointer(to=x).as_immutable().as_any_origin()
+    var p = UnsafePointer(to=x).as_immutable().as_unsafe_any_origin()
     _immutable_pointer(p)
     _immutable_any_pointer(p)
     _parameterized_pointer(p)
@@ -287,7 +287,7 @@ def test_unsafepointer_alloc_origin() raises:
     var did_del_1 = False
 
     # Allocate pointer with MutAnyOrigin.
-    var ptr_1 = alloc[Int](1).as_any_origin()
+    var ptr_1 = alloc[Int](1).as_unsafe_any_origin()
 
     var obj_1 = ObservableDel(UnsafePointer(to=did_del_1))
 
@@ -479,8 +479,8 @@ def test_merge() raises:
 
 def test_swap_pointees_trivial_move() raises:
     var a = 42
-    UnsafePointer(to=a).as_any_origin().swap_pointees(
-        UnsafePointer(to=a).as_any_origin()
+    UnsafePointer(to=a).as_unsafe_any_origin().swap_pointees(
+        UnsafePointer(to=a).as_unsafe_any_origin()
     )
     assert_equal(a, 42)
 
@@ -493,8 +493,8 @@ def test_swap_pointees_trivial_move() raises:
 
 def test_swap_pointees_non_trivial_move() raises:
     var counter = MoveCounter[Int](42)
-    UnsafePointer(to=counter).as_any_origin().swap_pointees(
-        UnsafePointer(to=counter).as_any_origin()
+    UnsafePointer(to=counter).as_unsafe_any_origin().swap_pointees(
+        UnsafePointer(to=counter).as_unsafe_any_origin()
     )
     # Pointers point to the same object, so no move should be performed
     assert_equal(counter.value, 42)
@@ -511,12 +511,12 @@ def test_swap_pointees_non_trivial_move() raises:
     assert_equal(counterB.move_count, 2)
 
 
-def test_as_any_origin_mutable() raises:
+def test_as_unsafe_any_origin_mutable() raises:
     var deleted = False
     var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
 
-    var mutable = UnsafePointer(to=x).as_any_origin()
+    var mutable = UnsafePointer(to=x).as_unsafe_any_origin()
     assert_true(mutable.mut)
     assert_false(deleted)
 
@@ -524,12 +524,12 @@ def test_as_any_origin_mutable() raises:
     assert_true(deleted)  # AnyOrigin extends all lifetimes
 
 
-def test_as_any_origin_immutable() raises:
+def test_as_unsafe_any_origin_immutable() raises:
     var deleted = False
     var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
 
-    var immutable = UnsafePointer(to=x).as_any_origin().as_immutable()
+    var immutable = UnsafePointer(to=x).as_unsafe_any_origin().as_immutable()
     assert_false(immutable.mut)
     assert_false(deleted)
 

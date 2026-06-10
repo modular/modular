@@ -79,7 +79,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         return self._size
 
     def unsafe_ptr(self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
-        return self._data.as_any_origin()
+        return self._data.as_unsafe_any_origin()
 
     def enqueue_copy_to(
         self, dst_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _]
