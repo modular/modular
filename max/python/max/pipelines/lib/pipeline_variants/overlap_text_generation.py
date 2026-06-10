@@ -2007,10 +2007,6 @@ class OverlapTextGenerationPipeline(
                 ]
             )
         with self._kv_manager.reserve(replica_batches, num_steps=1):
-            warmup_flat_batch = [
-                ctx for replica in replica_batches for ctx in replica
-            ]
-
             max_cache_length = self._effective_max_cache_length
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 replica_batches,
@@ -2055,6 +2051,9 @@ class OverlapTextGenerationPipeline(
                     self._spec_decode_state.draft_kv_blocks
                 )
 
+                warmup_flat_batch = [
+                    ctx for replica in replica_batches for ctx in replica
+                ]
                 sampling_buffers = self._build_spec_decode_sampling_buffers(
                     warmup_flat_batch
                 )
@@ -2106,21 +2105,7 @@ class OverlapTextGenerationPipeline(
                     model_inputs.wait_payload = overlap_state.wait_payload
                     model_inputs.device_bitmask_scratch = scratch_view
 
-            try:
-                yield model_inputs
-            finally:
-                # The KV cache is freed by the ``reserve`` context manager
-                # above, but architectures with additional per-request state
-                # (e.g. Qwen3.5 GatedDeltaNet slots, Mamba/LFM2 SSM slots,
-                # Gemma4 vision-encoder cache) manage it via
-                # ``PipelineModel.release``. Warmup builds throwaway contexts
-                # with fresh request IDs each iteration; without releasing
-                # them here their state leaks and exhausts the pool partway
-                # through capture. Mirror the serving release path's guarded
-                # check (see ``release`` below).
-                if hasattr(self._pipeline_model, "release"):
-                    for ctx in warmup_flat_batch:
-                        self._pipeline_model.release(ctx.request_id)
+            yield model_inputs
 
     def warmup_graph_capture(self) -> None:
         """Initializes and runs overlap device graph capture warmup."""
