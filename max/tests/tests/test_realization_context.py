@@ -216,3 +216,47 @@ def test_nested_contexts() -> None:
 
         assert not a.real
     assert not a.real
+
+
+# ---------------------------------------------------------------------------
+# default_realization_context
+# ---------------------------------------------------------------------------
+
+
+def test_set_default_realization_context_scoped() -> None:
+    """ensure_context constructs implicit contexts via the installed factory."""
+    created: list[rc.EagerRealizationContext] = []
+
+    def factory() -> rc.EagerRealizationContext:
+        ctx = rc.EagerRealizationContext(use_interpreter=False)
+        created.append(ctx)
+        return ctx
+
+    with rc.set_default_realization_context(factory):
+        # No explicit context: realization goes through ensure_context.
+        t = Tensor.zeros([2]) + 1.0
+        assert created, "factory was not used for the implicit context"
+        assert all(not ctx._use_interpreter for ctx in created)
+        assert t.real
+    # Exiting the scope restores the previous factory.
+    assert rc._DEFAULT_REALIZATION_CONTEXT is rc.EagerRealizationContext
+
+
+def test_set_default_realization_context_takes_effect_immediately() -> None:
+    """The set happens at call time; discarding the handle keeps it."""
+
+    def factory() -> rc.EagerRealizationContext:
+        return rc.EagerRealizationContext(use_interpreter=False)
+
+    undo = rc.set_default_realization_context(factory)
+    try:
+        assert rc._DEFAULT_REALIZATION_CONTEXT is factory
+    finally:
+        undo.__exit__(None, None, None)
+    assert rc._DEFAULT_REALIZATION_CONTEXT is rc.EagerRealizationContext
+
+
+def test_default_realization_context_default_is_eager() -> None:
+    """The out-of-the-box default constructs an EagerRealizationContext."""
+    ctx = rc.default_realization_context()
+    assert isinstance(ctx, rc.EagerRealizationContext)

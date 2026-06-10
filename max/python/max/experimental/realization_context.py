@@ -53,7 +53,7 @@ import os
 import threading
 import weakref
 from collections import OrderedDict
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
@@ -63,7 +63,7 @@ from max._core.dialects import builtin, rmo
 from max._mlir_context import in_default_mlir_context
 from max.dtype import DType
 from max.experimental import _passes
-from max.experimental.support import driver_tensor_type
+from max.experimental.support import SetterContext, driver_tensor_type
 from max.experimental.tensor import (
     GraphValue,
     RealizationContext,
@@ -753,16 +753,55 @@ def in_graph_context() -> bool:
     return True
 
 
+_DEFAULT_REALIZATION_CONTEXT: Callable[[], RealizationContext] = (
+    EagerRealizationContext
+)
+
+
+def default_realization_context() -> RealizationContext:
+    """Constructs a context for ops realized outside any explicit context."""
+    return _DEFAULT_REALIZATION_CONTEXT()
+
+
+def _set_default_realization_context_raw(
+    fn: Callable[[], RealizationContext],
+) -> None:
+    global _DEFAULT_REALIZATION_CONTEXT
+    _DEFAULT_REALIZATION_CONTEXT = fn
+
+
+def set_default_realization_context(
+    fn: Callable[[], RealizationContext],
+) -> SetterContext[Callable[[], RealizationContext]]:
+    """Sets the constructor used by :func:`default_realization_context`.
+
+    The set takes effect immediately. The returned
+    :class:`~max.experimental.support.SetterContext` may be used as a
+    context manager to restore the previous constructor on exit, or
+    discarded to keep the new one.
+
+    Args:
+        fn: A zero-argument callable returning a new realization context,
+            invoked each time an op realizes outside any explicit context.
+
+    Returns:
+        An undo handle restoring the previously installed constructor.
+    """
+    previous = _DEFAULT_REALIZATION_CONTEXT
+    _set_default_realization_context_raw(fn)
+    return SetterContext(fn, previous, _set_default_realization_context_raw)
+
+
 @contextlib.contextmanager
 def ensure_context() -> Generator[None]:
     """Ensures a realization context exists for Tensor / TensorValue conversion."""
     if current_realization_context(None) is not None:
         yield
         return
-    ctx: EagerRealizationContext | GraphRealizationContext = (
+    ctx: RealizationContext = (
         GraphRealizationContext(Graph.current)
         if in_graph_context()
-        else EagerRealizationContext()
+        else default_realization_context()
     )
     with ctx, realization_context(ctx):
         yield
@@ -779,9 +818,11 @@ __all__ = [
     "EagerRealizationContext",
     "GraphRealizationContext",
     "LazyRealizationContext",
+    "default_realization_context",
     "ensure_context",
     "in_graph_context",
     "lazy",
     "seed",
+    "set_default_realization_context",
     "set_seed",
 ]
