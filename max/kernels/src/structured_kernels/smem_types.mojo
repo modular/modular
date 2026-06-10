@@ -99,7 +99,7 @@ def reg_tile_to_tile_tensor[
 
 
 comptime SMemBarrier = UnsafePointer[
-    SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+    mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
 ]
 """Type alias for shared memory barrier pointer."""
 
@@ -192,7 +192,9 @@ struct SMemTileArray[
         Returns:
             Tile at index.
         """
-        return Self.Tile(self.ptr + eval[Self.layout.size()] * Int(index))
+        return Self.Tile(
+            (self.ptr + eval[Self.layout.size()] * Int(index)).as_any_origin()
+        )
 
     def slice[
         length: Int

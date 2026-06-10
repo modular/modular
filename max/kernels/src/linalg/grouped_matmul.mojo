@@ -309,28 +309,28 @@ def grouped_matmul_kernel_sm100[
     comptime a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutAnyOrigin,
+        MutExternalOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
+        MutExternalOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
-        MutAnyOrigin,
+        MutExternalOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
-        MutAnyOrigin,
+        MutExternalOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]

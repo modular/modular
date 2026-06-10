@@ -150,7 +150,9 @@ struct _Accumulator[
                 func(
                     m,
                     n,
-                    (row_ptr + n * Self.simd_width).unsafe_mut_cast[True](),
+                    (row_ptr + n * Self.simd_width)
+                    .unsafe_mut_cast[True]()
+                    .as_any_origin(),
                 )
             row_ptr += stride
 

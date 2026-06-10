@@ -679,7 +679,7 @@ struct SMemTileArrayWithLayout[
             A TileTensor with correct swizzled layout at the given index.
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
-        return Self.Tile(tile_ptr, Self.tile_layout)
+        return Self.Tile(tile_ptr.as_any_origin(), Self.tile_layout)
 
     def slice[
         length: Int
@@ -833,7 +833,7 @@ struct SMemTileArray[
             Coord[*Self.shape_types](),
             Coord[*Self.stride_types](),
         )
-        return Self.Tile(tile_ptr, layout)
+        return Self.Tile(tile_ptr.as_any_origin(), layout)
 
     def slice[
         length: Int
@@ -999,7 +999,7 @@ struct SMemTileArray2D[
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         return Self.Tile(
-            tile_ptr,
+            tile_ptr.as_any_origin(),
             Self.tile_layout,
         )
 
@@ -1027,7 +1027,7 @@ struct SMemTileArray2D[
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         return SMemTile[Self.dtype, tile_layout, alignment=Self.alignment](
-            tile_ptr, tile_layout
+            tile_ptr.as_any_origin(), tile_layout
         )
 
     def slice[
@@ -1164,7 +1164,7 @@ struct SMemTileArray2DRowMajor[
         """
         var tile_ptr = self.ptr + Self.tile_size * Int(index)
         return Self.Tile(
-            tile_ptr,
+            tile_ptr.as_any_origin(),
             Self.tile_layout,
         )
 

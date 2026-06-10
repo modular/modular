@@ -5176,11 +5176,15 @@ struct TMATensorTileArray[
         Returns:
             `UnsafePointer` to the `TMATensorTile` at the specified index.
         """
-        return (self.tensormaps_ptr + index * self.descriptor_bytes).bitcast[
-            TMATensorTile[
-                Self.dtype, Self.rank, Self.cta_tile_shape, Self.desc_shape
-            ]
-        ]()
+        return (
+            (self.tensormaps_ptr + index * self.descriptor_bytes)
+            .bitcast[
+                TMATensorTile[
+                    Self.dtype, Self.rank, Self.cta_tile_shape, Self.desc_shape
+                ]
+            ]()
+            .as_any_origin()
+        )
 
 
 struct RaggedTMA3DTile[

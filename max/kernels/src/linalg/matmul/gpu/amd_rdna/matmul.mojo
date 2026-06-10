@@ -209,7 +209,7 @@ def _load_tile_to_smem[
     NUM_THREADS: Int,
 ](
     smem: UnsafePointer[
-        Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
     tile: TileTensor[dtype, tile_layout, ImmutAnyOrigin],
     block_row_offset: Int,

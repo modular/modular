@@ -954,11 +954,10 @@ def test_layout_tensor_iterator_print() raises:
     var iter = LayoutTensorIter[
         DType.int16,
         tile_layout,
-        MutAnyOrigin,
         masked=True,
     ](storage.unsafe_ptr(), buf_size)
 
-    for i in range(ceildiv(buf_size, comptime (tile_layout.size()))):
+    for _i in range(ceildiv(buf_size, comptime (tile_layout.size()))):
         var tile = iter[]
         # CHECK: 0 1
         # CHECK-NEXT: 2 3

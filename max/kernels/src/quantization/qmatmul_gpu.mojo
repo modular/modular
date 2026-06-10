@@ -861,10 +861,8 @@ def multistage_qgemm_kernel[
         ]()
 
         var accum_smem_warp_tile = LayoutTensor[
-            mut=True,
             c_type,
             Layout.row_major(WM, WN),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
 

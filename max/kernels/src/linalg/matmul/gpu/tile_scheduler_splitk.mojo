@@ -516,7 +516,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: TileTensor[
-            accum_type, workspace_layout, MutAnyOrigin
+            mut=True, accum_type, workspace_layout, _
         ],
         c_reg_tile: RegTile[accum_type, c_reg_layout],
         work_tile_info: WorkInfo,
@@ -627,7 +627,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     def wait_eq(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: UnsafePointer[mut=True, Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -641,7 +641,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     def wait_lt(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: UnsafePointer[mut=True, Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
@@ -655,7 +655,7 @@ struct SplitKTileScheduler[
     @staticmethod
     @always_inline
     def arrive_set(
-        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        lock_ptr: UnsafePointer[mut=True, Int32, _],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,

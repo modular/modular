@@ -226,7 +226,9 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
             Allocated tile.
         """
         var result = T(
-            (self.base_ptr + self.offset).bitcast[Scalar[dtype]](),
+            (self.base_ptr + self.offset)
+            .bitcast[Scalar[dtype]]()
+            .as_any_origin(),
         )
         self.offset += T.storage_size
         return result

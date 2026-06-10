@@ -1243,9 +1243,9 @@ def _matmul_Q6_K_tile[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[
-        _block_Q8_K_packed[_block_Q6_K.group_size], ImmutAnyOrigin
+        mut=False, _block_Q8_K_packed[_block_Q6_K.group_size], _
     ],
-    b_ptr: UnsafePointer[_block_Q6_K_packed[], _],
+    b_ptr: UnsafePointer[mut=False, _block_Q6_K_packed[], _],
     c_ptr: UnsafePointer[mut=True, Float32, _],
     N: Int,
     accumulate: Bool,

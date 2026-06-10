@@ -1126,7 +1126,7 @@ def quantize_dynamic_scaled_fp4_async[
     )
 
     var scales_4d_tensor = LayoutTensor[
-        scales_dtype, scales_4d_layout[scales_layout], MutAnyOrigin
+        scales_dtype, scales_4d_layout[scales_layout]
     ](
         scales_tensor.ptr,
         RuntimeLayout[scales_4d_layout[scales_layout]].row_major(
@@ -1441,7 +1441,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     )
 
     var scales_4d_tensor = LayoutTensor[
-        scales_dtype, scales_4d_layout[scales_lt_layout], MutAnyOrigin
+        scales_dtype, scales_4d_layout[scales_lt_layout]
     ](
         scales_tensor.ptr,
         RuntimeLayout[scales_4d_layout[scales_lt_layout]].row_major(
