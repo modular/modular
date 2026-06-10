@@ -500,7 +500,12 @@ ASTType InitializerUValue::getDefaultType(SharedState &shared) const {
   case Syntax::kSetInitLiteral:
     return shared.getStandardCollectionType(loc, "Set");
   case Syntax::kSliceLiteral:
-    return {}; // TODO: This could default to Slice.
+    // Use the more restrictive contiguous slice if we know statically that the
+    // stride is `None`.
+    PValue stride = get()[2].ir.getIfPValue();
+    if (stride && isa<KGEN::NoneType>(stride.getType()))
+      return shared.getBuiltinSliceType(loc, "ContiguousSlice");
+    return shared.getBuiltinSliceType(loc, "Slice");
   }
 }
 
