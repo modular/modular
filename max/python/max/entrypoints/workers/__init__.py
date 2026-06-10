@@ -73,7 +73,6 @@ def sigint_handler(sig: int, frame: FrameType | None) -> None:
 def start_workers(
     settings: Settings,
     pipeline_config: PipelineConfig,
-    pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
     global _shutdown_event
 
@@ -88,7 +87,7 @@ def start_workers(
         # Load the Tokenizer and Pipeline Factory
         _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config,
-            task=pipeline_task,
+            task=pipeline_config.task,
         )
 
         try:
@@ -109,7 +108,7 @@ def start_workers(
                         settings,
                         metric_client,
                         model_worker_interface=ZmqModelWorkerInterface(
-                            pipeline_task,
+                            pipeline_config.task,
                             context_type=PIPELINE_REGISTRY.retrieve_context_type(
                                 pipeline_config
                             ),

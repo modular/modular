@@ -251,7 +251,7 @@ def _make_pipeline_config(
             max_batch_size=max_batch_size,
             defer_resolve=True,
         ),
-        pipeline_task=pipeline_task or PipelineTask.UNDEFINED,
+        task=pipeline_task or PipelineTask.UNDEFINED,
     )
 
 

@@ -30,10 +30,7 @@ from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
-from max.pipelines.kv_cache.config import (
-    KVCacheConfig,
-    KVConnectorConfig,
-)
+from max.pipelines.kv_cache.config import KVCacheConfig, KVConnectorConfig
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
@@ -409,7 +406,7 @@ class PipelineConfig(ConfigFileModel):
     )
     """The model-agnostic runtime settings for pipeline execution."""
 
-    pipeline_task: PipelineTask = Field(
+    task: PipelineTask = Field(
         default=PipelineTask.UNDEFINED,
         description=(
             "The pipeline task to run (e.g. ``text_generation``, "
@@ -1324,11 +1321,7 @@ class PipelineConfig(ConfigFileModel):
     def _validate_and_resolve_overlap_scheduler(self) -> None:
         arch: SupportedArchitecture | None = None
         if not self.runtime.force:
-            task = (
-                self.pipeline_task
-                if self.pipeline_task != PipelineTask.UNDEFINED
-                else None
-            )
+            task = self.task if self.task != PipelineTask.UNDEFINED else None
             arch = PIPELINE_REGISTRY.retrieve_architecture(
                 architecture_name=self.models.main_architecture_name,
                 prefer_module_v3=self.runtime.prefer_module_v3,

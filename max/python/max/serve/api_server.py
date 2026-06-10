@@ -30,10 +30,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from max.pipelines.context import BaseContext
-from max.pipelines.lib import (
-    PIPELINE_REGISTRY,
-    PipelineConfig,
-)
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.modeling.types import (
     PipelineOutput,
     PipelinesFactory,
@@ -93,7 +90,7 @@ class ServingTokenGeneratorSettings:
     model_factory: PipelinesFactory  # type: ignore
     pipeline_config: PipelineConfig
     tokenizer: PipelineTokenizer[Any, Any, Any]
-    pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
+    task: PipelineTask = PipelineTask.TEXT_GENERATION
     reasoning_parser_name: str | None = None
     temperature: float | None = None
     thinking_temperature: float | None = None
@@ -148,11 +145,11 @@ async def lifespan(
         model_worker_interface = ZmqModelWorkerInterface[
             BaseContext, PipelineOutput
         ](
-            serving_settings.pipeline_task,
+            serving_settings.task,
             PIPELINE_REGISTRY.retrieve_context_type(
                 serving_settings.pipeline_config,
                 override_architecture=override_architecture,
-                task=serving_settings.pipeline_task,
+                task=serving_settings.task,
             ),
         )
         model_worker = await exit_stack.enter_async_context(
@@ -200,7 +197,7 @@ async def lifespan(
                 model_worker=model_worker,
                 lora_queue=lora_queue,
             ),
-        }[serving_settings.pipeline_task]()
+        }[serving_settings.task]()
 
         # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
         # Legacy API routes (OpenAI, KServe, SageMaker) use modality-specific wrappers
@@ -212,7 +209,7 @@ async def lifespan(
         # Also store as handler for OpenResponses API route compatibility
         # For pixel generation, this is the same as pipeline
         # For other tasks, we also create a separate handler instance
-        if serving_settings.pipeline_task == PipelineTask.PIXEL_GENERATION:
+        if serving_settings.task == PipelineTask.PIXEL_GENERATION:
             app.state.handler = pipeline
         else:
             app.state.handler = GeneralPipelineHandler(
