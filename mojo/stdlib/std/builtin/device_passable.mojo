@@ -16,8 +16,9 @@ from std.os import abort
 from std.sys import size_of
 from std.sys.info import _TargetType
 from std.sys.intrinsics import _type_is_eq
-from std.builtin.rebind import downcast
+from std.builtin.rebind import downcast, trait_downcast
 from std.gpu.host.device_context import DeviceBuffer, DevicePointer
+from std.reflection import reflect
 
 
 trait DevicePassable:
@@ -65,6 +66,33 @@ trait DevicePassable:
         ...
 
 
+def _contains_device_passable_field[T: AnyType]() -> Bool:
+    """Returns whether `T` is a struct transitively containing a
+    `DevicePassable` field.
+
+    Used by `encode_fields` to choose between recursing into a composite field
+    and bit-copying it wholesale.
+
+    Parameters:
+        T: The type to inspect.
+
+    Returns:
+        `True` if a `DevicePassable` field exists anywhere in `T`'s field tree,
+        `False` otherwise (including for non-struct types).
+    """
+    comptime if not reflect[T].is_struct():
+        return False
+    comptime r = reflect[T]
+    comptime field_types = r.field_types()
+    comptime for i in range(r.field_count()):
+        comptime FieldType = field_types[i]
+        comptime if conforms_to(FieldType, DevicePassable):
+            return True
+        elif _contains_device_passable_field[FieldType]():
+            return True
+    return False
+
+
 trait DeviceTypeEncoder:
     """This trait marks types as capable of encoding device types.
 
@@ -89,13 +117,12 @@ trait DeviceTypeEncoder:
         ...
 
     def encode[
-        ValueType: DevicePassable
+        ValueType: AnyType
     ](mut self, value: ValueType, dst: MutOpaquePointer[_]):
-        """Encodes `value` into `dst` as its device-side representation.
+        """Encodes `value` into `dst` by copying its bits.
 
-        This is the default implementation for types whose
-        `DevicePassable.device_type` is `Self`, it writes the value's bits into
-        the storage pointed to by `dst`.
+        This is the default device encoding for a type whose
+        `DevicePassable.device_type` is `Self`.
 
         Parameters:
             ValueType: The type of `value`, see constraints.
@@ -107,16 +134,37 @@ trait DeviceTypeEncoder:
                 `size_of[ValueType, target=Self.target()]()` bytes wide.
 
         Constraints:
-            - `ValueType` must conform to `DevicePassable`.
-            - `ValueType` must be its own leaf `device_type` (i.e.
-              `ValueType._is_convertible_to_device_type[ValueType]()` holds).
+            - `ValueType` must conform to `DevicePassable` or `RegisterPassable`.
             - `ValueType` must conform to
-              `ImplicitlyCopyable & ImplicitlyDestructible` or to
+              `ImplicitlyCopyable & ImplicitlyDestructible` or
               `Copyable & ImplicitlyDestructible`.
+            - If `ValueType` is `DevicePassable`, it must be its own leaf
+              `device_type`
+              (`ValueType._is_convertible_to_device_type[ValueType]()`), since a
+              bit-copy only encodes an identity mapping correctly.
         """
-        comptime assert ValueType._is_convertible_to_device_type[
-            ValueType
-        ](), "encode: ValueType must be its own leaf device_type"
+        comptime assert conforms_to(ValueType, DevicePassable) or conforms_to(
+            ValueType, RegisterPassable
+        ), String(
+            t"encode: ValueType '{reflect[ValueType].base_name()}' must conform"
+            t" to DevicePassable or RegisterPassable"
+        )
+
+        comptime if conforms_to(ValueType, DevicePassable):
+            comptime DPType = downcast[ValueType, DevicePassable]
+            comptime assert DPType._is_convertible_to_device_type[
+                ValueType
+            ](), String(
+                t"encode: ValueType '{reflect[ValueType].base_name()}' being"
+                t" DevicePassable must be convertible to it's leaf device_type"
+            )
+            comptime assert (
+                size_of[ValueType]()
+                == size_of[ValueType, target=Self.target()]()
+            ), String(
+                t"encode: ValueType '{reflect[ValueType].base_name()}' mismatch"
+                t" between host-type and device-type size"
+            )
 
         comptime if conforms_to(
             ValueType, ImplicitlyCopyable & ImplicitlyDestructible
@@ -129,10 +177,89 @@ trait DeviceTypeEncoder:
             comptime T = downcast[ValueType, Copyable & ImplicitlyDestructible]
             dst.bitcast[T]()[] = rebind[T](value).copy()
         else:
-            abort(
-                "encode: Type must conform to ImplicitlyCopyable &"
-                " ImplicitlyDestructible or Copyable & ImplicitlyDestructible"
+            comptime assert False, String(
+                t"encode: ValueType '{reflect[ValueType].base_name()}' must"
+                t" conform to ImplicitlyCopyable & ImplicitlyDestructible or"
+                t" Copyable & ImplicitlyDestructible"
             )
+
+    def encode_fields[
+        StructType: AnyType,
+    ](mut self, value: StructType, dst: MutOpaquePointer[_]):
+        """Encodes each field of `value` into `dst` at its device offset.
+
+        For each field of `StructType`:
+
+        - If it conforms to `DevicePassable`, dispatch to its own
+          `_to_device_type()`.
+        - Otherwise, if it is a composite transitively containing a
+          `DevicePassable` member, recurse into `encode_fields`.
+        - Otherwise, delegate to `encode` (a bit-copy for a register-passable
+          field; any other type is rejected there at compile time).
+
+        This is the building block composite types use to encode their members,
+        including compiler-synthesized unified-closure wrappers whose
+        closure-state type does not itself conform to `DevicePassable`. Field
+        offsets use the encoder's target data layout (`Self.target()`) rather
+        than the host's, so each field lands at the offset the device expects.
+
+        Parameters:
+            StructType: The composite host-side type whose fields are being
+                encoded.
+
+        Args:
+            value: The composite host-side value to encode.
+            dst: The opaque destination pointer that receives the
+                encoded fields.
+
+        Constraints:
+            - `StructType` must conform to `RegisterPassable` and be a Mojo
+              struct type.
+            - Every field must either conform to `DevicePassable`, be a
+              composite transitively containing a `DevicePassable` member,
+              conform to `ImplicitlyCopyable & ImplicitlyDestructible`, or
+              conform to `Copyable & ImplicitlyDestructible`.
+        """
+        # NOTE: The trait system does not enforce viral conformance to
+        # DevicePassable if a RegisterPassable struct field is DevicePassable.
+        # Instead we allow non-DevicePassable types to be encoded when they are
+        # RegisterPassable.
+        comptime assert conforms_to(StructType, RegisterPassable), String(
+            t"encode_fields: StructType '{reflect[StructType].base_name()}'"
+            t" must conform to RegisterPassable"
+        )
+        comptime assert reflect[StructType].is_struct(), String(
+            t"encode_fields: StructType '{reflect[StructType].base_name()}'"
+            t" must be struct"
+        )
+        comptime r = reflect[StructType]
+        comptime field_types = r.field_types()
+
+        # FIXME: MOCO-4018 We don't properly support field reflection on these
+        # types yet.
+        if r.base_name() in ("InlineArray", "StaticTuple", "_RegTuple"):
+            abort(
+                t"encode_fields: StructType '{r.base_name()}' is not currently"
+                t" supported"
+            )
+
+        comptime for i in range(r.field_count()):
+            comptime FieldType = field_types[i]
+            # Offset in the device data layout, not the host's.
+            comptime offset = r.field_offset[index=i, target=Self.target()]()
+            ref field = r.field_ref[i](value)
+            var sub = (dst.bitcast[UInt8]() + offset).bitcast[NoneType]()
+
+            comptime if conforms_to(FieldType, DevicePassable):
+                trait_downcast[DevicePassable](field)._to_device_type(self, sub)
+            elif _contains_device_passable_field[FieldType]():
+                # Recurse so the nested `DevicePassable` member runs its own
+                # `_to_device_type` instead of being byte-copied.
+                self.encode_fields[FieldType](field, sub)
+            else:
+                # Register-passable field with no `DevicePassable` member:
+                # bit-copy. `encode` rejects any other type at compile time.
+                self.encode(field, sub)
 
     def encode_device_ptr(
         mut self, value: DevicePointer, dst: MutOpaquePointer[_]
