@@ -30,6 +30,11 @@ trait DeviceTypeEncoder:
     ):
         ...
 
+    def encode_fields[
+        T: AnyType,
+    ](mut self, value: T, target: MutOpaquePointer[_]):
+        ...
+
 
 trait DevicePassable:
     comptime device_type: AnyType
