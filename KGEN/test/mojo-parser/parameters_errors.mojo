@@ -293,7 +293,7 @@ def has_pos_only[a: Int, b: Int, /, c: Int = 9]():
 def test_pos_only():
     # expected-error @below {{positional-only parameter passed as keyword operand: 'b'}}
     has_pos_only[0, b=1, c=2]()
-    # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
+    # expected-error @below {{invalid call to 'has_pos_only': positional-only parameter passed as keyword operand: 'a'}}
     has_pos_only[b=1, a=3, c=2]()
 
     # expected-error @below {{invalid call to 'has_pos_only': failed to infer parameter 'b'}}
@@ -305,7 +305,7 @@ def indirect_callable_pos_only[
 ]():
     # expected-error @below {{positional-only parameter passed as keyword operand: 'b'}}
     _ = callable[0, b=1, c=2]
-    # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
+    # expected-error @below {{positional-only parameter passed as keyword operand: 'a'}}
     _ = callable[b=1, a=3, c=2]
 
 
@@ -343,7 +343,7 @@ def test_struct_kw_params3():
     _ = VarParamStruct["woof", args=7]
     # expected-error @below {{unknown keyword parameter: 'c'}}
     _ = KwParamStruct[7, c=9]()
-    # expected-error @below {{unknown keyword parameters: 'z', 'c'}}
+    # expected-error @below {{unknown keyword parameter: 'z'}}
     _ = KwParamStruct[7, z=13, c=9]()
     # expected-error @below {{parameter passed both as positional and keyword operand: 'a'}}
     _ = KwParamStruct[7, b=7, a=9]()
@@ -365,7 +365,7 @@ struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]:
 def test_pos_only_struct():
     # expected-error @below {{positional-only parameter passed as keyword operand: 'b'}}
     _ = PosOnlyStruct[0, b=1, c=2]
-    # expected-error @below {{positional-only parameters passed as keyword operands: 'a', 'b'}}
+    # expected-error @below {{positional-only parameter passed as keyword operand: 'a'}}
     _ = PosOnlyStruct[b=1, a=3, c=2]
     # expected-error @below {{failed to infer parameter 'b' of parent struct 'PosOnlyStruct'}}
     _ = PosOnlyStruct[1, c=9]()
@@ -538,9 +538,9 @@ def unused_init_self_param():
     # expected-error @below {{failed to infer parameter 'A' of parent struct 'UnusedInitSelfParam'}}
     var slice = UnusedInitSelfParam()
 
-# expected-note @below {{candidate not viable: missing 1 required keyword-only argument: 'take'}}
+# expected-note @below {{candidate not viable: missing required keyword-only argument: 'take'}}
 # expected-note @below {{def __init__(out self, *, deinit take: Self)    # note - generated function}}
-# expected-note @below {{candidate not viable: missing 1 required keyword-only argument: 'copy'}}
+# expected-note @below {{candidate not viable: missing required keyword-only argument: 'copy'}}
 # expected-note @below {{def __init__(out self, *, copy: Self)    # note - generated function}}
 struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):
     # expected-note @below {{candidate not viable: return type 'SimpleSIMD[50, 1]' parameter 'size' value '1' doesn't match expected value '4'}}

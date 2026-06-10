@@ -47,7 +47,7 @@ def takes_two_ints(x: Int, y: Int):
 
 
 def test_splat_into_fixed_arity[*Ts: AnyType](*pack: *Ts):
-    # expected-error @+2 {{invalid call to 'takes_two_ints': missing 1 required positional argument: 'y'}}
+    # expected-error @+2 {{invalid call to 'takes_two_ints': missing required positional argument: 'y'}}
     # expected-note @+1 {{'*' splat is only supported when the callee accepts a variadic pack argument at this position}}
     takes_two_ints(*pack)
 

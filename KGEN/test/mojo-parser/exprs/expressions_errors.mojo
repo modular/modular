@@ -470,10 +470,10 @@ struct MyIntPair(RegisterPassable):
 struct TwoAndThreeList:
 
    # expected-note @below {{argument passed both as positional and keyword operand: '__list_literal__'}}
-   # expected-note @below {{missing 2 required positional arguments: 'a', 'b'}}
+   # expected-note @below {{candidate not viable: missing required positional argument: 'a'}}
    def __init__(out self, a: Int, b: Int, __list_literal__: NoneType): pass
    # expected-note @below {{argument passed both as positional and keyword operand: '__list_literal__'}}
-   # expected-note @below {{missing 3 required positional arguments: 'a', 'b', 'c'}}
+   # expected-note @below {{candidate not viable: missing required positional argument: 'a'}}
    def __init__(out self, a: Int, b: Int, c: Int, __list_literal__: NoneType): pass
 
 struct SimpleRange(TrivialRegisterPassable):

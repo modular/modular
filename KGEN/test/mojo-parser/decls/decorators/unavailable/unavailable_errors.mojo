@@ -6,7 +6,7 @@
 
 # Tests for @unavailable decorator error emission.
 
-# RUN: %parse-mojo-isolated -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -verify-diagnostics %s -I=%S/inputs
 
 
 # ===----------------------------------------------------------------------=== #

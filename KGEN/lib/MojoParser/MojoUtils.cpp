@@ -140,18 +140,4 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//
 
-/// Emit a comma separated list of names, each in '...'.
-static void emitNames(MojoInflightDiag &diag, ArrayRef<StringAttr> names) {
-  llvm::interleave(
-      names, [&](StringAttr str) { diag << str; }, [&]() { diag << ", "; });
-}
-
-void LIT::emitMissing(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
-                      const Twine &kindStr) {
-  size_t numNames = names.size();
-  diag << "missing " << numNames << " required " << kindStr << plural(numNames)
-       << ": ";
-  emitNames(diag, names);
-}
-
 bool LIT::isInternalName(StringRef name) { return name.starts_with('_'); }

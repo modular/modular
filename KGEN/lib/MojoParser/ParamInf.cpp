@@ -1078,9 +1078,6 @@ LogicalResult ParamInf::inferFromDefaults() {
 LogicalResult ParamInf::finalizeWithUnbound() {
   bool defaultToUnbound = paramBindings.bindingKind != ParamBindings::kStandard;
 
-  // All kw-only parameter that is not inferrable.
-  SmallVector<StringAttr> kwDiagNames;
-
   auto emitInferenceFailure = [&](size_t paramIdx) {
     MojoInflightDiag &diag = getMojoDiag(paramBindings.getExprLoc());
     if (declIfKnown && isa<StructDeclOp>(declIfKnown->getIfOperation()))
@@ -1159,14 +1156,10 @@ LogicalResult ParamInf::finalizeWithUnbound() {
       emitInferenceFailure(idx);
       return failure();
     }
-    // Collect all missing keyword-only and report.
-    kwDiagNames.push_back(pog.getName());
-  }
 
-  if (!kwDiagNames.empty()) {
+    // Error on a missing keyword parameter.
     MojoInflightDiag &diag = getMojoDiag({});
-    emitMissing(diag, kwDiagNames, "keyword-only parameter");
-
+    diag << "missing required keyword-only parameter: " << pog.getName();
     if (isInferForStruct)
       diag << ", specify the parameter or use '_' or '...' to unbind the "
               "parameter explicitly";
