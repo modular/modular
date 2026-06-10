@@ -468,7 +468,12 @@ class OpenAIChatResponseGenerator(
                 )
                 n_reasoning_tokens += chunk.reasoning_token_count or 0
                 n_tokens += chunk.token_count
-                payload = response.model_dump_json()
+                # Omit unset (None) fields so each delta carries only what
+                # changed, matching the OpenAI streaming spec. Without this a
+                # delta serializes tool_calls/function_call/refusal as null on
+                # every chunk, so a client reading the first tool_calls-bearing
+                # delta sees null instead of the real tool-call fragment.
+                payload = response.model_dump_json(exclude_none=True)
                 yield payload
 
             # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric

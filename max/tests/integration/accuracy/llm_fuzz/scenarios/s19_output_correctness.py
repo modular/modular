@@ -371,14 +371,20 @@ def _build_prompt_set(model: str) -> list[dict[str, Any]]:
         },
         {
             "tag": "joke",
-            "timeout": 30,
+            # 60s to match the larger budget below: at ~60 TPS a ~1.5k-token
+            # joke needs ~25s, so the old 30s risked a timeout once max_tokens
+            # grew.
+            "timeout": 60,
             "concurrency": 10,
             "payload": {
                 "model": model,
                 "messages": [
                     {"role": "user", "content": f"Tell me a joke about {t[0]}"}
                 ],
-                "max_tokens": 1000,
+                # Reasoning models spend ~1.5k tokens deliberating over a joke
+                # before the punchline; 1000 truncated mid-<think>, yielding a
+                # reasoning-only response with no answer.
+                "max_tokens": 2500,
             },
         },
         {
