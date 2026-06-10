@@ -21,7 +21,7 @@ import os
 import re
 from collections import OrderedDict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +38,7 @@ from max.dtype import DType
 from max.graph.buffer_utils import cast_dlpack_to, cast_tensor_to
 from max.graph.quantization import QuantizationEncoding
 from max.graph.type import DeviceRef, Shape, TensorType
-from max.graph.value import TensorValue
+from max.graph.value import TensorValue, Value
 from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.lora import SupportsLoRA
@@ -76,17 +76,8 @@ class LoRAInputs:
     grouped_offsets_kv: Buffer
 
     def buffers(self) -> tuple[Buffer, ...]:
-        """Returns the buffers in graph-input order."""
-        return (
-            self.ids,
-            self.ranks,
-            self.grouped_offsets,
-            self.num_active,
-            self.end_idx,
-            self.batch_seq_len,
-            self.ids_kv,
-            self.grouped_offsets_kv,
-        )
+        """Returns the buffers in canonical (field-declaration) order."""
+        return tuple(getattr(self, field.name) for field in fields(self))
 
 
 class _LoRALRUCache:
@@ -1207,79 +1198,63 @@ class LoRAManager:
             device_ref: Symbolic device to be used for the symbols.
 
         Returns:
-            The graph input symbols.
+            The graph input symbols, ordered to match :class:`LoRAInputs`.
         """
-        lora_ids_type = TensorType(
-            DType.int32, shape=["lora_ids"], device=device_ref
-        )
-        lora_ranks_type = TensorType(
-            DType.uint32, shape=["lora_ranks"], device=DeviceRef.CPU()
-        )
-        lora_grouped_offsets_type = TensorType(
-            DType.uint32, shape=["lora_grouped_offsets"], device=device_ref
-        )
-        num_active_loras_type = TensorType(
-            DType.int64, shape=[1], device=DeviceRef.CPU()
-        )
-        lora_end_idx_type = TensorType(
-            DType.int64, shape=["lora_end_idx"], device=DeviceRef.CPU()
-        )
-        batch_seq_len_type = TensorType(
-            DType.int64, shape=[1], device=DeviceRef.CPU()
-        )
-        lora_ids_kv_type = TensorType(
-            DType.int32, shape=["lora_ids_kv"], device=device_ref
-        )
-        lora_grouped_offsets_kv_type = TensorType(
-            DType.uint32, shape=["lora_grouped_offsets_kv"], device=device_ref
-        )
-
         return [
-            lora_ids_type,
-            lora_ranks_type,
-            lora_grouped_offsets_type,
-            num_active_loras_type,
-            lora_end_idx_type,
-            batch_seq_len_type,
-            lora_ids_kv_type,
-            lora_grouped_offsets_kv_type,
+            TensorType(DType.int32, shape=["lora_ids"], device=device_ref),
+            TensorType(
+                DType.uint32, shape=["lora_ranks"], device=DeviceRef.CPU()
+            ),
+            TensorType(
+                DType.uint32,
+                shape=["lora_grouped_offsets"],
+                device=device_ref,
+            ),
+            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            TensorType(
+                DType.int64, shape=["lora_end_idx"], device=DeviceRef.CPU()
+            ),
+            TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            TensorType(DType.int32, shape=["lora_ids_kv"], device=device_ref),
+            TensorType(
+                DType.uint32,
+                shape=["lora_grouped_offsets_kv"],
+                device=device_ref,
+            ),
         ]
 
-    def set_graph_info(
-        self,
-        lora_ids: TensorValue,
-        lora_ranks: TensorValue,
-        lora_grouped_offsets: TensorValue,
-        num_active_loras: TensorValue,
-        lora_end_idx: TensorValue,
-        batch_seq_len: TensorValue,
-        lora_ids_kv: TensorValue,
-        lora_grouped_offsets_kv: TensorValue,
-    ) -> None:
-        """Sets the lora batch info required for the forward-pass.
+    def set_graph_info(self, lora_inputs: Sequence[TensorValue]) -> None:
+        """Wires the LoRA batch info into the LoRA layers for the forward pass.
 
         Args:
-            lora_ids: IDs of the LoRAs used in the batch.
-            lora_ranks: Ranks of the LoRAs used in the batch.
-            lora_grouped_offsets: Cumulative offsets for each LoRA group.
-            num_active_loras: Number of active LoRA adapters in the batch.
-            lora_end_idx: End index of LoRA token portion.
-            batch_seq_len: Total sequence length in the batch.
-            lora_ids_kv: LoRA IDs for KV cache (includes K and V portions).
-            lora_grouped_offsets_kv: Cumulative offsets for KV LoRA groups.
+            lora_inputs: The LoRA graph-input tensors in :class:`LoRAInputs`
+                order.
         """
         for _, layer in self._lora_layers.items():
             if isinstance(layer, SupportsLoRA):
-                layer.set_lora_batch_info(
-                    lora_ids,
-                    lora_ranks,
-                    lora_grouped_offsets,
-                    num_active_loras,
-                    lora_end_idx,
-                    batch_seq_len,
-                    lora_ids_kv,
-                    lora_grouped_offsets_kv,
-                )
+                layer.set_lora_batch_info(*lora_inputs)
+
+    def bind_graph_inputs(
+        self, graph_inputs: Sequence[Value[Any]]
+    ) -> list[Value[Any]]:
+        """Wires the LoRA graph inputs into the model and returns the rest.
+
+        The LoRA inputs immediately follow the model's head inputs, so this
+        peels them off the front of ``graph_inputs``, wires them into the LoRA
+        layers, and returns the remaining (non-LoRA) inputs.
+
+        Args:
+            graph_inputs: The model's graph inputs with its head inputs already
+                removed.
+
+        Returns:
+            ``graph_inputs`` with the LoRA inputs removed.
+        """
+        num_lora_inputs = len(fields(LoRAInputs))
+        self.set_graph_info(
+            [value.tensor for value in graph_inputs[:num_lora_inputs]]
+        )
+        return list(graph_inputs[num_lora_inputs:])
 
     def sort_lora_batch(
         self, context_batch: list[TextGenerationContextType]
