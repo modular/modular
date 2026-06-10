@@ -683,13 +683,13 @@ struct ConvTransposedPacked[
 
         # Filter pointer to the current cf tile offset location.
         var filter_ptr: UnsafePointer[
-            Scalar[Self.filter_type], ImmutExternalOrigin
+            Scalar[Self.filter_type], ImmutUntrackedOrigin
         ]
 
         # Move the pointer to the current group's start.
         filter_ptr = _get_group_filter_base(
             self.filter.as_immut(), g, self.conv_shape.f_per_group()
-        ).unsafe_origin_cast[ImmutExternalOrigin]()
+        ).unsafe_origin_cast[ImmutUntrackedOrigin]()
         # Move the pointer to (c_tile_offset, f_tile_offset) mapped in
         # current group.
         filter_ptr = filter_ptr + (
@@ -1416,7 +1416,7 @@ def conv_transposed_cpu[
         comptime packed_filter_rank = filter.rank if filter_packed else filter.rank + 1
 
         var packed_filter_ptr = filter.ptr.unsafe_origin_cast[
-            MutExternalOrigin
+            MutUntrackedOrigin
         ]()
         var packed_filter_shape: IndexList[packed_filter_rank]
 

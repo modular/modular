@@ -561,7 +561,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         layout_src: TensorLayout,
         //,
     ](
-        mut dst: RegTile[Self.T, layout_dst, MutExternalOrigin],
+        mut dst: RegTile[Self.T, layout_dst, MutUntrackedOrigin],
         src: SMemTile[Self.T, layout_src, MutAnyOrigin],
     ):
         """Loads the whole `(KV_BLOCK, DEPTH)` K tile from SMEM into the
@@ -765,7 +765,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         layout_src: TensorLayout,
         //,
     ](
-        mut dst: RegTile[Self.T, layout_dst, MutExternalOrigin],
+        mut dst: RegTile[Self.T, layout_dst, MutUntrackedOrigin],
         src: SMemTile[Self.T, layout_src, MutAnyOrigin],
     ):
         """Loads the whole V tile from SMEM into the col_l register tile.
@@ -1030,9 +1030,9 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         layout_q: TensorLayout,
         //,
     ](
-        mut att: RegTile[T_att, layout_att, MutExternalOrigin],
-        mut k: RegTile[Self.T, layout_k, MutExternalOrigin],
-        mut q: RegTile[Self.T, layout_q, MutExternalOrigin],
+        mut att: RegTile[T_att, layout_att, MutUntrackedOrigin],
+        mut k: RegTile[Self.T, layout_k, MutUntrackedOrigin],
+        mut q: RegTile[Self.T, layout_q, MutUntrackedOrigin],
     ):
         """QK MFMA: `att += k @ q^T`. K is A (M-outer), Q is B (N-outer).
 
@@ -1079,9 +1079,9 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         layout_p: TensorLayout,
         //,
     ](
-        mut o: RegTile[T_o, layout_o, MutExternalOrigin],
-        mut v: RegTile[Self.T, layout_v, MutExternalOrigin],
-        mut p: RegTile[Self.T, layout_p, MutExternalOrigin],
+        mut o: RegTile[T_o, layout_o, MutUntrackedOrigin],
+        mut v: RegTile[Self.T, layout_v, MutUntrackedOrigin],
+        mut p: RegTile[Self.T, layout_p, MutUntrackedOrigin],
     ):
         """PV MFMA: `o += v^T @ p`. V is A (K-outer), P is B (K-outer,
         JIT-cast to `Self.T` from `att_block`).
@@ -1128,7 +1128,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
         //,
         start: Int,
         end: Int,
-    ](mut tile: RegTile[T_att, layout, MutExternalOrigin],):
+    ](mut tile: RegTile[T_att, layout, MutUntrackedOrigin],):
         """In-place `exp2` over a base-tile-aligned per-lane slice
         `tile[start:end]`. `start` and `end` must be multiples of the
         fragment width so the slice maps to whole base tiles. Used to
@@ -1235,9 +1235,9 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         layout_q: TensorLayout,
         //,
     ](
-        mut att: RegTile[T_att, layout_att, MutExternalOrigin],
-        mut k: RegTile[Self.T, layout_k, MutExternalOrigin],
-        mut q: RegTile[Self.T, layout_q, MutExternalOrigin],
+        mut att: RegTile[T_att, layout_att, MutUntrackedOrigin],
+        mut k: RegTile[Self.T, layout_k, MutUntrackedOrigin],
+        mut q: RegTile[Self.T, layout_q, MutUntrackedOrigin],
     ):
         """QK MFMA — delegates to `MhaMmaOp.mma_QK` (body identical)."""
         Self._Shared.mma_QK(att, k, q)
@@ -1251,9 +1251,9 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         layout_p: TensorLayout,
         //,
     ](
-        mut o: RegTile[T_o, layout_o, MutExternalOrigin],
-        mut v: RegTile[Self.T, layout_v, MutExternalOrigin],
-        mut p: RegTile[Self.T, layout_p, MutExternalOrigin],
+        mut o: RegTile[T_o, layout_o, MutUntrackedOrigin],
+        mut v: RegTile[Self.T, layout_v, MutUntrackedOrigin],
+        mut p: RegTile[Self.T, layout_p, MutUntrackedOrigin],
     ):
         """PV MFMA — delegates to `MhaMmaOp.mma_PV` (body identical)."""
         Self._Shared.mma_PV(o, v, p)
@@ -1266,7 +1266,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         //,
         start: Int,
         end: Int,
-    ](mut tile: RegTile[T_att, layout, MutExternalOrigin],):
+    ](mut tile: RegTile[T_att, layout, MutUntrackedOrigin],):
         """`exp2` over a slice — delegates to `MhaMmaOp.exp2_inplace_range`."""
         Self._Shared.exp2_inplace_range[start, end](tile)
 
@@ -1471,7 +1471,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
     def load_V_from_lane_base[
         layout_dst: TensorLayout,
     ](
-        mut dst: RegTile[Self.T, layout_dst, MutExternalOrigin],
+        mut dst: RegTile[Self.T, layout_dst, MutUntrackedOrigin],
         v_lane_base: UnsafePointer[
             Scalar[Self.T], _, address_space=AddressSpace.SHARED
         ],

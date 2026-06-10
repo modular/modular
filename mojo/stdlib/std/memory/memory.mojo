@@ -400,7 +400,7 @@ def _malloc[
     out result: Optional[
         UnsafePointer[
             type,
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.GENERIC,
         ]
     ],
@@ -445,7 +445,7 @@ def _free(ptr: UnsafePointer[mut=True, ...]):
 @always_inline
 def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
     comptime if is_gpu():
-        libc.free(unsafe_cast[Type=NoneType, origin=MutExternalOrigin](ptr))
+        libc.free(unsafe_cast[Type=NoneType, origin=MutUntrackedOrigin](ptr))
     else:
         comptime KgenPointerType = type_of(ptr).T._mlir_type
         # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is

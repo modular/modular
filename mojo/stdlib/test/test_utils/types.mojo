@@ -562,9 +562,9 @@ struct AbortOnCopy(ImplicitlyCopyable):
 
 struct Observable[
     *,
-    CopyOrigin: MutOrigin = MutExternalOrigin,
-    MoveOrigin: MutOrigin = MutExternalOrigin,
-    DelOrigin: MutOrigin = MutExternalOrigin,
+    CopyOrigin: MutOrigin = MutUntrackedOrigin,
+    MoveOrigin: MutOrigin = MutUntrackedOrigin,
+    DelOrigin: MutOrigin = MutUntrackedOrigin,
     opt_into_unsafe_niche: Bool = False,
 ](Copyable, UnsafeNicheable where opt_into_unsafe_niche):
     """A type that tracks the number of times it has been copied, moved, and destroyed.

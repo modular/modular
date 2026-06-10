@@ -62,9 +62,9 @@ def PyInit_roi_align_ops() abi("C") -> PythonObject:
 def roi_align_op[
     dtype: DType, //
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    rois_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    rois_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     n_regions: Int,
     height: Int,
     width: Int,

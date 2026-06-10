@@ -1377,7 +1377,7 @@ def _matmul_common[
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
     var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutExternalOrigin
+        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutUntrackedOrigin
     ]
 
     comptime if is_cpu[target]():
@@ -2487,7 +2487,7 @@ def _qmatmul_gguf_quantized_alloc_output[
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
     var c_nd: LayoutTensor[
-        DType.float32, Layout.row_major(UNKNOWN_VALUE, N), MutExternalOrigin
+        DType.float32, Layout.row_major(UNKNOWN_VALUE, N), MutUntrackedOrigin
     ]
 
     # The CPU matmul codepath uses the C buffer as a workspace

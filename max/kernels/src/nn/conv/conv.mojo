@@ -527,7 +527,7 @@ struct ConvDirectNHWC[
 
         # Safety: the scratch pointer below will alias the output_ptr, so cast to MutAnyOrigin
         # here to turn off the check.
-        var output_ptr = output.ptr.unsafe_origin_cast[MutExternalOrigin]()
+        var output_ptr = output.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         var output_size = output.size()
         var scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:

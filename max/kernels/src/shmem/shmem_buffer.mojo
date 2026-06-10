@@ -27,7 +27,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
-    var _data: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
+    var _data: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var _ctx_ptr: _DeviceContextPtr[mut=True]
     var _size: Int
 
@@ -65,7 +65,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     def __init__(
         out self,
         ctx: DeviceContext,
-        data: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
+        data: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin],
         size: Int,
     ):
         self._data = data
@@ -99,7 +99,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
                 _CString[],
                 _DeviceContextPtr[mut=True],
                 type_of(dst_ptr),
-                UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
+                UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin],
                 Int,
             ](
                 self._ctx_ptr,
@@ -154,7 +154,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
                 "AsyncRT_DeviceContext_HtoD_async_sized",
                 _CString[],
                 _DeviceContextPtr[mut=True],
-                UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
+                UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin],
                 type_of(src_ptr),
                 Int,
             ](

@@ -39,7 +39,7 @@ valid C identifier. For example:
 @export("my_func")
 def my_function(
     name: StaticString,
-    ptr: OpaquePointer[MutExternalOrigin],
+    ptr: OpaquePointer[MutUntrackedOrigin],
 ) abi("C") -> None:
     pass
 ```

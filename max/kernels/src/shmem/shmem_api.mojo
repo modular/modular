@@ -417,7 +417,7 @@ def shmem_n_pes() -> c_int:
 
 def shmem_malloc[
     dtype: DType
-](size: Int) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+](size: Int) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     """Collectively allocate symmetric memory.
 
     Parameters:
@@ -460,7 +460,7 @@ def shmem_malloc[
 def shmem_calloc[
     dtype: DType
 ](count: Int, size: Int = Int(size_of[dtype]())) raises -> UnsafePointer[
-    Scalar[dtype], MutExternalOrigin
+    Scalar[dtype], MutUntrackedOrigin
 ]:
     """Collectively allocate a zeroed block of symmetric memory.
 
@@ -505,7 +505,7 @@ def shmem_calloc[
 
 def shmem_free[
     dtype: DType, //
-](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
+](ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]):
     """Collectively deallocate symmetric memory.
 
     Parameters:

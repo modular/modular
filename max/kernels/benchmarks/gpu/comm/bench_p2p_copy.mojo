@@ -324,7 +324,7 @@ def bench_p2p[
 def _verify[
     dtype: DType
 ](
-    host: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    host: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     expected: Scalar[dtype],
     num_elements: Int,
     gpu: Int,

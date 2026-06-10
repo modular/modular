@@ -73,7 +73,9 @@ def _get_mpi_function[
 # Types and constants
 # ===-----------------------------------------------------------------------===#
 
-comptime MPIComm = UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin]
+comptime MPIComm = UnsafePointer[
+    OpaquePointer[MutUntrackedOrigin], MutAnyOrigin
+]
 
 comptime MPI_THREAD_SINGLE = 0
 comptime MPI_THREAD_FUNNELED = 1
@@ -124,7 +126,7 @@ def MPI_Init_thread(
         raise Error("failed to MPI_Init_thread with error code:", result)
 
 
-def MPI_Initialized(flag: UnsafePointer[c_int, MutExternalOrigin]) raises:
+def MPI_Initialized(flag: UnsafePointer[c_int, MutUntrackedOrigin]) raises:
     """Check if MPI has been initialized.
 
     Raises:
@@ -132,7 +134,7 @@ def MPI_Initialized(flag: UnsafePointer[c_int, MutExternalOrigin]) raises:
     """
     var result = _get_mpi_function[
         "MPI_Initialized",
-        def(UnsafePointer[c_int, MutExternalOrigin]) thin -> c_int,
+        def(UnsafePointer[c_int, MutUntrackedOrigin]) thin -> c_int,
     ]()(flag)
     if result != 0:
         raise Error("failed to check MPI_Initialized with error code:", result)
@@ -200,7 +202,7 @@ def get_mpi_comm_world() raises -> MPIComm:
         If the MPI library is not available or the symbol cannot be found.
     """
     var handle = MPI_LIBRARY.get_or_create_ptr()[].borrow()
-    var comm_world_ptr = handle.get_symbol[OpaquePointer[MutExternalOrigin]](
+    var comm_world_ptr = handle.get_symbol[OpaquePointer[MutUntrackedOrigin]](
         cstr_name="ompi_mpi_comm_world".as_c_string_slice().unsafe_ptr()
     )
     if not comm_world_ptr:

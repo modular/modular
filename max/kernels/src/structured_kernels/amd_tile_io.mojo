@@ -2890,7 +2890,7 @@ comptime RegTile[
 # ===----------------------------------------------------------------------=== #
 # Stack allocators — thin specializations of layout.tile_tensor's
 # stack_allocation with address_space pre-set. The returned origin is
-# always MutExternalOrigin (the only origin tt_stack_allocation can
+# always MutUntrackedOrigin (the only origin tt_stack_allocation can
 # produce), so callers don't need to spell it.
 # ===----------------------------------------------------------------------=== #
 
@@ -2902,7 +2902,7 @@ def reg_alloc[
     dtype: DType,
     alignment: Int = align_of[dtype](),
 ](var layout: LayoutType) -> RegTile[
-    dtype, LayoutType, MutExternalOrigin
+    dtype, LayoutType, MutUntrackedOrigin
 ] where LayoutType.all_dims_known:
     """Stack-allocate a register tile (LOCAL address space) with the given layout.
     """
@@ -2918,7 +2918,7 @@ def smem_alloc[
     dtype: DType,
     alignment: Int = align_of[dtype](),
 ](var layout: LayoutType) -> SMemTile[
-    dtype, LayoutType, MutExternalOrigin
+    dtype, LayoutType, MutUntrackedOrigin
 ] where LayoutType.all_dims_known:
     """Stack-allocate a shared memory tile (SHARED address space) with the given layout.
     """

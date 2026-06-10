@@ -232,7 +232,7 @@ def create_tensor_spec_async[
 
 
 @export
-def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]) abi("Mojo"):
+def empty_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]) abi("Mojo"):
     pass
 
 
@@ -1112,12 +1112,12 @@ struct MoggAsyncPackHelper:
 
         # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
         @always_inline("nodebug")
-        def erased_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
+        def erased_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]):
             ptr.bitcast[Type]().destroy_pointee()
 
         var dst_ptr = external_call[
             "MGP_RT_MojoValueAllocateBuffer",
-            UnsafePointer[UInt8, MutExternalOrigin],
+            UnsafePointer[UInt8, MutUntrackedOrigin],
         ](size_of[Type](), align_of[Type]())
 
         dst_ptr.bitcast[Type]().init_pointee_move(data^)

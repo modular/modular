@@ -44,7 +44,7 @@ def global_cache_insert(key: String, value: OpaquePointer):
 
 def _get_fft_workarea(
     buffer_size: Int, ctx: DeviceContext
-) raises -> OpaquePointer[MutExternalOrigin]:
+) raises -> OpaquePointer[MutUntrackedOrigin]:
     # Include device ID in cache key to ensure per-device workspace buffers.
     var fft_buffer_key = String(
         "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
@@ -65,7 +65,7 @@ def _get_fft_workarea(
     )
 
     return device_ptr.bitcast[NoneType]().unsafe_origin_cast[
-        MutExternalOrigin
+        MutUntrackedOrigin
     ]()
 
 
@@ -123,7 +123,7 @@ def _get_fft_plan[
         cached_plan_key,
         # we are bitcasting the integer plan to a void * to cache it,
         # because that's what KGEN_CompilerRT_InsertGlobal expects.
-        UnsafePointer[NoneType, MutExternalOrigin](
+        UnsafePointer[NoneType, MutUntrackedOrigin](
             unsafe_from_address=Int(plan)
         ),
     )

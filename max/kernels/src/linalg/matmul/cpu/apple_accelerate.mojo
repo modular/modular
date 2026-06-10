@@ -265,10 +265,10 @@ def apple_gemv[
     var N = Int(b.dim[0]()) if transpose_b or b_packed else Int(b.dim[1]())
 
     var transposed_b_ptr = Optional[
-        UnsafePointer[Scalar[b.dtype], MutExternalOrigin]
+        UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin]
     ]()
     var transposed_b = TileTensor(
-        UnsafePointer[Scalar[b.dtype], MutExternalOrigin].unsafe_dangling(),
+        UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin].unsafe_dangling(),
         row_major(Coord(Int(0), Int(0))),
     )
 

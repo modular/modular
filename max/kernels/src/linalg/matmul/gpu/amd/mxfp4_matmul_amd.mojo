@@ -169,19 +169,19 @@ struct BlockScaledMmaOp[
     var _a_reg: TileTensor[
         DType.uint8,
         type_of(Self._a_reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var _b_reg: TileTensor[
         DType.uint8,
         type_of(Self._b_reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var _c_reg: TileTensor[
         DType.float32,
         type_of(Self._c_reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -194,13 +194,13 @@ struct BlockScaledMmaOp[
     var _a_scale_packed: TileTensor[
         DType.int32,
         type_of(Self._scale_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var _b_scale_packed: TileTensor[
         DType.int32,
         type_of(Self._scale_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 

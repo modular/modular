@@ -384,7 +384,7 @@ struct Device(Writable):
             _get_dylib_function[
                 "nvmlSystemGetDriverVersion",
                 def(
-                    UnsafePointer[c_char, MutExternalOrigin], UInt32
+                    UnsafePointer[c_char, MutUntrackedOrigin], UInt32
                 ) thin -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
@@ -421,7 +421,7 @@ struct Device(Writable):
             def(
                 _DeviceImpl,
                 UnsafePointer[UInt32, origin_of(num_clocks)],
-                Optional[UnsafePointer[UInt32, MutExternalOrigin]],
+                Optional[UnsafePointer[UInt32, MutUntrackedOrigin]],
             ) thin abi("C") -> Result,
         ]()(
             self.device,
@@ -459,7 +459,7 @@ struct Device(Writable):
                 _DeviceImpl,
                 UInt32,
                 UnsafePointer[UInt32, origin_of(num_clocks)],
-                Optional[UnsafePointer[UInt32, MutExternalOrigin]],
+                Optional[UnsafePointer[UInt32, MutUntrackedOrigin]],
             ) thin abi("C") -> Result,
         ]()(
             self.device,

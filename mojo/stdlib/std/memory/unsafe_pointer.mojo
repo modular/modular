@@ -182,7 +182,7 @@ def pointer_to_int(pointer: OptionalUnsafePointer[...]) -> Int:
 def alloc[
     type: AnyType, /
 ](count: Int, *, alignment: Int = align_of[type]()) -> UnsafePointer[
-    type, MutExternalOrigin
+    type, MutUntrackedOrigin
 ]:
     """Allocates contiguous storage for `count` elements of `type` with
     alignment `alignment`.
@@ -448,7 +448,7 @@ struct UnsafePointer[
     from std.random import random_float64
 
     # A field that may or may not point to a heap-allocated Int.
-    var maybe_ptr: Optional[UnsafePointer[Int, MutExternalOrigin]] = None
+    var maybe_ptr: Optional[UnsafePointer[Int, MutUntrackedOrigin]] = None
 
     # Maybe populate it later.
     if random_float64() > 0.5:
@@ -1053,24 +1053,24 @@ struct UnsafePointer[
                 Trait=AnyType,
                 Self,
                 Self._OriginCastType[MutAnyOrigin],
-                Self._OriginCastType[MutExternalOrigin],
+                Self._OriginCastType[MutUntrackedOrigin],
                 Self._OriginCastType[ImmutAnyOrigin],
-                Self._OriginCastType[ImmutExternalOrigin],
+                Self._OriginCastType[ImmutUntrackedOrigin],
                 Self._UnsafePointerType,
                 Self._UnsafePointerType._OriginCastType[MutAnyOrigin],
-                Self._UnsafePointerType._OriginCastType[MutExternalOrigin],
+                Self._UnsafePointerType._OriginCastType[MutUntrackedOrigin],
                 Self._UnsafePointerType._OriginCastType[ImmutAnyOrigin],
-                Self._UnsafePointerType._OriginCastType[ImmutExternalOrigin],
+                Self._UnsafePointerType._OriginCastType[ImmutUntrackedOrigin],
             ]().contains[T]()
         else:
             return TypeList.of[
                 Trait=AnyType,
                 Self,
                 Self._OriginCastType[ImmutAnyOrigin],
-                Self._OriginCastType[ImmutExternalOrigin],
+                Self._OriginCastType[ImmutUntrackedOrigin],
                 Self._UnsafePointerType,
                 Self._UnsafePointerType._OriginCastType[ImmutAnyOrigin],
-                Self._UnsafePointerType._OriginCastType[ImmutExternalOrigin],
+                Self._UnsafePointerType._OriginCastType[ImmutUntrackedOrigin],
             ]().contains[T]()
 
     def _to_device_type(
@@ -1123,7 +1123,7 @@ struct UnsafePointer[
         Example:
 
         ```mojo
-        var ptr = UnsafePointer[Int, MutExternalOrigin].unsafe_dangling()
+        var ptr = UnsafePointer[Int, MutUntrackedOrigin].unsafe_dangling()
         # Important: don't try to access the value of `ptr` without
         # initializing it first! The pointer is not null but isn't valid either!
         ```

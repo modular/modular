@@ -397,9 +397,9 @@ def select_dispatcher(
 def bin_elementwise_comparison_op[
     op: ElementwiseBinaryComparisonOp, dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[DType.uint8], MutExternalOrigin],
-    lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[DType.uint8], MutUntrackedOrigin],
+    lhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    rhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:
@@ -451,10 +451,10 @@ def bin_elementwise_comparison_op[
 def select_elementwise_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    cond_ptr: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
-    true_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    false_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    cond_ptr: UnsafePointer[Scalar[DType.bool], MutUntrackedOrigin],
+    true_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    false_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:

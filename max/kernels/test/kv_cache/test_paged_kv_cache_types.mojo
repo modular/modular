@@ -76,7 +76,7 @@ def do_test[
     var max_cache_length = UInt32(2048)
 
     var scales: OptionalReg[
-        LayoutTensor[scale_dtype, Layout.row_major[6](), MutExternalOrigin]
+        LayoutTensor[scale_dtype, Layout.row_major[6](), MutUntrackedOrigin]
     ] = None
 
     comptime if scale_dtype == DType.float8_e4m3fn:

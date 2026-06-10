@@ -86,7 +86,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _data: UnsafePointer[Self.ElementType, MutExternalOrigin]
+    var _data: UnsafePointer[Self.ElementType, MutUntrackedOrigin]
     """The underlying storage for the deque."""
 
     var _head: Int
@@ -207,7 +207,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
             shrink=copy._shrink,
         )
         comptime UnsafePointerType = UnsafePointer[
-            downcast[Self.ElementType, Copyable], MutExternalOrigin
+            downcast[Self.ElementType, Copyable], MutUntrackedOrigin
         ]
         for i in range(len(copy)):
             offset = copy._physical_index(copy._head + i)

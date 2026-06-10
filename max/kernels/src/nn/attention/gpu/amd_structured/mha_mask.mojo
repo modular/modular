@@ -52,7 +52,7 @@ def _apply_causal_mask_fast[
     Q_BLOCK_SIZE: Int,
     KV_BLOCK_SIZE: Int,
 ](
-    mut dst: RegTile[T_dst, layout, MutExternalOrigin],
+    mut dst: RegTile[T_dst, layout, MutUntrackedOrigin],
     q_tile_idx: Int32,
     k_tile_idx: Int32,
     start_pos: Int32,
@@ -105,7 +105,7 @@ def _apply_kbound_mask_fast[
     //,
     KV_BLOCK_SIZE: Int,
 ](
-    mut dst: RegTile[T_dst, layout, MutExternalOrigin],
+    mut dst: RegTile[T_dst, layout, MutUntrackedOrigin],
     k_tile_idx: Int32,
     num_keys: Int32,
     lane: Int32,
@@ -160,7 +160,7 @@ def _fill_dst_neg_inf[
     T_dst: DType,
     layout: TensorLayout,
     //,
-](mut dst: RegTile[T_dst, layout, MutExternalOrigin]):
+](mut dst: RegTile[T_dst, layout, MutUntrackedOrigin]):
     """FULL_MASK path: every fragment slot to `-inf`. Subsequent
     `exp2` sends them all to zero. Cheaper than `mask_functor.mask`
     when the entire tile is masked out.
@@ -187,7 +187,7 @@ def _apply_mask_generic[
     KV_BLOCK_SIZE: Int,
 ](
     mask_functor: mask_t,
-    mut dst: RegTile[T_dst, layout, MutExternalOrigin],
+    mut dst: RegTile[T_dst, layout, MutUntrackedOrigin],
     q_tile_idx: Int32,
     k_tile_idx: Int32,
     start_pos: Int32,
@@ -285,7 +285,7 @@ struct MaskApplier[
         //,
     ](
         self,
-        mut att_block: RegTile[T_dst, layout, MutExternalOrigin],
+        mut att_block: RegTile[T_dst, layout, MutUntrackedOrigin],
         q_tile_idx: Int,
         k_tile_idx: Int,
         start_pos: Int,

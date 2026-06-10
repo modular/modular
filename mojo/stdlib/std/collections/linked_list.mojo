@@ -40,7 +40,7 @@ struct Node[
     """
 
     comptime _OpaquePointer = Optional[
-        UnsafePointer[NoneType, MutExternalOrigin]
+        UnsafePointer[NoneType, MutUntrackedOrigin]
     ]
 
     var value: Self.ElementType
@@ -53,17 +53,17 @@ struct Node[
     @doc_hidden
     def prev(
         ref self,
-    ) -> ref[self._prev] Optional[UnsafePointer[Self, MutExternalOrigin]]:
+    ) -> ref[self._prev] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
         return UnsafePointer(to=self._prev).bitcast[
-            Optional[UnsafePointer[Self, MutExternalOrigin]]
+            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     @doc_hidden
     def next(
         ref self,
-    ) -> ref[self._next] Optional[UnsafePointer[Self, MutExternalOrigin]]:
+    ) -> ref[self._next] Optional[UnsafePointer[Self, MutUntrackedOrigin]]:
         return UnsafePointer(to=self._next).bitcast[
-            Optional[UnsafePointer[Self, MutExternalOrigin]]
+            Optional[UnsafePointer[Self, MutUntrackedOrigin]]
         ]()[]
 
     def __init__(
@@ -104,8 +104,8 @@ def _make_node[
 ](
     out node: Node[T],
     var value: T,
-    prev: Optional[UnsafePointer[Node[T], MutExternalOrigin]],
-    next: Optional[UnsafePointer[Node[T], MutExternalOrigin]],
+    prev: Optional[UnsafePointer[Node[T], MutUntrackedOrigin]],
+    next: Optional[UnsafePointer[Node[T], MutUntrackedOrigin]],
 ):
     """Initialize a new Node with the given value and optional prev/next
     pointers.
@@ -131,7 +131,9 @@ struct _LinkedListIter[
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     var src: Pointer[LinkedList[Self.ElementType], Self.origin]
-    var curr: Optional[UnsafePointer[Node[Self.ElementType], MutExternalOrigin]]
+    var curr: Optional[
+        UnsafePointer[Node[Self.ElementType], MutUntrackedOrigin]
+    ]
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -238,7 +240,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
     """
 
     comptime _NodePointer = Optional[
-        UnsafePointer[Node[Self.ElementType], MutExternalOrigin]
+        UnsafePointer[Node[Self.ElementType], MutUntrackedOrigin]
     ]
 
     # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the

@@ -389,7 +389,7 @@ struct Pointer[
 
     comptime _NonNull = UnsafePointer[
         Self.type,
-        ExternalOrigin[mut=Self.mut],
+        UntrackedOrigin[mut=Self.mut],
         address_space=Self.address_space,
     ]
 

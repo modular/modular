@@ -284,12 +284,12 @@ struct Attention[
 
     var k_smem_ptr: UnsafePointer[
         Scalar[Self.k_t.dtype],
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.SHARED,
     ]
     var v_smem_ptr: UnsafePointer[
         Scalar[Self.v_t.dtype],
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.SHARED,
     ]
     # Dedicated warp-reduction scratch SMEM. Decoupling from K SMEM
@@ -299,7 +299,7 @@ struct Attention[
     # V DMA to overwrite the corruption).
     var warp_scratch_ptr: UnsafePointer[
         Scalar[Self.accum_type],
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.SHARED,
     ]
 

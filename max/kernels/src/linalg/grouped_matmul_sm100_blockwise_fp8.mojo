@@ -1892,13 +1892,13 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # Load warp as producer and mma warp as consumer
     var load_mma_pipeline = ProducerConsumerPipeline[num_pipeline_stages](
-        load_mma_mbar_ptr.unsafe_origin_cast[MutExternalOrigin]()
+        load_mma_mbar_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     )
 
     var mma_output_mbar_ptr = load_mma_mbar_ptr + 2 * num_pipeline_stages
     var mma_output_pipeline = ProducerConsumerPipeline[
         config.num_accum_pipeline_stages
-    ](mma_output_mbar_ptr.unsafe_origin_cast[MutExternalOrigin]())
+    ](mma_output_mbar_ptr.unsafe_origin_cast[MutUntrackedOrigin]())
 
     var clc_full_mbar_ptr = (
         mma_output_mbar_ptr + 2 * config.num_accum_pipeline_stages
@@ -1914,7 +1914,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ](
         (
             clc_empty_mbar_ptr + config.num_clc_pipeline_stages
-        ).unsafe_origin_cast[MutExternalOrigin]()
+        ).unsafe_origin_cast[MutUntrackedOrigin]()
     )
 
     var clc_response_ptr = (

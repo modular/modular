@@ -149,7 +149,9 @@ struct SMemTileArray[
     comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
 
     var ptr: UnsafePointer[
-        Scalar[Self.dtype], MutExternalOrigin, address_space=AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutUntrackedOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     def __init__(
@@ -230,7 +232,7 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
     """
 
     comptime ptr_type = UnsafePointer[
-        Self.type, MutExternalOrigin, address_space=AddressSpace.SHARED
+        Self.type, MutUntrackedOrigin, address_space=AddressSpace.SHARED
     ]
     comptime storage_size = Self.size * size_of[Self.type]()
     comptime Storage = InlineArray[Self.type, Self.size]
@@ -291,5 +293,5 @@ comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
 comptime SMemPtr[type: AnyType] = UnsafePointer[
-    type, MutExternalOrigin, address_space=AddressSpace.SHARED
+    type, MutUntrackedOrigin, address_space=AddressSpace.SHARED
 ]

@@ -106,7 +106,7 @@ struct QRegisterBuffer[
     comptime RegType = TileTensor[
         Self.dtype,
         type_of(Self.reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var reg_tile: Self.RegType
@@ -229,7 +229,7 @@ struct QRegisterBuffer[
     ](self) -> TileTensor[
         Self.dtype,
         type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
         """Return MMA-sized sub-tile for the given tile and k indices."""
@@ -237,7 +237,7 @@ struct QRegisterBuffer[
             TileTensor[
                 Self.dtype,
                 type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
-                MutExternalOrigin,
+                MutUntrackedOrigin,
                 address_space=AddressSpace.LOCAL,
             ]
         ](
@@ -285,7 +285,7 @@ struct OutputRegisterBuffer[
     comptime RegType = TileTensor[
         Self.dtype,
         type_of(Self.reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var reg_tile: Self.RegType
@@ -347,7 +347,7 @@ struct PRegisterBuffer[
     comptime RegType = TileTensor[
         Self.accum_type_,
         type_of(Self.reg_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
     var reg_tile: Self.RegType
@@ -359,7 +359,7 @@ struct PRegisterBuffer[
     comptime StageTileType = TileTensor[
         Self.accum_type_,
         type_of(Self.stage_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 
@@ -550,7 +550,7 @@ struct PRegisterBuffer[
     comptime MmaTileType = TileTensor[
         Self.mma_dtype,
         type_of(Self._mma_layout),
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.LOCAL,
     ]
 

@@ -24,7 +24,7 @@ from std.testing import assert_equal
 
 def native_stream_ptr(
     stream: DeviceStream,
-) raises -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
+) raises -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
     comptime if has_nvidia_gpu_accelerator():
         return unsafe_cast[Type=NoneType](CUDA(stream))
     else:

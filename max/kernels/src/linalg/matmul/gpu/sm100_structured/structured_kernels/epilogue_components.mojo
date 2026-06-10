@@ -1704,7 +1704,7 @@ struct SMemEpilogueWriter[
         comptime warp_tile_layout = row_major[Self.data_paths, Self.stageN]()
         comptime SMemPtr = UnsafePointer[
             Scalar[Self.c_type],
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
         ]
         var upper_tile = TileTensor(

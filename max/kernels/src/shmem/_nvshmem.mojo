@@ -416,29 +416,29 @@ def nvshmem_n_pes() -> c_int:
 
 def nvshmem_malloc[
     dtype: DType
-](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     return _get_nvshmem_function[
         "nvshmem_malloc",
-        def(c_size_t) thin -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        def(c_size_t) thin -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     ]()(size)
 
 
 def nvshmem_calloc[
     dtype: DType
 ](count: c_size_t, size: c_size_t) -> UnsafePointer[
-    Scalar[dtype], MutExternalOrigin
+    Scalar[dtype], MutUntrackedOrigin
 ]:
     return _get_nvshmem_function[
         "nvshmem_calloc",
         def(
             c_size_t, c_size_t
-        ) thin -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        ) thin -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     ]()(count, size)
 
 
 def nvshmem_free[
     dtype: DType, //
-](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
+](ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]):
     _get_nvshmem_function[
         "nvshmem_free",
         def(type_of(ptr)) thin -> NoneType,

@@ -506,7 +506,7 @@ def main() raises:
         def make_vl(
             val: UInt32, ctx: DeviceContext
         ) raises -> LayoutTensor[
-            DType.uint32, Layout.row_major(1), MutExternalOrigin
+            DType.uint32, Layout.row_major(1), MutUntrackedOrigin
         ]:
             var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
             ctx.enqueue_memset(dev_buf, val)

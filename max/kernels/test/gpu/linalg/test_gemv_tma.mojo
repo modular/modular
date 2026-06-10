@@ -90,7 +90,7 @@ def gemv_tma_kernel[
         UnsafePointer[
             Scalar[dtype],
             address_space=AddressSpace.SHARED,
-            ExternalOrigin[mut=True],
+            UntrackedOrigin[mut=True],
         ]
     ](
         external_memory[

@@ -89,7 +89,7 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
     comptime tensor_type = LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
 
     var shape: IndexList[Self.rank]
-    var host_ptr: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
+    var host_ptr: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var device_buf: Optional[DeviceBuffer[Self.dtype]]
 
     def __init__(out self, shape: IndexList[Self.rank]):

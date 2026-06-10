@@ -566,7 +566,7 @@ def test_unsafe_origin_cast() raises:
     _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
 
 
-def _ptr_to_int(ptr: UnsafePointer[Int, MutExternalOrigin]) -> Int:
+def _ptr_to_int(ptr: UnsafePointer[Int, MutUntrackedOrigin]) -> Int:
     return Int(ptr)
 
 
@@ -579,7 +579,7 @@ def test_ptr_to_int_llvm_lowering() raises:
     assert_false("ptrtoaddr" in info.asm)
 
 
-def _from_address(x: Int, out result: UnsafePointer[Int, MutExternalOrigin]):
+def _from_address(x: Int, out result: UnsafePointer[Int, MutUntrackedOrigin]):
     result = type_of(result)(unsafe_from_address=x)
 
 
@@ -654,10 +654,10 @@ def test_unsafe_pointer_niche() raises:
 
 
 def test_unsafe_pointer_dangling() raises:
-    var int_ptr = UnsafePointer[Int, MutExternalOrigin].unsafe_dangling()
+    var int_ptr = UnsafePointer[Int, MutUntrackedOrigin].unsafe_dangling()
     assert_equal(Int(int_ptr) % align_of[Int](), 0)
 
-    var str_ptr = UnsafePointer[String, MutExternalOrigin].unsafe_dangling()
+    var str_ptr = UnsafePointer[String, MutUntrackedOrigin].unsafe_dangling()
     assert_equal(Int(str_ptr) % align_of[String](), 0)
 
 

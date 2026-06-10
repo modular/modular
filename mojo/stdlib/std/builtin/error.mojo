@@ -49,7 +49,7 @@ struct StackTrace(Copyable, Movable, Writable):
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutExternalOrigin],
+        unsafe_from_raw_pointer: UnsafePointer[UInt8, MutUntrackedOrigin],
     ):
         """Construct a StackTrace from a raw pointer to a C string.
 
@@ -112,7 +112,7 @@ struct StackTrace(Copyable, Movable, Writable):
         if depth < 0:
             return None
 
-        var buffer = Optional[UnsafePointer[UInt8, MutExternalOrigin]]()
+        var buffer = Optional[UnsafePointer[UInt8, MutUntrackedOrigin]]()
         var num_bytes = external_call[
             "KGEN_CompilerRT_GetStackTrace", SIMDSize
         ](UnsafePointer(to=buffer), depth)

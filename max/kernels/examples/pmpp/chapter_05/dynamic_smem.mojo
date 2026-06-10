@@ -24,9 +24,9 @@ from std.gpu.memory import AddressSpace, external_memory
 
 
 def matrixMulKernel(
-    M: UnsafePointer[Float32, MutExternalOrigin],
-    N: UnsafePointer[Float32, MutExternalOrigin],
-    P: UnsafePointer[Float32, MutExternalOrigin],
+    M: UnsafePointer[Float32, MutUntrackedOrigin],
+    N: UnsafePointer[Float32, MutUntrackedOrigin],
+    P: UnsafePointer[Float32, MutUntrackedOrigin],
     Width: Int,
     tile_width: Int,
 ):
@@ -44,7 +44,7 @@ def matrixMulKernel(
     var Mds = rebind[
         UnsafePointer[
             Scalar[DType.float32],
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.SHARED,
         ]
     ](
@@ -97,9 +97,9 @@ def matrixMulKernel(
 
 
 def cpu_matmul(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
-    c: UnsafePointer[Float32, MutExternalOrigin],
+    a: UnsafePointer[Float32, MutUntrackedOrigin],
+    b: UnsafePointer[Float32, MutUntrackedOrigin],
+    c: UnsafePointer[Float32, MutUntrackedOrigin],
     width: Int,
 ):
     """CPU reference implementation for matrix multiplication.
@@ -117,8 +117,8 @@ def cpu_matmul(
 
 
 def initialize(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
+    a: UnsafePointer[Float32, MutUntrackedOrigin],
+    b: UnsafePointer[Float32, MutUntrackedOrigin],
     width: Int,
 ):
     """Initialize input matrices with test data.

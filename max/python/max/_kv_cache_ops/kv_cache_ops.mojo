@@ -56,11 +56,11 @@ def _make_int_list(values: InlineArray[Int, 3]) -> PythonObject:
 
 def _get_ctx(
     device_context_ptr: PythonObject,
-) raises -> Optional[OpaquePointer[MutExternalOrigin]]:
+) raises -> Optional[OpaquePointer[MutUntrackedOrigin]]:
     var addr = Int(py=device_context_ptr)
     if addr == 0:
         return None
-    return OpaquePointer[MutExternalOrigin](unsafe_from_address=addr)
+    return OpaquePointer[MutUntrackedOrigin](unsafe_from_address=addr)
 
 
 def mha_decode_num_partitions(

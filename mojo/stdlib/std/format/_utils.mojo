@@ -399,7 +399,7 @@ comptime STACK_BUFFER_BYTES = UInt(
 
 
 struct _WriteBufferHeap(Writable, Writer):
-    var _data: UnsafePointer[Byte, MutExternalOrigin]
+    var _data: UnsafePointer[Byte, MutUntrackedOrigin]
     var _pos: Int
 
     def __init__(out self):

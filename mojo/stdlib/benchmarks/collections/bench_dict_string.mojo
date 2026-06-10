@@ -81,9 +81,9 @@ from std.bit import bit_width, pop_count
 struct KeysContainer[KeyEndType: DType = DType.uint32](
     ImplicitlyCopyable, Sized
 ):
-    var keys: UnsafePointer[UInt8, MutExternalOrigin]
+    var keys: UnsafePointer[UInt8, MutUntrackedOrigin]
     var allocated_bytes: Int
-    var keys_end: UnsafePointer[Scalar[Self.KeyEndType], MutExternalOrigin]
+    var keys_end: UnsafePointer[Scalar[Self.KeyEndType], MutUntrackedOrigin]
     var count: Int
     var capacity: Int
 
@@ -196,12 +196,12 @@ struct StringDict[
     caching_hashes: Bool = True,
 ](Sized):
     var keys: KeysContainer[Self.KeyOffsetType]
-    var key_hashes: UnsafePointer[Scalar[Self.KeyCountType], MutExternalOrigin]
+    var key_hashes: UnsafePointer[Scalar[Self.KeyCountType], MutUntrackedOrigin]
     var values: List[Self.V]
     var slot_to_index: UnsafePointer[
-        Scalar[Self.KeyCountType], MutExternalOrigin
+        Scalar[Self.KeyCountType], MutUntrackedOrigin
     ]
-    var deleted_mask: UnsafePointer[UInt8, MutExternalOrigin]
+    var deleted_mask: UnsafePointer[UInt8, MutUntrackedOrigin]
     var count: Int
     var capacity: Int
 

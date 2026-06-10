@@ -89,16 +89,16 @@ def gated_delta_conv1d_fwd_gpu[
     total_seq_len: Int,
     conv_dim: Int,
     qkv_input_ragged: TileTensor[
-        work_dtype, qkv_input_ragged_LT, MutExternalOrigin
+        work_dtype, qkv_input_ragged_LT, MutUntrackedOrigin
     ],
-    conv_weight: TileTensor[work_dtype, conv_weight_LT, MutExternalOrigin],
-    conv_state: TileTensor[state_dtype, conv_state_LT, MutExternalOrigin],
-    slot_idx: TileTensor[DType.uint32, slot_idx_LT, MutExternalOrigin],
+    conv_weight: TileTensor[work_dtype, conv_weight_LT, MutUntrackedOrigin],
+    conv_state: TileTensor[state_dtype, conv_state_LT, MutUntrackedOrigin],
+    slot_idx: TileTensor[DType.uint32, slot_idx_LT, MutUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, input_row_offsets_LT, MutExternalOrigin
+        DType.uint32, input_row_offsets_LT, MutUntrackedOrigin
     ],
     conv_output_ragged: TileTensor[
-        work_dtype, conv_output_ragged_LT, MutExternalOrigin
+        work_dtype, conv_output_ragged_LT, MutUntrackedOrigin
     ],
     # Strides for [total_seq_len, conv_dim] tensors
     qkv_input_seqlen_stride: UInt32,  # stride along total_seq_len axis

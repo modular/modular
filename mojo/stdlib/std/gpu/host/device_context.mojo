@@ -134,71 +134,71 @@ struct _DeviceGraphCpp:
 comptime _DeviceContextPtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceContextCpp, origin]
 
 comptime _DeviceBufferPtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceBufferCpp, origin]
 
 comptime _DeviceFunctionPtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceFunctionCpp, origin]
 
 comptime _DeviceMulticastBufferPtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceMulticastBufferCpp, origin]
 
 comptime _DeviceStreamPtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceStreamCpp, origin]
 
 comptime _DeviceEventPtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceEventCpp, origin]
 
 comptime _DeviceTimerPtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceTimerCpp, origin]
 
 comptime _CompletionFlagPtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_CompletionFlagCpp, origin]
 
 comptime _DeviceContextScopePtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceContextScopeCpp, origin]
 
 comptime _DeviceGraphBuilderPtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceGraphBuilderCpp, origin]
 
 comptime _DeviceGraphPtr[
     mut: Bool,
     //,
-    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
 ] = _CPointer[_DeviceGraphCpp, origin]
 
 comptime _CString[
-    origin: Origin[mut=False] = ExternalOrigin[mut=False]
+    origin: Origin[mut=False] = UntrackedOrigin[mut=False]
 ] = Optional[CStringSlice[origin]]
 
 comptime _DumpPath = Variant[Bool, Path, StaticString, def() capturing -> Path]
@@ -357,7 +357,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         dtype: Data type to be stored in the buffer.
     """
 
-    comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
+    comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
 
     # We cache the pointer of the buffer here to provide access to elements.
     var _host_ptr: Self._HostPtr
@@ -519,7 +519,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
         var new_host_ptr = Optional[
-            UnsafePointer[Scalar[view_type], MutExternalOrigin]
+            UnsafePointer[Scalar[view_type], MutUntrackedOrigin]
         ]()
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
@@ -1283,7 +1283,7 @@ struct DeviceBuffer[dtype: DType](
         """
         return String(t"DeviceBuffer[{Self.dtype}]")
 
-    comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
+    comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
@@ -1412,14 +1412,14 @@ struct DeviceBuffer[dtype: DType](
         comptime elem_size = size_of[_dtype]()
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
         var device_ptr = rebind[
-            UnsafePointer[Scalar[_dtype], MutExternalOrigin]
+            UnsafePointer[Scalar[_dtype], MutUntrackedOrigin]
         ](ptr)
         external_call[
             "AsyncRT_DeviceContext_createBuffer_owning",
             NoneType,
             UnsafePointer[_DeviceBufferPtr[mut=True], origin_of(cpp_handle)],
             _DeviceContextPtr[mut=True],
-            UnsafePointer[Scalar[_dtype], MutExternalOrigin],
+            UnsafePointer[Scalar[_dtype], MutUntrackedOrigin],
             c_size_t,
             c_size_t,
             Bool,
@@ -1528,7 +1528,7 @@ struct DeviceBuffer[dtype: DType](
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
         var new_device_ptr: Optional[
-            UnsafePointer[Scalar[view_type], MutExternalOrigin]
+            UnsafePointer[Scalar[view_type], MutUntrackedOrigin]
         ] = {}
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
@@ -2953,9 +2953,9 @@ struct DeviceFunction[
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[
-            OpaquePointer[MutAnyOrigin], MutExternalOrigin
+            OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
         ]
-        var dense_args_sizes: UnsafePointer[UInt64, MutExternalOrigin]
+        var dense_args_sizes: UnsafePointer[UInt64, MutUntrackedOrigin]
         if num_captures > num_captures_static:
             dense_args_addrs = alloc(
                 Layout[OpaquePointer[MutAnyOrigin]](
@@ -3223,7 +3223,7 @@ struct DeviceFunction[
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[
-            OpaquePointer[MutAnyOrigin], MutExternalOrigin
+            OpaquePointer[MutAnyOrigin], MutUntrackedOrigin
         ]
         if num_captures > num_captures_static:
             dense_args_addrs = alloc(
@@ -3317,7 +3317,7 @@ struct DeviceFunction[
                     len(attributes),
                     dense_args_addrs.as_any_origin(),
                     UInt32(num_translated_args + num_captures),
-                    Optional[UnsafePointer[UInt64, MutExternalOrigin]](),
+                    Optional[UnsafePointer[UInt64, MutUntrackedOrigin]](),
                 ),
                 device_context=self._context,
                 location=location.or_else(call_location()),
@@ -3753,7 +3753,7 @@ struct _GraphDepArgs(TrivialRegisterPassable):
     side never dereferences it).
     """
 
-    var ids: UnsafePointer[Int32, ImmutExternalOrigin]
+    var ids: UnsafePointer[Int32, ImmutUntrackedOrigin]
     var count: Int64
 
 
@@ -3773,7 +3773,7 @@ def _pack_dep_args(deps: List[DeviceGraphNode]) -> _GraphDepArgs:
     return _GraphDepArgs(
         ids=deps.unsafe_ptr()
         .bitcast[Int32]()
-        .unsafe_origin_cast[ImmutExternalOrigin](),
+        .unsafe_origin_cast[ImmutUntrackedOrigin](),
         count=Int64(len(deps)),
     )
 
@@ -4783,7 +4783,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         self._owning = False
 
     @doc_hidden
-    def __init__(out self, handle: OpaquePointer[ExternalOrigin[mut=True]]):
+    def __init__(out self, handle: OpaquePointer[UntrackedOrigin[mut=True]]):
         """Create a non-owning Mojo `DeviceContext` from a raw, type-erased
         pointer to an existing C++ `DeviceContext`.
 

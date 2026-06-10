@@ -757,7 +757,9 @@ struct _FlashAttention[
             )
 
             var packed_ptr_allocated = max_seq_len != 1
-            var packed_ptr: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
+            var packed_ptr: UnsafePointer[
+                Scalar[Self.dtype], MutUntrackedOrigin
+            ]
             if packed_ptr_allocated:
                 packed_ptr = alloc[Scalar[Self.dtype]](
                     packed_size,

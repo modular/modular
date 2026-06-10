@@ -414,7 +414,7 @@ def build_ndbuffer[
     *,
     static_shape: IndexList[rank] = IndexList[rank](fill=UNKNOWN_VALUE),
 ](shape: IndexList[rank]) raises -> LayoutTensor[
-    dtype, Layout.row_major(static_shape), MutExternalOrigin
+    dtype, Layout.row_major(static_shape), MutUntrackedOrigin
 ]:
     var ptr = alloc[Scalar[dtype]](shape.flattened_length())
     rand(ptr, shape.flattened_length())

@@ -1990,7 +1990,7 @@ struct PyObjectFunction[
     ](
         func: Self.func_type,
         py_self: PO,
-        args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
         nargs: Int,
     ) raises -> PO:
         """Compile-time dispatch for METH_FASTCALL non-kwargs function/method

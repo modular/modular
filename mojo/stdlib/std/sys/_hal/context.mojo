@@ -184,7 +184,7 @@ struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         )
 
         var opts = M_driver_bundle_compilation_options(
-            debug_level=rebind[ImmutPointer[Int8, ImmutExternalOrigin]](
+            debug_level=rebind[ImmutPointer[Int8, ImmutUntrackedOrigin]](
                 "".unsafe_ptr()
             ),
             debug_level_len=UInt64(0),

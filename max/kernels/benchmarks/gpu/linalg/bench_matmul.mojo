@@ -442,7 +442,7 @@ def bench_matmul[
         # in the correct c_type
         var c_dummy = TileTensor(
             UnsafePointer[
-                Scalar[DType.bfloat16], MutExternalOrigin
+                Scalar[DType.bfloat16], MutUntrackedOrigin
             ].unsafe_dangling(),
             row_major(shape_c),
         )

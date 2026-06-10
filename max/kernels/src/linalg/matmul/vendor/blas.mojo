@@ -1194,7 +1194,7 @@ def _cublasLt_matmul[
                     .bitcast[NoneType]()
                     .as_immutable()
                     .as_any_origin(),
-                    size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+                    size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
                 ),
                 msg=(
                     "failed to set cublasLtMatmulDescAttribute for Matrix A"
@@ -1209,7 +1209,7 @@ def _cublasLt_matmul[
                     .bitcast[NoneType]()
                     .as_immutable()
                     .as_any_origin(),
-                    size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+                    size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
                 ),
                 msg=(
                     "failed to set cublasLtMatmulDescAttribute for Matrix B"
@@ -1573,7 +1573,7 @@ def _hipblasLt_matmul[
                 operationDesc,
                 hipblasLtMatmulDescAttributes_t.A_SCALE_POINTER,
                 UnsafePointer(to=a_scale_ptr).bitcast[NoneType](),
-                size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+                size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
             )
         )
         _check_hipblas_error(
@@ -1581,7 +1581,7 @@ def _hipblasLt_matmul[
                 operationDesc,
                 hipblasLtMatmulDescAttributes_t.B_SCALE_POINTER,
                 UnsafePointer(to=b_scale_ptr).bitcast[NoneType](),
-                size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+                size_of[OpaquePointer[UntrackedOrigin[mut=True]]](),
             )
         )
 

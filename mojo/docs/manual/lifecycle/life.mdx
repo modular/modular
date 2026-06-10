@@ -363,7 +363,7 @@ performs a deep copy:
 
 ```mojo
 struct HeapArray(Copyable):
-    var data: UnsafePointer[Int, MutExternalOrigin]
+    var data: UnsafePointer[Int, MutUntrackedOrigin]
     var size: Int
     var cap: Int
 

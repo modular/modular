@@ -2883,7 +2883,7 @@ def stack_allocation[
 ](var layout: LayoutType) -> TileTensor[
     dtype,
     LayoutType,
-    MutExternalOrigin,
+    MutUntrackedOrigin,
     address_space=address_space,
 ] where LayoutType.all_dims_known:
     """Allocate a TileTensor on the stack with the given layout.
@@ -2915,7 +2915,7 @@ def stack_allocation[
     return TileTensor[
         dtype,
         LayoutType,
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=address_space,
     ](
         _std_stack_allocation[

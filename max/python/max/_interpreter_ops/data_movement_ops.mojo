@@ -107,8 +107,8 @@ def _pad_shape_to_max_rank(
 def static_broadcast_to_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
     ctx: DeviceContext,
@@ -237,8 +237,8 @@ def static_broadcast_to_dispatcher(
 def transpose_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
     perm_data: InlineArray[Int64, MAX_RANK],
@@ -457,8 +457,8 @@ def memcpy_dispatcher(
 def memcpy_op[
     dtype: DType
 ](
-    dst_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    src_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dst_offset: Int,
     src_offset: Int,
     count: Int,
@@ -511,13 +511,13 @@ def memcpy_op[
 def slice_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
-    starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
+    starts_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    stops_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    steps_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises:
     """Call Slice.execute with MAX_RANK tensors.
@@ -610,9 +610,9 @@ struct _SliceBody(Dispatchable):
     var in_addr: Int
     var in_shape: IndexList[MAX_RANK]
     var out_shape: IndexList[MAX_RANK]
-    var starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
-    var stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
-    var steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
+    var starts_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
+    var stops_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
+    var steps_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin]
     var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
@@ -703,8 +703,8 @@ def slice_dispatcher(
 def mutable_store_slice_op[
     dtype: DType
 ](
-    dst_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    src_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    dst_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dst_shape: IndexList[MAX_RANK],
     src_shape: IndexList[MAX_RANK],
     starts: InlineArray[Int64, MAX_RANK],

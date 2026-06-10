@@ -56,8 +56,8 @@ def PyInit_argmax_ops() abi("C") -> PythonObject:
 def argminmax_reduce_op[
     dtype: DType, //, is_max: Bool
 ](
-    out_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[DType.int64], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     dim0: Int,
     dim1: Int,
     dim2: Int,

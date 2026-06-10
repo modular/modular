@@ -290,13 +290,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
         #   in a global variable (yet).
         return Self._unsafe_add_functions(
             module,
-            functions.steal_data().unsafe_origin_cast[MutExternalOrigin](),
+            functions.steal_data().unsafe_origin_cast[MutUntrackedOrigin](),
         )
 
     @staticmethod
     def _unsafe_add_functions(
         module: PythonObject,
-        functions: UnsafePointer[PyMethodDef, MutExternalOrigin],
+        functions: UnsafePointer[PyMethodDef, MutUntrackedOrigin],
     ) raises:
         """Adds functions to a Python module object.
 

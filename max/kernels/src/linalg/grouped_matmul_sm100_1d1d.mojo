@@ -1908,7 +1908,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         config.num_pipeline_stages // config.k_group_size
     ](
         tma_mma_mbars_storage.unsafe_ptr().unsafe_origin_cast[
-            MutExternalOrigin
+            MutUntrackedOrigin
         ](),
     )
 
@@ -1918,7 +1918,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         config.num_accum_pipeline_stages
     ](
         accum_mbars_storage.unsafe_ptr().unsafe_origin_cast[
-            MutExternalOrigin
+            MutUntrackedOrigin
         ](),
     )
 

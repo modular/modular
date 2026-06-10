@@ -88,7 +88,7 @@ comptime LocalTensor[
         shape_types=layout.shape_types,
         stride_types=layout.stride_types,
     ],
-    MutExternalOrigin,
+    MutUntrackedOrigin,
     address_space=AddressSpace.LOCAL,
 ]
 comptime SharedMemTensor[dtype: DType, layout: InternalLayout] = TileTensor[
@@ -97,7 +97,7 @@ comptime SharedMemTensor[dtype: DType, layout: InternalLayout] = TileTensor[
         shape_types=layout.shape_types,
         stride_types=layout.stride_types,
     ],
-    MutExternalOrigin,
+    MutUntrackedOrigin,
     address_space=AddressSpace.SHARED,
 ]
 

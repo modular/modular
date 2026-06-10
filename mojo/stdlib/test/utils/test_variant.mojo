@@ -46,7 +46,7 @@ def _initialize_poison() -> Bool:
     return False
 
 
-def _poison_ptr() -> UnsafePointer[Bool, MutExternalOrigin]:
+def _poison_ptr() -> UnsafePointer[Bool, MutUntrackedOrigin]:
     try:
         return TEST_VARIANT_POISON.get_or_create_ptr()
     except:

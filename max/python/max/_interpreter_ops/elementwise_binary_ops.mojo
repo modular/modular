@@ -430,9 +430,9 @@ def bin_bool_dispatcher[
 def bin_elementwise_op[
     op: ElementwiseBinaryOp, dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    lhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    rhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:
@@ -484,9 +484,9 @@ def bin_elementwise_op[
 def pow_elementwise_op[
     dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    lhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    rhs_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:

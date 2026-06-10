@@ -235,8 +235,8 @@ def _cast_dispatch_out[
 def unary_mixed_op[
     op: ElementwiseUnaryMixedOp, dtype: DType, out_dtype: DType
 ](
-    out_ptr: UnsafePointer[Scalar[out_dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[out_dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     size: Int,
     ctx: DeviceContext,
 ) raises:

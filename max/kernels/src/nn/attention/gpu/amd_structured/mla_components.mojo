@@ -550,7 +550,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         //,
         v_full_v227: Bool = False,
     ](
-        v_smem_slot: SMemTile[Self.config.dtype, _, MutExternalOrigin, ...],
+        v_smem_slot: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         v_op: v_t,
         batch_idx: UInt32,
         kv_head_idx: UInt32,
@@ -606,7 +606,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     ](
         q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
     ) -> RegTile[
-        Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutExternalOrigin
+        Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin
     ]:
         """Loads the warp's Q sub-tile at d_qk from gmem into the row_l
         register tile. Mirrors `MhaPrefillV2.load_q` but iterates
@@ -676,7 +676,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     ](
         q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
         scale_log2e: Float32,
-    ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutExternalOrigin]:
+    ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin]:
         """Loads Q (d_qk wide) and (when `Self.prescale_q` is True)
         prescales it by `scale * log2e`.
 
@@ -731,10 +731,10 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     @always_inline
     def _att_bf16_full(
         mut dst: RegTile[
-            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
         ],
         att_block: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
     ):
         """Bulk-casts `att_block` (FP32) to the PV-A input dtype, writing
@@ -788,10 +788,10 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     @always_inline
     def _qk_collapse_inplace(
         mut att_block: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
     ) -> RegTile[
-        Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutExternalOrigin
+        Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
     ]:
         """Collapse the post-softmax FP32 score tile 4:1 to FP8 IN PLACE,
         into `att_block`'s OWN low quarter — the `v_cvt_pk_fp8_f32`
@@ -826,7 +826,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         var p_view = RegTile[
             Self.config.dtype,
             Self._ATT_BF16_FULL_LAYOUT_T,
-            MutExternalOrigin,
+            MutUntrackedOrigin,
         ](
             att_block.ptr.bitcast[Scalar[Self.config.dtype]](),
             Self._MmaOp.ATT_BF16_FULL_LAYOUT,
@@ -841,7 +841,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         output_dtype: DType,
         epilogue_chunk_width: Int = 1,
     ](
-        o_reg_t: RegTile[DType.float32, Self._O_T_LAYOUT_T, MutExternalOrigin],
+        o_reg_t: RegTile[DType.float32, Self._O_T_LAYOUT_T, MutUntrackedOrigin],
         epilogue_writer: RegTileEpilogue[output_dtype, epilogue_chunk_width],
         l_id: Int,
         valid_q_rows_in_warp: Int,
@@ -988,7 +988,7 @@ struct _MlaKDmaPair[
     @always_inline
     def dma_nope(
         self,
-        k_smem_slot: SMemTile[Self.config.dtype, _, MutExternalOrigin, ...],
+        k_smem_slot: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         w_id: Int,
         l_id: Int,
     ):
@@ -1058,7 +1058,7 @@ struct _MlaKDmaPair[
     @always_inline
     def dma_rope(
         self,
-        k_smem_slot: SMemTile[Self.config.dtype, _, MutExternalOrigin, ...],
+        k_smem_slot: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         w_id: Int,
         l_id: Int,
     ):
@@ -1139,7 +1139,7 @@ struct _MlaKDmaPair[
     @always_inline
     def dma(
         self,
-        k_smem_slot: SMemTile[Self.config.dtype, _, MutExternalOrigin, ...],
+        k_smem_slot: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         w_id: Int,
         l_id: Int,
     ):

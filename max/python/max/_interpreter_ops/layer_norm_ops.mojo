@@ -58,10 +58,10 @@ def PyInit_layer_norm_ops() abi("C") -> PythonObject:
 def _layer_norm_cpu[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    beta_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     batch_dim: Int,
     feature_dim: Int,
     epsilon: Scalar[dtype],
@@ -112,10 +112,10 @@ def _layer_norm_cpu[
 def layer_norm_op[
     dtype: DType,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    beta_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    gamma_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    beta_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     shape: IndexList[2],
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],

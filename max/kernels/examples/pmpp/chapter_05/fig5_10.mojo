@@ -24,9 +24,9 @@ from std.memory import stack_allocation
 
 
 def matrix_mul_tiled_kernel(
-    M: UnsafePointer[Float32, MutExternalOrigin],
-    N: UnsafePointer[Float32, MutExternalOrigin],
-    P: UnsafePointer[Float32, MutExternalOrigin],
+    M: UnsafePointer[Float32, MutUntrackedOrigin],
+    N: UnsafePointer[Float32, MutUntrackedOrigin],
+    P: UnsafePointer[Float32, MutUntrackedOrigin],
     Width: Int,
 ):
     """Tiled matrix multiplication kernel using shared memory.
@@ -82,9 +82,9 @@ def matrix_mul_tiled_kernel(
 
 
 def matmul_tiled(
-    h_a: UnsafePointer[Float32, MutExternalOrigin],
-    h_b: UnsafePointer[Float32, MutExternalOrigin],
-    h_c: UnsafePointer[Float32, MutExternalOrigin],
+    h_a: UnsafePointer[Float32, MutUntrackedOrigin],
+    h_b: UnsafePointer[Float32, MutUntrackedOrigin],
+    h_c: UnsafePointer[Float32, MutUntrackedOrigin],
     width: Int,
     ctx: DeviceContext,
 ) raises:
@@ -136,9 +136,9 @@ def matmul_tiled(
 
 
 def matmul_cpu(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
-    c: UnsafePointer[Float32, MutExternalOrigin],
+    a: UnsafePointer[Float32, MutUntrackedOrigin],
+    b: UnsafePointer[Float32, MutUntrackedOrigin],
+    c: UnsafePointer[Float32, MutUntrackedOrigin],
     width: Int,
 ):
     """CPU reference implementation for matrix multiplication.
@@ -158,8 +158,8 @@ def matmul_cpu(
 
 
 def initialize(
-    a: UnsafePointer[Float32, MutExternalOrigin],
-    b: UnsafePointer[Float32, MutExternalOrigin],
+    a: UnsafePointer[Float32, MutUntrackedOrigin],
+    b: UnsafePointer[Float32, MutUntrackedOrigin],
     width: Int,
 ):
     """Initialize input matrices with test data.

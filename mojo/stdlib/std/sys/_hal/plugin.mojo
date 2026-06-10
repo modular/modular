@@ -72,7 +72,7 @@ struct M_driver_queue_execute_config_gpu(TrivialRegisterPassable):
     var grid: M_driver_dim
     var block: M_driver_dim
     var shared_mem_bytes: UInt32
-    var attributes: OptionalReg[OpaquePointer[MutExternalOrigin]]
+    var attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]]
     var num_attributes: UInt32
 
 
@@ -91,7 +91,7 @@ struct M_driver_queue_execute_config:
 
 @fieldwise_init
 struct M_driver_bundle_compilation_options(TrivialRegisterPassable):
-    var debug_level: ImmutPointer[Int8, ImmutExternalOrigin]
+    var debug_level: ImmutPointer[Int8, ImmutUntrackedOrigin]
     var debug_level_len: UInt64
     var optimization_level: Int32
 
@@ -155,7 +155,7 @@ struct DriverVersion(TrivialRegisterPassable):
 # C API function pointer types
 # ===-----------------------------------------------------------------------===#
 
-comptime Handle[T: AnyType] = UnsafePointer[T, MutExternalOrigin]
+comptime Handle[T: AnyType] = UnsafePointer[T, MutUntrackedOrigin]
 comptime OutParam[T: TrivialRegisterPassable] = UnsafePointer[
     UnsafeMaybeUninit[T], MutAnyOrigin
 ]
@@ -603,7 +603,7 @@ struct RawDriver(Movable):
         func: FunctionHandle,
         grid: Tuple[UInt32, UInt32, UInt32],
         block: Tuple[UInt32, UInt32, UInt32],
-        args: UnsafePointer[mut=True, OpaquePointer[MutExternalOrigin], _],
+        args: UnsafePointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
         arg_sizes: UnsafePointer[mut=True, UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
@@ -706,7 +706,7 @@ struct RawPlugin(Movable):
         def(
             handle: DriverHandle,
             property_name: CStringSlice[ImmutAnyOrigin],
-            value: OutParam[OpaquePointer[ImmutExternalOrigin]],
+            value: OutParam[OpaquePointer[ImmutUntrackedOrigin]],
         ) thin -> PluginResultCode,
     ]
     var device_count: HALFunction[
@@ -893,7 +893,9 @@ struct RawPlugin(Movable):
             queue: QueueHandle,
             function: FunctionHandle,
             config: ExecuteConfigHandle,
-            args: UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin],
+            args: UnsafePointer[
+                OpaquePointer[MutUntrackedOrigin], MutAnyOrigin
+            ],
             arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
             num_args: UInt32,
         ) thin -> PluginResultCode,

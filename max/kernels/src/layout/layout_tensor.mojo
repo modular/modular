@@ -315,16 +315,16 @@ struct LayoutTensor[
                 Trait=AnyType,
                 Self,
                 Self.OriginCastType[MutAnyOrigin],
-                Self.OriginCastType[MutExternalOrigin],
+                Self.OriginCastType[MutUntrackedOrigin],
                 Self.OriginCastType[ImmutAnyOrigin],
-                Self.OriginCastType[ImmutExternalOrigin],
+                Self.OriginCastType[ImmutUntrackedOrigin],
             ]().contains[T]()
         else:
             return TypeList.of[
                 Trait=AnyType,
                 Self,
                 Self.OriginCastType[ImmutAnyOrigin],
-                Self.OriginCastType[ImmutExternalOrigin],
+                Self.OriginCastType[ImmutUntrackedOrigin],
             ]().contains[T]()
 
     def _to_device_type(

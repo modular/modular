@@ -2064,12 +2064,12 @@ struct ManagedTensorSlice[
         self,
         out result: TileTensor[
             dtype=Self.dtype,
-            origin=MutExternalOrigin,
+            origin=MutUntrackedOrigin,
             LayoutType=Self.RuntimeLayout,
         ],
     ):
         return {
-            self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
+            self.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
             self._runtime_layout,
         }
 

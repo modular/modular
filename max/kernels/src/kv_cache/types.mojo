@@ -2693,7 +2693,7 @@ struct PagedKVCacheCollection[
             LayoutTensor[Self.scale_dtype, Layout.row_major[6](), scales_origin]
         ] = OptionalReg[
             LayoutTensor[
-                Self.scale_dtype, Layout.row_major[6](), MutExternalOrigin
+                Self.scale_dtype, Layout.row_major[6](), MutUntrackedOrigin
             ]
         ](),
     ):

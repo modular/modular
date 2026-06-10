@@ -379,8 +379,8 @@ def reduce_op[
     dtype: DType,
     reduce_fn: ReduceFn,
 ](
-    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
-    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    out_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     normalized_shape: IndexList[3],
     ctx: DeviceContext,
 ) raises:

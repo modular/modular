@@ -134,6 +134,9 @@ from std.builtin.type_aliases import (
     ExternalOrigin,
     ImmutExternalOrigin,
     MutExternalOrigin,
+    UntrackedOrigin,
+    ImmutUntrackedOrigin,
+    MutUntrackedOrigin,
 )
 from std.builtin.value import (
     Copyable,

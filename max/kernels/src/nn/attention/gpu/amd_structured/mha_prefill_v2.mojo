@@ -470,7 +470,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     ](
         q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
     ) -> RegTile[
-        Self.config.dtype, Self._Q_LAYOUT_T, MutExternalOrigin
+        Self.config.dtype, Self._Q_LAYOUT_T, MutUntrackedOrigin
     ]:
         """Loads the warp's Q sub-tile from gmem into a row_l register
         tile via `RegTileLoader`.
@@ -563,7 +563,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     ](
         q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
         scale_log2e: Float32,
-    ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_T, MutExternalOrigin]:
+    ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_T, MutUntrackedOrigin]:
         """Loads Q from gmem and (when `Self.prescale_q` is True) prescales
         it by `scale * log2e`.
 
@@ -750,7 +750,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         v_t: MHAOperand,
         //,
     ](
-        v_smem_slot: SMemTile[Self.config.dtype, _, MutExternalOrigin, ...],
+        v_smem_slot: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         v_op: v_t,
         batch_idx: UInt32,
         kv_head_idx: UInt32,
@@ -787,9 +787,9 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     @always_inline
     def _load_k_reg(
         mut k_reg: RegTile[
-            Self.config.dtype, Self._K_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._K_LAYOUT_T, MutUntrackedOrigin
         ],
-        k_smem_slot: SMemTile[Self.config.dtype, _, MutExternalOrigin, ...],
+        k_smem_slot: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
     ):
         Self._MmaOp.load_K(k_reg, k_smem_slot)
 
@@ -797,13 +797,13 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     @always_inline
     def _qk_with_kreg(
         mut att_block: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
         mut k_reg: RegTile[
-            Self.config.dtype, Self._K_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._K_LAYOUT_T, MutUntrackedOrigin
         ],
         mut q_reg: RegTile[
-            Self.config.dtype, Self._Q_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._Q_LAYOUT_T, MutUntrackedOrigin
         ],
         scale_log2e: Float32,
     ):
@@ -864,9 +864,9 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     @always_inline
     def _load_v_reg(
         mut v_reg: RegTile[
-            Self.config.dtype, Self._V_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._V_LAYOUT_T, MutUntrackedOrigin
         ],
-        v_smem_slot: SMemTile[Self.config.dtype, _, MutExternalOrigin, ...],
+        v_smem_slot: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
     ):
         """LDS→register V load. No waitcnt: the consumer PV cluster
         drains LDS via its own `s_waitcnt[lgkmcnt=0]()`."""
@@ -878,10 +878,10 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         subtile_idx: Int,
     ](
         att_block: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
     ) -> RegTile[
-        Self.config.dtype, Self._ATT_BF16_SUB_LAYOUT_T, MutExternalOrigin
+        Self.config.dtype, Self._ATT_BF16_SUB_LAYOUT_T, MutUntrackedOrigin
     ]:
         """JIT-cast one PV-A subtile (MMA_K-row strip) from `att_block`.
         The narrow lifetime lets RA fold the cast registers into the
@@ -933,10 +933,10 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     @always_inline
     def _att_bf16_full(
         mut dst: RegTile[
-            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
         ],
         att_block: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
     ):
         """Bulk-casts `att_block` to the PV-A input dtype, writing into
@@ -991,11 +991,11 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     @staticmethod
     @always_inline
     def _pv_whole(
-        v_reg: RegTile[Self.config.dtype, Self._V_LAYOUT_T, MutExternalOrigin],
+        v_reg: RegTile[Self.config.dtype, Self._V_LAYOUT_T, MutUntrackedOrigin],
         att_bf16_full: RegTile[
-            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutExternalOrigin],
+        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
     ):
         """Whole-V PV MFMA over a pre-cast `att_bf16_full`. No fused
         softmax — used by the epilogue PV clusters."""
@@ -1012,14 +1012,14 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     def _pv_strip_with_partial_softmax[
         sched_group: Int,
     ](
-        v_reg: RegTile[Self.config.dtype, Self._V_LAYOUT_T, MutExternalOrigin],
+        v_reg: RegTile[Self.config.dtype, Self._V_LAYOUT_T, MutUntrackedOrigin],
         mut att_bf16_full: RegTile[
-            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutExternalOrigin],
+        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
         mut att_block_qk: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
     ) -> Bool:
         """Main-loop C2/C6 body: strip-interleaved PV (using pre-loaded
@@ -1087,14 +1087,14 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     def _pv_whole_with_partial_softmax[
         sched_group: Int,
     ](
-        v_reg: RegTile[Self.config.dtype, Self._V_LAYOUT_T, MutExternalOrigin],
+        v_reg: RegTile[Self.config.dtype, Self._V_LAYOUT_T, MutUntrackedOrigin],
         att_bf16_full: RegTile[
-            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutExternalOrigin],
+        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
         mut att_block_qk: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
     ):
         """Epilogue C2/C6 body: whole-V PV then UNCONDITIONAL rescale +
@@ -1129,7 +1129,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         output_dtype: DType,
         epilogue_chunk_width: Int = 1,
     ](
-        o_reg_t: RegTile[DType.float32, Self._O_T_LAYOUT_T, MutExternalOrigin],
+        o_reg_t: RegTile[DType.float32, Self._O_T_LAYOUT_T, MutUntrackedOrigin],
         epilogue_writer: RegTileEpilogue[output_dtype, epilogue_chunk_width],
         l_id: Int,
         valid_q_rows_in_warp: Int,
@@ -1185,7 +1185,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         sched_group: Int,
     ](
         mut att_block: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
     ):
@@ -1216,19 +1216,19 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         sched_group: Int,
     ](
         mut att_block_qk: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
         mut att_block_softmax: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
         mut att_block_bf16: RegTile[
-            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
         ],
         mut k_reg: RegTile[
-            Self.config.dtype, Self._K_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._K_LAYOUT_T, MutUntrackedOrigin
         ],
         mut q_reg: RegTile[
-            Self.config.dtype, Self._Q_LAYOUT_T, MutExternalOrigin
+            Self.config.dtype, Self._Q_LAYOUT_T, MutUntrackedOrigin
         ],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
         pending_scale: Bool,
@@ -1266,7 +1266,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         sched_group: Int,
     ](
         mut att_block: RegTile[
-            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutExternalOrigin
+            Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
         ],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
     ):
@@ -2177,7 +2177,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         var o_normalized_view = TileTensor[
             DType.float32,
             type_of(_o_view_layout),
-            MutExternalOrigin,
+            MutUntrackedOrigin,
             address_space=AddressSpace.LOCAL,
         ](o_reg.ptr, _o_view_layout)
         var epilogue_writer = RegTileEpilogue[output_dtype, 1](o_warp_2d)

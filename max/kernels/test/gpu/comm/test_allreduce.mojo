@@ -78,7 +78,7 @@ def allreduce_test[
     # Create device buffers for all GPUs
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
+    var host_buffers = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
@@ -303,7 +303,7 @@ def allreduce_naive_test() raises -> None:
     # Allocate input/output buffers and initialize inputs
     var in_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var host_ptrs = List[UnsafePointer[Float32, MutExternalOrigin]](
+    var host_ptrs = List[UnsafePointer[Float32, MutUntrackedOrigin]](
         capacity=ngpus
     )
 

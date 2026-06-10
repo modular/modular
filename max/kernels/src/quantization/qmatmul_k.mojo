@@ -261,7 +261,7 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 def _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
 ](a: LayoutTensor[dtype, ...]) -> UnsafePointer[
-    _block_Q8_K_packed[group_size], MutExternalOrigin
+    _block_Q8_K_packed[group_size], MutUntrackedOrigin
 ]:
     comptime assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k

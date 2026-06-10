@@ -456,7 +456,7 @@ def _matmul_cpu_impl[
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
         var a_packed_ptr: Optional[
-            UnsafePointer[Scalar[a.dtype], MutExternalOrigin]
+            UnsafePointer[Scalar[a.dtype], MutUntrackedOrigin]
         ] = None
         comptime if use_i8mm:
             a_packed_ptr = alloc[Scalar[a.dtype]](mh * kh, alignment=alignment)

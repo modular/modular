@@ -334,7 +334,7 @@ def _resize[
             resize_dims.append(i)
     var interpolator = Interpolator[interpolation_mode]()
 
-    var in_ptr = input.ptr.unsafe_origin_cast[MutExternalOrigin]()
+    var in_ptr = input.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     # SAFETY: Placeholder; always overwritten below.
     var out_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
 
@@ -393,7 +393,7 @@ def _resize[
                 )
 
         in_shape = out_shape
-        in_ptr = out_ptr.unsafe_origin_cast[MutExternalOrigin]()
+        in_ptr = out_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
 
         out_ptr = (
             tmp_buffer2.unsafe_ptr() if using_tmp1 else tmp_buffer1.unsafe_ptr()

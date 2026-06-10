@@ -182,7 +182,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     """Convenience alias: `WeakPointer[T]` for this `ArcPointer[T]`."""
 
     comptime _inner_type = _ArcPointerInner[Self.T]
-    var _inner: UnsafePointer[Self._inner_type, MutExternalOrigin]
+    var _inner: UnsafePointer[Self._inner_type, MutUntrackedOrigin]
 
     def __init__(out self, var value: Self.T):
         """Construct a new thread-safe, reference-counted smart pointer,
@@ -200,7 +200,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     def __init__(
         out self,
         *,
-        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutExternalOrigin],
+        unsafe_from_raw_pointer: UnsafePointer[Self.T, MutUntrackedOrigin],
     ):
         """Constructs an `ArcPointer` from a raw pointer.
 
@@ -245,7 +245,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     def __init__(
         out self,
         *,
-        _inner: UnsafePointer[Self._inner_type, MutExternalOrigin],
+        _inner: UnsafePointer[Self._inner_type, MutUntrackedOrigin],
     ):
         """Internal: construct from an already-incremented inner pointer.
 
@@ -338,7 +338,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         # is from a strong and there _must_ be exactly one implicit.
         return self._inner[].weak_count_with_implicit() - 1
 
-    def steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
+    def steal_data(deinit self) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
         """Consume this `ArcPointer`, returning a raw pointer to the underlying data.
 
         Returns:
@@ -451,8 +451,8 @@ struct WeakPointer[T: Movable & ImplicitlyDestructible](
     """
 
     comptime _inner_type = _ArcPointerInner[Self.T]
-    # FIXME MOCO-3525: use UnsafePointer[Self._inner_type, MutExternalOrigin]
-    comptime _inner_ptr_type = UnsafePointer[NoneType, MutExternalOrigin]
+    # FIXME MOCO-3525: use UnsafePointer[Self._inner_type, MutUntrackedOrigin]
+    comptime _inner_ptr_type = UnsafePointer[NoneType, MutUntrackedOrigin]
     var _inner: Optional[Self._inner_ptr_type]
 
     def __init__(

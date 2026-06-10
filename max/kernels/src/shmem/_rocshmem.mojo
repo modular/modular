@@ -464,10 +464,10 @@ def rocshmem_n_pes() -> c_int:
 
 def rocshmem_malloc[
     dtype: DType
-](size: c_size_t) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+](size: c_size_t) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     var ptr = _get_rocshmem_function[
         "rocshmem_malloc",
-        def(c_size_t) thin -> _CPointer[Scalar[dtype], MutExternalOrigin],
+        def(c_size_t) thin -> _CPointer[Scalar[dtype], MutUntrackedOrigin],
     ]()(size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_malloc", size)
@@ -476,13 +476,13 @@ def rocshmem_malloc[
 def rocshmem_calloc[
     dtype: DType
 ](count: c_size_t, size: c_size_t) raises -> UnsafePointer[
-    Scalar[dtype], MutExternalOrigin
+    Scalar[dtype], MutUntrackedOrigin
 ]:
     var ptr = _get_rocshmem_function[
         "rocshmem_calloc",
         def(
             c_size_t, c_size_t
-        ) thin -> _CPointer[Scalar[dtype], MutExternalOrigin],
+        ) thin -> _CPointer[Scalar[dtype], MutUntrackedOrigin],
     ]()(count, size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_calloc", count * size)
@@ -491,10 +491,10 @@ def rocshmem_calloc[
 def _check_rocshmem_allocation[
     dtype: DType
 ](
-    ptr: _CPointer[Scalar[dtype], MutExternalOrigin],
+    ptr: _CPointer[Scalar[dtype], MutUntrackedOrigin],
     func_name: StaticString,
     requested_bytes: c_size_t,
-) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     if not ptr:
         raise Error(
             func_name,
@@ -512,7 +512,7 @@ def _check_rocshmem_allocation[
 
 def rocshmem_free[
     dtype: DType, //
-](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
+](ptr: UnsafePointer[Scalar[dtype], MutUntrackedOrigin]):
     _get_rocshmem_function[
         "rocshmem_free",
         def(type_of(ptr)) thin -> NoneType,

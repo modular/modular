@@ -456,7 +456,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
         origin: The origin from which the inner iterators were produced.
             Used by the `zip()` factory overloads to thread lifetime info
             into the borrowed iterator types in `Ts`, and set to
-            `MutExternalOrigin` by the owning overload since its iterators
+            `MutUntrackedOrigin` by the owning overload since its iterators
             own their data.
         Ts: The inner iterator types being zipped. Each must conform to
             `Iterator` and its `Element` must be `ImplicitlyDestructible`.
@@ -559,7 +559,9 @@ def zip[
     *Ts: IterableOwned
 ](
     var *iterables: *Ts,
-    out res: _ZipIterator[MutExternalOrigin, *_iterable_owned_to_iterator[*Ts]],
+    out res: _ZipIterator[
+        MutUntrackedOrigin, *_iterable_owned_to_iterator[*Ts]
+    ],
 ) where AllImplicitlyDestructible[*res.Ts]:
     """Returns an iterator that yields tuples of the elements of the original
     iterables.

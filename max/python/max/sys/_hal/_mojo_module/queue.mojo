@@ -142,11 +142,11 @@ struct Queue(Movable, Writable):
             UInt32(Int(py=block_obj[2])),
         )
         var n = len(args_obj)
-        var args = List[OpaquePointer[MutExternalOrigin]](capacity=n)
+        var args = List[OpaquePointer[MutUntrackedOrigin]](capacity=n)
         var arg_sizes = List[UInt64](capacity=n)
         for i in range(n):
             args.append(
-                OpaquePointer[MutExternalOrigin](
+                OpaquePointer[MutUntrackedOrigin](
                     unsafe_from_address=Int(py=args_obj[i])
                 )
             )

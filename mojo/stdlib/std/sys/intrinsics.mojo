@@ -140,7 +140,7 @@ def gather[
     """
 
     comptime if size == 1:
-        return UnsafePointer[Scalar[dtype], MutExternalOrigin](
+        return UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
             unsafe_from_address=Int(base[0])
         ).load[invariant=invariant]() if mask else passthrough[0]
 
@@ -148,7 +148,7 @@ def gather[
         var result = SIMD[dtype, size]()
 
         comptime for i in range(size):
-            result[i] = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+            result[i] = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
         return result
@@ -238,7 +238,7 @@ def scatter[
 
     comptime if size == 1:
         if mask:
-            var ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+            var ptr = UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(base[0])
             )
             ptr.store(value[0])
@@ -906,7 +906,7 @@ def assume(val: Bool):
 @always_inline
 def implicitarg_ptr(
     out result: UnsafePointer[
-        UInt8, MutExternalOrigin, address_space=AddressSpace.CONSTANT
+        UInt8, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
     ]
 ):
     """

@@ -332,12 +332,12 @@ struct AttentionRDNA[
 
     var k_smem_ptr: UnsafePointer[
         Scalar[Self.k_t.dtype],
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.SHARED,
     ]
     var v_smem_ptr: UnsafePointer[
         Scalar[Self.v_t.dtype],
-        MutExternalOrigin,
+        MutUntrackedOrigin,
         address_space=AddressSpace.SHARED,
     ]
 
