@@ -69,6 +69,34 @@ This version is still a work in progress.
   first token and prefill time. Because the denominator counts the tokens the
   model actually produced, the metric accounts for speculative decoding.
 
+- The `maxserve.batch_size` Prometheus histogram is now labeled by
+  `batch_type` (`CE` for prefill, `TG` for decode), so the token-generation
+  (decode) batch size can be observed separately from prefill. For the
+  prefill token-count view, use `maxserve.batch_input_tokens` (also labeled
+  by `batch_type`). Existing aggregate queries over `maxserve.batch_size`
+  continue to work; selectors that pin a single series now gain the
+  `batch_type` dimension.
+
+- Added Prometheus metrics for the API-server ingress backlog: requests accepted
+  by the API server but not yet handed off to the model worker (still API-side,
+  for example in tokenization). `maxserve.num_requests_awaiting_admission` is an
+  up/down counter with the live value (incremented on arrival, decremented at
+  handoff), and `maxserve.requests_awaiting_admission` is a companion histogram
+  that captures the distribution / tail (p50/p99) over time. A persistently high
+  value points at a backlog in the API server rather than in the scheduler queue
+  (the latter is visible via `maxserve.num_requests_queued`).
+
+- Added Prometheus metrics for the egress (response) path, which show whether
+  the API server is shipping tokens back to clients slower than the model
+  produces them: `maxserve.num_responses_buffered` (a gauge sampling the total
+  model-worker responses received but not yet streamed to clients) with a
+  companion `maxserve.responses_buffered` distribution histogram, and
+  `maxserve.response_queue_time` (a millisecond histogram of how long a
+  response waits in the API server's per-request output queue before the
+  streaming layer consumes it). Together they surface API-side egress
+  bottlenecks (detokenization, serialization, slow clients) and the associated
+  unbounded-output-queue memory growth.
+
 - MAX Serve now returns a clearer 400 Bad Request with the underlying
   message when a prompt is too long for the model, instead of a generic
   "Value error." response (or, for streaming completions, a 500 Internal
