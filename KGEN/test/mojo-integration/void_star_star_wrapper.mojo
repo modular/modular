@@ -33,13 +33,13 @@ struct KernelFunction[
 # A wrapped void** argument.
 struct KernelArgPack[kernel: KernelFunction[_]]:
     var pointers: InlineArray[
-        MutOpaquePointer[MutExternalOrigin],
+        MutOpaquePointer[MutUntrackedOrigin],
         Self.kernel.declared_arg_types.size,
     ]
 
     def __init__(out self):
         self.pointers = type_of(self.pointers)(
-            fill=MutOpaquePointer[MutExternalOrigin].unsafe_dangling()
+            fill=MutOpaquePointer[MutUntrackedOrigin].unsafe_dangling()
         )
 
 
@@ -60,7 +60,7 @@ def wrapped_entry_point[
     comptime to_unsafe_pointer_mapper[
         T: AnyType
     ]: Movable & ImplicitlyCopyable & ImplicitlyDestructible = UnsafePointer[
-        T, MutExternalOrigin
+        T, MutUntrackedOrigin
     ]
     comptime UnsafePointerTupleType = Tuple[
         *kernel.declared_arg_types.map[to_unsafe_pointer_mapper]()
@@ -80,7 +80,7 @@ def wrapped_entry_point[
             ptr_tuple[i] = rebind[type_of(ptr_tuple[i])](pa[].pointers[i])
 
     comptime PackType = VariadicPack[
-        origin=MutExternalOrigin,
+        origin=MutUntrackedOrigin,
         element_trait=AnyType,
         False,
         *kernel.declared_arg_types,
@@ -105,11 +105,11 @@ def invoke_kernel[
     comptime for i in range(kernel.declared_arg_types.size):
         comptime ArgType = kernel.declared_arg_types[i]
         comptime if looks_like_pointer[ArgType]():
-            pa.pointers[i] = rebind[MutOpaquePointer[MutExternalOrigin]](
+            pa.pointers[i] = rebind[MutOpaquePointer[MutUntrackedOrigin]](
                 args[i]
             )
         else:
-            pa.pointers[i] = rebind[MutOpaquePointer[MutExternalOrigin]](
+            pa.pointers[i] = rebind[MutOpaquePointer[MutUntrackedOrigin]](
                 UnsafePointer(to=args[i])
             )
     return wrapped_kernel(

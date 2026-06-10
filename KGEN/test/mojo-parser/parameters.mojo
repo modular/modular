@@ -1870,8 +1870,8 @@ def _copy_nd_buffer_to_layout_tensor[shape: DimList](src: NDBuffer[shape]):
 comptime ImmutOrigin = Origin[mut=False]
 # CHECK-LABEL: lit.alias.decl *"ImmutAnyOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> #lit.any.origin>>
 comptime ImmutAnyOrigin = AnyOrigin[mut=False]
-# CHECK-LABEL: lit.alias.decl *"ImmutExternalOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> {}>>
-comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
+# CHECK-LABEL: lit.alias.decl *"ImmutUntrackedOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> {}>>
+comptime ImmutUntrackedOrigin = UntrackedOrigin[mut=False]
 
 
 def upcast_typelist_callee[y: TypeList[Trait=AnyType, ...]]():

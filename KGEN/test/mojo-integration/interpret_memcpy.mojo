@@ -26,7 +26,7 @@ def memcpy(
 
 
 struct Data(ImplicitlyCopyable, Writable):
-    var _data: UnsafePointer[Int, MutExternalOrigin]
+    var _data: UnsafePointer[Int, MutUntrackedOrigin]
     var _size: Int
 
     def __init__(out self, *, size: Int):
