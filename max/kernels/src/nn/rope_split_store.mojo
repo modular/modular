@@ -26,6 +26,7 @@ from std.math import gcd
 from std.sys import align_of
 from std.sys.info import _current_target, simd_width_of
 
+from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheT, PagedKVCacheCollection
 from layout import (
     Coord,
@@ -185,7 +186,7 @@ def _rope_split_store_ragged_impl[
                         alignment=align_freq,
                     ]()
                     (q_out_ptr + q_base).store[alignment=align_q_out](
-                        rope_value(val, freq).cast[q_out_dtype]()
+                        cast_saturating[q_out_dtype](rope_value(val, freq))
                     )
                 else:
                     # Non-interleaved: gather re/im halves, rope, scatter.
@@ -224,10 +225,10 @@ def _rope_split_store_ragged_impl[
                     res_re, res_im = res.deinterleave()
                     (q_out_ptr + head_start_q + re_idx).store[
                         alignment=align_q_out_2
-                    ](res_re.cast[q_out_dtype]())
+                    ](cast_saturating[q_out_dtype](res_re))
                     (q_out_ptr + head_start_q + im_idx).store[
                         alignment=align_q_out_2
-                    ](res_im.cast[q_out_dtype]())
+                    ](cast_saturating[q_out_dtype](res_im))
                 return
 
             if col < qk_offset:
@@ -255,7 +256,7 @@ def _rope_split_store_ragged_impl[
                         Int(hi),
                         cache_pos,
                         Int(di),
-                        rope_value(val, freq).cast[kv_type](),
+                        cast_saturating[kv_type](rope_value(val, freq)),
                     )
                 else:
                     # Non-interleaved K: gather re/im, rope, deinterleave,
@@ -296,14 +297,14 @@ def _rope_split_store_ragged_impl[
                         Int(hi),
                         cache_pos,
                         re_idx,
-                        roped_re.cast[kv_type](),
+                        cast_saturating[kv_type](roped_re),
                     )
                     k_cache.store(
                         bi,
                         Int(hi),
                         cache_pos,
                         im_idx,
-                        roped_im.cast[kv_type](),
+                        cast_saturating[kv_type](roped_im),
                     )
                 return
 
@@ -321,7 +322,7 @@ def _rope_split_store_ragged_impl[
                 Int(hi),
                 ti + cl,
                 Int(di),
-                val.cast[kv_type](),
+                cast_saturating[kv_type](val),
             )
 
     var launch_shape = (total_seq_len, combined_dim)
