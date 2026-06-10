@@ -70,8 +70,8 @@ from nn.attention.gpu.mla_graph import (
     mla_prefill_decode_graph_bf16,
 )
 from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
-from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
-    compute_mla_dispatch_scalars,
+from nn.attention.gpu.mla_decode_dispatch_scalars import (
+    mla_decode_dispatch_scalars,
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill import (
     mla_sm100_prefill_sparse,
@@ -1839,17 +1839,17 @@ struct Struct_mla_compute_dispatch_args_scalar:
             output[2] = Int64(1)
             return
 
-        comptime sm_count = ctx.default_device_info.sm_count
-        comptime _half_sms = sm_count // 2
-        var scalars = compute_mla_dispatch_scalars[
-            num_heads=num_heads,
-            is_fp8_kv=is_fp8_kv,
-            half_sms=_half_sms,
-        ](
+        # Route through the device-generic helper so this op (the test
+        # reference) stays in lockstep with the `mla_dispatch_args_scalar`
+        # binding the runtime resolver calls: HIP -> AMD heuristic, CUDA ->
+        # SM100 runtime heuristic.
+        var scalars = mla_decode_dispatch_scalars(
             batch_size,
             max_cache_valid_length,
             q_max_seq_len,
-            sm_count,
+            num_heads,
+            is_fp8_kv,
+            ctx,
         )
 
         output[0] = Int64(scalars[0])
