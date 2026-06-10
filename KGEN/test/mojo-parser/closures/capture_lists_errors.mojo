@@ -12,8 +12,8 @@ def takeIt[T: def () -> None, //](state: T):
 
 struct MoveMe(Movable):
     var x:Int
-    def __init__(out self, *, deinit take: Self):
-        self.x = take.x
+    def __init__(out self, *, deinit move: Self):
+        self.x = move.x
     def __del__(deinit self:Self):
         pass
 

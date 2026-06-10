@@ -538,8 +538,8 @@ def unused_init_self_param():
     # expected-error @below {{failed to infer parameter 'A' of parent struct 'UnusedInitSelfParam'}}
     var slice = UnusedInitSelfParam()
 
-# expected-note @below {{candidate not viable: missing required keyword-only argument: 'take'}}
-# expected-note @below {{def __init__(out self, *, deinit take: Self)    # note - generated function}}
+# expected-note @below {{candidate not viable: missing required keyword-only argument: 'move'}}
+# expected-note @below {{def __init__(out self, *, deinit move: Self)    # note - generated function}}
 # expected-note @below {{candidate not viable: missing required keyword-only argument: 'copy'}}
 # expected-note @below {{def __init__(out self, *, copy: Self)    # note - generated function}}
 struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):

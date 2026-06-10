@@ -256,7 +256,7 @@ def copy_me[T: ImplicitlyCopyable](value: T) -> T:
 # CHECK-SAME: :!Movable T, {{.*}}> byref_result
 def move_me[T: Movable](var value: T) -> T:
     # CHECK-NEXT: lit.ownership.use %value
-    # CHECK-NEXT: lit.call tail[{{.*}}#kgen.get_witness<:!Movable T, "std::builtin::stubs::Movable", "__init__(take:$0$)">]{{.*}}(%value, %__result__)
+    # CHECK-NEXT: lit.call tail[{{.*}}#kgen.get_witness<:!Movable T, "std::builtin::stubs::Movable", "__init__(move:$0$)">]{{.*}}(%value, %__result__)
     return value^
 
 
@@ -496,14 +496,14 @@ def bind_regpassable_required_type():
 struct RegTrivialSpecial(TrivialRegisterPassable, AnyType, ImplicitlyCopyable):
     pass
     # CHECK: lit.fn @"__del__
-    # CHECK: lit.fn @"__init__{{.*}}(*, %take:
+    # CHECK: lit.fn @"__init__{{.*}}(*, %move:
     # CHECK: lit.fn @"__init__{{.*}}(*, %copy:
 
 # COM: TrivialRegisterPassable should behave the same as
 struct RegTrivialSpecialWithTrait(TrivialRegisterPassable):
     pass
     # CHECK: lit.fn @"__del__
-    # CHECK: lit.fn @"__init__{{.*}}(*, %take:
+    # CHECK: lit.fn @"__init__{{.*}}(*, %move:
     # CHECK: lit.fn @"__init__{{.*}}(*, %copy:
 
 # CHECK-LABEL: lit.struct.decl @RegSpecial
@@ -512,7 +512,7 @@ struct RegSpecial(AnyType, ImplicitlyCopyable, RegisterPassable):
         pass
 
     # CHECK: lit.fn @"__del__
-    # CHECK: lit.fn @"__init__{{.*}}(*, %take:
+    # CHECK: lit.fn @"__init__{{.*}}(*, %move:
 
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
@@ -685,7 +685,7 @@ struct Item(TrivialRegisterPassable, InCollection):
     pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}Movable
-    # CHECK-NEXT: kgen.witness "__init__(take:$0$)"
+    # CHECK-NEXT: kgen.witness "__init__(move:$0$)"
 
 
 def take_movable(x: MovableType[Item]):
@@ -725,7 +725,7 @@ struct HasMyPointerSelf(AnyType):
     var x: MyPointer[Self]
     # CHECK: lit.fn @"__del__
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         pass
 
 

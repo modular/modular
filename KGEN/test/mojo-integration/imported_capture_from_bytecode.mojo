@@ -9,7 +9,7 @@
 
 
 # CHECK-LABEL: lit.struct.decl @Box
-# CHECK: lit.fn @"__init__{{.*}}"{{.*}}*, %take:
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}*, %move:
 
 from closure import Box
 

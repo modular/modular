@@ -31,8 +31,8 @@
 # CHECK-NEXT:  lit.end_fn
 # CHECK-NEXT: }
 
-# CHECK: lit.fn @"__init__{{.*}}"[mut *"[[L2:.*]]`", mut *"[[L3:.*]]`"](*, %take: !lit.ref<{{.*}}<:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L2]]`"> deinit_mem, ?, %self: !lit.ref<{{.*}} <:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L3]]`"> byref_result) -> !kgen.none
-# CHECK: lit.ownership.mark_destroyed %take
+# CHECK: lit.fn @"__init__{{.*}}"[mut *"[[L2:.*]]`", mut *"[[L3:.*]]`"](*, %move: !lit.ref<{{.*}}<:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L2]]`"> deinit_mem, ?, %self: !lit.ref<{{.*}} <:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L3]]`"> byref_result) -> !kgen.none
+# CHECK: lit.ownership.mark_destroyed %move
 
 # CHECK: lit.fn @"__del__({{.*}})"[mut *"[[L1:.*]]`"](%self: !lit.ref<{{.*}}<:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L1]]`"> deinit_mem, |) -> !kgen.none
 # CHECK: lit.ownership.mark_destroyed %self
@@ -151,7 +151,7 @@ trait MyInterface:
 
 # CHECK: lit.fn @"__init__($0$)"[mut *"impl`", mut *"self`"](%impl: !lit.ref<:[[TRAIT]] impl, mut *"impl`"> owned_in_mem, |, ?, %self: !lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> byref_result)
 # CHECK-NEXT: [[V0:%.*]] = lit.ref.struct.ger %self[field0] : <!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> -> :[[TRAIT]] impl
-# CHECK-NEXT: [[V1:%.*]] = lit.call[!lit.generator<[2](*, "take": !lit.ref<:[[TRAIT]] impl, mut *[0,0]> deinit_mem, ?, "self": !lit.ref<:[[TRAIT]] impl, mut *[0,1]> byref_result) -> !kgen.none>: #kgen.get_witness<:[[TRAIT]] impl, "{{.*}}::Movable", "__init__(take:$0$)">][mut *"impl`", mut *"self`"->field0](%impl, [[V0]])
+# CHECK-NEXT: [[V1:%.*]] = lit.call[!lit.generator<[2](*, "move": !lit.ref<:[[TRAIT]] impl, mut *[0,0]> deinit_mem, ?, "self": !lit.ref<:[[TRAIT]] impl, mut *[0,1]> byref_result) -> !kgen.none>: #kgen.get_witness<:[[TRAIT]] impl, "{{.*}}::Movable", "__init__(move:$0$)">][mut *"impl`", mut *"self`"->field0](%impl, [[V0]])
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %none : !kgen.none
 # CHECK-NEXT: lit.end_fn
@@ -274,7 +274,7 @@ def nested[
 # CHECK: kgen.conformance @"{{.*}}::ImplicitlyDestructible" {
 # CHECK-NEXT: kgen.witness "__del__{{.*}}"
 # CHECK: kgen.conformance @"{{.*}}::Movable" {
-# CHECK-NEXT: kgen.witness "__init__(take:$0$)"
+# CHECK-NEXT: kgen.witness "__init__(move:$0$)"
 # CHECK: kgen.conformance @"def(z: Int) -> Int" {
 # CHECK-NEXT: kgen.witness "__call__{{.*}}"
 def bindIt(x: Int, y: Int, mem:String) -> Int:
@@ -316,8 +316,8 @@ def bindIt(mem: String) -> Int:
 # CHECK-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__call__{{.*}}"<:[[TRAIT]] impl, :origin.set origin_set,
 
 # CHECK: kgen.conformance @{{.*}}::Movable" {
-# CHECK-NEXT: kgen.witness "__init__{{.*}}" : !lit.generator<[2](*, "take": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, ?, "self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,1]> byref_result) -> !kgen.none
-# CHECK-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__init__(take:
+# CHECK-NEXT: kgen.witness "__init__{{.*}}" : !lit.generator<[2](*, "move": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, ?, "self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,1]> byref_result) -> !kgen.none
+# CHECK-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__init__(move:
 
 # CHECK: kgen.conformance @"{{.*}}::ImplicitlyDestructible" {
 # CHECK-NEXT:  kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, |) -> !kgen.none

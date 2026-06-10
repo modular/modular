@@ -970,13 +970,13 @@ def materialize[T: AnyType, //, value: T](out result: T):
 
 @explicit_destroy
 trait ExplicitlyDestroyedMovable:
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         ...
 
 
 @explicit_destroy
 trait Movable:
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         ...
 
     comptime __move_ctor_is_trivial: Bool
@@ -1422,7 +1422,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
     def __init__(out self, *, copy: Self):
         pass
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         pass
 
     def __getitem_param__[i: Int](ref self) -> ref[self] Self.element_types[i]:

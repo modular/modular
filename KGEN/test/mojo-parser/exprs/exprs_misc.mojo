@@ -584,11 +584,11 @@ def test_if_else_move(r: Bool, var a: MoveOnly, var b: MoveOnly):
 
     # CHECK: hlcf.if
     # CHECK-NEXT: lit.ownership.use %b
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%b, %t){{.*}}*, "take"
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%b, %t){{.*}}*, "move"
     # CHECK-NEXT: hlcf.yield
     # CHECK-NEXT: } else {
     # CHECK-NEXT: lit.ownership.use %a
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%a, %t){{.*}}*, "take"
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%a, %t){{.*}}*, "move"
     # CHECK-NEXT: hlcf.yield
     # CHECK-NEXT: }
 

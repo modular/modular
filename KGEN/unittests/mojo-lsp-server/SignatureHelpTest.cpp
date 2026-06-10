@@ -50,7 +50,7 @@ def test():
                                  "def __init__() -> Self");
                        EXPECT_EQ(
                            signatureHelp.signatures[1].label,
-                           "def __init__(out self, *, deinit take: Self)");
+                           "def __init__(out self, *, deinit move: Self)");
                        EXPECT_EQ(signatureHelp.signatures[2].label,
                                  "def __init__(out self, *, copy: Self)");
                        EXPECT_EQ(signatureHelp.signatures[3].label,
@@ -75,7 +75,7 @@ def test():
                                  "def __init__() -> Self");
                        EXPECT_EQ(
                            signatureHelp.signatures[1].label,
-                           "def __init__(out self, *, deinit take: Self)");
+                           "def __init__(out self, *, deinit move: Self)");
                        EXPECT_EQ(signatureHelp.signatures[2].label,
                                  "def __init__(out self, *, copy: Self)");
                        EXPECT_EQ(signatureHelp.signatures[3].label,

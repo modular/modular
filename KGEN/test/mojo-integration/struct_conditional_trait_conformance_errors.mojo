@@ -23,8 +23,8 @@ struct ConditionalCopyableWrapper[T: ImplicitlyDestructible & Movable](
     def __init__(out self, var value: Self.T):
         self.value = value^
 
-    def __moveinit__(out self, deinit take: Self):
-        self.value = take.value^
+    def __moveinit__(out self, deinit move: Self):
+        self.value = move.value^
 
     def __copyinit__(
         out self, copy: Self, /
@@ -46,7 +46,7 @@ struct MovableOnlyType(ImplicitlyDestructible, Movable):
     def __init__(out self, x: Int):
         self.x = x
 
-    def __moveinit__(out self, deinit take: Self):
+    def __moveinit__(out self, deinit move: Self):
         self.x = take.x
 
 
@@ -67,7 +67,7 @@ struct NonPrintableType(ImplicitlyCopyable):
     def __init__(out self, x: Int):
         self.x = x
 
-    def __moveinit__(out self, deinit take: Self):
+    def __moveinit__(out self, deinit move: Self):
         self.x = take.x
 
     def __copyinit__(out self, copy: Self, /):
@@ -84,7 +84,7 @@ struct PrintableWrapper[T: ImplicitlyCopyable](
     def __init__(out self, value: Self.T):
         self.value = value
 
-    def __moveinit__(out self, deinit take: Self):
+    def __moveinit__(out self, deinit move: Self):
         self.value = take.value
 
     def __copyinit__(out self, copy: Self, /):

@@ -77,7 +77,7 @@ def testCopyMoveSynth(var a: IntPair, var b: IntPairWrapper):
     # CHECK: lit.memcpy %a, %aCopy
     var aCopy = a
 
-    # CHECK: lit.call {{.*}}IntPair::@"__init__{{.*}}"{{.*}}({{.*}}, %aMove){{.*}}*, "take"
+    # CHECK: lit.call {{.*}}IntPair::@"__init__{{.*}}"{{.*}}({{.*}}, %aMove){{.*}}*, "move"
     var aMove = a^
 
     # CHECK: lit.call {{.*}}IntPair::@"copy{{.*}}({{.*}}, %aExCopy)
@@ -86,7 +86,7 @@ def testCopyMoveSynth(var a: IntPair, var b: IntPairWrapper):
     # CHECK: lit.memcpy %b, %bCopy
     var bCopy = b
 
-    # CHECK: lit.call {{.*}}IntPairWrapper::@"__init__{{.*}}"{{.*}}({{.*}}, %bMove){{.*}}*, "take"
+    # CHECK: lit.call {{.*}}IntPairWrapper::@"__init__{{.*}}"{{.*}}({{.*}}, %bMove){{.*}}*, "move"
     var bMove = b^
 
     # CHECK: lit.call {{.*}}IntPairWrapper::@"copy{{.*}}({{.*}}, %bExCopy)
@@ -108,7 +108,7 @@ def testCopyMoveSynthNonTrivial(var a: IntPairNT, var b: IntPairWrapperNT):
     # CHECK: lit.call {{.*}}IntPairNT::@"__init__{{.*}}"{{.*}}({{.*}}, %aCopy){{.*}}*, "copy"
     var aCopy = a
 
-    # CHECK: lit.call {{.*}}IntPairNT::@"__init__{{.*}}"{{.*}}({{.*}}, %aMove){{.*}}*, "take"
+    # CHECK: lit.call {{.*}}IntPairNT::@"__init__{{.*}}"{{.*}}({{.*}}, %aMove){{.*}}*, "move"
     var aMove = a^
 
     # CHECK: lit.call {{.*}}IntPairNT::@"copy{{.*}}({{.*}}, %aExCopy)
@@ -117,7 +117,7 @@ def testCopyMoveSynthNonTrivial(var a: IntPairNT, var b: IntPairWrapperNT):
     # CHECK: lit.call {{.*}}IntPairWrapperNT::@"__init__{{.*}}"{{.*}}({{.*}}, %bCopy){{.*}}*, "copy"
     var bCopy = b
 
-    # CHECK: lit.call {{.*}}IntPairWrapperNT::@"__init__{{.*}}"{{.*}}({{.*}}, %bMove){{.*}}*, "take"
+    # CHECK: lit.call {{.*}}IntPairWrapperNT::@"__init__{{.*}}"{{.*}}({{.*}}, %bMove){{.*}}*, "move"
     var bMove = b^
 
     # CHECK: lit.call {{.*}}IntPairWrapperNT::@"copy{{.*}}({{.*}}, %bExCopy)
@@ -142,7 +142,7 @@ struct FieldwiseInitExample1[T: Movable]:
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[x]
 # CHECK-NEXT: lit.ref.store %x, [[TMP]]
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[y]
-# CHECK-NEXT: lit.call{{.*}}"__init__(take:$0$)">{{.*}}(%y, [[TMP]])
+# CHECK-NEXT: lit.call{{.*}}"__init__(move:$0$)">{{.*}}(%y, [[TMP]])
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 
 

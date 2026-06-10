@@ -58,7 +58,7 @@ struct S1[X: Int](R1, R1Child, R2, TrivialRegisterPassable):
     # CHECK-NEXT: traitRef = [[ANYTYPE_NAME:(@[^:]+::)+@ImplicitlyDestructible]]
 
     # CHECK: kgen.conformance @{{.*}}Movable
-    # CHECK-NEXT: kgen.witness "__init__{{.*}}(*, "take":{{.*}} = {{.*}}@S1::@"__init__{{.*}}"{{.*}}<:!Int X>
+    # CHECK-NEXT: kgen.witness "__init__{{.*}}(*, "move":{{.*}} = {{.*}}@S1::@"__init__{{.*}}"{{.*}}<:!Int X>
     # CHECK-NEXT: kgen.witness "__move_ctor_is_trivial" : !Bool = {:scalar<bool> true}
     # CHECK-NEXT: traitRef = @std::@builtin::@stubs::@Movable
 

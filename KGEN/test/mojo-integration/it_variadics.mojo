@@ -72,8 +72,8 @@ struct TalkativeCopableMovableMem(ImplicitlyCopyable, Writable):
         self.state = copy.state
         print("copying", self.state)
 
-    def __init__(out self, *, deinit take: Self):
-        self.state = take.state
+    def __init__(out self, *, deinit move: Self):
+        self.state = move.state
         print("moving", self.state)
 
     def __del__(deinit self):

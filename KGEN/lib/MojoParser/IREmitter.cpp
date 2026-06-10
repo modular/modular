@@ -1173,11 +1173,11 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // Otherwise, assign with a move constructor.  We own the RValue, so prefer
   // to use move ctor if present.
   if (valueType.isMovable(exprLoc, shared)) {
-    // Invoke `T(*, deinit take: Self)`.
+    // Invoke `T(*, deinit move: Self)`.
     ExprDest moveDest(destRef, context);
     CallOperands operands(CallSyntax::kImplicitMoveCtor, value.expr,
                           std::move(moveDest));
-    operands.add(StringAttr::get(shared.getContext(), "take"), value,
+    operands.add(StringAttr::get(shared.getContext(), "move"), value,
                  ArgUnpackStyle::kKeyword);
     if (!emitConstructorCall(valueType, std::move(operands)))
       return {};

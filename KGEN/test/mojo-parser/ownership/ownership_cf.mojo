@@ -38,8 +38,8 @@ struct MemExample(ImplicitlyCopyable):
     def noop(self):
         pass
 
-    def __init__(out self, *, deinit take: Self):
-        self.x = take.x
+    def __init__(out self, *, deinit move: Self):
+        self.x = move.x
 
     def __init__(out self, *, copy: Self):
         self.x = copy.x
@@ -397,7 +397,7 @@ struct TestLoopWithWholeObjectBit:
 
         # CHECK-NEXT: [[FIELD_REF:%.*]] = lit.ref.struct.ger %self[field]
         # CHECK-NEXT: lit.ownership.use %buf
-        # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}take"
+        # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}move"
         # CHECK-NEXT: lifetime.end %buf
         # CHECK-NEXT: %none = kgen.param.constant
         # CHECK-NEXT: kgen.return
@@ -461,7 +461,7 @@ struct MyStringReturningCtx(Movable):
     def __enter__(var self) -> Self:
         return self^
 
-    def __init__(out self, *, deinit take: Self):
+    def __init__(out self, *, deinit move: Self):
         self.s = ""
 
     def read(self) raises -> String:

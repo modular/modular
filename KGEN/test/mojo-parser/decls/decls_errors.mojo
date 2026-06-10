@@ -758,7 +758,7 @@ struct WrongType(RegisterPassable):
 
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
   # expected-error @+1 {{'RegisterPassable' types must not declare explicit move constructors; values of these types have no identity, and the compiler can freely move them between registers}}
-  def __init__(out self, *, deinit take: Self): pass
+  def __init__(out self, *, deinit move: Self): pass
 
 
 struct WrongSelfType[a: Int]:
@@ -824,7 +824,7 @@ struct OtherInMemStruct:
 struct InvalidMember(TrivialRegisterPassable):
   var x: __mlir_type.index
   # expected-error @+1 {{'RegisterPassable' types must not declare explicit move constructors; values of these types have no identity, and the compiler can freely move them between registers}}
-  def __init__(out self, *, deinit take: Self): pass
+  def __init__(out self, *, deinit move: Self): pass
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
   # expected-error @+1 {{trivial types must not declare explicit copy constructors; they are trivially copyable}}
   def __init__(out self, *, copy: Self): pass
