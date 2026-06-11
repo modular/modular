@@ -901,20 +901,113 @@ def scatter_nd_generator[
                         updates_offset + i
                     ]
 
+        @always_inline
+        def update_element_func[
+            simd_width: Int,
+            alignment: Int = 1,
+        ](_coords: Coord) {
+            var data_shape,
+            var last_shape_of_indices,
+            var output_flat,
+            var updates_flat,
+            var indices,
+            var updates,
+            var output,
+        }:
+            # One update element per invocation: the leading coordinates
+            # select the index row, the last coordinate selects the element
+            # within the row's slice. This exposes rows x slice_elems
+            # parallelism, where iterating over index rows alone caps
+            # parallelism at the row count and leaves each thread serially
+            # copying an entire slice.
+            var coords = coord_to_index_list(_coords)
+            var elem = coords[indices.rank - 1]
+
+            # Index into the indices tensor naming this update row.
+            var indices_index = IndexList[indices.rank]()
+            for i in range(indices.rank - 1):
+                indices_index[i] = coords[i]
+
+            # Base offset on output addressed by this index row.
+            var output_base = 0
+            for dim in range(last_shape_of_indices):
+                # Size of current dimension on data.
+                # Used to compare to index on this dimension (idx_on_axis).
+                var input_ax_dim = data_shape[dim]
+                indices_index[indices.rank - 1] = dim
+                var idx_on_axis = indices.load[width=1](Coord(indices_index))
+
+                comptime if oob_index_strategy == ScatterOobIndexStrategy.SKIP:
+                    # Quit if the index falls outside of [-input_ax_dim, input_ax_dim)
+                    if idx_on_axis < Scalar[indices_type](
+                        -input_ax_dim
+                    ) or idx_on_axis >= Scalar[indices_type](input_ax_dim):
+                        return
+
+                output_base = output_base + Int(
+                    output.dynamic_stride(dim)
+                ) * Int(_unsafe_normalize_neg_index(idx_on_axis, input_ax_dim))
+
+            # Base offset on updates for this row; the copied slice occupies
+            # the trailing dimensions contiguously. Both `updates_base + elem`
+            # and `output_base + elem` below treat `elem` as a flat offset into
+            # the trailing slice, so this path requires `updates` and `output`
+            # to be row-major contiguous in their slice dimensions (the leading
+            # row dimensions may be strided). A strided slice would silently
+            # produce wrong results.
+            var updates_base = 0
+            for i in range(indices.rank - 1):
+                updates_base = (
+                    updates_base + Int(updates.dynamic_stride(i)) * coords[i]
+                )
+
+            comptime if reduce_fn:
+                comptime reduction_fn = reduce_fn.value()
+
+                output_flat[output_base + elem] = reduction_fn[output_type, 1](
+                    output_flat.load[width=1](Coord(output_base + elem)),
+                    updates_flat.load[width=1](Coord(updates_base + elem)),
+                )
+            else:
+                output_flat[output_base + elem] = updates_flat[
+                    updates_base + elem
+                ]
+
         comptime trace_description_str = get_static_string[
             "elementwise_impl_" + _trace_description
         ]()
 
-        # Iterate over indices.shape[:-1], i.e. one update vector per index row.
-        var iter_shape = IndexList[indices.rank - 1]()
-        comptime for i in range(indices.rank - 1):
-            iter_shape[i] = Int(indices.dim[i]())
+        comptime if is_gpu[target]():
+            # Iterate over indices.shape[:-1] x slice_elems, one update
+            # element per thread. The CPU path below iterates over index rows
+            # with a contiguous inner copy per row, which is the right shape
+            # for CPU but caps GPU parallelism at the row count.
+            var slice_elems = 1
+            for i in range(r_minus_m):
+                slice_elems = slice_elems * data_shape[data.rank - 1 - i]
 
-        elementwise[
-            simd_width=1,
-            target=target,
-            _trace_description=trace_description_str,
-        ](update_func, Coord(iter_shape), context)
+            var iter_shape = IndexList[indices.rank]()
+            comptime for i in range(indices.rank - 1):
+                iter_shape[i] = Int(indices.dim[i]())
+            iter_shape[indices.rank - 1] = slice_elems
+
+            elementwise[
+                simd_width=1,
+                target=target,
+                _trace_description=trace_description_str,
+            ](update_element_func, Coord(iter_shape), context)
+        else:
+            # Iterate over indices.shape[:-1], i.e. one update vector per
+            # index row.
+            var iter_shape = IndexList[indices.rank - 1]()
+            comptime for i in range(indices.rank - 1):
+                iter_shape[i] = Int(indices.dim[i]())
+
+            elementwise[
+                simd_width=1,
+                target=target,
+                _trace_description=trace_description_str,
+            ](update_func, Coord(iter_shape), context)
 
 
 @always_inline

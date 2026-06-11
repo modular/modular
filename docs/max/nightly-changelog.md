@@ -394,6 +394,13 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- The GPU `scatter_nd` kernel (all `mo.scatter_nd*` variants) now parallelizes
+  over total update elements instead of one thread per index row, removing the
+  serial per-row slice copy. Slice-style scatters (for example row updates into
+  a large table) run roughly 1.7x-2.8x faster end to end on B200 depending on
+  shape; the update kernel itself speeds up far more, but the op's mandatory
+  `data`-to-`output` copy now dominates its runtime. Element-style scatters and
+  the CPU path are unchanged.
 - The `use_blocking_impl` parameter has been removed from the `foreach` custom
   op helper (and the underlying `elementwise` primitive), and the analogous
   `single_thread_blocking_override` parameter has been removed from the `concat`
