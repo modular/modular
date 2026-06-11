@@ -446,6 +446,15 @@ This version is still a work in progress.
 
 ## Fixes
 
+- `max.nn.kernels.scatter_set_constant` now raises a `ValueError` at graph
+  construction time when `indices` does not have a statically-known inner
+  dimension of 2. Each `indices` row is a `(row, col)` coordinate pair; the
+  kernel previously read the second coordinate out of bounds for
+  `[num_indices, 1]`-shaped indices, silently scattering the fill value to a
+  heap-content-dependent location (or dropping the write entirely). The Mojo
+  kernel also now raises unconditionally on malformed index shapes instead of
+  only under `MODULAR_MAX_DEBUG_ASSERT_LEVEL`.
+
 - Fixed structured output (`response_format: json_schema` and grammar-guided
   tool calling) intermittently emitting raw control characters inside JSON
   string values on models that use a byte-level BPE (TikToken) tokenizer,

@@ -1523,9 +1523,11 @@ def scatter_set_constant[
     comptime assert (
         indices.flat_rank == 2
     ), "scatter_set: indices must have rank 2"
-    assert (
-        Int(indices.dim[1]()) == 2
-    ), "scatter_set: indices must have shape [total_seq_len, 2]"
+    # An inner dimension other than 2 would make the elementwise body read
+    # indices[i, 1] out of bounds, scattering to a garbage location. Always
+    # raise (not just assert) since this is a once-per-launch host check.
+    if Int(indices.dim[1]()) != 2:
+        raise Error("scatter_set: indices must have shape [total_seq_len, 2]")
 
     @always_inline
     @parameter

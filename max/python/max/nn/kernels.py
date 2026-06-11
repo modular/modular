@@ -6127,6 +6127,16 @@ def scatter_set_constant(
             "scatter_set_constant currently only supports 2d indices"
         )
 
+    # Each indices row is a (row, col) coordinate into `data`. The kernel
+    # reads indices[i, 1] unconditionally, so a statically-known inner
+    # dimension other than 2 would read out of bounds.
+    coords_per_index = indices.shape[1]
+    if isinstance(coords_per_index, StaticDim) and int(coords_per_index) != 2:
+        raise ValueError(
+            "scatter_set_constant indices must have shape [num_indices, 2] "
+            f"of (row, col) coordinates, got inner dimension {coords_per_index}"
+        )
+
     ops.inplace_custom(
         "mo.scatter_set_constant",
         device=data.device,
