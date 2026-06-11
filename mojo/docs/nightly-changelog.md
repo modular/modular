@@ -418,6 +418,10 @@ This version is still a work in progress.
   respectively instead. The deprecated aliases still forward to the new names,
   so existing code keeps compiling until they are removed in a future release.
 
+- The `__init__` method required by the `Movable` trait has had its named
+  argument changed from `take` to `move`. Explicitly calling a move initializer
+  is now `SomeObject(move=)` instead of `SomeObject(take=)`.
+
 ## Tooling changes
 
 - Importing a Mojo module from Python no longer fails when the module lives in a
