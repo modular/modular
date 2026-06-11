@@ -847,8 +847,8 @@ struct HList[T: ImplicitlyCopyable]:
 # CHECK-NEXT:     "path": "/std/builtin/value/ImplicitlyCopyable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
-# CHECK-NEXT:     "name": "ImplicitlyDestructible",
-# CHECK-NEXT:     "path": "/std/builtin/anytype/ImplicitlyDestructible"
+# CHECK-NEXT:     "name": "ImplicitlyDeletable",
+# CHECK-NEXT:     "path": "/std/builtin/anytype/ImplicitlyDeletable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "Movable",

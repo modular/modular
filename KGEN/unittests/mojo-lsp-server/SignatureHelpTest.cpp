@@ -168,7 +168,7 @@ def test():
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
                                  R"(struct SomeStruct[dtype: DType]
-# Traits: AnyType, ImplicitlyDestructible)");
+# Traits: AnyType, ImplicitlyDeletable)");
                      })
       .execute();
 }

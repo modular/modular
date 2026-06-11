@@ -9,13 +9,13 @@
 
 # COM: Synthesized constructors should not emit debuginfo.
 
-# CHECK: lit.struct.decl @MyValueStruct(!AnyType_Copyable_ImplicitlyDestructible_Movable)
+# CHECK: lit.struct.decl @MyValueStruct(!AnyType_Copyable_ImplicitlyDeletable_Movable)
 # CHECK-SAME: attributes {sourceName = #MyValueStruct_name}
 
 # The only debug info comes from default trait method for copy.
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "copy($0)"
 
-# We also have Moveinit in Movable and __del__ in ImplicitlyDestructible.
+# We also have Moveinit in Movable and __del__ in ImplicitlyDeletable.
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(move:$0$)"
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__del__($0$)"
 

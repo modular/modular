@@ -982,7 +982,10 @@ trait Movable:
     comptime __move_ctor_is_trivial: Bool
 
 
-trait ImplicitlyDestructible:
+comptime ImplicitlyDestructible = ImplicitlyDeletable
+
+
+trait ImplicitlyDeletable:
     def __del__(deinit self, /):
         ...
 

@@ -28,7 +28,7 @@ struct SingleLineTrailingWhere[T: Base] where conforms_to(T, Extra):
 
 # CHECK-LABEL: lit.struct.decl @TrailingWhereWithParent
 # CHECK-SAME: <T: !Base, {{{.*}}conforms_to(:!Base T, [{{[^]]*}}@Extra]))
-# CHECK-SAME: (!AnyType_ImplicitlyDestructible_Marker)
+# CHECK-SAME: (!AnyType_ImplicitlyDeletable_Marker)
 @fieldwise_init
 struct TrailingWhereWithParent[T: Base](Marker) where conforms_to(T, Extra):
     pass
@@ -36,7 +36,7 @@ struct TrailingWhereWithParent[T: Base](Marker) where conforms_to(T, Extra):
 
 # CHECK-LABEL: lit.struct.decl @MultilineParentTrailingWhere
 # CHECK-SAME: <T: !Base, {{{.*}}conforms_to(:!Base T, [{{[^]]*}}@Extra]))
-# CHECK-SAME: (!AnyType_ImplicitlyDestructible_Marker)
+# CHECK-SAME: (!AnyType_ImplicitlyDeletable_Marker)
 @fieldwise_init
 struct MultilineParentTrailingWhere[T: Base](Marker) where conforms_to(
     T, Extra

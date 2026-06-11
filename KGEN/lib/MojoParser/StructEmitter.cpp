@@ -1067,7 +1067,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   switch (kind) {
   case SpecialFunctionKind::kDel:
     baseName = "__del__";
-    traitName = "ImplicitlyDestructible";
+    traitName = "ImplicitlyDeletable";
     break;
   case SpecialFunctionKind::kCopyCtor:
     baseName = "__copy_ctor_";

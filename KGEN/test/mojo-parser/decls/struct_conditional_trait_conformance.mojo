@@ -12,7 +12,7 @@
 # Type aliases with constraints are generated for constrained trait compositions.
 # Check for constrained trait type aliases containing the expected constraints:
 # CHECK-DAG: @std::@builtin::@stubs::@Copyable where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@Copyable, @std::@builtin::@stubs::@Movable])
-# CHECK-DAG: @std::@builtin::@stubs::@Intable where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@ImplicitlyDestructible, @std::@builtin::@stubs::@Intable])
+# CHECK-DAG: @std::@builtin::@stubs::@Intable where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@ImplicitlyDeletable, @std::@builtin::@stubs::@Intable])
 
 
 # ===========================================================================
@@ -59,7 +59,7 @@ struct ConditionalCopyable[T: Movable](
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@Copyable, @std::@builtin::@stubs::@Movable])
 # CHECK: kgen.conformance @"std::builtin::stubs::Intable"
-# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@ImplicitlyDestructible, @std::@builtin::@stubs::@Intable])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, [@std::@builtin::@stubs::@AnyType, @std::@builtin::@stubs::@ImplicitlyDeletable, @std::@builtin::@stubs::@Intable])
 struct MultipleConditionalConformances[T: Movable](
     Copyable where conforms_to(T, Copyable),
     Intable where conforms_to(T, Intable),

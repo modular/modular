@@ -8,8 +8,8 @@
 
 # COM: Verify generated trait and struct structure.
 
-# CHECK-DAG: [[PARENT:!Int_AnyType_ImplicitlyDestructible_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@Movable>
-# CHECK-DAG: [[IMPL_PARENT:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@Movable, @{{.*}}@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-DAG: [[PARENT:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
+# CHECK-DAG: [[IMPL_PARENT:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@Movable, @{{.*}}@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 # CHECK-DAG: [[TRAIT:!.*]] = !lit.trait<@"def(y: Int) -> Int">
 # CHECK-DAG: [[INT:!.*]] = !lit.struct<@{{.*}}::@Int>
@@ -54,7 +54,7 @@ def make_closure(x: Int, mem: String):
 # CHECK: lit.struct.decl @"def(z: Int) -> Int_{{.*}}"
 
 
-def make_closure(x: Int, mem:String):
+def make_closure(x: Int, mem: String):
     def my_closure(y: Int) {var x, var mem} -> Int:
         def my_nested_closure(z: Int) {var x, var mem} -> Int:
             return x
@@ -111,7 +111,7 @@ def make_closure(x: Int, mem: String) -> Int:
 
 # COM: Test that explicit origins are handled correctly alongside implicit origins.
 
-# CHECK: [[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[{{.*}}](a: ref[lt] String, b: String) -> None",
+# CHECK: [[TRAIT:!None_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[{{.*}}](a: ref[lt] String, b: String) -> None",
 
 
 # CHECK: lit.struct.decl @"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{[^"]*}}"<impl: {{.*}}, origin_set: origin.set, |>({{.*}}) attributes {definesClosure,{{.*}}synthetic}
@@ -146,7 +146,7 @@ trait MyInterface:
         ...
 
 
-# CHECK: [[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[T: MyInterface](a: T) -> None", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK: [[TRAIT:!None_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[T: MyInterface](a: T) -> None", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
 # CHECK: lit.fn @"__init__($0$)"[mut *"impl`", mut *"self`"](%impl: !lit.ref<:[[TRAIT]] impl, mut *"impl`"> owned_in_mem, |, ?, %self: !lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> byref_result)
@@ -157,7 +157,7 @@ trait MyInterface:
 # CHECK-NEXT: lit.end_fn
 
 
-def make_closure(x: Int, mem:String) -> Int:
+def make_closure(x: Int, mem: String) -> Int:
     def parametric[T: MyInterface](a: T) {var}:
         _ = mem
 
@@ -170,10 +170,10 @@ def make_closure(x: Int, mem:String) -> Int:
 # COM: Verify the closure instance is created correctly.
 
 # CHECK: [[INT:!Int.*]] = !lit.struct<@{{.*}}::@Int>
-# CHECK: [[TRAIT:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK: [[TRAIT:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
-def make_closure(x: Int, mem:String):
+def make_closure(x: Int, mem: String):
     # CHECK: [[RAW_CLOSURE:%.*]] = lit.closure.init[{{.*}}](%x, {{.*}})(%arg0[y]: [[INT]]) capturing -> [[INT]] {
     # CHECK-NEXT: [[BODY_OP:%.*]] = lit.call {{.*}}@Int::@"__add__{{.*}}"(%x, %arg0) : !lit.generator<("lhs": [[INT]], "rhs": [[INT]]) -> [[INT]]>
     # CHECK-NEXT: lit.return [[BODY_OP]] : [[INT]]
@@ -209,9 +209,10 @@ def take_closure[f: def(y: Int) -> Int](myFunc: f, x: Int):
 # COM: Ensure the transformed parameters are propagated into the underlying closure trait.
 
 
-# CHECK-DAG: [[TRAIT:!Int_AnyType_ImplicitlyDestructible_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@Movable>
+# CHECK-DAG: [[TRAIT:!Int_AnyType_ImplicitlyDeletable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@Movable>
 # CHECK-DAG: [[TRAIT2:!Int.*]] = !lit.trait<@"def(y: Int) -> Int">
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<@{{.*}}::@Int>
+
 
 # CHECK: lit.trait.decl @"def(y: Int) -> Int"
 # CHECK: lit.fn *"nested[def(y: Int) -> Int]($0,::Int)"<closure2: [[TRAIT2]]>
@@ -265,19 +266,19 @@ def nested[
 # COM: Check that the struct generator of the lit op is generated correctly.
 
 
-# CHECK: [[TRAIT:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK: [[TRAIT:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
 # CHECK: kgen.struct.generator @"bindIt(::Int,::Int,::String)::myclosure": [[TRAIT]] = struct_inst<"bindIt(::Int,::Int,::String)::myclosure"{{.*}}memoryOnly>{
 # CHECK: kgen.conformance @"{{.*}}::AnyType" {
 # CHECK-NEXT: }
-# CHECK: kgen.conformance @"{{.*}}::ImplicitlyDestructible" {
+# CHECK: kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
 # CHECK-NEXT: kgen.witness "__del__{{.*}}"
 # CHECK: kgen.conformance @"{{.*}}::Movable" {
 # CHECK-NEXT: kgen.witness "__init__(move:$0$)"
 # CHECK: kgen.conformance @"def(z: Int) -> Int" {
 # CHECK-NEXT: kgen.witness "__call__{{.*}}"
-def bindIt(x: Int, y: Int, mem:String) -> Int:
+def bindIt(x: Int, y: Int, mem: String) -> Int:
     def myclosure(z: Int) {var x, var y, var mem} -> Int:
         return x + y + z
 
@@ -304,7 +305,7 @@ def bindIt(mem: String) -> Int:
 
 # COM: Verify Conformance tables of the Wrapper are generated correctly
 
-# CHECK: [[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[{{.*}}](a: ref[lt] String, b: String) -> None",
+# CHECK: [[TRAIT:!None_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[{{.*}}](a: ref[lt] String, b: String) -> None",
 
 
 # CHECK: lit.struct.decl @"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{[^"]*}}"
@@ -319,7 +320,7 @@ def bindIt(mem: String) -> Int:
 # CHECK-NEXT: kgen.witness "__init__{{.*}}" : !lit.generator<[2](*, "move": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, ?, "self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,1]> byref_result) -> !kgen.none
 # CHECK-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__init__(move:
 
-# CHECK: kgen.conformance @"{{.*}}::ImplicitlyDestructible" {
+# CHECK: kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
 # CHECK-NEXT:  kgen.witness "__del__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, |) -> !kgen.none
 # CHECK-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__del__{{.*}}"<{{.*}}>
 
@@ -327,7 +328,7 @@ def bindIt(mem: String) -> Int:
 # CHECK-NEXT: }
 
 
-def make_closure(x: Int, mem:String) -> Int:
+def make_closure(x: Int, mem: String) -> Int:
     def mutate[
         lt: Origin[mut=True]
     ](a: Pointer[String, lt]._mlir_type, b: String) {var}:
@@ -341,7 +342,7 @@ def make_closure(x: Int, mem:String) -> Int:
 # COM: Check that the origin set is bound to the wrapper
 
 # CHECK-LABEL: lit.fn @"nonemptyOriginSet(::String&)"
-# CHECK: lit.closure.init[#kgen.type<typevalue<:[[TRAIT:!None_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]]
+# CHECK: lit.closure.init[#kgen.type<typevalue<:[[TRAIT:!None_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]]
 
 
 def nonemptyOriginSet(mut byRefMut: String):
@@ -355,8 +356,8 @@ def nonemptyOriginSet(mut byRefMut: String):
 
 # COM: Verify that closures can be rebound to compatible traits
 
-# CHECK-DAG: [[TRAIT1:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
-# CHECK-DAG: [[TRAIT:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
+# CHECK-DAG: [[TRAIT1:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-DAG: [[TRAIT:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<{{.*}}::@Int>
 
 # CHECK: lit.struct.decl @"def(x: Int) -> Int_{{.*}}"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
@@ -368,7 +369,7 @@ def takeIt[C: def(Int) -> Int](closure: C):
     _ = closure(3)
 
 
-def bindIt(z: Int, mem:String):
+def bindIt(z: Int, mem: String):
     def myclosure(x: Int) {var} -> Int:
         _ = mem
         return z
@@ -380,8 +381,8 @@ def bindIt(z: Int, mem:String):
 
 # COM: Verify that closures can be rebound even when traits are combined
 
-# CHECK-DAG: [[TRAIT1:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
-# CHECK-DAG: [[TRAIT:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
+# CHECK-DAG: [[TRAIT1:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-DAG: [[TRAIT:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<{{.*}}::@Int>
 
 # CHECK: lit.struct.decl @"def(x: Int) -> Int_{{.*}}"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
@@ -443,8 +444,8 @@ def bindIt(z: Int):
 
 # COM: Verify that closures can be rebound with differing parameter names
 
-# CHECK-DAG: [[TRAIT1:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[a: Int](b: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
-# CHECK-DAG: [[TRAIT:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"def[a: Int](b: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
+# CHECK-DAG: [[TRAIT1:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def[a: Int](b: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
+# CHECK-DAG: [[TRAIT:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable_Int.*]] = !lit.trait<@"def[a: Int](b: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDeletable, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable,
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<{{.*}}::@Int>
 
 # CHECK: lit.struct.decl @"def[a: Int](b: Int) -> Int_{{.*}}"<impl: [[TRAIT1]], origin_set: origin.set, |>([[TRAIT]])
@@ -482,10 +483,10 @@ struct custom(def(x: Int) -> Int):
 
 # COM: The wrapper conforms to copyable
 
-# CHECK: [[CANONICAL_TRAIT:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable*.]] = !lit.trait<
+# CHECK: [[CANONICAL_TRAIT:!Int_Movable_ImplicitlyDeletable_AnyType_Copyable_ImplicitlyCopyable*.]] = !lit.trait<
 # CHECK-SAME: @"def(x: Int) -> Int"
 # CHECK-SAME:, @{{.*}}::@Movable
-# CHECK-SAME:, @{{.*}}::@ImplicitlyDestructible
+# CHECK-SAME:, @{{.*}}::@ImplicitlyDeletable
 # CHECK-SAME:, @{{.*}}::@AnyType
 # CHECK-SAME:, @{{.*}}::@Copyable
 # CHECK-SAME:, @{{.*}}::@ImplicitlyCopyable>
@@ -528,7 +529,7 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
     takeIt(aThing)
 
     # COM: uncopyable version can still implement the def(x:Int) -> Int trait
-    def anotherThing(x: Int) {var ^} -> Int:
+    def anotherThing(x: Int) {var^} -> Int:
         useIt(one^)
         return x
 
@@ -596,6 +597,7 @@ def useIt[TT: DoIt, C: def(x: TT)](impl: C):
 
 # CHECK: kgen.conformance @"{{.*}}::RegisterPassable" {
 
+
 def takesRegisterPassable[T: RegisterPassable](impl: T):
     pass
 
@@ -603,6 +605,7 @@ def takesRegisterPassable[T: RegisterPassable](impl: T):
 def addTrivialRegisterPassable(x: Int):
     def closure() {var} -> Int:
         return x
+
     takesRegisterPassable(closure)
 
 
@@ -698,7 +701,7 @@ struct MiniSpan[dtype_tag: Int]:
 # CHECK: kgen.conformance @"def[{{.*}}u: Int](vec: ToySIMD[dtype_tag, u]) -> ToyMask[dtype_tag, u]" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "dtype_tag" : !Int = {1}
-def repro_capturing(mem:String):
+def repro_capturing(mem: String):
     var capture = 0
 
     def is_vec_a_capturing[
@@ -750,7 +753,9 @@ def repro_nested_type_param(mem: String):
 
     def apply_concrete[
         n: Int
-    ](item: Box[ConcreteElem, n]) {var capture, var mem} -> Box[ConcreteElem, n]:
+    ](item: Box[ConcreteElem, n]) {var capture, var mem} -> Box[
+        ConcreteElem, n
+    ]:
         _ = item
         _ = capture
         return Box[ConcreteElem, n](0)
@@ -858,6 +863,7 @@ def variadic_callee[
 def repro_variadic_attr():
     var x = 10
     var mem: String = "hello"
+
     def my_map_fn(
         point: ToyIndex[2],
     ) {read x, var mem} -> Tuple[ToyIndex[2], ToyIndex[2]]:
@@ -980,6 +986,7 @@ def repro_rebind_nonref_operand[
 
 # // -----
 
+
 trait Coord(ImplicitlyCopyable):
     comptime Dim: Int
 
@@ -1018,9 +1025,7 @@ def takes[T: Int, F: def(x: Container[T])](impl: F):
     impl(Container[T]())
 
 
-def takes2[
-    T: Int, U: Int, F: def(x: Container[T], y: Container[U])
-](impl: F):
+def takes2[T: Int, U: Int, F: def(x: Container[T], y: Container[U])](impl: F):
     impl(Container[T](), Container[U]())
 
 
@@ -1029,6 +1034,7 @@ def takes_w[T: Int, F: def(w: Container[T])](impl: F):
 
 
 # // -----
+
 
 struct Foo(ImplicitlyCopyable, Movable):
     var x: Int
@@ -1085,7 +1091,7 @@ struct Foo:
 # CHECK:   kgen.witness "T" : {{.*}} = [[INT]]
 # CHECK:   kgen.witness "U" : {{.*}} = [[INT]]
 
-comptime CollectionElement = ImplicitlyDestructible & ImplicitlyCopyable
+comptime CollectionElement = ImplicitlyDeletable & ImplicitlyCopyable
 
 
 def foo(x: Int):
@@ -1222,8 +1228,10 @@ def call_inner[
 
 # // -----
 
+
 def captures_with_default_convention():
     var a, b, c, d = ("a", "b", "c", "d")
+
     # COM: a
     # CHECK: lit.closure.init[{{.*}}](%{{.*}}[ref: mut *"a
     # COM: b
@@ -1233,6 +1241,7 @@ def captures_with_default_convention():
     # COM: d is omitted because it uses default convention.
     def my_fn() {mut a, b, c^, read}:
         pass
+
 
 # // -----
 #
@@ -1254,6 +1263,7 @@ def trigger_dtype():
     comptime dtype = nonsense(k)
     var x = SIMD[dtype, 1]()
     _ = x
+
 
 # // -----
 
@@ -1278,6 +1288,7 @@ def async_unified_closure():
 
 # COM: Verify promoted closures keep captured params before implicit origins.
 
+
 # CHECK-LABEL: lit.fn @"trigger_dtype_implicit_origin{{.*}}"<n: !Int>() -> !kgen.none
 # CHECK: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<[1]("impl": !lit.ref<!String, imm #lit.comptime.origin> read_mem) -> !DType> rebind(:!lit.generator<[1]("impl": !lit.ref<!String, imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType !String>)
 # CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
@@ -1293,12 +1304,14 @@ def trigger_dtype_implicit_origin[n: Int]():
     comptime dtype = nonsense("here")
     var x = SIMD[dtype, 1]()
     _ = x
+
 
 # // -----
 #
 # COM: Verify promoted stateless closures can bind captured params
 # COM: before satisfying thin function generic constraints.
 
+
 # CHECK-LABEL: lit.fn @"trigger_promoted_params{{.*}}"<n: !Int>() -> !kgen.none
 # CHECK: lit.call tail @{{.*}}::@"takesThin{{.*}}"<:!lit.generator<<"U": !AnyType, +>[1]("impl": !lit.ref<:!AnyType *(0,0), imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType ?>
 # CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
@@ -1317,10 +1330,12 @@ def trigger_promoted_params[n: Int]():
 
     takesThin[nonsense]()
 
+
 # // -----
 
 # COM: Verify promoted stateless closures create a function wrapper
 # COM: when passed as a value to a thin-compatible parameter.
+
 
 # CHECK-LABEL: lit.fn @"trigger_promoted_param_wrapper{{.*}}"<n: !Int>() -> !kgen.none
 # CHECK: %[[WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct<#PtrWrapper
@@ -1328,9 +1343,9 @@ def trigger_promoted_params[n: Int]():
 # CHECK: %[[WRAP_IMM:.*]] = lit.ref.immut %[[WRAP]]
 # CHECK: lit.call @{{.*}}::@"takesFatVale{{.*}}"{{.*}}(%[[WRAP_IMM]])
 # CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
-def takesFatVale[FuncType: def[U: AnyType, //](impl: U) -> DType](
-    impl: FuncType
-):
+def takesFatVale[
+    FuncType: def[U: AnyType, //](impl: U) -> DType
+](impl: FuncType):
     _ = impl("here")
 
 
@@ -1345,9 +1360,11 @@ def trigger_promoted_param_wrapper[n: Int]():
 
     takesFatVale(nonsense)
 
+
 # // -----
 
 # COM: Verify promoted closures keep captured params before implicit origins.
+
 
 # CHECK-LABEL: lit.fn @"trigger_dtype_implicit_origin{{.*}}"<n: !Int>() -> !kgen.none
 # CHECK: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<[1]("impl": !lit.ref<!String, imm #lit.comptime.origin> read_mem) -> !DType> rebind(:!lit.generator<[1]("impl": !lit.ref<!String, imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType !String>)
@@ -1365,10 +1382,12 @@ def trigger_dtype_implicit_origin[n: Int]():
     var x = SIMD[dtype, 1]()
     _ = x
 
+
 # // -----
 #
 # COM: Verify promoted stateless unified closures can bind captured params
 # COM: before satisfying thin function generic constraints.
+
 
 # CHECK-LABEL: lit.fn @"trigger_promoted_params{{.*}}"<n: !Int>() -> !kgen.none
 # CHECK: lit.call tail @{{.*}}::@"takesThin{{.*}}"<:!lit.generator<<"U": !AnyType, +>[1]("impl": !lit.ref<:!AnyType *(0,0), imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType ?>
@@ -1388,10 +1407,12 @@ def trigger_promoted_params[n: Int]():
 
     takesThin[nonsense]()
 
+
 # // -----
 
 # COM: Verify promoted stateless unified closures create a function wrapper
 # COM: when passed as a value to a thin-compatible parameter.
+
 
 # CHECK-LABEL: lit.fn @"trigger_promoted_param_wrapper{{.*}}"<n: !Int>() -> !kgen.none
 # CHECK: %[[WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct<#PtrWrapper
@@ -1399,9 +1420,9 @@ def trigger_promoted_params[n: Int]():
 # CHECK: %[[WRAP_IMM:.*]] = lit.ref.immut %[[WRAP]]
 # CHECK: lit.call @{{.*}}::@"takesFatVale{{.*}}"{{.*}}(%[[WRAP_IMM]])
 # CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
-def takesFatVale[FuncType: def[U: AnyType, //](impl: U) -> DType](
-    impl: FuncType
-):
+def takesFatVale[
+    FuncType: def[U: AnyType, //](impl: U) -> DType
+](impl: FuncType):
     _ = impl("here")
 
 
@@ -1415,6 +1436,7 @@ def trigger_promoted_param_wrapper[n: Int]():
             return DType.float32
 
     takesFatVale(nonsense)
+
 
 # // -----
 
@@ -1422,9 +1444,8 @@ def trigger_promoted_param_wrapper[n: Int]():
 # COM: concrete PtrWrapper via apply_result_slot before calling the closure
 # COM: parameter.
 
-def take_closure_param[
-    C: def[n: Int](arg: Int) -> Int
-](impl: C) -> Int:
+
+def take_closure_param[C: def[n: Int](arg: Int) -> Int](impl: C) -> Int:
     return impl[3](4)
 
 
@@ -1446,6 +1467,7 @@ def trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
     # CHECK: lit.call @{{.*}}::@"take_closure_param
     var Y = take_closure_param[type_of(wrapped_ok)](wrapped_ok)
 
+
 # // -----
 
 # COM: Verify promoted top-level functions with captured parameters
@@ -1465,35 +1487,36 @@ def trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
 # CHECK: %[[IMM:.*]] = lit.ref.immut %[[WRAP]]
 # CHECK: lit.call @{{.*}}::@"local_higher_order
 
+
 def local_higher_order[
     rank: Int,
     dtype: DType,
     compute_init: def[simd_width: Int]() -> SIMD[dtype, simd_width],
-](
-    compute_init_closure: compute_init,
-):
+](compute_init_closure: compute_init,):
     pass
 
 
 def trigger[rank: Int, dtype: DType]():
-    def compute_init2[
-        simd_width: Int
-    ]() -> SIMD[dtype, simd_width]:
+    def compute_init2[simd_width: Int]() -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     local_higher_order[rank, dtype, type_of(compute_init2)](compute_init2)
+
 
 # // -----
 
 # COM: Ensure Proper Ordering Of Parameters In Promoted Functions
 
-struct MyList[T:AnyType]:
+
+struct MyList[T: AnyType]:
     pass
 
+
 # CHECK: lit.fn @"thinClosure{{.*}}"<T: !AnyType, +, *"list`2x": !lit.struct<#MyList <:!AnyType T>>>() -> !Int
-def callIt[T:AnyType, list: MyList[T]]():
+def callIt[T: AnyType, list: MyList[T]]():
     def thinClosure[list: MyList[T]]() -> Int:
         return 1
+
     comptime x = thinClosure[list]()
 
 
@@ -1504,8 +1527,10 @@ def callIt[T:AnyType, list: MyList[T]]():
 
 comptime SIMDSize = Int
 
-struct IndexList[r:Int]:
+
+struct IndexList[r: Int]:
     pass
+
 
 def target[
     rank: Int,
@@ -1515,13 +1540,12 @@ def target[
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width],
-](
-    compute_func: ComputeFnType,
-) raises:
+](compute_func: ComputeFnType,) raises:
     pass
 
 
 # CHECK: lit.fn @"compute_gpu
+
 
 def repro_stencil_indirect_call[
     dtype: DType,
@@ -1541,34 +1565,36 @@ def repro_stencil_indirect_call[
 
     target[rank, dtype, type_of(compute_gpu)](compute_gpu)
 
+
 # // -----
 
 # COM: Stateless nested functions whose signature references both a captured
 # COM: parameter (dtype) and a free wildcard (alignment) are promoted to a
 # COM: top-level fn whose call site binds the captured params directly.
 
+
 def _current_target() -> __mlir_type.`!kgen.target`:
     return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
 
 
-def _align_of[dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()]() -> Int:
+def _align_of[
+    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
+]() -> Int:
     return 1
 
+
 @fieldwise_init
-struct LayoutTensor[dtype:DType, alignment: Int = _align_of[dtype, _current_target()]()](TrivialRegisterPassable):
-   pass
+struct LayoutTensor[
+    dtype: DType, alignment: Int = _align_of[dtype, _current_target()]()
+](TrivialRegisterPassable):
+    pass
+
 
 # CHECK-LABEL: lit.fn @"outer
-def outer[
-    dtype: DType, valid: Bool
-](
-    a: LayoutTensor[dtype, ...]
-) raises:
+def outer[dtype: DType, valid: Bool](a: LayoutTensor[dtype, ...]) raises:
     comptime assert valid, "need float"
 
-    def inner(
-        buf: LayoutTensor[dtype, ...]
-    ) -> LayoutTensor[dtype]:
+    def inner(buf: LayoutTensor[dtype, ...]) -> LayoutTensor[dtype]:
         return LayoutTensor[dtype]()
 
     # CHECK: lit.call tail @{{.*}}::@"inner{{.*}}"<:!DType dtype, :!Int *"a.alignment{{.*}}">(%a)
@@ -1579,80 +1605,92 @@ def outer[
 
 # COM: Verify Captures Are Prepended
 
-def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F)](impl:FuncType):
+
+def bind[
+    D: Copyable, E: Copyable, FuncType: def[F: Copyable](a: D, b: E, c: F)
+](impl: FuncType):
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @"def[A: Copyable, B: Copyable, #, C: Copyable](a: A, b: B, c: C) -> None_{{.*}}"
 # CHECK: lit.fn @"__call__{{.*}}"<_A: !Copyable, _B: !Copyable, C: !Copyable, +>
 
-def top[A:Copyable, B:Copyable](aa:A, bb:B):
-    def closure[C: Copyable, //](a:A, b:B, c:C) {read}:
+
+def top[A: Copyable, B: Copyable](aa: A, bb: B):
+    def closure[C: Copyable, //](a: A, b: B, c: C) {read}:
         pass
 
     closure(aa, bb, 3)
-    bind[A,B,type_of(closure)](closure)
+    bind[A, B, type_of(closure)](closure)
 
 
 # // -----
 
 # COM: Verify Lazy Conformance
 
-def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F)](impl:FuncType):
+
+def bind[
+    D: Copyable, E: Copyable, FuncType: def[F: Copyable](a: D, b: E, c: F)
+](impl: FuncType):
     pass
+
 
 # CHECK-LABEL: lit.struct.decl @"def[{{.*}}C: Copyable](a: {{.*}}, b: {{.*}}, c: C) -> None_{{.*}}"
 # CHECK: lit.fn @"__call__$def
 # CHECK-NEXT: kgen.rebind %a : !lit.ref<:!Copyable _D, imm *"1_unnamed`"> to !lit.ref<!String, imm *"1_unnamed`">
 # CHECK-NEXT: kgen.rebind %b : !lit.ref<:!Copyable _E, imm *"2_unnamed`"> to !lit.ref<!String, imm *"2_unnamed`">
 
+
 def top():
-    def closureConcrete[C: Copyable, //](a:String, b:String, c:C) {read}:
+    def closureConcrete[C: Copyable, //](a: String, b: String, c: C) {read}:
         pass
 
-    bind[String,String,type_of(closureConcrete)](closureConcrete)
+    bind[String, String, type_of(closureConcrete)](closureConcrete)
+
 
 # // -----
 
 # COM: Origins are properly captured and lifted into the struct generator
 
-def can_mutate[FuncType: def() -> None](impl: FuncType):
-   impl()
 
-def demo[o: Origin[mut=True]](
-   ptr: UnsafePointer[
-       Int,
-       o,
-       address_space=AddressSpace.GENERIC,
-   ],
-):
-   # CHECK: kgen.struct.generator @"demo{{.*}}::write"<*"o._mlir_origin`": origin<true>, o: !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">>>
-   # CHECK-SAME: struct_inst<"demo{{.*}}::write"[*"o._mlir_origin`", o]<:origin<true> *"o._mlir_origin`", :!lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">> o>
-   def write() {read ptr}:
-       ptr.store(0, 3)
-   can_mutate(write)
+def can_mutate[FuncType: def() -> None](impl: FuncType):
+    impl()
+
+
+def demo[
+    o: Origin[mut=True]
+](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC,],):
+    # CHECK: kgen.struct.generator @"demo{{.*}}::write"<*"o._mlir_origin`": origin<true>, o: !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">>>
+    # CHECK-SAME: struct_inst<"demo{{.*}}::write"[*"o._mlir_origin`", o]<:origin<true> *"o._mlir_origin`", :!lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"o._mlir_origin`">> o>
+    def write() {read ptr}:
+        ptr.store(0, 3)
+
+    can_mutate(write)
 
 
 # // -----
 
 # COM: If a mutable origin is captured but only in the context of a cast to immutable, do not lift and bind a mutable origin to the closure struct
 
-def must_be_read_only[Mut: Bool, //, o: Origin[mut=Mut], FuncType: def() -> None](impl: FuncType, ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC]):
-   impl()
 
-def demo[o: Origin[mut=True]](
-   ptr: UnsafePointer[
-       Int,
-       o,
-       address_space=AddressSpace.GENERIC,
-   ],
+def must_be_read_only[
+    Mut: Bool, //, o: Origin[mut=Mut], FuncType: def() -> None
+](
+    impl: FuncType,
+    ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC],
 ):
-   var immut_ptr = ptr.as_immutable()
+    impl()
 
-   # CHECK: kgen.struct.generator @"demo{{.*}}::read"<*"o._mlir_origin`": origin<false>, *"immut_ptr{{.*}}": origin<false>>
-   # CHECK-SAME: struct_inst<"demo{{.*}}::read"[*"o._mlir_origin`", *"immut_ptr{{.*}}"]<:origin<false> *"o._mlir_origin`", :origin<false> *"immut_ptr{{.*}}">
 
-   def read() {read immut_ptr}:
-       _ = immut_ptr[0]
+def demo[
+    o: Origin[mut=True]
+](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC,],):
+    var immut_ptr = ptr.as_immutable()
 
-   must_be_read_only(read, immut_ptr)
+    # CHECK: kgen.struct.generator @"demo{{.*}}::read"<*"o._mlir_origin`": origin<false>, *"immut_ptr{{.*}}": origin<false>>
+    # CHECK-SAME: struct_inst<"demo{{.*}}::read"[*"o._mlir_origin`", *"immut_ptr{{.*}}"]<:origin<false> *"o._mlir_origin`", :origin<false> *"immut_ptr{{.*}}">
+
+    def read() {read immut_ptr}:
+        _ = immut_ptr[0]
+
+    must_be_read_only(read, immut_ptr)
