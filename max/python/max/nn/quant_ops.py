@@ -17,6 +17,7 @@ from max.graph import DeviceRef, TensorValue, ops
 from .kernels import (
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
+    _is_sm10x_gpu,
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul,
@@ -27,6 +28,7 @@ from .kernels import (
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
     mxfp4_dequant,
+    nvfp4_dequant,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
@@ -68,6 +70,31 @@ def _reshape_pre_interleaved_scales(
     )
 
 
+def _dequant_weight_nvfp4(
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    weight_scale_2: TensorValue,
+    scales_pre_interleaved: bool,
+) -> TensorValue:
+    """Dequantizes an NVFP4 weight to BF16 (pre-Blackwell fallback).
+
+    Pre-multiplies the per-tensor ``weight_scale_2`` into the block scales
+    (float32) and runs the software-LUT dequant kernel, which works on any
+    GPU. Activations stay in BF16 — callers route the result through the
+    regular BF16 matmul instead of the FP4 tensor-core kernels.
+    """
+    if scales_pre_interleaved:
+        raise ValueError(
+            "NVFP4 checkpoints with pre-interleaved (TCGEN 5D) scales are"
+            " not supported on pre-Blackwell GPUs: the dequant fallback"
+            " needs the flat [N, K//16] scale layout."
+        )
+    scales_f32 = (
+        weight_scale.to(weight.device).cast(DType.float32) * weight_scale_2
+    )
+    return nvfp4_dequant(weight, scales_f32, out_type=DType.bfloat16)
+
+
 def _matmul_float4(
     x: TensorValue,
     weight: TensorValue,
@@ -77,6 +104,11 @@ def _matmul_float4(
     scales_pre_interleaved: bool = False,
 ) -> TensorValue:
     """Computes x @ weight.T with modelopt NVFP4 quantization.
+
+    On GPUs without native FP4 matmul support (pre-Blackwell NVIDIA), the
+    weight is dequantized to BF16 and routed through the regular BF16 matmul
+    instead (``input_scale`` is unused there — activations are never
+    quantized on the fallback path).
 
     Args:
         x: The input tensor in bf16.
@@ -91,6 +123,12 @@ def _matmul_float4(
     Returns:
         The output tensor in bf16.
     """
+    if not _is_sm10x_gpu():
+        dequanted = _dequant_weight_nvfp4(
+            weight, weight_scale, weight_scale_2, scales_pre_interleaved
+        )
+        return x @ dequanted.T
+
     x, x_scales = quantize_dynamic_block_scaled(
         x,
         tensor_sf=1.0 / input_scale,
@@ -473,6 +511,28 @@ def quantized_fused_qkv_matmul(
         case QuantFormat.NVFP4:
             assert input_scale is not None
             assert weight_scale_2 is not None
+
+            if not _is_sm10x_gpu():
+                # Pre-Blackwell fallback: no FP4 tensor cores, so dequantize
+                # the (constant) QKV weight to bf16 and use the unquantized
+                # fused QKV ragged matmul.
+                wqkv_bf16 = _dequant_weight_nvfp4(
+                    wqkv,
+                    weight_scale,
+                    weight_scale_2,
+                    quant_config.scales_pre_interleaved,
+                )
+                return fused_qkv_ragged_matmul(
+                    kv_params,
+                    input=x,
+                    input_row_offsets=input_row_offsets,
+                    wqkv=wqkv_bf16,
+                    kv_collection=kv_collection,
+                    layer_idx=layer_idx,
+                    n_heads=n_heads,
+                    bias=bias,
+                    _output_dim=_output_dim,
+                )
 
             x, x_scales = quantize_dynamic_block_scaled(
                 x,
