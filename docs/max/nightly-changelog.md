@@ -425,13 +425,38 @@ This version is still a work in progress.
   (`m >= 64`, `n >= 64`, `k >= 16`; ragged K supported) now use it: fp16/bf16
   always, and fp32 a/b by default (accepting the simdgroup MMA's fp19
   truncation). Set `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL=0` for the precise
-  naive fp32 path.
+  naive fp32 path. An 8x8 `simdgroup_matrix` matmul path also covers Apple M1-M4
+  GPUs, roughly 20x faster than the previous naive matmul on those GPUs in local
+  microbenchmarks.
 - Added a naive split-K decode attention kernel for Apple GPUs, opt-in behind
   `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE` (default off). On Apple Metal,
   token-generation attention otherwise falls back to the unfused
   `mha_gpu_naive`; this adds a paged-KV-cache decode path supporting MHA and
   GQA. It is a correctness-first implementation and not yet
   performance-optimized.
+- Migrated the AMD RDNA attention kernel to `TileTensor` and the structured
+  kernels design, re-enabling models on AMD RDNA 3+ GPUs with near-identical
+  performance to the previous kernel.
+- Several SM100 (Blackwell) GEMM kernel improvements:
+
+  - Added a cpasync + `mma.sync` pipelined GEMM kernel for small M and N
+    shapes, providing higher throughput than `gemv_splitk` for those cases
+    (for example, nearly 2x on `28x384x7168`).
+  - Added a warp-specialized TMA epilogue warp that asynchronously loads
+    epilogue data into shared memory, improving output-pipeline throughput.
+  - Added an experimental 1D residual bias epilogue (matmul + broadcast + add
+    fusion) that uses TMA to asynchronously load the bias tensor.
+  - The Mojo SM100 FP4 matmul kernel is now used for small shapes (`m <= 128`),
+    improving performance and supporting all fusion types on those shapes.
+- Improved the short-axis GPU softmax kernel, reaching performance parity on
+  `[8, 4096, 1024, 24]`-style shapes (~3.1 ms).
+- Fixed several GPU matmul kernel bugs:
+
+  - Fixed the `gemv_splitk` kernel epilogue when used with `M > 1`.
+  - Allowed `K % 128 != 0` in the batched blockwise scaled FP8 matmul kernel by
+    removing defensive guards that assumed `K % BK == 0`.
+  - Fixed a compute-epilogue alignment issue in the SM100 GEMM kernel that
+    caused scalar loads instead of vectorized loads.
 
 ## Breaking changes
 

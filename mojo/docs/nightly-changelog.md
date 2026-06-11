@@ -8,6 +8,21 @@ This version is still a work in progress.
 
 ## Documentation
 
+- Added several new Mojo reference pages: built-in (prelude) types available
+  without imports, function overloads and the compiler's overload-resolution
+  rules, closure declarations, CLI feature toggles, and Mojo docstrings.
+
+- Added a Closures page to the Mojo Manual documenting the unified capture-list
+  syntax, with runnable examples for each capture convention.
+
+- Expanded the Mojo Manual coverage of partially bound and unbound types and
+  automatic parameterization, with clearer and more discoverable guidance on
+  `rebind()`.
+
+- Added new Mojo Manual documentation for `TileTensor`, including an updated
+  tile `Layout` guide, a `TileTensor` guide with examples, and an introduction
+  describing the relationship between `TileTensor` and `LayoutTensor`.
+
 ## Language enhancements
 
 - Added an `@unavailable` decorator that marks a function or method as
@@ -100,6 +115,10 @@ This version is still a work in progress.
   If no trailing `where` discharges a constraint, the compiler reports an error
   and suggests the missing clause.
 
+- `ref` parameters can now use generic address spaces, for example
+  `ref[origin, _]`.
+  The generic address space is auto-parameterized onto the function signature.
+
 ## Language changes
 
 - Support for "set-only" accessors has been removed. You need to define a
@@ -140,11 +159,16 @@ This version is still a work in progress.
 - Functions marked as `raises` may no longer be given the `abi("C")` effect or
   be `@export`ed as such using the deprecated `ABI="C"` option.
 
-## Library changes
+- The `register_passable` effect keyword has been removed. Register passability
+  is now computed implicitly from a type's contents, so the explicit keyword is
+  no longer needed and is no longer accepted.
 
-- The `axis` of the `nn.split` kernel is now a keyword-only compile-time
-  parameter instead of a runtime argument. Pass it in the parameter list,
-  e.g. `split[..., axis=axis](input, outputs, ctx)`.
+- `where` clauses in parameter lists (param-`where`) are now deprecated. Move
+  `where` clauses from the parameter list to a trailing `where` on the
+  declaration. Note that `struct` and `comptime` declarations temporarily lose
+  `where` support until declaration-level `where` lands.
+
+## Library changes
 
 - `UnsafePointer` implicit constructor has been fixed. When a function took
   an `UnsafePointer[mut=False, ...]`, and was passed a mutable pointer, the
@@ -160,9 +184,11 @@ This version is still a work in progress.
   `mo.reduce.{mean,add,mul,max,min,reduce_min_and_max}` ops. Pass it in the
   parameter list, e.g. `sum[..., reduce_dim=axis](shape, ctx)`.
 
-- The `axis` of the `nn.cumsum` kernel is now a keyword-only compile-time
-  parameter instead of a runtime argument. Pass it in the parameter list,
-  e.g. `cumsum[dtype, exclusive, reverse, axis=axis](output, input)`.
+- The `axis` of the `nn.split`, `nn.cumsum`, and `fused_concat` kernels is now a
+  keyword-only compile-time parameter instead of a runtime argument. Pass it in
+  the parameter list, for example `split[..., axis=axis](input, outputs, ctx)`,
+  `cumsum[dtype, exclusive, reverse, axis=axis](output, input)`, or
+  `fused_concat[..., axis=axis](...)`.
 
 - The `ImplicitlyCopyable`, `Intable`, and `Equatable` traits no longer
   inherit from `ImplicitlyDestructible`. Generic code that relied on
@@ -398,10 +424,10 @@ This version is still a work in progress.
       print(x)  # 2, 3, 4
   ```
 
-- The `Indexer` trait no longer inherits from `ImplicitlyDestructible`.
-  Generic code that relied on receiving the destructor bound transitively
-  through this trait must now spell it out explicitly, for example
-  `T: Indexer & ImplicitlyDestructible`.
+- The `Indexer` and `Writer` traits no longer inherit from
+  `ImplicitlyDestructible`. Generic code that relied on receiving the destructor
+  bound transitively through these traits must now spell it out explicitly, for
+  example `T: Indexer & ImplicitlyDestructible`.
 
 - Added the `UntrackedOrigin` and `UnsafeAnyOrigin` origin aliases (and their
   `Mut`/`Immut` variants) as the new names for `ExternalOrigin` and
@@ -412,6 +438,10 @@ This version is still a work in progress.
   lifetime extension and exclusivity checking, so its `Unsafe` prefix marks it
   as an escape hatch slated for deprecation and removal.
 
+  The origin-discarding cast methods on `UnsafePointer`, `TileTensor`, and
+  `LayoutTensor` have correspondingly been renamed from `as_any_origin()` to
+  `as_unsafe_any_origin()`.
+
 - The `ExternalOrigin`, `ImmutExternalOrigin`, and `MutExternalOrigin` aliases
   are now deprecated and emit a deprecation warning when referenced. Use
   `UntrackedOrigin`, `ImmutUntrackedOrigin`, and `MutUntrackedOrigin`
@@ -421,6 +451,108 @@ This version is still a work in progress.
 - The `__init__` method required by the `Movable` trait has had its named
   argument changed from `take` to `move`. Explicitly calling a move initializer
   is now `SomeObject(move=)` instead of `SomeObject(take=)`.
+
+- Added an `index()` method to `LinkedList` for finding the first occurrence of
+  a value. Unlike Python's `list.index()`, it omits the `start`/`stop`
+  parameters.
+
+- `UnsafePointer.unsafe_from_address` now has an overloaded constructor that
+  takes an `IntLiteral` and emits a compile-time assertion if the address is
+  invalid (`0` or negative).
+
+- `Dict` now defers its backing-buffer allocation until the first insertion.
+  Default-constructed and `capacity=0` dictionaries no longer perform any heap
+  allocations.
+
+- `math.log` for `Float32` on NVIDIA GPUs now uses the `lg2.approx.ftz.f32` PTX
+  intrinsic, which flushes subnormal inputs and outputs to zero (matching CUDA's
+  `__logf`) and avoids the slower denormal-handling path.
+
+- Added a `PDLLevel.ON` named constant as an alias for `PDLLevel(1)`, for use in
+  place of the numeric `PDLLevel(0)`/`PDLLevel(1)` forms.
+
+- Added `has_nvidia_gpu_accelerator[subarch]` and
+  `has_nvidia_gpu_accelerator[subarchs]` overloads in `std.sys.info` that
+  combine compile-time and runtime checks for whether the host has an NVIDIA GPU
+  of a given subarchitecture or newer.
+
+- Added nested-layout support (CuTe layout algebra) to `Layout` and
+  `TileTensor`. A single `.tile[]` API now handles both flat and nested parent
+  layouts, and new `row_major_nested()`/`col_major_nested()` constructors (plus
+  `RowMajorNestedLayout`/`ColMajorNestedLayout` aliases) build re-nested layouts
+  for MFMA register tiles and `blocked_product` outputs.
+
+- Added a `DevicePointer` struct, a host-side representation of a pointer to
+  device memory that holds a reference to the owning `DeviceBuffer` and performs
+  bounds checking.
+
+- Kernel coordinate APIs now use `Coord` to preserve compile-time static shape
+  information:
+
+  - `elementwise` now passes a `Coord` to its callback instead of an
+    `IndexList[rank]`, and accepts a `Coord` shape argument, letting you pass
+    static dimensions. Rewrite callbacks from
+    `def func[width, rank, align](idx: IndexList[rank])` to
+    `def func[width, align](coord: Coord)`, and calls from
+    `elementwise(func, IndexList[2](...), ctx)` to
+    `elementwise(func, Coord(...), ctx)`.
+
+  - `Int` now conforms to `CoordLike`, so `Int` values can be passed directly to
+    `Coord` constructors without wrapping them in `Idx(...)`.
+
+  - Added `ManagedTensorSlice.shape_coord()` and
+    `ManagedTensorSlice.strides_coord()`, which return `Coord` values that
+    preserve the compile-time static shape and stride information that the
+    previous `IndexList`-returning queries discarded.
+
+- Added Mojo bindings for device-graph construction via a new
+  `DeviceGraphBuilder` type, letting you build a device graph and instantiate it
+  for replay from Mojo:
+
+  - Create a device graph, add nodes, and instantiate it for replay.
+
+  - Custom-op kernel registrations may define a `build_graph` method (alongside
+    `execute`) that receives the operand tensors plus a `DeviceGraphBuilder`,
+    letting an op contribute nodes to a device graph rather than enqueueing work
+    directly.
+
+  - Each node may be given an explicit dependency set; passing none preserves
+    the previous sequential ordering. `collect_dependencies()` runs a user
+    callback that adds producer nodes and returns a single joined dependency
+    handle.
+
+  - Device graphs support empty nodes (carrying dependencies without
+    computation) on both CUDA and HIP, and `add_memcpy`/`add_memset` memory
+    operations mirroring a subset of the `DeviceContext` memcpy and memset
+    operations.
+
+- Added support for the `fp8e4m3`, `fp8e4m3fn`, and `fp8e5m2` floating-point
+  types on the Metal (Apple GPU) backend, and enabled native `Int` <->
+  `bfloat16` conversion on Apple M2 (Apple8) Metal GPUs.
+
+- Added `Random.step_uniform_unbiased` and `NormalRandom.step_normal_4`
+  primitives to the Philox RNG. `step_uniform_unbiased` returns four `Float32`
+  values in (0, 1) using all 32 raw bits; `step_normal_4` returns four normals
+  from a single Philox step via same-step Box-Muller pairing.
+
+- Extended `PyObjectFunction` to support 7- and 8-argument signatures, adding
+  the corresponding type aliases and `@implicit` constructor overloads.
+
+- Added a new `std.sys.machine` module providing `MachineDefinition`, along with
+  expanded `DeviceSpec` and `DeviceRef` types, for aggregating accelerators and
+  supplying richer static device information during compilation.
+
+- Added a `WeakPointer[T]` type to `std.memory.arc_pointer`, providing weak
+  references to an `ArcPointer[T]` for building self-referential and cyclically
+  referential data structures that can still be destroyed.
+
+- Added `dual_elementwise` to `std.algorithm.functional`, which executes two
+  elementwise functions over their respective shapes in a single GPU kernel
+  launch, fusing two independent elementwise passes into one.
+
+- `UnsafeUnion` now propagates the address space of its origin instead of
+  defaulting to the `GENERIC` address space, allowing it to be used with
+  address-space-specific memory such as GPU shared memory.
 
 ## Tooling changes
 
@@ -525,6 +657,34 @@ This version is still a work in progress.
   capture lists. Previously only the equivalent `{var name^}` form
   round-tripped through the formatter.
 
+- Improved the clarity and actionability of a wide range of compiler
+  diagnostics—declaration resolution, `main()`, parser, lexer, signature, and
+  call-emission errors—explaining what is wrong and how to fix it.
+
+- Improved diagnostics for splatting a `VariadicPack` into a fixed-arity callee:
+  the compiler now attaches a hint pointing to the supported dispatcher pattern,
+  and a `callee(*pack)` pack-unpack mismatch now reports both the actual and
+  expected element types instead of only the pack trait.
+
+- `mojo precompile` now produces significantly smaller `.mojoc` packages by
+  dropping a redundant serialized copy of each module's parser output, which
+  also reduces package compile and load time.
+
+- The Mojo language server now returns `ContentModified` instead of
+  `InvalidRequest` for completion requests that arrive during a reparse, fixing
+  missing completions in clients such as Neovim's built-in LSP client.
+
+- `MODULAR_DEBUG=uninitialized-read-check` failures now print the kernel source
+  location, dtype, lane index, observed bit pattern, and block/thread indices of
+  each trapping lane, instead of being silenced by the thread-(0,0,0) print
+  gate.
+
+- The LLDB debugger now provides type summaries for Mojo's `PythonObject`
+  (showing the underlying Python type name and decoding common built-ins such as
+  `None`, `bool`, `int`, `float`, and item counts for `list`/`tuple`/`dict`) and
+  for `Dict[K, V]` (showing `(size N)` and exposing live entries in insertion
+  order with their keys and values).
+
 ## GPU programming
 
 - Added `DeviceContextList[size]` in `std.gpu.host`: a fixed-size,
@@ -570,6 +730,16 @@ This version is still a work in progress.
   # After
   ctx.enqueue_function[my_kernel](grid_dim=1, block_dim=1)
   ```
+
+- Added a `max_single_allocation_size` query to `DeviceContext` that reports the
+  largest single allocation the driver will currently service; on Metal it
+  reflects the live Metal framework limit, while CUDA/HIP report available
+  memory.
+
+- Added `npu` as a third well-known device label alongside `cpu` and `gpu`, with
+  new `is_npu()` and `is_accelerator()` predicates in `std.gpu.host.info`. No
+  NPU target support is enabled yet; using NPU as an accelerator type raises an
+  error.
 
 ## Removed
 
@@ -663,6 +833,18 @@ This version is still a work in progress.
 - `String` and `StringSlice` can now be indexed by graphemes, e.g.
   `String("👨‍🚀🧑‍🌾क्षि")[grapheme=1]` returns `"🧑‍🌾"`.
 
+- Removed `DeviceContext.compile_function_unchecked()` and
+  `DeviceContext.enqueue_function_unchecked()`. Use the checked
+  `compile_function()` and `enqueue_function()` instead.
+
+- Removed the `pdl_level` parameter from `elementwise`, `dual_elementwise`, and
+  the GPU elementwise implementations. PDL level 1 is now always used.
+
+- Removed the two `Optional[DeviceContext]` overloads of `elementwise` (in
+  `std.algorithm.functional`); callers now thread a non-optional `DeviceContext`
+  through directly. The `CpuDeviceContext` runtime always supplies a real
+  context for the CPU path, so the nullable wrapper is no longer needed.
+
 ## Fixed
 
 - Fixed a GPU reduction correctness bug that produced wrong results for a
@@ -703,3 +885,89 @@ This version is still a work in progress.
   runtime CPUID view, so features the kernel withholds no longer cause
   `SIGILL` at runtime.
   ([Issue #6413](https://github.com/modular/modular/issues/6413))
+
+- Fixed a lifetime-checker bug where destroying a type that captures origins
+  (its destructor can access those origins) failed to extend the referenced
+  value's lifetime beyond the `__del__` call.
+
+- Fixed linear/no-return function interaction so that `read` arguments and other
+  values are no longer required to be live after a no-return call (for example
+  `abort()`), reducing code size and eliminating spurious linear-type errors.
+
+- Fixed several compiler crashes and miscompiles in parameter inference and
+  trait casting, including type-value convertibility incorrectly rejected across
+  an upcast and a `Downcast` between traits dropping the original type's trait
+  conformance (`MOCO-3845`, `MOCO-3930`, `MOCO-4060`, `MOCO-4100`).
+
+- Fixed several trait-inheritance and conformance bugs: refining traits that
+  inherited a defaulted associated alias (whose default referenced `Self`, or
+  that was declared abstract by the refined trait) were rejected or crashed; a
+  `where conforms_to(T, Trait)` clause did not propagate to later parameter
+  matching; loading trait functions from bytecode could crash; a precompiled-
+  package stub closure trait cached before its full definition produced a
+  "closure trait missing call" crash; and passing a struct with a compatible
+  `__call__` method to a function-trait parameter now auto-conforms or produces
+  a proper error instead of crashing.
+
+- Fixed a bug where passing a function literal to a parameter typed as a sugared
+  closure trait (for example `comptime CallbackType = def(Int) -> Int`) failed
+  to inflate the literal to the requisite trait conformer.
+
+- Fixed a bug where passing a struct larger than 16 bytes to a Mojo callback
+  decorated with `abi("C")` failed on targets like x86-64 because the callback
+  was missing the required `byval` flags.
+
+- Fixed a code-generation bug where an indirect tail call to an `abi("C")`
+  function returning a struct via `sret` could read uninitialized memory; the
+  `tail` attribute is now correctly removed for such indirect calls.
+
+- The compiler now prefers a `.mojoc` module over a stale `.mojopkg` of the same
+  name when both live side by side in a directory, avoiding errors from picking
+  up an older build.
+
+- Fixed misdiagnosis when the compiler failed to synthesize an implicit copy
+  constructor because a field is not `ImplicitlyCopyable`, and corrected the
+  conditional-conformance backup path to check `ImplicitlyCopyable` rather than
+  `Copyable`.
+
+- Re-enabled error reporting in the elaborator that had previously been
+  disabled.
+
+- Splatting a non-`VariadicPack` value (for example `print(*l)` where `l` is a
+  `List[Int]`) now emits a clear error instead of crashing the parser.
+
+- Control-flow statements (`if`, `for`, `while`, `try`, `with`, and their
+  `comptime` forms) placed directly in a struct, trait, or extension body, or at
+  module scope, now emit a parse error instead of crashing the compiler.
+
+- Fixed a crash in `mojo doc` when emitting diagnostics for declarations without
+  valid source locations (for example, from bytecode packages).
+
+- Fixed `TileTensor.raw_store` not forwarding its `width` parameter to the
+  underlying `UnsafePointer.store` call.
+
+- Fixed a POP-to-LLVM lowering failure ("existing function with conflicting
+  signature") that occurred when a graph composed both an external cubin/PTX
+  launch via `enqueue_function` and a matmul; the launch path now casts
+  grid/block dimensions, shared-memory size, and attribute count to `UInt32` to
+  match the C ABI.
+
+- `MODULAR_DEBUG=uninitialized-read-check` no longer produces false positives
+  for fp8 dtypes, whose legitimate saturate-to-max values were bit-identical to
+  the poison sentinel; the fill and load-site check are now skipped for all fp8
+  formats (fp16, bf16, fp32, and fp64 are unaffected).
+
+- Fixed `isinf()` for finite-only float8 dtypes (`float8_e4m3fn`,
+  `float8_e8m0fnu`), which previously fell through to an `llvm.is.fpclass`
+  intrinsic with no `i8` overload and failed during LLVM lowering; `isinf()` now
+  correctly returns `False` for these formats at compile time.
+
+- Fixed several Apple GPU (Metal) backend code-generation bugs: illegal
+  generic-address-space accesses when unpacking an `OptionalReg[T]` containing
+  pointer fields, `bfloat16` arithmetic on M1 (Apple7) and M2 (Apple8) GPUs that
+  lack native support, and an unlowerable `max()` intrinsic on `SIMD` float
+  vectors.
+
+- Fixed AMD RDNA GPU architecture detection at compile time by removing the
+  `amdgpu:` prefix from the AMD RDNA GPU architecture patterns, which had caused
+  compilation to fail on AMD RDNA GPUs.
