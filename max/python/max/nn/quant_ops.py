@@ -89,9 +89,9 @@ def _dequant_weight_nvfp4(
             " not supported on pre-Blackwell GPUs: the dequant fallback"
             " needs the flat [N, K//16] scale layout."
         )
-    scales_f32 = (
-        weight_scale.to(weight.device).cast(DType.float32) * weight_scale_2
-    )
+    scales_f32 = weight_scale.to(weight.device).cast(
+        DType.float32
+    ) * weight_scale_2.to(weight.device)
     return nvfp4_dequant(weight, scales_f32, out_type=DType.bfloat16)
 
 
