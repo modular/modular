@@ -193,16 +193,16 @@ def execute_test[
 
     # --- Build KV collections ---
     var cache_lengths_immut = LayoutTensor[
-        DType.uint32, cache_lengths_layout, ImmutAnyOrigin
+        mut=False, DType.uint32, cache_lengths_layout
     ](
-        cache_lengths_device.unsafe_ptr(),
+        cache_lengths_device,
         RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
     )
     comptime paged_lut_kv_layout = Layout.row_major[2]()
     var paged_lut_immut = LayoutTensor[
-        DType.uint32, paged_lut_kv_layout, ImmutAnyOrigin
+        mut=False, DType.uint32, paged_lut_kv_layout
     ](
-        paged_lut_device.unsafe_ptr(),
+        paged_lut_device,
         RuntimeLayout[paged_lut_kv_layout].row_major(paged_lut_shape),
     )
 
@@ -216,7 +216,7 @@ def execute_test[
     var fused_kv_collection = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[dtype, Layout.row_major[6]()](
             fused_kv_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 fused_kv_lt.runtime_layout.shape.value.canonicalize(),
@@ -231,7 +231,7 @@ def execute_test[
     var unfused_kv_collection = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[dtype, Layout.row_major[6]()](
             unfused_kv_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 unfused_kv_lt.runtime_layout.shape.value.canonicalize(),
@@ -286,9 +286,10 @@ def execute_test[
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
     var unfused_v_cache = unfused_kv_collection.get_value_cache(layer_idx)
     var row_offsets_lt = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32,
+        Layout(UNKNOWN_VALUE),
     ](
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
             IndexList[1](batch_size + 1)
         ),
@@ -605,16 +606,20 @@ def execute_test_with_position_ids[
 
     # --- Build KV collections ---
     var cache_lengths_immut = LayoutTensor[
-        DType.uint32, cache_lengths_layout, ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        cache_lengths_layout,
     ](
-        cache_lengths_device.unsafe_ptr(),
+        cache_lengths_device,
         RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
     )
     comptime paged_lut_kv_layout = Layout.row_major[2]()
     var paged_lut_immut = LayoutTensor[
-        DType.uint32, paged_lut_kv_layout, ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        paged_lut_kv_layout,
     ](
-        paged_lut_device.unsafe_ptr(),
+        paged_lut_device,
         RuntimeLayout[paged_lut_kv_layout].row_major(paged_lut_shape),
     )
 
@@ -628,7 +633,7 @@ def execute_test_with_position_ids[
     var fused_kv_collection = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[dtype, Layout.row_major[6]()](
             fused_kv_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 fused_kv_lt.runtime_layout.shape.value.canonicalize(),
@@ -643,7 +648,7 @@ def execute_test_with_position_ids[
     var unfused_kv_collection = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
-        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[dtype, Layout.row_major[6]()](
             unfused_kv_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 unfused_kv_lt.runtime_layout.shape.value.canonicalize(),
@@ -704,9 +709,10 @@ def execute_test_with_position_ids[
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
     var unfused_v_cache = unfused_kv_collection.get_value_cache(layer_idx)
     var row_offsets_lt = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32,
+        Layout(UNKNOWN_VALUE),
     ](
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
             IndexList[1](batch_size + 1)
         ),
@@ -1004,16 +1010,20 @@ def execute_test_fp8[
 
     # --- Build KV collections ---
     var cache_lengths_immut = LayoutTensor[
-        DType.uint32, cache_lengths_layout, ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        cache_lengths_layout,
     ](
-        cache_lengths_device.unsafe_ptr(),
+        cache_lengths_device,
         RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
     )
     comptime paged_lut_kv_layout = Layout.row_major[2]()
     var paged_lut_immut = LayoutTensor[
-        DType.uint32, paged_lut_kv_layout, ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        paged_lut_kv_layout,
     ](
-        paged_lut_device.unsafe_ptr(),
+        paged_lut_device,
         RuntimeLayout[paged_lut_kv_layout].row_major(paged_lut_shape),
     )
 
@@ -1023,7 +1033,7 @@ def execute_test_fp8[
     var bf16_kv_collection = PagedKVCacheCollection[
         compute_dtype, kv_params, page_size
     ](
-        LayoutTensor[compute_dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[compute_dtype, Layout.row_major[6]()](
             bf16_kv_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 bf16_kv_lt.runtime_layout.shape.value.canonicalize(),
@@ -1042,7 +1052,7 @@ def execute_test_fp8[
     var fp8_kv_collection = PagedKVCacheCollection[
         fp8_dtype, kv_params, page_size
     ](
-        LayoutTensor[fp8_dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[fp8_dtype, Layout.row_major[6]()](
             fp8_kv_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 fp8_kv_lt.runtime_layout.shape.value.canonicalize(),

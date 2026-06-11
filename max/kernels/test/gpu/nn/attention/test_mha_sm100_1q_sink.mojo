@@ -270,39 +270,38 @@ def execute_1q_sink_test[
     # `cache_lengths`/`lookup_table` at ImmutAnyOrigin; the ragged FA4 path
     # wants `input_row_offsets` immutable. Bake the origins into the types.
     var input_row_offsets_lt = LayoutTensor[
-        DType.uint32, row_offsets_layout, ImmutAnyOrigin
+        mut=False, DType.uint32, row_offsets_layout
     ](
-        input_row_offsets_dev.unsafe_ptr(),
+        input_row_offsets_dev,
         RuntimeLayout[row_offsets_layout].row_major(
             IndexList[1](batch_size + 1)
         ),
     )
     var cache_lengths_lt = LayoutTensor[
-        DType.uint32, cache_lengths_layout, ImmutAnyOrigin
+        mut=False, DType.uint32, cache_lengths_layout
     ](
-        cache_lengths_dev.unsafe_ptr(),
+        cache_lengths_dev,
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
     )
-    var paged_lut_lt = LayoutTensor[
-        DType.uint32, paged_lut_layout, ImmutAnyOrigin
-    ](
-        paged_lut_dev.unsafe_ptr(),
+    var paged_lut_lt = LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+        paged_lut_dev,
         RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
     )
     var kv_block_paged_lt = LayoutTensor[
-        dtype, kv_block_6d_layout, MutAnyOrigin
+        dtype,
+        kv_block_6d_layout,
     ](
-        kv_block_dev.unsafe_ptr(),
+        kv_block_dev,
         RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
     )
-    var q_lt = LayoutTensor[dtype, q_ragged_layout, ImmutAnyOrigin](
-        q_dev.unsafe_ptr(),
+    var q_lt = LayoutTensor[mut=False, dtype, q_ragged_layout](
+        q_dev,
         RuntimeLayout[q_ragged_layout].row_major(
             IndexList[3](total_length, num_q_heads, head_size)
         ),
     )
-    var sinks_lt = LayoutTensor[dtype, sink_layout, ImmutAnyOrigin](
-        sinks_dev.unsafe_ptr(),
+    var sinks_lt = LayoutTensor[mut=False, dtype, sink_layout](
+        sinks_dev.unsafe_ptr().as_unsafe_any_origin(),
         RuntimeLayout[sink_layout].row_major(IndexList[1](num_q_heads)),
     )
 

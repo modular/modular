@@ -34,10 +34,10 @@ from nn.gemv_partial_norm import gemv_and_partial_norm
 def _host_reference[
     c_type: DType, a_type: DType
 ](
-    y_ref_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    gamma_ptr: UnsafePointer[Scalar[a_type], MutAnyOrigin],
-    normed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    unnormed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    y_ref_ptr: UnsafePointer[mut=False, Scalar[c_type], _],
+    gamma_ptr: UnsafePointer[mut=False, Scalar[a_type], _],
+    normed_ref: UnsafePointer[mut=True, Scalar[c_type], _],
+    unnormed_ref: UnsafePointer[mut=True, Scalar[c_type], _],
     n: Int,
     n_normed: Int,
     eps: Scalar[a_type],
