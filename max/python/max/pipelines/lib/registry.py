@@ -53,9 +53,6 @@ if TYPE_CHECKING:
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
-from max.pipelines.speculative.standalone import (
-    _StandaloneSpeculativeDecodingPipeline,
-)
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .embeddings_pipeline import EmbeddingsPipeline
@@ -82,7 +79,6 @@ def get_pipeline_for_task(
     type[TextGenerationPipeline[TextContext]]
     | type[EmbeddingsPipeline]
     | type[PixelGenerationPipeline[Any]]
-    | type[_StandaloneSpeculativeDecodingPipeline]
     | type[OverlapTextGenerationPipeline[TextContext]]
 ):
     """Returns the pipeline class for the given task and config.
@@ -99,9 +95,7 @@ def get_pipeline_for_task(
         and pipeline_config.speculative is not None
     ):
         spec_method = pipeline_config.speculative.speculative_method
-        if pipeline_config.speculative.is_standalone():
-            return _StandaloneSpeculativeDecodingPipeline
-        elif (
+        if (
             pipeline_config.speculative.is_eagle()
             or pipeline_config.speculative.is_mtp()
             or pipeline_config.speculative.is_dflash()
@@ -914,36 +908,6 @@ class PipelineRegistry:
             "weight_adapters": arch.weight_adapters,
             "tokenizer": typed_tokenizer,
         }
-
-        # If using standalone speculative decoding, add draft model-specific args
-        if (
-            pipeline_config.draft_model is not None
-            and pipeline_config.speculative is not None
-            and pipeline_config.speculative.is_standalone()
-        ):
-            draft_arch_name = pipeline_config.draft_model.architecture_name
-            if draft_arch_name is None:
-                raise ValueError(
-                    f"Cannot determine architecture for draft model "
-                    f"'{pipeline_config.draft_model.model_path}': "
-                    "no 'architectures' field in HuggingFace config."
-                )
-            draft_arch = self.retrieve_architecture(
-                architecture_name=draft_arch_name,
-                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-                task=task,
-            )
-            if draft_arch is None:
-                raise ValueError(
-                    f"MAX-Optimized architecture not found for draft model "
-                    f"'{pipeline_config.draft_model.model_path}'"
-                )
-            assert issubclass(draft_arch.pipeline_model, PipelineModel), (
-                f"Draft model must be a PipelineModel, "
-                f"got {draft_arch.pipeline_model.__name__}"
-            )
-            factory_kwargs["draft_pipeline_model"] = draft_arch.pipeline_model
-            factory_kwargs["draft_weight_adapters"] = draft_arch.weight_adapters
 
         # TODO: Running with overlap results in a CUDA_ILLEGAL_ADDRESS error.
         # The source of this error is in the realize_future_tokens graph where

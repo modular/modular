@@ -140,8 +140,8 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
     TextGenerationRequest,
 )
-from max.pipelines.speculative.base import _SpeculativeDecodingMetrics
 from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
+from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
 

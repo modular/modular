@@ -37,7 +37,7 @@ from .utils import AttentionDispatchResolver, AttnKey
 # on max.nn (BUILD.bazel), so importing back would create a circular
 # bazel dependency. The two definitions are structurally identical
 # Literals, so mypy treats them as the same type at use sites.
-SpeculativeMethod = Literal["standalone", "eagle", "mtp", "dflash"]
+SpeculativeMethod = Literal["eagle", "mtp", "dflash"]
 
 logger = logging.getLogger("max.pipelines")
 
@@ -312,7 +312,7 @@ class KVCacheParamInterface(Protocol):
     def num_draft_tokens_per_step(self) -> int:
         """Number of draft tokens written per draft forward.
 
-        One for autoregressive drafts (``eagle``, ``mtp``, ``standalone``);
+        One for autoregressive drafts (``eagle``, ``mtp``);
         equal to ``num_draft_tokens`` for block drafts (``dflash``).
         """
         if self.speculative_method == "dflash":

@@ -11,17 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from max.driver import CPU, Buffer
+from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.kv_cache import (
-    IncrementCacheLengthsProcessor,
     PagedKVCacheManager,
 )
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import _padded_lut_cols
@@ -464,44 +462,6 @@ async def test_multi_cache_runtime_inputs_combined() -> None:
 
     # But they have different block buffers (different caches).
     assert inputs.inputs[0].kv_blocks is not inputs.inputs[1].kv_blocks
-
-
-def test_multi_cache_increment_cache_lengths_updates_every_physical_cache() -> (
-    None
-):
-    """All KVCacheInputsPerDevice entries must get the new cache_lengths from execute.
-
-    Multi-cache runtime inputs interleave one entry per (cache, TP shard) per
-    replica. A bug only writing back the first `len(devices)` entries left
-    non-primary caches (e.g. an indexer) with stale lengths.
-    """
-    session = InferenceSession(devices=[CPU()])
-    kv_manager = _make_multi_kv_manager(
-        total_num_pages=16,
-        session=session,
-    )
-    ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
-    kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_in = kv_manager.runtime_inputs([[ctx]])
-
-    assert len(kv_in.inputs) == 2
-    # Independent buffers with the same starting counts (simulates distinct slots).
-    start = np.array([5], dtype=np.uint32)
-    kv_in.inputs[0].cache_lengths = Buffer.from_numpy(start.copy()).to(CPU())
-    kv_in.inputs[1].cache_lengths = Buffer.from_numpy(start.copy()).to(CPU())
-
-    processor = IncrementCacheLengthsProcessor(
-        session=session,
-        params=kv_manager.cache_params(),
-    )
-    row_offsets = Buffer.from_numpy(np.array([0, 3], dtype=np.uint32)).to(CPU())
-    prev = SimpleNamespace(input_row_offsets=row_offsets)
-    out = processor.execute(kv_in, prev)
-
-    want = np.array([8], dtype=np.uint32)
-    np.testing.assert_array_equal(out.inputs[0].cache_lengths.to_numpy(), want)
-    np.testing.assert_array_equal(out.inputs[1].cache_lengths.to_numpy(), want)
 
 
 @pytest.mark.asyncio

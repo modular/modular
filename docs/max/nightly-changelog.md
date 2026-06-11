@@ -221,6 +221,9 @@ This version is still a work in progress.
 - Removed multi-step decode from the text-generation pipelines. The flag
   `--max-num-steps` no longer works.
 
+- Removed support for speculative decoding with a standalone draft model.
+  Please use `eagle`, `mtp`, or `dflash` drafters instead.
+
 ### `max` CLI
 
 - The serving benchmark now reports a per-turn KV cache retention percentile

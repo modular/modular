@@ -30,7 +30,7 @@ __all__ = [
     "SpeculativeMethod",
 ]
 
-SpeculativeMethod = Literal["standalone", "eagle", "mtp", "dflash"]
+SpeculativeMethod = Literal["eagle", "mtp", "dflash"]
 """The supported methods for speculative decoding."""
 
 RejectionSamplingStrategy = Literal[
@@ -81,7 +81,7 @@ class SpeculativeConfig(ConfigFileModel):
     )
     """The speculative decoding method to use.
 
-    One of ``"standalone"``, ``"eagle"``, or ``"mtp"``. When ``None``,
+    One of ``"eagle"``, ``"mtp"``, or ``"dflash"``. When ``None``,
     speculative decoding is disabled.
     """
 
@@ -100,14 +100,13 @@ class SpeculativeConfig(ConfigFileModel):
         default=None,
         description=(
             "Rejection sampling strategy for verifying draft tokens. "
-            "Defaults to ``typical-acceptance`` for ``eagle``/``mtp`` and "
-            "``residual`` for ``standalone``."
+            "Defaults to ``typical-acceptance`` for ``eagle``/``mtp``."
         ),
     )
     """The rejection sampling strategy used to verify drafted tokens.
 
     When ``None``, defaults to ``"typical-acceptance"`` for ``eagle`` and
-    ``mtp`` and ``"residual"`` for ``standalone``.
+    ``mtp``.
     """
 
     synthetic_acceptance_rate: float | None = Field(
@@ -201,10 +200,6 @@ class SpeculativeConfig(ConfigFileModel):
         and read the target's hidden states.
         """
         return self.speculative_method == "eagle"
-
-    def is_standalone(self) -> bool:
-        """Returns whether the configured method is a standalone draft model."""
-        return self.speculative_method == "standalone"
 
     def is_mtp(self) -> bool:
         """Returns whether the configured method is multi-token prediction (MTP)."""

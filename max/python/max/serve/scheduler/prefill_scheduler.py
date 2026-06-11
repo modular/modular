@@ -441,12 +441,6 @@ def load_prefill_scheduler(
     # Validate speculative decoding configuration for prefill-only mode.
     spec_config = pipeline_config.speculative
     if spec_config is not None:
-        if spec_config.is_standalone():
-            raise ValueError(
-                "Standalone speculative decoding is not supported with "
-                "pipeline_role='prefill_only'. Use 'eagle' or 'mtp' "
-                "speculative methods instead."
-            )
         if not (spec_config.is_eagle() or spec_config.is_mtp()):
             raise ValueError(
                 f"Unsupported speculative method "

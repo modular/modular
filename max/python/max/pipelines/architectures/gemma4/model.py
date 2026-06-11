@@ -28,9 +28,6 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
-from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
-    IncrementCacheLengthsProcessor,
-)
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -182,11 +179,6 @@ class Gemma3_MultiModalModel(
         )
 
         assert isinstance(self.kv_params, MultiKVCacheParams)
-        self._increment_global_cache_lengths_processor = (
-            IncrementCacheLengthsProcessor(
-                session=session, params=self.kv_params.params[1]
-            )
-        )
 
     @property
     def model(self) -> Model:

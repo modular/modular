@@ -41,18 +41,16 @@ from max.graph.weights import (
     weights_format,
 )
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.context import (
     BatchLogitsProcessor,
     LogProbabilities,
     TextGenerationContextType,
     TextGenerationOutput,
 )
-from max.pipelines.context.exceptions import (
-    InputError,  # noqa: F401 (for docstring)
+from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
+    InputError,
 )
 from max.pipelines.kv_cache import (
-    IncrementCacheLengthsProcessor,
     PagedKVCacheManager,
     load_kv_manager,
 )
@@ -232,20 +230,6 @@ class TextGenerationPipeline(
             max_seq_len=self._pipeline_model.max_seq_len,
             session=session,
             available_cache_memory=available_cache_memory,
-        )
-
-        # Use the model's kv_params (not the manager's) because in
-        # compile-only mode the manager is a Mock.
-        if isinstance(kv_params, MultiKVCacheParams):
-            # In case of multiple KV caches, multiple KV cache inputs are passed to `IncrementCacheLengthsProcessor.execute`, params only used for metadata.
-            primary_params = kv_params.params[0]
-        else:
-            assert isinstance(kv_params, KVCacheParams)
-            primary_params = kv_params
-        self._increment_cache_lengths_processor = (
-            IncrementCacheLengthsProcessor(
-                session=session, params=primary_params
-            )
         )
 
         # Load sampler. The bitmask-aware sampler is loaded when constrained

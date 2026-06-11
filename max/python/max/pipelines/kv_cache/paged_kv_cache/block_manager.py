@@ -30,10 +30,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.pipelines.context import (
-    TextAndVisionContext,
-    TextContext,
-)
+from max.pipelines.context import TextAndVisionContext, TextContext
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
@@ -550,7 +547,7 @@ class BlockManager:
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
                 per draft forward. One for autoregressive drafts
-                (``eagle``, ``mtp``, ``standalone``); equal to
+                (``eagle``, ``mtp``); equal to
                 ``num_draft_tokens`` for block drafts (``dflash``). Used by
                 ``_compute_seq_len`` to size the cache for block drafts,
                 whose ``forward_block`` writes one extra position past the
@@ -634,7 +631,7 @@ class BlockManager:
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
                 per draft forward. One for autoregressive drafts
-                (``eagle``, ``mtp``, ``standalone``); equal to
+                (``eagle``, ``mtp``); equal to
                 ``num_draft_tokens`` for block drafts (``dflash``). Used by
                 ``_compute_seq_len`` to size the cache for block drafts,
                 whose ``forward_block`` writes one extra position past the

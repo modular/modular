@@ -898,12 +898,7 @@ class PipelineConfig(ConfigFileModel):
             else:
                 sampling_config = config_class(**matched_kwargs)
 
-            is_standalone_spec_decoding = (
-                self.speculative and self.speculative.is_standalone()
-            )
-            if (
-                "main" in self.models and self.model.enable_echo
-            ) or is_standalone_spec_decoding:
+            if "main" in self.models and self.model.enable_echo:
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
@@ -1491,43 +1486,6 @@ class PipelineConfig(ConfigFileModel):
             raise ValueError(
                 "MAX-Optimized architecture not found for target model (`model_path`)"
             )
-
-        # Validate that their tokenizers are identical.
-        if self.speculative.is_standalone():
-            if draft_arch != target_arch:
-                raise ValueError(
-                    f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
-                )
-
-            draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-                huggingface_repo=self.draft_model.huggingface_model_repo
-            )
-            target_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-                huggingface_repo=self.model.huggingface_model_repo
-            )
-
-            # Compare Vocabularies
-            if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
-                raise ValueError(
-                    f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model.model_path})"
-                )
-
-            # Compare Tokenizer Configuration
-            if hasattr(draft_tokenizer, "_tokenizer") and hasattr(
-                target_tokenizer, "_tokenizer"
-            ):
-                if (
-                    draft_tokenizer._tokenizer.__dict__
-                    != target_tokenizer._tokenizer.__dict__
-                ):
-                    raise ValueError(
-                        f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the configuration of the tokenizer for the target model ({self.model.model_path})"
-                    )
-            else:
-                if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
-                    raise ValueError(
-                        f"tokenizer for draft_model ({self.draft_model.model_path}) does not match the configuration of the tokenizer for the target model ({self.model.model_path})"
-                    )
 
         if self.model.enable_echo:
             raise ValueError(
