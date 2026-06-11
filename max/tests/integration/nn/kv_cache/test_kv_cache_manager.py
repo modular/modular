@@ -234,6 +234,53 @@ async def test_mla_runtime_inputs_handles_empty_replica_batch() -> None:
     assert runtime_inputs.inputs[1].attention_dispatch_metadata is not None
 
 
+@pytest.mark.parametrize("data_parallel_degree", [1, 2, 4])
+@pytest.mark.asyncio
+async def test_multi_cache_runtime_inputs_match_symbolic_order(
+    data_parallel_degree: int,
+) -> None:
+    """Runtime KV input order must match the graph's symbolic input order."""
+    kv_manager = _make_multi_kv_manager(
+        num_devices=data_parallel_degree,
+        data_parallel_degree=data_parallel_degree,
+    )
+
+    batches = []
+    for replica_idx in range(data_parallel_degree):
+        ctx = create_text_context(np.zeros(1, dtype=np.int64))
+        kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
+        kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+        batches.append([ctx])
+
+    symbolic_types = kv_manager.params.get_symbolic_inputs().flatten()
+    runtime_buffers = kv_manager.runtime_inputs(batches, num_steps=1).flatten()
+
+    assert len(runtime_buffers) == len(symbolic_types), (
+        "runtime produced a different number of KV inputs than the graph "
+        "declares"
+    )
+    for i, (typ, buf) in enumerate(
+        zip(symbolic_types, runtime_buffers, strict=True)
+    ):
+        assert typ.dtype == buf.dtype, (
+            f"position {i}: runtime dtype {buf.dtype} != symbolic "
+            f"{typ.dtype} (KV input order mismatch)"
+        )
+        # The graph engine validates each statically-known dim positionally
+        # (the leading block-count dim is symbolic and is skipped). A wrong
+        # cache ordering shows up as a head_dim mismatch here.
+        for axis, dim in enumerate(typ.shape):
+            try:
+                static_dim = int(dim)
+            except Exception:
+                continue
+            assert int(buf.shape[axis]) == static_dim, (
+                f"position {i} axis {axis}: runtime {buf.shape[axis]} != "
+                f"symbolic {static_dim} (likely MLA/indexer cache order "
+                f"mismatch)"
+            )
+
+
 @pytest.mark.asyncio
 async def test_alloc_num_speculative_steps_allocates_extra_blocks() -> None:
     """alloc with num_speculative_steps reserves blocks for spec tokens."""
@@ -354,9 +401,11 @@ def _make_multi_kv_manager(
     max_batch_size: int = 128,
     enable_prefix_caching: bool = False,
     session: InferenceSession | None = None,
+    num_devices: int = 1,
+    data_parallel_degree: int = 1,
 ) -> PagedKVCacheManager:
     """Creates a multi-cache manager with two caches (primary + secondary)."""
-    devices = [DeviceRef.CPU()]
+    devices = [DeviceRef.CPU() for _ in range(num_devices)]
     primary = KVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
@@ -364,6 +413,7 @@ def _make_multi_kv_manager(
         num_layers=10,
         page_size=page_size,
         devices=devices,
+        data_parallel_degree=data_parallel_degree,
         enable_prefix_caching=enable_prefix_caching,
     )
     secondary = KVCacheParams(
@@ -373,6 +423,7 @@ def _make_multi_kv_manager(
         num_layers=10,
         page_size=page_size,
         devices=devices,
+        data_parallel_degree=data_parallel_degree,
         enable_prefix_caching=enable_prefix_caching,
     )
     multi_params = MultiKVCacheParams.from_params(primary, secondary)

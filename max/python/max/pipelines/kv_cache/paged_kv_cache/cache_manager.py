@@ -839,17 +839,28 @@ class PagedKVCacheManager:
             raise ValueError(
                 f"Number of batches must match number of replicas. Expected {len(self._replica)}, got {len(batches)}"
             )
-        ret_list: list[KVCacheInputsPerDevice] = []
-        for replica_idx, ctxs in enumerate(batches):
-            ret_list.extend(
-                self._runtime_inputs_for_replica(
-                    replica_idx,
-                    ctxs,
-                    num_steps,
-                    max_cache_length=max_cache_length,
-                    batch_characteristics=batch_characteristics,
-                )
+        per_replica = [
+            self._runtime_inputs_for_replica(
+                replica_idx,
+                ctxs,
+                num_steps,
+                max_cache_length=max_cache_length,
+                batch_characteristics=batch_characteristics,
             )
+            for replica_idx, ctxs in enumerate(batches)
+        ]
+
+        # Reorder returned inputs to match the order of get_symbolic_inputs:
+        # ([cache0 across all replicas, then cache1, ...]).
+        ret_list: list[KVCacheInputsPerDevice] = []
+        for cache_idx in range(self._num_caches):
+            for replica_inputs in per_replica:
+                # Each cache contributes the same number of per-shard
+                # entries per replica, laid out contiguously cache-major.
+                seg = len(replica_inputs) // self._num_caches
+                ret_list.extend(
+                    replica_inputs[cache_idx * seg : (cache_idx + 1) * seg]
+                )
         return KVCacheInputs(inputs=ret_list)
 
     def alloc_dummy(self, request_id: RequestID, replica_idx: int) -> None:
