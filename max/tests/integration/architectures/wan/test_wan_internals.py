@@ -41,6 +41,24 @@ from max.pipelines.request.provider_options import (
 )
 
 
+def test_cfg_batched_detection_guards_1d_i2v_tokens() -> None:
+    """Regression for MODELS-1537: I2V tokens are 1-D ``[seq_len]``, so a
+    naive ``shape[0] > 1`` check mistook the sequence length for a CFG batch
+    of 2. That skipped negative-prompt encoding, zeroed the unconditional
+    pass, and over-guided the prediction into degenerate (flat-green) video.
+    """
+    from max.pipelines.architectures.wan.wan_executor import (
+        _tokens_are_cfg_batched,
+    )
+
+    # T2V: pre-concatenated [cond; uncond] -> 2-D [2, seq_len] is batched.
+    assert _tokens_are_cfg_batched((2, 512)) is True
+    # I2V / sequential: 1-D [seq_len] must NOT count as batched (the bug).
+    assert _tokens_are_cfg_batched((512,)) is False
+    # Sequential single-prompt 2-D [1, seq_len] is not batched either.
+    assert _tokens_are_cfg_batched((1, 512)) is False
+
+
 def test_wan_arch_config_initialize_uses_transformer_component() -> None:
     pipeline_config = cast(
         PipelineConfig,

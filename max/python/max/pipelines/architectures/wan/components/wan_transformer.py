@@ -238,12 +238,25 @@ class WanTransformer(CompiledComponent):
                 #   * non-CFG (text emb is also B=1; broadcast is identity)
                 #   * batched CFG (text emb is B=2; broadcast expands
                 #     without a separate pack graph).
+                # I2V models concatenate a VAE-encoded conditioning latent
+                # (in_channels - out_channels channels) onto the noise latent
+                # inside the pre module, so the noise input carries
+                # out_channels and a 4th i2v_condition input supplies the
+                # rest. T2V (in_channels == out_channels) has no condition.
+                cond_channels = (
+                    self.config.in_channels - self.config.out_channels
+                )
+                latent_in_channels = (
+                    self.config.out_channels
+                    if cond_channels > 0
+                    else self.config.in_channels
+                )
                 pre_input_types = [
                     TensorType(
                         DType.float32,
                         [
                             1,
-                            self.config.in_channels,
+                            latent_in_channels,
                             "frames",
                             "height",
                             "width",
@@ -257,6 +270,24 @@ class WanTransformer(CompiledComponent):
                         device=dev,
                     ),
                 ]
+                if cond_channels > 0:
+                    # The condition is concatenated onto the noise latent
+                    # *after* it is broadcast to the text embedding's batch
+                    # axis, so the condition shares the same symbolic
+                    # ``"batch"`` dim (1 for the sequential I2V path).
+                    pre_input_types.append(
+                        TensorType(
+                            dtype,
+                            [
+                                "batch",
+                                cond_channels,
+                                "frames",
+                                "height",
+                                "width",
+                            ],
+                            device=dev,
+                        )
+                    )
                 with Graph(
                     "wan_pre",
                     input_types=pre_input_types,
