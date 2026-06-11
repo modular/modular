@@ -106,7 +106,7 @@ struct _DeviceFunctionInner[
     var _compiled: Tuple[
         RuntimeBundle,
         CompiledFunctionInfo[
-            Self.func_type, Self.func, get_device_spec[0]().target.value
+            Self.func_type, Self.func, get_device_spec[0]()._mlir_target()
         ],
     ]
     var _context: ArcPointer[Context[get_device_spec[0]()]]
@@ -164,7 +164,7 @@ struct DeviceContext(
     comptime device_spec = get_device_spec[0]()
 
     comptime default_device_info = GPUInfo.from_target[
-        Self.device_spec.target.value
+        Self.device_spec._mlir_target()
     ]()
 
     var _driver: ArcPointer[Driver]
