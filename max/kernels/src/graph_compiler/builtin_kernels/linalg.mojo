@@ -47,7 +47,7 @@ from linalg.grouped_matmul_block_scaled_dispatch import (
     grouped_matmul_block_scaled_dispatch,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_swiglu_nvfp4_dispatch,
+    grouped_matmul_block_scaled_swiglu_sm100_dispatch,
 )
 from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
     fused_bias_residual_matmul_dispatch_sm100,
@@ -486,8 +486,8 @@ struct Struct_grouped_matmul_block_scaled:
         )
 
 
-@compiler.register("mo.grouped.matmul.swiglu.nvfp4")
-struct Struct_grouped_matmul_swiglu_nvfp4:
+@compiler.register("mo.grouped.matmul.block.scaled.swiglu")
+struct Struct_grouped_matmul_block_scaled_swiglu:
     """MOGG wrapper for fused grouped NVFP4 matmul + SwiGLU + NVFP4 quant.
 
     Fuses the MoE gate/up grouped matmul, SwiGLU activation, and per-block
@@ -499,13 +499,15 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
     @always_inline
     @staticmethod
     def execute[
+        c_type: DType,
         a_type: DType,
         b_type: DType,
         scales_type: DType,
         //,
+        clamp_activation: Bool,
         target: StaticString,
     ](
-        c_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        c_packed: OutputTensor[dtype=c_type, rank=2, ...],
         c_swiglu_scales: OutputTensor[dtype=scales_type, rank=5, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=3, ...],
@@ -518,6 +520,8 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         c_input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
         estimated_total_m: UInt32,
         num_active_experts: UInt32,
+        swiglu_alpha: Float32,
+        swiglu_limit: Float32,
         context: DeviceContext,
     ) raises:
         """Executes fused grouped NVFP4 matmul + SwiGLU + NVFP4 quant.
@@ -533,6 +537,7 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             b_type: The input B data type. Constraints: Must be `uint8`.
             scales_type: The scale factor data type.
                 Constraints: Must be `float8_e4m3fn`.
+            clamp_activation: Whether to clamp the activation (swigluoai).
             target: The target GPU device.
 
         Args:
@@ -549,6 +554,8 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             c_input_scales: Per-expert SiLU input scale (= 1/output_inv_scale).
             estimated_total_m: The estimated total number of tokens.
             num_active_experts: The number of active experts.
+            swiglu_alpha: The alpha value for the clamped activation.
+            swiglu_limit: The limit value for the clamped activation.
             context: The device context pointer.
         """
         comptime assert is_gpu[
@@ -556,7 +563,9 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         ](), "fused SwiGLU+NVFP4 grouped matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        grouped_matmul_swiglu_nvfp4_dispatch[transpose_b=True, target=target](
+        grouped_matmul_block_scaled_swiglu_sm100_dispatch[
+            transpose_b=True, target=target, clamp_activation=clamp_activation
+        ](
             c_packed.to_tile_tensor[DType.int64](),
             c_swiglu_scales.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
@@ -571,6 +580,8 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             Int(num_active_experts),
             Int(estimated_total_m),
             context,
+            swiglu_alpha,
+            swiglu_limit,
         )
 
 

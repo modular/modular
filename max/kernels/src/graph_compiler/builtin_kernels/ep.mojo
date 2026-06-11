@@ -67,7 +67,7 @@ from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
     MXFP4TokenFormat,
-    NVFP4TokenFormat,
+    NVBlockScaledTokenFormat,
     elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
@@ -146,9 +146,9 @@ struct Struct_ep_init:
             ]
             dispatch_msg_size = token_fmt_type.msg_size()
 
-        elif dispatch_fmt_str == "NVFP4":
-            comptime token_fmt_type = NVFP4TokenFormat[
-                fp4_dtype=dispatch_dtype,
+        elif dispatch_fmt_str == "BLOCK_SCALED_NV":
+            comptime token_fmt_type = NVBlockScaledTokenFormat[
+                quant_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
                 output_layout=RT_LAYOUT_2D,
                 scales_offset_layout=RT_LAYOUT_2D,
@@ -294,6 +294,7 @@ struct Struct_ep_dispatch_async:
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -368,14 +369,15 @@ struct Struct_ep_dispatch_async:
             raise Error("Invalid dispatch format string: ", dispatch_fmt_str)
 
 
-@compiler.register("ep.dispatch_async.nvfp4")
-struct Struct_ep_dispatch_async_nvfp4:
+@compiler.register("ep.dispatch_async.block.scaled.nv")
+struct Struct_ep_dispatch_async_block_scaled_nv:
     @always_inline
     @staticmethod
     @parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
         hidden_size: Int,
         top_k: Int,
         n_experts: Int,
@@ -407,9 +409,9 @@ struct Struct_ep_dispatch_async_nvfp4:
             # Currently only use one global input scale for all experts
             return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
 
-        comptime token_fmt_type = NVFP4TokenFormat[
-            fp4_dtype=dispatch_dtype,
-            scales_dtype=DType.float8_e4m3fn,
+        comptime token_fmt_type = NVBlockScaledTokenFormat[
+            quant_dtype=dispatch_dtype,
+            scales_dtype=dispatch_scale_dtype,
             output_layout=RT_LAYOUT_2D,
             scales_offset_layout=RT_LAYOUT_2D,
             hidden_size,
@@ -608,8 +610,8 @@ struct Struct_ep_dispatch_wait_fp8:
         )
 
 
-@compiler.register("ep.dispatch_wait.nvfp4")
-struct Struct_ep_dispatch_wait_nvfp4:
+@compiler.register("ep.dispatch_wait.block.scaled.nv")
+struct Struct_ep_dispatch_wait_block_scaled_nv:
     @always_inline
     @staticmethod
     def execute[
@@ -647,7 +649,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
             output_tokens_tensor.static_shape[1] * 2 == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
-        var format_handler = NVFP4TokenFormat[hidden_size, top_k](
+        var format_handler = NVBlockScaledTokenFormat[hidden_size, top_k](
             output_tokens_tensor,
             output_scales_tensor,
             scales_offsets_tensor,
@@ -866,8 +868,8 @@ struct Struct_ep_dispatch_fp8:
         )
 
 
-@compiler.register("ep.dispatch.nvfp4")
-struct Struct_ep_dispatch_nvfp4:
+@compiler.register("ep.dispatch.block.scaled.nv")
+struct Struct_ep_dispatch_block_scaled_nv:
     @always_inline
     @staticmethod
     @parameter
@@ -918,7 +920,7 @@ struct Struct_ep_dispatch_nvfp4:
             # Currently only use one global input scale for all experts
             return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
 
-        var format_handler = NVFP4TokenFormat[hidden_size, top_k](
+        var format_handler = NVBlockScaledTokenFormat[hidden_size, top_k](
             output_tokens_tensor,
             output_scales_tensor,
             scales_offsets_tensor,
@@ -1019,8 +1021,8 @@ struct Struct_ep_dispatch_mxfp4:
         )
 
 
-@compiler.register("mo.distributed.ep.dispatch.nvfp4")
-struct DistributedEPDispatchNVFP4:
+@compiler.register("mo.distributed.ep.dispatch.block.scaled.nv")
+struct DistributedEPDispatchBlockScaledNV:
     @staticmethod
     def execute[
         input_dtype: DType,
@@ -1098,7 +1100,7 @@ struct DistributedEPDispatchNVFP4:
             def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
                 return rebind[Scalar[dtype]](in_scales[0].cast[dtype]())
 
-            var format_handler = NVFP4TokenFormat[hidden_size, top_k](
+            var format_handler = NVBlockScaledTokenFormat[hidden_size, top_k](
                 out_tokens,
                 out_scales,
                 sc_offsets,

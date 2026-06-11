@@ -968,7 +968,7 @@ def parse_quant_config(
         # ``gate_up_proj`` and ``gate_up_proj_scales`` properties (which
         # gate the sigma-permutation on this flag) stay byte-equal to the
         # historical chained-kernel path.
-        config.can_use_fused_swiglu_nvfp4 = bool(config.is_nvfp4) and (
+        config.can_use_fused_swiglu = (config.is_nvfp4 or config.is_mxfp8) and (
             os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1"
         )
 

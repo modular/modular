@@ -75,6 +75,25 @@ def make_concatenated_gated_activation_fn(
     return _concatenated_gated_activation_fn
 
 
+def _swigluoai_activation(
+    gate_up: TensorValue,
+    moe_dim: int,
+    alpha: float,
+    limit: float,
+) -> TensorValue:
+    """Applies the OAI-style clamped SwiGLU activation."""
+    gate = gate_up[:, :moe_dim]
+    up = gate_up[:, moe_dim:]
+
+    lim = ops.constant(limit, gate.dtype, device=gate.device)
+    neg_lim = ops.constant(-limit, up.dtype, device=up.device)
+    alpha_value = ops.constant(alpha, gate.dtype, device=gate.device)
+
+    gate = ops.min(gate, lim)
+    up = ops.min(ops.max(up, neg_lim), lim)
+    return (up + 1.0) * gate * ops.sigmoid(gate * alpha_value)
+
+
 class MoEGate(Module):
     """Gate module for MoE."""
 
@@ -204,6 +223,12 @@ class MoE(Module, Shardable):
             ``None``.
         quant_config: The scaled quantization configuration. Defaults to
             ``None``.
+        use_swigluoai: Whether to use the OAI-style clamped SwiGLU activation
+            function. Defaults to ``False``.
+        swiglu_alpha: The alpha value for the clamped SwiGLU activation function.
+            Defaults to ``0.0``.
+        swiglu_limit: The limit value for the clamped SwiGLU activation function.
+            Defaults to ``0.0``.
         gated_activation_fn: Activation applied to the concatenated
             ``[gate | up]`` projection. ``None`` (default) uses a fused
             SiLU kernel; use
@@ -253,6 +278,9 @@ class MoE(Module, Shardable):
         ep_size: int = 1,
         dtype: DType = DType.bfloat16,
         apply_router_weight_first: bool = False,
+        use_swigluoai: bool = False,
+        swiglu_alpha: float = 0.0,
+        swiglu_limit: float = 0.0,
         gated_activation_fn: Callable[[TensorValue, int], TensorValue]
         | None = None,
         pre_expert_norm_cls: Callable[[], Module] | None = None,
@@ -274,6 +302,9 @@ class MoE(Module, Shardable):
         self.ep_size = ep_size
         self.dtype = dtype
         self.apply_router_weight_first = apply_router_weight_first
+        self.use_swigluoai = use_swigluoai
+        self.swiglu_alpha = swiglu_alpha
+        self.swiglu_limit = swiglu_limit
         self.gated_activation_fn = gated_activation_fn
         self.pre_expert_norm_cls = pre_expert_norm_cls
         self.pre_expert_norm = (
@@ -290,6 +321,15 @@ class MoE(Module, Shardable):
         self.quant_config = quant_config
         self.shared_experts_dtype = (
             shared_experts_dtype if shared_experts_dtype is not None else dtype
+        )
+
+        if use_swigluoai:
+            assert swiglu_alpha != 0.0 and swiglu_limit != 0.0, (
+                "swiglu_alpha and swiglu_limit must be set when use_swigluoai is True"
+            )
+
+        assert not (use_swigluoai and gated_activation_fn is not None), (
+            "use_swigluoai and gated_activation_fn cannot be set at the same time"
         )
 
         if has_shared_experts:
@@ -428,6 +468,9 @@ class MoE(Module, Shardable):
                 ep_size=self.ep_size,
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
+                use_swigluoai=self.use_swigluoai,
+                swiglu_alpha=self.swiglu_alpha,
+                swiglu_limit=self.swiglu_limit,
                 gated_activation_fn=self.gated_activation_fn,
                 pre_expert_norm_cls=self.pre_expert_norm_cls,
                 quant_config=self.quant_config,
@@ -472,7 +515,7 @@ class MoE(Module, Shardable):
 
         return shards
 
-    def _uses_fused_swiglu_nvfp4_layout(self) -> bool:
+    def _uses_fused_swiglu_layout(self) -> bool:
         # True when gate_up weights and scales are sigma-permuted to the
         # (gate, up) interleaved N-axis layout that the fused
         # SwiGLU+NVFP4 grouped-matmul kernel consumes. The kernel runs a
@@ -480,7 +523,7 @@ class MoE(Module, Shardable):
         # only makes sense under expert parallelism.
         return (
             self.quant_config is not None
-            and self.quant_config.can_use_fused_swiglu_nvfp4
+            and self.quant_config.can_use_fused_swiglu
             and self._ep_batch_manager is not None
             and self.gated_activation_fn is None
         )
@@ -528,7 +571,7 @@ class MoE(Module, Shardable):
         # innermost rows are now interleaved (g_0, u_0, g_1, u_1, ...). One
         # bulk permute replaces E per-expert stacks to keep the graph small
         # and the constant-folding tractable.
-        if self._uses_fused_swiglu_nvfp4_layout():
+        if self._uses_fused_swiglu_layout():
             shard = shard.reshape([len(gate_list), 2, -1, k_dim])
             shard = ops.permute(shard, [0, 2, 1, 3])
             return shard.reshape([len(gate_list), -1, k_dim])
@@ -569,6 +612,15 @@ class MoE(Module, Shardable):
         """
         return None
 
+    def _swigluoai_activation(self, gate_up: TensorValue) -> TensorValue:
+        """Applies the configured OAI-style clamped SwiGLU activation."""
+        return _swigluoai_activation(
+            gate_up,
+            self.moe_dim,
+            self.swiglu_alpha,
+            self.swiglu_limit,
+        )
+
     def _local_ep_compute(
         self,
         expert_inputs: tuple[TensorValue, ...],
@@ -594,6 +646,8 @@ class MoE(Module, Shardable):
         )
         if self.gated_activation_fn is not None:
             activated = self.gated_activation_fn(gate_up_projs, self.moe_dim)
+        elif self.use_swigluoai:
+            activated = self._swigluoai_activation(gate_up_projs)
         else:
             activated = fused_silu(gate_up_projs, expert_inputs[1])
         return grouped_matmul_ragged(
@@ -662,6 +716,8 @@ class MoE(Module, Shardable):
             gate_up_projs = self.gated_activation_fn(
                 gate_up_projs, self.moe_dim
             )
+        elif self.use_swigluoai:
+            gate_up_projs = self._swigluoai_activation(gate_up_projs)
         else:
             gate_up_projs = fused_silu(gate_up_projs, expert_start_indices)
 

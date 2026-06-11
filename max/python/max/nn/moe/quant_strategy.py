@@ -22,12 +22,12 @@ from max.graph import DeviceRef, TensorValue, ops
 
 from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
-    _grouped_matmul_swiglu_nvfp4,
     block_scales_interleave,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_dynamic_scaled_mxfp4_matmul,
     grouped_matmul_block_scaled,
-    grouped_quantize_dynamic_block_scaled_fp4,
+    grouped_matmul_blocked_swiglu,
+    grouped_quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
 )
@@ -187,12 +187,17 @@ class Fp8Strategy:
         )
 
 
-class Nvfp4Strategy:
-    """NVFP4 quantization for MoE."""
+class NvMxf4f8Strategy:
+    """NVIDIA NVFP4/MXFP4/MXFP8 quantization for MoE."""
 
     def __init__(self, config: QuantConfig, dtype: DType):
         self.config = config
         self.dtype = dtype
+
+    @property
+    def is_nvfp4(self) -> bool:
+        """Whether this strategy is handling NVFP4 rather than MXFP4 or MXFP8."""
+        return self.config.is_nvfp4
 
     def quantize(
         self,
@@ -213,16 +218,27 @@ class Nvfp4Strategy:
         expert_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations per-expert with padded scale alignment."""
-        if input_scale is None:
+        if self.is_nvfp4 and input_scale is None:
             raise ValueError("NVFP4 requires input_scale")
-        return grouped_quantize_dynamic_block_scaled_fp4(
+        sf_tensor = (
+            (1.0 / input_scale).to(tensor.device)
+            if input_scale is not None
+            else ops.broadcast_to(
+                ops.constant(1.0, DType.float32, device=tensor.device),
+                expert_ids.shape,
+            )
+        )
+        return grouped_quantize_dynamic_block_scaled(
             tensor,
             row_offsets=expert_start,
             scales_offsets=scales_offset,
             expert_ids=expert_ids,
-            sf_tensor=(1.0 / input_scale).to(tensor.device),
-            scales_type=DType.float8_e4m3fn,
-            out_type=DType.uint8,
+            sf_tensor=sf_tensor,
+            sf_vector_size=16 if self.is_nvfp4 else 32,
+            scales_type=(
+                DType.float8_e4m3fn if self.is_nvfp4 else DType.float8_e8m0fnu
+            ),
+            out_type=self.dtype,
         )
 
     def grouped_matmul(
@@ -233,8 +249,8 @@ class Nvfp4Strategy:
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
     ) -> TensorValue:
-        """Runs grouped NVFP4 matmul with per-expert scales."""
-        if expert_scales is None:
+        """Runs grouped NVIDIA block-scaled matmul with per-expert scales."""
+        if self.is_nvfp4 and expert_scales is None:
             raise ValueError("NVFP4 requires expert_scales")
 
         (
@@ -252,6 +268,14 @@ class Nvfp4Strategy:
                 [8192, int(expert_ids.shape[0])],
                 dtype=DType.uint32,
                 device=DeviceRef.CPU(),
+            )
+
+        if expert_scales is None:
+            # Create a dummy expert scales tensor with shape (num_experts,) for
+            # MXFP4 and MXFP8.
+            expert_scales = ops.broadcast_to(
+                ops.constant(1.0, DType.float32, device=hidden.device),
+                expert_ids.shape,
             )
 
         return grouped_matmul_block_scaled(
@@ -273,10 +297,10 @@ class Nvfp4Strategy:
         down: TensorValue,
         device: DeviceRef,
     ) -> tuple[TensorValue, TensorValue]:
-        """Interleaves NVFP4 block scales for kernel layout."""
+        """Interleaves NVIDIA block scales for kernel layout."""
         return (
-            _interleave_nvfp4_scales(gate_up, device),
-            _interleave_nvfp4_scales(down, device),
+            _nv_interleave_block_scales(gate_up, device),
+            _nv_interleave_block_scales(down, device),
         )
 
     def fused_silu_quantize(
@@ -301,20 +325,23 @@ class Nvfp4Strategy:
         weight: TensorValue,
         weight_scales: TensorValue,
         *,
-        expert_scales: TensorValue,
-        input_scales: TensorValue,
+        expert_scales: TensorValue | None = None,
+        input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...],
         estimated_total_m: TensorValue | None = None,
+        use_swigluoai: bool = False,
+        swiglu_alpha: float = 0.0,
+        swiglu_limit: float = 0.0,
     ) -> tuple[TensorValue, TensorValue]:
         """Runs the fused NVFP4 grouped matmul + SwiGLU + NVFP4 quant kernel.
 
         Equivalent to ``grouped_matmul`` followed by ``fused_silu_quantize``,
         but folds both into a single SM100 kernel. The caller must pass a
         sigma-permuted ``weight`` and ``weight_scales`` (see
-        ``max.nn.kernels._grouped_matmul_swiglu_nvfp4``); the layout is
+        ``max.nn.kernels.grouped_matmul_blocked_swiglu``); the layout is
         produced by :meth:`MoE.gate_up_proj` and
         :meth:`MoEQuantized.gate_up_proj_scales` when
-        ``quant_config.can_use_fused_swiglu_nvfp4`` is set.
+        ``quant_config.can_use_fused_swiglu`` is set.
 
         Args:
             weight: Sigma-permuted gate/up projection weights.
@@ -329,12 +356,21 @@ class Nvfp4Strategy:
                 ``(hidden, hidden_scales, expert_start, scales_offsets,
                 expert_ids, usage_stats)``.
             estimated_total_m: Estimated total non-padded token count.
+            use_swigluoai: Whether to use the OAI-style clamped SwiGLU activation
+                function.
+            swiglu_alpha: The alpha value for the clamped SwiGLU activation function.
+            swiglu_limit: The limit value for the clamped SwiGLU activation function.
 
         Returns:
             Tuple ``(c_packed, c_swiglu_scales)`` matching the chained
             reference path byte-for-byte under the kernel's default
             ``match_bf16=True`` setting.
         """
+        if self.is_nvfp4 and input_scales is None:
+            raise ValueError("NVFP4 requires input_scales")
+        if self.is_nvfp4 and expert_scales is None:
+            raise ValueError("NVFP4 requires expert_scales")
+
         (
             hidden,
             hidden_scales,
@@ -353,9 +389,13 @@ class Nvfp4Strategy:
                 device=DeviceRef.CPU(),
             )
 
-        c_input_scales = (1.0 / input_scales).to(hidden.device)
+        c_input_scales = (
+            (1.0 / input_scales).to(hidden.device)
+            if input_scales is not None
+            else None
+        )
 
-        return _grouped_matmul_swiglu_nvfp4(
+        return grouped_matmul_blocked_swiglu(
             hidden,
             weight,
             hidden_scales,
@@ -363,10 +403,13 @@ class Nvfp4Strategy:
             expert_start,
             scales_offsets,
             expert_ids,
-            expert_scales.to(hidden.device),
-            c_input_scales,
             usage_stats,
+            expert_scales=expert_scales,
+            c_input_scales=c_input_scales,
             estimated_total_m=estimated_total_m,
+            clamp_activation=use_swigluoai,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_limit=swiglu_limit,
         )
 
 
@@ -470,14 +513,16 @@ class Mxfp4Strategy:
         )
 
 
-def _interleave_nvfp4_scales(
+def _nv_interleave_block_scales(
     scales: TensorValue, device: DeviceRef
 ) -> TensorValue:
-    """Interleaves NVFP4 block scales for kernel consumption."""
+    """Interleaves rank-3 block scales for SM100 kernel consumption."""
     if scales.rank != 3:
         raise ValueError(
-            f"expected NVFP4 scales of rank 3 but got {scales.rank}"
+            f"expected block scales of rank 3 but got {scales.rank}"
         )
+    # Only NVFP4 uses one FP8_E4M3FN scale per 16 elements,
+    group_size = 16 if scales.dtype == DType.float8_e4m3fn else 32
     num_experts = int(scales.shape[0])
     scales = scales.to(device)
     scale_m = scales.shape[1]
@@ -485,7 +530,7 @@ def _interleave_nvfp4_scales(
     expert_scales = ops.split(scales, [1] * num_experts, axis=0)
     return ops.stack(
         [
-            block_scales_interleave(s.reshape([scale_m, scale_k]))
+            block_scales_interleave(s.reshape([scale_m, scale_k]), group_size)
             for s in expert_scales
         ],
         axis=0,

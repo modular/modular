@@ -39,7 +39,7 @@ from shmem.ep_comm import (
     EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
     MXFP4TokenFormat,
-    NVFP4TokenFormat,
+    NVBlockScaledTokenFormat,
     TokenFormat,
 )
 from std.testing import assert_almost_equal, assert_equal
@@ -447,8 +447,8 @@ struct NVFP4DispatchTest[
     comptime output_scales_offset_layout = row_major[
         Self.n_experts // Self.n_ranks
     ]()
-    comptime TokenFormatType = NVFP4TokenFormat[
-        fp4_dtype=Self.fp4_dtype,
+    comptime TokenFormatType = NVBlockScaledTokenFormat[
+        quant_dtype=Self.fp4_dtype,
         scales_dtype=Self.scales_dtype,
         output_layout=type_of(Self.output_layout),
         scales_offset_layout=type_of(Self.output_scales_offset_layout),
@@ -1455,7 +1455,7 @@ def test_dispatch_blockwise_fp8[
     ](list_of_ctx)
 
 
-def test_dispatch_nvfp4[
+def test_dispatch_block_scaled_nv[
     hidden_size: Int,
     top_k: Int,
     n_experts: Int,
@@ -1554,7 +1554,7 @@ def main() raises:
             comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
                 device_info
             ):
-                test_dispatch_nvfp4[
+                test_dispatch_block_scaled_nv[
                     hidden_size=7168,
                     top_k=8,
                     n_experts=num_gpus * n_local_experts,
