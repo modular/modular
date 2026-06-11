@@ -780,6 +780,39 @@ class Tensor(DLPackArray, HasTensorValue):
         return current_realization_context().create_unrealized((value,))
 
     @classmethod
+    def from_dim(cls, dim: DimLike) -> Tensor:
+        """Materializes a dimension as a rank-0 (scalar) tensor on CPU.
+
+        Converts a shape dimension — static, symbolic, or an algebraic
+        expression such as ``batch * seq`` — into a scalar tensor holding its
+        runtime value. This is the supported way to predicate runtime control
+        flow on a symbolic dimension: a symbolic :obj:`~max.graph.Dim` cannot be
+        compared to a Python ``int`` at trace time (``int(dim)`` and
+        ``dim <= 2`` both fail for dynamic dims), but the materialized tensor
+        can, and the comparison's result is exactly the scalar boolean predicate
+        that :func:`~max.experimental.functional.cond` expects.
+
+        .. code-block:: python
+
+            from max.experimental import functional as F
+            from max.experimental.tensor import Tensor
+
+            batch = x.shape[0]
+            pred = Tensor.from_dim(batch) <= 2  # scalar bool tensor on CPU
+            (out,) = F.cond(pred, [out_type], then_fn, else_fn)
+
+        Args:
+            dim: The dimension to materialize. Accepts anything
+                :obj:`~max.graph.DimLike` (an ``int``, a dim name, a
+                :obj:`~max.graph.Dim`, or an algebraic dim expression).
+
+        Returns:
+            Tensor: A rank-0 ``int64`` tensor on CPU holding the dimension's
+            runtime value.
+        """
+        return cls.from_graph_value(ops.shape_to_tensor([dim])).reshape([])
+
+    @classmethod
     def from_shard_values(
         cls,
         shard_values: Sequence[GraphValue],
