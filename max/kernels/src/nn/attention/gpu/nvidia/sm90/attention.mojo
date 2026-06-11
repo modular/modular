@@ -487,7 +487,7 @@ def produce[
     ) -> LayoutTensor[
         qkv_type,
         Layout.row_major(q_tile_shape),
-        MutAnyOrigin,
+        type_of(q_smem).origin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]:
@@ -505,7 +505,7 @@ def produce[
         out tile: LayoutTensor[
             qkv_type,
             k_smem_layout,
-            MutAnyOrigin,
+            type_of(kv_smem).origin,
             address_space=AddressSpace.SHARED,
             layout_int_type=DType.int32,
             linear_idx_type=DType.int32,

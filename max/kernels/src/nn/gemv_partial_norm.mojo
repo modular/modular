@@ -589,9 +589,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     var n = Int(weight.dim[0]())
 
     var y_layout = row_major(Coord(m, n))
-    var y = TileTensor[c_type, type_of(y_layout), MutAnyOrigin](
-        y_scratch, y_layout
-    )
+    var y = TileTensor[c_type, type_of(y_layout)](y_scratch, y_layout)
 
     _matmul_gpu[transpose_b=transpose_b](y, act, weight, ctx)
 

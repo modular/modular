@@ -1294,9 +1294,7 @@ struct RaggedMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[
-        Scalar[Self.dtype], ImmutOrigin(type_of(self.buffer.ptr).origin)
-    ]:
+    ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
@@ -1307,7 +1305,7 @@ struct RaggedMHAOperand[
                 Int(head_dim_idx),
             )
         )
-        return ret_ptr
+        return ret_ptr.as_immutable().as_unsafe_any_origin()
 
     @always_inline
     def scales_block_paged_ptr(
