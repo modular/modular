@@ -1106,12 +1106,12 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
 
   // When forming a&b&a we can just treat subsequent uses of 'a' as true.
   SmallPtrSet<Attribute, 4> seenExprs;
-  auto getI1Constant = [&](CValue value) -> std::optional<bool> {
+  auto getBoolConstant = [&](CValue value) -> std::optional<bool> {
     SyntheticNode node(structDecl.getLoc());
-    PValue i1 =
-        emitter.emitI1({value, &node}, EC_OperatorOperandValue).getIfPValue();
-    if (IntegerAttr asIntAttr = sugarDynCastIfPresent<IntegerAttr>(i1.get()))
-      return asIntAttr.getValue().isOne();
+    PValue i1 = emitter.emitScalarBool({value, &node}, EC_OperatorOperandValue)
+                    .getIfPValue();
+    if (SIMDAttr asIntAttr = sugarDynCastIfPresent<SIMDAttr>(i1.get()))
+      return asIntAttr.getAsBool();
     // No need to double check the same value. This crushes sugar bloat.
     if (!seenExprs.insert(i1.get()).second)
       return true;
@@ -1123,12 +1123,12 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   auto emitAnd = [&](CValue lhs, CValue rhs) -> CValue {
     SyntheticNode node(structDecl.getLoc());
     // Short circuit obvious cases to avoid piling up sugar.
-    if (std::optional<bool> lhsI1 = getI1Constant(lhs)) {
+    if (std::optional<bool> lhsI1 = getBoolConstant(lhs)) {
       if (*lhsI1)
         return rhs;
       return lhs;
     }
-    if (std::optional<bool> rhsI1 = getI1Constant(rhs)) {
+    if (std::optional<bool> rhsI1 = getBoolConstant(rhs)) {
       if (*rhsI1)
         return lhs;
       return rhs;

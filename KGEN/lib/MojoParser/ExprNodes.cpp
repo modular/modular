@@ -3492,7 +3492,7 @@ AnyValue BinOpNode::emitAndOr(ExprDest &dest, IREmitter &emitter) const {
 
       if (!rhsV.getRValueType().isEqualCanon(boolType)) {
         RValue rhsI1Value =
-            emitter.emitI1({rhsV, rhs}, EC_OperatorOperandValue);
+            emitter.emitScalarBool({rhsV, rhs}, EC_OperatorOperandValue);
         rhsV = emitter.emitCValue({rhsI1Value, rhs}, EC_OperatorOperandValue,
                                   boolType);
       }
@@ -3559,7 +3559,8 @@ AnyValue BinOpNode::emitAndOr(ExprDest &dest, IREmitter &emitter) const {
     // If the RHS is already a Bool, we're good, otherwise convert to i1 then
     // back to Bool with a ctor.
     if (!rhsV.getRValueType().isEqualCanon(boolType)) {
-      RValue rhsI1Value = emitter.emitI1({rhsV, rhs}, EC_OperatorOperandValue);
+      RValue rhsI1Value =
+          emitter.emitScalarBool({rhsV, rhs}, EC_OperatorOperandValue);
       emitter.builder = trueBuilder;
       rhsV = emitter.emitCValue({rhsI1Value, rhs}, EC_OperatorOperandValue,
                                 boolType);
