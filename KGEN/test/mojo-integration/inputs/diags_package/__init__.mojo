@@ -74,14 +74,14 @@ trait UnprovableCandidateTrait:
         ...
 
 
-# FIXME: We crash when loading conflicting traits from bytecode. See MOCO-4102.
-# trait ConflictTraitMethod:
-#    def test(self) -> Bool:
-#        return True
+trait ConflictTraitMethod:
+    def test(self) -> Bool:
+        return True
 
-# trait OtherConflictTraitMethod(ConflictTraitMethod):
-#    def test(self) -> Bool:
-#        return False
+
+trait OtherConflictTraitMethod(ConflictTraitMethod):
+    def test(self) -> Bool:
+        return False
 
 
 trait TraitWithMember:

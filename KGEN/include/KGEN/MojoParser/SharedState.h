@@ -299,8 +299,11 @@ public:
   /// takes a type and ensures that any referenced decls are resolved.
   LogicalResult resolveDeclReferencesIn(SMLoc loc, Type type);
 
-  /// Resolve the signature of the decl referenced by a `SymbolConstantAttr`.
-  LogicalResult resolveDeclReferencesIn(SMLoc loc, SymbolConstantAttr sym);
+  /// Look up the ASTDecl for a function symbol, loading it from a bytecode
+  /// package on demand if it has not been resolved yet. Decls from bytecode are
+  /// resolved lazily, so a symbol may not be registered until first referenced.
+  /// Returns null if resolution fails.
+  ASTDecl *resolveAndGetFuncDecl(SymbolRefAttr symbol, SMLoc loc);
 
   /// Finalize any imported bytecode modules. This should be called after all
   /// decls have been resolved, as this will erase bytecode operations attached

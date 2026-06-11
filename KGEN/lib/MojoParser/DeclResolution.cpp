@@ -3853,7 +3853,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                         << existingAlias.getDeclName().getValue()
                         << "' has conflicting default implementations in "
                         << otherTraitName << " and " << currentTraitName
-                        << ", you must implement it manually";
+                        << "; you must implement it manually";
 
             diag.attachNote(existingDecl->getLoc())
                 << "original default implementation from trait "

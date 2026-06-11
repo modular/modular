@@ -20,6 +20,6 @@ trait A:
     comptime a: Int = 2
 
 
-# expected-error@below{{trait member 'a' has conflicting default implementations in B and A, you must implement it manually}}
+# expected-error@below{{trait member 'a' has conflicting default implementations in B and A; you must implement it manually}}
 struct Foo(A, B):
     pass

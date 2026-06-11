@@ -29,8 +29,8 @@ trait Foo3(Foo1):
 
 
 @fieldwise_init
-# expected-error @+2 {{trait method requirement 'foo' has conflicting default implementations in 'Foo1' and 'Foo2' you must implement it manually}}
-# expected-error @+1 {{trait method requirement 'foo' has conflicting default implementations in 'Foo1' and 'Foo3' you must implement it manually}}
+# expected-error @+2 {{trait method requirement 'foo' has conflicting default implementations in 'Foo1' and 'Foo2'; you must implement it manually}}
+# expected-error @+1 {{trait method requirement 'foo' has conflicting default implementations in 'Foo1' and 'Foo3'; you must implement it manually}}
 struct Foo(Foo2, Foo3):
     pass
 
@@ -52,7 +52,7 @@ trait AA2:
 
 
 @fieldwise_init
-# expected-error @+1 {{trait method requirement 'zork' has conflicting default implementations in 'AA1' and 'AA2' you must implement it manually}}
+# expected-error @+1 {{trait method requirement 'zork' has conflicting default implementations in 'AA1' and 'AA2'; you must implement it manually}}
 struct Bar(AA1, AA2):
     comptime X: ImplicitlyCopyable = Int
 
@@ -88,6 +88,6 @@ trait FooB(FooC):
         return RP()
 
 
-# expected-error @+1 {{trait method requirement 'foo' has conflicting default implementations in 'FooB' and 'FooC' you must implement it manually}}
+# expected-error @+1 {{trait method requirement 'foo' has conflicting default implementations in 'FooB' and 'FooC'; you must implement it manually}}
 struct FooActual(FooB):
     pass
