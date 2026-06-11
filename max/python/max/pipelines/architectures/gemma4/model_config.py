@@ -73,8 +73,11 @@ def _resolve_num_global_kv_heads(text_config: PretrainedConfig) -> int:
     """Returns the number of KV heads used by full-attention layers.
 
     The Gemma 4 E*B checkpoints ship ``"num_global_key_value_heads": null``;
-    Hugging Face defines null/absent as "defaults to ``num_key_value_heads``"
-    (transformers ``configuration_gemma4.py``).
+    the transformers ``configuration_gemma4.py`` docstring defines null/absent
+    as "defaults to ``num_key_value_heads``". Note transformers never applies
+    that fallback in code -- its modeling only consults the field when
+    ``attention_k_eq_v`` is true (false on E*B), so resolving here matches the
+    HF runtime behavior.
     """
     num_global_kv_heads = getattr(
         text_config, "num_global_key_value_heads", None

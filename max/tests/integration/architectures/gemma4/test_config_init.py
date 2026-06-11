@@ -14,7 +14,7 @@
 """Config compatibility test for Gemma 4 E*B checkpoints.
 
 The google/gemma-4-E*B checkpoints ship ``"num_global_key_value_heads": null``
-in ``text_config`` (Hugging Face semantics: null falls back to
+in ``text_config`` (Hugging Face semantics: null/absent falls back to
 ``num_key_value_heads``). Exercises the config entry points the pipeline
 framework calls with a local E4B config.json (no network), which previously
 crashed with ``TypeError: unsupported operand type(s) for %: 'NoneType' and
@@ -45,7 +45,7 @@ def _load_hf_config() -> AutoConfig:
 def _mock_pipeline_config() -> Mock:
     """Builds a minimal PipelineConfig mock for config init."""
     model = Mock()
-    model.kv_cache.cache_dtype = DType.bfloat16
+    model.kv_cache = KVCacheConfig()
     model.quantization_encoding = "bfloat16"
     model.weight_path = [Path("model.safetensors")]
     model.rope_type = "default"
@@ -64,10 +64,15 @@ def test_resolve_num_global_kv_heads() -> None:
     null_config = Mock(num_global_key_value_heads=None, num_key_value_heads=2)
     assert _resolve_num_global_kv_heads(null_config) == 2
 
-    explicit_config = Mock(
-        num_global_key_value_heads=4, num_key_value_heads=2
-    )
-    assert _resolve_num_global_kv_heads(explicit_config) == 4
+    explicit = Mock(num_global_key_value_heads=4, num_key_value_heads=2)
+    assert _resolve_num_global_kv_heads(explicit) == 4
+
+    # Absent attribute (a bare Mock auto-creates attributes, so use a plain
+    # object to reach the getattr default branch).
+    class AbsentFieldConfig:
+        num_key_value_heads = 2
+
+    assert _resolve_num_global_kv_heads(AbsentFieldConfig()) == 2
 
 
 def test_construct_kv_params_with_null_global_kv_heads() -> None:
@@ -83,11 +88,19 @@ def test_construct_kv_params_with_null_global_kv_heads() -> None:
         KVCacheConfig(),
         DType.bfloat16,
     )
-    assert kv_params is not None
+    # E4B: sliding-window cache uses (num_key_value_heads=2, head_dim=256);
+    # the global (full-attention) cache must resolve null -> 2 KV heads with
+    # global_head_dim=512.
+    sliding_params, global_params = kv_params.params
+    assert sliding_params.n_kv_heads == 2
+    assert sliding_params.head_dim == 256
+    assert global_params.n_kv_heads == 2
+    assert global_params.head_dim == 512
 
 
 def test_text_config_init_with_null_global_kv_heads() -> None:
-    """initialize_from_config resolves null to num_key_value_heads."""
+    """Gemma4TextConfig.initialize_from_config resolves null to
+    num_key_value_heads."""
     hf_config = _load_hf_config()
     pipeline_config = _mock_pipeline_config()
 
@@ -99,3 +112,18 @@ def test_text_config_init_with_null_global_kv_heads() -> None:
         text_config.num_global_key_value_heads
         == text_config.num_key_value_heads
     )
+
+
+def test_top_level_initialize_from_config() -> None:
+    """The framework entry point composes vision + text configs and builds
+    the KV params from the same E4B config without crashing."""
+    hf_config = _load_hf_config()
+    pipeline_config = _mock_pipeline_config()
+
+    config = Gemma4ForConditionalGenerationConfig.initialize_from_config(
+        pipeline_config, hf_config
+    )
+    assert config.text_config.num_global_key_value_heads == 2
+    assert config.vision_config is not None
+    _, global_params = config.kv_params.params
+    assert global_params.n_kv_heads == 2
