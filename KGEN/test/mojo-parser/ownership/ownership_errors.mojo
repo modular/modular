@@ -661,7 +661,7 @@ struct ReducedStorage:
 
 @explicit_destroy("This needs explicit destruction when T isn't linear")
 struct ConditionallyLinearType[T: AnyType](
-    ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible)
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
 ):
     # var data: Self.T
 
@@ -671,7 +671,7 @@ struct ConditionallyLinearType[T: AnyType](
     def use(self):
         pass
 
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDestructible):
+    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         pass  # self.data^.__del__()
 
 
@@ -689,7 +689,7 @@ def testConditionallyLinearType():
 # ===----------------------------------------------------------------------=== #
 
 
-struct Pair[T: Movable & ImplicitlyDestructible](Movable):
+struct Pair[T: Movable & ImplicitlyDeletable](Movable):
     var first: Self.T
     var second: Self.T
 

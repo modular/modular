@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
+
 struct MyAffine:
     def __init__(out self):
         pass
@@ -73,7 +74,7 @@ struct ExplicitDestroyThrowing:
         self.method_that_raises()
 
 
-struct ImplicitlyDestructibleContainerOfExplicit:
+struct ImplicitlyDeletableContainerOfExplicit:
     var m: EmptyExplicit
 
     def __init__(out self):
@@ -93,12 +94,12 @@ def foo2[T: AnyType](x: T):
     pass
 
 
-def foo3[T: ImplicitlyDestructible](var x: T):
+def foo3[T: ImplicitlyDeletable](var x: T):
     # Is fine, there's a x.__del__() available
     pass
 
 
-trait Iterator(ImplicitlyDestructible):
+trait Iterator(ImplicitlyDeletable):
     comptime Element: AnyType
 
 

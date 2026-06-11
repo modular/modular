@@ -231,12 +231,12 @@ def partial_discharge[A: Int, B: Int, X: PosForPartial[A],
 
 
 struct IntableForParam[T: AnyType]
-    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, AnyType & ImplicitlyDestructible & Intable)'}}
+    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, AnyType & ImplicitlyDeletable & Intable)'}}
     where conforms_to(T, Intable):
     pass
 
 
-# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(T, AnyType & ImplicitlyDestructible & Intable)'}}
+# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(T, AnyType & ImplicitlyDeletable & Intable)'}}
 def undischarged_trait_param[T: AnyType,
                              # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
                              X: IntableForParam[T]]():
@@ -249,12 +249,12 @@ def undischarged_trait_param[T: AnyType,
 
 
 struct IntableForArg[T: AnyType]
-    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, AnyType & ImplicitlyDestructible & Intable)'}}
+    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, AnyType & ImplicitlyDeletable & Intable)'}}
     where conforms_to(T, Intable):
     pass
 
 
-# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(T, AnyType & ImplicitlyDestructible & Intable)'}}
+# expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(T, AnyType & ImplicitlyDeletable & Intable)'}}
 def undischarged_trait_arg[T: AnyType](
         # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
         x: IntableForArg[T]):

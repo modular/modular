@@ -78,7 +78,9 @@ def use_extra[T: Extra](read x: T):
     pass
 
 
-struct MiniPack[element_trait: type_of(AnyType), //, *element_types: element_trait]:
+struct MiniPack[
+    element_trait: type_of(AnyType), //, *element_types: element_trait
+]:
     def get_element[
         index: Int
     ](self) -> ref[origin_of(self)] Self.element_types[index]:
@@ -96,7 +98,9 @@ struct MiniPack[element_trait: type_of(AnyType), //, *element_types: element_tra
         use_extra(self.get_element[i]())
 
 
-struct BaseMiniPack[element_trait: type_of(Base), //, *element_types: element_trait]:
+struct BaseMiniPack[
+    element_trait: type_of(Base), //, *element_types: element_trait
+]:
     def get_element[
         index: Int
     ](self) -> ref[origin_of(self)] Self.element_types[index]:
@@ -214,9 +218,7 @@ trait HasOriginalParamElement:
 # CHECK-LABEL: lit.fn @"refine_type_value_associated_binding_preserves_original_bound
 # CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!OriginalParam #kgen.get_witness<{{.*}}Element{{.*}}))>
 # CHECK: lit.call{{.*}}@"accepts_original_param
-def refine_type_value_associated_binding_preserves_original_bound[
-    C: AnyType
-]():
+def refine_type_value_associated_binding_preserves_original_bound[C: AnyType]():
     comptime if conforms_to(C, HasOriginalParamElement):
         comptime assert conforms_to(C.Element, RefinedParam)
         accepts_refined_param[C.Element]()
@@ -285,21 +287,21 @@ def no_refinement_before_comptime_assert[T: Base](read x: T):
 
 # CHECK-LABEL: lit.fn @"refine_in_comptime_if_no_call
 # CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!SomeTrait T, mut *"x`"> owned_in_mem)
-# CHECK: kgen.param.if <{{.*}}conforms_to(:!SomeTrait T, [{{.*}}@ImplicitlyDestructible]){{.*}}> {
-# CHECK: [[IF_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}ImplicitlyDestructible{{.*}}downcast(:!SomeTrait T){{.*}}
+# CHECK: kgen.param.if <{{.*}}conforms_to(:!SomeTrait T, [{{.*}}@ImplicitlyDeletable]){{.*}}> {
+# CHECK: [[IF_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}ImplicitlyDeletable{{.*}}downcast(:!SomeTrait T){{.*}}
 # CHECK: lit.ownership.use [[IF_REBIND]]
 def refine_in_comptime_if_no_call[T: SomeTrait](var x: T):
-    comptime if conforms_to(T, ImplicitlyDestructible):
+    comptime if conforms_to(T, ImplicitlyDeletable):
         _ = x
 
 
 # CHECK-LABEL: lit.fn @"refine_after_comptime_assert_no_call
 # CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!SomeTrait T, mut *"x`"> owned_in_mem)
-# CHECK: kgen.param.assert <{{.*}}conforms_to(:!SomeTrait T, [{{.*}}@ImplicitlyDestructible]){{.*}}>
-# CHECK: [[ASSERT_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}ImplicitlyDestructible{{.*}}downcast(:!SomeTrait T){{.*}}
+# CHECK: kgen.param.assert <{{.*}}conforms_to(:!SomeTrait T, [{{.*}}@ImplicitlyDeletable]){{.*}}>
+# CHECK: [[ASSERT_REBIND:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}ImplicitlyDeletable{{.*}}downcast(:!SomeTrait T){{.*}}
 # CHECK: lit.ownership.use [[ASSERT_REBIND]]
 def refine_after_comptime_assert_no_call[T: SomeTrait](var x: T):
-    comptime assert conforms_to(T, ImplicitlyDestructible)
+    comptime assert conforms_to(T, ImplicitlyDeletable)
     _ = x
 
 

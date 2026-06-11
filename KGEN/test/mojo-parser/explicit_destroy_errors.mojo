@@ -25,14 +25,14 @@ def errorExample():
 
 
 # expected-error @below {{Must use consume!}}
-struct ImplicitlyDestructibleContainerOfExplicitWithAutoDel:
+struct ImplicitlyDeletableContainerOfExplicitWithAutoDel:
     var m: EmptyExplicit
 
     def __init__(out self):
         self.m = EmptyExplicit()
 
 
-struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
+struct ImplicitlyDeletableContainerOfExplicitWithIncompleteDel:
     var m: EmptyExplicit
 
     def __init__(out self):
@@ -45,7 +45,7 @@ struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
 
 # CHECK-LABEL: @"test_any_type_error
 # expected-error @below {{unhandled explicitly destroyed type 'AnyType'}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
 def test_any_type_error[T: AnyType](var x: T):
     pass
 
@@ -123,7 +123,7 @@ def testExplicitWithDel():
 # ===----------------------------------------------------------------------=== #
 
 
-# Trait without @explicit_destroy and without ImplicitlyDestructible
+# Trait without @explicit_destroy and without ImplicitlyDeletable
 trait PlainTrait:
     def do_something(self):
         ...
@@ -143,14 +143,14 @@ trait ExplicitDestroyWithMessage:
 
 # Test: Plain trait without @explicit_destroy
 # expected-error @below {{unhandled explicitly destroyed type 'PlainTrait'}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
 def take_plain_trait[T: PlainTrait](var value: T):
     pass
 
 
 # Test: Trait with @explicit_destroy but no custom message
 # expected-error @below {{Unhandled explicit_destroy type ExplicitDestroyNoMessage}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
 def take_generic_linear_no_message[T: ExplicitDestroyNoMessage](var value: T):
     pass
 
@@ -159,7 +159,7 @@ def take_generic_linear_no_message[T: ExplicitDestroyNoMessage](var value: T):
 def take_generic_linear_with_message[
     T: ExplicitDestroyWithMessage
     # expected-error @below {{Use `destroy()` method.}}
-    # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+    # expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
 ](var value: T):
     pass
 
@@ -183,7 +183,7 @@ trait LinearBar:
 
 # Test: First trait has custom message - uses that message
 # expected-error @below {{Use custom_foo_destroy().}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
 def take_foo_and_bar[T: LinearFoo & LinearBar](var value: T):
     pass
 
@@ -191,7 +191,7 @@ def take_foo_and_bar[T: LinearFoo & LinearBar](var value: T):
 # Test: First trait has no custom message - uses generic "Unhandled" message
 # (Documents current behavior where iteration order matters)
 # expected-error @below {{Unhandled explicit_destroy type ExplicitDestroyNoMessage}}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
 def take_no_msg_first[T: ExplicitDestroyNoMessage & LinearBar](var value: T):
     pass
 
@@ -202,7 +202,7 @@ def take_no_msg_first[T: ExplicitDestroyNoMessage & LinearBar](var value: T):
 
 
 # Test: Empty string message is valid on a linear trait (trait without
-# ImplicitlyDestructible). The empty message will be used as the error.
+# ImplicitlyDeletable). The empty message will be used as the error.
 @explicit_destroy("")
 trait LinearWithEmptyMessage:
     def consume(deinit self):
@@ -210,6 +210,6 @@ trait LinearWithEmptyMessage:
 
 
 # expected-error @below {{abandoned without being explicitly destroyed: }}
-# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDeletable}}
 def take_linear_empty_message[T: LinearWithEmptyMessage](var value: T):
     pass

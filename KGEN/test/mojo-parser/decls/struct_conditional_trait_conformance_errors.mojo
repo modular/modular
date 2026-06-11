@@ -199,8 +199,8 @@ struct RPTraitWeakerConstraint[T: Movable](
 # This test documents that such usage is accepted (no error expected).
 
 
-struct NoExplicitRPConformsToRPTrait[T: ImplicitlyDestructible & Movable](
-    ImplicitlyDestructible,
+struct NoExplicitRPConformsToRPTrait[T: ImplicitlyDeletable & Movable](
+    ImplicitlyDeletable,
     Movable,
     RPRequiringTrait where conforms_to(T, RegisterPassable),
 ):
@@ -214,15 +214,15 @@ struct NoExplicitRPConformsToRPTrait[T: ImplicitlyDestructible & Movable](
 
 
 # ===========================================================================
-# Conditional ImplicitlyDestructible requires @explicit_destroy
+# Conditional ImplicitlyDeletable requires @explicit_destroy
 # ===========================================================================
 # Without @explicit_destroy, there is no error message for when the
 # constraint is not satisfied, so the struct would silently auto-destroy.
 
 
-struct ConditionalImplicitlyDestructible[T: Movable](
-    # expected-error @below {{conditional conformance to 'ImplicitlyDestructible' requires @explicit_destroy}}
-    ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible),
+struct ConditionalImplicitlyDeletable[T: Movable](
+    # expected-error @below {{conditional conformance to 'ImplicitlyDeletable' requires @explicit_destroy}}
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Movable,
 ):
     var data: Self.T
@@ -504,9 +504,9 @@ def call_on_zero_field[T: Movable](x: ZeroFieldConditional[T]):
 # constraintImpliesConformance correctly rejects OR disjuncts.
 
 
-struct CopySynthFailsWithOR[T: ImplicitlyDestructible & Movable](
+struct CopySynthFailsWithOR[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable) or conforms_to(T, Intable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     # expected-error @below {{cannot synthesize copy constructor because field 'value' has non-copyable type}}
@@ -525,11 +525,11 @@ struct CopySynthFailsWithOR[T: ImplicitlyDestructible & Movable](
 
 
 struct CopySynthFailsMultiField[
-    T: ImplicitlyDestructible & Movable,
-    U: ImplicitlyDestructible & Movable,
+    T: ImplicitlyDeletable & Movable,
+    U: ImplicitlyDeletable & Movable,
 ](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var first: Self.T

@@ -2748,7 +2748,7 @@ static LogicalResult resolvePropagatedConstraints(
 ///
 /// `compilerInjectedTraits` contains canonical symbols for traits that the
 /// compiler injects into every struct's parent list when the stdlib is
-/// available (e.g., `AnyType`, `ImplicitlyDestructible`). These are treated
+/// available (e.g., `AnyType`, `ImplicitlyDeletable`). These are treated
 /// as unconditionally available and never require explicit listing. The set
 /// may be empty when builtins are disabled (`--mojo-disable-builtins`).
 ///
@@ -3223,7 +3223,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // so the trait names are stated only once here.
   ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait("AnyType", decl.getLoc());
   ASTDecl *implDestrDecl =
-      shared.lookupBuiltinTrait("ImplicitlyDestructible", decl.getLoc());
+      shared.lookupBuiltinTrait("ImplicitlyDeletable", decl.getLoc());
 
   DenseSet<SymbolRefAttr> compilerInjectedTraits;
   if (anyTypeDecl)
@@ -3327,16 +3327,16 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setCanonicalTrait(
       TraitType::get(getContext(), parentTraits, constraintsArray));
 
-  // Validate that @explicit_destroy + unconditional ImplicitlyDestructible is
-  // still an error. The combination is only valid when ImplicitlyDestructible
+  // Validate that @explicit_destroy + unconditional ImplicitlyDeletable is
+  // still an error. The combination is only valid when ImplicitlyDeletable
   // has a non-trivial where-clause constraint (conditional conformance).
   if (!linearTypeErrorMsg.empty()) {
     for (auto [i, symbol] : llvm::enumerate(parentTraits)) {
-      if (symbol.getLeafReference() == "ImplicitlyDestructible" &&
+      if (symbol.getLeafReference() == "ImplicitlyDeletable" &&
           isTriviallyTrueConstraint(constraintsArray[i])) {
         shared.emitError(decl.getLoc())
             << "@explicit_destroy cannot be combined with unconditional "
-               "conformance to 'ImplicitlyDestructible'; use a where-clause "
+               "conformance to 'ImplicitlyDeletable'; use a where-clause "
                "for conditional conformance or remove @explicit_destroy";
         decl.setErroneous();
         return failure();
@@ -3656,13 +3656,13 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   }
 
   // Check for unsupported conditional conformance to
-  // TrivialRegisterPassable and ImplicitlyDestructible.
+  // TrivialRegisterPassable and ImplicitlyDeletable.
   //
   // TrivialRegisterPassable depends on struct body (field triviality for
   // copy/move/del) which creates parser cycle risks and requires composing
   // the user's where-clause with field-level triviality witnesses.
   //
-  // ImplicitlyDestructible is rejected because CheckLifetimes does not
+  // ImplicitlyDeletable is rejected because CheckLifetimes does not
   // consult where-clause constraints when auto-destroying fields.
   //
   // Conditional conformance to RegisterPassable IS allowed. The struct stays
@@ -3683,10 +3683,10 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
           structDecl.setErroneous();
           return failure();
         }
-        if (traitName == "ImplicitlyDestructible") {
+        if (traitName == "ImplicitlyDeletable") {
           if (!structOp.getLinearTypeErrorMsg().has_value()) {
             shared.emitError(traitConstraints[i].getLoc())
-                << "conditional conformance to 'ImplicitlyDestructible' "
+                << "conditional conformance to 'ImplicitlyDeletable' "
                    "requires @explicit_destroy to provide the error message "
                    "when the constraint is not satisfied";
             structDecl.setErroneous();
@@ -3697,16 +3697,15 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     }
   }
 
-  // Determine if there is an explicit conformance to ImplicitlyDestructible.
-  if (conformsToTrait("ImplicitlyDestructible")) {
+  // Determine if there is an explicit conformance to ImplicitlyDeletable.
+  if (conformsToTrait("ImplicitlyDeletable")) {
     // Synthesize an empty __del__ when the type conforms to
-    // ImplicitlyDestructible but has no explicit destructor.
+    // ImplicitlyDeletable but has no explicit destructor.
     if (!shared.typeHasMember(structDecl, "__del__", structDecl.getLoc()))
       (void)StructEmitter(structDecl)
-          .synthesizeEmptyDtor(
-              getConformanceConstraint("ImplicitlyDestructible"));
+          .synthesizeEmptyDtor(getConformanceConstraint("ImplicitlyDeletable"));
 
-    // If the structure conforms to "ImplicitlyDestructible", we populate the
+    // If the structure conforms to "ImplicitlyDeletable", we populate the
     // trivial flag.
     synthesizeTrivialFlagIfNeeded("__del__");
   }
@@ -4127,12 +4126,11 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (conformsToTrait("TrivialRegisterPassable"))
     traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
-  // Check if the trait conforms to ImplicitlyDestructible by checking the
+  // Check if the trait conforms to ImplicitlyDeletable by checking the
   // parent traits list. We can't use doesNominalTypeConformTo or
   // lookupBuiltinTrait here because they would trigger signature resolution
   // and cause a cycle when resolving base traits like AnyType.
-  bool conformsToImplicitlyDestructible =
-      conformsToTrait("ImplicitlyDestructible");
+  bool conformsToImplicitlyDeletable = conformsToTrait("ImplicitlyDeletable");
 
   // Parse @explicit_destroy decorator if present.
   std::optional<std::string> linearTypeErrorMsg;
@@ -4166,15 +4164,15 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   }
 
   // Validate @explicit_destroy usage and set error message for linear traits.
-  if (conformsToImplicitlyDestructible) {
+  if (conformsToImplicitlyDeletable) {
     if (linearTypeErrorMsg) {
       shared.emitError(decl.getLoc(),
                        "@explicit_destroy cannot be used on a trait that "
-                       "conforms to ImplicitlyDestructible");
+                       "conforms to ImplicitlyDeletable");
       return failure();
     }
   } else {
-    // Trait does not conform to ImplicitlyDestructible, so it is a linear type.
+    // Trait does not conform to ImplicitlyDeletable, so it is a linear type.
     // Set a default error message if @explicit_destroy wasn't used.
     if (!linearTypeErrorMsg) {
       linearTypeErrorMsg = "unhandled explicitly destroyed type '" +

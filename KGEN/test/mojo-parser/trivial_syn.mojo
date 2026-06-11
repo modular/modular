@@ -45,7 +45,7 @@ struct C[X: ImplicitlyCopyable, Y: ImplicitlyCopyable](ImplicitlyCopyable):
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyCopyable" {
     # CHECK-NEXT:   }
 
-    # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyDestructible" {
+    # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyDeletable" {
     # CHECK-NEXT:    kgen.witness "__del__{{.*}}"
     # CHECK: kgen.witness "__del__is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 
@@ -93,12 +93,13 @@ struct Wrapper(Copyable):
 
 
 # CHECK-LABEL: lit.struct.decl @TrivialFieldGen
-# CHECK: lit.alias.decl __del__is_trivial: !Bool = <#kgen.get_witness<:!Movable T, "{{.*}}::ImplicitlyDestructible", "__del__is_trivial">>
+# CHECK: lit.alias.decl __del__is_trivial: !Bool = <#kgen.get_witness<:!Movable T, "{{.*}}::ImplicitlyDeletable", "__del__is_trivial">>
 # CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <#kgen.get_witness<:!Movable T, "{{.*}}::Movable", "__move_ctor_is_trivial">>
 struct TrivialFieldGen[T: Movable](Movable):
     var z: Self.T
     var y: Int
     var q: Self.T
+
 
 # CHECK-LABEL: lit.struct.decl @TestTrivialRegisterPassable
 # CHECK: lit.alias.decl __del__is_trivial: !Bool = <{:scalar<bool> true}>

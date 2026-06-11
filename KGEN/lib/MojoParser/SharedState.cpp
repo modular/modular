@@ -1231,7 +1231,7 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
 
 bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
 
-/// Lookup a builtin trait like `AnyType`, `ImplicitlyDestructible`, `Copyable`,
+/// Lookup a builtin trait like `AnyType`, `ImplicitlyDeletable`, `Copyable`,
 /// `Movable` etc.  On error this returns null but does not print an error.
 ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, SMLoc loc) {
   if (!useBuiltinModule) {

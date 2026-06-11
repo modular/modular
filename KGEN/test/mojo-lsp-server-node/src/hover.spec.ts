@@ -227,7 +227,7 @@ This is an exported function.
           kind: "markdown",
           value: `\`\`\`mojo
 struct SomeStruct[size: Int, other_param: Bool]
-# Traits: AnyType, ImplicitlyDestructible
+# Traits: AnyType, ImplicitlyDeletable
 \`\`\`
 ---
 
@@ -555,7 +555,7 @@ Another Int param.
           kind: "markdown",
           value: `\`\`\`mojo
 struct StructWithAlias
-# Traits: AnyType, ImplicitlyDestructible
+# Traits: AnyType, ImplicitlyDeletable
 \`\`\``,
         },
         range: doc.findFirstRange("StructWithAlias"),

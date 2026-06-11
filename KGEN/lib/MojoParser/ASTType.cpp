@@ -710,7 +710,7 @@ FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
   default:
     llvm_unreachable("Invalid special function kind");
   case SpecialFunctionKind::kDel:
-    traitName = "ImplicitlyDestructible";
+    traitName = "ImplicitlyDeletable";
     isTrivialHook = "__del__is_trivial";
     break;
   case SpecialFunctionKind::kCopyCtor:

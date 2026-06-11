@@ -448,7 +448,7 @@ trait SimpleTraitB:
 
 
 # CHECK-LABEL: lit.struct.decl @TwoThunks
-# CHECK-SAME: (!AnyType_ImplicitlyDestructible_Movable_RegisterPassable_SimpleTraitA_SimpleTraitB)
+# CHECK-SAME: (!AnyType_ImplicitlyDeletable_Movable_RegisterPassable_SimpleTraitA_SimpleTraitB)
 struct TwoThunks(RegisterPassable, SimpleTraitA, SimpleTraitB):
     # CHECK: lit.fn @"method({{.*}}TwoThunks)"
     def method(self):
@@ -903,8 +903,8 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
 struct ParamType[x: Int](TrivialRegisterPassable):
     pass
 
-# CHECK: lit.trait.decl @RGTrait{{.*}} 
-trait RGTrait(ImplicitlyDestructible, RegisterPassable):
+# CHECK: lit.trait.decl @RGTrait{{.*}}
+trait RGTrait(ImplicitlyDeletable, RegisterPassable):
     # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
     def doSomething(self):
         ...

@@ -201,7 +201,7 @@ ClosureEmitter::ClosureEmitter(SharedState &shared)
       copyName(StringAttr::get(ctx, "copy")),
       anyParent("AnyType", "", ClosureMethod::NONE),
       moveParent("Movable", "__init__", ClosureMethod::MOVE),
-      implicitlyDestructibleParent("ImplicitlyDestructible", "__del__",
+      implicitlyDestructibleParent("ImplicitlyDeletable", "__del__",
                                    ClosureMethod::DEL),
       registerPassableParent("RegisterPassable", "", ClosureMethod::NONE),
       trivialRegisterTypeParent("TrivialRegisterPassable", "",
@@ -2102,7 +2102,7 @@ ClosureEmitter::buildParamCaptureInfo(ParamType paramType,
       selfType.isMovable(nestedFnDecl.getLoc(), shared, &nestedFnDecl)
           ? makeWitness(moveParent)
           : nullptr;
-  TypedAttr del = conformsToBuiltinTrait("ImplicitlyDestructible")
+  TypedAttr del = conformsToBuiltinTrait("ImplicitlyDeletable")
                       ? makeWitness(implicitlyDestructibleParent)
                       : nullptr;
   TypedAttr copy = selfType.isExplicitlyCopyable(nestedFnDecl.getLoc(), shared,

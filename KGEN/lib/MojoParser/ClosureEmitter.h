@@ -277,7 +277,7 @@ private:
   ClosureParent anyParent;
   /// Movable trait is a parent of all closures. Cache its defining op.
   ClosureParent moveParent;
-  /// ImplicitlyDestructible trait is a parent of all closures. Cache its
+  /// ImplicitlyDeletable trait is a parent of all closures. Cache its
   /// defining op.
   ClosureParent implicitlyDestructibleParent;
   /// RegisterPassable marks the type as register passable.

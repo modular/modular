@@ -173,7 +173,7 @@ namespace {
 struct StructInfo {
   /// This is the decl for the struct type, and is always present.
   LIT::StructDeclOp decl;
-  /// This is the conformance information for ImplicitlyDestructible if it
+  /// This is the conformance information for ImplicitlyDeletable if it
   /// exists.
   ConformanceOp implicitlyDestructible;
 };
@@ -191,7 +191,7 @@ struct WholeProgramState {
   DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
 
-  // This is the ImplicitlyDestructible.__del__ trait member function.
+  // This is the ImplicitlyDeletable.__del__ trait member function.
   FnOp implicitlyDestructibleDtor;
 };
 } // namespace
@@ -210,11 +210,11 @@ WholeProgramState::WholeProgramState(Operation *module,
         return;
       funcList.emplace_back(funcOp);
 
-      // Remember the ImplicitlyDestructible.__del__ member function.
+      // Remember the ImplicitlyDeletable.__del__ member function.
       if (funcOp.getSpecialFunctionKind() == SpecialFunctionKind::kDel &&
           isa<TraitDeclOp>(funcOp->getParentOp()) &&
           cast<TraitDeclOp>(funcOp->getParentOp()).getSymName() ==
-              "ImplicitlyDestructible")
+              "ImplicitlyDeletable")
         implicitlyDestructibleDtor = funcOp;
     }
     if (auto closureOp = dyn_cast<LIT::ClosureInitOp>(op))
@@ -222,10 +222,10 @@ WholeProgramState::WholeProgramState(Operation *module,
 
     // Collect structs.
     else if (auto structOp = dyn_cast<LIT::StructDeclOp>(op)) {
-      // Find the conformance to ImplicitlyDestructible if it exists.
+      // Find the conformance to ImplicitlyDeletable if it exists.
       ConformanceOp implicitlyDestructibleConformance;
       for (auto conformance : structOp.getFields().getOps<ConformanceOp>()) {
-        if (conformance.getSymName().ends_with("::ImplicitlyDestructible")) {
+        if (conformance.getSymName().ends_with("::ImplicitlyDeletable")) {
           implicitlyDestructibleConformance = conformance;
           break;
         }
@@ -467,12 +467,12 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
                                    Location loc) const {
 
   // If all the types in the trait composition are linear, then the trait
-  // itself is linear.  If any of them is ImplicitlyDestructible, then the
+  // itself is linear.  If any of them is ImplicitlyDeletable, then the
   // whole thing is.
   auto getMessageIfTraitIsLinear = [&](ParamType generic,
                                        TraitType refinedTrait) -> StringAttr {
     // If all the types in the trait composition are linear, then the trait
-    // itself is linear.  If any of them is ImplicitlyDestructible, then the
+    // itself is linear.  If any of them is ImplicitlyDeletable, then the
     // whole thing is.
     if (refinedTrait.getSymbols().empty())
       return StringAttr::get(generic.getContext(),
@@ -482,7 +482,7 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
     for (SymbolRefAttr symbol : llvm::reverse(refinedTrait.getSymbols())) {
       TraitDeclOp traitDecl = shared->traitMap.at(symbol);
       // If the trait has a linear type error message set, it means it does
-      // not conform to ImplicitlyDestructible and is a linear type.
+      // not conform to ImplicitlyDeletable and is a linear type.
       if (auto errorMsg = traitDecl.getLinearTypeErrorMsgAttr()) {
         message = errorMsg;
         continue;
@@ -504,9 +504,9 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
       if (StringAttr message = getMessageIfTraitIsLinear(generic, refinedTrait))
         return SpecialMemberInfo::unavailable(message);
 
-      // Otherwise, it is ImplicitlyDestructible, take the
-      // ImplicitlyDestructible.__del__ member function and rebind Self to the
-      // right type. If we didn't find ImplicitlyDestructible.__del__ (e.g. in
+      // Otherwise, it is ImplicitlyDeletable, take the
+      // ImplicitlyDeletable.__del__ member function and rebind Self to the
+      // right type. If we didn't find ImplicitlyDeletable.__del__ (e.g. in
       // LSP cases) just assume everything is trivial.
       FnOp delFn = shared->implicitlyDestructibleDtor;
       if (!delFn)
@@ -518,7 +518,7 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
              "Should have Self as a parameter");
 
       // Determine the result Self type.  We upcast the current
-      // trait/composition up to ImplicitlyDestructible so we can set the
+      // trait/composition up to ImplicitlyDeletable so we can set the
       // type.
       auto selfParam = UpcastAttr::get(impDestroyTrait.getParams()[0].getType(),
                                        generic.getParam());
@@ -561,8 +561,8 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
         isTrivialAttr = witness.getValue();
       } else {
         assert(witness.getName().starts_with("__del__(") &&
-               "Unknown witness in ImplicitlyDestructible");
-        assert(!dtorAttr && "Multiple dtors found in ImplicitlyDestructible");
+               "Unknown witness in ImplicitlyDeletable");
+        assert(!dtorAttr && "Multiple dtors found in ImplicitlyDeletable");
         dtorAttr = witness.getValue();
       }
     }
@@ -603,10 +603,9 @@ TypeDeclInfo::getDestructorForType(Type type, FuncTypeGeneratorType fnContext,
       // destructor for the purposes of destructor insertion.
       // FIXME: This is wrong, we should check the 'where' clause on the
       // conformance.
-      assert(
-          info.decl.getLinearTypeErrorMsg().value_or("") != "" &&
-          "Shouldn't conditionally conform to ImplicitlyDestructible without a "
-          "linear type error message");
+      assert(info.decl.getLinearTypeErrorMsg().value_or("") != "" &&
+             "Shouldn't conditionally conform to ImplicitlyDeletable without a "
+             "linear type error message");
       return SpecialMemberInfo::unavailable(
           info.decl.getLinearTypeErrorMsgAttr());
     }
@@ -2642,13 +2641,13 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
     }
 
     // If the value is a parameter of trait type, then that parameter needs to
-    // add an ImplicitlyDestructible trait conformance.
+    // add an ImplicitlyDeletable trait conformance.
     if (auto generic = sugarDynCast<ParamType>(destroyedType)) {
       if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
         // TODO: We should really be able to use ASTPrinter.cpp here, need to
         // sink it to LIT dialect support though.
         diag.attachNote(builder.getLoc())
-            << "consider adding trait conformance to ImplicitlyDestructible";
+            << "consider adding trait conformance to ImplicitlyDeletable";
       }
     }
     return;
