@@ -142,8 +142,8 @@ class LocalConnector:
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
-        # Wait for any pending transfers
-        self._block_copy_engine.wait_for_completion()
+        # Syncs the copy streams and frees the (non-GC-freed) host buffer.
+        self._block_copy_engine.close()
 
     def reset_prefix_cache(self) -> None:
         """Reset the host prefix cache."""

@@ -25,6 +25,12 @@ import numpy as np
 import numpy.typing as npt
 from max._core.driver import Buffer as Buffer
 from max._core.driver import DevicePinnedBuffer as DevicePinnedBuffer
+from max._core.driver import (
+    _unsafe_alloc_fast_pinned_buffer as _unsafe_alloc_fast_pinned_buffer,
+)
+from max._core.driver import (
+    _unsafe_free_fast_pinned_buffer as _unsafe_free_fast_pinned_buffer,
+)
 from max.dtype import DType
 
 from .driver import CPU

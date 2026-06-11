@@ -27,7 +27,7 @@ from collections.abc import Sequence
 from concurrent.futures import Future, wait
 from dataclasses import dataclass
 
-from max.driver import Device
+from max.driver import Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -37,7 +37,6 @@ from max.profiler import Tracer, traced
 from ..paged_kv_cache.block_copy_engine import (
     BlockOffloadEngine,
     DeviceEventBundle,
-    PinnedHostKVCacheBuffer,
 )
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
@@ -93,7 +92,7 @@ class TieredConnector:
             total_num_host_blocks,
             kv_memory,
         )
-        self._host_buffer: PinnedHostKVCacheBuffer = (
+        self._host_buffer: DevicePinnedBuffer = (
             self._block_copy_engine.host_buffer
         )
 
@@ -211,7 +210,8 @@ class TieredConnector:
                 host_block, _ = self._host_block_pool.alloc_block()
 
                 assert self._host_buffer.dtype == DType.uint8
-                dest = self._host_buffer.numpy_page_view(host_block.bid)
+                # Zero-copy NumPy view of block bid's row (aliases pinned host).
+                dest = self._host_buffer[host_block.bid, :].to_numpy()
                 future = self._disk_tier.read_block_async(block_hash, dest)
                 hits.append(
                     _CacheHit(block_hash, host_block, device_block_id, future)
@@ -356,6 +356,10 @@ class TieredConnector:
                 self._host_block_pool.free_block(host_block)
         self._pending_disk_writes.clear()
 
+        # Free the host buffer last -- after GPU copies (close() syncs them) and
+        # the disk reads/writes that alias it (drained above) are both done.
+        self._block_copy_engine.close()
+
         d2h_gb = self._d2h_blocks_copied * self._block_disk_bytes / GiB
         h2d_gb = self._h2d_blocks_copied * self._block_disk_bytes / GiB
         disk_w_gb = self._disk_blocks_written * self._block_disk_bytes / GiB
@@ -432,7 +436,8 @@ class TieredConnector:
         """
         block_hash = host_block.block_hash
         assert block_hash is not None
-        src = self._host_buffer.numpy_page_view(host_block.bid)
+        # Zero-copy NumPy view of the block's row; aliases the pinned memory.
+        src = self._host_buffer[host_block.bid, :].to_numpy()
         future = self._disk_tier.write_block_async(block_hash, src)
         if future is not None:
             self._disk_blocks_written += 1
