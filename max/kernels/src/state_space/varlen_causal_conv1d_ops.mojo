@@ -403,18 +403,19 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        x: InputTensor[dtype=dtype, rank=2, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-    ) -> IndexList[2]:
-        return x.shape()
+
+@compiler.register_shape_function("causal_conv1d_varlen_fwd")
+def causal_conv1d_varlen_fwd_shape[
+    dtype: DType,
+](
+    x: InputTensor[dtype=dtype, rank=2, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    bias: InputTensor[dtype=dtype, rank=1, ...],
+    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+    cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+) -> IndexList[2]:
+    return x.shape()
 
 
 # ============================================================================
@@ -764,17 +765,18 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        x: InputTensor[dtype=dtype, rank=3, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        bias: InputTensor[dtype=dtype, rank=1, ...],
-        cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
-        conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    ) -> IndexList[3]:
-        return x.shape()
+
+@compiler.register_shape_function("causal_conv1d_varlen_update")
+def causal_conv1d_varlen_update_shape[
+    dtype: DType,
+](
+    x: InputTensor[dtype=dtype, rank=3, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    bias: InputTensor[dtype=dtype, rank=1, ...],
+    cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+    conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+) -> IndexList[3]:
+    return x.shape()
 
 
 # ============================================================================
@@ -877,15 +879,16 @@ struct CausalConv1DVarlenStates:
         else:
             raise Error("Unsupported target device")
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-    ](
-        x: InputTensor[dtype=dtype, rank=2, ...],
-        cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
-    ) -> IndexList[3]:
-        var batch = cu_seqlens.dim_size(0) - 1
-        var dim = x.dim_size(1)
-        # state_len is derived from the output tensor shape at runtime
-        # Return a placeholder shape; actual shape determined by output allocation
-        return IndexList[3](batch, dim, 0)
+
+@compiler.register_shape_function("causal_conv1d_varlen_states")
+def causal_conv1d_varlen_states_shape[
+    dtype: DType,
+](
+    x: InputTensor[dtype=dtype, rank=2, ...],
+    cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+) -> IndexList[3]:
+    var batch = cu_seqlens.dim_size(0) - 1
+    var dim = x.dim_size(1)
+    # state_len is derived from the output tensor shape at runtime
+    # Return a placeholder shape; actual shape determined by output allocation
+    return IndexList[3](batch, dim, 0)

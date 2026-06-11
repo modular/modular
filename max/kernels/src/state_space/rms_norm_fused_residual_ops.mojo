@@ -135,17 +135,18 @@ struct RMSNormFusedResidual:
             UInt64(seed),
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        residual_input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
-        dropout_p: Scalar[dtype=dtype],
-        seed: Scalar[dtype=DType.uint64],
-    ) -> IndexList[rank]:
-        return input.shape()
+
+@compiler.register_shape_function("rms_norm_fused_residual")
+def rms_norm_fused_residual_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    residual_input: InputTensor[dtype=dtype, rank=rank, ...],
+    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    epsilon: Scalar[dtype=dtype],
+    weight_offset: Scalar[dtype=dtype],
+    dropout_p: Scalar[dtype=dtype],
+    seed: Scalar[dtype=DType.uint64],
+) -> IndexList[rank]:
+    return input.shape()
