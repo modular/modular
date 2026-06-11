@@ -128,8 +128,17 @@ This version is still a work in progress.
   compiler will produce a warning on missing `abi` effects, which will become
   an error in a future release.
 
+  Note that the `main` function is excepted from this. It is always implicitly
+  `@export`ed, and in the case that `main` is explicitly `@export`ed, it is
+  implicitly given the correct ABI. However, if a user both explicitly
+  `@export`s `main` _and_ provides an incompatible ABI (e.g., `raises` and
+  `abi("C")`), then an error is still emitted.
+
 - A bug preventing `from . import module` with a spurious recursive-reference
   error has been fixed.
+
+- Functions marked as `raises` may no longer be given the `abi("C")` effect or
+  be `@export`ed as such using the deprecated `ABI="C"` option.
 
 ## Library changes
 
