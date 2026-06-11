@@ -74,6 +74,10 @@ class UnifiedMTPGemma4Inputs(ModelInputs):
     """Per-batch ``bool`` flag marking rows currently inside a
     ``<think>...</think>`` block; consumed by relaxed acceptance."""
 
+    pinned_bitmask: Buffer | None = None
+    wait_payload: Buffer | None = None
+    device_bitmask_scratch: Buffer | None = None
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         assert self.kv_cache_inputs is not None
@@ -110,6 +114,14 @@ class UnifiedMTPGemma4Inputs(ModelInputs):
             self.min_top_p,
             self.in_thinking_phase,
         )
+        if self.pinned_bitmask is not None:
+            assert self.wait_payload is not None
+            assert self.device_bitmask_scratch is not None
+            buffers += (
+                self.pinned_bitmask,
+                self.wait_payload,
+                self.device_bitmask_scratch,
+            )
         return buffers
 
 
@@ -205,6 +217,7 @@ class UnifiedMTPGemma4Model(
                 config,
                 draft_config,
                 speculative_config=self.pipeline_config.speculative,
+                enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
             )
 
             # Set return modes on the target model
@@ -304,6 +317,16 @@ class UnifiedMTPGemma4Model(
                 min_top_p = next(variadic_args_iter).tensor
                 in_thinking_phase = next(variadic_args_iter).tensor
 
+                pinned_bitmask_graph = None
+                wait_payload_graph = None
+                device_bitmask_scratch_graph = None
+                if nn_model.enable_structured_output:
+                    pinned_bitmask_graph = next(variadic_args_iter).tensor
+                    wait_payload_graph = next(variadic_args_iter).buffer
+                    device_bitmask_scratch_graph = next(
+                        variadic_args_iter
+                    ).buffer
+
                 outputs = nn_model(
                     tokens=tokens.tensor,
                     input_row_offsets=device_input_row_offsets.tensor,
@@ -322,6 +345,9 @@ class UnifiedMTPGemma4Model(
                     top_p=top_p,
                     min_top_p=min_top_p,
                     in_thinking_phase=in_thinking_phase,
+                    pinned_bitmask=pinned_bitmask_graph,
+                    wait_payload=wait_payload_graph,
+                    device_bitmask_scratch=device_bitmask_scratch_graph,
                 )
 
                 graph.output(*outputs)
