@@ -254,7 +254,7 @@ def cpu_bfs(
 def verify_levels(
     num_vertices: Int,
     expected: List[UInt32],
-    h_level: UnsafePointer[UInt32, MutAnyOrigin],
+    h_level: UnsafePointer[mut=False, UInt32, _],
 ) -> Bool:
     """Verify GPU BFS results against CPU reference.
 
