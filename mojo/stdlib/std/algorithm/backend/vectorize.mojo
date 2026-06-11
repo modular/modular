@@ -49,7 +49,7 @@ def vectorize[
 
     ```mojo
     from std.algorithm.functional import vectorize
-    from std.memory.alloc import alloc, Layout
+    from std.memory.alloc import alloc, dealloc, Layout
     from std.sys import simd_width_of
 
     # The amount of elements to loop through
@@ -58,7 +58,8 @@ def vectorize[
     comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     def main():
-        var p = alloc(Layout[Int32](count=size))
+        var allocation = alloc(Layout[Int32](count=size))
+        var p = allocation.unsafe_ptr()
 
         def closure[width: Int](i: Int) {mut}:
             print("storing", width, "els at pos", i)
@@ -67,6 +68,8 @@ def vectorize[
         vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
+
+        dealloc(allocation^)
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
@@ -164,7 +167,7 @@ def vectorize[
 
     ```mojo
     from std.algorithm.functional import vectorize
-    from std.memory.alloc import alloc, free, Layout
+    from std.memory.alloc import alloc, dealloc, Layout
     from std.sys import simd_width_of
     from std.math import iota
     from std.sys.intrinsics import masked_store
@@ -173,8 +176,8 @@ def vectorize[
     comptime simd_width = simd_width_of[DType.int32]()  # assumed 4 in this example
 
     def main():
-        var layout = Layout[Int32](count=size)
-        var p = alloc(layout)
+        var allocation = alloc(Layout[Int32](count=size))
+        var p = allocation.unsafe_ptr()
 
         def closure[width: Int](i: Int, evl: Int) {mut}:
             print("storing", evl, "of", width, "els at pos", i)
@@ -193,7 +196,7 @@ def vectorize[
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
         print(p.load[width=2](2 * simd_width))
-        free(p, layout)
+        dealloc(allocation^)
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
@@ -284,7 +287,7 @@ def vectorize[
 
     ```mojo
     from std.algorithm.functional import vectorize
-    from std.memory.alloc import alloc, Layout
+    from std.memory.alloc import alloc, dealloc, Layout
     from std.sys import simd_width_of
 
     # The amount of elements to loop through
@@ -293,7 +296,8 @@ def vectorize[
     comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     def main():
-        var p = alloc(Layout[Int32](count=size))
+        var allocation = alloc(Layout[Int32](count=size))
+        var p = allocation.unsafe_ptr()
 
         # The closure can capture the `p` pointer with {mut}
         def closure[width: Int](i: Int) {mut}:
@@ -303,6 +307,8 @@ def vectorize[
         vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())
         print(p.load[width=simd_width](simd_width))
+
+        dealloc(allocation^)
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values

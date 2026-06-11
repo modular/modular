@@ -24,7 +24,7 @@ from std.collections import check_bounds
 from std.reflection import call_location
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
-from std.memory.alloc import alloc, free, Layout
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 from std.os import abort
 
 from std.sys import align_of, size_of
@@ -207,7 +207,11 @@ struct _LinkedListIterOwned[T: Copyable & ImplicitlyDeletable](
             self._list._head.value()[].prev() = LinkedList[
                 Self.T
             ]._NodePointer()
-        free(nn, {count = 1})
+        dealloc(
+            ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                {count = 1}
+            )
+        )
         return node^._into_value()
 
     @always_inline
@@ -330,7 +334,11 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             var nn = curr.value()
             var next = nn[].next()
             nn.destroy_pointee()
-            free(nn, {count = 1})
+            dealloc(
+                ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                    {count = 1}
+                )
+            )
             curr = next
 
     def append(mut self, var value: Self.ElementType):
@@ -342,7 +350,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         Notes:
             Time Complexity: O(1).
         """
-        var addr = alloc(Layout[Node[Self.ElementType]].single())
+        var addr = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
         var value_ptr = UnsafePointer(to=addr[].value)
         value_ptr.init_pointee_move(value^)
         addr[].prev() = self._tail
@@ -364,7 +372,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             Time Complexity: O(1).
         """
         var node = _make_node[Self.ElementType](value^, None, self._head)
-        var addr = alloc(Layout[Node[Self.ElementType]].single())
+        var addr = alloc(Layout[Node[Self.ElementType]].single()).unsafe_leak()
         addr.init_pointee_move(node^)
         if self:
             self._head.value()[].prev() = addr
@@ -414,7 +422,11 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             self._head = Self._NodePointer()
         else:
             self._tail.value()[].next() = Self._NodePointer()
-        free(nn, {count = 1})
+        dealloc(
+            ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                {count = 1}
+            )
+        )
         return node^._into_value()
 
     @always_inline
@@ -454,7 +466,11 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             else:
                 self._tail = node.prev()
 
-            free(nn, {count = 1})
+            dealloc(
+                ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                    {count = 1}
+                )
+            )
             self._size -= 1
             return node^._into_value()
 
@@ -479,7 +495,11 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             self._head = Self._NodePointer()
         else:
             self._tail.value()[].next() = Self._NodePointer()
-        free(nn, {count = 1})
+        dealloc(
+            ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                {count = 1}
+            )
+        )
         return node^._into_value()
 
     @always_inline
@@ -517,7 +537,11 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             else:
                 self._tail = node.prev()
 
-            free(nn, {count = 1})
+            dealloc(
+                ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                    {count = 1}
+                )
+            )
             self._size -= 1
             return Optional[Self.ElementType](node^._into_value())
 
@@ -532,7 +556,11 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
             var nn = current.value()
             current = nn[].next()
             nn.destroy_pointee()
-            free(nn, {count = 1})
+            dealloc(
+                ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                    {count = 1}
+                )
+            )
 
         self._head = Self._NodePointer()
         self._tail = Self._NodePointer()
@@ -563,7 +591,9 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         i = max(i if i >= 0 else i + len(self), 0)
 
         if i == 0:
-            var node = alloc(Layout[Node[Self.ElementType]].single())
+            var node = alloc(
+                Layout[Node[Self.ElementType]].single()
+            ).unsafe_leak()
             node.init_pointee_move(
                 _make_node[Self.ElementType](
                     elem^, Self._NodePointer(), Self._NodePointer()
@@ -588,7 +618,9 @@ struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
         if current:
             var curr_nn = current.value()
             var next = curr_nn[].next()
-            var node = alloc(Layout[Node[Self.ElementType]].single())
+            var node = alloc(
+                Layout[Node[Self.ElementType]].single()
+            ).unsafe_leak()
             var data = UnsafePointer(to=node[].value)
             data[] = elem^
             node[].next() = next

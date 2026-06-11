@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.math
-from std.memory import alloc, free, Layout
+from std.memory import alloc, dealloc, Layout, ThinAllocation
 from std.random import randint
 from std.time import sleep
 
@@ -291,8 +291,8 @@ def test_custom() raises:
     comptime alignment = 64
     comptime dtype = DType.int32
     var xy_layout = Layout[Scalar[dtype]](count=N, alignment=alignment)
-    var x = alloc(xy_layout)
-    var y = alloc(xy_layout)
+    var x = alloc(xy_layout).unsafe_leak()
+    var y = alloc(xy_layout).unsafe_leak()
     randint[dtype](x, N, 0, 255)
     randint[dtype](y, N, 0, 255)
 
@@ -318,8 +318,12 @@ def test_custom() raises:
     )
 
     qb.dump_report()
-    free(x, xy_layout)
-    free(y, xy_layout)
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=x).unsafe_with_layout(xy_layout)
+    )
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=y).unsafe_with_layout(xy_layout)
+    )
 
 
 def test_all() raises:

@@ -366,18 +366,29 @@ This version is still a work in progress.
       print(reflect_fn[my_func].linkage_name())  # mangled symbol name
   ```
 
-- Added `alloc`, `free`, and `Layout` in `memory.alloc` for layout-aware memory
-  allocation. A `Layout[T]` bundles an element count and alignment into a
-  single value that is passed to both `alloc` and `free`, keeping size and
-  alignment requirements explicit and co-located at every call site.
+- Added the layout-aware `alloc`/`dealloc` allocation API in `memory.alloc`.
+  `alloc` returns an `Allocation[T]`, an owning handle that bundles the
+  allocated pointer with the `Layout` it was allocated with, and `dealloc`
+  consumes that handle to release the storage. A `Layout[T]` bundles an element
+  count and alignment into a single value, keeping size and alignment
+  requirements explicit and co-located at every call site.
+
+  `Allocation`, and its bare layout-less counterpart `ThinAllocation`, are
+  `@explicit_destroy` types: the compiler forces every allocation to be released
+  on all paths — by passing it to `dealloc`, or by taking ownership of the raw
+  pointer with `unsafe_leak()` — guarding against silent leaks, double-frees,
+  and use-after-free. These APIs are intended to eventually replace the
+  raw-pointer allocation APIs to promote memory safety.
 
   ```mojo
-  from memory import alloc, free, Layout
+  from std.memory import alloc, dealloc, Layout
 
   var layout = Layout[Int32](count=4)
-  var ptr = alloc(layout)
-  # ... initialize & use ptr ...
-  free(ptr, layout)
+  var allocation = alloc(layout)
+  var ptr = allocation.unsafe_ptr()
+  for i in range(layout.count()):
+      (ptr + i).init_pointee_move(i)
+  dealloc(allocation^)
   ```
 
 - The default `seed` for `random.Random`, `random.NormalRandom`, and the

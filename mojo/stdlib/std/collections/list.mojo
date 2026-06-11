@@ -29,7 +29,7 @@ from std.os import abort
 from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from std.memory.alloc import alloc, free, Layout
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
@@ -398,7 +398,7 @@ struct List[T: Movable](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = alloc(Layout[Self.T](count=capacity))
+            self._data = alloc(Layout[Self.T](count=capacity)).unsafe_leak()
         else:
             self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
@@ -491,7 +491,11 @@ struct List[T: Movable](
         """
         if self.capacity > 0:
             self._annotate_delete()
-            free(self._data, Layout[Self.T](count=self.capacity))
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._data
+                ).unsafe_with_layout(Layout[Self.T](count=self.capacity))
+            )
 
     def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroy all elements in the list and free its memory."""
@@ -788,7 +792,7 @@ struct List[T: Movable](
 
     @no_inline
     def _realloc(mut self, new_capacity: Int):
-        var new_data = alloc(Layout[Self.T](count=new_capacity))
+        var new_data = alloc(Layout[Self.T](count=new_capacity)).unsafe_leak()
 
         uninit_move_n[overlapping=False](
             dest=new_data, src=self._data, count=len(self)
@@ -796,7 +800,11 @@ struct List[T: Movable](
 
         if self.capacity > 0:
             self._annotate_delete()
-            free(self._data, Layout[Self.T](count=self.capacity))
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._data
+                ).unsafe_with_layout(Layout[Self.T](count=self.capacity))
+            )
         self._data = new_data
         self.capacity = new_capacity
         self._annotate_new()

@@ -160,20 +160,17 @@ trait ImplicitlyDeletable:
     Example:
 
     ```mojo
-    from std.memory import UnsafePointer
-    from std.memory.alloc import alloc, free, Layout
+    from std.memory.alloc import alloc, dealloc, Layout, Allocation
 
-    struct ResourceOwner(ImplicitlyDeletable):
-        var ptr: UnsafePointer[Int, MutUntrackedOrigin]
-        var size: Int
+    struct ResourceOwner(ImplicitlyDestructible):
+        var allocation: Allocation[Int]
 
         def __init__(out self, size: Int):
-            self.size = size
-            self.ptr = alloc(Layout[Int](count=size))
+            self.allocation = alloc(Layout[Int](count=size))
 
         def __del__(deinit self):
             # Clean up owned resources
-            free(self.ptr, Layout[Int](count=self.size))
+            dealloc(self.allocation^)
     ```
 
     Best practices:

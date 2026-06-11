@@ -56,7 +56,7 @@ from std.sys._libc import dlclose, dlerror, dlopen, dlsym
 from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
 from std.memory import OwnedPointer
-from std.memory.alloc import free
+from std.memory.alloc import dealloc, ThinAllocation
 from std.memory.unsafe_pointer import unsafe_cast
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
@@ -926,7 +926,11 @@ struct _Global[
     ):
         # Deinitialize and deallocate the storage.
         if opaque_ptr:
-            free(opaque_ptr.value(), {count = 1})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=opaque_ptr.value()
+                ).unsafe_with_layout({count = 1})
+            )
 
     @staticmethod
     def get_or_create_ptr() raises -> Self.ResultType:

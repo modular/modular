@@ -27,7 +27,7 @@ from std.builtin.rebind import downcast
 import std.format._utils as fmt
 from std.hashlib import Hasher
 from std.collections import check_bounds
-from std.memory.alloc import alloc, free, Layout
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -153,7 +153,9 @@ struct Deque[ElementType: Movable & ImplicitlyDeletable](
             deque_capacity = min(deque_capacity, max_deque_capacity)
 
         self._capacity = deque_capacity
-        self._data = alloc(Layout[Self.ElementType](count=deque_capacity))
+        self._data = alloc(
+            Layout[Self.ElementType](count=deque_capacity)
+        ).unsafe_leak()
         self._head = 0
         self._tail = 0
         self._min_capacity = min_deque_capacity
@@ -222,7 +224,11 @@ struct Deque[ElementType: Movable & ImplicitlyDeletable](
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
             (self._data + offset).destroy_pointee()
-        free(self._data, {count = self._capacity})
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=self._data
+            ).unsafe_with_layout({count = self._capacity})
+        )
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -573,9 +579,15 @@ struct Deque[ElementType: Movable & ImplicitlyDeletable](
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
             (self._data + offset).destroy_pointee()
-        free(self._data, {count = self._capacity})
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=self._data
+            ).unsafe_with_layout({count = self._capacity})
+        )
         self._capacity = self._min_capacity
-        self._data = alloc(Layout[Self.ElementType](count=self._capacity))
+        self._data = alloc(
+            Layout[Self.ElementType](count=self._capacity)
+        ).unsafe_leak()
         self._head = 0
         self._tail = 0
 
@@ -631,7 +643,11 @@ struct Deque[ElementType: Movable & ImplicitlyDeletable](
             self._tail = self._physical_index(self._tail + 1)
 
         # free the list backing buffer
-        free(values_data, {count = values_capacity})
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=values_data
+            ).unsafe_with_layout({count = values_capacity})
+        )
 
     def extendleft(mut self, var values: List[Self.ElementType]):
         """Extends the left side of the deque by consuming elements from the list argument.
@@ -668,7 +684,11 @@ struct Deque[ElementType: Movable & ImplicitlyDeletable](
             self._head = self._physical_index(self._head - 1)
             (self._data + self._head).init_pointee_move_from(src + i)
 
-        free(values_data, {count = values_capacity})
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=values_data
+            ).unsafe_with_layout({count = values_capacity})
+        )
 
     def index(
         self,
@@ -974,14 +994,20 @@ struct Deque[ElementType: Movable & ImplicitlyDeletable](
         if new_capacity == n_total:
             new_capacity <<= 1
 
-        new_data = alloc(Layout[Self.ElementType](count=new_capacity))
+        new_data = alloc(
+            Layout[Self.ElementType](count=new_capacity)
+        ).unsafe_leak()
 
         for i in range(n_retain):
             offset = self._physical_index(self._head + i)
             (new_data + i).init_pointee_move_from(self._data + offset)
 
         if self._capacity > 0:
-            free(self._data, {count = self._capacity})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._data
+                ).unsafe_with_layout({count = self._capacity})
+            )
 
         self._data = new_data
         self._capacity = new_capacity
@@ -1006,7 +1032,9 @@ struct Deque[ElementType: Movable & ImplicitlyDeletable](
             head_len = deque_len
             tail_len = 0
 
-        new_data = alloc(Layout[Self.ElementType](count=new_capacity))
+        new_data = alloc(
+            Layout[Self.ElementType](count=new_capacity)
+        ).unsafe_leak()
 
         src = self._data + self._head
         dsc = new_data
@@ -1022,7 +1050,11 @@ struct Deque[ElementType: Movable & ImplicitlyDeletable](
         self._tail = deque_len
 
         if self._capacity > 0:
-            free(self._data, {count = self._capacity})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._data
+                ).unsafe_with_layout({count = self._capacity})
+            )
         self._data = new_data
         self._capacity = new_capacity
 

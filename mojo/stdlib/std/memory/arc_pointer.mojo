@@ -28,7 +28,7 @@ from std.format._utils import (
 from std.hashlib.hasher import Hasher
 from std.memory.unsafe_maybe_uninit import UnsafeMaybeUninit
 from std.reflection import reflect
-from std.memory import alloc, free, Layout
+from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 
 @doc_hidden
@@ -191,7 +191,7 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         Args:
             value: The value to manage.
         """
-        self._inner = alloc(Layout[Self._inner_type].single())
+        self._inner = alloc(Layout[Self._inner_type].single()).unsafe_leak()
         # Cannot use init_pointee_move as _ArcPointerInner isn't movable.
         __get_address_as_uninit_lvalue(self._inner.address) = Self._inner_type(
             value^
@@ -272,7 +272,11 @@ struct ArcPointer[T: Movable & ImplicitlyDeletable](
         # Drop the implicit weak reference held collectively by all strong
         # pointers. If we are also the last weak, free the allocation.
         if self._inner[].drop_weak():
-            free(self._inner, {count = 1})
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._inner
+                ).unsafe_with_layout({count = 1})
+            )
 
     # FIXME: The origin returned for this is currently self origin, which
     # keeps the ArcPointer object alive as long as there are references into it.  That
@@ -514,9 +518,12 @@ struct WeakPointer[T: Movable & ImplicitlyDeletable](
             .bitcast[Self._inner_type]()[]
             .drop_weak()
         ):
-            free(
-                self._inner.unsafe_value().bitcast[Self._inner_type](),
-                {count = 1},
+            dealloc(
+                ThinAllocation(
+                    unsafe_assume_ownership=self._inner.unsafe_value().bitcast[
+                        Self._inner_type
+                    ]()
+                ).unsafe_with_layout({count = 1})
             )
 
     def try_upgrade(self) -> Optional[ArcPointer[Self.T]]:

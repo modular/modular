@@ -13,7 +13,7 @@
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections.optional import Optional
-from std.memory import Layout, stack_allocation, alloc, free
+from std.memory import Layout, stack_allocation, alloc, dealloc, ThinAllocation
 from std.reflection import SourceLocation
 from std.sys import size_of
 from std.sys.info import _current_target, _TargetType
@@ -154,7 +154,7 @@ def call_with_pack_metal[
     if num_captures > num_captures_static:
         dense_args_is_device_ptr = alloc(
             Layout[Bool](count=num_captures + num_args)
-        )
+        ).unsafe_leak()
         for i in range(num_captures + num_args):
             dense_args_is_device_ptr[i] = False
     else:
@@ -192,9 +192,10 @@ def call_with_pack_metal[
     )
 
     if num_captures > num_captures_static:
-        free(
-            dense_args_is_device_ptr,
-            {count = num_captures + num_args},
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=dense_args_is_device_ptr
+            ).unsafe_with_layout({count = num_captures + num_args})
         )
 
 
@@ -280,10 +281,10 @@ def call_with_pack_checked_metal[
     if num_captures > num_captures_static:
         dense_args_sizes = alloc(
             Layout[UInt64](count=num_captures + num_passed_args)
-        )
+        ).unsafe_leak()
         dense_args_is_device_ptr = alloc(
             Layout[Bool](count=num_captures + num_passed_args)
-        )
+        ).unsafe_leak()
         for i in range(num_captures + num_passed_args):
             dense_args_sizes[i] = 0
             dense_args_is_device_ptr[i] = False
@@ -370,8 +371,13 @@ def call_with_pack_checked_metal[
     )
 
     if num_captures > num_captures_static:
-        free(dense_args_sizes, {count = num_captures + num_passed_args})
-        free(
-            dense_args_is_device_ptr,
-            {count = num_captures + num_passed_args},
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=dense_args_sizes
+            ).unsafe_with_layout({count = num_captures + num_passed_args})
+        )
+        dealloc(
+            ThinAllocation(
+                unsafe_assume_ownership=dense_args_is_device_ptr
+            ).unsafe_with_layout({count = num_captures + num_passed_args})
         )

@@ -74,7 +74,7 @@ struct StackTrace(Copyable, Movable, Writable):
         # Copy the null-terminated string
         var src_ptr = copy._data.unsafe_ptr()
         var str_len = Int(_unsafe_strlen(src_ptr))
-        var new_ptr = alloc(Layout[UInt8](count=str_len + 1))
+        var new_ptr = alloc(Layout[UInt8](count=str_len + 1)).unsafe_leak()
         memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
 
