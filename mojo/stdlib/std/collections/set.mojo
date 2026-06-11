@@ -32,7 +32,7 @@ from .dict import (
 
 
 struct Set[
-    T: KeyElement & ImplicitlyDestructible,
+    T: KeyElement & ImplicitlyDeletable,
     H: Hasher = default_hasher,
 ](
     Boolable,
@@ -79,7 +79,7 @@ struct Set[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
-        downcast[Self.T, KeyElement & Copyable & ImplicitlyDestructible],
+        downcast[Self.T, KeyElement & Copyable & ImplicitlyDeletable],
         NoneType,
         Self.H,
         iterable_origin,
@@ -92,7 +92,7 @@ struct Set[
     """
 
     comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
-        downcast[Self.T, KeyElement & Copyable & ImplicitlyDestructible],
+        downcast[Self.T, KeyElement & Copyable & ImplicitlyDeletable],
         NoneType,
         Self.H,
     ]
@@ -424,7 +424,7 @@ struct Set[
             Self.T, Copyable
         ), "Set iteration requires the element type to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.T, KeyElement & Copyable & ImplicitlyDestructible],
+            downcast[Self.T, KeyElement & Copyable & ImplicitlyDeletable],
             NoneType,
             Self.H,
         ]
@@ -443,7 +443,7 @@ struct Set[
             Self.T, Copyable
         ), "Set iteration requires the element type to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.T, KeyElement & Copyable & ImplicitlyDestructible],
+            downcast[Self.T, KeyElement & Copyable & ImplicitlyDeletable],
             NoneType,
             Self.H,
         ]

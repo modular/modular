@@ -32,7 +32,7 @@ fundamentally need to copy keys (`copy`, `update`, `__or__`, `fromkeys`,
 iteration, ...) are conditionally available via
 `where conforms_to(K, Copyable)` clauses.
 
-Value elements only need to be `Movable & ImplicitlyDestructible`. Methods that
+Value elements only need to be `Movable & ImplicitlyDeletable`. Methods that
 fundamentally need to copy values (`copy`, `find`, `get`, `update`, `__or__`,
 `fromkeys`, iteration, ...) are conditionally available via
 `where conforms_to(V, Copyable)` clauses.
@@ -142,8 +142,8 @@ This is a comptime alias for `SwissTableEntry` for backwards compatibility.
 struct _DictEntryIter[
     mut: Bool,
     //,
-    K: KeyElement & Copyable & ImplicitlyDestructible,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDeletable,
+    V: Copyable & ImplicitlyDeletable,
     H: Hasher,
     origin: Origin[mut=mut],
     forward: Bool = True,
@@ -218,8 +218,8 @@ struct _DictEntryIter[
 
 @fieldwise_init
 struct _TakeDictEntryIter[
-    K: KeyElement & Copyable & ImplicitlyDestructible,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDeletable,
+    V: Copyable & ImplicitlyDeletable,
     H: Hasher,
     origin: MutOrigin,
 ](Copyable, Iterable, Iterator):
@@ -273,8 +273,8 @@ struct _TakeDictEntryIter[
 
 @fieldwise_init
 struct _DictEntryIterOwned[
-    K: KeyElement & Copyable & ImplicitlyDestructible,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDeletable,
+    V: Copyable & ImplicitlyDeletable,
     H: Hasher,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over DictEntry values that consumes the dictionary.
@@ -325,8 +325,8 @@ struct _DictEntryIterOwned[
 
 @fieldwise_init
 struct _DictKeyIterOwned[
-    K: KeyElement & Copyable & ImplicitlyDestructible,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDeletable,
+    V: Copyable & ImplicitlyDeletable,
     H: Hasher,
 ](IterableOwned, Iterator, Movable):
     """An owning iterator over Dict keys that consumes the dictionary.
@@ -359,8 +359,8 @@ struct _DictKeyIterOwned[
 struct _DictKeyIter[
     mut: Bool,
     //,
-    K: KeyElement & Copyable & ImplicitlyDestructible,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDeletable,
+    V: Copyable & ImplicitlyDeletable,
     H: Hasher,
     origin: Origin[mut=mut],
     forward: Bool = True,
@@ -405,8 +405,8 @@ struct _DictKeyIter[
 struct _DictValueIter[
     mut: Bool,
     //,
-    K: KeyElement & Copyable & ImplicitlyDestructible,
-    V: Copyable & ImplicitlyDestructible,
+    K: KeyElement & Copyable & ImplicitlyDeletable,
+    V: Copyable & ImplicitlyDeletable,
     H: Hasher,
     origin: Origin[mut=mut],
     forward: Bool = True,
@@ -463,8 +463,8 @@ struct _DictValueIter[
 
 
 struct Dict[
-    K: KeyElement & ImplicitlyDestructible,
-    V: Movable & ImplicitlyDestructible,
+    K: KeyElement & ImplicitlyDeletable,
+    V: Movable & ImplicitlyDeletable,
     H: Hasher = default_hasher,
 ](
     Boolable,
@@ -671,8 +671,8 @@ struct Dict[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         Self.H,
         iterable_origin,
     ]
@@ -684,8 +684,8 @@ struct Dict[
     """
 
     comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         Self.H,
     ]
     """The owned iterator type for this dictionary."""
@@ -865,9 +865,9 @@ struct Dict[
                     Dict[
                         downcast[
                             Self.K,
-                            KeyElement & Copyable & ImplicitlyDestructible,
+                            KeyElement & Copyable & ImplicitlyDeletable,
                         ],
-                        downcast[Self.V, Copyable & ImplicitlyDestructible],
+                        downcast[Self.V, Copyable & ImplicitlyDeletable],
                         Self.H,
                     ]
                 ](self^),
@@ -886,8 +886,8 @@ struct Dict[
             Self.V, Copyable
         ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-            downcast[Self.V, Copyable & ImplicitlyDestructible],
+            downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+            downcast[Self.V, Copyable & ImplicitlyDeletable],
             Self.H,
         ]
         return _DictKeyIter(
@@ -903,8 +903,8 @@ struct Dict[
     def __reversed__(
         ref self,
     ) -> _DictKeyIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         Self.H,
         origin_of(self),
         False,
@@ -919,8 +919,8 @@ struct Dict[
             Self.V, Copyable
         ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-            downcast[Self.V, Copyable & ImplicitlyDestructible],
+            downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+            downcast[Self.V, Copyable & ImplicitlyDeletable],
             Self.H,
         ]
         return _DictKeyIter(
@@ -1344,8 +1344,8 @@ struct Dict[
     def keys(
         ref self,
     ) -> _DictKeyIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         Self.H,
         origin_of(self),
     ]:
@@ -1370,8 +1370,8 @@ struct Dict[
     def values(
         ref self,
     ) -> _DictValueIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         Self.H,
         origin_of(self),
     ]:
@@ -1396,8 +1396,8 @@ struct Dict[
             Self.V, Copyable
         ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-            downcast[Self.V, Copyable & ImplicitlyDestructible],
+            downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+            downcast[Self.V, Copyable & ImplicitlyDeletable],
             Self.H,
         ]
         return _DictValueIter(
@@ -1413,8 +1413,8 @@ struct Dict[
     def items(
         ref self,
     ) -> _DictEntryIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         Self.H,
         origin_of(self),
     ]:
@@ -1444,8 +1444,8 @@ struct Dict[
             Self.V, Copyable
         ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-            downcast[Self.V, Copyable & ImplicitlyDestructible],
+            downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+            downcast[Self.V, Copyable & ImplicitlyDeletable],
             Self.H,
         ]
         return _DictEntryIter(
@@ -1457,8 +1457,8 @@ struct Dict[
     def take_items(
         mut self,
     ) -> _TakeDictEntryIter[
-        downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         Self.H,
         origin_of(self),
     ]:
@@ -1489,8 +1489,8 @@ struct Dict[
             Self.V, Copyable
         ), "Dict iteration requires the key and value types to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.K, KeyElement & Copyable & ImplicitlyDestructible],
-            downcast[Self.V, Copyable & ImplicitlyDestructible],
+            downcast[Self.K, KeyElement & Copyable & ImplicitlyDeletable],
+            downcast[Self.V, Copyable & ImplicitlyDeletable],
             Self.H,
         ]
         return _TakeDictEntryIter(
@@ -1744,7 +1744,7 @@ struct Dict[
         self._order = new_order^
 
 
-struct OwnedKwargsDict[V: Movable & ImplicitlyDestructible](
+struct OwnedKwargsDict[V: Movable & ImplicitlyDeletable](
     Copyable where conforms_to(V, Copyable),
     Defaultable,
     Iterable,
@@ -1755,7 +1755,7 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDestructible](
 
     Parameters:
         V: The value type of the dictionary. Must be
-            `Movable & ImplicitlyDestructible`; copy-requiring operations are
+            `Movable & ImplicitlyDeletable`; copy-requiring operations are
             conditionally available via `where conforms_to(V, Copyable)`.
 
     This type mimics the interface of a dictionary with `String` keys, and
@@ -1771,7 +1771,7 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDestructible](
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
         Self.key_type,
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         default_comp_time_hasher,
         iterable_origin,
     ]
@@ -1915,7 +1915,7 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDestructible](
         ref self,
     ) -> _DictKeyIter[
         Self.key_type,
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         default_comp_time_hasher,
         origin_of(self._dict),
     ]:
@@ -1930,7 +1930,7 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDestructible](
         ref self,
     ) -> _DictValueIter[
         Self.key_type,
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         default_comp_time_hasher,
         origin_of(self._dict),
     ]:
@@ -1945,7 +1945,7 @@ struct OwnedKwargsDict[V: Movable & ImplicitlyDestructible](
         ref self,
     ) -> _DictEntryIter[
         Self.key_type,
-        downcast[Self.V, Copyable & ImplicitlyDestructible],
+        downcast[Self.V, Copyable & ImplicitlyDeletable],
         default_comp_time_hasher,
         origin_of(self._dict),
     ]:

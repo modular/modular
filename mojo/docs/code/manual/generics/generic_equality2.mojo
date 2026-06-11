@@ -13,7 +13,7 @@
 
 from std.testing import *
 
-comptime CanCompare = Equatable & ImplicitlyCopyable & ImplicitlyDestructible
+comptime CanCompare = Equatable & ImplicitlyCopyable & ImplicitlyDeletable
 
 
 def all_equal[T: Copyable](lhs: List[T], rhs: List[T]) -> Bool:

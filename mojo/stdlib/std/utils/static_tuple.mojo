@@ -31,7 +31,7 @@ from std.reflection import reflect
 # StaticTuple
 # ===-----------------------------------------------------------------------===#
 
-comptime _StaticTupleTraits = ImplicitlyCopyable & ImplicitlyDestructible & RegisterPassable
+comptime _StaticTupleTraits = ImplicitlyCopyable & ImplicitlyDeletable & RegisterPassable
 """The required trait conformances for a StaticTuple's element type."""
 
 

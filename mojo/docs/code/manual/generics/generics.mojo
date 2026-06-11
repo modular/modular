@@ -22,7 +22,7 @@ trait Stacklike:
         ...
 
 
-struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
+struct MyStack[type: Copyable & ImplicitlyDeletable](Stacklike):
     """A simple Stack built using a List."""
 
     comptime EltType = Self.type
@@ -40,7 +40,7 @@ struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
         return self.list.pop()
 
     def dump[
-        WritableEltType: Writable & Copyable & ImplicitlyDestructible
+        WritableEltType: Writable & Copyable & ImplicitlyDeletable
     ](self: MyStack[WritableEltType]):
         print("[", end="")
         for item in self.list:

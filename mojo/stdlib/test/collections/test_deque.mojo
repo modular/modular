@@ -1099,9 +1099,7 @@ def _test_deque_iter_bounds[
         var lower, upper = iter.bounds()
         assert_equal(deque_len - i, lower)
         assert_equal(deque_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1273,7 +1271,7 @@ def test_deque_iter_owned_bounds() raises:
 
 def test_deque_move_only() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Deque[T: Movable & ImplicitlyDestructible]`.
+    # conformance path of `Deque[T: Movable & ImplicitlyDeletable]`.
     assert_false(conforms_to(Deque[MoveOnly[Int]], Copyable))
 
     var d = Deque[MoveOnly[Int]]()

@@ -97,7 +97,7 @@ struct _ListIter[
 
 
 @fieldwise_init
-struct _ListIterOwned[T: Copyable & ImplicitlyDestructible](
+struct _ListIterOwned[T: Copyable & ImplicitlyDeletable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for List.
@@ -139,7 +139,7 @@ struct _ListIterOwned[T: Copyable & ImplicitlyDestructible](
 
 
 @explicit_destroy(
-    "A `List` of non-`ImplicitlyDestructible` elements must either be"
+    "A `List` of non-`ImplicitlyDeletable` elements must either be"
     " explicitly destroyed with `destroy_with()`, or have its ownership passed"
     " along by returning it or moving it into another function."
 )
@@ -149,7 +149,7 @@ struct List[T: Movable](
     Defaultable,
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
-    ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible),
+    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
     IterableOwned,
     Movable,
@@ -344,7 +344,7 @@ struct List[T: Movable](
     """
 
     comptime IteratorOwnedType: Iterator = _ListIterOwned[
-        downcast[Self.T, Copyable & ImplicitlyDestructible]
+        downcast[Self.T, Copyable & ImplicitlyDeletable]
     ]
     """The owned iterator type for this list."""
 
@@ -508,7 +508,7 @@ struct List[T: Movable](
     def destroy_with(deinit self, destroy_func: Some[def(var Self.T)], /):
         """Consumes this list and destroy its values using the provided closure.
 
-        This can be used to destroy a `List` of non-`ImplicitlyDestructible` values.
+        This can be used to destroy a `List` of non-`ImplicitlyDeletable` values.
 
         Args:
             destroy_func: The deinitializing closure called on each `List` element.
@@ -592,7 +592,7 @@ struct List[T: Movable](
 
     def __mul__(
         self, x: Int
-    ) -> Self where conforms_to(Self.T, Copyable & ImplicitlyDestructible):
+    ) -> Self where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
         """Multiplies the list by x and returns a new list.
 
         Args:
@@ -610,9 +610,9 @@ struct List[T: Movable](
 
     def __imul__(
         mut self, x: Int
-    ) where conforms_to(
-        Self.T, ImplicitlyDestructible & Copyable
-    ) and conforms_to(Self, ImplicitlyDestructible & Copyable):
+    ) where conforms_to(Self.T, ImplicitlyDeletable & Copyable) and conforms_to(
+        Self, ImplicitlyDeletable & Copyable
+    ):
         """Appends the original elements of this list x-1 times or clears it if
         x is <= 0.
 
@@ -662,16 +662,14 @@ struct List[T: Movable](
         Returns:
             An iterator of owned elements.
         """
-        comptime assert conforms_to(
-            Self.T, Copyable & ImplicitlyDestructible
-        ), (
+        comptime assert conforms_to(Self.T, Copyable & ImplicitlyDeletable), (
             "Owned List iteration requires the element to be `Copyable &"
-            " ImplicitlyDestructible`."
+            " ImplicitlyDeletable`."
         )
         return {
-            rebind_var[
-                List[downcast[Self.T, Copyable & ImplicitlyDestructible]]
-            ](self^),
+            rebind_var[List[downcast[Self.T, Copyable & ImplicitlyDeletable]]](
+                self^
+            ),
             0,
         }
 
@@ -1071,7 +1069,7 @@ struct List[T: Movable](
 
     def resize(
         mut self, new_size: Int, value: Self.T
-    ) where conforms_to(Self.T, Copyable & ImplicitlyDestructible):
+    ) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
         """Resizes the list to the given new size.
 
         Args:
@@ -1113,7 +1111,7 @@ struct List[T: Movable](
 
     def resize(
         mut self, *, unsafe_uninit_length: Int
-    ) where conforms_to(Self.T, ImplicitlyDestructible):
+    ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Resizes the list to the given new size leaving any new elements
         uninitialized.
 
@@ -1143,7 +1141,7 @@ struct List[T: Movable](
 
     def shrink(
         mut self, new_size: Int
-    ) where conforms_to(Self.T, ImplicitlyDestructible):
+    ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Resizes to the given new size which must be <= the current size.
 
         Args:
@@ -1171,9 +1169,7 @@ struct List[T: Movable](
 
         # TODO(MOCO-3679): Use `destroy_n(self._data + new_size, ...)`
         # directly once where clause bounds propagate to callee inference.
-        var data = self._data.bitcast[
-            downcast[Self.T, ImplicitlyDestructible]
-        ]()
+        var data = self._data.bitcast[downcast[Self.T, ImplicitlyDeletable]]()
         destroy_n(data + new_size, count=len(self) - new_size)
 
         var old_size: Int = self._len
@@ -1262,7 +1258,7 @@ struct List[T: Movable](
 
     def clear(
         mut self,
-    ) where conforms_to(Self.T, ImplicitlyDestructible):
+    ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Clears the elements in the list.
 
         Examples:
@@ -1276,9 +1272,7 @@ struct List[T: Movable](
         """
         # TODO(MOCO-3679): Use `destroy_n(self._data, ...)` directly once
         # where clause bounds propagate to callee inference.
-        var data = self._data.bitcast[
-            downcast[Self.T, ImplicitlyDestructible]
-        ]()
+        var data = self._data.bitcast[downcast[Self.T, ImplicitlyDeletable]]()
         destroy_n(data, count=self._len)
         var old_size: Int = self._len
         self._len = 0
@@ -1407,7 +1401,7 @@ struct List[T: Movable](
     @always_inline
     def unsafe_set(
         mut self, idx: Int, var value: Self.T
-    ) where conforms_to(Self.T, ImplicitlyDestructible):
+    ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Write a value to a given location without checking index bounds.
 
         Args:
@@ -1428,7 +1422,7 @@ struct List[T: Movable](
         # TODO(MOCO-3679): Use `(self._data + idx).destroy_pointee()`
         # directly once where clause bounds propagate to callee inference.
         (self._data + idx).bitcast[
-            downcast[Self.T, ImplicitlyDestructible]
+            downcast[Self.T, ImplicitlyDeletable]
         ]().destroy_pointee()
         (self._data + idx).init_pointee_move(value^)
 

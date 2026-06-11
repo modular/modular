@@ -448,9 +448,7 @@ def _test_inline_array_iter_bounds[
         print(lower, upper, i)
         assert_equal(array_len - i, lower)
         assert_equal(array_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -517,7 +515,7 @@ def test_inline_array_conditional_conformances() raises:
     assert_true(conforms_to(InlineArray[Int, 3], Hashable))
     assert_true(conforms_to(InlineArray[Int, 3], Copyable))
     assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyCopyable))
-    assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyDestructible))
+    assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyDeletable))
     assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
 
 

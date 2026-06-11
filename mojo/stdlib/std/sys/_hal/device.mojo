@@ -61,7 +61,7 @@ def get_device_spec[
 
 
 @fieldwise_init
-struct Device[spec: DeviceSpec](ImplicitlyDestructible, Movable):
+struct Device[spec: DeviceSpec](ImplicitlyDeletable, Movable):
     """A device retrieved from a Driver.
 
     Does not own the device handle — the plugin manages device lifetime

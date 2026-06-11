@@ -50,7 +50,7 @@ Examples:
 
     struct Wrapper[T: AnyType]:
         comptime StorageType = ConditionalType[
-            Trait=ImplicitlyDestructible,
+            Trait=ImplicitlyDeletable,
             If=size_of[Self.T]() > 0,
             Then=List[Byte],
             Else=NoneType,

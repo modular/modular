@@ -594,7 +594,7 @@ def test_set_iter_owned_bounds() raises:
 
 def test_set_move_only_element() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Set[T: KeyElement & ImplicitlyDestructible, H]`
+    # conformance path of `Set[T: KeyElement & ImplicitlyDeletable, H]`
     # where the element type is move-only. Copy-requiring ops (`union`,
     # `intersection`, iteration, ...) are unavailable for this `T`, but the
     # add / remove / contains / pop / discard / clear core remains usable.

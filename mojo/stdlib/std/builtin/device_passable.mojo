@@ -136,8 +136,8 @@ trait DeviceTypeEncoder:
         Constraints:
             - `ValueType` must conform to `DevicePassable` or `RegisterPassable`.
             - `ValueType` must conform to
-              `ImplicitlyCopyable & ImplicitlyDestructible` or
-              `Copyable & ImplicitlyDestructible`.
+              `ImplicitlyCopyable & ImplicitlyDeletable` or
+              `Copyable & ImplicitlyDeletable`.
             - If `ValueType` is `DevicePassable`, it must be its own leaf
               `device_type`
               (`ValueType._is_convertible_to_device_type[ValueType]()`), since a
@@ -167,20 +167,20 @@ trait DeviceTypeEncoder:
             )
 
         comptime if conforms_to(
-            ValueType, ImplicitlyCopyable & ImplicitlyDestructible
+            ValueType, ImplicitlyCopyable & ImplicitlyDeletable
         ):
             comptime T = downcast[
-                ValueType, ImplicitlyCopyable & ImplicitlyDestructible
+                ValueType, ImplicitlyCopyable & ImplicitlyDeletable
             ]
             dst.bitcast[T]()[] = rebind[T](value)
-        elif conforms_to(ValueType, Copyable & ImplicitlyDestructible):
-            comptime T = downcast[ValueType, Copyable & ImplicitlyDestructible]
+        elif conforms_to(ValueType, Copyable & ImplicitlyDeletable):
+            comptime T = downcast[ValueType, Copyable & ImplicitlyDeletable]
             dst.bitcast[T]()[] = rebind[T](value).copy()
         else:
             comptime assert False, String(
                 t"encode: ValueType '{reflect[ValueType].base_name()}' must"
-                t" conform to ImplicitlyCopyable & ImplicitlyDestructible or"
-                t" Copyable & ImplicitlyDestructible"
+                t" conform to ImplicitlyCopyable & ImplicitlyDeletable or"
+                t" Copyable & ImplicitlyDeletable"
             )
 
     def encode_fields[
@@ -217,8 +217,8 @@ trait DeviceTypeEncoder:
               struct type.
             - Every field must either conform to `DevicePassable`, be a
               composite transitively containing a `DevicePassable` member,
-              conform to `ImplicitlyCopyable & ImplicitlyDestructible`, or
-              conform to `Copyable & ImplicitlyDestructible`.
+              conform to `ImplicitlyCopyable & ImplicitlyDeletable`, or
+              conform to `Copyable & ImplicitlyDeletable`.
         """
         # NOTE: The trait system does not enforce viral conformance to
         # DevicePassable if a RegisterPassable struct field is DevicePassable.

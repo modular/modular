@@ -413,7 +413,7 @@ def test_variant_hash() raises:
 
 @fieldwise_init
 struct _Bare(Movable):
-    """A `Movable & ImplicitlyDestructible` type that conforms to nothing
+    """A `Movable & ImplicitlyDeletable` type that conforms to nothing
     else — used to exercise the negative case of `Variant`'s conditional
     conformances."""
 

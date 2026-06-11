@@ -61,7 +61,7 @@ def _bundle_file_type[target: _TargetType]() -> StaticString:
 
 
 @fieldwise_init
-struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
+struct Context[device_spec: DeviceSpec](ImplicitlyDeletable, Movable):
     """A context loaded on a specific device.
 
     Represents a runtime handle to an initialized

@@ -23,7 +23,7 @@ def rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
 
 
 # start-infer-struct-param
-struct One[Type: Writable & Copyable & ImplicitlyDestructible]:
+struct One[Type: Writable & Copyable & ImplicitlyDeletable]:
     var value: Self.Type
 
     def __init__(out self, value: Self.Type):
@@ -39,7 +39,7 @@ def use_one():
 
 
 # start-infer-constructor-static-param
-struct Two[Type: Writable & Copyable & ImplicitlyDestructible]:
+struct Two[Type: Writable & Copyable & ImplicitlyDeletable]:
     var val1: Self.Type
     var val2: Self.Type
 

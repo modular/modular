@@ -279,9 +279,7 @@ def _test_iter_bounds[
         var lower, upper = iter.bounds()
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()
-        )
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](iter.__next__())
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
@@ -1259,7 +1257,7 @@ def test_dict_hash() raises:
     assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
 
 
-struct NonWritable(Copyable, ImplicitlyDestructible):
+struct NonWritable(Copyable, ImplicitlyDeletable):
     pass
 
 
@@ -1358,7 +1356,7 @@ def test_dict_iter_owned_bounds() raises:
 
 def test_dict_move_only_value() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Dict[K, V: Movable & ImplicitlyDestructible, H]`.
+    # conformance path of `Dict[K, V: Movable & ImplicitlyDeletable, H]`.
     assert_false(conforms_to(Dict[String, MoveOnly[Int]], Copyable))
 
     var d = Dict[String, MoveOnly[Int]]()

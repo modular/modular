@@ -635,7 +635,7 @@ struct UnsafePointer[
         ](other.address)
 
     def __init__[
-        T: ImplicitlyDestructible, //
+        T: ImplicitlyDeletable, //
     ](
         out self: UnsafePointer[T, Self.origin],
         *,
@@ -1928,7 +1928,7 @@ struct UnsafePointer[
 
     @always_inline
     def destroy_pointee[
-        T: ImplicitlyDestructible, //
+        T: ImplicitlyDeletable, //
     ](self: UnsafePointer[T, _]) where type_of(self).mut:
         """Destroy the pointed-to value.
 
@@ -1956,7 +1956,7 @@ struct UnsafePointer[
     ) where type_of(self).mut:
         """Destroy the pointed-to value using a user-provided destructor function.
 
-        This can be used to destroy non-`ImplicitlyDestructible` values in-place
+        This can be used to destroy non-`ImplicitlyDeletable` values in-place
         without moving.
 
         Args:

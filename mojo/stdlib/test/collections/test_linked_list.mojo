@@ -743,7 +743,7 @@ def test_linked_list_iter_owned_bounds() raises:
 
 def test_linked_list_move_only() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `LinkedList[T: Movable & ImplicitlyDestructible]`.
+    # conformance path of `LinkedList[T: Movable & ImplicitlyDeletable]`.
     assert_false(conforms_to(LinkedList[MoveOnly[Int]], Copyable))
 
     var l = LinkedList[MoveOnly[Int]]()

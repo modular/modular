@@ -152,12 +152,12 @@ struct OwnedPointer[T: AnyType](
     def __del__(deinit self):
         """Destroy the OwnedPointer[]."""
         _constrained_conforms_to[
-            conforms_to(Self.T, ImplicitlyDestructible),
+            conforms_to(Self.T, ImplicitlyDeletable),
             Parent=Self,
             Element=Self.T,
-            ParentConformsTo="ImplicitlyDestructible",
+            ParentConformsTo="ImplicitlyDeletable",
         ]()
-        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
+        comptime TDestructible = downcast[Self.T, ImplicitlyDeletable]
 
         self._inner.bitcast[TDestructible]().destroy_pointee()
         free(self._inner, Layout[Self.T].single())

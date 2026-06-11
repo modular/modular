@@ -498,7 +498,7 @@ own types. These standard library traits include:
 - [`Copyable`](/docs/std/builtin/value/Copyable/)
 - [`Defaultable`](/docs/std/builtin/value/Defaultable/)
 - [`Hashable`](/docs/std/hashlib/hash/Hashable/)
-- [`ImplicitlyDestructible`](/docs/std/builtin/anytype/ImplicitlyDestructible/)
+- [`ImplicitlyDeletable`](/docs/std/builtin/anytype/ImplicitlyDeletable/)
 - [`Indexer`](/docs/std/builtin/int/Indexer/)
 - [`Intable`](/docs/std/builtin/int/Intable/)
 - [`IntableRaising`](/docs/std/builtin/int/IntableRaising/)
@@ -629,7 +629,7 @@ Mojo provides two core traits for managing value lifetimes:
 types conform to. Types conforming only to `AnyType` may require explicit
 destruction.
 
-- [`ImplicitlyDestructible`](/docs/std/builtin/anytype/ImplicitlyDestructible/):
+- [`ImplicitlyDeletable`](/docs/std/builtin/anytype/ImplicitlyDeletable/):
 Types that can be automatically destroyed by calling `__del__()` when their
 lifetime ends.
 
@@ -735,7 +735,7 @@ The following struct implements the `Stacklike` trait using a `List` as the
 underlying storage:
 
 ```mojo
-struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
+struct MyStack[type: Copyable & ImplicitlyDeletable](Stacklike):
     """A simple Stack built using a List."""
     comptime EltType = Self.type
     comptime list_type = List[Self.EltType]
@@ -752,7 +752,7 @@ struct MyStack[type: Copyable & ImplicitlyDestructible](Stacklike):
         return self.list.pop()
 
     def dump[
-        WritableEltType: Writable & Copyable & ImplicitlyDestructible
+        WritableEltType: Writable & Copyable & ImplicitlyDeletable
     ](self: MyStack[WritableEltType]):
         print("[", end="")
         for item in self.list:

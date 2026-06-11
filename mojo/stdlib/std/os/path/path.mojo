@@ -264,7 +264,7 @@ def dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
 
 
 def realpath[
-    PathLike: os.PathLike & ImplicitlyDestructible, //
+    PathLike: os.PathLike & ImplicitlyDeletable, //
 ](path: PathLike) raises -> String:
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a

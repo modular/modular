@@ -31,7 +31,7 @@ from std.sys import align_of, size_of
 
 
 struct Node[
-    ElementType: Movable & ImplicitlyDestructible,
+    ElementType: Movable & ImplicitlyDeletable,
 ](Movable):
     """A node in a linked list data structure.
 
@@ -100,7 +100,7 @@ struct Node[
 
 
 def _make_node[
-    T: Movable & ImplicitlyDestructible
+    T: Movable & ImplicitlyDeletable
 ](
     out node: Node[T],
     var value: T,
@@ -126,7 +126,7 @@ def _make_node[
 struct _LinkedListIter[
     mut: Bool,
     //,
-    ElementType: Copyable & ImplicitlyDestructible,
+    ElementType: Copyable & ImplicitlyDeletable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -168,7 +168,7 @@ struct _LinkedListIter[
 
 
 @fieldwise_init
-struct _LinkedListIterOwned[T: Copyable & ImplicitlyDestructible](
+struct _LinkedListIterOwned[T: Copyable & ImplicitlyDeletable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for LinkedList.
@@ -216,7 +216,7 @@ struct _LinkedListIterOwned[T: Copyable & ImplicitlyDestructible](
         return (sz, {sz})
 
 
-struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
+struct LinkedList[ElementType: Movable & ImplicitlyDeletable](
     Boolable,
     Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
@@ -243,12 +243,12 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
         UnsafePointer[Node[Self.ElementType], MutUntrackedOrigin]
     ]
 
-    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the
+    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDeletable` from the
     # `downcast`s below — it is already implied by `ElementType`'s bound.
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _LinkedListIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
         iterable_origin,
     ]
     """The iterator type for this linked list.
@@ -259,7 +259,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
     """
 
     comptime IteratorOwnedType: Iterator = _LinkedListIterOwned[
-        downcast[Self.ElementType, Copyable & ImplicitlyDestructible]
+        downcast[Self.ElementType, Copyable & ImplicitlyDeletable]
     ]
     """The owned iterator type for this linked list."""
 
@@ -419,7 +419,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
 
     @always_inline
     def pop[
-        I: Indexer & ImplicitlyDestructible, //
+        I: Indexer & ImplicitlyDeletable, //
     ](mut self, var i: I) raises -> Self.ElementType:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
@@ -484,7 +484,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
 
     @always_inline
     def maybe_pop[
-        I: Indexer & ImplicitlyDestructible, //
+        I: Indexer & ImplicitlyDeletable, //
     ](mut self, var i: I) -> Optional[Self.ElementType]:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
@@ -830,9 +830,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
         return {
             rebind_var[
                 LinkedList[
-                    downcast[
-                        Self.ElementType, Copyable & ImplicitlyDestructible
-                    ]
+                    downcast[Self.ElementType, Copyable & ImplicitlyDeletable]
                 ]
             ](self^)
         }
@@ -857,7 +855,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
                 Pointer[
                     LinkedList[
                         downcast[
-                            Self.ElementType, Copyable & ImplicitlyDestructible
+                            Self.ElementType, Copyable & ImplicitlyDeletable
                         ]
                     ],
                     origin_of(self),
@@ -865,12 +863,12 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
             ](Pointer(to=self))
         )
 
-    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the
+    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDeletable` from the
     # `downcast`s below — it is already implied by `ElementType`'s bound.
     def __reversed__(
         ref self,
     ) -> _LinkedListIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
         origin_of(self),
         forward=False,
     ]:
@@ -889,7 +887,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
             Self.ElementType, Copyable
         ), "LinkedList iteration requires the element to be `Copyable`."
         return _LinkedListIter[
-            downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+            downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
             origin_of(self),
             forward=False,
         ](
@@ -897,7 +895,7 @@ struct LinkedList[ElementType: Movable & ImplicitlyDestructible](
                 Pointer[
                     LinkedList[
                         downcast[
-                            Self.ElementType, Copyable & ImplicitlyDestructible
+                            Self.ElementType, Copyable & ImplicitlyDeletable
                         ]
                     ],
                     origin_of(self),

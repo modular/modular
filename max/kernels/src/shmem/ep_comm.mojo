@@ -293,7 +293,7 @@ def get_device_alignment() -> Int:
     return gpu_alignment
 
 
-trait TokenFormat(DevicePassable, ImplicitlyDestructible):
+trait TokenFormat(DevicePassable, ImplicitlyDeletable):
     comptime hid_dim: Int
     comptime top_k: Int
     comptime alignment: Int

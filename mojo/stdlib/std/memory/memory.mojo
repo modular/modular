@@ -496,7 +496,7 @@ def is_trivially_copyable[T: Copyable]() -> Bool:
 
 
 @always_inline("nodebug")
-def is_trivially_destructible[T: ImplicitlyDestructible]() -> Bool:
+def is_trivially_destructible[T: ImplicitlyDeletable]() -> Bool:
     """Returns whether `T` has a trivial destructor.
 
     A destructor is trivial when the compiler generates it and all of `T`'s
@@ -644,7 +644,7 @@ def uninit_copy_n[
 
 @always_inline
 def destroy_n[
-    T: ImplicitlyDestructible
+    T: ImplicitlyDeletable
 ](pointer: UnsafePointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
@@ -655,7 +655,7 @@ def destroy_n[
     Otherwise, it calls `destroy_pointee()` on each element.
 
     Parameters:
-        T: The type of values to destroy, which must be `ImplicitlyDestructible`.
+        T: The type of values to destroy, which must be `ImplicitlyDeletable`.
 
     Args:
         pointer: Pointer to the memory region containing values to destroy.

@@ -270,7 +270,7 @@ def _run(var handle: Coroutine[...], out result: handle.type):
 # ===-----------------------------------------------------------------------===#
 
 
-struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
+struct Task[type: ImplicitlyDeletable, origins: OriginSet]:
     """Represents an asynchronous task that will produce a value of the specified type.
 
     A Task encapsulates a coroutine that is executing asynchronously and will eventually
@@ -521,7 +521,7 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
         free(rp, {count = 1})
 
     # TODO: Add force_destroy() when we have a trait that combines
-    # Movable and ImplicitlyDestructible. Currently, the caller must
+    # Movable and ImplicitlyDeletable. Currently, the caller must
     # call wait() to consume the task.
 
 
@@ -555,7 +555,7 @@ struct _TaskGroupBox(Copyable, RegisterPassable):
     var handle: AnyCoroutine
 
     def __init__[
-        type: ImplicitlyDestructible
+        type: ImplicitlyDeletable
     ](out self, var coro: Coroutine[type, ...]):
         self.handle = coro^._take_handle()
 

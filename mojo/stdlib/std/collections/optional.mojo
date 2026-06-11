@@ -727,9 +727,9 @@ struct Optional[T: Movable](
         caller-provided destructor function.
 
         This method can be used to destroy `Optional` values whose element
-        type is not `ImplicitlyDestructible` (for example, types
+        type is not `ImplicitlyDeletable` (for example, types
         marked `@explicit_destroy`). The `__del__` on `Optional`
-        requires `T: ImplicitlyDestructible`, so explicit-destroy users must
+        requires `T: ImplicitlyDeletable`, so explicit-destroy users must
         destroy an `Optional[T]` through this API instead.
 
         If `self` is empty, `destroy_func` is not called. Otherwise
@@ -769,14 +769,14 @@ struct Optional[T: Movable](
             self._value^.destroy_with[_NoneType](_NoneType.__del__)
 
     def or_else[
-        _T: Movable & ImplicitlyDestructible, //
+        _T: Movable & ImplicitlyDeletable, //
     ](deinit self: Optional[_T], var default: _T) -> _T:
         """Return the underlying value contained in the `Optional` or a default
         value if the `Optional`'s underlying value is not present.
 
         Parameters:
             _T: Type of the optional element, which must conform to
-                `ImplicitlyDestructible`.
+                `ImplicitlyDeletable`.
 
         Args:
             default: The new value to use if no value was present.

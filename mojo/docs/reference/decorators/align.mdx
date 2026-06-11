@@ -166,7 +166,7 @@ from sys import align_of
 
 @fieldwise_init
 @align(128)
-struct AlignedGeneric[T: Copyable & ImplicitlyDestructible]:
+struct AlignedGeneric[T: Copyable & ImplicitlyDeletable]:
     var value: Self.T
 
 def main():
@@ -183,7 +183,7 @@ from sys import align_of
 
 @fieldwise_init
 @align(4)
-struct AlignedGeneric[T: Copyable & ImplicitlyDestructible]:
+struct AlignedGeneric[T: Copyable & ImplicitlyDeletable]:
     var value: Self.T
 
 def main():

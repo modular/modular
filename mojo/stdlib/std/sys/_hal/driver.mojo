@@ -20,7 +20,7 @@ from std.memory.arc_pointer import WeakPointer
 
 
 @fieldwise_init
-struct Driver(ImplicitlyDestructible, Movable):
+struct Driver(ImplicitlyDeletable, Movable):
     """Top-level driver that owns a loaded plugin and the driver handle.
 
     Lifecycle: create via `Driver.create(plugin_spec)`, then call methods.

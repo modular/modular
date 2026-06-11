@@ -58,7 +58,7 @@ from .deque import Deque
 
 
 trait IntervalElement(
-    Comparable, Copyable, ImplicitlyDestructible, Intable, Writable
+    Comparable, Copyable, ImplicitlyDeletable, Intable, Writable
 ):
     """The trait denotes a trait composition of the `Copyable`,
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
@@ -288,7 +288,7 @@ struct Interval[T: IntervalElement](
 
 struct _IntervalNode[
     T: IntervalElement,
-    U: Copyable & Comparable & ImplicitlyDestructible & Writable,
+    U: Copyable & Comparable & ImplicitlyDeletable & Writable,
 ](Copyable, Writable):
     """A node containing an interval and associated data.
 
@@ -455,7 +455,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement,
-    U: Copyable & Comparable & ImplicitlyDestructible & Writable,
+    U: Copyable & Comparable & ImplicitlyDeletable & Writable,
 ](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 

@@ -34,7 +34,7 @@ from std.memory.alloc import alloc, free, Layout
 # ===-----------------------------------------------------------------------===#
 
 
-struct Deque[ElementType: Movable & ImplicitlyDestructible](
+struct Deque[ElementType: Movable & ImplicitlyDeletable](
     Boolable,
     Copyable where conforms_to(ElementType, Copyable),
     Equatable where conforms_to(ElementType, Equatable),
@@ -52,15 +52,15 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
 
     Parameters:
         ElementType: The type of the elements in the deque. Must implement
-            `Movable` and `ImplicitlyDestructible`.
+            `Movable` and `ImplicitlyDeletable`.
     """
 
-    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the
+    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDeletable` from the
     # `downcast`s below — it is already implied by `ElementType`'s bound.
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DequeIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
         iterable_origin,
     ]
     """The iterator type for this deque.
@@ -71,7 +71,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
     """
 
     comptime IteratorOwnedType: Iterator = _DequeIterOwned[
-        downcast[Self.ElementType, Copyable & ImplicitlyDestructible]
+        downcast[Self.ElementType, Copyable & ImplicitlyDeletable]
     ]
     """The owned iterator type for this deque."""
 
@@ -364,9 +364,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
         return {
             rebind_var[
                 Deque[
-                    downcast[
-                        Self.ElementType, Copyable & ImplicitlyDestructible
-                    ]
+                    downcast[Self.ElementType, Copyable & ImplicitlyDeletable]
                 ]
             ](self^),
             0,
@@ -390,7 +388,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
                 Pointer[
                     Deque[
                         downcast[
-                            Self.ElementType, Copyable & ImplicitlyDestructible
+                            Self.ElementType, Copyable & ImplicitlyDeletable
                         ]
                     ],
                     origin_of(self),
@@ -398,12 +396,12 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
             ](Pointer(to=self)),
         )
 
-    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDestructible` from the
+    # TODO(MOCO-4060): drop the redundant `& ImplicitlyDeletable` from the
     # `downcast` below — it is already implied by `ElementType`'s bound.
     def __reversed__(
         ref self,
     ) -> _DequeIter[
-        downcast[Self.ElementType, Copyable & ImplicitlyDestructible],
+        downcast[Self.ElementType, Copyable & ImplicitlyDeletable],
         origin_of(self),
         False,
     ]:
@@ -422,7 +420,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
                 Pointer[
                     Deque[
                         downcast[
-                            Self.ElementType, Copyable & ImplicitlyDestructible
+                            Self.ElementType, Copyable & ImplicitlyDeletable
                         ]
                     ],
                     origin_of(self),
@@ -1033,7 +1031,7 @@ struct Deque[ElementType: Movable & ImplicitlyDestructible](
 struct _DequeIter[
     mut: Bool,
     //,
-    T: Copyable & ImplicitlyDestructible,
+    T: Copyable & ImplicitlyDeletable,
     origin: Origin[mut=mut],
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
@@ -1086,7 +1084,7 @@ struct _DequeIter[
 
 
 @fieldwise_init
-struct _DequeIterOwned[T: Copyable & ImplicitlyDestructible](
+struct _DequeIterOwned[T: Copyable & ImplicitlyDeletable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for Deque.

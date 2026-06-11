@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
+struct GenericArray[ElementType: Copyable & ImplicitlyDeletable]:
     var data: UnsafePointer[Self.ElementType, MutUntrackedOrigin]
     var size: Int
 

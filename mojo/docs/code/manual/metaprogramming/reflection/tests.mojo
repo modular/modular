@@ -180,9 +180,9 @@ def test_trait_downcast_inequality() raises:
     assert_true(not equal)
 
 
-struct ConditionalCopyableWrapper[T: ImplicitlyDestructible & Movable](
+struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var value: Self.T
@@ -198,7 +198,7 @@ struct ConditionalCopyableWrapper[T: ImplicitlyDestructible & Movable](
         )
 
 
-# All structs are inherently `ImplicitlyDestructible`
+# All structs are inherently `ImplicitlyDeletable`
 @fieldwise_init
 struct NotCopyable(Movable):
     pass
@@ -248,11 +248,9 @@ trait MakeCopyable:
                 continue
 
             ref p_value = reflect[Self].field_ref[idx](self)
-            trait_downcast[Copyable & ImplicitlyDestructible](
+            trait_downcast[Copyable & ImplicitlyDeletable](
                 reflect[Self].field_ref[idx](other)
-            ) = trait_downcast[Copyable & ImplicitlyDestructible](
-                p_value
-            ).copy()
+            ) = trait_downcast[Copyable & ImplicitlyDeletable](p_value).copy()
 
 
 @fieldwise_init

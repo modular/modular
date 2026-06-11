@@ -205,8 +205,8 @@ struct Group(Copyable, Movable):
 
 @fieldwise_init
 struct SwissTableEntry[
-    K: KeyElement & ImplicitlyDestructible,
-    V: Movable & ImplicitlyDestructible,
+    K: KeyElement & ImplicitlyDeletable,
+    V: Movable & ImplicitlyDeletable,
     H: Hasher,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
@@ -217,7 +217,7 @@ struct SwissTableEntry[
     Parameters:
         K: The key type. Must be `Movable`, `Hashable`, and `Equatable`.
             `Copyable` is required only for entry copy construction.
-        V: The value type. Must be `Movable` and `ImplicitlyDestructible`.
+        V: The value type. Must be `Movable` and `ImplicitlyDeletable`.
             `Copyable` is required only for entry copy construction.
         H: The type of the hasher used to hash the key.
     """
@@ -263,8 +263,8 @@ struct SwissTableEntry[
 
 
 struct SwissTable[
-    K: KeyElement & ImplicitlyDestructible,
-    V: Movable & ImplicitlyDestructible,
+    K: KeyElement & ImplicitlyDeletable,
+    V: Movable & ImplicitlyDeletable,
     H: Hasher = default_hasher,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
@@ -279,7 +279,7 @@ struct SwissTable[
     Parameters:
         K: The key type. Must be `Movable`, `Hashable`, and `Equatable`.
             `Copyable` is required only for table copy construction.
-        V: The value type. Must be `Movable` and `ImplicitlyDestructible`.
+        V: The value type. Must be `Movable` and `ImplicitlyDeletable`.
             `Copyable` is required only for table copy construction.
         H: The hasher type.
     """

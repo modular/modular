@@ -39,7 +39,7 @@ def main() raises:
     assert_equal(s.first(), 42)
     assert_true(conforms_to(type_of(s), Writable))
 
-    comptime CollectionElement = ImplicitlyCopyable & ImplicitlyDestructible
+    comptime CollectionElement = ImplicitlyCopyable & ImplicitlyDeletable
 
     def make_filled[T: CollectionElement, size: Int](splat_value: T) -> List[T]:
         var result = List[T](capacity=size)

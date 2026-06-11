@@ -581,7 +581,7 @@ def test_span_hashable() raises:
 
 
 @fieldwise_init
-struct HashableOnly(Hashable, ImplicitlyDestructible, Movable):
+struct HashableOnly(Hashable, ImplicitlyDeletable, Movable):
     var value: Int
 
     def __hash__(self, mut hasher: Some[Hasher]):

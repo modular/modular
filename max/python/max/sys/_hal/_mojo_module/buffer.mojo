@@ -20,7 +20,7 @@ from std.sys._hal.device import get_device_spec
 
 
 @fieldwise_init
-struct Buffer(ImplicitlyDestructible, Movable, Writable):
+struct Buffer(ImplicitlyDeletable, Movable, Writable):
     """Python projection of HAL ``Buffer``.
 
     Owns a device (or host-pinned) memory allocation plus a strong

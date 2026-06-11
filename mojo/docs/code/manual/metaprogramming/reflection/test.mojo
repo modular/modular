@@ -124,7 +124,7 @@ trait MakeCopyable:
         comptime field_count = reflect[Self].field_count()
         comptime field_types = reflect[Self].field_types()
 
-        comptime Usable = Copyable & ImplicitlyDestructible
+        comptime Usable = Copyable & ImplicitlyDeletable
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
             comptime if conforms_to(field_type, Usable):

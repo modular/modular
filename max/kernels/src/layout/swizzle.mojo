@@ -306,7 +306,7 @@ def shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 
 
 struct Swizzle(
-    Copyable, ImplicitlyDestructible, TrivialRegisterPassable, Writable
+    Copyable, ImplicitlyDeletable, TrivialRegisterPassable, Writable
 ):
     """Swizzle functor for memory access pattern optimization.
 

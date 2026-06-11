@@ -581,7 +581,7 @@ struct Span[
 
     @always_inline
     def copy_from[
-        _T: Copyable & ImplicitlyDestructible, _origin: MutOrigin, //
+        _T: Copyable & ImplicitlyDeletable, _origin: MutOrigin, //
     ](self: Span[_T, _origin], other: Span[_T, _]):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
@@ -671,7 +671,7 @@ struct Span[
         return not self == rhs
 
     def fill[
-        _T: Copyable & ImplicitlyDestructible, //
+        _T: Copyable & ImplicitlyDeletable, //
     ](self: Span[mut=True, _T, _], value: _T):
         """
         Fill the memory that a span references with a given value.

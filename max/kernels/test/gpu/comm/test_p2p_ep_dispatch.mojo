@@ -77,7 +77,7 @@ def legalize_topk_ids[
             duplicate_idx = is_duplicate()
 
 
-trait DispatchTestT(ImplicitlyDestructible):
+trait DispatchTestT(ImplicitlyDeletable):
     """Trait to unify the test dispatch logic for different token formats."""
 
     comptime hidden_size: Int

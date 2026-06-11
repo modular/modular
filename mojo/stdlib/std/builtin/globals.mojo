@@ -20,7 +20,7 @@ from std.memory import is_trivially_copyable, is_trivially_destructible
 
 
 def global_constant[
-    T: Copyable & ImplicitlyDestructible, //, value: T
+    T: Copyable & ImplicitlyDeletable, //, value: T
 ]() -> ref[StaticConstantOrigin] T:
     """Creates a reference to a compile-time constant value stored in static memory.
 
