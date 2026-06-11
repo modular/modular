@@ -349,13 +349,17 @@ static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
   ErrorOr<const void *> srcAddrOr =
       state.getReadableMemory(srcPtr.getAddr(), size_t(lenAttr.getInt()));
 
-  if (dstAddrOr.isError())
+  if (dstAddrOr.isError()) {
     return ErrorTree(
-        loc, "interpreting memcpy can't get dst memory from the interpreter");
+        loc, "interpreting memcpy can't get dst memory from the interpreter",
+        ErrorTree(loc, dstAddrOr.takeError()));
+  }
 
-  if (srcAddrOr.isError())
+  if (srcAddrOr.isError()) {
     return ErrorTree(
-        loc, "interpreting memcpy can't get src memory from the interpreter");
+        loc, "interpreting memcpy can't get src memory from the interpreter",
+        ErrorTree(loc, srcAddrOr.takeError()));
+  }
 
   std::memcpy(*dstAddrOr, *srcAddrOr, lenAttr.getInt());
 
