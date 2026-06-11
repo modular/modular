@@ -6,5 +6,5 @@
 
 
 @export("foo")
-def foo(x: Int) abi("C") raises:
+def foo(x: Int) abi("C"):
     print("hello from foo:", x)

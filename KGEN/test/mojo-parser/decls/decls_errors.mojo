@@ -110,6 +110,10 @@ struct BadInitType:
 def defaultArgumentUntyped(a=1) raises:
     pass
 
+# expected-error @+1 {{'abi("C")' function may not be marked 'raises'; remove 'raises' or use 'abi("Mojo")'}}
+def c_raises() abi("C") raises:
+    pass
+
 ##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs
 ##===----------------------------------------------------------------------===##
