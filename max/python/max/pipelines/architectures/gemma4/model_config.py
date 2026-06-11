@@ -448,7 +448,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     text_config: Gemma4TextConfig
     """The config object of the text backbone."""
 
-    vision_config: Gemma4VisionConfig
+    vision_config: Gemma4VisionConfig | None
     """The config object of the vision encoder."""
 
     tie_word_embeddings: bool = False
@@ -601,9 +601,16 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
-        vision_config = Gemma4VisionConfig.initialize_from_config(
-            hf_vision_config
-        )
+        vision_config: Gemma4VisionConfig | None
+        if hasattr(hf_vision_config, "hidden_activation"):
+            vision_config = Gemma4VisionConfig.initialize_from_config(
+                hf_vision_config
+            )
+        else:
+            # The "gemma4_unified" checkpoints (e.g. google/gemma-4-12b-it)
+            # use a lightweight vision_embedder with a different schema that
+            # is not implemented yet; serve text-only.
+            vision_config = None
 
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
