@@ -1190,6 +1190,31 @@ class Graph:
                 kernels_paths = [Path(str(x)) for x in paths_attr]
         self._kernel_library = KernelLibrary(kernels_paths)
 
+    def copy(self) -> Graph:
+        """Creates a deep copy of this graph.
+
+        The copy shares no MLIR state with the original: staging or lowering
+        on either graph leaves the other untouched. Use this to hand a graph
+        to another thread (for example, background compilation) while
+        continuing to build or execute the original. The kernel library is
+        shared, not copied.
+
+        Returns:
+            A new :class:`Graph` wrapping a deep copy of this graph's module.
+        """
+        module = self._module.clone()
+        assert isinstance(module, builtin.ModuleOp)
+        copied = Graph.__new__(Graph)
+        copied.name = self.name
+        copied.strict_device_placement = self.strict_device_placement
+        copied._context_state = []
+        copied._module = module
+        # Mirrors _load_mlir: the mo.graph op is the first operation in the
+        # module body block.
+        copied._mlir_op = mlir.Operation._CAPICreate(module.body[0]._CAPIPtr)
+        copied._kernel_library = self._kernel_library
+        return copied
+
     def add_weight(
         # TODO(GEX-2121): Remove `force_initial_weight_on_host`
         self,

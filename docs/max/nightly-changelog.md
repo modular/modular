@@ -266,6 +266,11 @@ This version is still a work in progress.
   device, so it works in cross-compilation / virtual-device scenarios where
   the target device is not attached.
 
+- Added `Graph.copy()`, a deep copy of a graph's MLIR module (backed by a new
+  `Operation.clone()` in `max._core`). The copy shares no MLIR state with the
+  original, so it can be handed to another thread — for example, background
+  compilation — while the original continues to be staged or executed.
+
 - Reduced default signal buffer size from 1025 to 257 MiB per GPU and fixed
   miscalculation of required space in `MOGGKernelAPI.mojo`. Calculation was
   wrong by a factor of `1/num_devices` since each device only needs scratch
