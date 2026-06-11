@@ -52,11 +52,15 @@ def test_rng_rand_scalar() raises:
         DType.uint16,
         DType.uint32,
         DType.uint64,
+        DType.uint128,
+        DType.uint256,
         DType.int,
         DType.int8,
         DType.int16,
         DType.int32,
         DType.int64,
+        DType.int128,
+        DType.int256,
         DType.float16,
         DType.float32,
         DType.float64,
@@ -69,6 +73,39 @@ def test_rng_rand_scalar() raises:
             test_dtype[dtype](scalar(-10), scalar(10))
         else:
             test_dtype[dtype](scalar(10), scalar(20))
+
+
+def test_rng_rand_scalar_wide_covers_full_range() raises:
+    """Wide integer dtypes must produce magnitudes outside the UInt64 range."""
+
+    @parameter
+    def check[dtype: DType]() raises:
+        var rng = Rng(seed=1234)
+        var threshold = Scalar[dtype](UInt64.MAX)
+        var saw_above = False
+        var saw_below_zero = False
+        for _ in range(2000):
+            var v = rng.rand_scalar[dtype]()
+            comptime if dtype.is_signed():
+                if v < Scalar[dtype](0):
+                    saw_below_zero = True
+                if v > threshold or v < -threshold:
+                    saw_above = True
+            else:
+                if v > threshold:
+                    saw_above = True
+
+        assert_true(
+            saw_above,
+            "expected at least one value with magnitude > UInt64.MAX",
+        )
+        comptime if dtype.is_signed():
+            assert_true(saw_below_zero, "expected at least one negative value")
+
+    check[DType.uint128]()
+    check[DType.uint256]()
+    check[DType.int128]()
+    check[DType.int256]()
 
 
 def test_rng_rand_scalar_raises() raises:

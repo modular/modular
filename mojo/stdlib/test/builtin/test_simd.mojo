@@ -227,7 +227,6 @@ def test_to_bits() raises:
 
 # TODO: Use property testing framework to test this.
 def test_from_to_bits_roundtrip_property_test() raises:
-    @parameter
     def properties[dtype: DType, size: Int](simd: SIMD[dtype, size]) raises:
         var bits = simd.to_bits()
         var reconstructed = SIMD[dtype, size](from_bits=bits)
