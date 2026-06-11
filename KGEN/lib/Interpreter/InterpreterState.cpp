@@ -321,6 +321,31 @@ ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
   size_t pointerSize = target.getDataLayout().getPointerSize();
   if ((regionMark != RegionMark::None) && size != pointerSize)
     return Error("pointer write size is not equal to pointer bitwidth");
+
+  // For a raw-data write (None), a marked "pointer region" whose bytes
+  // don't resolve to a real blob isn't actually a live pointer (e.g. an SSO
+  // String's inline chars stored in the _ptr_or_data slot). Clear those stale
+  // marks so the write isn't rejected as a partial-pointer clobber. Genuine
+  // pointers (bytes resolve to a blob) are left marked and still trip the
+  // guard.
+  if (regionMark == RegionMark::None && blob.isOwned() && blob.pointerRegions) {
+    llvm::BitVector &bits = *blob.pointerRegions;
+    // Any pointer mark whose 8 bytes overlap this write...
+    for (int64_t p = std::max<int64_t>(0, offset - (int64_t)pointerSize + 1);
+         p < offset + (int64_t)size; ++p) {
+      if (!bits[p])
+        continue;
+      APInt v(target.getDataLayout().getPointerBitWidth(), 0);
+      llvm::LoadIntFromMemory(v, (uint8_t *)blob.getOwned() + p, pointerSize);
+
+      // garbage → not a real pointer
+      if (getMemory(v.getSExtValue(), 0).isError()) {
+        // drop the stale mark
+        bits.reset(p, p + (int64_t)pointerSize);
+      }
+    }
+  }
+
   if (ErrorOrSuccess err =
           blob.setMarkedRegion(offset, size, pointerSize, regionMark);
       err.isError())
