@@ -1326,22 +1326,6 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
   return type;
 }
 
-RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
-  if (!value.ir)
-    return {};
-
-  ASTType valueRValueType = value.ir.getRValueType();
-
-  // If this is already an 'i1', then we're done.
-  if (valueRValueType.mlirType.isInteger(1))
-    return emitRValue(value, context);
-
-  // re-route via scalar<bool> -> i1
-  RValue scalarBool = emitScalarBool(value, context);
-  return emitRValue({scalarBool, value.expr}, context,
-                    IntegerType::get(getContext(), 1));
-}
-
 RValue IREmitter::emitScalarBool(ASTExprAnd<CValue> value,
                                  ExprContext context) {
   if (!value.ir)
@@ -1399,10 +1383,6 @@ RValue IREmitter::emitScalarBool(ASTExprAnd<CValue> value,
         litBoolCall = sugar.getExpanded();
 
   return emitRValue({litBoolCall, value.expr}, context);
-}
-
-RValue IREmitter::emitExprI1(const ExprNode *condExpr, ExprContext context) {
-  return emitI1({emitExprCValue(condExpr, context), condExpr}, context);
 }
 
 RValue IREmitter::emitExprScalarBool(const ExprNode *condExpr,
