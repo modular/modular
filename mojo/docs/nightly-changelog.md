@@ -266,6 +266,48 @@ This version is still a work in progress.
   now take their argument by `var T`; for move-only types call them as
   `d.setdefault(key^, default)` or `set.add(value^)`.
 
+- `List[T]` now conditionally conforms to `ImplicitlyDestructible`: a `List`
+  is implicitly destructible only when its element type `T` is. This lets a
+  `List` hold elements that must be explicitly destroyed (dropping such a
+  `List` would otherwise leak them), at the cost of a stricter check in
+  generic code.
+
+  Generic code that takes a `List` by value with only a `Movable` element
+  bound now fails to compile for every `T`. Previously the error was deferred
+  and only fired when `T` was instantiated with a non-`ImplicitlyDestructible`
+  type. Add `& ImplicitlyDestructible` to the element bound:
+
+  ```mojo
+  # Now errors for every `T` (previously only when `T` lacked a destructor):
+  def foo[T: Movable, //](var list: List[T]):
+      pass
+
+  # Fix: require the destructor bound explicitly.
+  def foo[T: Movable & ImplicitlyDestructible, //](var list: List[T]):
+      pass
+  ```
+
+  Structs that store a `List` are affected the same way. Either constrain the
+  element type, or better yet, propagate the conditional conformance so your
+  type supports explicitly-destroyed elements too, forwarding cleanup through
+  `destroy_with`:
+
+  ```mojo
+  # Option 1: require the element type to be implicitly destructible.
+  struct Foo[T: Movable & ImplicitlyDestructible]:
+      var list: List[Self.T]
+
+  # Option 2: conditionally conform, and forward explicit destruction.
+  @explicit_destroy("...")
+  struct Foo[T: Movable](
+      ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible),
+  ):
+      var list: List[Self.T]
+
+      def destroy_with(deinit self, f: Some[def(var Self.T)]):
+          self.list^.destroy_with(f)
+  ```
+
 - `reflect[T]` is now a `comptime` alias for the `Reflected[T]` handle type
   rather than a function returning a zero-sized handle instance. All methods on
   `Reflected[T]` are `@staticmethod`s, and the type is no longer constructible.

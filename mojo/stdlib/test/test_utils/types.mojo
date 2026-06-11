@@ -26,6 +26,7 @@
 * `DelRecorder`
 * `AbortOnDel`
 * `AbortOnCopy`
+* `ExplicitDestroy`
 """
 
 from std.hashlib import Hasher
@@ -33,6 +34,24 @@ from std.memory import UnsafeMaybeUninit
 from std.os import abort
 from std.reflection import call_location
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
+
+# ===----------------------------------------------------------------------=== #
+# ExplicitDestroy
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("You must use .destroy() to consume `ExplicitDestroy`")
+@fieldwise_init
+struct ExplicitDestroy(Movable):
+    """Test type that is explicitly-destroyed."""
+
+    var value: Int
+    """Int data."""
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
 
 # ===----------------------------------------------------------------------=== #
 # MoveOnly

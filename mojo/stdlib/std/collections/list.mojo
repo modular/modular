@@ -97,7 +97,9 @@ struct _ListIter[
 
 
 @fieldwise_init
-struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
+struct _ListIterOwned[T: Copyable & ImplicitlyDestructible](
+    IterableOwned, Iterator, Movable
+):
     """An owning iterator for List.
 
     Parameters:
@@ -112,18 +114,10 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
 
     @always_inline
     def __del__(deinit self):
-        _constrained_conforms_to[
-            conforms_to(Self.T, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.T,
-            ParentConformsTo="ImplicitlyDestructible",
-        ]()
-        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
-
         # Destroy the remaining elements that have not yet been
         # iterated over.
         destroy_n(
-            self._list.unsafe_ptr().bitcast[TDestructible]() + self._index,
+            self._list.unsafe_ptr() + self._index,
             count=len(self._list) - self._index,
         )
         self._list._len = 0
@@ -144,12 +138,18 @@ struct _ListIterOwned[T: Copyable](IterableOwned, Iterator, Movable):
         return (iter_len, {iter_len})
 
 
+@explicit_destroy(
+    "A `List` of non-`ImplicitlyDestructible` elements must either be"
+    " explicitly destroyed with `destroy_with()`, or have its ownership passed"
+    " along by returning it or moving it into another function."
+)
 struct List[T: Movable](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
+    ImplicitlyDestructible where conforms_to(T, ImplicitlyDestructible),
     Iterable,
     IterableOwned,
     Movable,
@@ -344,7 +344,7 @@ struct List[T: Movable](
     """
 
     comptime IteratorOwnedType: Iterator = _ListIterOwned[
-        downcast[Self.T, Copyable]
+        downcast[Self.T, Copyable & ImplicitlyDestructible]
     ]
     """The owned iterator type for this list."""
 
@@ -486,21 +486,40 @@ struct List[T: Movable](
         self = Self(capacity=copy.capacity)
         self.extend(Span(copy))
 
-    def __del__(deinit self):
-        """Destroy all elements in the list and free its memory."""
-
-        _constrained_conforms_to[
-            conforms_to(Self.T, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.T,
-            ParentConformsTo="ImplicitlyDestructible",
-        ]()
-        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
-
-        destroy_n(self._data.bitcast[TDestructible](), count=len(self))
+    def _unsafe_assume_destroyed_and_deallocate(deinit self):
+        """Assumes self's values are already destroyed and deallocate the backing storage.
+        """
         if self.capacity > 0:
             self._annotate_delete()
             free(self._data, Layout[Self.T](count=self.capacity))
+
+    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+        """Destroy all elements in the list and free its memory."""
+        destroy_n(
+            rebind[
+                UnsafePointer[
+                    downcast[Self.T, ImplicitlyDeletable], MutUntrackedOrigin
+                ]
+            ](self._data),
+            count=len(self),
+        )
+        self^._unsafe_assume_destroyed_and_deallocate()
+
+    def destroy_with(deinit self, destroy_func: Some[def(var Self.T)], /):
+        """Consumes this list and destroy its values using the provided closure.
+
+        This can be used to destroy a `List` of non-`ImplicitlyDestructible` values.
+
+        Args:
+            destroy_func: The deinitializing closure called on each `List` element.
+        """
+        for i in range(len(self)):
+            # TODO(MOCO-4111): `destroy_func` cannot convert to UnsafePointer.destroy_pointee_with
+            # `destroy_func` type since UP is bound on `T: AnyType` but List has `T: Movable`.
+            destroy_func(
+                __get_address_as_owned_value((self.unsafe_ptr() + i).address)
+            )
+        self^._unsafe_assume_destroyed_and_deallocate()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -573,9 +592,7 @@ struct List[T: Movable](
 
     def __mul__(
         self, x: Int
-    ) -> Self where conforms_to(Self.T, Copyable) and conforms_to(
-        Self.T, ImplicitlyDestructible
-    ):
+    ) -> Self where conforms_to(Self.T, Copyable & ImplicitlyDestructible):
         """Multiplies the list by x and returns a new list.
 
         Args:
@@ -593,9 +610,9 @@ struct List[T: Movable](
 
     def __imul__(
         mut self, x: Int
-    ) where conforms_to(Self.T, Copyable) and conforms_to(
-        Self.T, ImplicitlyDestructible
-    ):
+    ) where conforms_to(
+        Self.T, ImplicitlyDestructible & Copyable
+    ) and conforms_to(Self, ImplicitlyDestructible & Copyable):
         """Appends the original elements of this list x-1 times or clears it if
         x is <= 0.
 
@@ -646,9 +663,17 @@ struct List[T: Movable](
             An iterator of owned elements.
         """
         comptime assert conforms_to(
-            Self.T, Copyable
-        ), "List iteration requires the element to be `Copyable`."
-        return {rebind_var[List[downcast[Self.T, Copyable]]](self^), 0}
+            Self.T, Copyable & ImplicitlyDestructible
+        ), (
+            "Owned List iteration requires the element to be `Copyable &"
+            " ImplicitlyDestructible`."
+        )
+        return {
+            rebind_var[
+                List[downcast[Self.T, Copyable & ImplicitlyDestructible]]
+            ](self^),
+            0,
+        }
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
@@ -874,9 +899,9 @@ struct List[T: Movable](
 
         # Update the size now since all elements have been moved into this list.
         self._len = final_size
-        # The elements of `other` are now consumed, so we mark it as empty so
-        # they don't get destroyed when it goes out of scope.
-        other._len = 0
+        # `other` only needs to deallocate its underlying buffer and not destroy
+        # its elements as they were moved into `self`.
+        other^._unsafe_assume_destroyed_and_deallocate()
 
     def extend(
         mut self, elements: Span[Self.T, _]
@@ -1046,9 +1071,7 @@ struct List[T: Movable](
 
     def resize(
         mut self, new_size: Int, value: Self.T
-    ) where conforms_to(Self.T, Copyable) and conforms_to(
-        Self.T, ImplicitlyDestructible
-    ):
+    ) where conforms_to(Self.T, Copyable & ImplicitlyDestructible):
         """Resizes the list to the given new size.
 
         Args:

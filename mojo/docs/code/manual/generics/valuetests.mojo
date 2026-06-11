@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct SizedListWrapper[capacity: Int, T: Writable & Copyable](
-    Sized, Writable where conforms_to(T, Writable) and capacity > 0
-):
+struct SizedListWrapper[
+    capacity: Int, T: Writable & Copyable & ImplicitlyDestructible
+](Sized, Writable where conforms_to(T, Writable) and capacity > 0):
     var data: List[Self.T]
 
     def __init__(out self, value: Self.T):

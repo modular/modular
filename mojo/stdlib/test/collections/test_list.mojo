@@ -17,6 +17,7 @@ from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
+    ExplicitDestroy,
     MoveCounter,
     MoveOnly,
     Observable,
@@ -1209,6 +1210,49 @@ def test_list_move_only() raises:
 
     l.clear()
     assert_equal(len(l), 0)
+
+
+def test_list_with_explicit_destroy_type() raises:
+    var list = [ExplicitDestroy(0), ExplicitDestroy(1)]
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    list^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, [0, 1])
+
+
+def test_empty_list_with_explicit_destroy_type() raises:
+    var list = List[ExplicitDestroy]()
+
+    var destroyed = 0
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed += 1
+        e^.destroy()
+
+    list^.destroy_with(destroy_closure)
+
+    assert_equal(destroyed, 0)
+
+
+def test_extend_list_with_explicit_destroy_type() raises:
+    var list1 = [ExplicitDestroy(0)]
+    var list2 = [ExplicitDestroy(1), ExplicitDestroy(2)]
+    list1.extend(list2^)
+
+    var destroyed = List[Int]()
+
+    def destroy_closure(var e: ExplicitDestroy) {mut}:
+        destroyed.append(e.value)
+        e^.destroy()
+
+    list1^.destroy_with(destroy_closure)
+    assert_equal(destroyed, [0, 1, 2])
 
 
 # ===-------------------------------------------------------------------===#
