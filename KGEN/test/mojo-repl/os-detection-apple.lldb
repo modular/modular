@@ -9,9 +9,8 @@
 
 # Note: in REPL mode, expressions are delimited by empty lines.
 
-from sys.info import CompilationTarget
+from std.sys.info import CompilationTarget
 # CHECK: True
 print(CompilationTarget.is_macos())
 # CHECK: False
 print(CompilationTarget.is_linux())
-
