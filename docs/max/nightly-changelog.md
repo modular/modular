@@ -402,6 +402,12 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- The GPU `scatter_nd` kernel now vectorizes its slice copy with 128-bit
+  accesses when the slice size, row strides, and base pointers are all
+  vector-aligned (scalar fallback otherwise). On B200 this brings the
+  measured row-scatter benchmark (4096 fp32 rows of 1024 columns into a
+  131072-row table) from 0.25 ms to 0.19 ms end to end, on par with PyTorch
+  `index_put_` for the same shape.
 - The GPU `scatter_nd` kernel (all `mo.scatter_nd*` variants) now parallelizes
   over total update elements instead of one thread per index row, removing the
   serial per-row slice copy. Slice-style scatters (for example row updates into

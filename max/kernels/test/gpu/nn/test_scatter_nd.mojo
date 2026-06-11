@@ -497,6 +497,151 @@ def test_reduce_add[
     _ = idx_dev
 
 
+def test_unaligned_slice(ctx: DeviceContext) raises:
+    """Slice width not divisible by the vector pack (15 fp32 cols), so the
+    launch must fall back to the scalar (simd_width=1) path. Verifies the
+    fallback produces the same result as the vectorized path covered by the
+    other tests."""
+    comptime rows = 64
+    comptime cols = 15
+    comptime n_idx = 8
+
+    var data_dev = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var out_dev = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var upd_dev = ctx.enqueue_create_buffer[dtype](n_idx * cols)
+    var idx_dev = ctx.enqueue_create_buffer[itype](n_idx)
+
+    var data_host = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var upd_host = ctx.enqueue_create_host_buffer[dtype](n_idx * cols)
+    var idx_host = ctx.enqueue_create_host_buffer[itype](n_idx)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var expected = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    ctx.synchronize()
+
+    for i in range(rows * cols):
+        data_host[i] = Float32(i % 1000)
+    for i in range(n_idx * cols):
+        upd_host[i] = Float32(10000 + i)
+    for i in range(n_idx):
+        idx_host[i] = Scalar[itype]((i * 7 + 3) % rows)
+
+    ctx.enqueue_copy(data_dev, data_host)
+    ctx.enqueue_copy(upd_dev, upd_host)
+    ctx.enqueue_copy(idx_dev, idx_host)
+    ctx.synchronize()
+
+    var data_tt = TileTensor(data_dev, row_major[rows, cols]())
+    var out_tt = TileTensor(out_dev, row_major[rows, cols]())
+    var upd_tt = TileTensor(upd_dev, row_major[n_idx, cols]())
+    var idx_tt = TileTensor(idx_dev, row_major[n_idx, 1]())
+
+    scatter_nd_generator[target="gpu"](data_tt, idx_tt, upd_tt, out_tt, ctx)
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.synchronize()
+
+    for i in range(rows * cols):
+        expected[i] = data_host[i]
+    for i in range(n_idx):
+        var r = Int(idx_host[i])
+        for c in range(cols):
+            expected[r * cols + c] = upd_host[i * cols + c]
+
+    for i in range(rows * cols):
+        assert_equal(out_host[i], expected[i])
+
+    _ = data_dev
+    _ = out_dev
+    _ = upd_dev
+    _ = idx_dev
+
+
+@always_inline
+def _add[
+    ty: DType, width: SIMDSize
+](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
+    return lhs + rhs
+
+
+@always_inline
+def _max[
+    ty: DType, width: SIMDSize
+](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
+    return max(lhs, rhs)
+
+
+@always_inline
+def _min[
+    ty: DType, width: SIMDSize
+](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
+    return min(lhs, rhs)
+
+
+def test_reduce_duplicate_indices[
+    reduce_op: def[dtype: DType, width: SIMDSize](
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) thin -> SIMD[dtype, width],
+](ctx: DeviceContext) raises:
+    """All index rows collide on one output row; the atomic path must apply
+    every duplicate update. Integer-valued floats keep the reduction exact
+    regardless of the (nondeterministic) atomic application order."""
+    comptime rows = 64
+    comptime cols = 16
+    comptime n_idx = 8
+    comptime target_row = 5
+
+    var data_dev = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var out_dev = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var upd_dev = ctx.enqueue_create_buffer[dtype](n_idx * cols)
+    var idx_dev = ctx.enqueue_create_buffer[itype](n_idx)
+
+    var data_host = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var upd_host = ctx.enqueue_create_host_buffer[dtype](n_idx * cols)
+    var idx_host = ctx.enqueue_create_host_buffer[itype](n_idx)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var expected = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    ctx.synchronize()
+
+    for i in range(rows * cols):
+        data_host[i] = Float32(i % 7)
+    for k in range(n_idx):
+        for c in range(cols):
+            upd_host[k * cols + c] = Float32(k + 1)
+    for i in range(n_idx):
+        idx_host[i] = Scalar[itype](target_row)
+
+    ctx.enqueue_copy(data_dev, data_host)
+    ctx.enqueue_copy(upd_dev, upd_host)
+    ctx.enqueue_copy(idx_dev, idx_host)
+    ctx.synchronize()
+
+    var data_tt = TileTensor(data_dev, row_major[rows, cols]())
+    var out_tt = TileTensor(out_dev, row_major[rows, cols]())
+    var upd_tt = TileTensor(upd_dev, row_major[n_idx, cols]())
+    var idx_tt = TileTensor(idx_dev, row_major[n_idx, 1]())
+
+    scatter_nd_generator[target="gpu", reduce_fn=reduce_op](
+        data_tt, idx_tt, upd_tt, out_tt, ctx
+    )
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.synchronize()
+
+    for i in range(rows * cols):
+        expected[i] = data_host[i]
+    for c in range(cols):
+        var acc = data_host[target_row * cols + c]
+        for k in range(n_idx):
+            acc = reduce_op[dtype, 1](acc, upd_host[k * cols + c])
+        expected[target_row * cols + c] = acc
+
+    for i in range(rows * cols):
+        assert_equal(out_host[i], expected[i])
+
+    _ = data_dev
+    _ = out_dev
+    _ = upd_dev
+    _ = idx_dev
+
+
 def main() raises:
     comptime UNDEFINED = ScatterOobIndexStrategy.UNDEFINED
     comptime SKIP = ScatterOobIndexStrategy.SKIP
@@ -513,3 +658,4 @@ def main() raises:
         test_skip_oob_multi_index(ctx)
         test_reduce_add[UNDEFINED](ctx)
         test_reduce_add[SKIP](ctx)
+        test_unaligned_slice(ctx)

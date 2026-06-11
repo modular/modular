@@ -961,17 +961,28 @@ def scatter_nd_generator[
                     updates_base + Int(updates.dynamic_stride(i)) * coords[i]
                 )
 
+            # The launch below only selects simd_width > 1 when slice_elems,
+            # the row strides, and the base pointers are all multiples of the
+            # vector width, so these accesses stay aligned.
+            comptime access_alignment = align_of[
+                SIMD[output_type, simd_width], target=get_gpu_target()
+            ]()
+            var update_vec = updates_flat.load[
+                width=simd_width, alignment=access_alignment
+            ](Coord(updates_base + elem))
+
             comptime if reduce_fn:
                 comptime reduction_fn = reduce_fn.value()
-
-                output_flat[output_base + elem] = reduction_fn[output_type, 1](
-                    output_flat.load[width=1](Coord(output_base + elem)),
-                    updates_flat.load[width=1](Coord(updates_base + elem)),
+                update_vec = reduction_fn[output_type, simd_width](
+                    output_flat.load[
+                        width=simd_width, alignment=access_alignment
+                    ](Coord(output_base + elem)),
+                    update_vec,
                 )
-            else:
-                output_flat[output_base + elem] = updates_flat[
-                    updates_base + elem
-                ]
+
+            output_flat.store[alignment=access_alignment](
+                Coord(output_base + elem), update_vec
+            )
 
         comptime trace_description_str = get_static_string[
             "elementwise_impl_" + _trace_description
@@ -991,11 +1002,45 @@ def scatter_nd_generator[
                 iter_shape[i] = Int(indices.dim[i]())
             iter_shape[indices.rank - 1] = slice_elems
 
-            elementwise[
-                simd_width=1,
-                target=target,
-                _trace_description=trace_description_str,
-            ](update_element_func, Coord(iter_shape), context)
+            # Vectorize across the slice when every access is provably
+            # aligned: each thread touches `base + elem` where elem is a
+            # multiple of the vector width (elementwise packs the last
+            # iteration dim), so the bases must also be multiples of the
+            # width — slice_elems, every stride feeding a base offset, and
+            # the raw pointers all have to be pack-divisible.
+            comptime pack = simd_width_of[
+                output_type, target=get_gpu_target()
+            ]()
+            comptime vector_alignment = align_of[
+                SIMD[output_type, pack], target=get_gpu_target()
+            ]()
+
+            var vector_safe = (
+                slice_elems % pack == 0
+                and Int(output.ptr) % vector_alignment == 0
+                and Int(updates.ptr) % vector_alignment == 0
+            )
+            for dim in range(last_shape_of_indices):
+                vector_safe = vector_safe and (
+                    Int(output.dynamic_stride(dim)) % pack == 0
+                )
+            for i in range(indices.rank - 1):
+                vector_safe = vector_safe and (
+                    Int(updates.dynamic_stride(i)) % pack == 0
+                )
+
+            if vector_safe:
+                elementwise[
+                    simd_width=pack,
+                    target=target,
+                    _trace_description=trace_description_str,
+                ](update_element_func, Coord(iter_shape), context)
+            else:
+                elementwise[
+                    simd_width=1,
+                    target=target,
+                    _trace_description=trace_description_str,
+                ](update_element_func, Coord(iter_shape), context)
         else:
             # Iterate over indices.shape[:-1], i.e. one update vector per
             # index row.
