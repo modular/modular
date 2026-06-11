@@ -1690,13 +1690,25 @@ def block_scaled_matmul[
 
     comptime assert transpose_b, "Only support transposed B"
 
-    comptime assert (
-        scales_dtype == NVFP4_SF_DTYPE
-    ), "Only support NVFP4_SF_DTYPE (float8_e4m3fn) for scales for now."
+    # NVFP4 (float8_e4m3fn scales, 16-vector) and MXFP8 (float8_e8m0fnu scales,
+    # 32-vector) are both lowered to the SM100 block-scaled MMA below. The
+    # vendor/epilogue fallback path is still NVFP4-only, so MXFP8 is routed to
+    # the Mojo `heuristic_and_outliers_dispatch` kernel (see below).
+    comptime is_mxfp8_scaling = (
+        scales_dtype == MXFP8_SF_DTYPE
+        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+    )
+    comptime assert scales_dtype == NVFP4_SF_DTYPE or is_mxfp8_scaling, (
+        "Only NVFP4 (float8_e4m3fn scales, SF_VECTOR_SIZE=16) or MXFP8"
+        " (float8_e8m0fnu scales, SF_VECTOR_SIZE=32) are supported."
+    )
 
     comptime assert (
-        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
+        SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE or is_mxfp8_scaling
+    ), (
+        "SF_VECTOR_SIZE must be NVFP4_SF_VECTOR_SIZE (16) for NVFP4 or"
+        " MXFP8_SF_VECTOR_SIZE (32) for MXFP8"
+    )
 
     var c = c_device.as_unsafe_any_origin()
     var a = a_device.as_unsafe_any_origin()
@@ -1871,7 +1883,9 @@ def block_scaled_matmul[
             static_K == 7168 and static_N in (18432, 36864)
         )
         comptime mojo_m_cap = 256 if is_widened_shape else 128
-        if m <= mojo_m_cap:
+        # MXFP8 always uses the Mojo block-scaled kernel: the vendor/epilogue
+        # fallback below is NVFP4-only.
+        if m <= mojo_m_cap or is_mxfp8_scaling:
             var status = heuristic_and_outliers_dispatch[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
@@ -1890,20 +1904,30 @@ def block_scaled_matmul[
             if status == DISPATCH_HIT:
                 return
 
-        # vendor matmul only supports epilogue lambda, so we wrap it around an epilogue lambda instead.
-        block_scaled_matmul_with_epilogue[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            tensor_sf,
-            ctx,
-        )
+        # The vendor/epilogue fallback is NVFP4-only, so it must not even be
+        # instantiated for MXFP8 (its `comptime assert` would fail to compile).
+        # Gate it with `comptime if`; for MXFP8 the heuristic dispatch above is
+        # the only path, so a miss is a hard error rather than a fallback.
+        comptime if is_mxfp8_scaling:
+            raise Error(
+                "MXFP8 block-scaled matmul: heuristic dispatch found no config"
+                " for this shape (the vendor fallback is NVFP4-only)."
+            )
+        else:
+            # vendor matmul only supports epilogue lambda, so we wrap it around an epilogue lambda instead.
+            block_scaled_matmul_with_epilogue[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                tensor_sf,
+                ctx,
+            )
 
 
 @always_inline

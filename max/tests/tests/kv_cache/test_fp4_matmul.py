@@ -25,9 +25,9 @@ from max.nn.kernels import (
 )
 from max.nn.kernels import (
     block_scales_interleave,
-    dynamic_block_scaled_matmul_fp4,
+    dynamic_block_scaled_matmul,
     grouped_matmul_block_scaled,
-    quantize_dynamic_block_scaled_fp4,
+    quantize_dynamic_block_scaled,
 )
 from max.nn.kv_cache import (
     KVCacheParams,
@@ -59,7 +59,7 @@ class FusedQKVRaggedMatmulScaledFloat4:
         weight_scale: TensorValue,
         weight_scale_2: TensorValue,
     ) -> TensorValue:
-        x, x_scales = quantize_dynamic_block_scaled_fp4(
+        x, x_scales = quantize_dynamic_block_scaled(
             input,
             tensor_sf=1.0 / input_scale,
             scales_type=DType.float8_e4m3fn,
@@ -177,7 +177,7 @@ def test_dynamic_block_scaled_1d1d_matmul_fp4() -> None:
     """Tests dynamic_block_scaled_1d1d_matmul_fp4 with valid inputs."""
     device = DeviceRef.CPU()
     with Graph(
-        "dynamic_block_scaled_matmul_fp4",
+        "dynamic_block_scaled_matmul",
         input_types=[
             # a
             TensorType(DType.uint8, shape=(127, 129), device=device),
@@ -195,7 +195,7 @@ def test_dynamic_block_scaled_1d1d_matmul_fp4() -> None:
     ) as graph:
         a, b, a_scales, b_scales = (inp.tensor for inp in graph.inputs)
 
-        output = dynamic_block_scaled_matmul_fp4(
+        output = dynamic_block_scaled_matmul(
             a,
             b,
             a_scales,
@@ -219,19 +219,19 @@ def test_quantize_dynamic_block_scaled_fp4(
     scales_type: DType,
     expected_scales_shape: list[int],
 ) -> None:
-    """Tests quantize_dynamic_block_scaled_fp4 with valid inputs."""
+    """Tests quantize_dynamic_block_scaled with valid FP4 inputs."""
     from max.nn.kernels import _is_sm10x_gpu
 
     device = DeviceRef.CPU()
     with Graph(
-        "quantize_dynamic_block_scaled_fp4",
+        "quantize_dynamic_block_scaled",
         input_types=[
             TensorType(DType.bfloat16, shape=(129, 192), device=device),
         ],
     ) as graph:
         (input,) = (inp.tensor for inp in graph.inputs)
 
-        quantized_output, scales = quantize_dynamic_block_scaled_fp4(
+        quantized_output, scales = quantize_dynamic_block_scaled(
             input,
             1.0,
             sf_vector_size=sf_vector_size,
@@ -247,7 +247,7 @@ def test_quantize_dynamic_block_scaled_fp4(
 
 
 def test_quantize_mxfp4() -> None:
-    """Tests quantize_dynamic_block_scaled_fp4 with MXFP4 params."""
+    """Tests quantize_dynamic_block_scaled with MXFP4 params."""
     from max.nn.kernels import _is_sm10x_gpu
 
     device = DeviceRef.CPU()
@@ -259,7 +259,7 @@ def test_quantize_mxfp4() -> None:
     ) as graph:
         (input,) = (inp.tensor for inp in graph.inputs)
 
-        quantized_output, scales = quantize_dynamic_block_scaled_fp4(
+        quantized_output, scales = quantize_dynamic_block_scaled(
             input,
             1.0,
             sf_vector_size=32,
