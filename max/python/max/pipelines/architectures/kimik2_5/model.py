@@ -159,8 +159,6 @@ class KimiK2_5Model(
 
     model_config_cls: ClassVar[type[Any]] = KimiK2_5Config
 
-    _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
-
     """Conservative coefficient for vision encoder peak transient memory.
 
     Per-patch peak transient working memory in the encoder, in units of

@@ -2858,18 +2858,20 @@ struct Struct_cross_attention_ragged_paged:
     @always_inline
     @staticmethod
     def execute[
-        dtype: DType,
+        out_dtype: DType,
+        q_dtype: DType,
+        cache_dtype: DType,
         //,
         mask_str: StaticString,
         target: StaticString,
         local_window_size: Int = -1,
     ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        q: InputTensor[dtype=dtype, rank=3, ...],
+        output: OutputTensor[dtype=out_dtype, rank=3, ...],
+        q: InputTensor[dtype=q_dtype, rank=3, ...],
         q_input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         q_max_seq_len: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
@@ -2887,6 +2889,7 @@ struct Struct_cross_attention_ragged_paged:
             mask_str=mask_str,
             local_window_size=local_window_size,
             target=target,
+            output_dtype=out_dtype,
         ](
             q.to_layout_tensor(),
             q_input_row_offsets.to_layout_tensor(),

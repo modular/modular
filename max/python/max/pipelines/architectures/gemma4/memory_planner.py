@@ -50,9 +50,14 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
         # FIXME: We arbitrarily set some memory for activation memory to leave
         # headroom for vision processing. We should determine this in a more
         # principled way.
-        # Update: Bumped to 15 GiB after #80736 removed MemoryManager
-        # fallthrough.
-        base = 15 * 1024 * 1024 * 1024  # 15 GiB
+        # Smaller KV cache dtypes (e.g. FP8) halve bytes_per_block, so the
+        # same KV budget buys ~2x more blocks.  The scheduler admits work
+        # based on available blocks, so it targets larger concurrent batches
+        # whose activation tensors need proportionally more headroom.
+        # TODO(MODELS-1544): investigate high activation memory estimates
+        base = (
+            30 // pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
+        ) * 1024**3
         if pipeline_config.runtime.device_graph_capture:
             base += _GRAPH_CAPTURE_HEADROOM_BYTES
         return base

@@ -154,6 +154,7 @@ class Gemma4AssistantAttention(Module, Shardable):
             rope_positions,
             freqs_cis,
             interleaved=self.rope.interleaved,
+            output_dtype=self.kv_params.dtype,
         )
 
         # Cross-attention against target's KV cache.
@@ -173,6 +174,7 @@ class Gemma4AssistantAttention(Module, Shardable):
             q_max_seq_len=q_max_seq_len,
             scale=self.scale,
             local_window_size=self.local_window_size if self.is_sliding else -1,
+            output_dtype=DType.bfloat16,
         )
 
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])

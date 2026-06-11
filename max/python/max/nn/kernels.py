@@ -1451,6 +1451,7 @@ def rope_ragged(
     freqs_cis: TensorValue,
     *,
     interleaved: bool = True,
+    output_dtype: DType | None = None,
 ) -> TensorValue:
     """Applies RoPE to ragged input using the standard rope kernel."""
     _check_dtype(
@@ -1487,7 +1488,9 @@ def rope_ragged(
         ],
         out_types=[
             TensorType(
-                dtype=input.dtype, shape=input.shape, device=input.device
+                dtype=output_dtype if output_dtype is not None else input.dtype,
+                shape=input.shape,
+                device=input.device,
             )
         ],
         parameters=parameters,
@@ -2121,12 +2124,7 @@ def flash_attention_ragged(
             f"expected input of rank {input_rank_expected} but got {input.rank}"
         )
 
-    is_native_fp8 = (
-        input.dtype.is_float8()
-        and kv_params.dtype.is_float8()
-        and not kv_params.quantized_kv_cache
-    )
-    if input.dtype != kv_params.dtype and not is_native_fp8:
+    if input.dtype != kv_params.dtype:
         raise ValueError(
             f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
         )
@@ -3308,6 +3306,7 @@ def cross_attention_ragged(
     q_max_seq_len: TensorValue,
     scale: float,
     local_window_size: int = -1,
+    output_dtype: DType | None = None,
 ) -> TensorValue:
     """Computes cross attention provided the `!mo.opaque` KV Cache.
 
@@ -3368,7 +3367,9 @@ def cross_attention_ragged(
         ],
         out_types=[
             TensorType(
-                dtype=input.dtype, shape=input.shape, device=input.device
+                dtype=output_dtype if output_dtype is not None else input.dtype,
+                shape=input.shape,
+                device=input.device,
             )
         ],
         parameters=parameters,

@@ -65,8 +65,6 @@ from .weight_adapters import (
 
 logger = logging.getLogger("max.pipelines")
 
-_GRAPH_CAPTURE_HEADROOM_BYTES = 2 * 1024**3  # 2 GiB
-
 
 @dataclass
 class Gemma3MultiModalModelInputs(ModelInputs):
