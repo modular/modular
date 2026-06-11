@@ -182,7 +182,14 @@ class WanExecutor(
         # Extract model config.
         transformer_config = manifest["transformer"]
         encoding = transformer_config.quantization_encoding or "bfloat16"
-        self._model_dtype: DType = supported_encoding_dtype(encoding)
+        # Under FP8 only the DiT linear weights are quantized; latents, the
+        # CFG-combine / scheduler helper graphs, guidance scales, and the
+        # TaylorSeer cache all operate in the bfloat16 working dtype.
+        self._model_dtype: DType = (
+            DType.bfloat16
+            if encoding == "float8_e4m3fn"
+            else supported_encoding_dtype(encoding)
+        )
         self._model_device: Device = load_devices(
             transformer_config.device_specs
         )[0]

@@ -1405,7 +1405,7 @@ struct DistributedEPCombine:
         n_gpus_per_node: Int,
         n_nodes: Int,
         fused_shared_expert: Bool,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         //,
         target: StaticString,
         _trace_name: StaticString,
@@ -1480,7 +1480,7 @@ struct DistributedEPCombine:
                 router_weights_wrapper=router_weights_fn,
                 epilogue_fn=Optional[elementwise_epilogue_type](
                     output_fn
-                ) if lambdas_have_fusion else None,
+                ) if has_epilogue_fusion else None,
                 fused_shared_expert=fused_shared_expert,
             ](
                 output_tokens[index].to_tile_tensor[DType.int64](),
@@ -1556,7 +1556,7 @@ struct Struct_ep_combine_wait:
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         n_nodes: Int,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         target: StaticString,
     ](
         output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
@@ -1609,7 +1609,7 @@ struct Struct_ep_combine_wait:
             router_weights_wrapper=router_weights_fn,
             epilogue_fn=Optional[elementwise_epilogue_type](
                 output_fn
-            ) if lambdas_have_fusion else None,
+            ) if has_epilogue_fusion else None,
         ](
             output_tokens_tensor,
             atomic_counters.to_tile_tensor[DType.int64](),
@@ -1635,7 +1635,7 @@ struct Struct_ep_combine:
         n_gpus_per_node: Int,
         n_nodes: Int,
         fused_shared_expert: Bool,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         skip_a2a: Bool,
         //,
         target: StaticString,
@@ -1688,7 +1688,7 @@ struct Struct_ep_combine:
             router_weights_wrapper=router_weights_fn,
             epilogue_fn=Optional[elementwise_epilogue_type](
                 output_fn
-            ) if lambdas_have_fusion else None,
+            ) if has_epilogue_fusion else None,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
         ](
@@ -1718,7 +1718,7 @@ struct Struct_ep_combine_skip_a2a:
         n_gpus_per_node: Int,
         n_nodes: Int,
         fused_shared_expert: Bool,
-        lambdas_have_fusion: Bool,
+        has_epilogue_fusion: Bool,
         skip_a2a: Bool,
         allreduce_world_size: Int,
         //,
@@ -1773,7 +1773,7 @@ struct Struct_ep_combine_skip_a2a:
             router_weights_wrapper=router_weights_fn,
             epilogue_fn=Optional[elementwise_epilogue_type](
                 output_fn
-            ) if lambdas_have_fusion else None,
+            ) if has_epilogue_fusion else None,
             fused_shared_expert=fused_shared_expert,
             skip_a2a=skip_a2a,
             allreduce_world_size=allreduce_world_size,

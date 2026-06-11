@@ -36,7 +36,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_rms_norm_ops() -> PythonObject:
+def PyInit_rms_norm_ops() abi("C") -> PythonObject:
     """Create a Python module with rms_norm kernel function bindings."""
     try:
         var b = PythonModuleBuilder("rms_norm_ops")

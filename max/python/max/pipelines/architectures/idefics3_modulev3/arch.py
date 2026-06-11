@@ -13,6 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
@@ -38,4 +39,5 @@ idefics3_modulev3_arch = SupportedArchitecture(
         "enable_prefix_caching": False,
     },
     config=Idefics3Config,
+    memory_planner=PagedMemoryPlanner,
 )

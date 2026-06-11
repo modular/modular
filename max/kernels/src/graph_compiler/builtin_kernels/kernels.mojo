@@ -64,7 +64,6 @@ from nn.irfft import irfft
 from nn.kv_cache import (
     generic_fused_qkv_matmul_kv_cache_bshd_paged,
     generic_get_paged_cache,
-    generic_get_paged_cache_with_scales,
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
 )
@@ -200,7 +199,7 @@ def _unsafe_str_to_coord[
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
 @export
-def export():
+def export() abi("Mojo"):
     comptime _simd_load_from_managed_tensor_slice = simd_load_from_managed_tensor_slice
     comptime _simd_store_into_managed_tensor_slice = simd_store_into_managed_tensor_slice
 
@@ -1069,16 +1068,18 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
     @always_inline
     @staticmethod
     def execute[
-        dtype: DType,
+        out_dtype: DType,
+        qkv_dtype: DType,
         freq_dtype: DType,
+        cache_dtype: DType,
         //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        qkv: InputTensor[dtype=dtype, rank=2, ...],
+        output: OutputTensor[dtype=out_dtype, rank=2, ...],
+        qkv: InputTensor[dtype=qkv_dtype, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
@@ -1092,6 +1093,7 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
             max_lengths,
         )
         return rope_split_store_paged_ragged[
+            q_out_dtype=out_dtype,
             target=target,
             interleaved=Self.interleaved,
         ](
@@ -1166,100 +1168,6 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
                 output.to_tile_tensor[DType.int64](),
                 ctx,
             )
-
-
-@compiler.register("mo.rope_split_store.ragged.paged.fp8_quantized")
-struct Struct_rope_split_store_ragged_paged_fp8_quantized[interleaved: Bool]:
-    """Fused RoPE+split+store for FP8 KV cache with blockwise float32 scales.
-
-    The input QKV tensor is bfloat16; K and V are quantized to float8_e4m3fn
-    and written to the paged cache together with per-block float32 scales.
-    The roped Q output is bfloat16, matching the flash_attention input dtype.
-
-    Parameter:
-        interleaved: Whether freqs_cis uses interleaved (re, im) format.
-        quantization_granularity: Number of head_dim elements per scale block.
-    """
-
-    @always_inline
-    @staticmethod
-    def execute[
-        freq_dtype: DType,
-        cache_dtype: DType,
-        scale_dtype: DType,
-        //,
-        quantization_granularity: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
-        qkv: InputTensor[dtype=DType.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
-        kv_scales: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
-        layer_idx: UInt32,
-        ctx: DeviceContext,
-    ) raises:
-        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
-        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
-        comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
-        comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
-        comptime kv_params = KVCacheStaticParams(num_heads, head_dim, is_mla)
-
-        var kv_collection = generic_get_paged_cache_with_scales[
-            cache_dtype,
-            scale_dtype,
-            kv_params,
-            page_size,
-            quantization_granularity,
-        ](
-            LayoutTensor[cache_dtype, Layout.row_major[6](), MutAnyOrigin](
-                kv_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    kv_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-                cache_lengths.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                    cache_lengths.to_layout_tensor().runtime_layout.shape.value,
-                    cache_lengths.to_layout_tensor().runtime_layout.stride.value,
-                ),
-            ),
-            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-                kv_lookup_table.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()].row_major(
-                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-                max_lengths.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()].row_major(
-                    max_lengths.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](
-                kv_scales.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    kv_scales.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-        )
-        return rope_split_store_paged_ragged[
-            target=target,
-            interleaved=Self.interleaved,
-        ](
-            qkv.to_tile_tensor[DType.int64](),
-            input_row_offsets.to_tile_tensor[DType.int64](),
-            freqs_cis.to_tile_tensor[DType.int64](),
-            kv_collection,
-            layer_idx,
-            output.to_tile_tensor[DType.int64](),
-            ctx,
-        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1478,17 +1386,19 @@ def _unmarshal_mha_decode_dispatch_metadata(
 
 @always_inline
 def _execute_mha_ragged_paged_scalar_args[
-    dtype: DType,
+    q_dtype: DType,
     //,
     target: StaticString,
     mask_str: StaticString,
     sink: Bool = False,
     local_window_size: Int = -1,
+    output_dtype: DType = q_dtype,
+    cache_dtype: DType = q_dtype,
 ](
-    output: OutputTensor[dtype=dtype, rank=3, ...],
-    q: InputTensor[dtype=dtype, rank=3, ...],
+    output: OutputTensor[dtype=output_dtype, rank=3, ...],
+    q: InputTensor[dtype=q_dtype, rank=3, ...],
     input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-    kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
     cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
     kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
     max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
@@ -1497,7 +1407,7 @@ def _execute_mha_ragged_paged_scalar_args[
     mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
     context: DeviceContext,
     sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+        LayoutTensor[q_dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises:
     var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
@@ -1518,6 +1428,7 @@ def _execute_mha_ragged_paged_scalar_args[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
+            output_dtype=output_dtype,
         ](
             q.to_layout_tensor(),
             input_row_offsets_lt,
@@ -1534,6 +1445,7 @@ def _execute_mha_ragged_paged_scalar_args[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
+            output_dtype=output_dtype,
         ](
             q.to_layout_tensor(),
             input_row_offsets_lt,

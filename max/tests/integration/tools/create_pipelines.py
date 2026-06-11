@@ -1043,6 +1043,7 @@ class GenericOracle(PipelineOracle):
         config = pipelines.PipelineConfig.model_validate(
             {
                 "defer_resolve": True,
+                "task": self.task,
                 "device_specs": device_specs if device_specs else None,
                 "quantization_encoding": encoding,
                 "model_path": self.model_path,

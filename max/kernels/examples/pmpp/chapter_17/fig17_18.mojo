@@ -45,7 +45,7 @@ struct Element(Comparable, ImplicitlyCopyable):
 
 def spmv_csc_kernel(
     cscMatrix: CSCMatrix,
-    x: UnsafePointer[Float32, MutAnyOrigin],
+    x: UnsafePointer[Float32, ImmutAnyOrigin],
     y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var col = block_idx.x * block_dim.x + thread_idx.x
@@ -150,9 +150,9 @@ def main() raises:
         rows,
         cols,
         numNonzeros,
-        d_colPtrs_buf.unsafe_ptr(),
-        d_rowIdxs_buf.unsafe_ptr(),
-        d_values_buf.unsafe_ptr(),
+        d_colPtrs_buf.unsafe_ptr().as_any_origin(),
+        d_rowIdxs_buf.unsafe_ptr().as_any_origin(),
+        d_values_buf.unsafe_ptr().as_any_origin(),
     )
 
     var blockSize = 256

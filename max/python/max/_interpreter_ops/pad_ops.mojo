@@ -54,7 +54,7 @@ comptime MAX_PAD_SIZE = 2 * MAX_RANK
 
 
 @export
-def PyInit_pad_ops() -> PythonObject:
+def PyInit_pad_ops() abi("C") -> PythonObject:
     """Create a Python module with pad kernel function bindings."""
     try:
         var b = PythonModuleBuilder("pad_ops")

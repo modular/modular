@@ -23,7 +23,7 @@ from typing import Any, Generic
 import zmq
 from max.pipelines.context import (
     BaseContextType,
-    TextGenerationContext,
+    TextContext,
 )
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
@@ -252,7 +252,7 @@ class ZmqModelWorkerInterface(
     def __init__(
         self,
         pipeline_task: PipelineTask,
-        context_type: type[TextGenerationContext] | type[EmbeddingsContext],
+        context_type: type[TextContext] | type[EmbeddingsContext],
     ) -> None:
         response_type = _response_type_for_task(pipeline_task)
 

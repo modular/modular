@@ -54,7 +54,7 @@ from op_utils import (
 
 
 @export
-def PyInit_data_movement_ops() -> PythonObject:
+def PyInit_data_movement_ops() abi("C") -> PythonObject:
     """Create a Python module with data movement kernel function bindings."""
     try:
         var b = PythonModuleBuilder("data_movement_ops")

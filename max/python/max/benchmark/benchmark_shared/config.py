@@ -755,6 +755,18 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Control Flags"},
     )
 
+    server_pids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Explicit PIDs to monitor for CPU stats, including their children."
+            " Bypasses automatic port-based PID detection. Useful when the"
+            " server runs inside a container."
+            " Example: --server-pids $(docker inspect -f '{{.State.Pid}}'"
+            " <container_name>)"
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
     collect_server_stats: bool = Field(
         default=True,
         description="Enable server stats collection for serving benchmarks.",

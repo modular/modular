@@ -26,13 +26,17 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.driver import CPU, Buffer, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
+)
+from max.nn.kv_cache.cache_params import (
+    KVCacheMemory,
+    ReplicatedKVCacheMemory,
 )
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 
@@ -63,6 +67,17 @@ def _read_page(buf: Buffer, page: int) -> np.ndarray:
 
 def _zero_page(buf: Buffer, page: int) -> None:
     _write_page(buf, page, np.zeros(_page_nbytes(buf), dtype=np.uint8))
+
+
+def _u8_device_buffer(
+    num_pages: int, bytes_per_page: int, device: Accelerator
+) -> Buffer:
+    """Allocate a 2-D ``[num_pages, bytes_per_page]`` uint8 device buffer."""
+    return Buffer(
+        shape=[num_pages, bytes_per_page],
+        dtype=DType.uint8,
+        device=device,
+    )
 
 
 def _make_mla_fp8_params(num_devices: int) -> KVCacheParams:
@@ -157,3 +172,81 @@ def test_mla_replicated_fp8_offload_roundtrip() -> None:
             scale_bytes,
             err_msg=f"scales rank {i}: reloaded scale bytes differ from original",
         )
+
+
+def test_mixed_replicated_and_sharded_offload_roundtrip() -> None:
+    """A single engine offloads one replicated and one non-replicated unit.
+
+    Mirrors a mixed-sharding deployment (e.g. MLA target + MHA draft): one
+    ``ReplicatedKVCacheMemory`` (rank-0 + a peer, broadcast back on load)
+    alongside one plain ``KVCacheMemory`` (a single shard). The two units use
+    different ``bytes_per_page`` to confirm the host buffer concatenates them
+    correctly. Offload -> clobber -> reload must preserve bytes for both.
+    """
+    if accelerator_count() < 2:
+        pytest.skip("Need at least 2 GPUs for the replicated path")
+
+    rng = np.random.default_rng(0)
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+
+    num_pages = 8
+    replicated_bytes_per_page = 256
+    sharded_bytes_per_page = 128
+
+    # Replicated unit: rank-0 on gpu0, one peer on gpu1.
+    rep_root = _u8_device_buffer(num_pages, replicated_bytes_per_page, gpu0)
+    rep_peer = _u8_device_buffer(num_pages, replicated_bytes_per_page, gpu1)
+    # Non-replicated (sharded) unit: a single shard on gpu0.
+    sharded = _u8_device_buffer(num_pages, sharded_bytes_per_page, gpu0)
+
+    kv_memory: list[KVCacheMemory] = [
+        ReplicatedKVCacheMemory(buffer=rep_root, peers=[rep_peer]),
+        KVCacheMemory(buffer=sharded),
+    ]
+
+    src_page, dst_page = 2, 5
+
+    # Replicated invariant: rank-0 and peer hold identical bytes.
+    rep_bytes = rng.integers(
+        0, 256, size=replicated_bytes_per_page, dtype=np.uint8
+    )
+    sharded_bytes = rng.integers(
+        0, 256, size=sharded_bytes_per_page, dtype=np.uint8
+    )
+    _write_page(rep_root, src_page, rep_bytes)
+    _write_page(rep_peer, src_page, rep_bytes)
+    _write_page(sharded, src_page, sharded_bytes)
+
+    connector = LocalConnector(kv_memory=kv_memory, total_num_host_blocks=4)
+
+    block_hash = 0xBEEF
+    connector.offload([src_page], [block_hash])
+    connector.sync()
+
+    # Clobber the destination page on every buffer.
+    _zero_page(rep_root, dst_page)
+    _zero_page(rep_peer, dst_page)
+    _zero_page(sharded, dst_page)
+
+    loaded = connector.load([dst_page], [block_hash])
+    connector.sync()
+    assert loaded == 1, "expected the offloaded block to be a host-cache hit"
+
+    # Replicated unit: rank-0 and the broadcast peer must match the original.
+    np.testing.assert_array_equal(
+        _read_page(rep_root, dst_page),
+        rep_bytes,
+        err_msg="replicated rank-0: reloaded bytes differ from original",
+    )
+    np.testing.assert_array_equal(
+        _read_page(rep_peer, dst_page),
+        rep_bytes,
+        err_msg="replicated peer: broadcast bytes differ from original",
+    )
+    # Non-replicated unit must match its own original bytes.
+    np.testing.assert_array_equal(
+        _read_page(sharded, dst_page),
+        sharded_bytes,
+        err_msg="sharded unit: reloaded bytes differ from original",
+    )

@@ -36,7 +36,7 @@ from op_utils import (
 
 
 @export
-def PyInit_gather_scatter_ops() -> PythonObject:
+def PyInit_gather_scatter_ops() abi("C") -> PythonObject:
     """Create a Python module with gather/scatter kernel function bindings."""
     try:
         var b = PythonModuleBuilder("gather_scatter_ops")

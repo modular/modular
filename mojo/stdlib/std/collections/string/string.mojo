@@ -768,6 +768,32 @@ struct String(
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
+    @doc_hidden
+    @unavailable(
+        "String does not support direct positional indexing like `s[i]`"
+        " because Mojo strings are UTF-8 encoded, and the same position can"
+        " mean three different things. Use one of: `s[byte=i]` for a raw"
+        " UTF-8 byte, `s[codepoint=i]` for a Unicode code point, or"
+        " `s[grapheme=i]` for a user-visible character (grapheme cluster)."
+    )
+    def __getitem__(
+        self, _index: Some[Indexer], /
+    ) -> StringSlice[origin_of(self)]:
+        ...
+
+    @doc_hidden
+    @unavailable(
+        "String does not support direct positional slicing like `s[a:b]`"
+        " because Mojo strings are UTF-8 encoded, and the same range can"
+        " mean different things. Use `s[byte=a:b]` to slice by raw UTF-8"
+        " byte positions, or `s[codepoint=a:b]` to slice by Unicode code"
+        " points."
+    )
+    def __getitem__(
+        self, _slice: ContiguousSlice, /
+    ) -> StringSlice[origin_of(self)]:
+        ...
+
     @always_inline
     def __getitem__[
         I: Indexer, //

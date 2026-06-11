@@ -3111,7 +3111,7 @@ def conv_nhwc_direct[
     output_type: DType,
     filter_packed: Bool,
     conv_info_static: ConvInfoStatic[conv_info_rank],
-    lambdas_have_fusion: Bool,
+    has_epilogue_fusion: Bool,
     elementwise_lambda: elementwise_simd_epilogue_type,
 ](
     input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
@@ -3237,7 +3237,7 @@ def conv_nhwc_direct[
             conv_info_static,
             Optional[elementwise_epilogue_type](
                 elementwise_epilogue
-            ) if lambdas_have_fusion else None,
+            ) if has_epilogue_fusion else None,
         ].run(
             output_lt,
             input_lt,

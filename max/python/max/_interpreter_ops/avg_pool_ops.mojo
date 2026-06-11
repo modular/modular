@@ -40,7 +40,7 @@ from op_utils import (
 
 
 @export
-def PyInit_avg_pool_ops() -> PythonObject:
+def PyInit_avg_pool_ops() abi("C") -> PythonObject:
     """Create a Python module with avg_pool2d kernel function bindings."""
     try:
         var b = PythonModuleBuilder("avg_pool_ops")

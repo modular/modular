@@ -133,6 +133,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
     "google/gemma-4-26B-A4B-it__localkv": MULTI,
     "google/gemma-4-26B-A4B-it__tieredkv": MULTI,
+    "google/gemma-4-31B-it__fp8kv": MULTI | {"MI355"},
     "google/gemma-4-31B-it__localkv": MULTI,
     "google/gemma-4-31B-it__mtp": MULTI | {"vllm", "sglang"},
     "google/gemma-4-31B-it__tieredkv": MULTI,

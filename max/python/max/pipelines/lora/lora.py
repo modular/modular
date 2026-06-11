@@ -21,6 +21,7 @@ import os
 import re
 from collections import OrderedDict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,37 @@ from .lora_types import LoRAStatus, LoRAType
 _logger = logging.getLogger("max.serve")
 
 ADAPTER_CONFIG_FILE = "adapter_config.json"
+
+
+@dataclass
+class LoRAInputs:
+    """Per-batch LoRA buffers passed to a model graph.
+
+    Fields are ordered to match the graph's LoRA input signature. Use
+    :meth:`buffers` to splice them into a model ABI call.
+    """
+
+    ids: Buffer
+    ranks: Buffer
+    grouped_offsets: Buffer
+    num_active: Buffer
+    end_idx: Buffer
+    batch_seq_len: Buffer
+    ids_kv: Buffer
+    grouped_offsets_kv: Buffer
+
+    def buffers(self) -> tuple[Buffer, ...]:
+        """Returns the buffers in graph-input order."""
+        return (
+            self.ids,
+            self.ranks,
+            self.grouped_offsets,
+            self.num_active,
+            self.end_idx,
+            self.batch_seq_len,
+            self.ids_kv,
+            self.grouped_offsets_kv,
+        )
 
 
 class _LoRALRUCache:

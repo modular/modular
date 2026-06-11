@@ -34,7 +34,7 @@ from op_utils import (
 
 
 @export
-def PyInit_pooling_ops() -> PythonObject:
+def PyInit_pooling_ops() abi("C") -> PythonObject:
     """Create a Python module with pooling kernel function bindings."""
     try:
         var b = PythonModuleBuilder("pooling_ops")

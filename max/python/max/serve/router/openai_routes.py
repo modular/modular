@@ -92,6 +92,7 @@ from max.serve.schemas.openai import (
     ChatCompletionTokenLogprob,
     CompletionLogprobs,
     CompletionResponseChoice,
+    CompletionTokensDetails,
     CompletionUsage,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
@@ -105,6 +106,7 @@ from max.serve.schemas.openai import (
     ErrorResponse,
     ListModelsResponse,
     LoadLoraRequest,
+    MaxModel,
     Model,
     PromptTokensDetails,
     TopLogprob,
@@ -468,7 +470,12 @@ class OpenAIChatResponseGenerator(
                 )
                 n_reasoning_tokens += chunk.reasoning_token_count or 0
                 n_tokens += chunk.token_count
-                payload = response.model_dump_json()
+                # Omit unset (None) fields so each delta carries only what
+                # changed, matching the OpenAI streaming spec. Without this a
+                # delta serializes tool_calls/function_call/refusal as null on
+                # every chunk, so a client reading the first tool_calls-bearing
+                # delta sees null instead of the real tool-call fragment.
+                payload = response.model_dump_json(exclude_none=True)
                 yield payload
 
             # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
@@ -489,7 +496,6 @@ class OpenAIChatResponseGenerator(
             # If `include_usage=True`, send a final chunk with usage statistics
             if self.stream_options and self.stream_options.get("include_usage"):
                 final_usage = CompletionUsage(
-                    # TODO: (MODELS-1116) add reasoning token usage under completion_tokens_details
                     prompt_tokens=n_prompt_tokens,
                     completion_tokens=n_reasoning_tokens + n_tokens,
                     total_tokens=n_prompt_tokens
@@ -497,6 +503,9 @@ class OpenAIChatResponseGenerator(
                     + n_tokens,
                     prompt_tokens_details=PromptTokensDetails(
                         cached_tokens=n_cached_prompt_tokens,
+                    ),
+                    completion_tokens_details=CompletionTokensDetails(
+                        reasoning_tokens=n_reasoning_tokens,
                     ),
                 )
 
@@ -664,7 +673,6 @@ class OpenAIChatResponseGenerator(
             usage = None
             if n_reasoning_tokens > 0 or n_tokens > 0:
                 usage = CompletionUsage(
-                    # TODO: (MODELS-1116) add reasoning token usage under completion_tokens_details
                     prompt_tokens=n_prompt_tokens,
                     completion_tokens=n_reasoning_tokens + n_tokens,
                     total_tokens=n_prompt_tokens
@@ -672,6 +680,9 @@ class OpenAIChatResponseGenerator(
                     + n_tokens,
                     prompt_tokens_details=PromptTokensDetails(
                         cached_tokens=n_cached_prompt_tokens,
+                    ),
+                    completion_tokens_details=CompletionTokensDetails(
+                        reasoning_tokens=n_reasoning_tokens,
                     ),
                 )
 
@@ -1947,6 +1958,9 @@ class OpenAICompletionResponseGenerator(
                     prompt_tokens_details=PromptTokensDetails(
                         cached_tokens=n_cached_prompt_tokens,
                     ),
+                    completion_tokens_details=CompletionTokensDetails(
+                        reasoning_tokens=n_reasoning_tokens,
+                    ),
                 )
                 final_response = CompletionStreamResponse(
                     id=request.request_id.value,
@@ -2046,6 +2060,9 @@ class OpenAICompletionResponseGenerator(
                 total_tokens=n_prompt_tokens + n_reasoning_tokens + n_tokens,
                 prompt_tokens_details=PromptTokensDetails(
                     cached_tokens=n_cached_prompt_tokens,
+                ),
+                completion_tokens_details=CompletionTokensDetails(
+                    reasoning_tokens=n_reasoning_tokens,
                 ),
             )
             response = CreateCompletionResponse(
@@ -2275,19 +2292,49 @@ async def health() -> Response:
     return Response(status_code=200)
 
 
+def _resolve_max_model_len(request: Request) -> int | None:
+    """Resolve the served model's max context length.
+
+    Returns the smallest length the tokenizer and model can handle, so clients
+    can avoid overflowing the model's context.
+    """
+    max_model_len = get_app_pipeline_config(request.app).model.max_length
+    if max_model_len is None:
+        return None
+
+    tokenizer_max = getattr(
+        request.app.state.pipeline.tokenizer, "max_length", None
+    )
+    if isinstance(tokenizer_max, int):
+        max_model_len = min(max_model_len, tokenizer_max)
+
+    return max_model_len
+
+
 @router.get("/models", response_model=None)
 async def openai_get_models(request: Request) -> ListModelsResponse:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     created = int(datetime.now().timestamp())
+    max_model_len = _resolve_max_model_len(request)
     model_list = [
-        Model(
-            id=pipeline.model_name, object="model", created=created, owned_by=""
+        MaxModel(
+            id=pipeline.model_name,
+            object="model",
+            created=created,
+            owned_by="",
+            max_model_len=max_model_len,
         )
     ]
 
     if lora_queue := request.app.state.pipeline.lora_queue:
         model_list += [
-            Model(id=lora, object="model", created=created, owned_by="")
+            MaxModel(
+                id=lora,
+                object="model",
+                created=created,
+                owned_by="",
+                max_model_len=max_model_len,
+            )
             for lora in lora_queue.list_loras()
         ]
 
@@ -2297,11 +2344,12 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
 @router.get("/models/{model_id}", response_model=None)
 async def openai_get_model(model_id: str, request: Request) -> Model:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
-    pipeline_model = Model(
+    pipeline_model = MaxModel(
         id=pipeline.model_name,
         object="model",
         created=int(datetime.now().timestamp()),
         owned_by="",
+        max_model_len=_resolve_max_model_len(request),
     )
 
     if model_id == pipeline.model_name:

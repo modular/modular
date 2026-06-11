@@ -455,7 +455,8 @@ class InferenceSession:
         compiled: AsyncValue[CompiledModels],
         weights_registry: Mapping[str, Any],
     ) -> list[Model]: ...
-    def compile_from_path(
+    @overload
+    def compile(
         self,
         model_path: str | os.PathLike,
         custom_extension_paths: Sequence[str | os.PathLike],
@@ -472,7 +473,8 @@ class InferenceSession:
             ready to be initialized with weights via :meth:`_load_all`.
         """
 
-    def compile_from_object(
+    @overload
+    def compile(
         self,
         model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],

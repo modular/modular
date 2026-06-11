@@ -16,6 +16,12 @@ This version is still a work in progress.
   per-head query/key RMSNorm, and split-half RoPE. Runs multi-GPU with
   tensor-parallel attention and expert-parallel MoE.
 - Added NVFP4 quantization support for Gemma 4.
+- Gemma 4 can now run native FP8 attention with an FP8 KV cache on B200
+  (SM100): Q, K, and V are `float8_e4m3fn` read directly from the paged cache,
+  and both Q@K^T and P@V execute as raw FP8 matmuls at tensorwise scale = 1
+  (no per-block scales, no dequantization staging) with a bf16 attention
+  output. This roughly matches bf16 accuracy while improving decode throughput
+  and roughly doubling KV cache capacity at the same memory.
 - Added MXFP4 quantization support for MiniMax-M2.
 - Added tensor-parallel attention + expert-parallel MoE (TP+EP) support for
   MiniMax-M2. Set `data_parallel_degree: 1` with `runtime.ep_size > 1` to
@@ -400,6 +406,16 @@ This version is still a work in progress.
   has been removed.
 
 ## Fixes
+
+- Fixed structured output (`response_format: json_schema` and grammar-guided
+  tool calling) intermittently emitting raw control characters inside JSON
+  string values on models that use a byte-level BPE (TikToken) tokenizer,
+  producing invalid JSON. The constrained-decoding adapter fed llguidance the
+  tokens' byte->unicode *surface* bytes (e.g. a raw newline rendered as `Ċ`)
+  instead of their true bytes, so the grammar mask admitted control-char
+  tokens as legal string content. Token bytes are now recovered via the
+  tokenizer's `byte_decoder`, so raw control characters are correctly
+  excluded. Fast-tokenizer checkpoints were unaffected.
 
 - Fixed an expert-parallelism dispatch assertion (`Cannot dispatch EP
   kernel with N input tokens when the maximum tokens per rank is N-1`)

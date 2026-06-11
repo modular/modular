@@ -2674,6 +2674,7 @@ def generic_flash_attention_kv_cache_ragged[
     target: StaticString,
     mask_str: StaticString,
     local_window_size: Int = -1,
+    output_dtype: DType = dtype,
 ](
     q: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
@@ -2683,7 +2684,7 @@ def generic_flash_attention_kv_cache_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
@@ -2720,6 +2721,7 @@ def generic_flash_attention_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
+            output_dtype=output_dtype,
         ](
             q,
             input_row_offsets,
@@ -2740,6 +2742,7 @@ def _flash_attention_dispatch[
     target: StaticString,
     mask_str: StaticString,
     local_window_size: Int = -1,
+    output_dtype: DType = dtype,
 ](
     q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
@@ -2749,7 +2752,7 @@ def _flash_attention_dispatch[
     layer_idx: UInt32,
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
@@ -2771,6 +2774,10 @@ def _flash_attention_dispatch[
         @parameter
         def call_flash_attention[sink: Bool]() raises:
             comptime if is_cpu[target]():
+                comptime assert output_dtype == dtype, (
+                    "CPU flash attention requires output dtype == q dtype;"
+                    " the distinct-output-dtype (fp8->bf16) path is GPU-only."
+                )
                 return flash_attention_kv_cache_cpu(
                     q,
                     input_row_offsets,
@@ -2779,7 +2786,7 @@ def _flash_attention_dispatch[
                     v,
                     mask,
                     scale,
-                    output,
+                    output.bitcast[dtype](),
                     sink_weights,
                 )
             else:
@@ -2816,6 +2823,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
     target: StaticString,
     mask_str: StaticString,
     local_window_size: Int = -1,
+    output_dtype: DType = dtype,
 ](
     q: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
@@ -2825,7 +2833,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
     layer_idx: UInt32,
     scale: Float32,
     output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContext,
     sink_weights: LayoutTensor[
@@ -2865,6 +2873,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
+            output_dtype=output_dtype,
         ](
             q,
             input_row_offsets,

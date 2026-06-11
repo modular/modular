@@ -13,7 +13,7 @@
 """End-to-end correctness for the short-axis GPU softmax fast/safe arms.
 
 The short-inner-axis softmax warp kernel picks its load arm from the
-graph-compiler `lambdas_have_fusion` flag:
+graph-compiler `has_prologue_fusion` flag:
 
 - No real input fusion (`softmax(x)`) -> flat fast path.
 - A fused elementwise producer (`softmax(x * scale)`) -> true-coordinate
@@ -172,9 +172,9 @@ def test_softmax_sliced_view(gpu_session, dtype) -> None:  # noqa: ANN001
     """Softmax over a non-contiguous fused VIEW (a slice).
 
     Regression: `x[:, :-1]` is a view whose outer stride reflects the original
-    (un-sliced) size, and a view producer leaves `lambdas_have_fusion == False`.
-    The warp flat-load fast path assumed contiguity and read the wrong elements
-    for outer rows; the load must use true coordinates. `vocab = 5` keeps this
+    (un-sliced) size. A fused view producer sets `has_prologue_fusion == True`,
+    so the warp kernel must use true coordinates; a flat fast path would assume
+    contiguity and read the wrong elements for outer rows. `vocab = 5` keeps this
     on the warp path. Mirrors the rejection sampler's `[:, :-1]` bonus-token
     slice.
     """

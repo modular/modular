@@ -38,7 +38,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
 
 @export
-def PyInit_reduce_ops() -> PythonObject:
+def PyInit_reduce_ops() abi("C") -> PythonObject:
     """Create a Python module with reduce kernel function bindings."""
     try:
         var b = PythonModuleBuilder("reduce_ops")

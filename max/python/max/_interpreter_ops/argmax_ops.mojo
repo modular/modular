@@ -32,7 +32,7 @@ from op_utils import _get_dtype, _get_ctx, _make_ptr
 
 
 @export
-def PyInit_argmax_ops() -> PythonObject:
+def PyInit_argmax_ops() abi("C") -> PythonObject:
     """Create a Python module with argmax/argmin kernel function bindings."""
     try:
         var b = PythonModuleBuilder("argmax_ops")

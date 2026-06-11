@@ -14,6 +14,7 @@
 
 import threading
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock, call, patch
 
 import numpy as np
@@ -317,7 +318,7 @@ def test_effective_max_cache_length_covers_compute_seq_len(
         ),
     )
     required = _compute_seq_len(
-        boundary_ctx,
+        cast(TextContext, boundary_ctx),
         num_steps=1,
         num_draft_tokens=num_draft_tokens,
         num_draft_tokens_per_step=num_draft_tokens_per_step,

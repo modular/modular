@@ -21,6 +21,7 @@ from std.ffi import c_size_t
 
 from linalg.fp4_utils import (
     MXFP4_SF_VECTOR_SIZE,
+    MXFP8_SF_VECTOR_SIZE,
     NVFP4_SF_VECTOR_SIZE,
     SF_ATOM_K,
     SF_ATOM_M,
@@ -4560,3 +4561,218 @@ def fused_silu_mxfp4_kernel[
                 cast_float_to_fp4e2m1_amd(output_val, scale_f32)
             )
             output_tensor.store((m, k // 2), output_vector)
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(t"ep_fused_silu_mxfp8_interleaved_{input_dtype}_{fp8_dtype}")
+def fused_silu_mxfp8_interleaved_kernel[
+    fp8_dtype: DType,
+    scales_dtype: DType,
+    input_dtype: DType,
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    input_layout: TensorLayout,
+    offsets_layout: TensorLayout,
+    scales_offsets_layout: TensorLayout,
+    num_threads: Int,
+    num_sms: Int,
+    # Optional clamped activation variant (`swigluoai`):
+    #   g' = min(g, L);  u' = clamp(u, -L, L)
+    #   z  = (u' + 1) * g' * sigmoid(g' * alpha)
+    # When False (default) the kernel applies plain SiLU(g) * u.
+    clamp_activation: Bool = False,
+](
+    output_tensor: TileTensor[fp8_dtype, output_layout, MutExternalOrigin],
+    scales_tensor: TileTensor[scales_dtype, scales_layout, MutExternalOrigin],
+    input_tensor: TileTensor[input_dtype, input_layout, ImmutExternalOrigin],
+    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmutExternalOrigin],
+    scales_offsets: TileTensor[
+        DType.uint32, scales_offsets_layout, ImmutExternalOrigin
+    ],
+    # Runtime alpha and L for the clamped activation; ignored when
+    # `clamp_activation=False`.
+    alpha: Float32 = Float32(0.0),
+    limit: Float32 = Float32(0.0),
+):
+    """SwiGLU + MXFP8 quantization for interleaved gate/up layout.
+
+    MXFP8 counterpart of `fused_silu_nvfp4_interleaved_kernel`. Consumes
+    BF16 inputs in the `[gate_0, up_0, gate_1, up_1, ...]` interleaved
+    layout produced by permuting the MoE up-projection weight on the N
+    axis with `sigma(2i)=i, sigma(2i+1)=H+i`, applies SiLU(gate)*up, and
+    quantizes the result per 32-element block to FP8-E4M3 with FP8-UE8M0
+    block scales.
+
+    Compared with the NVFP4 variant the differences are:
+      - Output is one fp8_e4m3fn byte per element (vs. 2 fp4 nibbles
+        per byte for NVFP4), so `output_dim == hidden_size`.
+      - Block size is `MXFP8_SF_VECTOR_SIZE = 32` (vs. 16) and the per-
+        block scale uses 4 cooperating threads via `lane_group_max`
+        (vs. 2 for NVFP4).
+      - Scale dtype is `float8_e8m0fnu` (E8M0, power-of-2 only) and the
+        scale value is `block_max / 448` (FP8-E4M3 max abs), rounded to
+        the nearest power of two by the cast to E8M0.
+      - No per-expert `input_scales` (`tensor_sf`) folded into the
+        scale: E8M0 cannot represent non-power-of-2 multipliers without
+        precision loss; MXFP8 activations use the per-block scale only.
+        Caller's `c_input_scales` is therefore unused here and not
+        plumbed through; the fused in-tile path matches the same
+        contract.
+      - 5D scale tile layout is identical to NVFP4; only the
+        `SF_VECTOR_SIZE` divisor passed to `set_scale_factor` changes.
+    """
+    comptime accum_dtype = DType.float32
+    comptime assert (
+        output_tensor.flat_rank >= 2
+    ), "output_tensor must be at least 2D"
+    comptime assert scales_tensor.flat_rank == 5, "scales_tensor must be 5D"
+    comptime assert (
+        input_tensor.flat_rank >= 2
+    ), "input_tensor must be at least 2D"
+    comptime assert row_offsets.flat_rank == 1, "row_offsets must be 1D"
+    comptime assert scales_offsets.flat_rank == 1, "scales_offsets must be 1D"
+    comptime input_dim = input_tensor.static_shape[1]
+    comptime output_dim = output_tensor.static_shape[1]
+    # MXFP8 output is one byte per element (no nibble packing), so
+    # `hidden_size == output_dim`. The matmul produces `2*hidden_size`
+    # interleaved bf16 columns (gate || up).
+    comptime hidden_size = output_dim
+    comptime src_width = 8
+    comptime NUM_THREADS_PER_SF = MXFP8_SF_VECTOR_SIZE // src_width
+    comptime scales_simds_per_tok = hidden_size // (
+        MXFP8_SF_VECTOR_SIZE * SF_ATOM_K
+    )
+    comptime n_threads_per_token = hidden_size // src_width
+
+    comptime assert (
+        input_dim == hidden_size * 2
+    ), "Input dimension must be twice the unpacked output dimension."
+    comptime assert (
+        hidden_size % (MXFP8_SF_VECTOR_SIZE * SF_ATOM_K) == 0
+    ), "Hidden size must be divisible by (MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)."
+
+    comptime n_groups = scales_offsets.static_shape[0]
+    comptime n_sms_per_group = num_sms // n_groups
+    comptime assert (
+        n_groups <= num_sms
+    ), "num_sms must be >= number of expert groups."
+
+    var tid = thread_idx.x
+    var sm_id = block_idx.x
+    var group_id, sm_id_in_group = udivmod(sm_id, n_sms_per_group)
+    var tid_in_group = (
+        lane_id()
+        + sm_id_in_group * WARP_SIZE
+        + warp_id() * WARP_SIZE * n_sms_per_group
+    )
+    if group_id >= n_groups:
+        return
+
+    with PDL():
+        var expert_start = Int(row_offsets[group_id])
+        var expert_end = Int(row_offsets[group_id + 1])
+        var expert_m = expert_end - expert_start
+        var scales_block_id = expert_start // SF_MN_GROUP_SIZE + Int(
+            scales_offsets[group_id]
+        )
+
+        var _scales_tensor = TileTensor[
+            scales_dtype, scales_layout, MutExternalOrigin
+        ](
+            ptr=scales_tensor.ptr_at_offset(
+                (scales_block_id, Idx[0], Idx[0], Idx[0], Idx[0])
+            ),
+            layout=scales_tensor.layout,
+        )
+
+        for group_linear in range(
+            tid_in_group,
+            n_threads_per_token * expert_m,
+            num_threads * n_sms_per_group,
+        ):
+            var token_idx, hid_idx = udivmod(group_linear, n_threads_per_token)
+            var m = expert_start + token_idx
+            var k = hid_idx * src_width
+
+            # Interleaved load: 16 contiguous BF16 cols at 2k; even/odd
+            # split into gate/up. Same as the NVFP4 interleaved variant.
+            var pair = input_tensor.load[width=2 * src_width]((m, 2 * k)).cast[
+                accum_dtype
+            ]()
+            var gate_proj = SIMD[accum_dtype, src_width](
+                pair[0],
+                pair[2],
+                pair[4],
+                pair[6],
+                pair[8],
+                pair[10],
+                pair[12],
+                pair[14],
+            )
+            var up_proj = SIMD[accum_dtype, src_width](
+                pair[1],
+                pair[3],
+                pair[5],
+                pair[7],
+                pair[9],
+                pair[11],
+                pair[13],
+                pair[15],
+            )
+
+            var output_val: SIMD[accum_dtype, src_width]
+            comptime if clamp_activation:
+                var g_c = min(gate_proj, limit)
+                var u_c = max(min(up_proj, limit), -limit)
+                var sigmoid = 1.0 / (1.0 + exp(-(g_c * alpha)))
+                output_val = (u_c + 1.0) * g_c * sigmoid
+            else:
+                gate_proj = gate_proj / (1.0 + exp(-gate_proj))
+                output_val = gate_proj * up_proj
+
+            # Per-block (32-element) amax across 4 cooperating threads.
+            var thread_max = abs(output_val).reduce_max().cast[DType.float32]()
+            var group_max = warp.lane_group_max[num_lanes=NUM_THREADS_PER_SF](
+                thread_max
+            )
+
+            # MXFP8 scale: block_max / 448 (FP8-E4M3 maxabs). E8M0 cast
+            # rounds to the nearest power of two.
+            var scale_factor = group_max * recip(Float32(448.0))
+            var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+            var output_scale = Float32(0.0)
+            if group_max != 0:
+                output_scale = recip(fp8_scale_factor.cast[DType.float32]())
+
+            var input_f32 = output_val.cast[DType.float32]() * output_scale
+            var output_vector = input_f32.cast[fp8_dtype]()
+            output_tensor.store((m, k), output_vector)
+
+            # The first thread in each SF-group writes the scale.
+            if tid % NUM_THREADS_PER_SF == 0:
+                set_scale_factor[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](
+                    _scales_tensor,
+                    token_idx,
+                    k,
+                    fp8_scale_factor,
+                )
+
+        # Trailing scale-tile zero pad (same logic as the NVFP4 variant).
+        if expert_m % SF_MN_GROUP_SIZE != 0:
+            var tokens_to_zero_pad = SF_MN_GROUP_SIZE - (
+                expert_m % SF_MN_GROUP_SIZE
+            )
+            for i in range(
+                tid_in_group,
+                scales_simds_per_tok * tokens_to_zero_pad,
+                num_threads * n_sms_per_group,
+            ):
+                var token_idx, scale_simd_idx = udivmod(i, scales_simds_per_tok)
+                set_scale_factor[SF_VECTOR_SIZE=1](
+                    _scales_tensor,
+                    token_idx + expert_m,
+                    scale_simd_idx * SF_ATOM_K,
+                    SIMD[scales_dtype, SF_ATOM_K](0.0),
+                )

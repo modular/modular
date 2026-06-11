@@ -20,7 +20,7 @@ from std.gpu import NamedBarrierSemaphore
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host.info import H100
 from std.gpu import block_idx, grid_dim, thread_idx
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Layout, LayoutTensor, RuntimeLayout, TensorLayout, TileTensor
 from std.bit import log2_floor
 
 from std.utils.index import Index, IndexList
@@ -506,6 +506,30 @@ struct SplitKTileScheduler[
     def output_tile_index(self, work_tile_info: WorkInfo) -> UInt32:
         return self.get_linear_idx_from_m_and_n(
             work_tile_info.m, work_tile_info.n
+        )
+
+    @always_inline
+    def reduction[
+        accum_type: DType,
+        c_reg_layout: Layout,
+        workspace_layout: TensorLayout,
+    ](
+        self,
+        reduction_workspace: TileTensor[
+            accum_type, workspace_layout, MutAnyOrigin
+        ],
+        c_reg_tile: RegTile[accum_type, c_reg_layout],
+        work_tile_info: WorkInfo,
+        num_barriers: UInt32,
+        warp_group_local_idx: UInt32,
+    ):
+        var reduction_workspace_lt = reduction_workspace.to_layout_tensor()
+        self.reduction(
+            reduction_workspace_lt,
+            c_reg_tile,
+            work_tile_info,
+            num_barriers,
+            warp_group_local_idx,
         )
 
     @always_inline

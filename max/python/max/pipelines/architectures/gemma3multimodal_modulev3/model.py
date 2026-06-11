@@ -145,13 +145,6 @@ class Gemma3MultiModalModelV3(
         self.vision_model, self.language_model = self._load_models()
 
     @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        del pipeline_config, huggingface_config
-        return 15 * 1024 * 1024 * 1024  # 15 GiB
-
-    @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return Gemma3ForConditionalGenerationConfig.get_num_layers(
             huggingface_config

@@ -15,16 +15,12 @@
 
 from __future__ import annotations
 
-from typing import TypeAlias
-
 from .context import PixelContext, TextAndVisionContext, TextContext
 from .exceptions import InputError
 
-_AnyContext: TypeAlias = TextContext | TextAndVisionContext | PixelContext
-
 
 def validate_requires_vision_context(
-    context: _AnyContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that the context is a TextAndVisionContext.
 
@@ -39,7 +35,7 @@ def validate_requires_vision_context(
 
 
 def validate_only_one_image(
-    context: _AnyContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that at most one image is provided in the context.
 
@@ -56,7 +52,7 @@ def validate_only_one_image(
 
 
 def validate_initial_prompt_has_image(
-    context: _AnyContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that initial prompts contain an image for vision models.
 
@@ -75,7 +71,7 @@ def validate_initial_prompt_has_image(
 
 
 def validate_aspect_ratio_args(
-    context: _AnyContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that required aspect ratio arguments are present for vision input.
 
@@ -98,7 +94,7 @@ def validate_aspect_ratio_args(
 
 
 def validate_image_shape_5d(
-    context: _AnyContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that images have the expected 5-dimensional shape.
 
@@ -120,7 +116,7 @@ def validate_image_shape_5d(
 
 
 def validate_image_grid_thw_args(
-    context: _AnyContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that image_grid_thw is present when vision encoding is needed.
 
@@ -142,7 +138,7 @@ def validate_image_grid_thw_args(
 
 
 def validate_vision_position_ids(
-    context: _AnyContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that vision_position_ids is present when vision encoding is needed.
 

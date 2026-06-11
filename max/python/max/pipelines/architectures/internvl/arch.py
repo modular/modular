@@ -16,6 +16,7 @@ from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .memory_planner import InternVLMemoryPlanner
 from .model import InternVLModel
 from .model_config import InternVLConfig
 from .tokenizer import InternVLTokenizer
@@ -37,4 +38,5 @@ internvl_arch = SupportedArchitecture(
         "enable_chunked_prefill": False,
     },
     config=InternVLConfig,
+    memory_planner=InternVLMemoryPlanner,
 )

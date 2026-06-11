@@ -13,6 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
@@ -93,4 +94,7 @@ step3p5_arch = SupportedArchitecture(
     },
     config=Step3p5Config,
     multi_gpu_supported=True,
+    memory_planner=PagedMemoryPlanner.with_activation_reservation(
+        0, always_signal_buffers=True
+    ),
 )

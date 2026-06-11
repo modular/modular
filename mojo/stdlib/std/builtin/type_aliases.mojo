@@ -38,6 +38,47 @@ comptime ImmutAnyOrigin = AnyOrigin[mut=False]
 comptime MutAnyOrigin = AnyOrigin[mut=True]
 """The mutable origin that might access any memory value."""
 
+comptime UnsafeAnyOrigin[*, mut: Bool] = Origin[
+    _mlir_origin=__mlir_attr[
+        `#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`
+    ],
+]()
+"""The universal origin: an unsafe origin that might alias any memory value.
+
+Parameters:
+    mut: Whether the origin is mutable.
+
+Because a reference with this origin might alias any live value, it forces the
+lifetime checker into its most conservative behavior, defeating the guarantees
+the origin system is meant to provide:
+
+- It extends unrelated lifetimes. Every other value in scope is kept alive for
+  as long as the reference is live, even values it never points to, effectively
+  halting ASAP destruction.
+- It hides unused-variable warnings, since the compiler treats every in-scope
+  variable as potentially aliased.
+- It disables mutable exclusivity checking, since the compiler cannot prove
+  which value the reference aliases.
+
+**Safety:** This is a temporary compiler escape hatch from Mojo's early days,
+not a capability to reach for. It will never be stabilized and is slated for
+deprecation and removal. The `Unsafe` prefix marks every use as a place to
+migrate away from; prefer a concrete origin so the compiler can continue to
+track lifetimes and exclusivity.
+"""
+
+comptime ImmutUnsafeAnyOrigin = UnsafeAnyOrigin[mut=False]
+"""The immutable universal origin that might alias any memory value.
+
+This is an unsafe escape hatch slated for removal. See `UnsafeAnyOrigin`.
+"""
+
+comptime MutUnsafeAnyOrigin = UnsafeAnyOrigin[mut=True]
+"""The mutable universal origin that might alias any memory value.
+
+This is an unsafe escape hatch slated for removal. See `UnsafeAnyOrigin`.
+"""
+
 comptime ExternalOrigin[*, mut: Bool] = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
@@ -70,6 +111,33 @@ An external origin implies there is no previously existing value that this
 origin aliases. The compiler cannot track the origin or the value's lifecycle.
 Useful when interfacing with memory from outside the current Mojo program.
 """
+
+comptime UntrackedOrigin[*, mut: Bool] = Origin[
+    _mlir_origin=__mlir_attr[
+        `#lit.origin.union<> : !lit.origin<`,
+        +mut._mlir_value,
+        `>`,
+    ],
+]()
+"""An origin the lifetime checker does not track, because it aliases no
+existing value.
+
+Parameters:
+    mut: Whether the origin is mutable.
+
+An untracked origin is the empty origin: it promises the reference aliases no
+value the compiler is managing, so there is nothing for the lifetime checker to
+track or extend. That is exactly the behavior you want when interfacing with
+memory from outside the Mojo program. For example, the pointer returned by
+`alloc()` carries an untracked origin, because the allocated block aliases no
+Mojo-owned value.
+"""
+
+comptime ImmutUntrackedOrigin = UntrackedOrigin[mut=False]
+"""An immutable origin the lifetime checker does not track."""
+
+comptime MutUntrackedOrigin = UntrackedOrigin[mut=True]
+"""A mutable origin the lifetime checker does not track."""
 
 # Static constants are a named subset of the global origin.
 comptime StaticConstantOrigin = Origin[

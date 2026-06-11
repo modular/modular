@@ -42,13 +42,12 @@ from max.pipelines.context import (
     LogProbabilities,
 )
 from max.pipelines.kv_cache.config import KVCacheConfig
-from max.pipelines.lora import LoRAManager
+from max.pipelines.lora import LoRAInputs, LoRAManager
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
-    from max.pipelines.lib.interfaces.arch_config import ArchConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -111,30 +110,6 @@ class AlwaysSignalBuffersMixin:
             )
             for dev in self.devices
         ]
-
-    @classmethod
-    def estimate_signal_buffer_memory(
-        cls,
-        pipeline_config: PipelineConfig,
-        arch_config: ArchConfig | None = None,
-    ) -> int:
-        """Account for the mixin's always-allocate behaviour at single-GPU.
-
-        For multi-GPU, returns the same default as :class:`PipelineModel`.
-        For single-GPU, allocates one set on the lone device.
-
-        Note: this implementation calls ``pipeline_config.estimate_signal_buffer_memory()``
-        directly rather than chaining through ``super()``, mirroring the
-        :attr:`signal_buffers` property on this mixin. If a concrete model
-        needs custom signal-buffer accounting, override on the model class
-        itself — MRO ensures it wins over this method.
-        """
-        if len(pipeline_config.model.device_specs) > 1:
-            return pipeline_config.estimate_signal_buffer_memory(arch_config)
-        # Import here to avoid circular dependency
-        from max.nn.comm import Signals
-
-        return Signals.NUM_BYTES
 
 
 @dataclass
@@ -213,11 +188,8 @@ class ModelInputs:
 
     kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None
 
-    lora_ids: Buffer | None = None
-    """Buffer containing the LoRA ids."""
-
-    lora_ranks: Buffer | None = None
-    """Buffer containing the LoRA ranks"""
+    lora: LoRAInputs | None = None
+    """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
 
     hidden_states: Buffer | list[Buffer] | None = None
     """Hidden states for a variable number of tokens per sequence.
@@ -418,61 +390,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return cls._calculate_max_seq_len_from_config(
             pipeline_config, huggingface_config
         )
-
-    @classmethod
-    def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
-        """Calculates the estimated memory consumption of our model."""
-        # TODO move this logic to the PipelineModel instead of PipelineConfig class.
-        # Better yet, make this more accurate by loading and measuring memory consumption
-        # after we load the model
-        return pipeline_config.model.weights_size()
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Estimates the activation memory required for model execution.
-
-        This accounts for temporary memory buffers used during model execution,
-        such as intermediate activations and working buffers.
-
-        The default implementation returns 0 for backward compatibility.
-        Models with significant activation memory requirements should override
-        this method to provide accurate estimates.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            huggingface_config: Hugging Face model configuration
-
-        Returns:
-            Estimated activation memory in bytes
-        """
-        del pipeline_config, huggingface_config  # Unused.
-        return 0
-
-    @classmethod
-    def estimate_signal_buffer_memory(
-        cls,
-        pipeline_config: PipelineConfig,
-        arch_config: ArchConfig | None = None,
-    ) -> int:
-        """Estimates total signal-buffer memory for this model across all devices.
-
-        Defaults to :meth:`PipelineConfig.estimate_signal_buffer_memory`, which
-        covers the main model graph and :class:`BlockOffloadEngine`. Models with
-        additional allocation sites (always-allreduce mixins, diffusion
-        component graphs, separate vision encoders) should override.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            arch_config: Optional architecture config used to tighten estimates
-                (e.g. gate :class:`BlockOffloadEngine` signal-buffer accounting
-                on whether the KV cache actually replicates across TP).
-
-        Returns:
-            Estimated total signal-buffer memory in bytes (across all devices).
-        """
-        return pipeline_config.estimate_signal_buffer_memory(arch_config)
 
     @abstractmethod
     def execute(

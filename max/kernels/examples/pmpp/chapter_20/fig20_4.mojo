@@ -105,7 +105,9 @@ def softmax_kernel(
 
     barrier()
 
-    var max_val_row = block_reduce[max_op](max_val_thread, temp_store)
+    var max_val_row = block_reduce[max_op](
+        max_val_thread, temp_store.as_any_origin()
+    )
 
     if tid == 0:
         broadcast_slot[0] = max_val_row
@@ -121,7 +123,7 @@ def softmax_kernel(
 
     barrier()
 
-    var sum_row = block_reduce[sum_op](sum_thread, temp_store)
+    var sum_row = block_reduce[sum_op](sum_thread, temp_store.as_any_origin())
 
     if tid == 0:
         broadcast_slot[0] = sum_row
@@ -141,8 +143,8 @@ def softmax_kernel(
 
 
 def cpu_softmax(
-    h_S: UnsafePointer[Float32, MutAnyOrigin],
-    h_P: UnsafePointer[Float32, MutAnyOrigin],
+    h_S: UnsafePointer[mut=False, Float32, _],
+    h_P: UnsafePointer[mut=True, Float32, _],
     N: Int,
 ):
     var P_ptr = h_P

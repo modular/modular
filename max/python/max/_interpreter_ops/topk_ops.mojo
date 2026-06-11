@@ -43,7 +43,7 @@ from op_utils import (
 
 
 @export
-def PyInit_topk_ops() -> PythonObject:
+def PyInit_topk_ops() abi("C") -> PythonObject:
     """Create a Python module with top_k kernel function bindings."""
     try:
         var b = PythonModuleBuilder("topk_ops")

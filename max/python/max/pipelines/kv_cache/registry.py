@@ -197,6 +197,9 @@ def load_multi_kv_managers(
         [] for _ in range(dp)
     ]
 
+    # Mixed strategies like mla target + mha draft (or the reverse) are supported
+    # with KVCache offloading since each buffer carries its own replicates_kv_across_tp
+    # metadata.
     if kv_managers_1_to_n:
         for kv_manager_i in kv_managers_1_to_n:
             for replica_idx in range(dp):

@@ -55,7 +55,7 @@ from op_utils import (
 
 
 @export
-def PyInit_misc_ops() -> PythonObject:
+def PyInit_misc_ops() abi("C") -> PythonObject:
     """Create a Python module with miscellaneous kernel function bindings."""
     try:
         var b = PythonModuleBuilder("misc_ops")

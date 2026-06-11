@@ -37,7 +37,7 @@ from op_utils import (
 
 
 @export
-def PyInit_nms_ops() -> PythonObject:
+def PyInit_nms_ops() abi("C") -> PythonObject:
     """Create a Python module with NMS kernel function bindings."""
     try:
         var b = PythonModuleBuilder("nms_ops")

@@ -52,7 +52,7 @@ def _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
 
 
 @export
-def PyInit_elementwise_cast_ops() -> PythonObject:
+def PyInit_elementwise_cast_ops() abi("C") -> PythonObject:
     """Create a Python module with cast kernel function bindings."""
     try:
         var b = PythonModuleBuilder("elementwise_cast_ops")

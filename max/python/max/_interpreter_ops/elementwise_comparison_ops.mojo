@@ -66,7 +66,7 @@ def _is_gpu_allowed_comparison_op[op: ElementwiseBinaryComparisonOp]() -> Bool:
 
 
 @export
-def PyInit_elementwise_comparison_ops() -> PythonObject:
+def PyInit_elementwise_comparison_ops() abi("C") -> PythonObject:
     """Create a Python module with comparison elementwise kernel function bindings.
     """
     try:

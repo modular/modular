@@ -87,7 +87,7 @@ def _is_gpu_allowed_binary_op[op: ElementwiseBinaryOp]() -> Bool:
 
 
 @export
-def PyInit_elementwise_binary_ops() -> PythonObject:
+def PyInit_elementwise_binary_ops() abi("C") -> PythonObject:
     """Create a Python module with binary elementwise kernel function bindings.
     """
     try:

@@ -46,7 +46,6 @@ def create_connector(
     devices: Sequence[Device],
     kv_buffers: list[KVCacheBuffer],
     total_num_host_blocks: int,
-    total_num_blocks: int,
 ) -> KVConnector:
     """Create a KV cache connector instance based on ``kv_connector``.
 
@@ -56,7 +55,6 @@ def create_connector(
         devices: Devices for the KV cache tensors.
         kv_buffers: KVCacheBuffer objects describing all caches to offload.
         total_num_host_blocks: Total number of host blocks for swapping.
-        total_num_blocks: Total number of device blocks.
 
     Returns:
         A connector instance implementing the KVConnector protocol.

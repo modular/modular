@@ -43,7 +43,6 @@ from max.pipelines.lib import (
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
-from transformers import AutoConfig
 
 from .batch_vision_inputs import (
     ImageInputs,
@@ -203,20 +202,6 @@ class Gemma3_MultiModalModel(
     def release(self, request_id: RequestID) -> None:
         """Release vision encoder cache for a completed request."""
         self._ve_cache.release_request(request_id)
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        del huggingface_config  # Unused.
-
-        # FIXME: We arbitrarily set some memory for activation memory to leave headroom
-        # for vision processing. We should determine this in a more principled way.
-        # Update: Bumped to 15 GiB after #80736 removed MemoryManager fallthrough.
-        base = 15 * 1024 * 1024 * 1024  # 15 GiB
-        if pipeline_config.runtime.device_graph_capture:
-            base += _GRAPH_CAPTURE_HEADROOM_BYTES
-        return base
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Gemma3 MultiModal models into the MAX Engine session.

@@ -178,6 +178,14 @@ class BlockOffloadEngine:
             u for u in self._units if isinstance(u, ReplicatedKVCacheMemory)
         ]
 
+        # Validate that all units have the same number of pages.
+        unique_total_num_pages = {mem.total_num_pages for mem in kv_memory}
+        if len(unique_total_num_pages) > 1:
+            raise ValueError(
+                "all kv_memory units must have the same total_num_pages; got "
+                f"{unique_total_num_pages}"
+            )
+
         # Validate device topology across all replicated units.
         unique_topologies: set[tuple[int, ...]] = {
             tuple(

@@ -39,6 +39,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import numpy as np
+import psutil
 import yaml
 from cyclopts import App, Parameter
 from cyclopts.config import Env
@@ -141,6 +142,25 @@ BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _expand_pids(pids: list[int]) -> list[int]:
+    """Returns pids plus all their descendants."""
+    ppid_to_children: dict[int, list[int]] = {}
+    for proc in psutil.process_iter(["pid", "ppid"]):
+        ppid_to_children.setdefault(proc.info["ppid"], []).append(
+            proc.info["pid"]
+        )
+
+    result: set[int] = set()
+    queue = list(pids)
+    while queue:
+        pid = queue.pop()
+        if pid in result:
+            continue
+        result.add(pid)
+        queue.extend(ppid_to_children.get(pid, []))
+    return list(result)
 
 
 def parse_response_format(arg: str) -> ResponseFormat:
@@ -521,9 +541,12 @@ async def benchmark(
         cpu_collector = None
         if args.collect_cpu_stats:
             try:
-                pids = collect_pids_for_port(
-                    int(urlparse(session.api_url).port or 8000)
-                )
+                if args.server_pids:
+                    pids = _expand_pids(args.server_pids)
+                else:
+                    pids = collect_pids_for_port(
+                        int(urlparse(session.api_url).port or 8000)
+                    )
                 cpu_collector = benchmark_stack.enter_context(
                     CPUMetricsCollector(pids)
                 )

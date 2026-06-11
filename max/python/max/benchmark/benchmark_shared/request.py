@@ -43,6 +43,7 @@ from .datasets.types import (
     PixelGenerationImageOptions,
 )
 from .sse import iter_events
+from .utils import deadline_passed
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
@@ -156,6 +157,35 @@ class BaseRequestFuncOutput:
         if self.request_submit_time is None:
             return None
         return self.request_submit_time + self.latency
+
+
+def mark_cancelled_if_past_deadline(
+    output: BaseRequestFuncOutput, end_time_ns: int | None
+) -> BaseRequestFuncOutput:
+    """Reclassify an end-of-benchmark cut-off as cancelled rather than failed.
+
+    When the benchmark duration deadline cancels an in-flight request, aiohttp
+    can surface the cancellation as a swallowed error inside the request driver
+    instead of propagating the ``wait_for`` timeout, leaving a ``success=False``
+    output. If the result is not a success and the benchmark deadline has
+    passed, treat it as cancelled (cut off by benchmark end) rather than a real
+    failure. Successful results are left untouched.
+
+    Args:
+        output: The request output to (possibly) reclassify, mutated in place.
+        end_time_ns: The benchmark ``perf_counter_ns`` deadline, or ``None`` if
+            the run is unbounded.
+
+    Returns:
+        The same ``output`` instance, for convenient inline use.
+    """
+    if not output.success and deadline_passed(end_time_ns):
+        output.cancelled = True
+        logger.info(
+            "Reclassifying request as cancelled (cut off by benchmark end): %s",
+            output.error or "<no error>",
+        )
+    return output
 
 
 def measured_window_duration(

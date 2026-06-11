@@ -43,7 +43,7 @@ from op_utils import (
 
 
 @export
-def PyInit_argnonzero_ops() -> PythonObject:
+def PyInit_argnonzero_ops() abi("C") -> PythonObject:
     """Create a Python module with arg_nonzero kernel function bindings."""
     try:
         var b = PythonModuleBuilder("argnonzero_ops")

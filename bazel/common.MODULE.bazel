@@ -1,6 +1,6 @@
 """Define bazel dependencies common to the internal and external repos."""
 
-bazel_dep(name = "apple_support", version = "1.24.2", repo_name = "build_bazel_apple_support")
+bazel_dep(name = "apple_support", version = "2.3.0", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "curl", version = "8.12.0")

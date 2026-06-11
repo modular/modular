@@ -39,7 +39,7 @@ from max.nn.kv_cache.utils import (
     AttentionDispatchResolver,
     build_max_lengths_tensor,
 )
-from max.pipelines.context import TextGenerationContext
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import KVConnector
 from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
@@ -322,7 +322,6 @@ class PagedKVCacheManager:
                 devices=replica_devices,
                 kv_buffers=kv_buffers_to_offload,
                 total_num_host_blocks=total_num_host_pages,
-                total_num_blocks=total_num_pages,
             )
 
             persistent_kv_device_input_buffers = (
@@ -376,7 +375,7 @@ class PagedKVCacheManager:
         return self._replica[replica_idx].attention_dispatch_resolver
 
     def get_pct_used_blocks_after_allocation(
-        self, ctx: TextGenerationContext, replica_idx: int, num_steps: int = 1
+        self, ctx: TextContext, replica_idx: int, num_steps: int = 1
     ) -> float:
         """Gets the percentage of blocks used after allocating for a request.
 
@@ -406,7 +405,7 @@ class PagedKVCacheManager:
 
     def alloc(
         self,
-        data: TextGenerationContext,
+        data: TextContext,
         replica_idx: int,
         num_steps: int = 1,
     ) -> None:
@@ -437,7 +436,7 @@ class PagedKVCacheManager:
 
     def _does_req_need_more_blocks(
         self,
-        ctx: TextGenerationContext,
+        ctx: TextContext,
         num_steps: int,
         replica_idx: int,
     ) -> bool:
@@ -457,7 +456,7 @@ class PagedKVCacheManager:
     def _runtime_inputs_for_replica(
         self,
         replica_idx: int,
-        batch: Sequence[TextGenerationContext],
+        batch: Sequence[TextContext],
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
@@ -766,7 +765,7 @@ class PagedKVCacheManager:
 
     def runtime_inputs(
         self,
-        batches: Sequence[Sequence[TextGenerationContext]],
+        batches: Sequence[Sequence[TextContext]],
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
@@ -860,7 +859,7 @@ class PagedKVCacheManager:
     @contextmanager
     def reserve(
         self,
-        replica_batches: Sequence[Sequence[TextGenerationContext]],
+        replica_batches: Sequence[Sequence[TextContext]],
         *,
         num_steps: int = 1,
     ) -> Iterator[None]:
@@ -895,7 +894,7 @@ class PagedKVCacheManager:
             for request_id, replica_idx in claimed:
                 self.release(request_id, replica_idx=replica_idx)
 
-    def step(self, batches: Sequence[Sequence[TextGenerationContext]]) -> None:
+    def step(self, batches: Sequence[Sequence[TextContext]]) -> None:
         """Commits new tokens into the prefix cache for per-replica batches."""
         for replica, ctxs in zip(self._replica, batches, strict=True):
             replica.connector.sync()
