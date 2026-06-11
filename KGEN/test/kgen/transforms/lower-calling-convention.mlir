@@ -44,7 +44,7 @@ kgen.func @early_return_loop() -> !kgen.none {
 }
 
 // CHECK-LABEL: kgen.func @if_none
-kgen.func @if_none(%arg0: i1, %arg1: i32) {
+kgen.func @if_none(%arg0: !kgen.scalar<bool>, %arg1: i32) {
   %none = kgen.param.constant: none = <#kgen.none>
   // CHECK: %0 = hlcf.if %arg0 -> i32
   %0:2 = hlcf.if %arg0 -> !kgen.none, i32 {
@@ -209,7 +209,6 @@ kgen.func @lower_variants(%arg0: i64) {
   // CHECK-NEXT: [[DISCR:%.*]] = kgen.struct.extract [[VARIANT]][1]
   // CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: scalar<ui8> = <0>
   // CHECK-NEXT: [[EQ:%.*]] = pop.cmp eq([[DISCR]], [[ZERO]])
-  // CHECK-NEXT: pop.cast_to_builtin [[EQ]] : !kgen.scalar<bool> to i1
   %1 = kgen.variant.is %0, 0 : <i32, i64>
 
   // CHECK-NEXT: [[UNION:%.*]] = kgen.struct.extract [[VARIANT]][0]

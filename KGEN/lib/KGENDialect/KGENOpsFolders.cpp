@@ -908,16 +908,14 @@ ErrorTreeOrSuccess
 IsRunInComptimeInterpreterOp::interpret(ArrayRef<Attribute> operands,
                                         InterpreterState &state) {
   // Always return true during interpreting time.
-  Builder builder(getContext());
-  state.mapResults(builder.getBoolAttr(true));
+  state.mapResults(SIMDAttr::getScalarBool(getContext(), true));
   return success();
 }
 
 ErrorTreeOrSuccess IsRunInComptimeInterpreterOp::parametric_interpret(
     ArrayRef<Attribute> operands, ParametricInterpreterState &state) {
   // Always return true during interpreting time.
-  Builder builder(getContext());
-  state.mapResults(builder.getBoolAttr(true));
+  state.mapResults(SIMDAttr::getScalarBool(getContext(), true));
   return success();
 }
 
@@ -1086,10 +1084,12 @@ VariantCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
 
 OpFoldResult VariantIsOp::fold(FoldAdaptor adaptor) {
   if (auto variant = dyn_cast_if_present<VariantAttr>(adaptor.getVariant()))
-    return BoolAttr::get(getContext(), variant.getIndex() == getIndex());
+    return SIMDAttr::getScalarBool(getContext(),
+                                   variant.getIndex() == getIndex());
 
   if (auto createOp = getOperand().getDefiningOp<VariantCreateOp>())
-    return BoolAttr::get(getContext(), createOp.getIndex() == getIndex());
+    return SIMDAttr::getScalarBool(getContext(),
+                                   createOp.getIndex() == getIndex());
 
   return {};
 }

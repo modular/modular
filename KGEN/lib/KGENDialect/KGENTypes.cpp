@@ -2287,6 +2287,10 @@ SIMDType SIMDType::get(MLIRContext *ctx, int64_t size, KGENDType dtype) {
   return get(size, DTypeConstantAttr::get(ctx, dtype));
 }
 
+SIMDType SIMDType::getScalarBoolType(MLIRContext *ctx) {
+  return get(ctx, /*size=*/1, KGENDType::kBool);
+}
+
 SIMDType SIMDType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                               MLIRContext *ctx, int64_t size, KGENDType dtype) {
   return getChecked(emitError, size, DTypeConstantAttr::get(ctx, dtype));

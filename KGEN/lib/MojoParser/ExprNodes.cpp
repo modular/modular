@@ -3471,12 +3471,13 @@ AnyValue BinOpNode::emitAndOr(ExprDest &dest, IREmitter &emitter) const {
   if (auto mrVal = lhsV.getIfMRValue())
     lhsBVal = MBValue(mrVal);
 
-  RValue lhsI1Val = emitter.emitI1({lhsBVal, lhs}, EC_OperatorOperandValue);
-  PValue lhsI1PVal = lhsI1Val.getIfPValue();
+  RValue lhsBoolVal =
+      emitter.emitScalarBool({lhsBVal, lhs}, EC_OperatorOperandValue);
+  PValue lhsBoolPVal = lhsBoolVal.getIfPValue();
 
   if (!emitter.builder) {
-    lhsI1PVal = emitter.emitPValue({lhsI1Val, lhs}, EC_BoolCondition);
-    if (!lhsI1PVal)
+    lhsBoolPVal = emitter.emitPValue({lhsBoolVal, lhs}, EC_BoolCondition);
+    if (!lhsBoolPVal)
       return {};
     CValue rhsV = emitter.emitExprCValue(rhs, EC_BoolCondition);
 
@@ -3497,7 +3498,7 @@ AnyValue BinOpNode::emitAndOr(ExprDest &dest, IREmitter &emitter) const {
       }
 
       if (!lhsV.getRValueType().isEqualCanon(boolType)) {
-        lhsV = emitter.emitCValue({AnyValue(lhsI1Val), lhs},
+        lhsV = emitter.emitCValue({AnyValue(lhsBoolVal), lhs},
                                   EC_OperatorOperandValue, boolType);
       }
 
@@ -3513,12 +3514,12 @@ AnyValue BinOpNode::emitAndOr(ExprDest &dest, IREmitter &emitter) const {
     if (kind == kBoolOr) // and/or swap true/false operands
       std::swap(lhsPV, rhsPV);
 
-    auto value = ParamOperatorAttr::get(POC::Cond, {lhsI1PVal, rhsPV, lhsPV});
+    auto value = ParamOperatorAttr::get(POC::Cond, {lhsBoolPVal, rhsPV, lhsPV});
     return emitter.emitResult(value, this, dest);
   }
 
   SRValue lhsI1SRValue =
-      emitter.emitSRValue({AnyValue(lhsI1Val), lhs}, EC_BoolCondition);
+      emitter.emitSRValue({AnyValue(lhsBoolVal), lhs}, EC_BoolCondition);
   if (!lhsI1SRValue)
     return {};
 
@@ -3579,12 +3580,12 @@ AnyValue BinOpNode::emitAndOr(ExprDest &dest, IREmitter &emitter) const {
   // Detect unreachable code and warn about it. This is called after both arms
   // are emitted.
   auto deadCodeCheck = [&]() {
-    if (!lhsI1PVal)
+    if (!lhsBoolPVal)
       return;
-    IntegerAttr asIntAttr = sugarDynCast<IntegerAttr>(lhsI1PVal.get());
-    if (!asIntAttr)
+    auto asBoolAttr = sugarDynCast<SIMDAttr>(lhsBoolPVal.get());
+    if (!asBoolAttr)
       return;
-    bool isZero = asIntAttr.getValue().isZero();
+    bool isZero = !asBoolAttr.getAsBool();
     if (kind == kBoolOr && !isZero) {
       emitter.emitWarning(this->getLoc())
           << "unreachable code on right side of 'True or ...'";
@@ -4133,11 +4134,8 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
         });
   }
 
-  // Otherwise, emit HLCF::IfOp, which expects an i1 condition.
-  // TODO: migrate hlcf.if to using scalar<bool> as well.
   Value condValue =
-      emitter.emitSRValue({AnyValue(condRVal), condExpr}, EC_BoolCondition,
-                          IntegerType::get(emitter.getContext(), 1));
+      emitter.emitSRValue({AnyValue(condRVal), condExpr}, EC_BoolCondition);
 
   if (!condValue)
     return {};
@@ -4232,7 +4230,8 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
   std::optional<OpBuilder> lastBuilder;
   if (emitter.builder)
     lastBuilder = emitter.builder.value();
-  RValue prevCmpI1Value = emitter.emitI1({prevCmpVal, this}, EC_BoolCondition);
+  RValue prevCmpI1Value =
+      emitter.emitScalarBool({prevCmpVal, this}, EC_BoolCondition);
   if (!prevCmpI1Value)
     return {};
   SRValue prevCmpI1SRValue;
@@ -4684,8 +4683,8 @@ MagicFunctionNode::emitIsRunInComptimeInterpreter(ExprDest &dest,
     return emitter.emitErrorForDynamicValueInParameter(this);
   auto op = IsRunInComptimeInterpreterOp::create(*emitter.builder,
                                                  this->getLocation(emitter));
-  // Wrap the i1 result in a Bool so callers can use it with 'not', 'and',
-  // 'or', etc.
+  // Wrap the scalar<bool> result in a Bool so callers can use it with 'not',
+  // 'and', 'or', etc.
   ASTType boolType = emitter.shared.lookupBuiltinType(
       "Bool", emitter.getDeclScope(), getLoc());
   AnyValue i1Value = SRValue(op.getResult());

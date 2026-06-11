@@ -174,8 +174,8 @@ def ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
 # CHECK-LABEL: lit.fn @"def_ref_result
 def def_ref_result(mut x: MemoryOnly) raises -> ref [x] MemoryOnly:
     # CHECK-NEXT: lit.ref.store %x, %__result__
-    # CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
-    # CHECK-NEXT: lit.return %0
+    # CHECK-NEXT: %simd = kgen.param.constant: scalar<bool> = <false>
+    # CHECK-NEXT: lit.return %simd
     return x
 
 

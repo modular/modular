@@ -25,7 +25,7 @@ kgen.func @two_overlapping(%arg0: index, %arg1: index) -> (index, index) {
 }
 
 // CHECK-LABEL: @control_flow_if
-kgen.func @control_flow_if(%arg0: index, %arg1: index, %arg2: i1) -> index {
+kgen.func @control_flow_if(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>) -> index {
   // CHECK-NEXT: %[[S0:.*]] = pop.stack_allocation
   // CHECK-NOT: pop.stack_allocation
   %s0 = pop.stack_allocation 1 x index
@@ -61,7 +61,7 @@ kgen.func @control_flow_if(%arg0: index, %arg1: index, %arg2: i1) -> index {
 }
 
 // CHECK-LABEL: @control_flow_if_lifetime
-kgen.func @control_flow_if_lifetime(%arg0: index, %arg1: index, %arg2: i1) -> index {
+kgen.func @control_flow_if_lifetime(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>) -> index {
   // CHECK-NEXT: %[[S0:.*]] = pop.stack_allocation
   // CHECK-NEXT: pop.stack_alloc.lifetime.start(%[[S0]])
   // CHECK-NOT: pop.stack_allocation

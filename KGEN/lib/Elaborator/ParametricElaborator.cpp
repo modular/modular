@@ -2814,7 +2814,7 @@ LogicalResult ParametricElaborator::run(
       // Rewrite IsCompileTimeOp to cpuDevice value as always false.
       OpBuilder b(op);
       isCompileTime->replaceAllUsesWith(ParamConstantOp::create(
-          b, op->getLoc(), b.getIntegerAttr(b.getI1Type(), 0)));
+          b, op->getLoc(), SIMDAttr::getScalarBool(b.getContext(), false)));
       op->erase();
     }
   });

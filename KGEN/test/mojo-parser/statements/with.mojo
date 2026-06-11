@@ -143,13 +143,13 @@ def testWithRaising(a: ExampleCM) raises:
         raise_error()
         # CHECK-NEXT: lit.try.yield
     # CHECK-NEXT: } except {
-    # CHECK:        lit.ref.store %false, %__with_exc__
+    # CHECK:        [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
+    # CHECK-NEXT:   lit.ref.store [[FALSE]], %__with_exc__
     # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
     # CHECK-NEXT:   [[ERROR:%.*]] = lit.ref.immut %__inner_error__
     # CHECK-NEXT:   [[EXIT_RESULT:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMMREF]], [[ERROR]])
     # CHECK-NEXT:   [[SUCCESS_SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[EXIT_RESULT]])
-    # CHECK-NEXT:   [[SUCCESS:%.*]] = pop.cast_to_builtin [[SUCCESS_SB]]
-    # CHECK-NEXT:   hlcf.if [[SUCCESS]] {
+    # CHECK-NEXT:   hlcf.if [[SUCCESS_SB]] {
     # CHECK-NEXT:     hlcf.yield
     # CHECK-NEXT:   } else {
     # CHECK-NEXT:     lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__inner_error__, %__with_error__){{.*}}*, "move"
@@ -180,7 +180,8 @@ def testWithInTry(a: ExampleCM):
         # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
         # CHECK: %cm = lit.var.decl "cm"
         # CHECK-NEXT: lit.ref.store [[TARGET]], %cm
-        # CHECK: lit.ref.store %true, %__with_exc__
+        # CHECK: [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
+        # CHECK-NEXT: lit.ref.store [[TRUE]], %__with_exc__
         # CHECK-NEXT: lit.try %__with_error__
         with a as cm:
             # CHECK: %__inner_error__ = lit.var.decl

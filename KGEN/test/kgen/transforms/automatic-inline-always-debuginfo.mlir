@@ -105,7 +105,8 @@ kgen.func @nodebug_inline_me_multiple_exits(%arg0: index) -> index always_inline
   %idx1 = index.constant 1 loc(#locCallsite)
   %0 = index.add %arg0, %arg0 loc(#locCallsite)
   %1 = index.cmp sgt (%arg0, %idx1) loc(#locCallsite)
-  hlcf.if %1 {
+  %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool> loc(#locCallsite)
+  hlcf.if %c1 {
     kgen.return %0: index loc(#locCallsite)
   } else  {
     hlcf.yield loc(#locCallsite)

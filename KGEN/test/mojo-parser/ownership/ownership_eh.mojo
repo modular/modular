@@ -33,10 +33,10 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
         return
 
     # Test a raising constructor.
-    # CHECK-LABEL: lit.fn @"__init__{{.*}}(%a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %self: !lit.ref<!RegExample, {{.*}}> byref_result) throws -> i1
+    # CHECK-LABEL: lit.fn @"__init__{{.*}}(%a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %self: !lit.ref<!RegExample, {{.*}}> byref_result) throws -> !kgen.scalar<bool>
     def __init__(out self, a: MemExample, b: MemExample) raises:
         # CHECK-NOT: __del__
-        # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+        # CHECK: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
         # CHECK-NEXT: kgen.return [[FALSE]]
         return
 
@@ -90,14 +90,14 @@ def somethingThatRaises() raises:
 
 
 # CHECK-LABEL: lit.fn @"thing_that_raises
-def thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
+def thing_that_raises(c: __mlir_type.`!kgen.scalar<bool>`) raises -> MemExample:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<none,
     # CHECK-NEXT: lifetime.start [[RESULT]]
     # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__error__, [[RESULT]])
     # CHECK-NEXT: hlcf.if [[IS_ERR]]
     # CHECK-NEXT:   mark_consumed [[RESULT]]
     # CHECK-NEXT:   lifetime.end [[RESULT]]
-    # CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+    # CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
     # CHECK-NEXT:   lit.error_return [[TRUE]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   lifetime.end [[RESULT]]
@@ -139,7 +139,7 @@ def finally_may_raise() raises:
         # CHECK-NEXT: } except {
         # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__try_error__, %__error__){{.*}}*, "move"
         # CHECK-NEXT: lit.var.lifetime.end %__try_error__
-        # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+        # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
         # CHECK-NEXT: %__finally_error__ = lit.var.decl
         # CHECK-NEXT: lit.try
         # CHECK-NEXT:   [[RESULT:%.*]] = lit.var.decl
@@ -179,7 +179,7 @@ struct ThrowingExit:
 def context_mgr_exit_raises() raises:
     # CHECK: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "move"
     # CHECK-NEXT: lit.var.lifetime.end %__with_error__
-    # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+    # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
     # CHECK-NEXT: %__finally_error__ = lit.var.decl
     # CHECK-NEXT: lit.try
     # CHECK-NEXT:   [[DID_ERR:%.*]] = lit.ref.load %__with_exc__
@@ -236,7 +236,7 @@ def propagate_reg_error() raises:
     _ = may_throw()
     # CHECK-NEXT: %none = kgen.param.constant: none
     # CHECK-NEXT: lit.ref.store %none, %__result__
-    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: kgen.return [[FALSE]]
 
 
@@ -256,7 +256,7 @@ struct BigRegExample(RegisterPassable):
         # CHECK-NEXT: [[B:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: lit.ref.store [[B]], [[B_REF]]
         self.b = RegExample()
-        # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+        # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
         # CHECK-NEXT: kgen.return [[FALSE]]
 
 
@@ -422,8 +422,8 @@ struct InitFieldsDestroyedInThrowingConstructor:
     def __init__(out self):
         self.x = MemExample()
 
-    # CHECK-LABEL: lit.fn @"__init__(i1)"
-    def __init__(out self, cond: __mlir_type.`i1`) raises:
+    # CHECK-LABEL: lit.fn @"__init__(!kgen.scalar<bool>)"
+    def __init__(out self, cond: __mlir_type.`!kgen.scalar<bool>`) raises:
         self = InitFieldsDestroyedInThrowingConstructor()
         # CHECK:      hlcf.elif {
         # CHECK-NEXT:   hlcf.elif.yield %cond

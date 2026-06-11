@@ -9,6 +9,7 @@
 
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/Bytecode/BytecodeOpInterface.h"

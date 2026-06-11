@@ -1806,8 +1806,8 @@ def KGEN_VariantIsOp : KGENOp<"variant.is", [Pure]> {
   let summary = "Check the field contained by a variant.";
   let description = [{
     The `kgen.variant.is` operation checks whether the given variant contains
-    a particular type. Returns an `i1` that indicates whether the variant is the
-    particular type.
+    a particular type. Returns a `!kgen.scalar<bool>` that indicates whether the
+    variant is the particular type.
 
     Example:
 
@@ -1818,7 +1818,7 @@ def KGEN_VariantIsOp : KGENOp<"variant.is", [Pure]> {
   }];
 
   let arguments = (ins KGEN_VariantType:$variant, UnsignedIndexAttr:$index);
-  let results = (outs I1:$result);
+  let results = (outs BoolScalar:$result);
   let assemblyFormat = "$variant `,` $index attr-dict `:` type($variant)";
 
   let hasVerifier = 1;
@@ -1931,11 +1931,11 @@ def KGEN_IsRunInComptimeInterpreterOp: KGENOp<"is_run_in_comptime_interpreter",
     Example:
 
     ```mlir
-      kgen.is_run_in_comptime_interpreter : i1
+      kgen.is_run_in_comptime_interpreter : !kgen.scalar<bool>
     ```
   }];
 
-  let results = (outs I1:$result);
+  let results = (outs BoolScalar:$result);
 
   let assemblyFormat = [{
       attr-dict `:` type($result)

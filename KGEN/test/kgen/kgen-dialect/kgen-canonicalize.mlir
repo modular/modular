@@ -263,27 +263,27 @@ kgen.func @variant_create() -> !kgen.variant<si4, ui4> {
 }
 
 // CHECK-LABEL: @variant_is
-kgen.func @variant_is() -> i1 {
-  // CHECK-NEXT: constant: i1 = <1>
+kgen.func @variant_is() -> !kgen.scalar<bool> {
+  // CHECK-NEXT: constant: scalar<bool> = <true>
   %0 = kgen.param.constant: variant<si4, ui4> = <#kgen.variant<:ui4 7, 1>>
   %1 = kgen.variant.is %0, 1 : <si4, ui4>
-  kgen.return %1 : i1
+  kgen.return %1 : !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: @variant_create_is_true
-kgen.func @variant_create_is_true(%a: i32) -> i1 {
-  // CHECK-NEXT: constant: i1 = <1>
+kgen.func @variant_create_is_true(%a: i32) -> !kgen.scalar<bool> {
+  // CHECK-NEXT: constant: scalar<bool> = <true>
   %0 = kgen.variant.create %a, 0 : <i32, f32>
   %1 = kgen.variant.is %0, 0 : <i32, f32>
-  kgen.return %1 : i1
+  kgen.return %1 : !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: @variant_create_is_false
-kgen.func @variant_create_is_false(%a: i32) -> i1 {
-  // CHECK-NEXT: constant: i1 = <0>
+kgen.func @variant_create_is_false(%a: i32) -> !kgen.scalar<bool> {
+  // CHECK-NEXT: constant: scalar<bool> = <false>
   %0 = kgen.variant.create %a, 0 : <i32, f32>
   %1 = kgen.variant.is %0, 1 : <i32, f32>
-  kgen.return %1 : i1
+  kgen.return %1 : !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: @variant_get

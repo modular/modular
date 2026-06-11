@@ -203,6 +203,6 @@ def fail_register() raises -> Int:
 # CHECK-LABEL: lit.fn @"fail_register_raises
 def fail_register_raises() raises -> Int:
     # CHECK-NEXT: call {{.*}}fail_register{{.*}}(%__error__, %__result__)
-    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.return [[FALSE]]
     return fail_register()

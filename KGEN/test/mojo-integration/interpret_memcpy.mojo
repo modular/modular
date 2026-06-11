@@ -15,7 +15,9 @@ def memcpy(
 ):
     var byte_count = count * size_of[Int]()
 
-    if __mlir_op.`kgen.is_run_in_comptime_interpreter`[_type=__mlir_type.i1]():
+    if __mlir_op.`kgen.is_run_in_comptime_interpreter`[
+        _type=__mlir_type.`!kgen.scalar<bool>`
+    ]():
         llvm_intrinsic["llvm.memcpy", NoneType](
             dst.bitcast[Byte](), src.bitcast[Byte](), byte_count
         )

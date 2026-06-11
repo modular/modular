@@ -642,8 +642,8 @@ kgen.generator @nestedConstexprIf2() {
     kgen.param.declare next_lt = <add(cond_var, 10)>
     kgen.param.yield %1 : index
   } else {
-    // CHECK-NEXT: param.constant: i1 = <1>
-    %condition = kgen.param.constant : i1 = <to_builtin(:scalar<bool> gt(cond_var, 30))>
+    // CHECK-NEXT: param.constant: scalar<bool> = <true>
+    %condition = kgen.param.constant : scalar<bool> = <gt(cond_var, 30)>
     // CHECK-NEXT: hlcf.if
     %3 = hlcf.if %condition -> index {
       // CHECK-NEXT: "should.appear"
@@ -1164,7 +1164,7 @@ kgen.generator @bat_binder(%arg0: index) {
 
 // -----
 
-kgen.generator @count_ops(%arg0: i1) -> index {
+kgen.generator @count_ops(%arg0: !kgen.scalar<bool>) -> index {
   %0 = hlcf.if %arg0 -> index {
     %idx0 = index.constant 0
     hlcf.yield %idx0 : index
@@ -1175,16 +1175,16 @@ kgen.generator @count_ops(%arg0: i1) -> index {
   kgen.return %0 : index
 }
 
-kgen.generator @cost_of<fn: (i1) -> index>() -> index {
-  %0:8 = kgen.cost_of[(i1) -> index: fn]
-  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(i1) -> index: @count_ops]
+kgen.generator @cost_of<fn: (!kgen.scalar<bool>) -> index>() -> index {
+  %0:8 = kgen.cost_of[(!kgen.scalar<bool>) -> index: fn]
+  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!kgen.scalar<bool>) -> index: @count_ops]
   kgen.return %0#7  : index
 }
 
 // CHECK-LABEL: kgen.func export @main
 kgen.generator export @main() {
   // CHECK-NEXT: <1>
-  %0 = kgen.param.constant = <apply(:() -> index @cost_of<:(i1) -> index @count_ops>)>
+  %0 = kgen.param.constant = <apply(:() -> index @cost_of<:(!kgen.scalar<bool>) -> index @count_ops>)>
   kgen.return
 }
 

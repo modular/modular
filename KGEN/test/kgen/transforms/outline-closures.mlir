@@ -143,7 +143,7 @@ kgen.generator @useAfterDef() -> index {
 }
 
 // CHECK-LABEL: @nested
-kgen.generator @nested(%pred: i1) -> index {
+kgen.generator @nested(%pred: !kgen.scalar<bool>) -> index {
   kgen.param.declare C = <15>
 
   // CHECK: hlcf.if

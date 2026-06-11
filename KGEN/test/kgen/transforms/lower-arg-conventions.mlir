@@ -155,26 +155,28 @@ kgen.func @test_lower_res(%arg0: !byref_res_sig, %arg1: !byref_res_reg_passable_
 kgen.func @byref_throws(
   %__error__: !kgen.pointer<!Error> byref_error,
   %__result__: !kgen.pointer<index> byref_result
-) throws -> i1 {
+) throws -> !kgen.scalar<bool> {
   // CHECK: %[[ERROR:.*]] = pop.stack_allocation 1 x struct<(f32)>
   // CHECK: %[[VALUE:.*]] = pop.stack_allocation 1 x index
 
-  // CHECK: %[[COND:.*]] = kgen.param.constant: i1 = <?>
+  // CHECK: %[[FLAG:.*]] = kgen.param.constant: i1 = <?>
+  // CHECK: %[[COND:.*]] = pop.cast_from_builtin %[[FLAG]] : i1 to !kgen.scalar<bool>
   %0 = kgen.param.constant: i1 = <?>
+  %cflag = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
 
   // CHECK: hlcf.if %[[COND]]
-  hlcf.if %0 {
-    %1 = kgen.param.constant: i1 = <1>
+  hlcf.if %cflag {
+    %1 = kgen.param.constant: scalar<bool> = <true>
     // CHECK: [[ERR:%.*]] = pop.load %[[ERROR]]
     // CHECK-NEXT: [[RESULT:%.*]] = kgen.variant.create [[ERR]], 0
     // CHECK-NEXT: return [[RESULT]]
-    kgen.return %1 : i1
+    kgen.return %1 : !kgen.scalar<bool>
   } else {
-    %2 = kgen.param.constant: i1 = <0>
+    %2 = kgen.param.constant: scalar<bool> = <false>
     // CHECK: [[VAL:%.*]] = pop.load %[[VALUE]]
     // CHECK-NEXT: [[RESULT:%.*]] = kgen.variant.create [[VAL]], 1
     // CHECK-NEXT: return [[RESULT]]
-    kgen.return %2 : i1
+    kgen.return %2 : !kgen.scalar<bool>
   }
 
   // CHECK:      %[[RES:.*]] = hlcf.if %[[COND]] -> !kgen.variant
@@ -187,12 +189,12 @@ kgen.func @byref_throws(
   // CHECK-NEXT:   hlcf.yield [[RESULT]]
 
   // CHECK: kgen.return %[[RES]]
-  kgen.return %0 : i1
+  kgen.return %cflag : !kgen.scalar<bool>
 }
 
 !byref_throws_sig = !kgen.generator<(
   !kgen.pointer<!Error> byref_error, !kgen.pointer<index> byref_result
-) throws -> i1>
+) throws -> !kgen.scalar<bool>>
 
 // CHECK-LABEL: kgen.func @test_byref_throws(
 kgen.func @test_byref_throws(%arg0: !byref_throws_sig) {
@@ -213,8 +215,8 @@ kgen.func @test_byref_throws(%arg0: !byref_throws_sig) {
   // CHECK-NEXT:   yield
   %res1 = kgen.call @byref_throws(%__error__, %__result__) : (
     !kgen.pointer<!Error> byref_error, !kgen.pointer<index> byref_result
-  ) throws -> i1
-  "handle.error"(%res1) : (i1) -> ()
+  ) throws -> !kgen.scalar<bool>
+  "handle.error"(%res1) : (!kgen.scalar<bool>) -> ()
   "use.result"(%__result__) : (!kgen.pointer<index>) -> ()
 
 
@@ -229,7 +231,7 @@ kgen.func @test_byref_throws(%arg0: !byref_throws_sig) {
   // CHECK-NEXT:   store [[VAL]], [[RESULT]]
   // CHECK-NEXT:   yield
   %res2 = kgen.call_indirect %arg0(%__error__, %__result__) : !byref_throws_sig
-  "handle.error"(%res2) : (i1) -> ()
+  "handle.error"(%res2) : (!kgen.scalar<bool>) -> ()
   "use.result"(%__result__) : (!kgen.pointer<index>) -> ()
 }
 
@@ -269,12 +271,12 @@ kgen.func @unreachable_byref_result(%arg0: !kgen.pointer<index> byref_result) ->
 }
 
 // CHECK-LABEL: kgen.func @byref_error
-// CHECK-SAME: (%arg0: !kgen.generator<(index, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> (i1, f16)>
-// CHECK-SAME:  %arg1: !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> (i1, f16)
+// CHECK-SAME: (%arg0: !kgen.generator<(index, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> (!kgen.scalar<bool>, f16)>
+// CHECK-SAME:  %arg1: !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> (!kgen.scalar<bool>, f16)
 kgen.func @byref_error(
-    %f: !kgen.generator<(index, !kgen.pointer<f16> byref_error, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> i1>,
+    %f: !kgen.generator<(index, !kgen.pointer<f16> byref_error, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> !kgen.scalar<bool>>,
     %err: !kgen.pointer<f16> byref_error,
-    %result: !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> i1 {
+    %result: !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> !kgen.scalar<bool> {
   // CHECK-NEXT: [[F_ERR:%.*]] = pop.stack_allocation 1 x f16
   // CHECK-NEXT: %idx0
   %idx0 = index.constant 0
@@ -284,7 +286,7 @@ kgen.func @byref_error(
   %0 = pop.stack_allocation 1 x f16
   %1 = pop.stack_allocation 1 x struct<(i16) memoryOnly>
   // CHECK-NEXT: [[R:%.*]]:2 = kgen.call_indirect %arg0(%idx0, [[VAL]])
-  %2 = kgen.call_indirect %f(%idx0, %0, %1) : (index, !kgen.pointer<f16> byref_error, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> i1
+  %2 = kgen.call_indirect %f(%idx0, %0, %1) : (index, !kgen.pointer<f16> byref_error, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> !kgen.scalar<bool>
   // CHECK-NEXT: hlcf.if [[R]]#0 {
   // CHECK-NEXT:   pop.store [[R]]#1, [[ERR]]
   // CHECK-NEXT:   hlcf.yield
@@ -294,7 +296,7 @@ kgen.func @byref_error(
 
   // CHECK-NEXT: [[ERR_RES:%.*]] = pop.load [[F_ERR]]
   // CHECK-NEXT: return [[R]]#0, [[ERR_RES]]
-  kgen.return %2 : i1
+  kgen.return %2 : !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: @dont_alter_async_results(%arg0: index, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async
@@ -482,18 +484,18 @@ kgen.func @external_call_nested_pack(
 // MOCO-3267: Compiler crash with parametric raise.
 // CHECK-LABEL: kgen.func @remove_never_error_slot(%arg0: !kgen.pointer<struct<() memoryOnly>> byref_result) throws
 kgen.func @remove_never_error_slot(%err: !kgen.pointer<!kgen.never> byref_error,
-                                   %arg0: !kgen.pointer<struct<() memoryOnly>> byref_result) throws -> i1 {
-  %1 = kgen.param.constant: i1 = <0>
+                                   %arg0: !kgen.pointer<struct<() memoryOnly>> byref_result) throws -> !kgen.scalar<bool> {
+  %1 = kgen.param.constant: scalar<bool> = <false>
   // CHECK: kgen.return{{$}}
-  kgen.return %1 : i1
+  kgen.return %1 : !kgen.scalar<bool>
 }
 
 // CHECK: @call_remove_never_error_slot
 kgen.func @call_remove_never_error_slot(%err: !kgen.pointer<!kgen.never>,
-                                        %arg0: !kgen.pointer<struct<() memoryOnly>>) throws -> i1 {
-  // CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
+                                        %arg0: !kgen.pointer<struct<() memoryOnly>>) throws -> !kgen.scalar<bool> {
+  // CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
   // CHECK-NEXT: kgen.call @remove_never_error_slot(%arg1)
-  %0 = kgen.call @remove_never_error_slot(%err, %arg0) : (!kgen.pointer<!kgen.never> byref_error, !kgen.pointer<struct<() memoryOnly>> byref_result) throws -> i1
-  // CHECK-NEXT: kgen.return %0 : i1
-  kgen.return %0 : i1
+  %0 = kgen.call @remove_never_error_slot(%err, %arg0) : (!kgen.pointer<!kgen.never> byref_error, !kgen.pointer<struct<() memoryOnly>> byref_result) throws -> !kgen.scalar<bool>
+  // CHECK-NEXT: kgen.return [[FALSE]] : !kgen.scalar<bool>
+  kgen.return %0 : !kgen.scalar<bool>
 }

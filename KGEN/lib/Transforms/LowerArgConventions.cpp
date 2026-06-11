@@ -615,7 +615,8 @@ static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
     // able to lower one of them, we end up with "i1, othertype" as two results
     // from the KGEN function, if both can be lowered to registers then we
     // replace the i1 with "variant<normal, error>".
-    result.newResultTypes.push_back(IntegerType::get(oldSig.getContext(), 1));
+    result.newResultTypes.push_back(
+        SIMDType::getScalarBoolType(oldSig.getContext()));
     result.newResultTypes.push_back(loweredErrorType);
     break;
   case ABI::PromoteBoth:
@@ -624,7 +625,8 @@ static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
     break;
   case ABI::PromoteResult:
     if (oldSig.isThrows())
-      result.newResultTypes.push_back(IntegerType::get(oldSig.getContext(), 1));
+      result.newResultTypes.push_back(
+          SIMDType::getScalarBoolType(oldSig.getContext()));
     [[fallthrough]];
   case ABI::PromoteResultRemoveError:
     result.newResultTypes.push_back(loweredResultType);
@@ -674,7 +676,8 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
     break;
   case RemoveError: {
     // Never thrown.
-    replaceUsesWithDummy(res, b, b.getBoolAttr(false));
+    replaceUsesWithDummy(res, b,
+                         SIMDAttr::getScalarBool(op->getContext(), false));
     // We can't just drop the result of an MLIR op, removing the i1 result
     // requires replacing the call.
     OperationState state(op->getLoc(), op->getName(), op->getOperands(),
@@ -711,7 +714,8 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
     // If we are ending up with a single function result, do it.
     if (!oldSig.isThrows() || abiLowering == PromoteResultRemoveError) {
       // If the callee doesn't throw, then we can directly return the result.
-      replaceUsesWithDummy(res, b, b.getBoolAttr(false));
+      replaceUsesWithDummy(res, b,
+                           SIMDAttr::getScalarBool(op->getContext(), false));
 
       // Then just store the new callee result into the old memory result.
       res.setType(result.newResultTypes[0]);
@@ -772,9 +776,9 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
 
   // We check the result is coming from. If we can guarantee that it's either an
   // error or not, we can just repack the error or the valid result.
-  BoolAttr isError;
+  SIMDAttr isError;
   if (mlir::matchPattern(oldRetVal, mlir::m_Constant(&isError))) {
-    if (!isError.getValue()) {
+    if (!isError.getAsBool()) {
       // This is guaranteed to be a normal return.
       return VariantCreateOp::create(b, newVariantTy,
                                      POP::LoadOp::create(b, newResPtr), 1);

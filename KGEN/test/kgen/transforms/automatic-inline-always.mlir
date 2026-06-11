@@ -44,7 +44,7 @@ kgen.func @top1() -> index {
   kgen.return %1 : index
 }
 
-kgen.func @two_returns(%a: i1, %b: index, %c: index) -> index always_inline {
+kgen.func @two_returns(%a: !kgen.scalar<bool>, %b: index, %c: index) -> index always_inline {
   hlcf.if %a {
     kgen.return %b : index
   } else {
@@ -55,11 +55,11 @@ kgen.func @two_returns(%a: i1, %b: index, %c: index) -> index always_inline {
 
 // CHECK-LABEL: @top2
 kgen.func @top2() -> index {
-  %0:3 = "produce"() : () -> (i1, index, index)
+  %0:3 = "produce"() : () -> (!kgen.scalar<bool>, index, index)
   // CHECK: %1 = hlcf.loop
     // CHECK-NEXT: hlcf.if %0#0
       // CHECK-NEXT: hlcf.break "{{.*}}" %0#1
-  %1 = kgen.call @two_returns(%0#0, %0#1, %0#2) : (i1, index, index) -> index
+  %1 = kgen.call @two_returns(%0#0, %0#1, %0#2) : (!kgen.scalar<bool>, index, index) -> index
     // CHECK: hlcf.break "{{.*}}" %0#2
   // CHECK: return %1
   kgen.return %1 : index
@@ -68,7 +68,7 @@ kgen.func @top2() -> index {
 // -----
 
 kgen.func @async_fn(%arg0: index) async -> index always_inline {
-  %0 = pop.compiler.global_load "cond" : i1
+  %0 = pop.compiler.global_load "cond" : !kgen.scalar<bool>
   hlcf.if %0 {
     %idx1 = index.constant 1
     kgen.return %idx1 : index
@@ -81,8 +81,8 @@ kgen.func @async_fn(%arg0: index) async -> index always_inline {
 // CHECK-LABEL: kgen.func @call_it
 kgen.func @call_it() -> !co.routine {
   %idx2 = index.constant 2
-  %true = index.bool.constant true
-  pop.compiler.global_store "cond", %true : i1
+  %true = kgen.param.constant: scalar<bool> = <true>
+  pop.compiler.global_store "cond", %true : !kgen.scalar<bool>
   // CHECK: %0 = co.execute : index
   // CHECK:   %1 = pop.compiler.global_load
   // CHECK:   hlcf.if %1
@@ -141,7 +141,7 @@ kgen.func @top() {
 // -----
 
 kgen.func @unreachable_and_early_ret() always_inline {
-  %true = index.bool.constant true
+  %true = kgen.param.constant: scalar<bool> = <true>
   hlcf.if %true {
     kgen.return
   } else {

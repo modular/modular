@@ -1517,18 +1517,17 @@ kgen.func @fold_offset(%arg0: !kgen.pointer<index>) -> (!kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: @select
-kgen.func @select(%arg0: i1, %arg1: i32, %arg2: i32) -> (i32, i32) {
+kgen.func @select(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> (i32, i32) {
   // CHECK-NEXT: kgen.return %arg1, %arg2
-  %true = kgen.param.constant: i1 = <1>
+  %true = kgen.param.constant: scalar<bool> = <true>
   %0 = pop.select %arg0, %arg1, %arg1 : i32
   %1 = pop.select %true, %arg2, %arg1 : i32
   kgen.return %0, %1 : i32, i32
 }
 
 // CHECK-LABEL: @select_to_cond
-kgen.func @select_to_cond(%cond: i1) -> !kgen.scalar<bool> {
-  // CHECK-NEXT: %0 = pop.cast_from_builtin %arg0 : i1 to !kgen.scalar<bool>
-  // CHECK-NEXT: kgen.return %0
+kgen.func @select_to_cond(%cond: !kgen.scalar<bool>) -> !kgen.scalar<bool> {
+  // CHECK-NEXT: kgen.return %arg0
   %true = kgen.param.constant: scalar<bool> = <true>
   %false = kgen.param.constant: scalar<bool> = <false>
   %0 = pop.select %cond, %true, %false : !kgen.scalar<bool>
@@ -1585,16 +1584,16 @@ kgen.func @large_int_memory_leak() -> !kgen.scalar<si128> {
 }
 
 // CHECK-LABEL: kgen.func @select_true_false
-kgen.func @select_true_false(%arg0: i1) -> i1 {
-  // CHECK-NEXT: return %arg0 : i1
-  %0 = kgen.param.constant: i1 = <1>
-  %1 = kgen.param.constant: i1 = <0>
-  %2 = pop.select %arg0, %0, %1 : i1
-  kgen.return %2 : i1
+kgen.func @select_true_false(%arg0: !kgen.scalar<bool>) -> !kgen.scalar<bool> {
+  // CHECK-NEXT: return %arg0 : !kgen.scalar<bool>
+  %0 = kgen.param.constant: scalar<bool> = <true>
+  %1 = kgen.param.constant: scalar<bool> = <false>
+  %2 = pop.select %arg0, %0, %1 : !kgen.scalar<bool>
+  kgen.return %2 : !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: kgen.func @select_of_select
-kgen.func @select_of_select(%arg0: i1, %arg1: index, %arg2: index, %arg3: index) -> (index, index) {
+kgen.func @select_of_select(%arg0: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> (index, index) {
   // CHECK-NEXT: %0 = pop.select %arg0, %arg1, %arg3
   %0 = pop.select %arg0, %arg1, %arg2 : index
   %1 = pop.select %arg0, %0, %arg3 : index

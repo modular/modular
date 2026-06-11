@@ -25,7 +25,7 @@ lit.fn @bad_continue() {
 }
 
 // break in an 'else' is an error unless in a nested loop.
-lit.fn @bad_break_2(%arg0: i1) {
+lit.fn @bad_break_2(%arg0: !kgen.scalar<bool>) {
   // CHECK: hlcf.loop "_loop_0"
   lit.loop {
     hlcf.if %arg0 {

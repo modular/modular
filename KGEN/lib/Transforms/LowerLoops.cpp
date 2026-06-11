@@ -111,8 +111,16 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
     break;
   }
 
-  // Create IfOp with ThenBlock yields and ElseBlock breaks.
-  auto ifOp = IfOp::create(rewriter, forLoop->getLoc(), ValueRange{}, cmpOp);
+  // Create IfOp with ThenBlock yields and ElseBlock breaks. `index.cmp`
+  // produces an `i1`, so normalize to the `scalar<bool>` condition.
+  //
+  // TODO: this won't be needed after migrating scalar<int>, but we need to
+  // create simdcmp above.
+  auto boolTy = KGEN::SIMDType::getScalarBoolType(rewriter.getContext());
+  Value cmpCond = KGEN::POP::CastFromBuiltinOp::create(
+                      rewriter, forLoop->getLoc(), boolTy, cmpOp)
+                      .getResult();
+  auto ifOp = IfOp::create(rewriter, forLoop->getLoc(), ValueRange{}, cmpCond);
 
   rewriter.createBlock(&ifOp.getThenRegion());
   YieldOp::create(rewriter, forLoop->getLoc());

@@ -9,7 +9,7 @@ kgen.func @loop_generates_constant() -> (index, index) {
   %0 = index.add %idx1, %idx2
   %1 = index.mul %0, %0
 
-  // CHECK: [[FALSE:%.*]] = index.bool.constant false
+  // CHECK: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
   // CHECK-DAG: [[IDX11:%.*]] = index.constant 11
   // CHECK-DAG: [[IDX9:%.*]] = index.constant 9
   // CHECK-DAG: [[IDX3:%.*]] = index.constant 3
@@ -21,7 +21,8 @@ kgen.func @loop_generates_constant() -> (index, index) {
   %2 = hlcf.loop(%arg0 = %idx0: index) -> index {
     // CHECK: index.cmp
     %3 = index.cmp slt(%arg0, %idx2)
-    hlcf.if %3 {
+    %b3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
+    hlcf.if %b3 {
       hlcf.yield
     } else {
       %4 = index.add %arg0, %1
@@ -34,9 +35,10 @@ kgen.func @loop_generates_constant() -> (index, index) {
   // COM: %2 will be a constant, so this cmp result will be a constant
   // CHECK-NOT: index.cmp
   %6 = index.cmp slt(%2, %idx2)
+  %b6 = pop.cast_from_builtin %6 : i1 to !kgen.scalar<bool>
 
   // CHECK: [[V1:%.*]] = hlcf.if [[FALSE]]
-  %7 = hlcf.if %6 -> index {
+  %7 = hlcf.if %b6 -> index {
     hlcf.yield %idx0: index
   } else {
     // CHECK: hlcf.yield [[IDX9]]
@@ -48,7 +50,7 @@ kgen.func @loop_generates_constant() -> (index, index) {
 }
 
 // CHECK-LABEL: @not_much_can_be_known
-kgen.func @not_much_can_be_known(%cond: i1) -> (index, index) {
+kgen.func @not_much_can_be_known(%cond: !kgen.scalar<bool>) -> (index, index) {
   // COM: Not much can be folded except obvious one that has constant operands.
   %idx0 = index.constant 0
   %idx1 = index.constant 1
@@ -62,7 +64,7 @@ kgen.func @not_much_can_be_known(%cond: i1) -> (index, index) {
 
   %0 = index.add %idx1, %idx2
   %1 = index.mul %0, %0
-  %2 = hlcf.loop(%arg0 = %idx0: index, %arg1 = %cond: i1) -> index {
+  %2 = hlcf.loop(%arg0 = %idx0: index, %arg1 = %cond: !kgen.scalar<bool>) -> index {
     %3 = hlcf.if %arg1 -> index {
       hlcf.yield %idx0: index
     } else {
@@ -70,7 +72,8 @@ kgen.func @not_much_can_be_known(%cond: i1) -> (index, index) {
     }
 
     %4 = index.cmp slt(%3, %arg0)
-    hlcf.if %4 {
+    %b4 = pop.cast_from_builtin %4 : i1 to !kgen.scalar<bool>
+    hlcf.if %b4 {
       hlcf.yield
     } else {
       %5 = index.add %3, %3
@@ -79,7 +82,8 @@ kgen.func @not_much_can_be_known(%cond: i1) -> (index, index) {
 
     %6 = index.add %3, %idx1
     %7 = index.cmp slt(%3, %idx2)
-    hlcf.continue %6, %7 : index, i1
+    %b7 = pop.cast_from_builtin %7 : i1 to !kgen.scalar<bool>
+    hlcf.continue %6, %b7 : index, !kgen.scalar<bool>
   }
 
   // CHECK: kgen.return [[IDX9]], [[V0:%.*]]
@@ -103,7 +107,7 @@ kgen.func @should_not_crash() -> (i1) {
 
 
 // CHECK-LABEL: @nested_if_constant_result
-kgen.func @nested_if_constant_result(%cond: i1) -> index {
+kgen.func @nested_if_constant_result(%cond: !kgen.scalar<bool>) -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
   %idx2 = index.constant 2
@@ -111,7 +115,7 @@ kgen.func @nested_if_constant_result(%cond: i1) -> index {
   %0 = index.add %idx1, %idx2
   %1 = index.mul %0, %0
 
-  // CHECK: [[TRUE:%.*]] = index.bool.constant true
+  // CHECK: [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
   // CHECK-DAG: [[IDX9:%.*]] = index.constant 9
   // CHECK-DAG: [[IDX3:%.*]] = index.constant 3
   // CHECK-DAG: [[IDX2:%.*]] = index.constant 2
@@ -129,9 +133,10 @@ kgen.func @nested_if_constant_result(%cond: i1) -> index {
     kgen.call @foo(%3#0) : (index) -> ()
     // COM: This cmp has constant result.
     %4 = index.cmp slt (%3#1, %idx2)
+    %b4 = pop.cast_from_builtin %4 : i1 to !kgen.scalar<bool>
 
     // CHECK: [[V2:%.*]] = hlcf.if [[TRUE]]
-    %5 = hlcf.if %4 -> index {
+    %5 = hlcf.if %b4 -> index {
       // CHECK: hlcf.yield [[IDX1]]
       hlcf.yield %3#1: index
     } else {
@@ -193,7 +198,8 @@ kgen.func @test_switches(%arg0: index) -> (index, index, index) {
     // COM: loop result is constant
     %6 = hlcf.loop(%arg1 = %idx0: index) -> index {
       %7 = index.cmp slt(%arg1, %idx2)
-      hlcf.if %7 {
+      %b7 = pop.cast_from_builtin %7 : i1 to !kgen.scalar<bool>
+      hlcf.if %b7 {
         hlcf.yield
       } else {
         hlcf.break %arg1: index
@@ -254,7 +260,8 @@ kgen.func @nested_loops() -> index {
   %2 = hlcf.loop(%arg0 = %idx0: index) -> index {
     %3 = hlcf.loop(%arg1 = %idx0: index) -> index {
       %4 = index.cmp slt(%arg1, %arg0)
-      hlcf.if %4 {
+      %b4 = pop.cast_from_builtin %4 : i1 to !kgen.scalar<bool>
+      hlcf.if %b4 {
         hlcf.yield
       } else {
         %5 = index.add %arg1, %1
@@ -265,7 +272,8 @@ kgen.func @nested_loops() -> index {
     }
 
     %7 = index.cmp slt(%3, %idx4)
-    hlcf.if %7 {
+    %b7 = pop.cast_from_builtin %7 : i1 to !kgen.scalar<bool>
+    hlcf.if %b7 {
       hlcf.yield
     } else {
       %8 = index.add %3, %1
@@ -302,7 +310,8 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
   %2 = hlcf.loop(%arg0 = %idx0: index) -> index {
     // CHECK: index.cmp
     %3 = index.cmp slt(%arg0, %idx110)
-    hlcf.if %3 {
+    %b3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
+    hlcf.if %b3 {
       hlcf.yield
     } else {
       %4 = index.add %arg0, %1
@@ -314,9 +323,10 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
 
   // CHECK: [[V6:%.*]] = index.cmp slt([[V2]], [[IDX2]])
   %6 = index.cmp slt(%2, %idx2)
+  %b6 = pop.cast_from_builtin %6 : i1 to !kgen.scalar<bool>
 
-  // CHECK: [[V7:%.*]] = hlcf.if [[V6:%.*]]
-  %7 = hlcf.if %6 -> index {
+  // CHECK: [[V7:%.*]] = hlcf.if
+  %7 = hlcf.if %b6 -> index {
     hlcf.yield %idx0: index
   } else {
     // CHECK: hlcf.yield [[IDX9]]
@@ -329,7 +339,7 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
 
 
  // CHECK-LABEL: @nested_if_breaks
- kgen.func @nested_if_breaks(%cond: i1) -> (index, index) {
+ kgen.func @nested_if_breaks(%cond: !kgen.scalar<bool>) -> (index, index) {
    %idx0 = index.constant 0
    %idx1 = index.constant 1
    %idx2 = index.constant 2
@@ -349,12 +359,14 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
    // COM: loop generates constant 6.
    %2 = hlcf.loop(%arg0 = %idx0: index) -> index {
      %3 = index.cmp slt(%arg0, %idx2)
-     hlcf.if %3 {
+     %b3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
+     hlcf.if %b3 {
        hlcf.yield
      } else {
        %4 = index.add %arg0, %idx2
        %5 = index.cmp slt(%4, %1)
-       hlcf.if %5 {
+       %b5 = pop.cast_from_builtin %5 : i1 to !kgen.scalar<bool>
+       hlcf.if %b5 {
          hlcf.yield
        } else {
          // break and return 6
@@ -367,7 +379,7 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
    }
 
    // COM: loop generates constant 1.
-   %6 = hlcf.loop(%arg0 = %cond: i1) -> index {
+   %6 = hlcf.loop(%arg0 = %cond: !kgen.scalar<bool>) -> index {
      // COM: Both regions of hlcf.if will terminate the current iteration
      // COM: immediately so that %9 and operations after will never be evaluated.
      %8 = hlcf.if %arg0 -> index {
@@ -377,7 +389,8 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
      }
      %9 = index.add %8, %idx1
      %10 = index.cmp slt (%9, %idx2)
-     hlcf.continue %10 : i1
+     %b10 = pop.cast_from_builtin %10 : i1 to !kgen.scalar<bool>
+     hlcf.continue %b10 : !kgen.scalar<bool>
    }
    // CHECK: kgen.return %idx6, %idx1
    kgen.return %2, %6 : index, index
@@ -407,14 +420,16 @@ kgen.func @should_continue() -> index {
   %idx1 = index.constant 1
   %0 = hlcf.loop (%arg0 = %idx0 : index, %arg1 = %idx1 : index) -> index {
     %2 = index.cmp sgt(%arg1, %idx0)
-    hlcf.if %2 {
+    %b2 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
+    hlcf.if %b2 {
       hlcf.yield
     } else {
       hlcf.break %arg0 : index
     }
     %3 = index.sub %arg1, %idx1
     %4 = index.cmp eq(%idx1, %arg1)
-    hlcf.if %4 {
+    %b4 = pop.cast_from_builtin %4 : i1 to !kgen.scalar<bool>
+    hlcf.if %b4 {
       hlcf.continue %arg0, %3 : index, index
     } else {
       hlcf.yield
@@ -445,12 +460,14 @@ kgen.func @indirect_loop_break(%cond: index) -> index {
     %2 = hlcf.loop(%arg0 = %idx0: index) -> index {
       // CHECK: index.cmp
       %3 = index.cmp slt(%arg0, %cond)
-      hlcf.if %3 {
+      %b3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
+      hlcf.if %b3 {
         // This breaks to the outer loop instead of the inner one.
         hlcf.break "inlined_cf_scope" %arg0 : index
       } else {
         %4 = index.cmp slt(%arg0, %idx7)
-        hlcf.if %4 {
+        %b4 = pop.cast_from_builtin %4 : i1 to !kgen.scalar<bool>
+        hlcf.if %b4 {
           hlcf.yield
         } else {
           %5 = index.add %arg0, %idx1
@@ -485,7 +502,8 @@ kgen.func @single_unreachable_indirect_loop_break(%cond: index) -> index {
   %0 = hlcf.loop "inlined_cf_scope" () -> index {
     hlcf.loop "_loop_0" (%arg2 = %idx100000 : index, %arg3 = %idx0 : index) {
       %18 = index.cmp sgt(%arg2, %idx0)
-      hlcf.if %18 {
+      %b18 = pop.cast_from_builtin %18 : i1 to !kgen.scalar<bool>
+      hlcf.if %b18 {
         hlcf.yield
       } else {
         hlcf.break "inlined_cf_scope" %idx1 : index

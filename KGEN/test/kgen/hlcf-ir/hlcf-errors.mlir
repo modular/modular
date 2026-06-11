@@ -29,7 +29,7 @@ kgen.func @return_mismatch_result_count(%arg0: i32) -> i64 {
 
 // -----
 
-kgen.func @yield_mismatch(%arg0: i1, %arg1 : i32) {
+kgen.func @yield_mismatch(%arg0: !kgen.scalar<bool>, %arg1 : i32) {
   // expected-note @below {{to end of parent operation here}}
   %0 = hlcf.if %arg0 -> i64 {
     // expected-error @below {{'hlcf.yield' op branch input #0 has type 'i32' but target expected 'i64' along control-flow edge from here}}
@@ -42,7 +42,7 @@ kgen.func @yield_mismatch(%arg0: i1, %arg1 : i32) {
 // -----
 
 // expected-note @below {{see control-flow root here}}
-kgen.func @break_no_loop(%arg0: i1) {
+kgen.func @break_no_loop(%arg0: !kgen.scalar<bool>) {
   hlcf.if %arg0 {
     kgen.return
   } else {

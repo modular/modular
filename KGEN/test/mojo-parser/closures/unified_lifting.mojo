@@ -57,7 +57,7 @@ def outer() -> Int:
         return 123
 
 
-# CHECK: lit.fn @"stateless()`{{.*}}"[{{.*}}]({{.*}}) throws -> i1
+# CHECK: lit.fn @"stateless()`{{.*}}"[{{.*}}]({{.*}}) throws -> !kgen.scalar<bool>
 
 # // -----
 

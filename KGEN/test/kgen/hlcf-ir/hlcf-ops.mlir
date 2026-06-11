@@ -31,7 +31,7 @@ kgen.func @loop(%arg0: i32, %arg1: i64) {
 }
 
 // CHECK-LABEL: kgen.func @if
-kgen.func @if(%arg0: i1, %arg1: i32, %arg2: i64) {
+kgen.func @if(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
   // CHECK-NEXT: hlcf.if %arg0 {
   hlcf.if %arg0 {
     // CHECK-NEXT: hlcf.yield
@@ -65,7 +65,7 @@ kgen.func @if(%arg0: i1, %arg1: i32, %arg2: i64) {
 }
 
 // CHECK-LABEL: kgen.func @func_loop_if
-kgen.func @func_loop_if(%arg0: i1, %arg1: i32, %arg2: i64) -> i32 {
+kgen.func @func_loop_if(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) -> i32 {
   // CHECK: %[[V0:.*]] = hlcf.loop (%[[A:.*]] = %arg2 : i64) -> i32
   %2 = hlcf.loop (%0 = %arg2 : i64) -> i32 {
     // CHECK: %[[V1:.*]] = hlcf.if %arg0 -> i64
@@ -90,7 +90,7 @@ kgen.func @func_loop_if(%arg0: i1, %arg1: i32, %arg2: i64) -> i32 {
 }
 
 // CHECK-LABEL: @labelled_loops
-kgen.func @labelled_loops(%cond: i1, %arg0: index, %arg1: i32) {
+kgen.func @labelled_loops(%cond: !kgen.scalar<bool>, %arg0: index, %arg1: i32) {
   // CHECK-NEXT: hlcf.loop "foo" (%{{.*}} = %{{.*}} : index) -> i32
   %0 = hlcf.loop "foo" (%a0 = %arg0 : index) -> i32 {
     // CHECK-NEXT: hlcf.loop "bar" (%{{.*}} = %{{.*}} : i32) -> index
@@ -145,13 +145,15 @@ kgen.func @elif(%arg0: index, %arg1: index, %arg2: index) {
   %idx0 = index.constant 0
   // CHECK:         [[VAR0:%.*]] = hlcf.elif -> index {
   // CHECK-NEXT:      [[VAR1:%.*]] = index.cmp eq(%arg0, %idx0)
-  // CHECK-NEXT:      hlcf.elif.yield [[VAR1]]
+  // CHECK-NEXT:      [[VAR1B:%.*]] = pop.cast_from_builtin [[VAR1]] : i1 to !kgen.scalar<bool>
+  // CHECK-NEXT:      hlcf.elif.yield [[VAR1B]]
   // CHECK-NEXT:    } then {
   // CHECK-NEXT:     hlcf.yield %arg0 : index
   // CHECK-NEXT:    } {
   // CHECK-NEXT:     %idx1 = index.constant 1
   // CHECK-NEXT:     [[VAR2:%.*]] = index.cmp eq(%arg0, %idx1)
-  // CHECK-NEXT:     hlcf.elif.yield [[VAR2]]
+  // CHECK-NEXT:     [[VAR2B:%.*]] = pop.cast_from_builtin [[VAR2]] : i1 to !kgen.scalar<bool>
+  // CHECK-NEXT:     hlcf.elif.yield [[VAR2B]]
   // CHECK-NEXT:    } then {
   // CHECK-NEXT:     hlcf.yield %arg0 : index
   // CHECK-NEXT:   } else {
@@ -159,13 +161,15 @@ kgen.func @elif(%arg0: index, %arg1: index, %arg2: index) {
   // CHECK-NEXT:   }
   %0 = hlcf.elif -> index {
     %c = index.cmp eq(%arg0, %idx0)
-    hlcf.elif.yield %c
+    %cb = pop.cast_from_builtin %c : i1 to !kgen.scalar<bool>
+    hlcf.elif.yield %cb
   } then {
     hlcf.yield %arg0 : index
   } {
     %idx1 = index.constant 1
     %c = index.cmp eq(%arg0, %idx1)
-    hlcf.elif.yield %c
+    %cb = pop.cast_from_builtin %c : i1 to !kgen.scalar<bool>
+    hlcf.elif.yield %cb
   } then {
     hlcf.yield %arg0 : index
   } else {
@@ -175,7 +179,8 @@ kgen.func @elif(%arg0: index, %arg1: index, %arg2: index) {
 
   // CHECK:      hlcf.elif {
   // CHECK-NEXT:   [[VAR3:%.*]] = index.cmp eq(%arg0, %idx0)
-  // CHECK-NEXT:    hlcf.elif.yield [[VAR3]]
+  // CHECK-NEXT:   [[VAR3B:%.*]] = pop.cast_from_builtin [[VAR3]] : i1 to !kgen.scalar<bool>
+  // CHECK-NEXT:    hlcf.elif.yield [[VAR3B]]
   // CHECK-NEXT:  } then {
   // CHECK-NEXT:    hlcf.yield
   // CHECK-NEXT:  } else {
@@ -183,7 +188,8 @@ kgen.func @elif(%arg0: index, %arg1: index, %arg2: index) {
   // CHECK-NEXT:  }
   hlcf.elif {
     %c = index.cmp eq(%arg0, %idx0)
-    hlcf.elif.yield %c
+    %cb = pop.cast_from_builtin %c : i1 to !kgen.scalar<bool>
+    hlcf.elif.yield %cb
   } then {
     hlcf.yield
   } else {
@@ -289,12 +295,14 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
   %idx2 = index.constant 2
   // CHECK: [[V0:%*.]]:2 = hlcf.elif -> index, index {
   // CHECK-NEXT:   [[V2:%*.]] = index.cmp eq(%arg0, %idx0)
-  // CHECK-NEXT:   hlcf.elif.yield [[V2]], %arg0, %arg0 : index, index
+  // CHECK-NEXT:   [[V2B:%*.]] = pop.cast_from_builtin [[V2]] : i1 to !kgen.scalar<bool>
+  // CHECK-NEXT:   hlcf.elif.yield [[V2B]], %arg0, %arg0 : index, index
   // CHECK-NEXT: } then (%arg1: index, %arg2: index){
   // CHECK-NEXT:   hlcf.yield %arg1, %arg1 : index, index
   // CHECK-NEXT: } (%arg1: index, %arg2: index){
   // CHECK-NEXT:   [[V2:%*.]] = index.cmp eq(%arg0, %idx1)
-  // CHECK-NEXT:   hlcf.elif.yield [[V2]], %arg1, %arg1 : index, index
+  // CHECK-NEXT:   [[V2B:%*.]] = pop.cast_from_builtin [[V2]] : i1 to !kgen.scalar<bool>
+  // CHECK-NEXT:   hlcf.elif.yield [[V2B]], %arg1, %arg1 : index, index
   // CHECK-NEXT: } then (%arg1: index, %arg2: index){
   // CHECK-NEXT:   hlcf.yield %arg1, %arg1 : index, index
   // CHECK-NEXT: } else (%arg1: index, %arg2: index){
@@ -302,12 +310,14 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
   // CHECK-NEXT: }
   %0:2 = hlcf.elif -> index, index {
      %3 = index.cmp eq(%arg0, %idx0)
-     hlcf.elif.yield %3, %arg0, %arg0 : index, index
+     %c3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
+     hlcf.elif.yield %c3, %arg0, %arg0 : index, index
   } then (%arg1: index, %arg2: index) {
      hlcf.yield %arg1, %arg1 : index, index
   } (%arg1: index, %arg2: index) {
      %4 = index.cmp eq(%arg0, %idx1)
-     hlcf.elif.yield %4, %arg1, %arg1 : index, index
+     %c4 = pop.cast_from_builtin %4 : i1 to !kgen.scalar<bool>
+     hlcf.elif.yield %c4, %arg1, %arg1 : index, index
   } then (%arg1: index, %arg2: index) {
      hlcf.yield %arg1, %arg1 : index, index
   } else (%arg1: index, %arg2: index) {

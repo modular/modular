@@ -284,8 +284,7 @@ def precedence_associativity(a: Int):
   # CHECK-NEXT: %[[TEN:.*]] = kgen.param.constant: !Int = <{10}>
   # CHECK-NEXT: %[[EQ:.*]] = lit.call {{.*}}__eq__{{.*}}(%[[C]], %[[TEN]])
   # CHECK-NEXT: %[[EQSB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}%[[EQ]]
-  # CHECK-NEXT: %[[EQI1:.*]] = pop.cast_to_builtin %[[EQSB]]
-  # CHECK-NEXT: %[[RESULT:.*]] = hlcf.if %[[EQI1]] -> !Int {
+  # CHECK-NEXT: %[[RESULT:.*]] = hlcf.if %[[EQSB]] -> !Int {
   # CHECK-NEXT:   %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
   # CHECK-NEXT:   hlcf.yield %[[ZERO]] : !Int
   # CHECK-NEXT: } else {
@@ -293,8 +292,7 @@ def precedence_associativity(a: Int):
   # CHECK-NEXT:  %[[ELEVEN:.*]] = kgen.param.constant: !Int = <{11}>
   # CHECK-NEXT:  %[[EQ:.*]] = lit.call {{.*}}__eq__{{.*}}(%[[C]], %[[ELEVEN]])
   # CHECK-NEXT:  %[[EQSB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[EQ]])
-  # CHECK-NEXT:  %[[EQI1:.*]] = pop.cast_to_builtin %[[EQSB]]
-  # CHECK-NEXT:  %[[RIGHT_IF_RESULT:.*]] = hlcf.if %[[EQI1]] -> !Int {
+  # CHECK-NEXT:  %[[RIGHT_IF_RESULT:.*]] = hlcf.if %[[EQSB]] -> !Int {
   # CHECK-NEXT:    %[[ONE:.*]] = kgen.param.constant: !Int = <{1}>
   # CHECK-NEXT:    hlcf.yield %[[ONE]] : !Int
   # CHECK-NEXT:  } else {
@@ -456,8 +454,7 @@ def andOr1(a: Boolish, b: Boolish):
 
   # CHECK: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%a)
   # CHECK: [[SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[BOOL]])
-  # CHECK: [[I1:%.*]] = pop.cast_to_builtin [[SB]]
-  # CHECK: hlcf.if [[I1]] -> !Boolish {
+  # CHECK: hlcf.if [[SB]] -> !Boolish {
   # CHECK:   = lit.call {{.*}}__init__{{.*}}"{{.*}}(%b){{.*}}*, "copy"
   # CHECK:   hlcf.yield
   # CHECK: } else {
@@ -474,8 +471,7 @@ def andOr2(a: Boolish, b: Boolish):
 
   # CHECK: [[ABOOL:%.*]] = lit.call {{.*}}Boolish::@"__bool__{{.*}}(
   # CHECK-NEXT: [[SB:%.*]] = lit.call {{.*}}@Bool::@"__mlir_bool__{{.*}}([[ABOOL]])
-  # CHECK-NEXT: [[I1:%.*]] = pop.cast_to_builtin [[SB]]
-  # CHECK-NEXT:  = hlcf.if [[I1]] -> !Boolish {
+  # CHECK-NEXT:  = hlcf.if [[SB]] -> !Boolish {
   # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}Boolish::@"__init__{{.*}}"{{.*}}(%a){{.*}}*, "copy"
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -490,11 +486,10 @@ def andOr3(a: Boolish, c: Bool):
 
   # CHECK: [[ABOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%a)
   # CHECK-NEXT: [[SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[ABOOL]])
-  # CHECK-NEXT: [[I1:%.*]] = pop.cast_to_builtin [[SB]]
-  # CHECK-NEXT:  = hlcf.if [[I1]] -> !Bool {
+  # CHECK-NEXT:  = hlcf.if [[SB]] -> !Bool {
   # CHECK-NEXT:   hlcf.yield %c
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}([[I1]])
+  # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}([[SB]])
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: }
   _ = a and c
@@ -504,9 +499,8 @@ def andOr4(b: Boolish, c: Bool):
   # Check incompatible types that are nevertheless boolish.
   # CHECK: [[BBOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%b)
   # CHECK-NEXT: [[BSB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[BBOOL]])
-  # CHECK-NEXT: [[BI1:%.*]] = pop.cast_to_builtin [[BSB]]
-  # CHECK-NEXT: = hlcf.if [[BI1]] -> !Bool {
-  # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}([[BI1]])
+  # CHECK-NEXT: = hlcf.if [[BSB]] -> !Bool {
+  # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}([[BSB]])
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK: } else {
   # CHECK-NEXT: hlcf.yield %c : !Bool
@@ -520,9 +514,8 @@ def andOr2(b: Boolish, d: MemBoolish):
 
   # CHECK: [[DBOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%d)
   # CHECK-NEXT: [[DSB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[DBOOL]])
-  # CHECK-NEXT: [[DI1:%.*]] = pop.cast_to_builtin [[DSB]]
   # CHECK-NEXT: [[IFRESULT:%.*]] = lit.var.decl {{.*}} : !lit.ref<!MemBoolish
-  # CHECK-NEXT: hlcf.if [[DI1]] {
+  # CHECK-NEXT: hlcf.if [[DSB]] {
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}"{{.*}}(%d, [[ANON:%[^)]*]]){{.*}}*, "copy"
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
@@ -579,8 +572,7 @@ def test_if_cond(var cond: Bool, memCond: MemBoolish):
     # CHECK: %i = lit.var.decl "i"
     # CHECK: %[[COND:.*]] = lit.ref.load %cond
     # CHECK: %[[LIT_BOOLSB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[COND]])
-    # CHECK-NEXT: %[[LIT_BOOLI1:.*]] = pop.cast_to_builtin %[[LIT_BOOLSB]]
-    # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLI1]]
+    # CHECK-NEXT: %[[IF_RES:.*]] = hlcf.if %[[LIT_BOOLSB]]
     # CHECK-NEXT:   %[[INT_TWO:.*]] = kgen{{.*}}{2}
     # CHECK-NEXT:   hlcf.yield %[[INT_TWO]]
     # CHECK-NEXT: } else {
@@ -1012,7 +1004,7 @@ def function_types():
   # CHECK: lit.alias.decl *"p0{{.*}}<<"a": !Int>(!lit.struct<#ParamType <:!Int *(0,0)>{{.*}}>, |) -> !kgen.none
   comptime p0 = def[a: Int](ParamType[a]) thin -> None
 
-  # CHECK: lit.alias.decl *"p1{{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
+  # CHECK: lit.alias.decl *"p1{{.*}}<<"a": !Int, "b": {{.*}}#ParamType <:!Int *(0,0)>>>[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>
   comptime p1 = def[a: Int, b: ParamType[a]]() thin raises -> None
 
   # CHECK: lit.alias.decl *"p2{{.*}}"Ts": !lit.struct<#TypeList{{.*}} pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack
@@ -1035,7 +1027,7 @@ def function_types():
   # CHECK: lit.var.decl "float4"{{.*}}(!lit.ref<!Int, mut *[0,0]> mut, |) -> !kgen.none
   var float4: def(mut Int) thin -> None
 
-  # CHECK: lit.var.decl "float5"{{.*}}(!Int, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
+  # CHECK: lit.var.decl "float5"{{.*}}(!Int, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> !kgen.scalar<bool>
   var float5: def(Int) thin raises -> None
 
   # CHECK: lit.var.decl "float6"{{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none

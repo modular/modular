@@ -22,7 +22,7 @@ kgen.func @basic(%arg0: !kgen.pointer<struct<(struct<(scalar<index>)>, struct<(s
 }
 
 // CHECK-LABEL: @many_nests
-kgen.func @many_nests(%arg0: !kgen.pointer<struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>>, %cond: i1) {
+kgen.func @many_nests(%arg0: !kgen.pointer<struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>>, %cond: !kgen.scalar<bool>) {
   %struct = pop.load %arg0 : !kgen.pointer<struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>>
 
   // CHECK: %[[LOAD:.*]] = pop.load
@@ -70,7 +70,7 @@ kgen.func @memory_ops_untouched(%input: !kgen.pointer<index>, %output: !kgen.poi
 }
 
 // CHECK-LABEL: @hoist_loop_index
-kgen.func @hoist_loop_index(%arg0: index, %cond: i1) {
+kgen.func @hoist_loop_index(%arg0: index, %cond: !kgen.scalar<bool>) {
   // CHECK-NEXT: hlcf.loop
   hlcf.loop (%arg1 = %arg0 : index) {
     // CHECK-NEXT: index.add

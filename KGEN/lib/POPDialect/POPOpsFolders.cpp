@@ -1591,8 +1591,8 @@ LogicalResult OffsetOp::canonicalize(OffsetOp op, PatternRewriter &b) {
 
 OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
   // Narrow to one of the conditional values.
-  if (auto cond = dyn_cast_if_present<BoolAttr>(adaptor.getCondition())) {
-    if (cond.getValue()) {
+  if (auto cond = dyn_cast_if_present<SIMDAttr>(adaptor.getCondition())) {
+    if (cond.getAsBool()) {
       if (Attribute attr = adaptor.getTrueValue())
         return attr;
       return getTrueValue();
@@ -1603,11 +1603,13 @@ OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
   }
 
   // Fold `select x, true, false -> x`.
-  auto trueAttr = dyn_cast_if_present<BoolAttr>(adaptor.getTrueValue());
-  auto falseAttr = dyn_cast_if_present<BoolAttr>(adaptor.getFalseValue());
-  if (trueAttr && falseAttr && trueAttr.getValue() == true &&
-      falseAttr.getValue() == false)
-    return getCondition();
+  if (getCondition().getType() == getType()) {
+    auto trueAttr = dyn_cast_if_present<SIMDAttr>(adaptor.getTrueValue());
+    auto falseAttr = dyn_cast_if_present<SIMDAttr>(adaptor.getFalseValue());
+    if (trueAttr && falseAttr && trueAttr.getAsBool() == true &&
+        falseAttr.getAsBool() == false)
+      return getCondition();
+  }
 
   // Fold `select x, undef, y -> y` and `select x, y, undef -> y`.
   if (isa_and_nonnull<UnknownAttr, UninitMemAttr>(adaptor.getTrueValue()))
@@ -1623,42 +1625,6 @@ OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
 }
 
 namespace {
-/// Fold the following pattern
-///   %cond: i1
-///   %true  = kgen.param.constant: scalar<bool> = <true>
-///   %false = kgen.param.constant: scalar<bool> = <false>
-///   %res   = pop.select %cond, %true, %false : !kgen.scalar<bool>
-/// Into
-///   %res   = pop.cast_from_builtin %cond i1 to !kgen.scalar<bool>
-struct SelectTrueFalseScalarBool : OpRewritePattern<SelectOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(SelectOp op,
-                                PatternRewriter &b) const override {
-    auto simdTy = dyn_cast<SIMDType>(op.getType());
-    if (!simdTy || !simdTy.isScalar() ||
-        simdTy.getResolvedDType() != KGENDType::kBool) {
-      return b.notifyMatchFailure(op, "result type isn't !kgen.scalar<bool>");
-    }
-
-    SIMDAttr trueVal, falseVal;
-    if (!mlir::matchPattern(op.getTrueValue(), mlir::m_Constant(&trueVal)) ||
-        !mlir::matchPattern(op.getFalseValue(), mlir::m_Constant(&falseVal)))
-      return b.notifyMatchFailure(op, "True/False value isn't constant");
-
-    auto isBoolAttr = [](SIMDAttr attr, bool value) {
-      return attr.getValues().front().getBoolVal() == value;
-    };
-
-    if (isBoolAttr(trueVal, true) && isBoolAttr(falseVal, false)) {
-      b.replaceOpWithNewOp<POP::CastFromBuiltinOp>(op, op.getType(),
-                                                   op.getCondition());
-      return success();
-    }
-
-    return b.notifyMatchFailure(op, "failed to match true/false constants");
-  }
-};
 
 /// Canonicalize `select x, (select x, a, b), c` into `select x, a, c` or
 /// `select x, a, (select x, b, c)` into `select x, a, c`.
@@ -1692,7 +1658,7 @@ struct SelectOfSelect : OpRewritePattern<SelectOp> {
 
 void SelectOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                            MLIRContext *context) {
-  results.add<SelectTrueFalseScalarBool, SelectOfSelect>(context);
+  results.add<SelectOfSelect>(context);
 }
 
 //===----------------------------------------------------------------------===//

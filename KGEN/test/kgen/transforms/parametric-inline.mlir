@@ -12,7 +12,7 @@ kgen.generator @parent() {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee() -> index always_inline {
-  %cond = "some.cond"() : () -> i1
+  %cond = "some.cond"() : () -> !kgen.scalar<bool>
   hlcf.if %cond {
     %0 = index.constant 1
     kgen.return %0 : index
@@ -41,7 +41,7 @@ kgen.generator @parent<A>() {
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<T: type>() -> !kgen.param<T> always_inline {
   %0 = "some.producer"() : () -> !kgen.param<T>
-  %cond = "some.cond"() : () -> i1
+  %cond = "some.cond"() : () -> !kgen.scalar<bool>
   hlcf.if %cond {
     kgen.return %0 : !kgen.param<T>
   } else {
@@ -514,7 +514,7 @@ kgen.generator @parent() {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee() always_inline {
-  %cond = "some.cond"() : () -> i1
+  %cond = "some.cond"() : () -> !kgen.scalar<bool>
   kgen.param.declare.region F = () {
     hlcf.if %cond {
       kgen.return
@@ -549,7 +549,7 @@ kgen.generator @callee<A>() -> index always_inline {
 // -----
 
 // CHECK-LABEL: kgen.generator @inline_call_in_if
-kgen.generator @inline_call_in_if(%cond: i1) {
+kgen.generator @inline_call_in_if(%cond: !kgen.scalar<bool>) {
   // CHECK-NEXT: hlcf.if
   hlcf.if %cond {
     // CHECK: inlined.a
@@ -1015,7 +1015,7 @@ kgen.generator @entry() {
 // -----
 
 kgen.generator @unreachable_and_early_ret() always_inline {
-  %true = index.bool.constant true
+  %true = kgen.param.constant: scalar<bool> = <true>
   hlcf.if %true {
     kgen.return
   } else {

@@ -3,7 +3,7 @@
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: @stack_allocation
-kgen.func @stack_allocation(%cond: i1) {
+kgen.func @stack_allocation(%cond: !kgen.scalar<bool>) {
   // CHECK-NEXT: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
   // CHECK-NEXT: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {alignment = 4 : i64}
   // CHECK-NEXT: llvm.intr.lifetime.start %[[PTR0]]

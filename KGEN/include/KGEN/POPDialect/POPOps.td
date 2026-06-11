@@ -1118,7 +1118,8 @@ def POP_SelectOp : POPOp<"select", [Pure,
     ```
   }];
 
-  let arguments = (ins I1:$condition, AnyType:$trueValue, AnyType:$falseValue);
+  let arguments = (ins BoolScalar:$condition, AnyType:$trueValue,
+                   AnyType:$falseValue);
   let results = (outs AnyType:$result);
 
   let assemblyFormat = [{

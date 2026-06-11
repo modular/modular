@@ -520,35 +520,35 @@ def test_variadic_mem_only[x: MemStruct, y: MemStruct]():
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.fn @"defAlwaysRaises()"[{{.*}}](?, %__error__: {{.*}}, %__result__: {{.*}}) throws -> i1 attributes {sourceName = "defAlwaysRaises"
+# CHECK-LABEL: lit.fn @"defAlwaysRaises()"[{{.*}}](?, %__error__: {{.*}}, %__result__: {{.*}}) throws -> !kgen.scalar<bool> attributes {sourceName = "defAlwaysRaises"
 def defAlwaysRaises() raises -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
     # CHECK: lit.ref.store [[RESULT]], %__result__
-    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.return [[FALSE]]
     return 0
 
-# CHECK-LABEL: lit.fn @"defCanAlsoRaise()"{{.*}} throws -> i1
+# CHECK-LABEL: lit.fn @"defCanAlsoRaise()"{{.*}} throws -> !kgen.scalar<bool>
 def defCanAlsoRaise() raises Int -> Int:
     pass
 
 
 
 
-# CHECK-LABEL: lit.fn @"fnThatRaises()"{{.*}} throws -> i1
+# CHECK-LABEL: lit.fn @"fnThatRaises()"{{.*}} throws -> !kgen.scalar<bool>
 def fnThatRaises() raises -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
     # CHECK-NEXT: lit.ref.store [[RESULT]], %__result__
-    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.return [[FALSE]]
     return 0
 
 
-# CHECK-LABEL: lit.fn @"raisesReturnsNone()"{{.*}} throws -> i1
+# CHECK-LABEL: lit.fn @"raisesReturnsNone()"{{.*}} throws -> !kgen.scalar<bool>
 def raisesReturnsNone() raises:
     # CHECK-NEXT: %none = kgen.param.constant: none
     # CHECK-NEXT: lit.ref.store %none, %__result__
-    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.return [[FALSE]]
     # CHECK-NEXT: lit.end_fn
     pass
@@ -563,11 +563,11 @@ def raisesReturnsVariant() -> __mlir_type[`!kgen.variant<`, Error, `, index>`]:
     ](Int(1)._mlir_value)
 
 
-# CHECK-LABEL: lit.fn @"raise_and_return{{.*}} throws -> i1
+# CHECK-LABEL: lit.fn @"raise_and_return{{.*}} throws -> !kgen.scalar<bool>
 def raise_and_return(a: Error) raises -> Error:
     # COM: True result indicates an error.
     # CHECK: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}(%__result__)
-    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.return [[FALSE]]
     return Error()
 
@@ -586,7 +586,7 @@ def test_raising_computed_getter() raises:
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn1
 # CHECK-SAME: %__error__: !lit.ref<!Int, mut *"__error__`"> byref_error
-# CHECK-SAME: ) throws -> i1
+# CHECK-SAME: ) throws -> !kgen.scalar<bool>
 def test_typed_raises_fn1() raises Int -> String:
     pass
 
@@ -666,7 +666,7 @@ def call_test_typed_raises_fn() raises Int:
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn8
 # CHECK-SAME: %__error__: !lit.ref<!Int, mut *"__error__`"> byref_error
-# CHECK-SAME: ) throws -> i1
+# CHECK-SAME: ) throws -> !kgen.scalar<bool>
 def test_typed_raises_fn8() raises Int -> String:
     pass
 
@@ -1042,7 +1042,7 @@ async def mem_result() -> Awaitable:
     var coro = mem_result()
 
 
-# CHECK-LABEL: lit.fn @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int, {{.*}}> byref_result) throws|async -> i1
+# CHECK-LABEL: lit.fn @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int, {{.*}}> byref_result) throws|async -> !kgen.scalar<bool>
 async def mem_raises() raises -> Int:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][imm {}, imm {}]()
     # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1

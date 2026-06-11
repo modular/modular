@@ -1558,7 +1558,7 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
   //   hlcf.yield
   // else:
   //   lit.loop.break.else  // Jump to the 'else' block.
-  RValue condRVal = getEmitter().emitExprI1(condExp, EC_BoolCondition);
+  RValue condRVal = getEmitter().emitExprScalarBool(condExp, EC_BoolCondition);
   Value condVal =
       getEmitter().emitSRValue({AnyValue(condRVal), condExp}, EC_BoolCondition);
 
@@ -1780,7 +1780,8 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
         "__has_next__",
         CallOperands(CallSyntax::kMethodCall, seqExpr, EC_ForIterator,
                      {{MLValue(iterVar), seqExpr}}));
-    CValue hasNext = emitter.emitI1({hasNextBool, seqExpr}, EC_ForIterator);
+    CValue hasNext =
+        emitter.emitScalarBool({hasNextBool, seqExpr}, EC_ForIterator);
     SRValue shouldContinue =
         emitter.emitSRValue({hasNext, seqExpr}, EC_ForIterator);
     if (!shouldContinue) {
@@ -2470,10 +2471,15 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // Insert the flag ahead of our try and initialize it to 'True'.
       OpBuilder::InsertPoint ip = builder.saveInsertionPoint();
       builder.setInsertionPoint(tryOp);
-      excVar = getEmitter().emitVarDecl("__with_exc__", builder.getI1Type(),
-                                        loc, VarDeclKind::Synthesized);
+
+      auto boolType = SIMDType::getScalarBoolType(builder.getContext());
+      excVar = getEmitter().emitVarDecl("__with_exc__", boolType, loc,
+                                        VarDeclKind::Synthesized);
       RefStoreOp::create(
-          builder, loc, mlir::index::BoolConstantOp::create(builder, loc, true),
+          builder, loc,
+          ParamConstantOp::create(
+              builder, loc,
+              SIMDAttr::getScalarBool(builder.getContext(), true)),
           excVar);
       builder.restoreInsertionPoint(ip);
 
@@ -2656,9 +2662,11 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     builder.createBlock(&nestedTryOp.getExceptRegion());
 
     // Set the flag to 'False'.
-    RefStoreOp::create(builder, loc,
-                       mlir::index::BoolConstantOp::create(builder, loc, false),
-                       excVar);
+    RefStoreOp::create(
+        builder, loc,
+        ParamConstantOp::create(
+            builder, loc, SIMDAttr::getScalarBool(builder.getContext(), false)),
+        excVar);
 
     // Pass the error value to the __exit__ method.
     // TODO: this isn't using the same convention that Python does.  We support
@@ -2670,8 +2678,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
                                   {MBValue(nestedErrDecl), contextExp}});
     CValue exitResult = getEmitter().emitNamedMethodCall(
         "__exit__", std::move(exitOperandList));
-    RValue exitI1RVal =
-        getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
+    RValue exitI1RVal = getEmitter().emitScalarBool({exitResult, contextExp},
+                                                    EC_WithExitResult);
     SRValue exitI1Val =
         getEmitter().emitSRValue({exitI1RVal, contextExp}, EC_WithExitResult);
     if (!exitI1Val)
@@ -2705,8 +2713,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   (void)handleRaisingFinallyRegion(tryOp, smLoc, [&] {
     HLCF::IfOp excIf;
     if (nestedTryOp) {
-      excIf = HLCF::IfOp::create(builder, loc,
-                                 RefLoadOp::create(builder, loc, excVar));
+      Value excFlag = RefLoadOp::create(builder, loc, excVar);
+      excIf = HLCF::IfOp::create(builder, loc, excFlag);
       builder.createBlock(&excIf.getThenRegion());
     }
     emitNormalExitLogic();
@@ -2861,14 +2869,13 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
       return {failure(), {}};
 
     // Create the 'elif' and parse the body into its "then" region.
-    RValue condI1RVal = emitter.emitExprI1(condExp, EC_BoolCondition);
+    RValue condI1RVal = emitter.emitExprScalarBool(condExp, EC_BoolCondition);
     if (!condI1RVal)
       return {failure(), {}};
     std::optional<bool> knownConditionForWarning;
     if (PValue condI1PVal = condI1RVal.getIfPValue();
-        IntegerAttr asIntAttr =
-            sugarDynCastIfPresent<IntegerAttr>(condI1PVal.get())) {
-      knownConditionForWarning = !asIntAttr.getValue().isZero();
+        auto asBoolAttr = sugarDynCastIfPresent<SIMDAttr>(condI1PVal.get())) {
+      knownConditionForWarning = asBoolAttr.getAsBool();
     }
     SRValue condRVal =
         emitter.emitSRValue({condI1RVal, condExp}, EC_BoolCondition);
@@ -3975,7 +3982,7 @@ static LogicalResult emitIfClause(StmtParser &stmtEmitter,
   emitter.builder->setInsertionPointToStart(&condBlock);
 
   // Emit the condition expression.
-  RValue condI1RVal = emitter.emitExprI1(clause.expr, EC_BoolCondition);
+  RValue condI1RVal = emitter.emitExprScalarBool(clause.expr, EC_BoolCondition);
   if (!condI1RVal)
     return failure();
   SRValue condRVal =

@@ -269,7 +269,7 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
         b, op->getLoc(), KGEN::SIMDAttr::get(is.getIndex(), discrType));
     Value isEq = POP::CmpOp::create(b, op->getLoc(), KGEN::CmpPredicate::EQ,
                                     discrVal, discrCst);
-    b.replaceOpWithNewOp<POP::CastToBuiltinOp>(op, b.getI1Type(), isEq);
+    b.replaceOp(op, isEq);
     return;
   }
   if (auto get = dyn_cast<VariantGetOp>(op)) {

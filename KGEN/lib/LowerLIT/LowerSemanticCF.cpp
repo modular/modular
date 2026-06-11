@@ -427,8 +427,9 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
       if (conv == ArgConvention::DeinitMem)
         LIT::OwnershipMarkDestroyedOp::create(b, arg);
     }
-    LIT::ErrorReturnOp::create(b,
-                               ParamConstantOp::create(b, b.getBoolAttr(true)));
+    LIT::ErrorReturnOp::create(
+        b, ParamConstantOp::create(
+               b, SIMDAttr::getScalarBool(b.getContext(), true)));
   } else {
     LIT::TryRaiseOp::create(b, cast<LIT::TryOp>(opForRaise).getLabelAttr());
   }
@@ -765,9 +766,9 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     Region *deadRegion = nullptr;
     bool constantCondValue = false;
     if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
-      BoolAttr cond;
+      SIMDAttr cond;
       if (mlir::matchPattern(ifOp.getCond(), m_Constant(&cond))) {
-        constantCondValue = cond.getValue();
+        constantCondValue = cond.getAsBool();
         deadRegion =
             &(constantCondValue ? ifOp.getElseRegion() : ifOp.getThenRegion());
       }

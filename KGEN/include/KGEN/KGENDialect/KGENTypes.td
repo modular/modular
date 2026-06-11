@@ -1133,6 +1133,8 @@ def KGEN_SIMDType : KGENType<"SIMD", "simd", [
     std::optional<int64_t> getResolvedSize() const;
     /// Returns true if this is known to be a scalar type.
     bool isScalar() const { return getResolvedSize() == 1; }
+    /// Returns the `!kgen.scalar<bool>` type (a SIMD of size 1 and bool dtype).
+    static SIMDType getScalarBoolType(MLIRContext *ctx);
   }];
 }
 
