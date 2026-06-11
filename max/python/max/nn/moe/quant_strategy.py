@@ -482,9 +482,7 @@ class Nvfp4DequantStrategy:
         )
         # Activations are BF16 on this path by construction; self.dtype is
         # the packed storage dtype (uint8) and must not be used here.
-        dequanted = nvfp4_dequant(
-            weight, scales_f32, out_type=DType.bfloat16
-        )
+        dequanted = nvfp4_dequant(weight, scales_f32, out_type=DType.bfloat16)
 
         return grouped_matmul_ragged(
             hidden,
