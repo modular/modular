@@ -410,6 +410,12 @@ This version is still a work in progress.
   always, and fp32 a/b by default (accepting the simdgroup MMA's fp19
   truncation). Set `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL=0` for the precise
   naive fp32 path.
+- Added a naive split-K decode attention kernel for Apple GPUs, opt-in behind
+  `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE` (default off). On Apple Metal,
+  token-generation attention otherwise falls back to the unfused
+  `mha_gpu_naive`; this adds a paged-KV-cache decode path supporting MHA and
+  GQA. It is a correctness-first implementation and not yet
+  performance-optimized.
 
 ## Breaking changes
 

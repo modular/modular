@@ -13,6 +13,7 @@
 
 from std.math import ceildiv, recip
 from std.math.uutils import umod, ufloordiv, udivmod
+from std.os.env import getenv
 from std.math.constants import log2e
 from std.collections import OptionalReg
 from std.sys import (
@@ -20,6 +21,7 @@ from std.sys import (
     align_of,
     get_defined_bool,
     has_amd_gpu_accelerator,
+    has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
@@ -93,6 +95,7 @@ from std.memory import stack_allocation
 from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
 from .amd_rdna.mha_prefill import AttentionRDNA
+from .apple.naive_fa_decode import naive_fa_decode_apple
 from .amd_structured.attention import Attention
 from .amd_structured.mha_prefill_v2 import (
     MhaConfigV2,
@@ -515,6 +518,10 @@ def q_num_matrix_view_rows[dtype: DType, //](q: TileTensor[dtype, ...]) -> Int:
     comptime for i in range(1, q.rank - 2):
         num_rows *= Int(q.dim[i]())
     return num_rows
+
+
+def _apple_naive_fa_decode_enabled() -> Bool:
+    return getenv("MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE", "0") == "1"
 
 
 @always_inline
@@ -1513,28 +1520,79 @@ def flash_attention_dispatch[
     # Not supported by fast flash attention kernel.
     else:
         # Assumes BSHD.
-        mha_gpu_naive[
-            ragged=ragged,
-            _use_valid_length=_use_valid_length,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            sink=sink,
-        ](
-            q,
-            k,
-            v,
-            mask_functor,
-            output,
-            valid_length.value(),
-            scale,
-            batch_size,
-            max_prompt_len,
-            max_cache_valid_length,
-            num_heads,
-            depth,
-            group,
-            ctx,
-            sink_weights,
-        )
+        comptime if has_apple_gpu_accelerator():
+            # Apple-only, decode-only opt-in path (default OFF) while
+            # development is underway. Flag-unset behavior is the existing
+            # mha_gpu_naive path.
+            if is_token_generation and _apple_naive_fa_decode_enabled():
+                naive_fa_decode_apple[
+                    ragged=ragged,
+                    sink=sink,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                ](
+                    q,
+                    k,
+                    v,
+                    mask_functor,
+                    output,
+                    valid_length.value(),
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    num_heads,
+                    depth,
+                    group,
+                    ctx,
+                    sink_weights,
+                )
+            else:
+                mha_gpu_naive[
+                    ragged=ragged,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                    sink=sink,
+                ](
+                    q,
+                    k,
+                    v,
+                    mask_functor,
+                    output,
+                    valid_length.value(),
+                    scale,
+                    batch_size,
+                    max_prompt_len,
+                    max_cache_valid_length,
+                    num_heads,
+                    depth,
+                    group,
+                    ctx,
+                    sink_weights,
+                )
+        else:
+            mha_gpu_naive[
+                ragged=ragged,
+                _use_valid_length=_use_valid_length,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                sink=sink,
+            ](
+                q,
+                k,
+                v,
+                mask_functor,
+                output,
+                valid_length.value(),
+                scale,
+                batch_size,
+                max_prompt_len,
+                max_cache_valid_length,
+                num_heads,
+                depth,
+                group,
+                ctx,
+                sink_weights,
+            )
 
 
 def flash_attention[
