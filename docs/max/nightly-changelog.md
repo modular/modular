@@ -257,6 +257,12 @@ This version is still a work in progress.
 
 ### Python API
 
+- Added `CompiledModel.export_mef(path)` to `max.engine` and to the
+  `max.experimental.nn.Module.compile` result. It serializes the compiled
+  artifact directly, without requiring the model to be initialized on a
+  device, so it works in cross-compilation / virtual-device scenarios where
+  the target device is not attached.
+
 - Reduced default signal buffer size from 1025 to 257 MiB per GPU and fixed
   miscalculation of required space in `MOGGKernelAPI.mojo`. Calculation was
   wrong by a factor of `1/num_devices` since each device only needs scratch

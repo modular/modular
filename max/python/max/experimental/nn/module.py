@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Generic
 
 from max.driver import CPU, Buffer, Device, DLPackArray
+from max.engine import CompiledModel as EngineCompiledModel
 from max.engine import Model
 from max.experimental.realization_context import (
     GraphRealizationContext,
@@ -92,17 +93,32 @@ class CompiledModel(Generic[_P, _R]):
         output_slots: list[_OutputSlot],
         signal_buffers: list[Buffer],
         unary: bool,
+        compiled_artifact: EngineCompiledModel,
     ) -> None:
         self._engine_model = engine_model
         self._input_slots = input_slots
         self._output_slots = output_slots
         self._signal_buffers = signal_buffers
         self._unary = unary
+        self._compiled_artifact = compiled_artifact
 
     @property
     def engine_model(self) -> Model:
         """The underlying :class:`~max.engine.Model` for capture/replay."""
         return self._engine_model
+
+    def export_mef(self, path: str | Path) -> None:
+        """Exports the compiled model to a MEF file.
+
+        Writes the serialized artifact straight from the compiled model, so
+        it works even in cross-compilation / virtual-device scenarios where
+        the target device is not attached and :attr:`engine_model` is not a
+        live, executable model.
+
+        Args:
+            path: Filesystem path to write the MEF to.
+        """
+        self._compiled_artifact.export_mef(path)
 
     @property
     def signal_buffers(self) -> list[Buffer]:
@@ -1075,8 +1091,14 @@ class Module(Generic[_P, _R]):
 
             timer.mark_build_complete()
             with Tracer("Module.compile.session_load"):
-                session_model = session.load(
-                    graph, weights_registry=weights_registry
+                # Compile and initialize as separate steps (equivalent to
+                # session.load) so the compiled artifact is retained. The
+                # artifact is what backs `CompiledModel.export_mef`, and it
+                # remains usable even in virtual-device mode where `init`
+                # returns a mock model rather than a live one.
+                compiled_artifact = session.compile(graph)
+                session_model = session.init(
+                    compiled_artifact, weights_registry=weights_registry
                 )
 
             with Tracer("Module.compile.finalize"):
@@ -1091,6 +1113,7 @@ class Module(Generic[_P, _R]):
                     output_slots=output_slots,
                     signal_buffers=cached_sig_bufs,
                     unary=unary,
+                    compiled_artifact=compiled_artifact,
                 )
 
     def __rich_repr__(self):
