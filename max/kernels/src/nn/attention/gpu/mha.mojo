@@ -95,7 +95,10 @@ from std.memory import stack_allocation
 from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
 from .amd_rdna.mha_prefill import AttentionRDNA
-from .apple.naive_fa_decode import naive_fa_decode_apple
+from .apple.naive_fa_decode import (
+    NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM,
+    naive_fa_decode_apple,
+)
 from .amd_structured.attention import Attention
 from .amd_structured.mha_prefill_v2 import (
     MhaConfigV2,
@@ -1521,10 +1524,12 @@ def flash_attention_dispatch[
     else:
         # Assumes BSHD.
         comptime if has_apple_gpu_accelerator():
-            # Apple-only, decode-only opt-in path (default OFF) while
-            # development is underway. Flag-unset behavior is the existing
-            # mha_gpu_naive path.
-            if is_token_generation and _apple_naive_fa_decode_enabled():
+            # Apple decode-only opt-in; larger head_dim/prefill/flag-off -> mha_gpu_naive.
+            if (
+                is_token_generation
+                and _apple_naive_fa_decode_enabled()
+                and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM
+            ):
                 naive_fa_decode_apple[
                     ragged=ragged,
                     sink=sink,

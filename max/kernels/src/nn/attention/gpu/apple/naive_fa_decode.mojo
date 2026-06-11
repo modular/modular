@@ -59,6 +59,9 @@ from nn.attention.mha_operand import MHAOperand
 comptime BN = 16  # KV keys per producer tile step; must be <= producer block width
 comptime NEG_INF = Float32(-3.0e38)
 
+# Max head_dim; routes larger dims to mha_gpu_naive.
+comptime NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM = 256
+
 
 @always_inline
 def _ml_idx(
@@ -484,16 +487,21 @@ def naive_fa_decode_apple[
     # `CORE_BLOCK` is the producer threadgroup width (>= BN so every score slot
     # is written before the BN-wide reductions); `SplitSize` is the per-partition
     # KV span.
-    comptime MaxDepth = 128
+    # head_dim gated at dispatcher; producer asserts invariant.
+    comptime MaxDepth = NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM
     comptime SplitSize = 32
     comptime CORE_BLOCK = 64
 
-    # Uniform allocation (max partitions for every (batch, head)). The
-    # partition-last contiguous layout needs one stride across the batch;
-    # compacting per-sequence would require a per-step device->host sync of
-    # cache_lengths. Ragged compute stays free regardless — the producer
-    # early-returns and the stitch reads only a sequence's own splits.
-    var num_partitions = ceildiv(max_cache_size, SplitSize)
+    # Uniform allocation; per-sequence compaction would need a device->host
+    # cache_lengths sync each step. Cover the producer's cur_cache_len span
+    # (cache_length + cur_query_len): max_cache_size alone is one partition short
+    # when the cache length is a multiple of SplitSize.
+    var partition_keys: Int
+    comptime if _is_cache_length_accurate:
+        partition_keys = max_cache_size
+    else:
+        partition_keys = max_cache_size + max_prompt_len
+    var num_partitions = ceildiv(partition_keys, SplitSize)
 
     var o_partial_dev = ctx.enqueue_create_buffer[p_type](
         batch_size * num_heads * depth * num_partitions

@@ -55,6 +55,7 @@ def execute_decode_compare[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
+    kernel_max_cache_size: Int = 0,
 ) raises -> Float64:
     """Return the max-abs error (fp32) between `naive_fa_decode_apple` and the
     `mha_gpu_naive` reference on one decode batch.
@@ -209,6 +210,11 @@ def execute_decode_compare[
     # above; flags must mirror that overload's forwarded values.
     var k_operand = KVCacheMHAOperand(k_cache_device)
     var v_operand = KVCacheMHAOperand(v_cache_device)
+    # Lets a regression feed the kernel a tighter max_cache_size than the oracle,
+    # to exercise the launcher's partition sizing.
+    var test_max_cache_size = (
+        max_context_len if kernel_max_cache_size == 0 else kernel_max_cache_size
+    )
     naive_fa_decode_apple[
         _use_valid_length=True, _is_cache_length_accurate=False
     ](
@@ -221,7 +227,7 @@ def execute_decode_compare[
         scale,
         batch_size,
         max_prompt_len,
-        max_context_len,
+        test_max_cache_size,
         num_q_heads,
         depth,
         group,
@@ -289,6 +295,15 @@ def run_all(ctx: DeviceContext) raises:
         cache_lengths_short, max_seq, 1, 0, ctx
     )
     print("  PASS  max-abs-err:", e3)
+
+    # Partition off-by-one regression: a tight, mult-of-32 max_cache_size leaves
+    # the launcher one partition short unless it accounts for cur_query_len.
+    var cache_lengths_mult32: List[Int] = [128, 64, 96, 32]
+    print("=== off-by-one regression (tight mult-of-32 max_cache_size) ===")
+    var e4 = execute_decode_compare[8, kv_params_gqa](
+        cache_lengths_mult32, max_seq, 1, 0, ctx, kernel_max_cache_size=128
+    )
+    print("  PASS  max-abs-err:", e4)
 
 
 def main() raises:
