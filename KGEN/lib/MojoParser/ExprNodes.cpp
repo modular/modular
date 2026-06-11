@@ -2447,6 +2447,9 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   // happen before useDeferredOp is called, because useDeferredOp will analyze
   // result types stored in the state.
   bool hadTypeSpec = false;
+  // Set by `_type=__mlir_deferred_type`: force `kgen.deferred` without
+  // adding any result type.
+  bool forceDeferred = false;
   for (auto &attr : unboundOp.getAttrs()) {
     if (attr.getName() == "_type") {
       // We expect either a single type, `None`, or a `Tuple` of types.
@@ -2463,6 +2466,14 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       // Strip any sugar from the type specifier. Ops may have verifiers that
       // restrict the result type to something unsugared.
       value = getCanonicalAttr(value);
+
+      // Bare `__mlir_deferred_type` (the magic decl itself, not a deferred
+      // type instance): force `kgen.deferred` with no result types.
+      if (sugarIsa<MagicMLIRDeferredTypeType>(ASTType(value).mlirType)) {
+        forceDeferred = true;
+        hadTypeSpec = true;
+        continue;
+      }
 
       auto pushTypeToState = [&](TypedAttr type,
                                  const Twine &message) -> LogicalResult {
@@ -2532,7 +2543,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   bool isDeferredOp = false;
   NamedAttrList attrs;
-  if (useDeferredOp()) {
+  if (forceDeferred || useDeferredOp()) {
     // Change operation name within a state to `kgen.deferred`
     state.name = mlir::OperationName(DeferredOp::getOperationName(), context);
     isDeferredOp = true;
