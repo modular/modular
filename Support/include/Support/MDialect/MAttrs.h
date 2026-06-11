@@ -24,7 +24,6 @@ namespace M {
 
 // Forward declarations.
 struct HostMachineInfo;
-
 //===----------------------------------------------------------------------===//
 // DataLayout
 //===----------------------------------------------------------------------===//
@@ -62,12 +61,22 @@ struct HostMachineInfo;
 /// This class covers the minimum surface required to interoperate with LLVM's
 /// data layout. It should be expanded as required. The textual format is
 /// identical to LLVM's data layout specification.
+
+// Constant for total number of address spaces. Increase this value if needed.
+static constexpr uint32_t kNumAddrSpaces = 16;
 class DataLayout {
 public:
   /// Get the default alloca address space.
   int32_t getAllocaAddrSpace() const { return allocaAddrSpace; }
   /// Get the default address space pointer bitwidth.
-  int32_t getPointerBitWidth() const { return ptrWidth; }
+  int32_t getPointerBitWidth(uint32_t addrSpace = 0) const {
+    addrSpace = addrSpace >= ptrInfos.size() ? 0 : addrSpace;
+    // An address space with no explicit pointer spec falls back to the default
+    // address space (0), matching LLVM data layout semantics. A zero width
+    // marks an address space that was never set.
+    const PointerLayout &info = ptrInfos[addrSpace];
+    return info.ptrWidth ? info.ptrWidth : ptrInfos[0].ptrWidth;
+  }
   /// Get the default address space pointer size in bytes.
   int32_t getPointerSize() const {
     return llvm::divideCeil(getPointerBitWidth(), 8);
@@ -84,7 +93,13 @@ public:
   /// Get the ABI alignment of a vector type in bytes.
   int32_t getVectorABIAlign(int32_t numElts, int32_t eltBitWidth) const;
   /// Get the default address space pointer ABI alignment in bytes.
-  int32_t getPointerABIAlign() const { return ptrAbiAlign; }
+  int32_t getPointerABIAlign(uint32_t addrSpace = 0) const {
+    addrSpace = addrSpace >= ptrInfos.size() ? 0 : addrSpace;
+    // Fall back to the default address space when this one has no explicit
+    // spec (a zero width marks an unset address space).
+    const PointerLayout &info = ptrInfos[addrSpace];
+    return info.ptrWidth ? info.ptrAbiAlign : ptrInfos[0].ptrAbiAlign;
+  }
   /// Get the endianness
   bool getIsLittleEndian() const { return isLittleEndian; }
 
@@ -95,7 +110,13 @@ public:
   StringRef toString() const { return dlSpecStr; }
 
   /// Default constructor used during bytecode parsing.
-  DataLayout() {}
+  DataLayout() : ptrInfos(kNumAddrSpaces) {}
+  struct PointerLayout {
+    /// The pointer width.
+    int32_t ptrWidth = 0;
+    /// The pointer ABI alignment.
+    int32_t ptrAbiAlign = 0;
+  };
 
 private:
   DataLayout(StringRef dlSpecStr);
@@ -112,10 +133,7 @@ private:
   /// The list of alignment entries for vectors; the key is the datatype size in
   /// BITS, the value is the alignment in BYTES.
   SmallVector<std::pair<int32_t, int32_t>> vecAbiAlign;
-  /// The pointer width.
-  int32_t ptrWidth;
-  /// The pointer ABI alignment.
-  int32_t ptrAbiAlign;
+
   /// The default alloca address space.
   int32_t allocaAddrSpace = 0;
 
@@ -124,6 +142,11 @@ private:
 
   /// The underlying string representation.
   std::string dlSpecStr;
+
+  /// Pointer width and abiAlignment for different address spaces. Entries that
+  /// are never set keep a zero width, which the getters treat as "fall back to
+  /// the default address space".
+  SmallVector<PointerLayout, kNumAddrSpaces> ptrInfos;
 };
 
 //===----------------------------------------------------------------------===//

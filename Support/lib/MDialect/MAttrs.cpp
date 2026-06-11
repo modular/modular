@@ -729,15 +729,13 @@ AlignedBytesType AlignedBytesAttr::getAlignedBytesType() const {
 
 /// Construct the default data layout and then overwrite the entries when
 /// parsing the data layout string.
-// clang-format off
-DataLayout::DataLayout(StringRef dlSpecStr) :
-      intAbiAlign{{1, 1}, {8, 1}, {16, 2}, {32, 4}, {64, 4}},
+DataLayout::DataLayout(StringRef dlSpecStr)
+    : intAbiAlign{{1, 1}, {8, 1}, {16, 2}, {32, 4}, {64, 4}},
       fpAbiAlign{{16, 2}, {32, 4}, {64, 8}, {128, 16}},
-      vecAbiAlign{{64, 8}, {128, 16}},
-      ptrWidth(64),
-      ptrAbiAlign(8),
-      dlSpecStr(dlSpecStr) {}
-// clang-format on
+      vecAbiAlign{{64, 8}, {128, 16}}, dlSpecStr(dlSpecStr),
+      ptrInfos(kNumAddrSpaces) {
+  ptrInfos[0] = {.ptrWidth = 64, .ptrAbiAlign = 8};
+}
 
 /// Checked version of split to ensure mandatory subparts.
 static ErrorOr<std::pair<StringRef, StringRef>> checkedSplit(StringRef str,
@@ -851,10 +849,6 @@ ErrorOrSuccess DataLayout::parse() {
           return addrSpaceOr.takeError();
         addrSpace = std::move(*addrSpaceOr);
       }
-      if (addrSpace != 0) {
-        // Skip non-default address spaces.
-        break;
-      }
 
       // Size.
       if (rest.empty())
@@ -865,13 +859,15 @@ ErrorOrSuccess DataLayout::parse() {
           return splitOr.takeError();
         split = std::move(*splitOr);
       }
+      int32_t pWidth, pAbiAlign;
+
       {
         auto ptrWidthOr = getInt(tok);
         if (ptrWidthOr.isError())
           return ptrWidthOr.takeError();
-        ptrWidth = std::move(*ptrWidthOr);
+        pWidth = std::move(*ptrWidthOr);
       }
-      if (!ptrWidth)
+      if (!pWidth)
         return Error("invalid pointer size of 0 bytes");
 
       // ABI alignment.
@@ -887,10 +883,16 @@ ErrorOrSuccess DataLayout::parse() {
         auto ptrAbiAlignOr = getIntInBytes(tok);
         if (ptrAbiAlignOr.isError())
           return ptrAbiAlignOr.takeError();
-        ptrAbiAlign = std::move(*ptrAbiAlignOr);
+        pAbiAlign = std::move(*ptrAbiAlignOr);
       }
-      if (!llvm::isPowerOf2_32(ptrAbiAlign))
+      if (!llvm::isPowerOf2_32(pAbiAlign))
         return Error("pointer ABI alignment must be a power of 2");
+
+      if (addrSpace >= ptrInfos.size())
+        ptrInfos.resize(addrSpace + 1);
+
+      ptrInfos[addrSpace] =
+          PointerLayout{.ptrWidth = pWidth, .ptrAbiAlign = pAbiAlign};
 
       // Skip pointer preferred alignment and index size.
       break;
@@ -1175,11 +1177,12 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
     }
   }
 
-  return TargetInfoAttr::get(
-      ctx, llvm::Triple(targetTriple), arch, resolvedFeatures, std::move(*dl),
-      machine->getRelocationModel(),
-      simdWidthFromFeatures(StringRef(resolvedFeatures)),
-      dl->getPointerBitWidth(), tuneCpu, acceleratorArch);
+  int32_t pointerBitWidth = dl->getPointerBitWidth();
+  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), arch,
+                             resolvedFeatures, std::move(*dl),
+                             machine->getRelocationModel(),
+                             simdWidthFromFeatures(StringRef(resolvedFeatures)),
+                             pointerBitWidth, tuneCpu, acceleratorArch);
 }
 
 ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
