@@ -13,9 +13,9 @@
 
 # A wrapper struct with conditional Copyable conformance.
 # ConditionalCopyableWrapper[T] is Copyable if and only if T is Copyable.
-struct ConditionalCopyableWrapper[T: ImplicitlyDestructible & Movable](
+struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var value: Self.T
@@ -40,7 +40,7 @@ def needs_copyable[T: Copyable](x: T):
 
 
 # A movable-only type (not Copyable)
-struct MovableOnlyType(ImplicitlyDestructible, Movable):
+struct MovableOnlyType(ImplicitlyDeletable, Movable):
     var x: Int
 
     def __init__(out self, x: Int):
@@ -111,7 +111,7 @@ def use_printable_closure[
 
 # CHECK: argument type 'ConditionalCopyableWrapper[T]' does not conform to trait 'Copyable'
 def unsound_generic_call[
-    T: ImplicitlyDestructible & Movable
+    T: ImplicitlyDeletable & Movable
 ](x: ConditionalCopyableWrapper[T]):
     needs_copyable(x)
 
@@ -136,7 +136,7 @@ def unsound_variadic_call[*types: Movable](t: Tuple[*types]):
 
 # CHECK: argument type 'ConditionalCopyableWrapper[T]' does not conform to trait 'Copyable'
 def wrong_where_clause[
-    T: ImplicitlyDestructible & Movable
+    T: ImplicitlyDeletable & Movable
 ](x: ConditionalCopyableWrapper[T]) where conforms_to(T, Intable):
     needs_copyable(x)
 
@@ -150,9 +150,9 @@ def wrong_where_clause[
 
 
 @fieldwise_init
-struct AliasWrapper[T: ImplicitlyDestructible & Movable](
+struct AliasWrapper[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     comptime Inner = ConditionalCopyableWrapper[Self.T]
@@ -173,8 +173,8 @@ def alias_needs_copyable():
 # RegisterPassable) to a function requiring RegisterPassable must be rejected.
 
 
-struct ConditionalRPWrapper[T: ImplicitlyDestructible & Movable](
-    ImplicitlyDestructible,
+struct ConditionalRPWrapper[T: ImplicitlyDeletable & Movable](
+    ImplicitlyDeletable,
     Movable,
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):

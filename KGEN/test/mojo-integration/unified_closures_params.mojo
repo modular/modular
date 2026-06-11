@@ -79,14 +79,14 @@ struct Polar[y: Int](Coordinate, ImplicitlyCopyable):
 
 
 def useDefinesCapturingParamClosure[
-    X: Coordinate & ImplicitlyCopyable & ImplicitlyDestructible, C: def() -> X
+    X: Coordinate & ImplicitlyCopyable & ImplicitlyDeletable, C: def() -> X
 ](impl: C):
     var coordinate = impl()
     coordinate.prettyPrint()
 
 
 def definesCapturingParamClosure[
-    X: Coordinate & ImplicitlyCopyable & ImplicitlyDestructible
+    X: Coordinate & ImplicitlyCopyable & ImplicitlyDeletable
 ](something: X, one: Int) raises:
     def closureImpl() {var} -> X:
         return something
@@ -102,7 +102,7 @@ def definesCapturingParamClosure[
 
 
 def usesParamRefClosure[
-    T: Coordinate & ImplicitlyCopyable & ImplicitlyDestructible,
+    T: Coordinate & ImplicitlyCopyable & ImplicitlyDeletable,
     C: def[x: Int, Y: Coordinate](xx: T, unused: Y) -> Polar[x],
 ](impl: C, value: T):
     var result = impl[3, Cartesian](value, Cartesian(3, 3))
@@ -110,7 +110,7 @@ def usesParamRefClosure[
 
 
 def definesParamRefClosure[
-    T: Coordinate & ImplicitlyCopyable & ImplicitlyDestructible
+    T: Coordinate & ImplicitlyCopyable & ImplicitlyDeletable
 ](value: T):
     def closureImpl[x: Int, Y: Coordinate](xx: T, unused: Y) {var} -> Polar[x]:
         _ = value

@@ -122,12 +122,12 @@ def test_conditional_conformance_single_line():
 def test_long_conditional_conformance():
     """Test conditional conformance that needs line wrapping."""
     source = (
-        "struct VeryLongWrapper[T: ImplicitlyDestructible & Movable]("
+        "struct VeryLongWrapper[T: ImplicitlyDeletable & Movable]("
         "Copyable where conforms_to(T, Copyable) and conforms_to(T, Intable) and conforms_to(T, Writable), "
         "Movable): pass"
     )
     expected = (
-        "struct VeryLongWrapper[T: ImplicitlyDestructible & Movable](\n"
+        "struct VeryLongWrapper[T: ImplicitlyDeletable & Movable](\n"
         "    Copyable where (\n"
         "        conforms_to(T, Copyable)\n"
         "        and conforms_to(T, Intable)\n"
@@ -242,17 +242,17 @@ def test_conditional_conformance_with_self_type():
 def test_complex_generic_with_conditional():
     """Test complex generic struct with conditional conformance."""
     source = (
-        "struct Container[T: ImplicitlyDestructible & Movable](\n"
+        "struct Container[T: ImplicitlyDeletable & Movable](\n"
         "    Copyable where conforms_to(T, Copyable),\n"
-        "    ImplicitlyDestructible,\n"
+        "    ImplicitlyDeletable,\n"
         "    Movable,\n"
         "):\n"
         "    var value: Self.T\n"
     )
     expected = (
-        "struct Container[T: ImplicitlyDestructible & Movable](\n"
+        "struct Container[T: ImplicitlyDeletable & Movable](\n"
         "    Copyable where conforms_to(T, Copyable),\n"
-        "    ImplicitlyDestructible,\n"
+        "    ImplicitlyDeletable,\n"
         "    Movable,\n"
         "):\n"
         "    var value: Self.T\n"

@@ -902,7 +902,7 @@ struct Set[T: AnyType]:
 
 
 struct Dict[
-    K: Copyable & ImplicitlyDestructible, V: Copyable & ImplicitlyDestructible
+    K: Copyable & ImplicitlyDeletable, V: Copyable & ImplicitlyDeletable
 ]:
     def __init__(out self):
         pass
@@ -947,7 +947,7 @@ trait ImplicitlyCopyable(Copyable):
 
 
 trait TrivialRegisterPassable(
-    ImplicitlyCopyable, ImplicitlyDestructible, Movable, RegisterPassable
+    ImplicitlyCopyable, ImplicitlyDeletable, Movable, RegisterPassable
 ):
     pass
 
@@ -980,9 +980,6 @@ trait Movable:
         ...
 
     comptime __move_ctor_is_trivial: Bool
-
-
-comptime ImplicitlyDestructible = ImplicitlyDeletable
 
 
 trait ImplicitlyDeletable:
@@ -1595,7 +1592,7 @@ struct StopIteration(TrivialRegisterPassable):
     pass
 
 
-trait Iterator(ImplicitlyDestructible, Movable):
+trait Iterator(ImplicitlyDeletable, Movable):
     comptime Element: Movable
 
     def __next__(mut self) raises StopIteration -> Self.Element:
@@ -1606,12 +1603,12 @@ def paramfor_has_next[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> Bool where conforms_to(
     IteratorType.Element,
-    Movable & ImplicitlyDestructible,
+    Movable & ImplicitlyDeletable,
 ):
     var result = it.copy()
     try:
         var elem = result.__next__()
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](elem^)
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](elem^)
         return True
     except:
         return False
@@ -1621,7 +1618,7 @@ def paramfor_next_iter[
     IteratorType: Iterator & Copyable
 ](it: IteratorType) -> IteratorType where conforms_to(
     IteratorType.Element,
-    Movable & ImplicitlyDestructible,
+    Movable & ImplicitlyDeletable,
 ):
     # NOTE: This function is called by the compiler's elaborator only when
     # paramfor_has_next will return true. This is needed because the interpreter
@@ -1631,7 +1628,7 @@ def paramfor_next_iter[
     # so recomputing it in the body of the loop is fine.
     try:
         var elem = result.__next__()
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](elem^)
+        _ = trait_downcast_var[Movable & ImplicitlyDeletable](elem^)
     except:
         abort()
     return result^
@@ -1747,7 +1744,7 @@ def trait_downcast[
 # ===----------------------------------------------------------------------=== #
 
 
-trait Intable(ImplicitlyDestructible):
+trait Intable(ImplicitlyDeletable):
     def __int__(self) -> Int:
         ...
 

@@ -13,8 +13,8 @@
 
 
 @fieldwise_init
-struct CondRPMove[T: Movable & ImplicitlyDestructible](
-    ImplicitlyDestructible,
+struct CondRPMove[T: Movable & ImplicitlyDeletable](
+    ImplicitlyDeletable,
     Movable,
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):

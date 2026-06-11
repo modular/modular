@@ -8,7 +8,7 @@
 from std.sys import argv
 
 
-trait Coord(ImplicitlyCopyable, ImplicitlyDestructible):
+trait Coord(ImplicitlyCopyable, ImplicitlyDeletable):
     def prettyPrint(self):
         ...
 
@@ -173,7 +173,7 @@ def testNestedClosureCapture[RR: Coord](r: RR, x: Int):
 # ===----------------------------------------------------------------------=== #
 
 
-trait _NestedCapPrintable(ImplicitlyCopyable, ImplicitlyDestructible):
+trait _NestedCapPrintable(ImplicitlyCopyable, ImplicitlyDeletable):
     def string(self) -> String:
         ...
 
@@ -196,7 +196,7 @@ struct _NestedCapStringWrapper(_NestedCapPrintable):
 
 @fieldwise_init
 struct _NestedCapHasParam[T: _NestedCapPrintable](
-    ImplicitlyCopyable, ImplicitlyDestructible
+    ImplicitlyCopyable, ImplicitlyDeletable
 ):
     var x: Self.T
 

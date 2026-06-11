@@ -11,7 +11,7 @@ from std.collections.deque import _DequeIter
 
 
 def not_a_list[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     return value.__reversed__()
 

@@ -21,7 +21,7 @@ trait Describable:
         ...
 
 
-struct Dog(Copyable, Describable, Greetable, ImplicitlyDestructible, Movable):
+struct Dog(Copyable, Describable, Greetable, ImplicitlyDeletable, Movable):
     var name: String
 
     def __init__(out self, name: String):
@@ -34,7 +34,7 @@ struct Dog(Copyable, Describable, Greetable, ImplicitlyDestructible, Movable):
         return "Dog(" + self.name + ")"
 
 
-struct Cat(Copyable, Greetable, ImplicitlyDestructible, Movable):
+struct Cat(Copyable, Greetable, ImplicitlyDeletable, Movable):
     var name: String
 
     def __init__(out self, name: String):
@@ -74,7 +74,7 @@ trait StaticRefinedOverload:
         ...
 
 
-trait ArgConstructible(ImplicitlyDestructible):
+trait ArgConstructible(ImplicitlyDeletable):
     def __init__(out self, value: Int):
         ...
 
@@ -217,14 +217,14 @@ def static_label_does_not_rewrite_type_uses[
 
 def default_construct_refined[
     T: AnyType
-]() where conforms_to(T, Defaultable & ImplicitlyDestructible):
+]() where conforms_to(T, Defaultable & ImplicitlyDeletable):
     _ = T()
 
 
 def default_construct_with_original_candidate[
     T: ArgConstructible
 ]() -> String where conforms_to(
-    T, RefinedDefaultConstructible & ImplicitlyDestructible
+    T, RefinedDefaultConstructible & ImplicitlyDeletable
 ):
     _ = T()
     return "refined-constructor"
@@ -233,7 +233,7 @@ def default_construct_with_original_candidate[
 def original_construct_with_refined_candidates[
     T: ArgConstructible
 ]() -> String where conforms_to(
-    T, RefinedDefaultConstructible & ImplicitlyDestructible
+    T, RefinedDefaultConstructible & ImplicitlyDeletable
 ):
     _ = T(1)
     return "original-constructor"
@@ -241,14 +241,14 @@ def original_construct_with_refined_candidates[
 
 def accept_refined_implicit_conversion[
     T: ArgConstructible
-](value: T) -> String where conforms_to(T, ImplicitlyDestructible):
+](value: T) -> String where conforms_to(T, ImplicitlyDeletable):
     return "refined-implicit-conversion"
 
 
 def implicit_construct_with_original_candidate[
     T: ArgConstructible
 ]() -> String where conforms_to(
-    T, RefinedStringConstructible & ImplicitlyDestructible
+    T, RefinedStringConstructible & ImplicitlyDeletable
 ):
     return accept_refined_implicit_conversion[T](String("converted"))
 
@@ -508,7 +508,7 @@ def call_greet_ref[
 
 
 def call_greet_var[
-    T: ImplicitlyDestructible
+    T: ImplicitlyDeletable
 ](var x: T) -> String where conforms_to(T, Greetable):
     return x.greet()
 
@@ -526,7 +526,7 @@ def test_conventions():
 
 
 def copyable_and_greetable[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](read x: T) -> String where conforms_to(T, Greetable):
     var y = x.copy()
     return y.greet()
@@ -580,7 +580,7 @@ struct Widget(
     Countable,
     Describable,
     Greetable,
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var name: String
@@ -676,7 +676,7 @@ trait HasBar:
         ...
 
 
-struct FooBar(HasBar, HasFoo, ImplicitlyDestructible):
+struct FooBar(HasBar, HasFoo, ImplicitlyDeletable):
     def __init__(out self):
         pass
 
@@ -696,7 +696,7 @@ def test_per_candidate_self_binding():
     print(use_both(FooBar()))
 
 
-struct Box[T: ImplicitlyDestructible & Movable]:
+struct Box[T: ImplicitlyDeletable & Movable]:
     var item: Self.T
 
     def __init__(out self, var item: Self.T):
@@ -716,9 +716,9 @@ struct Box[T: ImplicitlyDestructible & Movable]:
         return self.item.greet() + " | " + self.item.describe()
 
 
-struct GreetableBox[T: ImplicitlyDestructible & Movable](
+struct GreetableBox[T: ImplicitlyDeletable & Movable](
     Greetable where conforms_to(T, Greetable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var item: Self.T
@@ -832,7 +832,7 @@ def test_register_passable():
     print(reg_conjunction(RegDescGreeter()))
 
 
-struct Wrapper[T: ImplicitlyDestructible & Movable]:
+struct Wrapper[T: ImplicitlyDeletable & Movable]:
     comptime Element = Self.T
     var value: Self.T
 
@@ -843,7 +843,7 @@ struct Wrapper[T: ImplicitlyDestructible & Movable]:
         return self.value
 
 
-struct DoubleAliasWrapper[T: ImplicitlyDestructible & Movable]:
+struct DoubleAliasWrapper[T: ImplicitlyDeletable & Movable]:
     comptime Inner = Self.T
     comptime Element = Self.Inner
     var value: Self.T
@@ -855,9 +855,7 @@ struct DoubleAliasWrapper[T: ImplicitlyDestructible & Movable]:
         return self.value
 
 
-struct Pair[
-    A: ImplicitlyDestructible & Movable, B: ImplicitlyDestructible & Movable
-]:
+struct Pair[A: ImplicitlyDeletable & Movable, B: ImplicitlyDeletable & Movable]:
     comptime First = Self.A
     comptime Second = Self.B
     var first: Self.A
@@ -875,20 +873,20 @@ struct Pair[
 
 
 def greet_wrapper[
-    T: ImplicitlyDestructible & Movable
+    T: ImplicitlyDeletable & Movable
 ](w: Wrapper[T],) -> String where conforms_to(T, Greetable):
     return w.get().greet()
 
 
 def greet_double_alias[
-    T: ImplicitlyDestructible & Movable
+    T: ImplicitlyDeletable & Movable
 ](w: DoubleAliasWrapper[T],) -> String where conforms_to(T, Greetable):
     return w.get().greet()
 
 
 def greet_first[
-    A: ImplicitlyDestructible & Movable,
-    B: ImplicitlyDestructible & Movable,
+    A: ImplicitlyDeletable & Movable,
+    B: ImplicitlyDeletable & Movable,
 ](p: Pair[A, B]) -> String where conforms_to(A, Greetable):
     return p.get_first().greet()
 
@@ -902,7 +900,7 @@ def test_comptime_aliases():
     print(greet_first(Pair(Cat("Socks"), Dog("Bear"))))
 
 
-trait SimpleIterator(ImplicitlyDestructible, Movable):
+trait SimpleIterator(ImplicitlyDeletable, Movable):
     comptime Element: Movable
 
     def next(mut self) -> Self.Element:
@@ -916,7 +914,7 @@ trait SimpleIterable:
         ...
 
 
-struct DogIter(ImplicitlyDestructible, Movable, SimpleIterator):
+struct DogIter(ImplicitlyDeletable, Movable, SimpleIterator):
     comptime Element = Dog
     var dog: Dog
 
@@ -941,7 +939,7 @@ struct DogContainer(SimpleIterable):
 def any_greetable[
     C: SimpleIterable
 ](container: C) -> String where conforms_to(
-    C.IterType.Element, Greetable & ImplicitlyDestructible & Movable
+    C.IterType.Element, Greetable & ImplicitlyDeletable & Movable
 ):
     var it = container.iter()
     var elem = it.next()
@@ -951,7 +949,7 @@ def any_greetable[
 def greet_and_describe_nested[
     C: SimpleIterable
 ](container: C) -> String where conforms_to(
-    C.IterType.Element, Greetable & ImplicitlyDestructible & Movable
+    C.IterType.Element, Greetable & ImplicitlyDeletable & Movable
 ) and conforms_to(C.IterType.Element, Describable):
     var it = container.iter()
     var elem = it.next()
@@ -961,7 +959,7 @@ def greet_and_describe_nested[
 def discard_associated_iterator_element[
     C: SimpleIterable
 ](container: C) -> String where conforms_to(
-    C.IterType.Element, ImplicitlyDestructible & Movable
+    C.IterType.Element, ImplicitlyDeletable & Movable
 ):
     var it = container.iter()
     _ = it.next()
@@ -978,13 +976,13 @@ def test_associated_type_chains():
 
 
 def call_greet_ptr[
-    T: Copyable & ImplicitlyDestructible, O: Origin
+    T: Copyable & ImplicitlyDeletable, O: Origin
 ](p: Pointer[T, O]) -> String where conforms_to(T, Greetable):
     return p[].greet()
 
 
 def ptr_eq[
-    T: Copyable & ImplicitlyDestructible, O: Origin
+    T: Copyable & ImplicitlyDeletable, O: Origin
 ](p: Pointer[T, O], value: T) -> Bool where conforms_to(T, Equatable):
     return p[] == value
 
@@ -1007,7 +1005,7 @@ def explicit_downcast_ref_to_original_ref[
 
 
 @fieldwise_init
-struct RefinedFieldHolder[T: Copyable & ImplicitlyDestructible & Movable]:
+struct RefinedFieldHolder[T: Copyable & ImplicitlyDeletable & Movable]:
     var value: Self.T
 
     def use_value(self) -> Bool where conforms_to(Self.T, Equatable):
@@ -1068,28 +1066,28 @@ def local_ref_binding[
 
 
 def local_var_copy[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](read x: T) -> String where conforms_to(T, Greetable):
     var y: T = x.copy()
     return y.greet()
 
 
 def local_var_move[
-    T: Movable & ImplicitlyDestructible
+    T: Movable & ImplicitlyDeletable
 ](var x: T) -> String where conforms_to(T, Greetable):
     var y: T = x^
     return y.greet()
 
 
 def tuple_from_refined_args[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](read a: T, read b: T) -> String where conforms_to(T, Greetable):
     var t = (a.copy(), b.copy())
     return t[0].greet() + " and " + t[1].greet()
 
 
 def nested_comptime_outer_binding_refinement[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](read x: T) where conforms_to(T, Greetable) and conforms_to(T, Describable):
     var val: T = x.copy()
     print("outer:", val.greet())
@@ -1100,7 +1098,7 @@ def nested_comptime_outer_binding_refinement[
 
 
 def nested_comptime_inner_shadow_refinement[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](read y: T) where conforms_to(T, Greetable) and conforms_to(T, Describable):
     comptime if conforms_to(T, Describable):
         # Inner scope adds Describable on top of the where-clause Greetable.
@@ -1110,7 +1108,7 @@ def nested_comptime_inner_shadow_refinement[
 
 
 def nested_comptime_fallback_refinement[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](read x: T, read y: T) where conforms_to(T, Greetable):
     var val: T = x.copy()
     print("outer:", val.greet())
@@ -1149,7 +1147,7 @@ def use_refined_dtor[T: AnyType](ref x: T):
     print("use-dtor")
 
 
-struct DestructTracer(Copyable, ImplicitlyDestructible, Movable):
+struct DestructTracer(Copyable, ImplicitlyDeletable, Movable):
     var tag: Int
 
     def __init__(out self, tag: Int):
@@ -1160,9 +1158,7 @@ struct DestructTracer(Copyable, ImplicitlyDestructible, Movable):
         print("del-dtor", self.tag)
 
 
-struct MarkedDestructTracer(
-    Copyable, DtorMarker, ImplicitlyDestructible, Movable
-):
+struct MarkedDestructTracer(Copyable, DtorMarker, ImplicitlyDeletable, Movable):
     var tag: Int
 
     def __init__(out self, tag: Int):
@@ -1175,27 +1171,27 @@ struct MarkedDestructTracer(
 
 def destroy_via_where[
     T: Movable
-](var x: T) where conforms_to(T, ImplicitlyDestructible):
+](var x: T) where conforms_to(T, ImplicitlyDeletable):
     use_refined_dtor(x)
 
 
 def destroy_via_comptime_assert[T: Movable](var x: T):
-    comptime assert conforms_to(T, ImplicitlyDestructible)
+    comptime assert conforms_to(T, ImplicitlyDeletable)
     use_refined_dtor(x)
 
 
 def destroy_via_comptime_if[T: Movable](var x: T):
-    comptime if conforms_to(T, ImplicitlyDestructible):
+    comptime if conforms_to(T, ImplicitlyDeletable):
         use_refined_dtor(x)
     else:
         # Keep both branches consuming `x` symmetrically.
-        _ = trait_downcast_var[ImplicitlyDestructible & Movable](x^)
+        _ = trait_downcast_var[ImplicitlyDeletable & Movable](x^)
 
 
 def destroy_via_chained_refinement[
     T: Movable
 ](var x: T) where conforms_to(T, DtorMarker):
-    comptime assert conforms_to(T, ImplicitlyDestructible)
+    comptime assert conforms_to(T, ImplicitlyDeletable)
     use_refined_dtor(x)
 
 
@@ -1271,10 +1267,10 @@ def downcast_preserves_refinement_ref[
 # `trait_downcast_var` consumes its argument, so copy to keep `x` live and
 # verify its Describable refinement survives across the owning downcast call.
 def downcast_preserves_refinement_var[
-    T: Copyable & ImplicitlyDestructible & Movable
+    T: Copyable & ImplicitlyDeletable & Movable
 ](var x: T) -> String where conforms_to(T, Describable):
     var before = needs_describable(x)
-    var y = trait_downcast_var[Greetable & ImplicitlyDestructible & Movable](
+    var y = trait_downcast_var[Greetable & ImplicitlyDeletable & Movable](
         x.copy()
     )
     var mid = needs_greetable(y)

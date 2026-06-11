@@ -39,7 +39,7 @@ trait Foo:
         ...
 
 
-trait FooActual(Absable, Foo, ImplicitlyDestructible, Intable):
+trait FooActual(Absable, Foo, ImplicitlyDeletable, Intable):
     comptime P: Int
 
     def rp_return_params[T: Int](self) -> Int:

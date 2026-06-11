@@ -12,7 +12,7 @@ struct PlainStruct:
 
 # TODO(MOCO-522): Simplify generic_struct_package, struct_only_package,
 # and simple_struct_package into this one package
-struct GenericBox[T: ImplicitlyCopyable & ImplicitlyDestructible]:
+struct GenericBox[T: ImplicitlyCopyable & ImplicitlyDeletable]:
     var value: Self.T
 
     def __init__(out self, value: Self.T):
