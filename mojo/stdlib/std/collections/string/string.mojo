@@ -121,7 +121,7 @@ struct String(
     Be aware of the following characteristics when working with `String`:
 
     - **UTF-8 encoding**: Strings store UTF-8 encoded text, so byte length may
-      differ from character count. Use `string.count_codepoints())` to get
+      differ from character count. Use `text.count_codepoints()` to get
       the codepoint count:
 
       ```mojo
