@@ -1019,18 +1019,18 @@ PointerType::getChecked(function_ref<InFlightDiagnostic()> emitError,
 }
 
 std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerSize();
+  return target.getDataLayout().getPointerSize(getAddrSpaceOrZero());
 }
 
 std::optional<int64_t> PointerType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerABIAlign();
+  return target.getDataLayout().getPointerABIAlign(getAddrSpaceOrZero());
 }
 
 ErrorOrSuccess PointerType::writeTo(TypedAttr value, int64_t addr,
                                     InterpreterState &state) const {
   int64_t size = *getTypeSize(state.getTarget());
-  ErrorOr<void *> mem =
-      state.getWritableMemory(addr, size, RegionMark::Pointer);
+  ErrorOr<void *> mem = state.getWritableMemory(addr, size, RegionMark::Pointer,
+                                                getAddrSpaceOrZero());
   if (mem.isError())
     return mem.takeError();
 

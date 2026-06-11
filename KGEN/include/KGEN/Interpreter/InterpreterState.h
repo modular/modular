@@ -188,7 +188,8 @@ public:
   /// Clobbering a pointer region is invalid. This can either be partially
   /// overwriting a pointer region with a non-pointer value or a pointer value.
   ErrorOr<void *> getWritableMemory(int64_t addr, size_t size,
-                                    RegionMark regionMark = RegionMark::None);
+                                    RegionMark regionMark = RegionMark::None,
+                                    int32_t addrSpace = 0);
 
   /// Get readable memory for the given address to interpreter memory.
   ErrorOr<const void *> getReadableMemory(int64_t addr, size_t size);
