@@ -18,7 +18,7 @@ kgen.func @dont_cse_none(%arg0: i1) -> !kgen.none {
 }
 
 // CHECK-LABEL: @cse_simple
-kgen.func @cse_simple(%arg0: i1) -> index {
+kgen.func @cse_simple(%arg0: !kgen.scalar<bool>) -> index {
   // CHECK: [[INDEX:%.*]] = kgen.param.constant = <1>
   %index = kgen.param.constant: index = <1>
 

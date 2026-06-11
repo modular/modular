@@ -8,6 +8,7 @@
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
@@ -345,8 +346,8 @@ HLCF::UnrollLevel LoopOp::getUnrollLevelValue() {
 void IfOp::getEntryTargets(ArrayRef<Attribute> operands,
                            SmallVectorImpl<ControlFlowTarget> &targets) {
   assert(operands.size() == 1);
-  if (auto cond = dyn_cast_or_null<BoolAttr>(operands.front())) {
-    targets.emplace_back(cond.getValue() ? 0 : 1);
+  if (auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands.front())) {
+    targets.emplace_back(cond.getAsBool() ? 0 : 1);
   } else {
     targets.emplace_back(0);
     targets.emplace_back(1);
@@ -362,12 +363,12 @@ ValueRange IfOp::getEntryArguments(std::optional<unsigned> target) {
 
 ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
                                    InterpreterState &state) {
-  auto cond = dyn_cast_if_present<BoolAttr>(operands[0]);
+  auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands[0]);
   if (!cond)
     return ErrorTree(getLoc(), "non-constant condition");
 
   state.transferControlFlowTo(
-      cond.getValue() ? getThenRegion() : getElseRegion(), {});
+      cond.getAsBool() ? getThenRegion() : getElseRegion(), {});
   return success();
 }
 
@@ -790,10 +791,12 @@ void ElifYieldOp::getBranchTargets(
   unsigned nextConditionRegionOrElse =
       nextConditionRegion == numRegions ? 0 : nextConditionRegion;
   ValueRange carryOver(getOperands().drop_front(1));
-  if (auto constantResult = dyn_cast_or_null<BoolAttr>(operands.front())) {
-    targets.emplace_back(ControlFlowTarget(
-        constantResult.getValue() ? nextValueRegion : nextConditionRegionOrElse,
-        carryOver));
+  if (auto constantResult =
+          dyn_cast_if_present<KGEN::SIMDAttr>(operands.front())) {
+    targets.emplace_back(ControlFlowTarget(constantResult.getAsBool()
+                                               ? nextValueRegion
+                                               : nextConditionRegionOrElse,
+                                           carryOver));
     return;
   }
   targets.emplace_back(nextValueRegion, carryOver);
@@ -805,8 +808,8 @@ ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
   auto parent = cast<ElifOp>(getOperation()->getParentOp());
   unsigned myIndex = getOperation()->getParentRegion()->getRegionNumber() - 1;
   ArrayRef<Attribute> blockArguments = operands.slice(1);
-  if (auto cond = dyn_cast_if_present<BoolAttr>(operands[0])) {
-    if (cond.getValue()) {
+  if (auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands[0])) {
+    if (cond.getAsBool()) {
       state.transferControlFlowTo(parent.getElifRegions()[myIndex + 1],
                                   blockArguments);
       return success();

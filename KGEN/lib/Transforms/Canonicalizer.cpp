@@ -426,12 +426,16 @@ struct ConditionPropagation : OpRewritePattern<HLCF::IfOp> {
     for (OpOperand &use : op.getCond().getUses()) {
       if (op.getThenRegion().isAncestor(use.getOwner()->getParentRegion())) {
         if (!trueCst)
-          trueCst = mlir::index::BoolConstantOp::create(b, op.getLoc(), true);
+          trueCst = KGEN::ParamConstantOp::create(
+              b, op.getLoc(),
+              KGEN::SIMDAttr::getScalarBool(b.getContext(), true));
         use.set(trueCst);
       } else if (op.getElseRegion().isAncestor(
                      use.getOwner()->getParentRegion())) {
         if (!falseCst)
-          falseCst = mlir::index::BoolConstantOp::create(b, op.getLoc(), false);
+          falseCst = KGEN::ParamConstantOp::create(
+              b, op.getLoc(),
+              KGEN::SIMDAttr::getScalarBool(b.getContext(), false));
         use.set(falseCst);
       }
     }

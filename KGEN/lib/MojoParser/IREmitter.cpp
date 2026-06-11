@@ -1599,7 +1599,8 @@ void IREmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
     // Otherwise, the resulting actual function result must be a none-type or a
     // bool for a throwing result.
     if (signature.isThrows())
-      value = ParamConstantOp::create(builder, builder.getBoolAttr(false));
+      value = ParamConstantOp::create(
+          builder, SIMDAttr::getScalarBool(builder.getContext(), false));
     else if (!value)
       value =
           ParamConstantOp::create(builder, NoneAttr::get(func.getContext()));

@@ -241,6 +241,13 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
   // rest will be other loop carried variable
   IfOp ifOp = cast<IfOp>(breakOp->getParentOp());
   Value ifCond = ifOp.getOperand();
+
+  // `pop.cast_from_builtin`. Look through that cast to recognize  `index.cmp`
+  // TODO: we won't need this after migrating scalar<int>, but the pattern
+  // matching below needs to be updated as well.
+  if (auto castOp =
+          dyn_cast_if_present<POP::CastFromBuiltinOp>(ifCond.getDefiningOp()))
+    ifCond = castOp.getInput();
   Value start;
   Value end;
   // Position number in the BlockArgument list where the induction variable
@@ -280,19 +287,8 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
                          ? HLCF::ForLoopBoundCmpPredicate::SGT
                          : HLCF::ForLoopBoundCmpPredicate::SLT;
     }
-  } else if (auto castOp = dyn_cast_if_present<POP::CastToBuiltinOp>(
-                 ifCond.getDefiningOp())) {
-    // Because hlcf.if expects `i1` type, also check if there's a sequence
-    // `pop.cast_to_builtin(pop.cmp)`. That's a special case, because `pop.cmp`
-    // produces `!kgen.scalar<bool>`, i.e. IR looks like
-    //
-    //  %prd = pop.cmp gt(%arg1, %simd_1) : <1, si64>
-    //  %i1 = pop.cast_to_builtin %1 : !kgen.scalar<bool> to i1
-    //  hlcf.if %i1 ...
-    auto cmp = castOp.getInput().getDefiningOp<POP::CmpOp>();
-    if (!cmp)
-      return {};
-
+  } else if (auto cmp =
+                 dyn_cast_if_present<POP::CmpOp>(ifCond.getDefiningOp())) {
     KGEN::CmpPredicate pred = cmp.getPred();
     if (pred != KGEN::CmpPredicate::LT && pred != KGEN::CmpPredicate::GT)
       return {};

@@ -2325,8 +2325,8 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
       (void)body.addArgument(refType, shared.translateLocation(resultArg.loc));
     }
 
-    // The ABI result type is an i1 indicating the error state.
-    fullResultType = Builder(shared.getContext()).getI1Type();
+    // The ABI result type is an scalar<bool> indicating the error state.
+    fullResultType = SIMDType::getScalarBoolType(shared.getContext());
     // The result value is always returned through memory.
     rp = TypeConvention::MemoryOnly;
   }

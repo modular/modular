@@ -13,23 +13,20 @@
 # CHECK-LABEL: lit.fn @"test_elif_chain
 # CHECK-NEXT:    hlcf.elif {
 # CHECK-NEXT:      [[TEST_A_SB:%.*]] = lit.call {{.*}}::@Bool::@"__mlir_bool__{{.*}}"(%a)
-# CHECK-NEXT:      [[TEST_A:%.*]] = pop.cast_to_builtin [[TEST_A_SB]]
-# CHECK-NEXT:      hlcf.elif.yield [[TEST_A]]
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_A_SB]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_a = lit.var.decl "inside_a"
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } {
 # CHECK-NEXT:      [[B_EQ:%.*]] = lit.call {{.*}}::@"__eq__{{.*}}"(%b, %d) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool>
 # CHECK-NEXT:      [[TEST_B_SB:%.*]] = lit.call {{.*}}::@"__mlir_bool__{{.*}}"([[B_EQ]]) : !lit.generator<("self": !Bool) -> !kgen.scalar<bool>>
-# CHECK-NEXT:      [[TEST_B:%.*]] = pop.cast_to_builtin [[TEST_B_SB]]
-# CHECK-NEXT:      hlcf.elif.yield [[TEST_B]]
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_B_SB]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_b = lit.var.decl "inside_b"
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    } {
 # CHECK-NEXT:      [[TEST_C_SB:%.*]] = lit.call {{.*}}::@"__mlir_bool__{{.*}}"(%c)
-# CHECK-NEXT:      [[TEST_C:%.*]] = pop.cast_to_builtin [[TEST_C_SB]]
-# CHECK-NEXT:      hlcf.elif.yield [[TEST_C]]
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_C_SB]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      %inside_c = lit.var.decl "inside_c"
 # CHECK-NEXT:      hlcf.yield
@@ -61,8 +58,7 @@ def test_constant(a: Bool) -> Bool:
     # CHECK-NEXT: store [[FIVE]], %z
     # CHECK-NEXT: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}([[FIVE]])
     # CHECK-NEXT: [[SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[BOOL]])
-    # CHECK-NEXT: [[I1:%.*]] = pop.cast_to_builtin [[SB]]
-    # CHECK-NEXT: hlcf.elif.yield [[I1]]
+    # CHECK-NEXT: hlcf.elif.yield [[SB]]
     if z := 5:
         return a
 
@@ -73,24 +69,21 @@ def test_constant(a: Bool) -> Bool:
 def test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
     # CHECK-NEXT: hlcf.elif {
     # CHECK-NEXT:   %0 = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%a)
-    # CHECK-NEXT:   %1 = pop.cast_to_builtin %0
-    # CHECK-NEXT:   hlcf.elif.yield %1
+    # CHECK-NEXT:   hlcf.elif.yield %0
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   %inside_a = lit.var.decl "inside_a"
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.elif {
     # CHECK-NEXT:     [[TEST_B_SB:%.*]] = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%b)
-    # CHECK-NEXT:     [[TEST_B:%.*]] = pop.cast_to_builtin [[TEST_B_SB]]
-    # CHECK-NEXT:     hlcf.elif.yield [[TEST_B]]
+    # CHECK-NEXT:     hlcf.elif.yield [[TEST_B_SB]]
     # CHECK-NEXT:   } then {
     # CHECK-NEXT:     %inside_b = lit.var.decl "inside_b"  var : !lit.ref<!Int, mut *"inside_b`1">
     # CHECK-NEXT:     hlcf.yield
     # CHECK-NEXT:   } else {
     # CHECK-NEXT:     hlcf.elif {
     # CHECK-NEXT:       [[TEST_C_SB:%.*]] = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%c)
-    # CHECK-NEXT:       [[TEST_C:%.*]] = pop.cast_to_builtin [[TEST_C_SB]]
-    # CHECK-NEXT:       hlcf.elif.yield [[TEST_C]]
+    # CHECK-NEXT:       hlcf.elif.yield [[TEST_C_SB]]
     # CHECK-NEXT:     } then {
     # CHECK-NEXT:       %inside_c = lit.var.decl "inside_c"
     # CHECK-NEXT:       hlcf.yield
@@ -120,9 +113,8 @@ def test_if_nested(a: Bool, b: Bool, c: Bool) -> Bool:
 # CHECK-LABEL: lit.fn @"if_try
 def if_try(p: Bool):
     # CHECK:      hlcf.elif {
-    # CHECK-NEXT:   [[TEST_P_SB:%*.]] = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%p)
-    # CHECK-NEXT:   [[TEST_P:%.*]] = pop.cast_to_builtin [[TEST_P_SB]]
-    # CHECK-NEXT:   hlcf.elif.yield [[TEST_P]]
+    # CHECK-NEXT:   [[TEST_P_SB:%.*]] = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%p)
+    # CHECK-NEXT:   hlcf.elif.yield [[TEST_P_SB]]
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   %e = lit.var.decl {{.*}} !lit.ref<!Error,
     # CHECK-NEXT:   lit.try %e : {{.*}} {
@@ -156,7 +148,7 @@ def if_try(p: Bool):
 
 
 # CHECK-LABEL: lit.fn @"testCondAsArg
-def testCondAsArg(exit_early: __mlir_type.i1):
+def testCondAsArg(exit_early: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK: hlcf.elif
     if exit_early:
         return
@@ -165,8 +157,8 @@ def testCondAsArg(exit_early: __mlir_type.i1):
 # CHECK-LABEL: lit.fn @"constantTrue
 def constantTrue(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK-NEXT: hlcf.elif {
-    # CHECK-NEXT:  %0 = kgen.param.constant: i1 = <{{.*}}1{{.*}}>
-    # CHECK-NEXT:  hlcf.elif.yield %0
+    # CHECK-NEXT:  [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
+    # CHECK-NEXT:  hlcf.elif.yield [[TRUE]]
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   lit.return %x : !Int
     # CHECK-NEXT:   hlcf.yield
@@ -181,14 +173,13 @@ def constantTrue(cond: Bool, x: Int, y: Int) -> Int:
 def constantFalse(cond: Bool, x: Int, y: Int) -> Int:
     # CHECK:      hlcf.elif {
     # CHECK-NEXT:   %0 = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%cond)
-    # CHECK-NEXT:   %1 = pop.cast_to_builtin %0
-    # CHECK-NEXT:   hlcf.elif.yield %1
+    # CHECK-NEXT:   hlcf.elif.yield %0
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   lit.return %x : !Int
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: } {
-    # CHECK-NEXT:   %0 = kgen.param.constant: i1 = <{{.*}}0{{.*}}>
-    # CHECK-NEXT:   hlcf.elif.yield %0
+    # CHECK-NEXT:   [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
+    # CHECK-NEXT:   hlcf.elif.yield [[FALSE]]
     # CHECK-NEXT: } then {
     # CHECK-NEXT:   kgen.unreachable
     # CHECK-NEXT: } else {
@@ -213,8 +204,7 @@ def constantFalse(cond: Bool, x: Int, y: Int) -> Int:
 # CHECK:       %inside_else = lit.var.decl "inside_else" var
 # CHECK:       lit.loop {
 # CHECK:         [[V0_SB:%.*]] = lit.call {{.*}}@Bool::@"__mlir_bool__({{.*}}Bool)"(%a)
-# CHECK:         [[V0:%.*]] = pop.cast_to_builtin [[V0_SB]]
-# CHECK:         hlcf.if [[V0]] {
+# CHECK:         hlcf.if [[V0_SB]] {
 # CHECK-NEXT:        hlcf.yield
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:        lit.loop.break.else
@@ -222,9 +212,8 @@ def constantFalse(cond: Bool, x: Int, y: Int) -> Int:
 # CHECK-NEXT:    kgen.param.constant: {{.*}} = <{0}>
 # CHECK-NEXT:    lit.ref.store {{.+}}, %inside_a
 # CHECK-NEXT:    hlcf.elif {
-# CHECK-NEXT:      [[TEST_B_SB:%*.]] = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%b)
-# CHECK-NEXT:      [[TEST_B:%.*]] = pop.cast_to_builtin [[TEST_B_SB]]
-# CHECK-NEXT:      hlcf.elif.yield [[TEST_B]]
+# CHECK-NEXT:      [[TEST_B_SB:%.*]] = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%b)
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_B_SB]]
 # CHECK-NEXT:    } then {
 # CHECK-NEXT:      kgen.param.constant: !Int = <{1}>
 # CHECK-NEXT:      lit.ref.store
@@ -258,7 +247,6 @@ def test_else_outside_while(a: Bool, b: Bool) raises -> Bool:
     if b:
         # CHECK: lit.loop {
         # CHECK:   [[V1_SB:%.*]] = lit.call {{.*}}@Bool::@"__mlir_bool__({{.*}}Bool)"(%a)
-        # CHECK:   [[V1:%.*]] = pop.cast_to_builtin [[V1_SB]]
         while a:
             # CHECK: lit.ref.store {{.+}}, %inside_a
             inside_a = 0
@@ -279,11 +267,9 @@ def test_else_outside_while(a: Bool, b: Bool) raises -> Bool:
 def test_break_continue_inside_while(a: Bool) raises -> Bool:
     # CHECK: lit.loop {
     # CHECK:   [[V1_SB:%.*]] = lit.call {{.*}}@Bool::@"__mlir_bool__({{.*}}Bool)"(%a)
-    # CHECK:   [[V1:%.*]] = pop.cast_to_builtin [[V1_SB]]
     while a:
         # CHECK:      hlcf.elif {
         # CHECK-NEXT:   lit.call {{.*}}__mlir_bool__
-        # CHECK-NEXT:   pop.cast_to_builtin
         # CHECK-NEXT:   hlcf.elif.yield
         # CHECK-NEXT: } then {
         if a:
@@ -356,7 +342,7 @@ def return_new_line() -> Int:
 def return_impl_convert_raises() raises -> Int:
     # CHECK: %0 = kgen{{.*}}{4}
     # CHECK-NEXT: lit.ref.store %0, %__result__
-    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: return [[FALSE]]
     return 4  # Implicit conversion from literal to Int
 
@@ -368,7 +354,6 @@ def return_impl_convert_raises() raises -> Int:
 # CHECK-LABEL: lit.fn @"test_simple
 # CHECK:       lit.loop {
 # CHECK:         [[V0_SB:%.*]] = lit.call {{.*}}@Bool::@"__mlir_bool__({{.*}}Bool)"(%a)
-# CHECK:         [[V0:%.*]] = pop.cast_to_builtin [[V0_SB]]
 # CHECK:         lit.loop.continue
 # CHECK-NEXT:  } else {
 # CHECK-NEXT:    lit.loop.yield

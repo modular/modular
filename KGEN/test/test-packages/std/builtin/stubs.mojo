@@ -1426,7 +1426,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
         pass
 
     def __getitem_param__[i: Int](ref self) -> ref[self] Self.element_types[i]:
-        while __mlir_attr.true:
+        while True:
             pass
 
 
@@ -1477,17 +1477,17 @@ struct UnsafePointer[
         return Self()
 
     def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
-        while __mlir_attr.true:
+        while True:
             pass
 
     def __getitem__(
         self, offset: Int
     ) -> ref[Self.origin, Self.address_space] Self.type:
-        while __mlir_attr.true:
+        while True:
             pass
 
     def store(self, offset: Int, value: Self.type):
-        while __mlir_attr.true:
+        while True:
             pass
 
     # This returns a reference to an element with an origin specified by as a
@@ -1499,7 +1499,7 @@ struct UnsafePointer[
         _lit_indirect_origin[self_origin].unsafe_mut_cast[True](),
         Self.address_space,
     ] Self.type:
-        while __mlir_attr.true:
+        while True:
             pass
 
     @always_inline

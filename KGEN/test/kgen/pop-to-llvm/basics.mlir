@@ -389,8 +389,8 @@ kgen.func @memcpy_addrspace(%dst: !kgen.pointer<scalar<f32>, 3>, %src: !kgen.poi
 }
 
 // CHECK-LABEL: @pop_select
-kgen.func @pop_select(%arg0: i1, %arg1: !kgen.struct<(f32)>, %arg2: !kgen.struct<(f32)>) -> !kgen.struct<(f32)> {
-  // CHECK: llvm.select %arg0, {{.*}}, {{.*}} {fastmathFlags = #llvm.fastmath<contract>} : i1, !llvm.struct<(f32)>
+kgen.func @pop_select(%arg0: !kgen.scalar<bool>, %arg1: !kgen.struct<(f32)>, %arg2: !kgen.struct<(f32)>) -> !kgen.struct<(f32)> {
+  // CHECK: llvm.select %{{.*}}, {{.*}}, {{.*}} {fastmathFlags = #llvm.fastmath<contract>} : i1, !llvm.struct<(f32)>
   %0 = pop.select %arg0, %arg1, %arg2 : !kgen.struct<(f32)>
   kgen.return %0 : !kgen.struct<(f32)>
 }

@@ -39,6 +39,17 @@ class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
   let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
 }
 
+/// The `!kgen.scalar<bool>` type, used for boolean control-flow conditions.
+/// Mirrored to avoid cyclic dependency between HLCF and KGEN dialects.
+///
+/// TODO: maybe we should move `simd`-related entities into a different dialect
+/// that both HLCF and KGEN can depend on.
+def HLCF_BoolScalar :
+    Type<CPred<"::M::KGEN::isScalarOf<::M::KGEN::KGENDType::kBool>($_self)">,
+         "!kgen.scalar<bool>", "::M::KGEN::SIMDType">,
+    BuildableType<"::M::KGEN::SIMDType::get(1, ::M::KGEN::DTypeConstantAttr::get("
+                  "$_builder.getContext(), ::M::KGEN::KGENDType::kBool))">;
+
 //===----------------------------------------------------------------------===//
 // ForOp / ForControlVariableType constraint
 //===----------------------------------------------------------------------===//
@@ -338,7 +349,7 @@ def HLCF_IfOp : HLCFParentOp<"if"> {
     ```
   }];
 
-  let arguments = (ins I1:$cond);
+  let arguments = (ins HLCF_BoolScalar:$cond);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$thenRegion,
                         SizedRegion<1>:$elseRegion);
@@ -606,7 +617,8 @@ def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
     transfers control-flow either to the subsequent region or to the else block
     of the parent `hlcf.elif`.
 
-    This op takes at least one i1 value which is the condition, but can take
+    This op takes at least one `!kgen.scalar<bool>` value which is the
+    condition, but can take
     an arbitrary number of other values.  These values are passed into the
     "then" or "else" block, enabling mem2reg promotion of values stored in the
     condition block.
@@ -635,7 +647,7 @@ def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
     }
     ```
   }];
-  let arguments = (ins I1:$cond, Variadic<AnyType>:$values);
+  let arguments = (ins HLCF_BoolScalar:$cond, Variadic<AnyType>:$values);
 
   let assemblyFormat = "$cond (`,` $values `:` type($values)^)? attr-dict";
 }

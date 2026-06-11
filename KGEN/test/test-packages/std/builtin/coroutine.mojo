@@ -18,7 +18,7 @@ struct Coroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`](
         self.value = handle
 
     def __await__(deinit self) -> Self.T:
-        while __mlir_attr.true:
+        while True:
             pass
 
 
@@ -33,5 +33,5 @@ struct RaisingCoroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`](
         self.value = handle
 
     def __await__(deinit self) raises -> Self.T:
-        while __mlir_attr.true:
+        while True:
             pass

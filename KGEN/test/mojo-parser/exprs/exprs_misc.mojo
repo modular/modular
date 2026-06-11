@@ -357,8 +357,7 @@ def test_mergewith(
 ):
     # One merges to the other.
     _ = a if cond else b
-    # CHECK: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
-    # CHECK-NEXT: hlcf.if
+    # CHECK: hlcf.if %cond
     # CHECK-NEXT:   [[ARES:%.*]] = lit.call {{.*}}TypeA::@"__merge_with__
     # CHECK-NEXT:   hlcf.yield [[ARES]]
     # CHECK-NEXT: } else {
@@ -367,8 +366,7 @@ def test_mergewith(
 
     # This merge with two merge_with
     _ = a if cond else c
-    # CHECK: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
-    # CHECK-NEXT: hlcf.if
+    # CHECK: hlcf.if %cond
     # CHECK:   [[ARES:%.*]] = lit.call {{.*}}TypeA::@"__merge_with__
     # CHECK:   hlcf.yield [[ARES]]
     # CHECK: } else {
@@ -378,8 +376,7 @@ def test_mergewith(
 
     # One merge and one implicit conversion.
     _ = c if cond else d
-    # CHECK: pop.cast_to_builtin %cond : !kgen.scalar<bool> to i1
-    # CHECK-NEXT: hlcf.if
+    # CHECK: hlcf.if %cond
     # CHECK:   [[CRES:%.*]] = lit.call {{.*}}TypeC::@"__merge_with__
     # CHECK:   hlcf.yield [[CRES]]
     # CHECK: } else {
@@ -394,7 +391,7 @@ def test_mergewith(
 
     # https://github.com/modular/modular/issues/5380
     # CHECK: hlcf.elif {
-    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: [[COND:%.*]] = hlcf.if [[FALSE]]
     # CHECK-NEXT:   kgen.unreachable
     # CHECK-NEXT: } else {
@@ -415,8 +412,7 @@ def test_mergewith(
 def chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK:      [[CMP_A_B:%.*]] = lit.call tail @{{.*}}__lt__{{.*}}(%a, %b)
     # CHECK-NEXT: %[[CMP_A_B_SB:.*]] = lit.call tail @{{.*}}__mlir_bool__{{.*}}([[CMP_A_B]])
-    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = pop.cast_to_builtin %[[CMP_A_B_SB]]
-    # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
+    # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_SB]]
     # CHECK-NEXT:   %[[CMP_B_C:.*]] = lit.call tail @{{.*}}__lt__{{.*}}(%b, %c)
     # CHECK:        %[[IF_B_C:.*]] = hlcf.if
     # CHECK-NEXT:     %[[CMP_C_D:.*]] = lit.call tail @{{.*}}__lt__{{.*}}(%c, %d)
@@ -435,16 +431,14 @@ def chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # COM: This checks the parsing precedence between `<` and `and`.
     # CHECK:      %[[CMP_A_B:.*]] = lit.call {{.*}}__lt__{{.*}}(%a, %b)
     # CHECK:       %[[CMP_A_B_SB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[CMP_A_B]])
-    # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = pop.cast_to_builtin %[[CMP_A_B_SB]]
-    # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
+    # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_SB]]
     # CHECK:   %[[CMP_B_C:.*]] = lit.call {{.*}}__lt__{{.*}}(
     # CHECK-NEXT:   hlcf.yield %[[CMP_B_C]]
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield %[[CMP_A_B]]
     # CHECK-NEXT: }
     # CHECK-NEXT: %[[CMP_SB:.*]] = lit.call {{.*}}__mlir_bool__{{.*}}(%[[IF_A_B]])
-    # CHECK-NEXT: %[[CMP_I1:.*]] = pop.cast_to_builtin %[[CMP_SB]]
-    # CHECK-NEXT: %[[IF:.*]] = hlcf.if %[[CMP_I1]]
+    # CHECK-NEXT: %[[IF:.*]] = hlcf.if %[[CMP_SB]]
     # CHECK-NEXT:   %[[CMP_D_E:.*]] = lit.call {{.*}}__lt__{{.*}}(%d, %e)
     # CHECK-NEXT:   hlcf.yield %[[CMP_D_E]]
     # CHECK-NEXT: } else {
@@ -466,18 +460,16 @@ comptime chainedCmpAlias3 = 1 <= 2 <= 9 <= 4 <= 5
 
 # CHECK-LABEL: lit.fn @"chainedCmpSemiDyn
 def chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
-    # CHECK-NEXT: [[IFCOND:%.*]] = kgen.param.constant: i1 = <1>
+    # CHECK-NEXT: [[IFCOND:%.*]] = kgen.param.constant: scalar<bool> = <true>
     # CHECK-NEXT: [[FINALRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
     # CHECK-NEXT:   [[PV:%.*]] = {{.*}}constant{{.*}}77
     # CHECK-NEXT:   [[CMPRESULT1:%.*]] = {{.*}}__lt__{{.*}}([[PV]], %x)
     # CHECK-NEXT:   [[IFCONDSB:%.*]] = {{.*}}__mlir_bool__{{.*}}([[CMPRESULT1]])
-    # CHECK-NEXT:   [[IFCOND:%.*]] = pop.cast_to_builtin [[IFCONDSB]]
-    # CHECK-NEXT:   [[INNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
+    # CHECK-NEXT:   [[INNERRESULT:%.*]] = hlcf.if [[IFCONDSB]] -> !Bool {
     # CHECK-NEXT:     [[PV:%.*]] = {{.*}}constant{{.*}}105
     # CHECK-NEXT:     [[CMPRESULT2:%.*]] = {{.*}}__lt__{{.*}}(%x, [[PV]])
     # CHECK-NEXT:     [[IFCONDSB:%.*]] = {{.*}}__mlir_bool__{{.*}}([[CMPRESULT2]])
-    # CHECK-NEXT:     [[IFCOND:%.*]] = pop.cast_to_builtin [[IFCONDSB]]
-    # CHECK-NEXT:     [[MOSTINNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
+    # CHECK-NEXT:     [[MOSTINNERRESULT:%.*]] = hlcf.if [[IFCONDSB]] -> !Bool {
     # CHECK-NEXT:       [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:scalar<bool> true}
     # CHECK-NEXT:       hlcf.yield [[TRUEPARAM]]
     # CHECK-NEXT:     } else {
@@ -513,8 +505,7 @@ struct NonCopyableContainer:
 def chained_cmp_in_non_copyable(a: Int, b: Int, c: NonCopyableContainer):
     # CHECK:      [[CMP_A_B:%.*]] = lit.call {{.*}}__lt__{{.*}}(%a, %b)
     # CHECK:      [[CMP_A_B_SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[CMP_A_B]])
-    # CHECK-NEXT: [[CMP_A_B_I1:%.*]] = pop.cast_to_builtin [[CMP_A_B_SB]]
-    # CHECK-NEXT: {{%.*}} = hlcf.if [[CMP_A_B_I1]]
+    # CHECK-NEXT: {{%.*}} = hlcf.if [[CMP_A_B_SB]]
     # CHECK-NEXT:   {{%.*}} = lit.call {{.*}}__contains__{{.*}}(%c,
     # CHECK:        hlcf.yield
     # CHECK-NEXT: } else {

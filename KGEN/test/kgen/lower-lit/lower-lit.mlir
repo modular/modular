@@ -356,7 +356,7 @@ lit.fn @throwing_func(%1: !lit.struct<@Error>) throws -> !kgen.variant<@Error, n
 
 // CHECK-LABEL: kgen.generator @return_raise_or
 // CHECK-SAME: -> !kgen.variant<struct<() memoryOnly>, none>
-lit.fn @return_raise_or(%cond: i1, %err: !lit.struct<@Error>) -> !kgen.variant<@Error, none> {
+lit.fn @return_raise_or(%cond: !kgen.scalar<bool>, %err: !lit.struct<@Error>) -> !kgen.variant<@Error, none> {
   // CHECK-NEXT: hlcf.if %arg0
   hlcf.elif {
     hlcf.elif.yield %cond

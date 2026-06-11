@@ -127,7 +127,7 @@ def walrus_control_flow(a: Int) raises:
 
 # Check that we only get one implicit declaration and all three scopes use it.
 # CHECK-LABEL: lit.fn @"reuse_implicit
-def reuse_implicit(a: Int, cond: __mlir_type.i1) raises:
+def reuse_implicit(a: Int, cond: __mlir_type.`!kgen.scalar<bool>`) raises:
     # CHECK: %implicit = lit.var.decl
 
     # CHECK: hlcf.elif

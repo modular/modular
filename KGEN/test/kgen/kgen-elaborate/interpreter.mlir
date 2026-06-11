@@ -4,7 +4,8 @@
 kgen.generator @recursive(%arg0: index) -> index {
   %idx1 = index.constant 1
   %0 = index.cmp sge(%arg0, %idx1)
-  hlcf.if %0 {
+  %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+  hlcf.if %c0 {
     %1 = index.sub %arg0, %idx1
     %2 = kgen.call @recursive(%1) : (index) -> index
     kgen.return %2 : index
@@ -133,7 +134,8 @@ kgen.generator @sum(%from: index, %to: index) -> index {
   %idx1 = index.constant 1
   %result = hlcf.loop (%acc = %idx0 : index, %i = %from : index) -> index {
     %cond = index.cmp sle(%i, %to)
-    hlcf.if %cond {
+    %condb = pop.cast_from_builtin %cond : i1 to !kgen.scalar<bool>
+    hlcf.if %condb {
       hlcf.yield
     } else {
       hlcf.break %acc : index
@@ -156,7 +158,8 @@ kgen.generator @call_it() {
 
 kgen.generator @early_return(%cond: i1) -> index {
   %idx0 = index.constant 0
-  %result = hlcf.if %cond -> index {
+  %condb = pop.cast_from_builtin %cond : i1 to !kgen.scalar<bool>
+  %result = hlcf.if %condb -> index {
     hlcf.yield %idx0 : index
   } else {
     %idx1 = index.constant 1
@@ -382,17 +385,20 @@ kgen.generator @elif(%arg0: index, %arg1: index) -> index {
   %idx2 = index.constant 2
   %0 = hlcf.elif -> index {
     %cond0 = index.cmp eq(%arg0, %idx0)
-    hlcf.elif.yield %cond0
+    %cond0b = pop.cast_from_builtin %cond0 : i1 to !kgen.scalar<bool>
+    hlcf.elif.yield %cond0b
   } then {
     hlcf.yield %idx0 : index
   } {
     %cond1 = index.cmp eq(%arg0, %idx1)
-    hlcf.elif.yield %cond1
+    %cond1b = pop.cast_from_builtin %cond1 : i1 to !kgen.scalar<bool>
+    hlcf.elif.yield %cond1b
   } then {
     hlcf.yield %idx1 : index
   } {
     %cond2 = index.cmp eq(%arg0, %idx2)
-    hlcf.elif.yield %cond2
+    %cond2b = pop.cast_from_builtin %cond2 : i1 to !kgen.scalar<bool>
+    hlcf.elif.yield %cond2b
   } then {
     hlcf.yield %idx2 : index
   } else {
@@ -420,7 +426,8 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
   %0:2 = hlcf.elif -> index, index {
     %2 = index.add %arg0, %idx1
     %3 = index.cmp eq(%2, %idx3)
-    hlcf.elif.yield %3, %2 : index
+    %c3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
+    hlcf.elif.yield %c3, %2 : index
   } then (%arg1 : index) {
     hlcf.yield %arg1, %arg1 : index, index
   } else (%arg1 : index) {
@@ -437,13 +444,15 @@ kgen.func @elifManyRegionsWithArgs(%arg0: index) -> index {
   %0:2 = hlcf.elif -> index, index {
     %2 = index.add %arg0, %idx1
     %3 = index.cmp eq(%2, %idx3)
-    hlcf.elif.yield %3, %2 : index
+    %c3 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
+    hlcf.elif.yield %c3, %2 : index
   } then (%arg1 : index) {
     hlcf.yield %arg1, %arg1 : index, index
   } (%arg1 : index) {
     %4 = index.cmp eq(%arg0, %idx4)
+    %c4 = pop.cast_from_builtin %4 : i1 to !kgen.scalar<bool>
     %5 = index.add %arg1, %idx3
-    hlcf.elif.yield %4, %5 : index
+    hlcf.elif.yield %c4, %5 : index
   } then (%arg1 : index) {
     hlcf.yield %arg1, %arg1 : index, index
   } else (%arg1 : index) {

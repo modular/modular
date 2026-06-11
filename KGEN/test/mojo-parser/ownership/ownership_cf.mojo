@@ -55,7 +55,7 @@ struct MemExample(ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.fn @"if_examples
-def if_examples(cond: __mlir_type.i1):
+def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK: %_a = lit.var.decl
     var _a: MemExample
 
@@ -117,7 +117,7 @@ def if_examples(cond: __mlir_type.i1):
     var d = MemExample()
 
     # CHECK: hlcf.elif {
-    # CHECK-NEXT: [[ONE:%[0-9]+]] = kgen.param.constant: i1 = <1>
+    # CHECK-NEXT: [[ONE:%.+]] = kgen.param.constant: scalar<bool> = <true>
     # CHECK-NEXT: hlcf.elif.yield [[ONE]]
     # CHECK-NEXT: } then {
     if True:
@@ -137,7 +137,7 @@ def if_examples(cond: __mlir_type.i1):
 
 
 # CHECK-LABEL: lit.fn @"try_examples
-def try_examples(cond: __mlir_type.i1):
+def try_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: %a = lit.var.decl
     # CHECK-NEXT: %caught_error = lit.var.decl
     var a: MemExample
@@ -279,7 +279,6 @@ def chris_origin_example(a: Bool, b: Bool):
         # CHECK: except
         # CHECK: hlcf.elif
         # CHECK-NEXT: lit.call
-        # CHECK-NEXT: pop.cast_to_builtin
         # CHECK-NEXT: hlcf.elif.yield
         # CHECK-NEXT: } then {
         # CHECK-NEXT: __del__{{.*}}(%x)
@@ -304,7 +303,7 @@ def chris_origin_example(a: Bool, b: Bool):
 
 
 # CHECK-LABEL: lit.fn @"loop_example
-def loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
+def loop_example(cond1: __mlir_type.`!kgen.scalar<bool>`, cond2: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: %a = lit.var.decl "a"
     var a: MemExample
     # CHECK-NEXT: %b = lit.var.decl "b"
@@ -318,7 +317,7 @@ def loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
 
     # Unneeded boilerplate due to 'while True':
     # CHECK-NEXT: hlcf.loop "_loop_0" {
-    # CHECK-NEXT:  = kgen.param.constant: i1 = <1>
+    # CHECK-NEXT:  = kgen.param.constant: scalar<bool> = <true>
     # CHECK-NEXT:      hlcf.if
     # CHECK-NEXT:        hlcf.yield
     # CHECK-NEXT:      } else {
@@ -376,7 +375,7 @@ struct TestLoopWithWholeObjectBit:
 
     # CHECK: lit.fn @"__init__
     @implicit
-    def __init__(out self, cond: __mlir_type.i1):
+    def __init__(out self, cond: __mlir_type.`!kgen.scalar<bool>`):
         # CHECK-NEXT: %buf = lit.var.decl "buf"
         # CHECK-NEXT: lifetime.start %buf
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%buf)
@@ -407,8 +406,8 @@ struct TestLoopWithWholeObjectBit:
 # CHECK-LABEL: lit.fn @"testInfiniteloop
 def testInfiniteloop():
     # CHECK-NEXT:  hlcf.loop "_loop_0" {
-    # CHECK-NEXT:    %0 = kgen.param.constant: i1 = <1>
-    # CHECK-NEXT:    hlcf.if %0 {
+    # CHECK-NEXT:    [[T:%.+]] = kgen.param.constant: scalar<bool> = <true>
+    # CHECK-NEXT:    hlcf.if [[T]] {
     # CHECK-NEXT:      hlcf.yield
     # CHECK-NEXT:    } else {
     # CHECK-NEXT:      kgen.unreachable
@@ -591,7 +590,6 @@ def test_elif(cond: Bool, cond2: Bool):
 
     # CHECK: hlcf.elif {
     # CHECK-NEXT:  __mlir_bool__
-    # CHECK-NEXT: pop.cast_to_builtin
     # CHECK-NEXT: hlcf.elif.yield
     # CHECK-NEXT: } then {
     if cond:
@@ -612,7 +610,6 @@ def test_elif(cond: Bool, cond2: Bool):
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem1)
     # CHECK-NEXT: lifetime.end %mem1
     # CHECK-NEXT: __mlir_bool__
-    # CHECK-NEXT: pop.cast_to_builtin
     # CHECK-NEXT: hlcf.elif.yield
 
     # CHECK-NEXT: } then {
@@ -661,7 +658,6 @@ def loop_any_origin(var mem: MemExample, cond: Bool):
     # there is an access through AnyOrigin within the loop.
     # CHECK: hlcf.loop
     # CHECK-NEXT:     lit.call {{.*}}Bool::@"__mlir_bool__
-    # CHECK-NEXT:     pop.cast_to_builtin
     # CHECK-NEXT:     hlcf.if
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     } else {

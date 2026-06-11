@@ -42,7 +42,7 @@ kgen.generator @parent() -> index {
 kgen.generator @callee() -> index always_inline {
   // CHECK: index.constant 0 loc(#[[CALLEE_LOC:.*]])
   %0 = index.constant 0 loc(#calleeMisc)
-  %false = index.bool.constant false loc(#calleeMisc)
+  %false = kgen.param.constant: scalar<bool> = <false> loc(#calleeMisc)
   hlcf.if %false {
     // CHECK: kgen.return %idx0 : index loc(#[[RET_LOC0:.*]])
     kgen.return %0 : index loc(#ret0)

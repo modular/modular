@@ -22,7 +22,7 @@ kgen.func @multiLoad() -> (index, index) {
 }
 
 // CHECK-LABEL: @multiLoadNested
-kgen.func @multiLoadNested(%pred : i1) -> index {
+kgen.func @multiLoadNested(%pred : !kgen.scalar<bool>) -> index {
   // CHECK-NEXT: index.constant
   %idx0 = index.constant 0
   pop.compiler.global_store "aGlobal", %idx0 : index

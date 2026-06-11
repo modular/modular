@@ -97,7 +97,7 @@ kgen.generator @nohoist_cond() {
 }
 
 // CHECK-LABEL: kgen.generator @hlcf_if_apply
-kgen.generator @hlcf_if_apply(%cond: i1) {
+kgen.generator @hlcf_if_apply(%cond: !kgen.scalar<bool>) {
   // COM: make sure that the apply is being lifted to the beginning
   // COM: of the generator since hlcf.if regions don't create
   // COM: new parameter decl scopes.
@@ -121,7 +121,7 @@ kgen.generator @hlcf_if_apply(%cond: i1) {
 }
 
 // CHECK-LABEL: kgen.generator @hlcf_if_in_param_if_apply
-kgen.generator @hlcf_if_in_param_if_apply(%cond0: i1, %cond1: i1) {
+kgen.generator @hlcf_if_in_param_if_apply(%cond0: !kgen.scalar<bool>, %cond1: !kgen.scalar<bool>) {
   // COM: make sure that the apply is being lifted to the beginning
   // COM: of the paramDecl region since hlcf.if regions don't create
   // COME: new parameter decl scopes.

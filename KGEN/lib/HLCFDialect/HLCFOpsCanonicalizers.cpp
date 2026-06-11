@@ -98,11 +98,12 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
     for (auto [res, opndThen, opndElse] :
          llvm::zip(op.getResults(), op.getThenTerminator()->getOperands(),
                    op.getElseTerminator()->getOperands())) {
-      // Replace 'if cond { return true } else {return false} with "cond".
-      BoolAttr trueCond, falseCond;
-      if (matchPattern(opndThen, m_Constant(&trueCond)) &&
+      // Replace 'if cond { yield true } else { yield false }' with "cond".
+      KGEN::SIMDAttr trueCond, falseCond;
+      if (res.getType() == op.getCond().getType() &&
+          matchPattern(opndThen, m_Constant(&trueCond)) &&
           matchPattern(opndElse, m_Constant(&falseCond)) &&
-          trueCond.getValue() == true && falseCond.getValue() == false) {
+          trueCond.getAsBool() == true && falseCond.getAsBool() == false) {
         rewriter.replaceAllUsesWith(res, op.getCond());
         changed = true;
         continue;
@@ -133,12 +134,12 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
 
   LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter &rewriter) const override {
-    BoolAttr condition;
+    KGEN::SIMDAttr condition;
     if (!matchPattern(op.getCond(), m_Constant(&condition)))
       return failure();
 
     Region &active =
-        condition.getValue() ? op.getThenRegion() : op.getElseRegion();
+        condition.getAsBool() ? op.getThenRegion() : op.getElseRegion();
     replaceOpWithRegion(rewriter, op, active);
 
     return success();

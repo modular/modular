@@ -592,7 +592,7 @@ module {
       kgen.witness "__call__" : (!kgen.closure<@thin, "fn3" trivial>, index) -> index = #kgen.closure.symbol<@thin, "fn3", #kgen.closure_method<call>, <:!kgen.param_closure<@thin "fn3"> CAPTURES>>
     }
   }
-  kgen.generator @thin(%arg0: i1) {
+  kgen.generator @thin(%arg0: !kgen.scalar<bool>) {
     hlcf.if %arg0 {
       %0 = kgen.closure.init()(%arg1: index) -> index {
         lit.try "try0" {
