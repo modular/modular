@@ -188,7 +188,6 @@ def test_warmup_graph_capture_batch_size(
     )
     mock_model = MagicMock()
     mock_model.model = MagicMock()
-    mock_model.execute = MagicMock()
     mock_model.max_seq_len = 2048
     pipeline._pipeline_model = mock_model
     pipeline._pipeline_config = MagicMock()
@@ -202,7 +201,6 @@ def test_warmup_graph_capture_batch_size(
     pipeline._kv_manager._total_num_pages = 100
     pipeline._spec_decode_state = None
     pipeline._kv_manager.num_caches = 1
-    pipeline.session = MagicMock()
 
     with patch(
         "max.pipelines.lib.pipeline_variants.overlap_text_generation"
@@ -215,8 +213,6 @@ def test_warmup_graph_capture_batch_size(
 
         call_kwargs = MockRunner.call_args.kwargs
         assert call_kwargs["model"] is mock_model.model
-        assert call_kwargs["execute_model"] is mock_model.execute
-        assert call_kwargs["session"] is pipeline.session
         assert call_kwargs["kv_params"] is mock_kv_params
         assert callable(call_kwargs["warmup_model_inputs"])
         assert (

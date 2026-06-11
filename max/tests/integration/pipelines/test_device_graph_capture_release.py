@@ -22,14 +22,36 @@ import numpy as np
 import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import Model
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice, KVCacheParams
-from max.pipelines.lib import ModelOutputs
+from max.nn.kv_cache import (
+    BatchCharacteristics,
+    KVCacheInputs,
+    KVCacheInputsPerDevice,
+    KVCacheParams,
+    MHAAttnKey,
+)
 from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
 from test_common.mocks.pipeline_model import MockModelInputs
 
 MiB = 1024 * 1024
+
+
+def _mock_kv_params() -> SimpleNamespace:
+    """A minimal KVCacheParams stand-in exposing the dispatch resolver API."""
+    return SimpleNamespace(
+        devices=[DeviceRef.CPU()],
+        is_mla=False,
+        n_kv_heads_per_device=1,
+        num_q_heads_per_device=1,
+        is_fp8_kv_dtype=False,
+        data_parallel_degree=1,
+        num_draft_tokens_per_step=1,
+        graph_capture_probe_cache_lengths=lambda max_cache_length, q: [1],
+        resolve_attn_key=lambda batch_size, q, cache_length: MHAAttnKey(
+            batch_size=batch_size, max_prompt_length=q, num_partitions=1
+        ),
+    )
 
 
 @pytest.fixture
@@ -89,7 +111,9 @@ def _make_kv_per_device() -> KVCacheInputsPerDevice[Buffer, Buffer]:
 
 
 @contextmanager
-def _warmup_model_inputs(batch_size: int) -> Iterator[MockModelInputs]:
+def _warmup_model_inputs(
+    batch_size: int, batch_characteristics: BatchCharacteristics
+) -> Iterator[MockModelInputs]:
     yield MockModelInputs(
         active_batch_size=batch_size,
         eos_prob=0.0,
@@ -112,21 +136,9 @@ def test_warmup_pre_ready_releases_capture_outputs(
     # memory manager can reuse the same backing allocation.
     output_bytes = 48 * MiB
     model = OutputAllocatingModel(output_bytes)
-    kv_params = SimpleNamespace(
-        devices=[DeviceRef.CPU()],
-        is_mla=False,
-        n_kv_heads_per_device=1,
-        num_q_heads_per_device=1,
-        is_fp8_kv_dtype=False,
-        data_parallel_degree=1,
-        num_draft_tokens_per_step=1,
-    )
+    kv_params = _mock_kv_params()
     runner = ServeGraphCaptureRunner(
         model=cast(Model, model),
-        execute_model=lambda model_inputs: ModelOutputs(
-            logits=Buffer.zeros((1,), dtype=DType.float32)
-        ),
-        session=cast(InferenceSession, object()),
         kv_params=cast(KVCacheParams, kv_params),
         warmup_model_inputs=_warmup_model_inputs,
         max_cache_length_upper_bound=1,
@@ -151,21 +163,9 @@ def test_release_graph_drops_entry_and_forwards_to_model(
 
     output_bytes = 48 * MiB
     model = OutputAllocatingModel(output_bytes)
-    kv_params = SimpleNamespace(
-        devices=[DeviceRef.CPU()],
-        is_mla=False,
-        n_kv_heads_per_device=1,
-        num_q_heads_per_device=1,
-        is_fp8_kv_dtype=False,
-        data_parallel_degree=1,
-        num_draft_tokens_per_step=1,
-    )
+    kv_params = _mock_kv_params()
     runner = ServeGraphCaptureRunner(
         model=cast(Model, model),
-        execute_model=lambda model_inputs: ModelOutputs(
-            logits=Buffer.zeros((1,), dtype=DType.float32)
-        ),
-        session=cast(InferenceSession, object()),
         kv_params=cast(KVCacheParams, kv_params),
         warmup_model_inputs=_warmup_model_inputs,
         max_cache_length_upper_bound=1,
