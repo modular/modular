@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MArchTarget/MArchTarget.h"
+#include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/MDialect.h"
 #include "Support/PlatformUtils.h"
 #include "llvm/Support/TargetSelect.h"
@@ -90,4 +91,79 @@ TEST(ArchTarget, GetTargetInfoForExpandsFeatures) {
   ASSERT_FALSE(targetOff.isError()) << targetOff.getError();
   EXPECT_FALSE(targetOff->hasFeature("avx512f"));
   EXPECT_TRUE(targetOff->hasFeature("avx2"));
+}
+
+// DataLayout parses pointer specs per address space. The spec format is
+// `p[<addr-space>]:<size>:<abi-align>[:...]` (LLVM-compatible); `p` with no
+// number is the default address space (0). Each address space keeps its own
+// pointer width and ABI alignment, so a target with, e.g., 32-bit GPU shared
+// pointers and 64-bit global pointers round-trips correctly.
+TEST(ArchTarget, DataLayoutPointerAddressSpaces) {
+  // Default address space only: `p:64:64` -> 64-bit width, 8-byte ABI align.
+  // The no-arg and explicit-zero queries are equivalent.
+  {
+    auto dl = M::DataLayout::parse("e-p:64:64-i64:64");
+    ASSERT_FALSE(dl.isError()) << dl.getError();
+    EXPECT_EQ(dl->getPointerBitWidth(), 64);
+    EXPECT_EQ(dl->getPointerBitWidth(/*addrSpace=*/0), 64);
+    EXPECT_EQ(dl->getPointerABIAlign(), 8);
+  }
+
+  // A non-default pointer size for the default address space parses.
+  {
+    auto dl = M::DataLayout::parse("e-p:32:32-i64:64");
+    ASSERT_FALSE(dl.isError()) << dl.getError();
+    EXPECT_EQ(dl->getPointerBitWidth(), 32);
+    EXPECT_EQ(dl->getPointerABIAlign(), 4);
+  }
+
+  // Multiple address spaces with distinct widths/alignments are each parsed and
+  // queryable independently (only the explicitly specified spaces are queried).
+  {
+    auto dl = M::DataLayout::parse("e-p:64:64-p3:32:32-p5:128:128-i64:64");
+    ASSERT_FALSE(dl.isError()) << dl.getError();
+    // Default (address space 0): 64-bit, 8-byte aligned.
+    EXPECT_EQ(dl->getPointerBitWidth(0), 64);
+    EXPECT_EQ(dl->getPointerABIAlign(0), 8);
+    // Address space 3 (e.g. GPU shared/LDS): 32-bit, 4-byte aligned.
+    EXPECT_EQ(dl->getPointerBitWidth(3), 32);
+    EXPECT_EQ(dl->getPointerABIAlign(3), 4);
+    // Address space 5: 128-bit, 16-byte aligned.
+    EXPECT_EQ(dl->getPointerBitWidth(5), 128);
+    EXPECT_EQ(dl->getPointerABIAlign(5), 16);
+  }
+
+  // The trailing index-size field (`p7:128:128:128:32`) is accepted and ignored
+  // for sizing/alignment purposes.
+  {
+    auto dl = M::DataLayout::parse("e-p7:128:128:128:32-i64:64");
+    ASSERT_FALSE(dl.isError()) << dl.getError();
+    EXPECT_EQ(dl->getPointerBitWidth(7), 128);
+    EXPECT_EQ(dl->getPointerABIAlign(7), 16);
+  }
+
+  // An address space with no explicit pointer spec falls back to the default
+  // address space (AS 0), matching LLVM semantics, rather than reading
+  // uninitialized state.
+  {
+    auto dl = M::DataLayout::parse("e-p:32:32-p3:64:64-i64:64");
+    ASSERT_FALSE(dl.isError()) << dl.getError();
+    // AS0 is explicitly 32-bit; AS3 is explicitly 64-bit.
+    EXPECT_EQ(dl->getPointerBitWidth(0), 32);
+    EXPECT_EQ(dl->getPointerBitWidth(3), 64);
+    // AS7 was never specified, so it mirrors the default address space (AS0).
+    EXPECT_EQ(dl->getPointerBitWidth(7), 32);
+    EXPECT_EQ(dl->getPointerABIAlign(7), 4);
+  }
+
+  // Address spaces beyond the tracked range (e.g. x86-64's p270/p271/p272
+  // mixed-pointer modes) are skipped rather than rejected, so real target
+  // datalayouts still parse and the default address space stays authoritative.
+  {
+    auto dl = M::DataLayout::parse(
+        "e-p:64:64-p270:32:32-p271:32:32-p272:64:64-i64:64");
+    ASSERT_FALSE(dl.isError()) << dl.getError();
+    EXPECT_EQ(dl->getPointerBitWidth(0), 64);
+    EXPECT_EQ(dl->getPointerABIAlign(0), 8);
+  }
 }
