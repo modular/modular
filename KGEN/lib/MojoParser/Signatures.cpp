@@ -693,9 +693,10 @@ static MojoInflightDiag emitOptionalAfterRequired(IREmitter &emitter,
 /// an optional argument/parameter).
 /// The default value is returned if available, otherwise a null PValue is
 /// returned.
-static PValue emitDefault(const ParsedArgument &arg, ASTType type,
-                          SmallVectorImpl<TypedAttr> &defaults,
+static PValue emitDefault(ArrayRef<ParsedArgument> args, unsigned argIdx,
+                          ASTType type, SmallVectorImpl<TypedAttr> &defaults,
                           IREmitter &emitter, ExprContext exprContext) {
+  const ParsedArgument &arg = args[argIdx];
   if (const ExprNode *initExpr = arg.initExpr) {
     // If the type is parametric, then we have to be careful about emitting the
     // initializer - we can't check to see if the argument satisfies type
@@ -726,15 +727,20 @@ static PValue emitDefault(const ParsedArgument &arg, ASTType type,
     return UnknownAttr::get(type);
   }
 
-  auto hasAnyDefaults = [&]() -> bool {
-    return llvm::any_of(defaults,
-                        [](TypedAttr val) { return val != TypedAttr(); });
+  auto hasAnyPosDefaults = [&]() -> bool {
+    return llvm::any_of(llvm::zip(args, defaults), [](auto pair) {
+      // Default value on inferred parameters is allowed, since inferred
+      // parameters can only be overwritten by keywords, so it does not leads to
+      // ambiguity.
+      return std::get<0>(pair).kwArgHandling != KWArgHandling::kInferred &&
+             std::get<1>(pair) != TypedAttr();
+    });
   };
 
   // If we have a variadic argument, we add a placeholder default value so
   // that invariants about default values always correspond to the trailing
   // arguments. This allows us the have default values before a variadic.
-  if (arg.variadicKind != VariadicKind::None && hasAnyDefaults())
+  if (arg.variadicKind != VariadicKind::None && hasAnyPosDefaults())
     return UnknownAttr::get(mlir::NoneType::get(type.mlirType.getContext()));
 
   // Diagnose an invalid missing default argument: if we have any positional
@@ -745,7 +751,7 @@ static PValue emitDefault(const ParsedArgument &arg, ASTType type,
   if (arg.kwArgHandling != KWArgHandling::kKeywordOnly &&
       arg.kwArgHandling != KWArgHandling::kInferred &&
       arg.kgenConvention != ArgConvention::ByRefResult &&
-      arg.kgenConvention != ArgConvention::ByRefError && hasAnyDefaults()) {
+      arg.kgenConvention != ArgConvention::ByRefError && hasAnyPosDefaults()) {
     MojoInflightDiag diag = emitOptionalAfterRequired(
         emitter, arg,
         exprContext == EC_DefaultParam ? "parameter" : "argument");
@@ -1096,7 +1102,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
   bool hasErrors = false;
 
   IndexRefRemapper remapper({});
-  for (ParsedArgument &arg : parsedParams.params) {
+  for (auto [argIdx, arg] : llvm::enumerate(parsedParams.params)) {
     // Check for things supported in arguments that are not supported in
     // parameters.
     ASTType type;
@@ -1146,8 +1152,8 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 
     // Emit default parameter values if present. An error would have been
     // emitted if failed.
-    PValue defaultVal =
-        emitDefault(arg, type, result.defaults, emitter, EC_DefaultParam);
+    PValue defaultVal = emitDefault(parsedParams.params, argIdx, type,
+                                    result.defaults, emitter, EC_DefaultParam);
     result.defaults.push_back(defaultVal);
 
     // TODO: Parameter decls should support conventions at some point.
@@ -1990,8 +1996,9 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 
   // Emit default argument values if present. An error would have been emitted
   // if failed.
-  auto defaultVal = emitDefault(arg, type, tcSignature.defaults, typeEmitter,
-                                EC_DefaultArgument);
+  auto defaultVal =
+      emitDefault(tcSignature.argList.parsedArgs, idx, type,
+                  tcSignature.defaults, typeEmitter, EC_DefaultArgument);
   tcSignature.defaults.push_back(defaultVal);
 
   // Now that we have the declared type and default value sorted, apply the

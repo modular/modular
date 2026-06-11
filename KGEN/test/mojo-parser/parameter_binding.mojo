@@ -60,3 +60,13 @@ def test(x: SomeStruct[1, 2, 3]):
 def foo[T: def[a: Int, b: Int](ParamType[b]) thin -> Int](param: ParamType[1]):
     # CHECK: lit.call tail{{.*}}bind_params(:{{.*}} T, :!Int {2}, :!Int {1})]
     T[2](param)
+
+
+# We allow default values on inferred parameters.
+# CHECK: lit.struct.decl @MySpan<mut: !Bool = {:scalar<bool> false}
+struct MySpan[
+    mut: Bool = False,
+    //,
+    origin: Origin[mut=mut],
+]():
+    pass
