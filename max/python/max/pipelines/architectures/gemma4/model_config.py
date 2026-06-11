@@ -68,6 +68,14 @@ except ImportError:
     except ValueError:
         pass
 
+    class Gemma4UnifiedHFConfig(Gemma4HFConfig):
+        model_type = "gemma4_unified"
+
+    try:
+        AutoConfig.register("gemma4_unified", Gemma4UnifiedHFConfig)
+    except ValueError:
+        pass
+
 
 @dataclass(kw_only=True)
 class Gemma4TextConfig(Gemma3Config):
