@@ -24,7 +24,7 @@ def generic(conditional: ConditionalArraySize) raises:
 
 struct ConditionalValueType[T: AnyType]:
     comptime Type = ConditionalType[
-        Trait=Defaultable & ImplicitlyDestructible,
+        Trait=Defaultable & ImplicitlyDeletable,
         If=conforms_to(Self.T, ImplicitlyCopyable),
         Then=List[Int],
         Else=String,

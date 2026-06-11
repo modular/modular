@@ -18,7 +18,7 @@
 
 
 # A simple copyable type
-struct CopyableType(Copyable, ImplicitlyDestructible, Movable):
+struct CopyableType(Copyable, ImplicitlyDeletable, Movable):
     var x: Int
 
     def __init__(out self, x: Int):
@@ -27,7 +27,7 @@ struct CopyableType(Copyable, ImplicitlyDestructible, Movable):
 
 # An implicitly-copyable type (ImplicitlyCopyable ⊃ Copyable ⊃ Movable)
 struct ImplCopyableType(
-    Copyable, ImplicitlyCopyable, ImplicitlyDestructible, Movable
+    Copyable, ImplicitlyCopyable, ImplicitlyDeletable, Movable
 ):
     var x: Int
 
@@ -42,9 +42,9 @@ struct ImplCopyableType(
 
 # A simple wrapper struct with conditional Copyable conformance.
 # Wrapper[T] is Copyable if and only if T is Copyable.
-struct SimpleWrapper[T: ImplicitlyDestructible & Movable](
+struct SimpleWrapper[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var value: Self.T
@@ -92,7 +92,7 @@ def test_nested_wrappers():
 # covariance.
 
 
-def takes_copyable_via_trait[T: Copyable & ImplicitlyDestructible](x: T):
+def takes_copyable_via_trait[T: Copyable & ImplicitlyDeletable](x: T):
     var copy = x.copy()
     _ = copy^
     # CHECK: Function type conversion with conditional works
@@ -193,7 +193,7 @@ def test_function_type_conversion():
 
 
 # A type that is both Copyable and Intable
-struct CopyableIntableType(Copyable, ImplicitlyDestructible, Intable, Movable):
+struct CopyableIntableType(Copyable, ImplicitlyDeletable, Intable, Movable):
     var x: Int
 
     def __init__(out self, x: Int):
@@ -221,7 +221,7 @@ trait DerivedB(Base):
 # - Base when T is Copyable OR T is Intable (must be explicitly listed)
 # The derived constraints imply Base's OR constraint via the weakening rule:
 # A implies (A OR B), so conforms_to(T, Copyable) implies the OR.
-struct DiamondBothConditional[T: ImplicitlyDestructible & Movable](
+struct DiamondBothConditional[T: ImplicitlyDeletable & Movable](
     # Base must be explicitly listed with its OR constraint
     Base where conforms_to(T, Copyable) or conforms_to(T, Intable),
     # DerivedA's constraint implies Base's via weakening: A implies (A OR B)
@@ -269,14 +269,14 @@ def test_diamond_both_conditional():
 
 
 # A movable-only type (not Copyable)
-struct MovableOnlyType(ImplicitlyDestructible, Movable):
+struct MovableOnlyType(ImplicitlyDeletable, Movable):
     var x: Int
 
     def __init__(out self, x: Int):
         self.x = x
 
 
-struct DiamondOneUnconditional[T: ImplicitlyDestructible & Movable](
+struct DiamondOneUnconditional[T: ImplicitlyDeletable & Movable](
     DerivedA where conforms_to(T, Copyable),
     DerivedB,
 ):
@@ -305,7 +305,7 @@ def test_diamond_one_unconditional():
 
 # When an ancestor is explicitly listed, it uses the explicit constraint
 # (or no constraint if listed unconditionally)
-struct ExplicitAncestor[T: ImplicitlyDestructible & Movable](
+struct ExplicitAncestor[T: ImplicitlyDeletable & Movable](
     Base,
     DerivedA where conforms_to(T, Copyable),
 ):
@@ -330,7 +330,7 @@ def test_explicit_ancestor():
 # ===========================================================================
 
 
-struct MultipleConditional[T: ImplicitlyDestructible & Movable](
+struct MultipleConditional[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
     Intable where conforms_to(T, Intable),
 ):
@@ -372,7 +372,7 @@ trait RequiresMethod:
         ...
 
 
-struct StrongerConformance[T: ImplicitlyDestructible & Movable](
+struct StrongerConformance[T: ImplicitlyDeletable & Movable](
     # Conformance requires BOTH Copyable AND Intable
     RequiresMethod where conforms_to(T, Copyable) and conforms_to(T, Intable),
 ):
@@ -403,7 +403,7 @@ def test_stronger_implies_weaker():
 # the constraint to Base without requiring explicit listing.
 
 
-struct DiamondSameConstraint[T: ImplicitlyDestructible & Movable](
+struct DiamondSameConstraint[T: ImplicitlyDeletable & Movable](
     DerivedA where conforms_to(T, Copyable),
     DerivedB where conforms_to(T, Copyable),
 ):
@@ -440,7 +440,7 @@ def test_diamond_same_constraint():
 # implication to recognize them as agreeing and auto-propagate to Base.
 
 
-struct DiamondReorderedConstraint[T: ImplicitlyDestructible & Movable](
+struct DiamondReorderedConstraint[T: ImplicitlyDeletable & Movable](
     DerivedA where conforms_to(T, Copyable) and conforms_to(T, Intable),
     DerivedB where conforms_to(T, Intable) and conforms_to(T, Copyable),
 ):
@@ -478,8 +478,8 @@ trait ViolatedPrecedenceTrait:
         return 0
 
 
-struct ViolatedTakesPrecedence[T: ImplicitlyDestructible & Movable](
-    ImplicitlyDestructible,
+struct ViolatedTakesPrecedence[T: ImplicitlyDeletable & Movable](
+    ImplicitlyDeletable,
     Movable,
     ViolatedPrecedenceTrait where conforms_to(T, Copyable),
 ):
@@ -517,8 +517,8 @@ def test_violated_precedence():
 # The transfer operator (^) should work when T satisfies the condition.
 
 
-struct MovableViaCopyable[T: ImplicitlyDestructible & Movable](
-    ImplicitlyDestructible,
+struct MovableViaCopyable[T: ImplicitlyDeletable & Movable](
+    ImplicitlyDeletable,
     Movable where conforms_to(T, Copyable),
 ):
     var value: Self.T
@@ -541,8 +541,8 @@ def test_move_via_copyable():
 # ImplicitlyCopyable also subsumes Movable, so the transfer should work.
 
 
-struct MovableViaImplCopyable[T: ImplicitlyDestructible & Movable](
-    ImplicitlyDestructible,
+struct MovableViaImplCopyable[T: ImplicitlyDeletable & Movable](
+    ImplicitlyDeletable,
     Movable where conforms_to(T, ImplicitlyCopyable),
 ):
     var value: Self.T
@@ -566,9 +566,9 @@ def test_move_via_impl_copyable():
 # transfer (^) and copy should work when conditions are met.
 
 
-struct BothConditionalMoveCopy[T: ImplicitlyDestructible & Movable](
+struct BothConditionalMoveCopy[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable) and conforms_to(T, Movable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable where conforms_to(T, Movable),
 ):
     var value: Self.T
@@ -604,9 +604,9 @@ def test_both_conditional_move_copy():
 # conforms_to(T, Copyable).  No manual copy init is written.
 
 
-struct SynthCopyWrapper[T: ImplicitlyDestructible & Movable](
+struct SynthCopyWrapper[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var value: Self.T
@@ -626,7 +626,7 @@ def test_synthesized_copy():
 # Synthesized move ctor with T-typed field
 # ===========================================================================
 # The move init is synthesized for a struct with a T-typed field.  Because
-# T: ImplicitlyDestructible & Movable, the field IS unconditionally movable,
+# T: ImplicitlyDeletable & Movable, the field IS unconditionally movable,
 # so the unconditional synthesis path handles it.  This verifies that the
 # synthesized move init works correctly alongside conditional copy.
 
@@ -646,9 +646,9 @@ def test_synthesized_move():
 # each field via the appropriate path.
 
 
-struct MixedFieldWrapper[T: ImplicitlyDestructible & Movable](
+struct MixedFieldWrapper[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var count: Int
@@ -675,9 +675,9 @@ def test_mixed_field_copy():
 # ImplicitlyCopyable constraint.  The move constructor is unconditional.
 
 
-struct CopyableViaImplCopyable[T: ImplicitlyDestructible & Movable](
+struct CopyableViaImplCopyable[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, ImplicitlyCopyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var value: Self.T
@@ -719,8 +719,8 @@ def test_synth_copy_with_impl_copyable_type():
 # ===========================================================================
 
 
-struct ConditionalRP[T: Movable & ImplicitlyDestructible](
-    ImplicitlyDestructible,
+struct ConditionalRP[T: Movable & ImplicitlyDeletable](
+    ImplicitlyDeletable,
     Movable,
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):
@@ -809,7 +809,7 @@ def test_conforms_to_evaluates_where_clause():
 # true/false based on the conditional conformance constraint.
 
 
-def check_copyable_symbolic[T: ImplicitlyDestructible & Movable]() -> Bool:
+def check_copyable_symbolic[T: ImplicitlyDeletable & Movable]() -> Bool:
     return conforms_to(SimpleWrapper[T], Copyable)
 
 
@@ -831,7 +831,7 @@ def test_symbolic_conforms_to():
 
 
 def guarded_copyable_call[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](x: SimpleWrapper[T]):
     needs_copyable(x)
 
@@ -851,7 +851,7 @@ def test_guarded_conditional_call():
 
 
 def conditional_copy_in_guard[
-    T: ImplicitlyDestructible & Movable
+    T: ImplicitlyDeletable & Movable
 ](x: SimpleWrapper[T]):
     comptime if conforms_to(T, Copyable):
         # CHECK: comptime_guard_copy: ok
@@ -930,7 +930,7 @@ def accept_copyable_metatype[T: Copyable]():
     pass
 
 
-def upcast_with_scope[T: Copyable & ImplicitlyDestructible]():
+def upcast_with_scope[T: Copyable & ImplicitlyDeletable]():
     # SimpleWrapper[T] is Copyable because T: Copyable is in scope.
     # This exercises canMetaTypeUpCastTo receiving the scope.
     accept_copyable_metatype[SimpleWrapper[T]]()
@@ -952,13 +952,13 @@ def test_metatype_upcast_with_scope():
 
 
 def apply_copyable_fn[
-    T: Copyable & ImplicitlyDestructible & Movable
+    T: Copyable & ImplicitlyDeletable & Movable
 ](f: def(SimpleWrapper[T]) thin -> None, x: SimpleWrapper[T]):
     f(x)
 
 
 def print_wrapper_value[
-    T: Copyable & ImplicitlyDestructible & Movable
+    T: Copyable & ImplicitlyDeletable & Movable
 ](w: SimpleWrapper[T],):
     # CHECK: fn_conversion_scope: ok
     print("fn_conversion_scope: ok")
@@ -983,7 +983,7 @@ def accept_movable[T: Movable](x: T):
 
 
 def upcast_conditional_to_base[
-    T: Copyable & ImplicitlyDestructible & Movable
+    T: Copyable & ImplicitlyDeletable & Movable
 ](x: SimpleWrapper[T]):
     # SimpleWrapper[T] is Copyable (proven by T: Copyable in scope).
     # Copyable refines Movable, so this upcast should work.
@@ -1089,17 +1089,17 @@ def test_trp_multiple_conditional():
 
 
 @fieldwise_init
-struct CondWrapper[T: ImplicitlyDestructible & Movable](
+struct CondWrapper[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
     ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var value: Self.T
 
 
 def implicit_copy_in_generic[
-    T: ImplicitlyCopyable & ImplicitlyDestructible
+    T: ImplicitlyCopyable & ImplicitlyDeletable
 ](x: CondWrapper[T]) -> CondWrapper[T]:
     return x
 
@@ -1117,15 +1117,15 @@ def test_implicit_copy_in_generic():
 
 
 @fieldwise_init
-struct CondMovable[T: ImplicitlyDestructible & Movable](
-    ImplicitlyDestructible,
+struct CondMovable[T: ImplicitlyDeletable & Movable](
+    ImplicitlyDeletable,
     Movable where conforms_to(T, Copyable),
 ):
     var value: Self.T
 
 
 def move_in_generic[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](var x: CondMovable[T]) -> CondMovable[T]:
     return x^
 
@@ -1143,7 +1143,7 @@ def test_move_in_generic():
 
 
 def explicit_copy_in_generic[
-    T: Copyable & ImplicitlyDestructible
+    T: Copyable & ImplicitlyDeletable
 ](x: CondWrapper[T]) -> CondWrapper[T]:
     return x.copy()
 
@@ -1170,9 +1170,9 @@ def test_explicit_copy_in_generic():
 
 
 @fieldwise_init
-struct AliasField[T: ImplicitlyDestructible & Movable](
+struct AliasField[T: ImplicitlyDeletable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     comptime Wrapped = SimpleWrapper[Self.T]
@@ -1209,13 +1209,13 @@ def test_comptime_alias_conditional_conformance():
 # getCanonicalAttr cannot descend into the SymbolRefAttr list, producing
 # non-canonical forms that cause constraintImplies to reject valid
 # subsumption (e.g. conforms_to(T, Equatable) should imply
-# conforms_to(T, ImplicitlyDestructible) via ancestor expansion).
+# conforms_to(T, ImplicitlyDeletable) via ancestor expansion).
 
 
 @fieldwise_init
-struct DefaultEqWrapper[T: ImplicitlyDestructible & Movable](
+struct DefaultEqWrapper[T: ImplicitlyDeletable & Movable](
     Equatable where conforms_to(T, Equatable),
-    ImplicitlyDestructible,
+    ImplicitlyDeletable,
     Movable,
 ):
     var value: Self.T
@@ -1246,12 +1246,12 @@ def test_default_equatable_conditional():
 # trait from the conditional conformance constraint.
 
 
-comptime CopyableAlias = Copyable & ImplicitlyDestructible
+comptime CopyableAlias = Copyable & ImplicitlyDeletable
 
 
 def test_alias_param_conditional[T: CopyableAlias](x: SimpleWrapper[T]):
     # SimpleWrapper[T] is conditionally Copyable where conforms_to(T, Copyable).
-    # T: CopyableAlias = Copyable & ImplicitlyDestructible.
+    # T: CopyableAlias = Copyable & ImplicitlyDeletableImplicitlyDeletable.
     # The compiler must look through the alias sugar to see that T: Copyable.
     needs_copyable(x)
     print("alias_param_conditional: ok")

@@ -59,7 +59,7 @@ def wrapped_entry_point[
 ) -> kernel.declared_ret_type:
     comptime to_unsafe_pointer_mapper[
         T: AnyType
-    ]: Movable & ImplicitlyCopyable & ImplicitlyDestructible = UnsafePointer[
+    ]: Movable & ImplicitlyCopyable & ImplicitlyDeletable = UnsafePointer[
         T, MutUntrackedOrigin
     ]
     comptime UnsafePointerTupleType = Tuple[

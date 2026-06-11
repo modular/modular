@@ -59,7 +59,7 @@ def takeIt[f: def(z: Int) -> Int](impl: f, y: Int):
 # COM: Ensure closures work when a RegisterPassable struct forwards
 # COM: a concrete type argument through a generic closure parameter.
 @fieldwise_init
-struct RegPassWrapper[U: RegisterPassable & ImplicitlyDestructible](
+struct RegPassWrapper[U: RegisterPassable & ImplicitlyDeletable](
     RegisterPassable,
 ):
     var u: Self.U

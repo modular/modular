@@ -21,7 +21,7 @@ def takes_int_variadic_kwargs(**kwargs: Int) raises:
         print("non-existent key not found (as expected)")
 
 
-trait Resettable(ImplicitlyCopyable, ImplicitlyDestructible):
+trait Resettable(ImplicitlyCopyable, ImplicitlyDeletable):
     def reset(mut self):
         ...
 
