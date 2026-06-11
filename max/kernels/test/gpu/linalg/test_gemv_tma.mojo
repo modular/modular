@@ -112,24 +112,22 @@ def gemv_tma_kernel[
     var a_smem = LayoutTensorIter[
         dtype,
         a_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
-        a_smem_base,
+        a_smem_base.as_unsafe_any_origin(),
         a_size * NUM_PIPELINE_STAGES,
     )
 
     var b_smem = LayoutTensorIter[
         dtype,
         b_smem_layout,
-        MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
         circular=False,
     ](
-        b_smem_base,
+        b_smem_base.as_unsafe_any_origin(),
         b_size * NUM_PIPELINE_STAGES,
     )
 

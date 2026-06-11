@@ -193,7 +193,7 @@ def test_erf_kernel_sm90() raises:
 
 
 def test_shared_stack_allocation() -> (
-    UnsafePointer[Int8, MutAnyOrigin, address_space=AddressSpace.SHARED]
+    UnsafePointer[Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED]
 ):
     return stack_allocation[
         999, DType.int8, 8, address_space=AddressSpace.SHARED

@@ -184,8 +184,8 @@ def tma_umma_kernel_ss[
     ) == 0, "preserve alignment"
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
 
-    var a_smem_tile = a_smem_tile_t(a_smem)
-    var b_smem_tile = b_smem_tile_t(b_smem)
+    var a_smem_tile = a_smem_tile_t(a_smem.as_unsafe_any_origin())
+    var b_smem_tile = b_smem_tile_t(b_smem.as_unsafe_any_origin())
 
     # Shared memory pointer to hold tensor memory address
     var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
@@ -429,7 +429,7 @@ def tma_umma_kernel_ts_fp8[
         alignment=128,
     ]
 
-    var b_smem_tile = b_smem_tile_t(b_smem)
+    var b_smem_tile = b_smem_tile_t(b_smem.as_unsafe_any_origin())
     comptime b_size = b_smem_tile_t.layout.size()
 
     comptime accum_type = get_accum_type[a_type]()

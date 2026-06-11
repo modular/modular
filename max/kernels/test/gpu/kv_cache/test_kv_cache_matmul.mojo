@@ -176,8 +176,8 @@ def execute_fused_qkv_matmul[
 
     # Create device tensors for kernel calls
     var hidden_state_device_tensor = hidden_state.device_tensor()
-    var weight_device_tensor = LayoutTensor[dtype, weight_layout, MutAnyOrigin](
-        weight_device.unsafe_ptr(),
+    var weight_device_tensor = LayoutTensor[dtype, weight_layout](
+        weight_device,
         RuntimeLayout[weight_layout].row_major(weight_shape),
     )
     var test_output_device_tensor = test_output.device_tensor()

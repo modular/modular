@@ -303,33 +303,38 @@ def execute_matmul_k_cache_ragged_scale[
 
     # Create device LayoutTensors for kernel calls
     var hidden_state_ragged_tensor = LayoutTensor[
-        weight_dtype, hidden_state_layout, MutAnyOrigin
+        weight_dtype, hidden_state_layout
     ](
-        hidden_state_ragged_device.unsafe_ptr(),
+        hidden_state_ragged_device,
         RuntimeLayout[hidden_state_layout].row_major(
             IndexList[2](ragged_total_length, hidden_size)
         ),
     )
     var input_row_offsets_tensor = LayoutTensor[
-        DType.uint32, layout_1d, ImmutAnyOrigin
+        mut=False,
+        DType.uint32,
+        layout_1d,
     ](
-        input_row_offsets_device.unsafe_ptr(),
+        input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
     var weight_device_tensor = LayoutTensor[
-        weight_dtype, weight_layout, MutAnyOrigin
+        weight_dtype,
+        weight_layout,
     ](
-        weight_device.unsafe_ptr(),
+        weight_device,
         RuntimeLayout[weight_layout].row_major(weight_shape),
     )
     var input_scale_device_tensor = LayoutTensor[
-        scale_dtype, input_scale_layout, MutAnyOrigin
+        scale_dtype,
+        input_scale_layout,
     ](
         input_scale.device_tensor().ptr,
         input_scale.device_tensor().runtime_layout,
     )
     var weight_scale_device_tensor = LayoutTensor[
-        scale_dtype, weight_scale_layout, MutAnyOrigin
+        scale_dtype,
+        weight_scale_layout,
     ](
         weight_scale.device_tensor().ptr,
     )

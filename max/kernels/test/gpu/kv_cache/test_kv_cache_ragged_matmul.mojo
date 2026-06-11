@@ -325,22 +325,20 @@ def execute_matmul_kv_cache_ragged[
 
     # Create device LayoutTensors for kernel calls
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
-    var hidden_state_ragged_tensor = LayoutTensor[
-        dtype, hidden_state_layout, MutAnyOrigin
-    ](
-        hidden_state_ragged_device.unsafe_ptr(),
+    var hidden_state_ragged_tensor = LayoutTensor[dtype, hidden_state_layout](
+        hidden_state_ragged_device,
         RuntimeLayout[hidden_state_layout].row_major(
             IndexList[2](total_length, hidden_size)
         ),
     )
     var input_row_offsets_tensor = LayoutTensor[
-        DType.uint32, layout_1d, ImmutAnyOrigin
+        mut=False, DType.uint32, layout_1d
     ](
-        input_row_offsets_device.unsafe_ptr(),
+        input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
-    var weight_device_tensor = LayoutTensor[dtype, weight_layout, MutAnyOrigin](
-        weight_device.unsafe_ptr(),
+    var weight_device_tensor = LayoutTensor[dtype, weight_layout](
+        weight_device,
         RuntimeLayout[weight_layout].row_major(weight_shape),
     )
 
@@ -545,22 +543,20 @@ def execute_matmul_k_cache_ragged[
     var ref_output_device = ctx.enqueue_create_buffer[dtype](ref_output_size)
 
     # Create device LayoutTensors for kernel calls
-    var hidden_state_ragged_tensor = LayoutTensor[
-        dtype, hidden_state_layout, MutAnyOrigin
-    ](
-        hidden_state_ragged_device.unsafe_ptr(),
+    var hidden_state_ragged_tensor = LayoutTensor[dtype, hidden_state_layout](
+        hidden_state_ragged_device,
         RuntimeLayout[hidden_state_layout].row_major(
             IndexList[2](ragged_total_length, hidden_size)
         ),
     )
     var input_row_offsets_tensor = LayoutTensor[
-        DType.uint32, layout_1d, ImmutAnyOrigin
+        mut=False, DType.uint32, layout_1d, ImmutAnyOrigin
     ](
-        input_row_offsets_device.unsafe_ptr(),
+        input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
-    var weight_device_tensor = LayoutTensor[dtype, weight_layout, MutAnyOrigin](
-        weight_device.unsafe_ptr(),
+    var weight_device_tensor = LayoutTensor[dtype, weight_layout](
+        weight_device,
         RuntimeLayout[weight_layout].row_major(weight_shape),
     )
 
@@ -823,28 +819,24 @@ def generic_execute_fused_qkv_cache_ragged[
     var test_output_device = ctx.enqueue_create_buffer[dtype](test_output_size)
 
     # Create device LayoutTensors for kernel calls
-    var hidden_state_ragged_tensor = LayoutTensor[
-        dtype, hidden_state_layout, MutAnyOrigin
-    ](
-        hidden_state_ragged_device.unsafe_ptr(),
+    var hidden_state_ragged_tensor = LayoutTensor[dtype, hidden_state_layout](
+        hidden_state_ragged_device,
         RuntimeLayout[hidden_state_layout].row_major(
             IndexList[2](total_length, hidden_size)
         ),
     )
     var input_row_offsets_tensor = LayoutTensor[
-        DType.uint32, layout_1d, ImmutAnyOrigin
+        mut=False, DType.uint32, layout_1d
     ](
-        input_row_offsets_device.unsafe_ptr(),
+        input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
-    var weight_device_tensor = LayoutTensor[dtype, weight_layout, MutAnyOrigin](
-        weight_device.unsafe_ptr(),
+    var weight_device_tensor = LayoutTensor[dtype, weight_layout](
+        weight_device,
         RuntimeLayout[weight_layout].row_major(weight_shape),
     )
-    var test_output_device_tensor = LayoutTensor[
-        dtype, hidden_state_layout, MutAnyOrigin
-    ](
-        test_output_device.unsafe_ptr(),
+    var test_output_device_tensor = LayoutTensor[dtype, hidden_state_layout](
+        test_output_device,
         RuntimeLayout[hidden_state_layout].row_major(test_output_shape),
     )
 
@@ -1103,16 +1095,16 @@ def execute_cont_batch_fused_qkv_matmul[
     )
 
     var kv_collection_device = CollectionType(
-        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
-            kv_block_device.unsafe_ptr(),
+        LayoutTensor[dtype, kv_block_layout](
+            kv_block_device,
             kv_block_runtime,
         ),
-        LayoutTensor[DType.uint32, layout_1d, ImmutAnyOrigin](
-            cache_lengths_device.unsafe_ptr(),
+        LayoutTensor[mut=False, DType.uint32, layout_1d](
+            cache_lengths_device,
             cache_len_runtime,
         ),
-        LayoutTensor[DType.uint32, layout_1d, ImmutAnyOrigin](
-            lookup_table_device.unsafe_ptr(),
+        LayoutTensor[mut=False, DType.uint32, layout_1d](
+            lookup_table_device,
             cache_len_runtime,
         ),
         UInt32(max_seq_length_batch),
@@ -1123,15 +1115,15 @@ def execute_cont_batch_fused_qkv_matmul[
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     var kv_collection_host = CollectionType(
-        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
+        LayoutTensor[dtype, kv_block_layout](
             kv_block_host_ptr,
             kv_block_runtime,
         ),
-        LayoutTensor[DType.uint32, layout_1d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, layout_1d](
             cache_lengths_host_ptr,
             cache_len_runtime,
         ),
-        LayoutTensor[DType.uint32, layout_1d, ImmutAnyOrigin](
+        LayoutTensor[mut=False, DType.uint32, layout_1d](
             lookup_table_host_ptr,
             cache_len_runtime,
         ),

@@ -201,7 +201,7 @@ def blockscaled_pair_cta_mxfp8[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_smem)
+    ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         b_type,
@@ -209,7 +209,7 @@ def blockscaled_pair_cta_mxfp8[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_smem)
+    ](b_smem.as_unsafe_any_origin())
 
     var a_scales_smem_tile = LayoutTensor[
         a_scales_type,
@@ -217,7 +217,7 @@ def blockscaled_pair_cta_mxfp8[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](a_scales_smem)
+    ](a_scales_smem.as_unsafe_any_origin())
 
     var b_scales_smem_tile = LayoutTensor[
         b_scales_type,
@@ -225,7 +225,7 @@ def blockscaled_pair_cta_mxfp8[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
-    ](b_scales_smem)
+    ](b_scales_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -651,7 +651,8 @@ def sm100_blockscaled_mxfp8_cta_pair[
     comptime b_scales_4d_layout = scales_4d_layout[b_scales_layout]
 
     var a_scales_4d = LayoutTensor[
-        a_scales_type, a_scales_4d_layout, MutAnyOrigin
+        a_scales_type,
+        a_scales_4d_layout,
     ](
         a_scales.ptr,
         RuntimeLayout[a_scales_4d_layout].row_major(
@@ -664,7 +665,8 @@ def sm100_blockscaled_mxfp8_cta_pair[
         ),
     )
     var b_scales_4d = LayoutTensor[
-        b_scales_type, b_scales_4d_layout, MutAnyOrigin
+        b_scales_type,
+        b_scales_4d_layout,
     ](
         b_scales.ptr,
         RuntimeLayout[b_scales_4d_layout].row_major(

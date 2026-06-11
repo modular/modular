@@ -139,9 +139,9 @@ def gather4_raw_smoke_kernel[
 def _verify_gathered_rows[
     dtype: DType, row_width: Int
 ](
-    h_out: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    h_source: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    h_indices: UnsafePointer[Int32, MutAnyOrigin],
+    h_out: UnsafePointer[mut=False, Scalar[dtype], _],
+    h_source: UnsafePointer[mut=False, Scalar[dtype], _],
+    h_indices: UnsafePointer[mut=False, Int32, _],
     num_rows: Int,
 ) raises:
     """Verifies gathered output rows match the source buffer at the expected

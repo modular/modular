@@ -149,28 +149,28 @@ def kernel_4[
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
-        MutAnyOrigin,
+        _,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ]
@@ -191,9 +191,9 @@ def kernel_4[
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
     var c_smem = (b_smem + b_size).bitcast[Scalar[c_type]]()
 
-    var a_smem_tile = a_smem_tile_t(a_smem)
-    var b_smem_tile = b_smem_tile_t(b_smem)
-    var c_smem_tile = c_smem_tile_t(c_smem)
+    var a_smem_tile = a_smem_tile_t(a_smem.as_unsafe_any_origin())
+    var b_smem_tile = b_smem_tile_t(b_smem.as_unsafe_any_origin())
+    var c_smem_tile = c_smem_tile_t(c_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -386,7 +386,6 @@ def kernel_4[
         c_tma_tile = LayoutTensor[
             c_type,
             Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
             alignment=128,
         ](smem_offset)

@@ -308,9 +308,10 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
             valid_lengths_host[i] = UInt32(valid_lengths[i])
 
     var valid_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        DType.uint32,
+        Layout.row_major(UNKNOWN_VALUE),
     ](
-        valid_lengths_device.unsafe_ptr(),
+        valid_lengths_device,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](batch_size)
         ),

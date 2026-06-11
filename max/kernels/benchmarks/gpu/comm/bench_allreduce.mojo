@@ -152,7 +152,10 @@ def bench_reduce[
             signal_buffers[gpu_idx], 0
         )
         rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+            signal_buffers[gpu_idx]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
         )
 
     # Create and initialize input and output buffers.

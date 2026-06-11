@@ -236,10 +236,10 @@ def bench_dispatch[
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var recv_buf_ptrs: InlineArray[
                 UnsafePointer[UInt8, MutAnyOrigin], 1
-            ] = [recv_buf]
+            ] = [recv_buf.as_unsafe_any_origin()]
             var recv_count_ptrs: InlineArray[
                 UnsafePointer[UInt64, MutAnyOrigin], 1
-            ] = [recv_count]
+            ] = [recv_count.as_unsafe_any_origin()]
 
             ctx.enqueue_function(
                 func,
