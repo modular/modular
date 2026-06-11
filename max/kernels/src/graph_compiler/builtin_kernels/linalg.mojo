@@ -131,20 +131,21 @@ struct MatmulFusedPartialRMSNorm:
             ctx,
         )
 
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
-    ) -> IndexList[rank]:
-        # Return the input shape for normed output
-        # The actual shape split is handled by the op semantics
-        return input.shape()
+
+@compiler.register_shape_function("mo.composite.matmul_fused_partial_rms_norm")
+def composite_matmul_fused_partial_rms_norm_shape[
+    dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    weight: InputTensor[dtype=dtype, rank=2, ...],
+    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    epsilon: Scalar[dtype=dtype],
+    weight_offset: Scalar[dtype=dtype],
+) -> IndexList[rank]:
+    # Return the input shape for normed output
+    # The actual shape split is handled by the op semantics
+    return input.shape()
 
 
 @compiler.register("mo.matmul")
@@ -274,19 +275,20 @@ struct BatchMatmul:
             target=target,
         ](c_tile, a_tile, b_tile, context=ctx)
 
-    @staticmethod
-    def shape[
-        rank: Int,
-        a_type: DType,
-        b_type: DType,
-    ](
-        a: InputTensor[dtype=a_type, rank=rank, ...],
-        b: InputTensor[dtype=b_type, rank=rank, ...],
-    ) raises -> IndexList[rank]:
-        return batched_matmul_shape[rank](
-            a.to_tile_tensor[DType.int64](),
-            b.to_tile_tensor[DType.int64](),
-        )
+
+@compiler.register_shape_function("mo.batch_matmul")
+def batch_matmul_shape[
+    rank: Int,
+    a_type: DType,
+    b_type: DType,
+](
+    a: InputTensor[dtype=a_type, rank=rank, ...],
+    b: InputTensor[dtype=b_type, rank=rank, ...],
+) raises -> IndexList[rank]:
+    return batched_matmul_shape[rank](
+        a.to_tile_tensor[DType.int64](),
+        b.to_tile_tensor[DType.int64](),
+    )
 
 
 @compiler.register("mo.composite.matmul_add")
@@ -969,25 +971,25 @@ struct PackMatmulBShapeFunc:
     def execute(b_input: InputTensor) raises:
         raise Error("Only meant to be used for shape function!")
 
-    @always_inline
-    @staticmethod
-    def shape[
-        a_type: DType,
-        a_shape: IntTuple,
-        b_type: DType,
-        b_shape: IntTuple,
-        c_type: DType,
-        c_shape: IntTuple,
-        transpose_in_0: Bool,
-    ](b_input: InputTensor[dtype=b_type, rank=2, ...]) -> IndexList[2]:
-        var kernel_type_m = 0
-        comptime if a_shape[0] != UNKNOWN_VALUE:
-            kernel_type_m = Int(a_shape[0])
-        return pack_matmul_b_shape_func[
-            a_type,
-            c_type,
-            transpose_in_0,
-        ](b_input.to_tile_tensor[DType.int64]().as_immut(), kernel_type_m)
+
+@compiler.register_shape_function("pack_matmul_b_shape_func")
+def pack_matmul_b_shape_func_shape[
+    a_type: DType,
+    a_shape: IntTuple,
+    b_type: DType,
+    b_shape: IntTuple,
+    c_type: DType,
+    c_shape: IntTuple,
+    transpose_in_0: Bool,
+](b_input: InputTensor[dtype=b_type, rank=2, ...]) -> IndexList[2]:
+    var kernel_type_m = 0
+    comptime if a_shape[0] != UNKNOWN_VALUE:
+        kernel_type_m = Int(a_shape[0])
+    return pack_matmul_b_shape_func[
+        a_type,
+        c_type,
+        transpose_in_0,
+    ](b_input.to_tile_tensor[DType.int64]().as_immut(), kernel_type_m)
 
 
 @compiler.register("mo.matmul_dynamic_scaled_fp8")
