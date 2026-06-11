@@ -182,7 +182,7 @@ struct BF16DispatchTest[
         ctx: DeviceContext,
         out result: Self.TokenFormatType,
     ):
-        var output_tensor = TileTensor[origin=MutAnyOrigin](
+        var output_tensor = TileTensor(
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
             + slot_idx * Self.max_recv_num_tokens * Self.hidden_size,
             layout=Self.output_layout,
@@ -332,12 +332,12 @@ struct BlockwiseFP8DispatchTest[
         ctx: DeviceContext,
         out result: Self.TokenFormatType,
     ):
-        var output_tensor = TileTensor[origin=MutAnyOrigin](
+        var output_tensor = TileTensor(
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
             + slot_idx * Self.max_recv_num_tokens * Self.hidden_size,
             layout=Self.output_layout,
         )
-        var output_scales_tensor = TileTensor[origin=MutAnyOrigin](
+        var output_scales_tensor = TileTensor(
             ptr=self.device_output_scales_bufs_list[dev_idx].unsafe_ptr()
             + slot_idx
             * Self.max_recv_num_tokens
@@ -544,12 +544,12 @@ struct NVFP4DispatchTest[
         ctx: DeviceContext,
         out result: Self.TokenFormatType,
     ):
-        var output_tensor = TileTensor[origin=MutAnyOrigin](
+        var output_tensor = TileTensor(
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
             + slot_idx * Self.max_recv_num_tokens * Self.uint8_last_dim,
             layout=Self.output_layout,
         )
-        var output_scales_tensor = TileTensor[origin=MutAnyOrigin](
+        var output_scales_tensor = TileTensor(
             ptr=self.device_output_scales_bufs_list[dev_idx].unsafe_ptr()
             + slot_idx
             * Self.scales_padded_size
@@ -557,7 +557,7 @@ struct NVFP4DispatchTest[
             // NVFP4_SF_VECTOR_SIZE,
             layout=Self.output_scales_layout,
         )
-        var output_scales_offset_tensor = TileTensor[origin=MutAnyOrigin](
+        var output_scales_offset_tensor = TileTensor(
             ptr=self.device_output_scales_offset_bufs_list[dev_idx].unsafe_ptr()
             + slot_idx * (Self.n_experts // Self.n_ranks),
             layout=Self.output_scales_offset_layout,
@@ -605,7 +605,7 @@ struct NVFP4DispatchTest[
             + (hid_dim_idx // 2)
         )
 
-        var host_scales_tensor = TileTensor[origin=MutAnyOrigin](
+        var host_scales_tensor = TileTensor(
             ptr=self.host_output_scales_bufs_list[dev_idx]
             + slot_idx
             * Self.scales_padded_size
@@ -621,7 +621,7 @@ struct NVFP4DispatchTest[
                 slot_idx * (Self.n_experts // Self.n_ranks) + expert_idx
             ]
         )
-        var _scales_tensor = TileTensor[origin=MutAnyOrigin](
+        var _scales_tensor = TileTensor(
             ptr=host_scales_tensor.ptr_at_offset(
                 (scales_block_id, Idx[0], Idx[0], Idx[0], Idx[0])
             ),
@@ -774,12 +774,12 @@ struct MXFP4DispatchTest[
         ctx: DeviceContext,
         out result: Self.TokenFormatType,
     ):
-        var output_tensor = TileTensor[origin=MutAnyOrigin](
+        var output_tensor = TileTensor(
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
             + slot_idx * Self.max_recv_num_tokens * Self.uint8_last_dim,
             layout=Self.output_layout,
         )
-        var output_scales_tensor = TileTensor[origin=MutAnyOrigin](
+        var output_scales_tensor = TileTensor(
             ptr=self.device_output_scales_bufs_list[dev_idx].unsafe_ptr()
             + slot_idx
             * Self.scales_padded_size
@@ -1001,49 +1001,49 @@ def test_dispatch_common[
     @always_inline
     @parameter
     def get_send_ptrs_tensor(slot_idx: Int, out result: TileTensor[DType.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
-        return type_of(result)(ptr=send_ptrs_inputs + slot_idx * n_ranks, layout=ptrs_layout)
+        return type_of(result)(ptr=(send_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @always_inline
     @parameter
     def get_recv_ptrs_tensor(slot_idx: Int, out result: TileTensor[DType.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
-        return type_of(result)( ptr=recv_ptrs_inputs + slot_idx * n_ranks, layout=ptrs_layout)
+        return type_of(result)( ptr=(recv_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @always_inline
     @parameter
     def get_recv_count_ptrs_tensor(slot_idx: Int, out result: TileTensor[DType.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
-        return type_of(result)(ptr=recv_count_ptrs_inputs + slot_idx * n_ranks, layout=ptrs_layout)
+        return type_of(result)(ptr=(recv_count_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @always_inline
     @parameter
     def get_atomic_counters_tensor( dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(counters_layout), MutAnyOrigin]) raises:
         return type_of(result)(
-            ptr=atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * counters_size, layout=counters_layout
+            ptr=(atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * counters_size).as_unsafe_any_origin(), layout=counters_layout
         )
 
     @always_inline
     @parameter
     def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(topk_ids_layout), ImmutAnyOrigin]) raises:
-        return type_of(result)(ptr=device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k, layout=topk_ids_layout)
+        return type_of(result)(ptr=(device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k).as_unsafe_any_origin(), layout=topk_ids_layout)
 
     @always_inline
     @parameter
     def get_input_tokens_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(input_tokens_layout), ImmutAnyOrigin]) raises:
-        return type_of(result)(ptr=device_input_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * hidden_size, layout=input_tokens_layout)
+        return type_of(result)(ptr=(device_input_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * hidden_size).as_unsafe_any_origin(), layout=input_tokens_layout)
 
     @always_inline
     @parameter
     def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.uint32, type_of(row_offsets_layout), MutAnyOrigin]) raises:
-        return type_of(result)(ptr=device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1), layout=row_offsets_layout)
+        return type_of(result)(ptr=(device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1)).as_unsafe_any_origin(), layout=row_offsets_layout)
 
     @always_inline
     @parameter
     def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(expert_ids_layout), MutAnyOrigin]) raises:
-        return type_of(result)(ptr=device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts, layout=expert_ids_layout)
+        return type_of(result)(ptr=(device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts).as_unsafe_any_origin(), layout=expert_ids_layout)
 
     @always_inline
     @parameter
     def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises:
-        return type_of(result)(ptr=device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2, layout=src_token_info_layout)
+        return type_of(result)(ptr=(device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2).as_unsafe_any_origin(), layout=src_token_info_layout)
     # fmt: on
 
     @always_inline
