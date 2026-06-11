@@ -126,8 +126,10 @@ from max.experimental.sharding.per_shard_dim import (
 )
 from max.experimental.support import contextvar_context, driver_tensor_type
 from max.graph import (
+    Dim,
     DimLike,
     ShapeLike,
+    StaticDim,
     TensorType,
     TensorValueLike,
     ops,
@@ -809,8 +811,29 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A rank-0 ``int64`` tensor on CPU holding the dimension's
             runtime value.
+
+        Raises:
+            ValueError: In eager mode (no active graph) for a symbolic or
+                algebraic dimension, which has no value outside a graph.
         """
-        return cls.from_graph_value(ops.shape_to_tensor([dim])).reshape([])
+        d = Dim(dim)
+        if isinstance(d, StaticDim):
+            # The value is known now, so emit a scalar constant. This needs no
+            # active graph, so it works in eager mode as well as while building
+            # a graph.
+            return F.constant(int(d), DType.int64, CPU())
+        # A symbolic/algebraic dim has no value until runtime, which requires a
+        # graph to defer to. In eager mode there is none, so fail with a clear
+        # message rather than the downstream "No graph found" lookup error.
+        try:
+            _ = graph.Graph.current
+        except LookupError:
+            raise ValueError(
+                f"Tensor.from_dim({d}): a symbolic dimension has no value in "
+                "eager mode. Use a static dimension, or call this while "
+                "building a graph (e.g. inside Module.compile or F.functional)."
+            ) from None
+        return cls.from_graph_value(ops.shape_to_tensor([d])).reshape([])
 
     @classmethod
     def from_shard_values(

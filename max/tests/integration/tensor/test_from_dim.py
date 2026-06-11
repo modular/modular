@@ -15,11 +15,12 @@ tensor, and using it as a runtime predicate for `F.cond`. CPU-only."""
 
 import max.experimental.functional as F
 import numpy as np
+import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import nn
 from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef, Dim, TensorType
 
 CPU_REF = DeviceRef.CPU()
 
@@ -92,3 +93,35 @@ def test_from_dim_predicate_in_cond() -> None:
     # batch == 5 (> 2)   -> else branch (x * 4)
     large = compiled(Tensor.ones([5, 4], dtype=DType.float32, device=CPU()))
     assert np.allclose(large.to_numpy(), 4.0)
+
+
+# --- Eager mode (no compile) -------------------------------------------------
+
+
+def test_from_dim_eager_static() -> None:
+    """In eager mode a static dim materializes to its value (no graph needed).
+    Covers both a literal int and a concrete tensor's (always-static) shape."""
+    r = Tensor.from_dim(7)
+    r._sync_realize()
+    assert list(r.shape) == []
+    assert r.dtype == DType.int64
+    assert r.item() == 7
+
+    x = Tensor(
+        np.ones((5, 8), dtype=np.float32), dtype=DType.float32, device=CPU()
+    )
+    got = Tensor.from_dim(x.shape[0])  # x.shape[0] is a StaticDim in eager
+    got._sync_realize()
+    assert got.item() == 5
+
+
+def test_from_dim_eager_symbolic_raises() -> None:
+    """A symbolic dim has no value in eager mode -> clear ValueError."""
+    with pytest.raises(ValueError, match="eager mode"):
+        Tensor.from_dim(Dim("x"))
+
+
+def test_from_dim_eager_algebraic_raises() -> None:
+    """An algebraic dim has no value in eager mode -> clear ValueError."""
+    with pytest.raises(ValueError, match="eager mode"):
+        Tensor.from_dim(Dim("a") * Dim("b"))
