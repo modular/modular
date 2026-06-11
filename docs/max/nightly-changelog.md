@@ -56,12 +56,15 @@ This version is still a work in progress.
   non-object type (for example `{"type": "string"}`) is still rejected,
   matching OpenAI's structured-outputs contract.
 
-- Added a `maxserve.startup_time` Prometheus histogram (seconds) that
-  records model-worker startup time, previously only available in the
-  server logs. It is split by a `component` tag (`build`, `compile`, `init`,
-  `graph_capture`, `pinned_memory`, `spawn`, and `total`), so a single metric
-  can be plotted broken down by startup phase to track pod startup time in
-  production.
+- Added a per-phase startup breakdown to the `maxserve.model_load_time`
+  Prometheus histogram (milliseconds), previously only available in the
+  server logs. In addition to the existing untagged model-load aggregate,
+  the model worker now records each startup phase on the same metric split
+  by a `component` tag (`build`, `compile`, `init`, `graph_capture`,
+  `pinned_memory`, `spawn`, and `total`), so a single metric can be plotted
+  broken down by startup phase to track pod startup time in production.
+  This replaces the `maxserve.startup_time` histogram (seconds) added
+  earlier in this nightly cycle.
 
 - Added a `maxserve.time_per_output_token` Prometheus histogram (milliseconds).
   Emitted once per request, it reports the mean decode-phase latency per

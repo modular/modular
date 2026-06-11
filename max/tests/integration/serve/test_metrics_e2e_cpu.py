@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test that metrics are collected correctly during a serve request."""
 
+import re
 import time
 
 import hf_repo_lock
@@ -58,6 +59,22 @@ def assert_metrics(
     )
 
 
+def _series_value(
+    metrics_text: str, name: str, *, component: str
+) -> float | None:
+    """Return the value of a Prometheus series for a given component.
+
+    Matches a line like ``name{...,component="<component>",...} <value>``
+    regardless of label ordering, and returns the parsed float value.
+    """
+    pattern = re.compile(
+        rf'^{re.escape(name)}\{{[^}}]*component="{re.escape(component)}"[^}}]*\}}\s+(\S+)$',
+        re.MULTILINE,
+    )
+    match = pattern.search(metrics_text)
+    return float(match.group(1)) if match else None
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
@@ -101,12 +118,29 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         assert_metrics(
             expected_metrics=[
                 "maxserve_model_load_time_milliseconds_bucket",
-                # Per-phase startup breakdown, one metric split by component.
-                "maxserve_startup_time_seconds_bucket",
+                # Per-phase startup breakdown on the same metric, split by
+                # the component tag.
                 'component="total"',
                 'component="compile"',
             ],
             absent_metrics=["maxserve_request_time_milliseconds_bucket"],
+        )
+
+        # The histogram must carry the real measured duration, not 0.
+        metrics_text = requests.get(
+            "http://localhost:8001/metrics", timeout=1
+        ).text
+        total = _series_value(
+            metrics_text,
+            "maxserve_model_load_time_milliseconds_sum",
+            component="total",
+        )
+        assert total is not None, (
+            "maxserve_model_load_time_milliseconds_sum{component='total'} "
+            "not found"
+        )
+        assert total > 0.0, (
+            f"model_load_time total sum should be > 0, got {total}"
         )
 
         # Make a few requests

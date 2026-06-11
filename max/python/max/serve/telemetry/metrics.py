@@ -179,16 +179,12 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.model_load_time": _meter.create_histogram(
         "maxserve.model_load_time",
         unit="ms",
-        description="Time to load a model",
-    ),  # type: ignore
-    "maxserve.startup_time": _meter.create_histogram(
-        "maxserve.startup_time",
-        unit="s",
         description=(
-            "Model-worker startup duration in seconds, split by the "
-            "'component' tag (build, compile, init, graph_capture, "
-            "pinned_memory, spawn, total). Mirrors the per-phase breakdown "
-            "in the model worker's startup log lines."
+            "Time to load a model. Recorded once per model-worker startup, "
+            "both as an untagged aggregate and split by the 'component' tag "
+            "(build, compile, init, graph_capture, pinned_memory, spawn, "
+            "total), mirroring the per-phase breakdown in the model worker's "
+            "startup log lines."
         ),
     ),  # type: ignore
     "maxserve.itl": _meter.create_histogram(
@@ -679,30 +675,22 @@ class _AsyncMetrics:
             MetricLevel.BASIC,
         )
 
-    def model_load_time(self, ms: float) -> None:
-        self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.model_load_time", ms, self.extra_attributes
-            ),
-            MetricLevel.BASIC,
-        )
-
-    def startup_time(self, seconds: float, component: str) -> None:
-        """Record a model-worker startup phase duration in seconds.
+    def model_load_time(self, ms: float, component: str | None = None) -> None:
+        """Record a model-worker startup duration in milliseconds.
 
         Args:
-            seconds: The duration of the startup phase.
-            component: The phase name (e.g. ``"build"``, ``"compile"``,
+            ms: The duration in milliseconds.
+            component: Optional phase name (e.g. ``"build"``, ``"compile"``,
                 ``"init"``, ``"graph_capture"``, ``"pinned_memory"``,
                 ``"spawn"``, ``"total"``). Recorded as the ``component`` tag
-                so a single metric can be split by phase.
+                so a single metric can be split by startup phase. When
+                omitted, records the untagged model-load aggregate.
         """
+        attributes = self.extra_attributes
+        if component is not None:
+            attributes = {**attributes, "component": component}
         self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.startup_time",
-                seconds,
-                {**self.extra_attributes, "component": component},
-            ),
+            MaxMeasurement("maxserve.model_load_time", ms, attributes),
             MetricLevel.BASIC,
         )
 
