@@ -518,15 +518,13 @@ def layer_norm_gpu[
     if rank == 0:
         return
 
-    var last_dim = shape[rank - 1]
-
-    if last_dim == 0:
-        return
-
     comptime rank_rs = 2
     var flattened_shape = layer_norm_reshape[rank_rs](shape)
     var rows = flattened_shape[0]
     var cols = flattened_shape[1]
+
+    if rows == 0 or cols == 0:
+        return
 
     @parameter
     @always_inline
