@@ -1,0 +1,139 @@
+---
+title: Bring up a model with AI agent skills
+sidebar_label: Bring-up with agent skills
+description: Learn how to bring up new Hugging Face models in MAX using AI coding agents and Modular skills, including installation, prompting, and verification.
+---
+
+You can accelerate bringing a new large language model architecture to MAX using
+AI coding agents equipped with Modular's official agent skills. These skills
+define automated, step-by-step workflows that let agents inspect Hugging Face
+checkpoints, scaffold custom architectures from similar models, implement
+layer-level differences, and run verification loops.
+
+By delegating the mechanical tasks of mapping configurations and remapping
+weight keys to an agent, you can focus on directing high-level architecture
+decisions and verifying the final inference results.
+
+## Install the MAX skills
+
+To equip your AI coding agent with the model bring-up workflow, you must install
+the MAX skills.
+
+### Install via npx
+
+If you have Node.js installed, you can add all Modular agent skills to your
+assistant with a single command:
+
+```bash
+npx skills add modular/skills
+```
+
+If you only want to install the model bring-up skill in isolation, specify the
+`--skill` flag:
+
+```bash
+npx skills add modular/skills --skill import-model
+```
+
+Keep your skills up to date with the latest best practices by running:
+
+```bash
+npx skills update
+```
+
+### Manual installation
+
+If you prefer to install the skills manually, clone the official repository:
+
+```bash
+git clone https://github.com/modular/skills.git
+```
+
+After cloning, copy or symlink the individual skills into your AI agent's
+configuration directory. For Claude Code, copy the directories into
+`~/.claude/skills/`:
+
+```bash
+cp -r skills/import-model ~/.claude/skills/
+```
+
+Consult your specific agent's documentation to find its configuration and skills
+directory.
+
+## Start the model bring-up
+
+To begin, open your AI coding agent in your project workspace and instruct it to
+import the model using its Hugging Face model ID.
+
+Here are a few example prompts you can use to start the workflow:
+
+```text
+Import the Hugging Face model "Qwen/Qwen2.5-7B-Instruct" into MAX.
+```
+
+```text
+Please bring up the Hugging Face model "microsoft/Phi-3-mini-4k-instruct" in MAX. Start from the llama3 architecture as the donor.
+```
+
+```text
+I want to add a new causal language model architecture to MAX. The Hugging Face model ID is "allenai/OLMo-2-1124-7B".
+```
+
+After receiving the prompt, the agent initializes the decide and plan phase and
+presents the bring-up plan for your review.
+
+## How agent-driven model bring-up works
+
+The `import-model` skill drives a three-phase workflow—decide and plan,
+implement, then verify—while you remain the coordinator and validator at each
+checkpoint. The sections below describe what the agent delivers in each phase
+and how you steer it. For the full procedure, see the skill's
+[`README.md`](https://github.com/modular/skills/blob/main/import-model/README.md).
+
+### Decide and plan
+
+The agent inspects the target model's configuration, selects the closest
+existing MAX architecture as a donor template (such as `llama3` or `qwen3`), and
+analyzes the structural differences between the two. It then presents a written
+plan listing the chosen donor and the catalog of deltas.
+
+Review the plan before authorizing the agent to write code. Confirm that it
+chose the correct donor and identified every unique layer property described in
+the model's paper or Hugging Face model card.
+
+### Implement
+
+After you approve the plan, the agent scaffolds the architecture package from
+the donor, maps Hugging Face config keys to the MAX configuration classes, edits
+the graph to implement each delta, and writes weight adapters that translate
+checkpoint names to the slots the MAX graph expects.
+
+Make sure the agent updates the copied docstrings and comments so they describe
+your model rather than retaining stale references to the donor.
+
+### Verify and validate
+
+The agent runs linters and type checkers, serves the model locally to confirm
+the graph compiles and loads weights without orphan keys, then compares greedy
+token generation against the reference Hugging Face model.
+
+Review the generated output and verification reports. Because the skill is
+continuously improving, it doesn't guarantee correctness out of the box. If you
+see gibberish or incoherent text, steer the agent to run a layer-by-layer
+divergence hunt, comparing intermediate outputs and weights against the Hugging
+Face reference until it isolates and resolves the exact point of divergence.
+
+## Next steps
+
+Once the agent has created and verified your new model architecture, you can
+serve and deploy it:
+
+- [Serve custom model architectures](/max/develop/serve-custom-model-architectures/):
+  Learn how to package and run your new custom model architecture using
+  `max serve`.
+- [Model bring-up workflow](/max/develop/model-bringup-workflow/): Read the
+  detailed manual bring-up steps to better understand graph compilation, memory
+  sizing, and weight remapping.
+- [Using AI coding assistants](/max/coding-assistants/): Configure your
+  development environment with rules and context files for general AI-assisted
+  development.

@@ -4,6 +4,12 @@ sidebar_label: Model bring-up workflow
 description: Understand MAX's model architecture system and how to implement a custom architecture by mapping config fields, translating weight names, connecting to the KV cache, and extending the compute graph.
 ---
 
+:::tip
+You can automate this entire model bring-up process using AI coding agents. See
+[Bring up a model with AI agent skills](/max/develop/model-bringup-skills/) for
+details.
+:::
+
 MAX organizes model support through **architectures**: Python module directories
 that define the compute graph, map configuration, and load weights. An
 architecture connects your Hugging Face checkpoint to the

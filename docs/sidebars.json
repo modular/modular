@@ -71,6 +71,7 @@
           "id": "max/develop/index",
           "label": "Overview"
         },
+        "max/develop/model-bringup-skills",
         {
           "label": "Graphs",
           "type": "category",
