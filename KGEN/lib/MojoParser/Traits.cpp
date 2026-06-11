@@ -308,23 +308,24 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
         StringAttr currentTraitName =
             traitDecl.getSymbolRef().getLeafReference();
 
-        auto otherTraitFn = shared.getDeclResolver().getDeclForFuncSymbol(
-            fnOp.getInheritedFromAttr());
+        ASTDecl *otherTraitFn = shared.resolveAndGetFuncDecl(
+            fnOp.getInheritedFromAttr(), structDecl.getLoc());
+        assert(otherTraitFn && "Couldn't find trait fn decl");
 
-        auto otherTraitName =
+        StringAttr otherTraitName =
             otherTraitFn->getParentDecl()->getSymbolRef().getLeafReference();
 
         auto diag = shared.emitError(structDecl.getLoc())
                     << "trait method requirement " << traitFn.getDeclName()
                     << " has conflicting default implementations in "
                     << otherTraitName << " and " << currentTraitName
-                    << " you must implement it manually";
+                    << "; you must implement it manually";
 
-        diag.attachNote(decl->getLoc())
+        diag.attachNote(*otherTraitFn)
             << "original default implementation from trait " << otherTraitName
             << " here";
 
-        diag.attachNote(traitFn.getLoc())
+        diag.attachNote(*traitFnDecl)
             << "conflicting implementation from trait " << currentTraitName
             << " here";
 
@@ -419,7 +420,9 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     auto traitFnSymbolRef = getFullyResolvedSymbolRef(fnOp);
 
     auto traitFnDecl =
-        shared.declResolver->getDeclForFuncSymbol(traitFnSymbolRef);
+        shared.resolveAndGetFuncDecl(traitFnSymbolRef, structDecl.getLoc());
+    assert(traitFnDecl && "Couldn't find trait fn decl");
+
     auto parentTraitRef = traitFnDecl->getParentDecl()->getSymbolRef();
 
     // resolve corresponds to the trait we're currently working on in
@@ -429,7 +432,6 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
     // Grab the actual decl corresponding to the trait function we'll be
     // wrapping.
-    assert(traitFnDecl && "Couldn't find trait fn decl");
     if (failed(signatureResolveStub(traitFnDecl, decl)))
       return failure();
   }

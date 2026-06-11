@@ -1748,10 +1748,18 @@ LogicalResult SharedState::resolveDeclReferencesIn(SMLoc loc, Type type) {
   return success(!refWalker.walk(type).wasInterrupted());
 }
 
-LogicalResult SharedState::resolveDeclReferencesIn(SMLoc loc,
-                                                   SymbolConstantAttr sym) {
-  return getImpl().bytecodeRefResolutionWalker.resolveBytecodeSymbolSignature(
-      sym.getSymbol(), loc);
+ASTDecl *SharedState::resolveAndGetFuncDecl(SymbolRefAttr symbol, SMLoc loc) {
+  if (!symbol)
+    return nullptr;
+  if (ASTDecl *decl = declResolver->getDeclForFuncSymbol(symbol))
+    return decl;
+  // Not yet registered: trigger lazy bytecode resolution, then retry. This is
+  // hit for default trait methods loaded from a bytecode package.
+  if (failed(
+          getImpl().bytecodeRefResolutionWalker.resolveBytecodeSymbolSignature(
+              symbol, loc)))
+    return nullptr;
+  return declResolver->getDeclForFuncSymbol(symbol);
 }
 
 LogicalResult

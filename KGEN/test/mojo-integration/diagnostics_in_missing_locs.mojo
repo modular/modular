@@ -97,9 +97,14 @@ struct ConflictStruct[a: Int](diags_package.ConflictTraitName):
     pass
 
 
-# FIXME: Crashes when loaded from bytecode. See MOCO-4102.
-# struct ConflictMethod(diags_package.OtherConflictTraitMethod):
-#    pass
+# CHECK: error: trait method requirement 'test' has conflicting default implementations in 'ConflictTraitMethod' and 'OtherConflictTraitMethod'; you must implement it manually
+# CHECK-NEXT: struct ConflictMethod(diags_package.OtherConflictTraitMethod):
+# CHECK: note: original default implementation from trait 'ConflictTraitMethod' here
+# CHECK-NEXT: def test(self: _Self) -> Bool    # note - synthetic signature
+# CHECK: note: conflicting implementation from trait 'OtherConflictTraitMethod' here
+# CHECK-NEXT: def test(self: _Self) -> Bool    # note - synthetic signature
+struct ConflictMethod(diags_package.OtherConflictTraitMethod):
+    pass
 
 
 # CHECK: error: 'StructViolation' does not implement all requirements for 'NoDefaultFunc'
