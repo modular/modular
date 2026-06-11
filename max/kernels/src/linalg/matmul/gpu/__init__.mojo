@@ -80,6 +80,7 @@ from .amd import (
     SplitKWorkspace,
 )
 from .amd_rdna import gemm_kernel_rdna
+from .apple import gemm_kernel_apple_8x8
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
 from .sm100_structured.default.dispatch import matmul_dispatch_sm100
@@ -578,6 +579,45 @@ def _matmul_gpu[
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ](c, a, rebind[BAsAType](b), ctx)
             return
+
+        # 8x8 `simdgroup_matrix` GEMM:
+        #   - M1-M4: the accelerated path for every supported dtype.
+        #   - M5: fall-throughs from the above, mostly for precise f32.
+        comptime if a_type in (
+            DType.float16,
+            DType.bfloat16,
+            DType.float32,
+        ):
+            var route_8x8 = (ctx.compute_capability() != 5) or (
+                f32_in and not _apple_m5_allow_lossy_f32_matmul()
+            )
+            if route_8x8 and m > 1 and n > 1 and k >= 16 and k % 16 == 0:
+                logger.info("Executing: Apple GPU 8x8 simdgroup MATMUL kernel")
+                comptime apple_kernel = gemm_kernel_apple_8x8[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                    BLOCK_M=64,
+                    BLOCK_N=64,
+                    BLOCK_K=16,
+                    NUM_SIMDGROUPS=4,
+                ]
+                ctx.enqueue_function[apple_kernel](
+                    c,
+                    a,
+                    b,
+                    m,
+                    n,
+                    k,
+                    grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
+                    block_dim=(4 * WARP_SIZE,),
+                )
+                return
 
     comptime if get_defined_bool["MODULE_USE_VENDOR_BLAS", False]():
         logger.info("Executing: Vendor BLAS")
