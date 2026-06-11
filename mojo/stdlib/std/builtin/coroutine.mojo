@@ -258,10 +258,13 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](RegisterPassable):
         # Don't you dare copy this code! 😤
         var handle = self^._take_handle()
         var error: Error
-        if __mlir_op.`co.await`[_type=__mlir_type.i1](
-            handle,
-            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
-            __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),
+        if Bool(
+            # TODO: co.await should return scalar<bool>
+            __mlir_op.`co.await`[_type=__mlir_type.i1](
+                handle,
+                __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
+                __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(error)),
+            )
         ):
             __mlir_op.`lit.ownership.mark_initialized`(
                 __get_mvalue_as_litref(error)
