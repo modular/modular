@@ -1088,6 +1088,12 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
       emitError(loc, *simpleLinkageName) << " is not a valid C identifier";
       return;
     }
+
+    if (tcSignature.argList.effects.isThrows()) {
+      emitError(loc) << "'abi(\"C\")' function may not be marked 'raises'; "
+                        "remove 'raises' or use 'abi(\"Mojo\")'";
+      return;
+    }
   } else if (!tcSignature.argList.hasExplicitABI) {
     emitWarning(loc, spelling)
         << " requires an explicit 'abi()' effect on the function";

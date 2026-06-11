@@ -1534,6 +1534,13 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
       p.consumeIdentifier();
 
+      // A "C" ABI function cannot propagate a Mojo error across the C boundary.
+      if (effects.isCABI()) {
+        p.emitError(loc) << "'abi(\"C\")' function may not be marked 'raises'; "
+                            "remove 'raises' or use 'abi(\"Mojo\")'";
+        return failure();
+      }
+
       // Parse a thrown type if specified.  Signatures can exist in function
       // declarations but also in function types "def () raises X" etc, which
       // means we have to be a bit careful about parsing the thing after
@@ -1596,8 +1603,18 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
         p.emitError(
             loc, "'abi()' effect was already specified; remove the duplicate");
       hasExplicitABI = true;
-      if (isCABI)
+      if (isCABI) {
         effects.setCABI(true);
+
+        // A "C" ABI function cannot propagate a Mojo error across the C
+        // boundary.
+        if (effects.isThrows()) {
+          p.emitError(loc)
+              << "'abi(\"C\")' function may not be marked 'raises'; "
+                 "remove 'raises' or use 'abi(\"Mojo\")'";
+          return failure();
+        }
+      }
       // abi("Mojo") is the default Mojo calling convention — recorded as
       // explicit but leaves the CABI bit unset.
       continue; // tokens already consumed; skip bottom p.consumeIdentifier()
