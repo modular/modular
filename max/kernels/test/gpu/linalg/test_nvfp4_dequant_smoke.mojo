@@ -54,9 +54,9 @@ def _cpu_dequant_nvfp4[
             var fp32_val = E2M1_TO_FLOAT32[fp4_bits]
 
             var scale_col = col // NVFP4_SF_VECTOR_SIZE
-            var scale_f32 = scales_data[
-                row * scale_cols + scale_col
-            ].cast[DType.float32]()
+            var scale_f32 = scales_data[row * scale_cols + scale_col].cast[
+                DType.float32
+            ]()
 
             var result = (fp32_val * scale_f32).cast[out_dtype]()
             expected[row * num_cols + col] = result
@@ -101,8 +101,11 @@ def test_nvfp4_dequant[
     var in_host = ctx.enqueue_create_host_buffer[DType.uint8](in_size)
     var scales_host = ctx.enqueue_create_host_buffer[scales_dtype](scales_size)
     var expected_host = ctx.enqueue_create_host_buffer[out_dtype](out_size)
+    # Vary scales per block so wrong scale indexing cannot pass unnoticed.
     for i in range(scales_size):
-        scales_host[i] = scale_stored
+        scales_host[i] = (
+            scale_value * Float32(1 + i % 3) / Float32(1 + (i // 7) % 2)
+        ).cast[scales_dtype]()
 
     for row in range(num_rows):
         for col in range(packed_cols):
@@ -200,9 +203,9 @@ def main() raises:
         # Pre-multiplied float32 scales (the path the Python fallback uses:
         # block_scale * weight_scale_2)
         print("-- float32 scales --")
-        test_nvfp4_dequant[64, 64, scales_dtype = DType.float32](ctx, 1.0)
-        test_nvfp4_dequant[128, 512, scales_dtype = DType.float32](ctx, 0.125)
-        test_nvfp4_dequant[256, 2880, scales_dtype = DType.float32](ctx, 3.0)
+        test_nvfp4_dequant[64, 64, scales_dtype=DType.float32](ctx, 1.0)
+        test_nvfp4_dequant[128, 512, scales_dtype=DType.float32](ctx, 0.125)
+        test_nvfp4_dequant[256, 2880, scales_dtype=DType.float32](ctx, 3.0)
 
         # Large shape (gemma-4-26B-A4B expert dimensions)
         print("-- Large shape --")
@@ -210,7 +213,7 @@ def main() raises:
 
         # FP8 output
         print("-- FP8 output --")
-        test_nvfp4_dequant[64, 64, out_dtype = DType.float8_e4m3fn](ctx, 1.0)
+        test_nvfp4_dequant[64, 64, out_dtype=DType.float8_e4m3fn](ctx, 1.0)
 
         print("======================================")
         print("ALL TESTS PASSED")

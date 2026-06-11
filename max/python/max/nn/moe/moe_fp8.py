@@ -57,6 +57,12 @@ class MoEQuantized(MoE):
             return NvMxf4f8Strategy(self.quant_config, self.dtype)
         if self.quant_config.is_nvfp4:
             if not _is_sm10x_gpu():
+                if self._ep_batch_manager:
+                    raise NotImplementedError(
+                        "Expert-parallel NVFP4 is not supported on"
+                        " pre-SM100 GPUs (EP dispatch quantizes"
+                        " activations to FP4)."
+                    )
                 # Pre-Blackwell fallback: no FP4 tensor cores -- dequantize
                 # expert weights to BF16 and use the BF16 grouped matmul.
                 return Nvfp4DequantStrategy(self.quant_config, self.dtype)
