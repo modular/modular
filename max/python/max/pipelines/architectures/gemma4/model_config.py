@@ -69,6 +69,21 @@ except ImportError:
         pass
 
 
+def _resolve_num_global_kv_heads(text_config: PretrainedConfig) -> int:
+    """Returns the number of KV heads used by full-attention layers.
+
+    The Gemma 4 E*B checkpoints ship ``"num_global_key_value_heads": null``;
+    Hugging Face defines null/absent as "defaults to ``num_key_value_heads``"
+    (transformers ``configuration_gemma4.py``).
+    """
+    num_global_kv_heads = getattr(
+        text_config, "num_global_key_value_heads", None
+    )
+    if num_global_kv_heads is None:
+        return text_config.num_key_value_heads
+    return num_global_kv_heads
+
+
 @dataclass(kw_only=True)
 class Gemma4TextConfig(Gemma3Config):
     """Text configuration for Gemma 4 models.
@@ -273,7 +288,9 @@ class Gemma4TextConfig(Gemma3Config):
             # Gemma4-specific fields
             vocab_size_per_layer_input=huggingface_config.vocab_size_per_layer_input,
             hidden_size_per_layer_input=huggingface_config.hidden_size_per_layer_input,
-            num_global_key_value_heads=huggingface_config.num_global_key_value_heads,
+            num_global_key_value_heads=_resolve_num_global_kv_heads(
+                huggingface_config
+            ),
             global_head_dim=huggingface_config.global_head_dim,
             attention_k_eq_v=huggingface_config.attention_k_eq_v,
             num_kv_shared_layers=huggingface_config.num_kv_shared_layers,
@@ -506,7 +523,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         )
         global_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
-            n_kv_heads=huggingface_config.text_config.num_global_key_value_heads,
+            n_kv_heads=_resolve_num_global_kv_heads(
+                huggingface_config.text_config
+            ),
             head_dim=huggingface_config.text_config.global_head_dim,
             num_layers=global_layers,
             devices=devices,
