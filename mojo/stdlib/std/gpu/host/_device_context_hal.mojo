@@ -145,18 +145,17 @@ struct DeviceContext(
         ctx.synchronize()
     ```
 
-    A custom operation receives an opaque `DeviceContextPtr`, which provides
-    a `get_device_context()` method to retrieve the device context:
+    A custom operation receives the `DeviceContext` for the target device
+    directly as an argument to its `execute` method:
 
     ```text
-    from std.runtime.asyncrt import DeviceContextPtr
+    from std.gpu.host import DeviceContext
     from compiler import register
 
     @register("custom_op")
     struct CustomOp:
         @staticmethod
-        def execute(ctx_ptr: DeviceContextPtr) raises:
-            var ctx = ctx_ptr.get_device_context()
+        def execute(ctx: DeviceContext) raises:
             ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=(2, 2, 2))
             ctx.synchronize()
     ```

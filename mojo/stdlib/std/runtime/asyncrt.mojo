@@ -15,7 +15,6 @@
 from std.os import abort
 from std.atomic import Atomic
 from std.ffi import _CPointer, external_call
-from std.gpu.host.device_context import _DeviceContextPtr
 from std.memory.alloc import alloc, free, Layout
 
 from std.builtin.coroutine import (
