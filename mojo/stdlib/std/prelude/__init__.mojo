@@ -47,6 +47,7 @@ from std.builtin.anytype import (
     Some,
     SomeTypeList,
     ImplicitlyDestructible,
+    ImplicitlyDeletable,
 )
 from std.builtin.bool import Bool, Boolable, all, any
 from std.builtin.breakpoint import breakpoint

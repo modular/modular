@@ -1576,7 +1576,7 @@ def _unsafe_alloc[
 
 
 def _unsafe_init[
-    T: Movable & ImplicitlyDestructible,
+    T: Movable & ImplicitlyDeletable,
     //,
 ](obj_ptr: PyObjectPtr, var mojo_value: T) raises:
     """Initialize a Python object pointer with a Mojo value.
