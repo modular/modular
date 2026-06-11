@@ -666,6 +666,13 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             huggingface_config,
             state_dict,
             self.dtype,
+            # Gemma 4 checkpoints nest the language tower under
+            # "model.language_model."; without these prefixes the per-layer
+            # quantized/ignored classification looks up "model.layers.*"
+            # keys that never exist and misclassifies quantized attention
+            # (e.g. the gemma4_unified 12B NVFP4 quants) as unquantized.
+            state_dict_name_prefix="model.language_model.",
+            ignored_modules_prefix="model.language_model.",
         )
 
         for k, v in state_dict.items():
