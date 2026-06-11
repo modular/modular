@@ -91,7 +91,12 @@ def discover_categories(dir_names: list[str]) -> dict[str, list[str]]:
 
 
 def discover_registered_dirs() -> list[str]:
-    """Return sorted directory names of all registered architectures."""
+    """Return sorted directory names of all registered architectures.
+
+    ``_modulev3`` architectures are intentionally excluded from the public
+    API docs. They stay registered and importable, but their internal
+    module-v3 variants are not documented.
+    """
     tree = ast.parse((ARCH_BASE / "__init__.py").read_text())
     for node in ast.walk(tree):
         if (
@@ -101,6 +106,8 @@ def discover_registered_dirs() -> list[str]:
             modules = set()
             for stmt in node.body:
                 if isinstance(stmt, ast.ImportFrom) and stmt.module:
+                    if stmt.module.endswith("_modulev3"):
+                        continue
                     modules.add(stmt.module)
             return sorted(modules)
     raise RuntimeError("Could not find register_all_models() in __init__.py")
