@@ -48,9 +48,7 @@ int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
   assert(LLVM::isCompatibleType(type) && "expected an LLVM type");
 
   if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type)) {
-    assert(ptrType.getAddressSpace() == 0 &&
-           "only default address space supported");
-    return target.getDataLayout().getPointerBitWidth();
+    return target.getDataLayout().getPointerBitWidth(ptrType.getAddressSpace());
   }
   if (auto vecType = dyn_cast<VectorType>(type)) {
     return target.getDataLayout().getVectorBitWidth(

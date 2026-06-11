@@ -78,8 +78,8 @@ public:
     return info.ptrWidth ? info.ptrWidth : ptrInfos[0].ptrWidth;
   }
   /// Get the default address space pointer size in bytes.
-  int32_t getPointerSize() const {
-    return llvm::divideCeil(getPointerBitWidth(), 8);
+  int32_t getPointerSize(uint32_t addrSpace = 0) const {
+    return llvm::divideCeil(getPointerBitWidth(addrSpace), 8);
   }
   /// Get the bitwidth of a fixed vector type.
   int32_t getVectorBitWidth(int32_t numElts, int32_t eltBitWidth) const {

@@ -305,7 +305,8 @@ InterpreterState::getMemory(int64_t addr, size_t size) {
 }
 
 ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
-                                                    RegionMark regionMark) {
+                                                    RegionMark regionMark,
+                                                    int32_t addrSpace) {
   ErrorOr<std::pair<MemoryBlob &, int64_t>> memref = getMemory(addr, size);
   if (memref.isError())
     return memref.takeError();
@@ -318,7 +319,7 @@ ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
 
   // If the access is a pointer write, then mark the region as a pointer. The
   // pointer write size must be equal to the target pointer size.
-  size_t pointerSize = target.getDataLayout().getPointerSize();
+  size_t pointerSize = target.getDataLayout().getPointerSize(addrSpace);
   if ((regionMark != RegionMark::None) && size != pointerSize)
     return Error("pointer write size is not equal to pointer bitwidth");
 
