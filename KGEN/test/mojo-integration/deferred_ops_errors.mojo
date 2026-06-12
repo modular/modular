@@ -23,7 +23,9 @@ def extra_attribute(a: Int, b: Int) abi("Mojo") raises -> Bool:
     comptime pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
 
     # expected-note @below {{unexpected attribute 'foobar' on operation}}
-    var res = __mlir_op.`index.cmp`[pred=pred_attr, foobar=pred_attr](a, b)
+    var res = __mlir_op.`index.cmp`[pred=pred_attr, foobar=pred_attr](
+        a._int_mlir_index(), b._int_mlir_index()
+    )
     return res
 
 

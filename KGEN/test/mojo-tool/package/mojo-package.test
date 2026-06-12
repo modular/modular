@@ -15,7 +15,7 @@
 // CHECK:       lit.fn @"foo{{.*}}"{{.*}}sourceName = {{.*}}
 // CHECK:         lit.end_fn
 
-// CHECK: lit.struct.decl @ParametricStruct<{{.*}}: !Int>
+// CHECK: lit.struct.decl @ParametricStruct<{{.*}}: !Int1>
 // CHECK:       lit.fn @"foo(
 // CHECK-NEXT:    kgen.param.constant
 // CHECK-NEXT:    lit.return

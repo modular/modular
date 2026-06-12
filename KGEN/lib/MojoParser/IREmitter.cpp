@@ -1433,6 +1433,23 @@ CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue, ExprDest &dest) {
   ASTType intType = shared.lookupBuiltinType("Int", getDeclScope(),
                                              indexValue.expr->getLoc());
 
+  // Int is now SIMD[DType.int, 1], so its mlir_value init expects !pop.simd<1,
+  // index>, not a bare index.  If the caller passed us a plain IntegerAttr with
+  // IndexType (the historical form), wrap it in a POP::SIMDAttr.
+  AnyValue simdValue = indexValue.ir;
+  if (PValue pval = simdValue.getIfPValue()) {
+    if (auto intAttr = dyn_cast<IntegerAttr>(pval.get())) {
+      if (intAttr.getType().isIndex()) {
+        MLIRContext *ctx = getContext();
+        simdValue = PValue{SIMDAttr::get(
+            DTypeValue(intAttr.getInt(), KGENDType::index),
+            SIMDType::get(
+                /*size=*/1, DTypeConstantAttr::get(ctx, KGENDType::index)))};
+      }
+    }
+  }
+  ASTExprAnd<AnyValue> simdIndexValue{simdValue, indexValue.expr};
+
   // Build Int from __mlir_type.index explicitly: Int.__init__(*, mlir_value=…)
   CallOperands intCtorOperands(CallSyntax::kTypeCall, indexValue.expr,
                                std::move(dest));

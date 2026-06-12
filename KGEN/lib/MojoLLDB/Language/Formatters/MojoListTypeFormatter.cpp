@@ -6,6 +6,7 @@
 
 #include "MojoListTypeFormatter.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/lib/MojoLLDB/Utils/ValueObjectHelpers.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 
 using namespace lldb;
@@ -72,10 +73,7 @@ MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
     return {};
 
   // The REPL sees a struct around an int, but DWARF shows directly the int.
-  lldb::ValueObjectSP sizeVal =
-      sizeField->IsScalarType()
-          ? sizeField
-          : sizeField->GetChildMemberWithName("_mlir_value");
+  lldb::ValueObjectSP sizeVal = unwrapToScalarOrPointer(sizeField);
   if (!sizeVal || !sizeVal->GetError().Success())
     return {};
 

@@ -39,11 +39,12 @@ TEST(ControlFlowTest, testStepStraightLine) {
 
 static void assertIndex(StopContext &ctx, StringRef name, int64_t expected) {
   SBValue var = ctx.frame.FindVariable(name.data());
-  EXPECT_STREQ(var.GetValue(), std::to_string(expected).c_str());
-  EXPECT_STREQ(var.GetTypeName(), "index");
-  EXPECT_STREQ(var.GetDisplayTypeName(), "__mlir_type.index");
+  EXPECT_STREQ(var.GetChildAtIndex(0).GetValue(),
+               std::to_string(expected).c_str());
+  EXPECT_STREQ(var.GetTypeName(), "!kgen.scalar<index>");
+  EXPECT_STREQ(var.GetDisplayTypeName(), "__mlir_type.`!kgen.scalar<index>`");
   EXPECT_TRUE(var.GetType().GetTypeFlags() | lldb::eTypeIsInteger);
-  EXPECT_EQ(var.GetValueAsSigned(expected - 1), expected);
+  EXPECT_EQ(var.GetChildAtIndex(0).GetValueAsSigned(expected - 1), expected);
 }
 
 TEST(ControlFlowTest, testAssignment) {

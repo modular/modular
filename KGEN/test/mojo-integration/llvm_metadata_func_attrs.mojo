@@ -168,7 +168,7 @@ def fn_no_inline_line_tables() abi("Mojo"):
 # CHECK-LABEL: define{{.*}} @{{.*}}fn_stack_probe_size
 # CHECK-SAME: #[[SPS:[0-9]+]]
 @export
-@__llvm_metadata(`llvm.stack_probe_size`=Int(4096))
+@__llvm_metadata(`llvm.stack_probe_size`=SIMDSize(4096))
 def fn_stack_probe_size() abi("Mojo"):
     pass
 
@@ -176,7 +176,7 @@ def fn_stack_probe_size() abi("Mojo"):
 # CHECK-LABEL: define{{.*}} @{{.*}}fn_warn_stack_size
 # CHECK-SAME: #[[WSS:[0-9]+]]
 @export
-@__llvm_metadata(`llvm.warn_stack_size`=Int(1024))
+@__llvm_metadata(`llvm.warn_stack_size`=SIMDSize(1024))
 def fn_warn_stack_size() abi("Mojo"):
     pass
 
@@ -190,7 +190,7 @@ def fn_warn_stack_size() abi("Mojo"):
 # CHECK-LABEL: define{{.*}} @{{.*}}fn_alignment
 # CHECK-SAME: align 32
 @export
-@__llvm_metadata(`llvm.alignment`=Int(32))
+@__llvm_metadata(`llvm.alignment`=SIMDSize(32))
 def fn_alignment() abi("Mojo"):
     pass
 
@@ -199,7 +199,7 @@ def fn_alignment() abi("Mojo"):
 # CHECK-LABEL: define{{.*}} @{{.*}}fn_entry_count
 # CHECK-SAME: !prof
 @export
-@__llvm_metadata(`llvm.function_entry_count`=Int(1234))
+@__llvm_metadata(`llvm.function_entry_count`=SIMDSize(1234))
 def fn_entry_count() abi("Mojo"):
     pass
 

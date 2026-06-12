@@ -23,8 +23,8 @@ struct Conforms(RGTrivialTrait):
         print(self.x)
 
 
-# ELABORATE: kgen.func @"{{.*}}bar{{.*}}"(%arg0: index)
-# ELABORATE-NEXT: kgen.call @"{{.*}}::Conforms::doSomething{{.*}}"(%arg0) : (index) -> ()
+# ELABORATE: kgen.func @"{{.*}}bar{{.*}}"(%arg0: !kgen.scalar<index>)
+# ELABORATE-NEXT: kgen.call @"{{.*}}::Conforms::doSomething{{.*}}"(%arg0) : (!kgen.scalar<index>) -> ()
 @no_inline
 def bar[x: RGTrivialTrait](y: x):
     y.doSomething()

@@ -41,7 +41,7 @@ TEST(LifetimesTest, testFullEagerDestruction) {
 
   for (size_t i = 0; i < 2; ++i) {
     ctx.resume();
-    SBValue number = ctx.frame.FindVariable("number");
+    SBValue number = ctx.frame.FindVariable("number").GetChildAtIndex(0);
     EXPECT_EQ((int)number.GetValueAsSigned(), 8);
     assertVarNotAvailable(ctx, "text");
   }
@@ -50,12 +50,18 @@ TEST(LifetimesTest, testFullEagerDestruction) {
   // Trivial types (number, simd) persist through the scope at -O0.
   ctx.resume();
   assertVarNotAvailable(ctx, "text");
-  EXPECT_EQ((int)ctx.frame.FindVariable("number").GetValueAsSigned(), 8);
+  EXPECT_EQ((int)ctx.frame.FindVariable("number")
+                .GetChildAtIndex(0)
+                .GetValueAsSigned(),
+            8);
 
   // Past the last use of all variables; non-trivial dead, trivial persists.
   ctx.resume();
   assertVarNotAvailable(ctx, "text");
-  EXPECT_EQ((int)ctx.frame.FindVariable("number").GetValueAsSigned(), 8);
+  EXPECT_EQ((int)ctx.frame.FindVariable("number")
+                .GetChildAtIndex(0)
+                .GetValueAsSigned(),
+            8);
   assertVarAvailable(ctx, "simd");
 
   // `text_moved` should be alive when breaking on the call.
@@ -93,7 +99,7 @@ TEST(LifetimesTest, testFullEagerDestruction) {
   // `number2` should be alive when breaking on the call.
   ctx.resume();
   assertVarNotAvailable(ctx, "text_after");
-  SBValue number2 = ctx.frame.FindVariable("number2");
+  SBValue number2 = ctx.frame.FindVariable("number2").GetChildAtIndex(0);
   EXPECT_EQ(number2.GetValueAsSigned(), 8);
 }
 
@@ -132,7 +138,7 @@ TEST(LifetimesTest, testRedefined) {
   /// Ensures that if a variable is redefined, it is visible.
   StopContext ctx = buildAndLaunch("redefined.mojo");
 
-  SBValue x = ctx.frame.FindVariable("x");
+  SBValue x = ctx.frame.FindVariable("x").GetChildAtIndex(0);
   EXPECT_EQ((int)x.GetValueAsSigned(), 468);
 
   ctx.resume();
@@ -152,7 +158,7 @@ TEST(LifetimesTest, testTrivialTypePersistence) {
 
   // Breakpoint 1: "after last use" — past the last use of my_int, my_float,
   // my_bool.  Trivial types persist through the scope.
-  SBValue myInt = ctx.frame.FindVariable("my_int");
+  SBValue myInt = ctx.frame.FindVariable("my_int").GetChildAtIndex(0);
   EXPECT_EQ((int)myInt.GetValueAsSigned(), 42);
   assertVarAvailable(ctx, "my_float");
   assertVarAvailable(ctx, "my_bool");
@@ -163,7 +169,7 @@ TEST(LifetimesTest, testTrivialTypePersistence) {
   SBValue myString = ctx.frame.FindVariable("my_string");
   EXPECT_STREQ(myString.GetSummary(), R"("hello")");
 
-  myInt = ctx.frame.FindVariable("my_int");
+  myInt = ctx.frame.FindVariable("my_int").GetChildAtIndex(0);
   EXPECT_EQ((int)myInt.GetValueAsSigned(), 42);
   assertVarAvailable(ctx, "my_float");
   assertVarAvailable(ctx, "my_bool");
@@ -173,7 +179,7 @@ TEST(LifetimesTest, testTrivialTypePersistence) {
   ctx.resume();
   assertVarNotAvailable(ctx, "my_string");
 
-  myInt = ctx.frame.FindVariable("my_int");
+  myInt = ctx.frame.FindVariable("my_int").GetChildAtIndex(0);
   EXPECT_EQ((int)myInt.GetValueAsSigned(), 42);
   assertVarAvailable(ctx, "my_float");
   assertVarAvailable(ctx, "my_bool");
@@ -191,7 +197,7 @@ TEST(LifetimesTest, testOriginTypesDoNotExtendNonTrivialLifetimes) {
   EXPECT_STREQ(myString.GetSummary(), R"("hello")");
 
   // `length` (trivial Int) persists through the scope.
-  SBValue length = ctx.frame.FindVariable("length");
+  SBValue length = ctx.frame.FindVariable("length").GetChildAtIndex(0);
   EXPECT_EQ((int)length.GetValueAsSigned(), 5);
 
   // Breakpoint 2: "after string use" — my_string (non-trivial) should be dead.
@@ -200,6 +206,6 @@ TEST(LifetimesTest, testOriginTypesDoNotExtendNonTrivialLifetimes) {
   assertVarNotAvailable(ctx, "my_string");
 
   // But `length` (trivial) should still be visible.
-  length = ctx.frame.FindVariable("length");
+  length = ctx.frame.FindVariable("length").GetChildAtIndex(0);
   EXPECT_EQ((int)length.GetValueAsSigned(), 5);
 }

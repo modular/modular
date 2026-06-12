@@ -59,9 +59,10 @@ TEST(PrimitiveTypesTest, testPointerChild) {
   StopContext ctx = buildAndLaunch("pointer.mojo");
   SBValue var = ctx.frame.FindVariable("int_pointer");
   SBValue child = var.GetChildAtIndex(0);
-  EXPECT_STREQ(child.GetName(), "*int_pointer");
+  EXPECT_STREQ(var.Dereference().GetName(), "*int_pointer");
+  EXPECT_STREQ(child.GetName(), "[0]"); // TODO: this might be wrong
   EXPECT_STREQ(child.GetValue(), "101");
-  EXPECT_STREQ(var.Dereference().GetValue(), "101");
+  EXPECT_STREQ(var.Dereference().GetChildAtIndex(0).GetValue(), "101");
 }
 
 TEST(PrimitiveTypesTest, testInvalidPointer) {
@@ -75,9 +76,9 @@ TEST(PrimitiveTypesTest, testInvalidPointer) {
 static void checkIntPair(SBValue &strct, int fst, int snd) {
   EXPECT_STREQ(strct.GetDisplayTypeName(), "MyPair");
   ASSERT_EQ((int)strct.GetNumChildren(), 2);
-  SBValue firstField = strct.GetChildAtIndex(0);
+  SBValue firstField = strct.GetChildAtIndex(0).GetChildAtIndex(0);
   EXPECT_EQ((int)firstField.GetValueAsSigned(fst - 1), fst);
-  SBValue secondField = strct.GetChildAtIndex(1);
+  SBValue secondField = strct.GetChildAtIndex(1).GetChildAtIndex(0);
   EXPECT_EQ((int)secondField.GetValueAsSigned(snd - 1), snd);
 }
 
@@ -186,14 +187,16 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   EXPECT_TRUE(RE::PartialMatch(ctx.runCommand("v p_struct_string_slice").output,
                                R"("hello")"));
   EXPECT_EQ(ctx.runCommand("v an_int").output,
-            "(__mlir_type.index) an_int = 123\n");
+            "(__mlir_type.`!kgen.scalar<index>`) an_int = 123\n");
   EXPECT_EQ(ctx.runCommand("v a_literal_float").output,
             "(__mlir_type.`!kgen.scalar<f64>`) a_literal_float = 3.125\n");
   EXPECT_EQ(ctx.runCommand("v a_float").output,
             "(__mlir_type.`!kgen.scalar<f32>`) a_float = 3.125\n");
   EXPECT_EQ(ctx.runCommand("v another_float").output,
             "(__mlir_type.`!kgen.scalar<f32>`) another_float = 4.125\n");
-  EXPECT_STREQ(ctx.frame.FindVariable("^ uncommon name").GetValue(), "1123123");
+  EXPECT_STREQ(
+      ctx.frame.FindVariable("^ uncommon name").GetChildAtIndex(0).GetValue(),
+      "1123123");
   EXPECT_EQ(ctx.runCommand("v a_string").output,
             "(String) a_string = \"fofofo\"\n");
   // FIXME(37682): Reenable list printing

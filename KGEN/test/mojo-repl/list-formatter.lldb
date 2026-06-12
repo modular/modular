@@ -10,7 +10,7 @@
 # FIXME(26700): split this single long expression into smaller ones. Right now
 # the REPL breaks after using List.
 
-from collections import List
+from std.collections import List
 
 struct Point(TrivialRegisterPassable, Copyable, Movable):
   var x: Int

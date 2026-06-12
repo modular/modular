@@ -49,8 +49,8 @@ def main():
     print(FloatLiteral.negative_zero)  # CHECK-NEXT: -0.0
     print(FloatLiteral.nan)  # CHECK-NEXT: nan
 
-    print(-1 * 0.0)  # CHECK-NEXT: -0.0
-    print(-1 * -0.0)  # CHECK-NEXT: 0.0
+    print(Float64(-1) * 0.0)  # CHECK-NEXT: -0.0
+    print(Float64(-1) * -0.0)  # CHECK-NEXT: 0.0
 
     # Very special cases of float literals were rounding incorrectly:
     # Specifically, where long division would end due to the mantissa being

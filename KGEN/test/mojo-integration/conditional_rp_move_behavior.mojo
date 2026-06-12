@@ -26,7 +26,7 @@ struct CondRPMove[T: Movable & ImplicitlyDeletable](
 
 
 # RP case: arg/return have no memoryOnly, body is a register copy.
-# CHECK-IR:      kgen.func @"{{.*}}do_move{{.*}}Int{{.*}}"(
+# CHECK-IR:      kgen.func @"{{.*}}do_move{{.*}}::SIMD[::DType(int), ::SIMDSize(1)]{{.*}}"(
 # CHECK-IR-NOT:  memoryOnly
 # CHECK-IR-SAME: ) ->
 # CHECK-IR-NOT:  memoryOnly

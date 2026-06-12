@@ -32,7 +32,7 @@ def test_fn():
     # CHECK: lit.call {{.*}}bar
     _ = bar()
 
-    # CHECK: kgen.create_closure{{.*}}@"def(::Int) -> None|def(x: ::Int) -> None|{{.*}}[def(x: ::Int) -> None](::Int)"
+    # CHECK: kgen.create_closure{{.*}}@"def(::SIMD[::DType(int), ::SIMDSize(1)]) -> None|def(x: ::SIMD[::DType(int), ::SIMDSize(1)]) -> None|{{.*}}[def(x: ::SIMD[::DType(int), ::SIMDSize(1)]) -> None](::SIMD[::DType(int), ::SIMDSize(1)])"
     var f: def(Int) thin -> None = thunk[Int]
 
 
@@ -40,16 +40,16 @@ def test_fn():
 
 # CHECK-LABEL: lit.package @std
 
-# CHECK-NOT: lit.fn @"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
+# CHECK-NOT: lit.fn @"def(::SIMD[::DType(int), ::SIMDSize(1)]) -> None|def(y: ::SIMD[::DType(int), ::SIMDSize(1)]) -> None|{{.*}}[def(y: ::SIMD[::DType(int), ::SIMDSize(1)]) -> None](::SIMD[::DType(int), ::SIMDSize(1)])"
 
 # CHECK-LABEL: lit.package @func_package_foo
 # CHECK: lit.fn @"foo
-# CHECK: kgen.create_closure{{.*}}@"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
+# CHECK: kgen.create_closure{{.*}}@"def(::SIMD[::DType(int), ::SIMDSize(1)]) -> None|def(y: ::SIMD[::DType(int), ::SIMDSize(1)]) -> None|{{.*}}[def(y: ::SIMD[::DType(int), ::SIMDSize(1)]) -> None](::SIMD[::DType(int), ::SIMDSize(1)])"
 
-# CHECK-COUNT-1: lit.fn @"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
+# CHECK-COUNT-1: lit.fn @"def(::SIMD[::DType(int), ::SIMDSize(1)]) -> None|def(y: ::SIMD[::DType(int), ::SIMDSize(1)]) -> None|{{.*}}[def(y: ::SIMD[::DType(int), ::SIMDSize(1)]) -> None](::SIMD[::DType(int), ::SIMDSize(1)])"
 
 # CHECK-LABEL: lit.package @func_package_bar
 # CHECK: lit.fn @"bar
-# CHECK: kgen.create_closure{{.*}}@"def(::Int) -> None|def(y: ::Int) -> None|{{.*}}[def(y: ::Int) -> None](::Int)"
+# CHECK: kgen.create_closure{{.*}}@"def(::SIMD[::DType(int), ::SIMDSize(1)]) -> None|def(y: ::SIMD[::DType(int), ::SIMDSize(1)]) -> None|{{.*}}[def(y: ::SIMD[::DType(int), ::SIMDSize(1)]) -> None](::SIMD[::DType(int), ::SIMDSize(1)])"
 
 # CHECK-NOT: lit.fn @"def(::Int) -> None|def(::Int) -> None|{{.*}}[def(::Int) -> None](::Int)"

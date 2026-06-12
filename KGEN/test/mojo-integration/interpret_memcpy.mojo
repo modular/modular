@@ -19,7 +19,9 @@ def memcpy(
         _type=__mlir_type.`!kgen.scalar<bool>`
     ]():
         llvm_intrinsic["llvm.memcpy", NoneType](
-            dst.bitcast[Byte](), src.bitcast[Byte](), byte_count
+            dst.bitcast[Byte](),
+            src.bitcast[Byte](),
+            byte_count._int_mlir_index(),
         )
     else:
         # Intentionally mis-match behavior between then and else
