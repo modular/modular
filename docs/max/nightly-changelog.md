@@ -15,6 +15,7 @@ This version is still a work in progress.
   top-8 plus one shared expert) with sigmoid plus correction-bias routing,
   per-head query/key RMSNorm, and split-half RoPE. Runs multi-GPU with
   tensor-parallel attention and expert-parallel MoE.
+- Added LiquidAI LFM2 (`LFM2ForCausalLM`)
 - Added NVFP4 quantization support for Gemma 4.
 - Gemma 4 can now run native FP8 attention with an FP8 KV cache on B200
   (SM100): Q, K, and V are `float8_e4m3fn` read directly from the paged cache,
@@ -36,6 +37,37 @@ This version is still a work in progress.
   reasoning block before each, and lets the model stop before the cap. This
   fixes a `tool_choice=auto` failure where a second tool-call section
   disabled grammar enforcement for the rest of the request.
+- Expanded DeepSeek and GLM support
+  - Added DeepSeek V2 and V3 (ModuleV3) on a single GPU, with FP8 block-scaled
+    quantization for V3
+  - Added long-context sparse MLA support for DeepSeek-V3.2
+  - Added DeepSeek V3 and V3.1 tool-call parsers
+  - Added GLM-5 and GLM-5.1 (`GlmMoeDsaForCausalLM`) with FP8/NVFP4 weights
+    and FP8 sparse MLA decode for GLM-5.1-FP8
+- Expanded Gemma 4 support
+  - Added structured output (`response_format`) and tool calling with grammar
+    enforcement and tool-call parsing
+  - Extended tool parameter schemas with JSON Schema `anyOf`, `$ref`/`$defs`,
+    and `additionalProperties`
+  - Added a reasoning parser
+  - Added MTP speculative decoding (including `TP=2`) with constrained decoding
+    when MTP is the draft method
+  - Added multi-GPU support for Gemma 4 31B
+- Expanded speculative decoding model support
+  - Added DFlash speculative decoding for Kimi K2.5 and Llama 3, with CUDA
+    device-graph capture for the Kimi path
+  - Added GQA-based EAGLE drafters for DeepSeek and Kimi
+  - Added Kimi K2.6 Eagle3 speculative decoding and Kimi-K2.6-NVFP4 model
+    support
+- Expanded pixel-generation model support
+  - Added FLUX.2-Klein-NVFP4 architecture support
+  - Enabled multi-GPU FLUX.2 and FLUX.2-Klein pipelines
+  - Added diffusion pipeline configuration for `Qwen-Image`
+  - Added TaylorSeer cache support to the Wan T2V pipeline
+  - Added FP8 weight support for Wan 2.2 T2V
+- Added tensor-parallel support, tool-call grammar support, and tool-call
+  parsing for MiniMax M2.7
+- Removed FLUX.1 model support
 
 ## MAX framework
 
@@ -221,8 +253,36 @@ This version is still a work in progress.
 - Removed multi-step decode from the text-generation pipelines. The flag
   `--max-num-steps` no longer works.
 
-- Removed support for speculative decoding with a standalone draft model.
-  Please use `eagle`, `mtp`, or `dflash` drafters instead.
+- Expanded auto-enablement of overlap scheduler and device graph capture
+  - Auto-enabled for OLMo, OLMo2, OLMo3, Qwen2, Qwen3, Qwen3 MoE, and Qwen3.5
+    text-generation models
+  - Restricted auto-enablement to text-generation pipelines; embedding
+    pipelines (for example `Qwen/Qwen3-Embedding-0.6B`) are excluded
+  - Enabled HIP device graph capture by default for supported ROCm architectures
+- The `local` and `tiered` KV connectors now support EAGLE speculative
+  decoding with an MLA target model and an MHA draft model, and can offload
+  the draft model's KV cache to host memory or disk alongside the target
+  model's cache.
+- Expanded overlap scheduling with structured output
+  - Overlap scheduling now supports speculative decoding together with
+    structured output (`response_format` and tool-call grammars)
+  - Tool-call grammars are no longer gated behind `--enable-structured-output`
+- Improved OpenAI-compatible endpoint responses
+  - Added `reasoning_tokens` to `usage` objects when applicable for chat
+    completion responses
+  - Omitted JSON fields set to `null` from streaming deltas in chat completion
+    responses
+  - `/v1/models` now includes each model's `max_model_len`
+  - `/v1/completions` now reports `usage` statistics in non-streaming responses
+- Added `temperature` and `thinking_temperature` to CLI/server arguments
+- Restored the MAX-only `prompt_tokens` field on
+  `CreateChatCompletionRequest` for pre-tokenized prompt forwarding
+- Added per-request TTL eviction to the decode scheduler via
+  `decode_request_ttl_s` (`MODULAR_DECODE_REQUEST_TTL_S`). Requests stuck in
+  `prefill_reqs` or `inflight_transfers` past the TTL are evicted, KV blocks
+  are released, and a cancelled `SchedulerResult` is surfaced instead of
+  escalating to a stall-watchdog engine restart.
+- Extended `top_k` sampling to support values greater than 255.
 
 ### `max` CLI
 
@@ -257,8 +317,17 @@ This version is still a work in progress.
   of the run. The server still needs to be launched under `nsys launch`
   (matching the existing `--trace` requirement); `--profile` removes the
   "now run `nsys stats` by hand" step.
+- Added architecture YAML recipe support to the CLI
+  - Added reusable recipe files under each architecture's `recipes/` directory
+  - Wired recipes to `max serve` and `max benchmark` via `--config-file`
+  - CLI flags override recipe YAML values when both are supplied
 
 ### Python API
+
+- Removed the `max.interfaces` top-level module. Pipeline request/context
+  types and helpers moved into `max.pipelines` (for example
+  `max.pipelines.request`, `max.pipelines.modeling`); `SchedulerResult`
+  moved to `max.serve`. No deprecation shim remains at the old paths.
 
 - Added `CompiledModel.export_mef(path)` to `max.engine` and to the
   `max.experimental.nn.Module.compile` result. It serializes the compiled
@@ -400,6 +469,25 @@ This version is still a work in progress.
   language_model = models[language_graph.name]
   ```
 
+- Added `Tensor.from_dim` for building symbolic-dimension predicates inside
+  traced graph regions (for example, comparing a tensor dimension against a
+  compile-time constant inside `ops.cond`). `from_dim` also works in eager
+  mode.
+- Bound `AsyncValue` with asyncio interop so `InferenceSession.compile()` and
+  related compile paths can be awaited from async Python code.
+- Added a segmented K-axis sharding strategy to `Linear.shard` for
+  block-scaled and multi-device weights.
+- Added `Module.replace_module(name, module)` on the `max.nn` `Module` base
+  class. Unlike a bare `setattr`, it raises `KeyError` when the name is not
+  already a registered child submodule.
+- Exposed `guidance_scale` on `VideoProviderOptions` for video-generation
+  pipelines.
+- Cached eager-compiled models for built-in op graphs to speed repeated eager
+  execution.
+- Added `maxSingleAllocationSize` query to the device context.
+- Raised the default `MAX_INTERPRETER_MAX_OPS` threshold from 30 to 1024 so
+  larger eager graphs stay on the interpreter path without setting the env var.
+
 ## MAX kernels
 
 - The GPU `scatter_nd` kernel now vectorizes its slice copy with 128-bit
@@ -469,7 +557,29 @@ This version is still a work in progress.
   - Fixed a compute-epilogue alignment issue in the SM100 GEMM kernel that
     caused scalar loads instead of vectorized loads.
 
+- Improved AMD MI355X GPU kernel performance
+  - Added FP8 MLA prefill and `HKMhaPrefill` long-context MHA prefill
+  - Added 4-wave matmul and implicit-GEMM convolution kernels (FP8/BF16/FP16)
+    and native 3D implicit-GEMM convolution
+  - Tuned MLA/MXFP4 decode including split-K
+  - Overlapped Kimi K2.5 MXFP4 shared-expert compute with expert-parallel
+    communication on MI355
+  - Fixed HK MHA prefill correctness for partial-K, odd-N, and depth-64
+    geometries that corrupted FLUX image generation
+- Improved Blackwell (SM100) GPU kernel performance
+  - Added sparse MHA prefill and decode kernels and FP8 MHA prefill/decode
+    support
+  - Added sparse MLA prefill kernel (`mo.mla.prefill.sparse.paged.fp8`)
+  - Added fused grouped matmul + SwiGLU + NVFP4/MXFP8 quantization for Kimi K2.5
+  - Enabled PDL for split-K MHA decode
+  - Fixed an SM100 FP8 MoE decode regression in grouped GEMM
+  - Improved FP8 grouped GEMM for non-aligned problem sizes
+  - Made LayerNorm ~13% faster at FLUX/DiT-32B tensor shapes
+
 ## Breaking changes
+
+- Removed support for speculative decoding with a standalone draft model.
+  Instead use `eagle`, `mtp`, or `dflash` drafters.
 
 - KV cache management has moved from `max.kv_cache` to `max.pipelines.kv_cache`.
   Update imports accordingly:
@@ -501,6 +611,8 @@ This version is still a work in progress.
 
 - `max/python/max/benchmark/benchmark_throughput.py`, deprecated in v0.26.3,
   has been removed.
+
+- Removed the LMCache KV cache connector (use `local` or `tiered` connectors)
 
 ## Fixes
 
@@ -539,6 +651,17 @@ This version is still a work in progress.
   option was previously parsed but no compiler stage consulted it, so
   users had to fall back to the legacy `MODULAR_MAX_TEMPS_DIR` env var.
   Both spellings are now honored.
+
+- Fixed page-size=128 support in attention kernels when head depth is ≥ 256,
+  which previously produced incorrect results.
+- Fixed pixel-generation serve configs silently dropping denoising-cache flags
+  (for example TeaCache), so cache tuning options passed through recipes now
+  take effect.
+- Fixed Wan 2.2 image-to-video (I2V) producing a flat green frame when
+  conditioning inputs were misaligned across the dual-transformer MoE path.
+- Fixed a KV-cache host-buffer lifetime bug where `cache_lengths` and
+  `lut_tables` could be freed before asynchronous H2D copies finished,
+  causing intermittent corruption under offload or tiered-KV workloads.
 
 ## Mojo language
 
