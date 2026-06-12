@@ -218,7 +218,7 @@ def _run_8x8_bias_case[
     @always_inline
     @__copy_capture(d_ptr, bias_ptr, row_stride)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
         var bias = (bias_ptr + coords[1]).load[width=w]()
@@ -1553,7 +1553,7 @@ def _run_bias_epilogue_test[
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -1780,7 +1780,7 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     @always_inline
     @__copy_capture(d_ptr)
     def relu_compose_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var relu_val = max(v_fp16, SIMD[DType.float16, w](0))
@@ -1865,7 +1865,7 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_relu_compose_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -1956,7 +1956,7 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var v_fp16 = rebind[SIMD[DType.float16, w]](val)
         var b = (bias_ptr + coords[1]).load[width=w]()
@@ -2107,7 +2107,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
-        dt: DType, w: Int, *, alignment: Int = 1
+        dt: DType, w: SIMDSize, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
         var b = (bias_ptr + coords[1]).load[width=w]()
         var v_c = rebind[SIMD[DType.float16, w]](val)
