@@ -1329,9 +1329,17 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             == DType.uint8 else input_col
         )
 
+        # The k_idx grid covers whole SF_K_GROUP_SIZE column blocks, so when
+        # num_cols is not a multiple of SF_K_GROUP_SIZE the last block extends
+        # past the input. Lanes in that tail must not touch the payload
+        # tensors; they contribute a zero group max so their scale lanes store
+        # a clean zero.
+        var num_cols = input_tensor.dim(1)
+        var col_is_valid = Int(input_col) < Int(num_cols)
+
         comptime for iter_idx in range(num_iters):
             var local_row = iter_idx * rows_per_iter + row_in_iter
-            var is_valid = local_row < num_tokens
+            var is_valid = local_row < num_tokens and col_is_valid
 
             var input_vector = SIMD[input_dtype, ELEMENTS_PER_THREAD](0)
             if is_valid:
@@ -1430,6 +1438,14 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     ],
     ctx: DeviceContext,
 ) raises:
+    # The kernel masks columns at 8-element lane granularity, so a column
+    # count that is not a multiple of 8 would still load and store partially
+    # out of bounds within the straddling lane.
+    debug_assert(
+        Int(input_tensor.dim(1)) % 8 == 0,
+        "num_cols must be a multiple of ELEMENTS_PER_THREAD (8 for NVFP4)",
+    )
+
     var scales_tensor_lt = scales_tensor.to_layout_tensor()
     comptime scales_lt_layout = scales_tensor_lt.layout
 
