@@ -55,8 +55,34 @@ public:
           return replace(attr, TypeDomain::AsType);
         },
         TypeDomain::AsValue);
+
     // param_list should always use the AsType domain: the parameter is always
     // the param_list attr, never the param_list type.
+    //
+    // This is to mitigate the issue is that we allow ALL `__mlir_type` to be
+    // bound to
+    // ```
+    // struct __MLIRType[T: __mlir_type.`!kgen.non_struct_type`]
+    // ```
+    // When things like parametric function (a generator) with a param_list
+    // parameter is bound to this, the generator (as `T`) is then lowered in
+    // value domain, and the param_list will be lowered to
+    // `#kgen.type<param_list<type_value<#trait_ref>>>`
+    // ^ later lead to verification error, because the generator body type
+    // could be lowered in type domain, since
+    // ```
+    // addNonRecursiveReplacement(
+    // [&](TypedAttr attr) -> FailureOr<Attribute> {
+    //   return replace(attr, TypeDomain::AsType);
+    // },
+    // TypeDomain::AsValue);
+    //```
+    // We could also always lower generator parameter in type domain, but hard
+    // code to `ParamListType` for now.
+    //
+    // `__MLIRType` probably need a systematic fix as well, if we disallow
+    // generator to be bound to no_struct_type. The problem won't exist at the
+    // first place.
     addNonRecursiveReplacement(
         [&](ParamListType paramList) -> FailureOr<Type> {
           return replace(paramList, TypeDomain::AsType);
