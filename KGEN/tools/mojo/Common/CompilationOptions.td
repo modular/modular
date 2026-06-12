@@ -129,6 +129,12 @@ defm Xlinker : CommandOption<["-"], "Xlinker",
   LinkOptionGroup, Index<1>, MetaVarName<"ARG">,
   HelpText<"Pass ARG to the linker.">>;
 
+defm lld_path : CommandOption<["--", "-"], "lld-path",
+  LinkOptionGroup, Index<2>, MetaVarName<"PATH">,
+  HelpText<"Overrides the path to the `lld` linker used when linking. Takes "
+           "precedence over the `MODULAR_MOJO_MAX_LLD_PATH` environment "
+           "variable and the `mojo-max.lld_path` configuration value.">>;
+
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
 //===----------------------------------------------------------------------===//

@@ -144,6 +144,10 @@ StringRef MojoConfig::getLLDPath() {
   return getPath(STRINGIFY_MOJO_CONFIG(".lld_path"), "bin/lld");
 }
 
+void MojoConfig::setLLDPathOverride(StringRef path) {
+  Config::setGlobalValue(STRINGIFY_MOJO_CONFIG(".lld_path"), path);
+}
+
 void MojoConfig::appendSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs) {
   if (auto maybeSystemLibsArg =
           getConfig().maybeGetValue(STRINGIFY_MOJO_CONFIG(".system_libs"))) {

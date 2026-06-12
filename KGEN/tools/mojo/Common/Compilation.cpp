@@ -10,6 +10,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/MArchTarget/MArchTarget.h"
@@ -129,6 +130,15 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
   if (optionIDs.warnOnUnstableAPIs.isValid())
     result.compilationOptions.warnOnUnstableAPIs =
         args.hasArg(optionIDs.warnOnUnstableAPIs);
+
+  // Apply the lld path override (equivalent to MODULAR_MOJO_MAX_LLD_PATH). This
+  // installs a process-wide override so every later `MojoConfig::open()` (for
+  // example, in the object compiler) observes it.
+  if (optionIDs.lldPath.isValid()) {
+    StringRef lldPath = args.getLastArgValue(optionIDs.lldPath);
+    if (!lldPath.empty())
+      KGEN::MojoConfig::setLLDPathOverride(lldPath);
+  }
 
   // Store the parsed args for the caller.
   result.args = std::move(args);
