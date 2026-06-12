@@ -936,6 +936,7 @@ modular_shared_library(
     output_name = "KGENCompilerRTShared",
     visibility = [
         "//KGEN:consumers",
+        "//KGEN/test/profiling:__pkg__",
         "//KGEN/test/tracy:__pkg__",
     ],
     deps = [
