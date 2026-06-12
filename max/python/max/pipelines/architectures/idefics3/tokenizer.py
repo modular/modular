@@ -96,9 +96,13 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         self._default_eos_token_ids = set([self.eos])
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
     ) -> str:
         """Decode token array back into readable text, filtering out special tokens."""
+        # Log-probability responses decode one token id (a plain int) at a
+        # time; match the text tokenizer's handling.
+        if isinstance(encoded, int):
+            encoded = np.array(encoded)
         # Force skip_special_tokens=True to filter out tokens like <end_of_utterance>
         kwargs_with_special_filter = kwargs.copy()
         kwargs_with_special_filter["skip_special_tokens"] = True
@@ -295,6 +299,8 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             images=[
