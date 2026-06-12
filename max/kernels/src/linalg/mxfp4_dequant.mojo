@@ -101,7 +101,7 @@ def _dequant_fp4_kernel[
                 )
 
                 # Unpack to float32 via E2M1 lookup table.
-                # NOTE: We use a software LUT (cast_uint_to_fp4e2m1) rather
+                # NOTE: We use a software decode (cast_uint_to_fp4e2m1) rather
                 # than the SM100+ PTX instruction (cast_f4e2m1x2_to_fp16x2)
                 # because this kernel targets SM90 (H100).
                 var fp32_values = cast_uint_to_fp4e2m1[

@@ -29,9 +29,9 @@ def _check[M: Int, N: Int, K: Int](ctx: DeviceContext) raises:
 
     seed(42)
     for i in range(M * K):
-        a_host[i] = (
-            Float32(Int(random_ui64(0, 200)) - 100) / 50.0
-        ).cast[DType.bfloat16]()
+        a_host[i] = (Float32(Int(random_ui64(0, 200)) - 100) / 50.0).cast[
+            DType.bfloat16
+        ]()
     for i in range(N * packed_cols):
         w_host[i] = UInt8(random_ui64(0, 255))
     for i in range(N * scale_cols):
@@ -66,9 +66,7 @@ def _check[M: Int, N: Int, K: Int](ctx: DeviceContext) raises:
                 var wval = _decode_nibble(nib)
                 var scale = s_host[nn * scale_cols + kk // 16]
                 expected += (
-                    wval
-                    * scale
-                    * a_host[mm * K + kk].cast[DType.float32]()
+                    wval * scale * a_host[mm * K + kk].cast[DType.float32]()
                 )
             var got = c_host[mm * N + nn].cast[DType.float32]()
             # bf16 output rounding: tolerate ~1% relative.
@@ -102,12 +100,19 @@ def _bench[M: Int, N: Int, K: Int](ctx: DeviceContext) raises:
     var t1 = perf_counter_ns()
 
     var ms = Float64(t1 - t0) / 1e6 / ITERS
-    var bytes_read = Float64(
-        N * packed_cols + N * scale_cols * 4 + M * K * 2
-    )
+    var bytes_read = Float64(N * packed_cols + N * scale_cols * 4 + M * K * 2)
     var gbps = bytes_read / (ms * 1e6)
     print(
-        "gemv M=", M, " [", N, "x", K, "]: ", ms, " ms -> ", gbps,
+        "gemv M=",
+        M,
+        " [",
+        N,
+        "x",
+        K,
+        "]: ",
+        ms,
+        " ms -> ",
+        gbps,
         " GB/s (packed)",
     )
 
@@ -117,6 +122,9 @@ def main() raises:
     _check[1, 64, 128](ctx)
     _check[3, 96, 256](ctx)
     _check[5, 33, 1024](ctx)
+    # >1 K-chunk per lane (K/32 > WARP_SIZE) and the production K.
+    _check[2, 64, 2048](ctx)
+    _check[1, 48, 3840](ctx)
     _bench[1, 15360, 3840](ctx)
     _bench[4, 15360, 3840](ctx)
     _bench[16, 15360, 3840](ctx)

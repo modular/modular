@@ -73,31 +73,6 @@ def _reshape_pre_interleaved_scales(
     )
 
 
-def _dequant_weight_nvfp4(
-    weight: TensorValue,
-    weight_scale: TensorValue,
-    weight_scale_2: TensorValue,
-    scales_pre_interleaved: bool,
-) -> TensorValue:
-    """Dequantizes an NVFP4 weight to BF16 (pre-Blackwell fallback).
-
-    Pre-multiplies the per-tensor ``weight_scale_2`` into the block scales
-    (float32) and runs the software-LUT dequant kernel, which works on any
-    GPU. Activations stay in BF16 — callers route the result through the
-    regular BF16 matmul instead of the FP4 tensor-core kernels.
-    """
-    if scales_pre_interleaved:
-        raise ValueError(
-            "NVFP4 checkpoints with pre-interleaved (TCGEN 5D) scales are"
-            " not supported on pre-Blackwell GPUs: the dequant fallback"
-            " needs the flat [N, K//16] scale layout."
-        )
-    scales_f32 = weight_scale.to(weight.device).cast(
-        DType.float32
-    ) * weight_scale_2.to(weight.device)
-    return nvfp4_dequant(weight, scales_f32, out_type=DType.bfloat16)
-
-
 def _matmul_float4(
     x: TensorValue,
     weight: TensorValue,
@@ -108,10 +83,10 @@ def _matmul_float4(
 ) -> TensorValue:
     """Computes x @ weight.T with modelopt NVFP4 quantization.
 
-    On GPUs without native FP4 matmul support (pre-Blackwell NVIDIA), the
-    weight is dequantized to BF16 and routed through the regular BF16 matmul
-    instead (``input_scale`` is unused there — activations are never
-    quantized on the fallback path).
+    On NVIDIA GPUs without native FP4 matmul (pre-Blackwell), the fused
+    dequant-GEMV decodes the packed weight in registers instead
+    (``input_scale`` is unused there — activations are never quantized on
+    the fallback path).
 
     Args:
         x: The input tensor in bf16.
@@ -556,7 +531,13 @@ def quantized_fused_qkv_matmul(
                     qkv[:, q_dim : q_dim + kv_dim],
                     [-1, kv_params.n_kv_heads_per_device, head_dim],
                 )
-                if total_dim - q_dim - kv_dim >= kv_dim:
+                remaining = total_dim - q_dim - kv_dim
+                if remaining not in (0, kv_dim):
+                    raise ValueError(
+                        f"unexpected wqkv layout: {total_dim} rows with"
+                        f" q_dim={q_dim}, kv_dim={kv_dim}"
+                    )
+                if remaining == kv_dim:
                     v_out = ops.reshape(
                         qkv[:, q_dim + kv_dim : q_dim + 2 * kv_dim],
                         [-1, kv_params.n_kv_heads_per_device, head_dim],

@@ -28,7 +28,7 @@ from std.math import ceildiv
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
 from std.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import PDL, PDLLevel
+from std.gpu.primitives.grid_controls import PDL
 from layout import TileTensor
 from layout.coord import Coord
 from layout.tile_layout import TensorLayout
@@ -71,28 +71,25 @@ def _nvfp4_gemv_kernel[
     var warp_id = Int(thread_idx.x) // WARP_SIZE
     var lane = Int(lane_id())
     var col = Int(block_idx.x) * WARPS_PER_BLOCK + warp_id
-    if col >= n:
-        return
-
     var num_chunks = ceildiv(k, CHUNK)
 
+    # All threads must enter the PDL region; tail-block threads with no
+    # output column simply skip the work.
     with PDL():
+        if col >= n:
+            return
         for m_base in range(0, m, M_TILE):
             var acc = SIMD[DType.float32, M_TILE](0)
 
             for chunk_idx in range(lane, num_chunks, WARP_SIZE):
                 var k_base = chunk_idx * CHUNK
 
-                var packed = w.load[BYTES_PER_CHUNK](
-                    Coord(col, k_base // 2)
-                )
+                var packed = w.load[BYTES_PER_CHUNK](Coord(col, k_base // 2))
                 var vals = cast_uint_to_fp4e2m1[
-                    out_dtype = DType.float32, out_width=CHUNK
+                    out_dtype=DType.float32, out_width=CHUNK
                 ](packed)
                 var s0 = rebind[Scalar[DType.float32]](
-                    scales.load(
-                        Coord(col, k_base // NVFP4_GEMV_SF_VECTOR_SIZE)
-                    )
+                    scales.load(Coord(col, k_base // NVFP4_GEMV_SF_VECTOR_SIZE))
                 )
                 var s1 = rebind[Scalar[DType.float32]](
                     scales.load(
@@ -111,8 +108,7 @@ def _nvfp4_gemv_kernel[
                         # Scales are constant per block: factor them out of
                         # the dot products.
                         acc[mi] += (
-                            s0
-                            * (w_lo * xv.slice[16, offset=0]()).reduce_add()
+                            s0 * (w_lo * xv.slice[16, offset=0]()).reduce_add()
                             + s1
                             * (w_hi * xv.slice[16, offset=16]()).reduce_add()
                         )
@@ -136,7 +132,6 @@ def nvfp4_gemv(
     m: Int,
     n: Int,
     k: Int,
-    pdl_level: PDLLevel = PDLLevel(),
 ) raises:
     """Launches the fused NVFP4 dequant-GEMV.
 
@@ -150,7 +145,6 @@ def nvfp4_gemv(
         m: Number of activation rows.
         n: Output features (weight rows).
         k: Inner dimension (unpacked element count, multiple of 32).
-        pdl_level: PDL optimization level for the launch.
     """
     comptime assert scales.dtype == DType.float32, "scales must be float32"
     comptime assert (
@@ -173,12 +167,8 @@ def nvfp4_gemv(
         WARPS_PER_BLOCK=WARPS_PER_BLOCK,
     ]
 
-    var c_dev = rebind[
-        TileTensor[c.dtype, c.LayoutType, MutAnyOrigin]
-    ](c)
-    var a_dev = rebind[
-        TileTensor[a.dtype, a.LayoutType, MutAnyOrigin]
-    ](a)
+    var c_dev = rebind[TileTensor[c.dtype, c.LayoutType, MutAnyOrigin]](c)
+    var a_dev = rebind[TileTensor[a.dtype, a.LayoutType, MutAnyOrigin]](a)
     var w_dev = rebind[
         TileTensor[DType.uint8, w_packed.LayoutType, MutAnyOrigin]
     ](w_packed)

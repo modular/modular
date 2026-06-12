@@ -5298,7 +5298,7 @@ def nvfp4_dequant(
 ) -> TensorValue:
     """Dequantizes NVFP4 packed weights to BF16 or FP8 on GPU.
 
-    Software-LUT kernel that runs on any GPU — the fallback path on
+    Software-decode kernel that runs on any GPU — the fallback path on
     architectures without native FP4 matmul support (pre-Blackwell NVIDIA).
     The modelopt per-tensor ``weight_scale_2`` must be pre-multiplied into
     ``scales`` by the caller (yielding float32 scales); raw float8_e4m3fn
